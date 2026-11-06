@@ -549,8 +549,9 @@ def directory_lock(
     exception is the daemon/child pair: the daemon spends a machine slot at
     admission and its child takes this lock a moment later, so an in-process build
     that claims the directory in between makes the child wait with that slot spent.
-    The in-process build's own slot retry budget gives up and releases the
-    directory first, so the pair stalls (bounded) rather than deadlocking.
+    Whichever budget lapses first closes it — the in-process build's slot retries or
+    this build's directory-wait bound — so the pair stalls (bounded) rather than
+    deadlocking.
 
     Args:
         directory: The build's working directory (canonicalised here, so two
@@ -569,26 +570,29 @@ def directory_lock(
     bound = _DIRECTORY_WAIT_SECONDS if timeout_seconds is None else timeout_seconds
     started = time.monotonic()
 
-    while True:
-        result = _directory_acquire(key, identity, command, ticket)
-        if result.get('status') != 'success':
-            # Release the WAITING entry this call may have committed: a leaked
-            # waiter keeps its FIFO place with a live pid, so a retry would queue
-            # behind a ghost of itself.
-            _directory_release(key, ticket)
-            raise RuntimeError(f'directory lock acquire failed for {key!r}: {result.get("error")}')
-        if result.get('admission') == 'admitted':
-            break
-        waited = time.monotonic() - started
-        if waited >= bound:
-            # Same reason as above: the build does not run, so it must not leave a
-            # waiting entry behind for the next build to queue behind.
-            _directory_release(key, ticket)
-            raise DirectoryBusy(key, result.get('waiting_on') or {}, waited)
-        time.sleep(_DIRECTORY_POLL_SECONDS)
-
-    lease = DirectoryLease(waited_seconds=round(time.monotonic() - started, 3))
+    # The ticket is committed to the queue by the FIRST acquire attempt, so from
+    # then on every non-admitted exit must drop it again — including a
+    # BaseException (a harness reap lands as one). A leaked waiter holds a place in
+    # the directory's FIFO with a live pid, so a leak would pin the directory for
+    # everyone until the process dies. Releasing here is the guarantee; the
+    # age-based reclaim in `build_queue` is the backstop.
     try:
-        yield lease
+        while True:
+            result = _directory_acquire(key, identity, command, ticket)
+            if result.get('status') != 'success':
+                raise RuntimeError(f'directory lock acquire failed for {key!r}: {result.get("error")}')
+            if result.get('admission') == 'admitted':
+                break
+            waited = time.monotonic() - started
+            if waited >= bound:
+                raise DirectoryBusy(key, result.get('waiting_on') or {}, waited)
+            time.sleep(_DIRECTORY_POLL_SECONDS)
+    except BaseException:
+        _directory_release(key, ticket)
+        raise
+
+    with_lease = DirectoryLease(waited_seconds=round(time.monotonic() - started, 3))
+    try:
+        yield with_lease
     finally:
         _directory_release(key, ticket)

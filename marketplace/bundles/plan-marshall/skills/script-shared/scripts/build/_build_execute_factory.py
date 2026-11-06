@@ -445,10 +445,10 @@ def _record_resolution(
     # as a normally-scheduled build. Two fail-closed rules keep the label
     # honest: an unrecognized `resolved` value reports `unknown` (never a
     # guessed lane — a new routing branch must extend this map), and a
-    # plan-less in-process build reports `unserialized` for THIS layer (it
-    # bypasses the machine-global fallback slot, which only real plans enter).
-    # It is still serialised against other builds of its own directory by the
-    # per-directory lock; the label names the slot layer, not the whole build.
+    # plan-less in-process build reports `directory-only`: it enters no slot
+    # scheduler, and the per-directory build lock is the only serialisation it
+    # has. The token never says "unserialized", because the build IS serialised
+    # against other builds of its own directory.
     _RESOLVED_TO_SERIALIZATION = {
         'routed': 'daemon-scheduled',
         'in_process': 'fallback-slot',
@@ -456,7 +456,7 @@ def _record_resolution(
     }
     serialization = _RESOLVED_TO_SERIALIZATION.get(resolved, 'unknown')
     if resolved == 'in_process' and not names_real_plan(plan_id):
-        serialization = 'unserialized'
+        serialization = 'directory-only'
     message = (
         f'[BUILD-SERVER] resolved build (requested={requested}, resolved={resolved}, '
         f'reason={reason}, notation={notation}, plan={plan_id}, mechanism={mechanism}, '
@@ -1737,10 +1737,13 @@ def create_execute_handlers(
         #   2. the machine-global build-queue slot, taken only when `plan_id`
         #      names a REAL plan (`NO_PLAN` passthrough, as before).
         #
-        # Directory FIRST, slot SECOND, always: a build that holds a slot must
-        # never wait on a directory, which is what rules out a deadlock between
-        # the daemon's slots and the in-process lock. The slot is released by its
-        # context manager's finally; the directory lease the same way.
+        # Directory FIRST, slot SECOND, always: no build PROCESS waits on a
+        # directory while holding a slot. The daemon/child pair has one bounded
+        # exception (the daemon spends a slot at admission, its child takes the
+        # directory a moment later), and it is broken by whichever budget expires
+        # first rather than being absent — see `directory_lock` for the exact
+        # statement. The slot is released by its context manager's finally; the
+        # directory lease the same way.
         try:
             lease: DirectoryLease | None = None
             with directory_lock(

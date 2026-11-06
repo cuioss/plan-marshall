@@ -44,7 +44,7 @@ A registered, ready build flows through the client in two steps:
 
 The status-TOON carries two hard guarantees:
 
-* **A bound-expiry wait is never timeout-shaped.** It returns a live status — `running` with `elapsed` / `eta` / `last_progress`, or `queued` with `waiting_on` / `queued_seconds` when the job is admitted-but-not-started — not an empty body, so the caller always knows whether the build is waiting or working, and how far along it is.
+* **A bound-expiry wait is never timeout-shaped.** It returns a live status — `running` with `elapsed` / `eta` / `last_progress` once the job is admitted, or `queued` with `waiting_on` / `queued_seconds` while it has been accepted but not yet admitted — not an empty body, so the caller always knows whether the build is waiting or working, and how far along it is.
 * **`killed` is a first-class terminal status.** A child the supervisor did not itself terminate (a harness reap, a daemon restart) is classified `killed` — rendered "externally killed — not flaky, do not blind-retry" — and is never folded into `failure`. A kill is not flakiness, and the caller must not blind-retry it.
 
 == The fallback path

@@ -215,20 +215,19 @@ def test_routed_build_names_daemon_scheduling(captured, capsys):
     assert 'serialization=daemon-scheduled' in err
 
 
-def test_plan_less_fallback_is_labeled_unserialized(captured, capsys):
-    """A plan-less in-process build bypasses the SLOT, so it must not be labeled
-    `fallback-slot`.
+def test_plan_less_fallback_is_labeled_directory_only(captured, capsys):
+    """A plan-less in-process build enters no slot, so it must not be labeled
+    `fallback-slot` — and must not be labeled `unserialized` either.
 
-    The label names the slot layer: a plan-less build enters no slot, while it IS
-    serialised against other builds of its own directory. Without this control, a
-    label derived from `resolved` alone would claim a slot lane for a build that
-    never took one.
+    The label names the SLOT layer, and a plan-less build enters none; but the build
+    IS serialised against other builds of its own directory, so the emitted token
+    says what it has instead of denying serialisation altogether.
     """
     factory._record_resolution('auto', 'in_process', 'socket_absent', _NOTATION, None)
 
     assert captured == []
     err = capsys.readouterr().err
-    assert 'serialization=unserialized' in err
+    assert 'serialization=directory-only' in err
     assert 'serialization=fallback-slot' not in err
 
 

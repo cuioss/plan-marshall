@@ -96,9 +96,9 @@ Two primitives live here:
     directory a live in-process holder has. One bounded window survives that
     pre-check: the daemon spends a slot at admission and its child takes the
     directory a moment later, so an in-process build slipping in between makes the
-    child wait with that slot spent. That wait is bounded by the in-process build's
-    own slot retry budget, which gives up and releases the directory first — a
-    bounded stall, not a deadlock.
+    child wait with that slot spent. That wait is closed by whichever budget lapses
+    first (the in-process build's slot retries, or the child's directory-wait
+    bound) — a bounded stall, not a deadlock.
   - Liveness is by **pid**, not by plan directory: a plan-less holder has no plan
     directory, so a plan-anchored check would declare a running lane build dead and
     steal its directory. A dead holder's record is reclaimed, so a crashed build

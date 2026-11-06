@@ -912,6 +912,32 @@ def test_an_exhausted_bound_raises_directory_busy_naming_the_holder(tmp_path, is
 
 
 @pytest.mark.real_directory_lock
+def test_an_interrupt_during_the_wait_drops_the_waiter(tmp_path, isolated_home, monkeypatch):
+    """A reap mid-wait must not leave a waiter pinning the directory.
+
+    A leaked waiter holds a FIFO place with a live pid, and the FIFO rule admits
+    nobody ahead of it — so the leak would block every later build of that
+    directory. The release therefore sits in a ``BaseException`` scope.
+    """
+    directory = tmp_path / 'W1'
+    directory.mkdir()
+    _stage_directory_holder(isolated_home, directory)
+
+    def _interrupt(_seconds):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(bqs.time, 'sleep', _interrupt)
+
+    with pytest.raises(KeyboardInterrupt):
+        with bqs.directory_lock(str(directory), plan_id=NO_PLAN_SENTINEL, command='x', timeout_seconds=10):
+            raise AssertionError('the body must not run')  # pragma: no cover
+
+    state = json.loads((isolated_home / 'build-queue.json').read_text(encoding='utf-8'))
+    assert state.get('directory_waiters', []) == [], 'the waiter was released on the interrupt path'
+    assert _directory_key(directory) in state['directory_locks'], "the other build's lease is untouched"
+
+
+@pytest.mark.real_directory_lock
 def test_a_directory_holder_waiting_on_a_slot_does_not_deadlock(tmp_path, isolated_home, monkeypatch):
     """Directory-then-slot never deadlocks — and the spec's cross-order shape IS
     reachable across processes, so this states what is actually true.

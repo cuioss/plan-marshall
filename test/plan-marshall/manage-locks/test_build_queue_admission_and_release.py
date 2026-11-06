@@ -543,3 +543,90 @@ class TestDirectoryRecovery:
 
         assert result['status'] == 'success'
         assert result['action'] == 'noop'
+
+    def test_a_malformed_waiter_record_is_dropped_not_raised(self, isolated_base: dict) -> None:
+        """A waiter record missing ``directory`` must not take every acquire down.
+
+        The admission scan indexes ``waiter['directory']``, so a junk record kept in
+        the list would raise inside the read-modify-write — and then EVERY
+        in-process build would fail until the machine-global file was hand-edited,
+        which no verb allows. Junk is dropped, the same fail-open direction the
+        dead-holder prune takes.
+        """
+        directory = isolated_base['base'] / 'W1'
+        directory.mkdir(parents=True, exist_ok=True)
+        (isolated_base['queue_path']).write_text(
+            json.dumps(
+                {
+                    'active': [],
+                    'waiting': [],
+                    'run_log': [],
+                    'directory_locks': {},
+                    'directory_waiters': [{'ticket': 'junk-only'}, {'directory': str(directory), 'pid': 'bad'}],
+                }
+            ),
+            encoding='utf-8',
+        )
+
+        result = build_queue.run_directory_acquire(_directory_namespace(directory, 't-mine', 'mine'))
+
+        assert result['status'] == 'success'
+        assert result['admission'] == 'admitted'
+        state = _read_queue(isolated_base['queue_path'])
+        assert [waiter['ticket'] for waiter in state['directory_waiters']] == []
+
+    def test_a_waiter_past_the_ceiling_loses_its_place(self, isolated_base: dict) -> None:
+        """A pid-recycled waiter must not pin its directory forever.
+
+        The FIFO rule admits nobody ahead of a queued waiter, so a leaked record
+        whose pid now belongs to an unrelated live process would block every later
+        build. The waiter's age is the backstop.
+        """
+        directory = isolated_base['base'] / 'W1'
+        directory.mkdir(parents=True, exist_ok=True)
+        stale_ts = time.time() - build_queue.DIRECTORY_LOCK_CEILING_SECONDS - 60
+        (isolated_base['queue_path']).write_text(
+            json.dumps(
+                {
+                    'active': [],
+                    'waiting': [],
+                    'run_log': [],
+                    'directory_locks': {},
+                    'directory_waiters': [
+                        {
+                            'directory': str(directory.resolve()),
+                            'ticket': 't-abandoned',
+                            'plan_id': 'abandoned',
+                            'pid': os.getpid(),
+                            'ts': stale_ts,
+                        }
+                    ],
+                }
+            ),
+            encoding='utf-8',
+        )
+
+        result = build_queue.run_directory_acquire(_directory_namespace(directory, 't-mine', 'mine'))
+
+        assert result['admission'] == 'admitted', 'an abandoned waiter must not hold the queue'
+
+    def test_a_zombie_holder_is_reclaimable(self) -> None:
+        """A holder whose process has exited but not been reaped is DEAD.
+
+        ``os.kill(pid, 0)`` succeeds for a zombie, so a signal probe alone would let
+        a daemon-killed build child pin its directory for as long as the corpse
+        lives. The probe reads the process state on Linux; where ``/proc`` is absent
+        the signal probe alone decides (and this assertion would then fail, which is
+        why the probe's own contract is stated here rather than assumed).
+        """
+        import subprocess
+        import sys
+
+        zombie = subprocess.Popen([sys.executable, '-c', 'import os; os._exit(0)'])
+        try:
+            time.sleep(0.1)
+            assert not build_queue._pid_alive(zombie.pid), 'the exited-but-unreaped child must read as dead'
+        finally:
+            zombie.wait()
+        # The matched control: a live process still reads as alive.
+        assert build_queue._pid_alive(os.getpid())

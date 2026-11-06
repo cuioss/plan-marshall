@@ -840,6 +840,24 @@ def _directory_waiters(state: dict[str, Any]) -> list[dict[str, Any]]:
     ]
 
 
+def _waiter_is_live(waiter: dict[str, Any], now: float) -> bool:
+    """Return whether a queued directory waiter may still hold its FIFO place.
+
+    Two ways to lose it: the owning process is gone (dead, or an unreaped zombie),
+    or the record has outlived :data:`DIRECTORY_LOCK_CEILING_SECONDS`. The second is
+    the backstop for a record whose pid was RECYCLED by an unrelated process — no
+    build legitimately waits two hours for one directory, and without this a single
+    leaked waiter would pin its directory for every caller, since the FIFO rule
+    admits nobody ahead of a queued waiter.
+    """
+    if not _pid_alive(waiter.get('pid')):
+        return False
+    queued_at = waiter.get('ts')
+    if not isinstance(queued_at, (int, float)):
+        return True
+    return (now - float(queued_at)) <= DIRECTORY_LOCK_CEILING_SECONDS
+
+
 def _holder_view(holder: dict[str, Any] | None, now: float) -> dict[str, Any]:
     """Render a holder (or a waiter that is being waited on) for a result payload.
 
@@ -1402,7 +1420,7 @@ def run_directory_acquire(args: Namespace) -> dict[str, Any]:
         # a crashed build must never block a directory forever.
         for held_directory in [key for key, holder in locks.items() if not _pid_alive(holder.get('pid'))]:
             del locks[held_directory]
-        waiters = [waiter for waiter in _directory_waiters(state) if _pid_alive(waiter.get('pid'))]
+        waiters = [waiter for waiter in _directory_waiters(state) if _waiter_is_live(waiter, now)]
 
         holder = locks.get(directory)
         # FIFO is LIST POSITION among this directory's waiters, never "any other

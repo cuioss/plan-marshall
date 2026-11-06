@@ -164,7 +164,7 @@ class DirectCommandResult(TypedDict, total=False):
     routed_errors: list  # Daemon-routed failing build: the INNER wrapper's errors[]
     job_id: str  # Daemon-routed running hand-back: the daemon job to re-attach to
     job_status: str  # Daemon-routed running hand-back: always 'running' on this shape
-    queued_seconds: int  # Daemon-routed build: how long it waited for its directory/slot
+    queued_seconds: int  # How long the build waited for its directory/slot (routed or in-process)
     # Written BACK by the renderer (cmd_run_common) once it has measured the
     # executed-test count, so the routing seam's ledger row can name the
     # population on the in-process route too. Absent means unmeasured, never zero.

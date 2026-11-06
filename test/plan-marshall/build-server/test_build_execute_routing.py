@@ -686,8 +686,12 @@ def test_cmd_run_falls_back_under_a_slot_when_not_routed(monkeypatch):
 def test_cmd_run_takes_the_directory_lock_before_the_slot(monkeypatch):
     """The lock order is directory first, then slot — one order, everywhere.
 
-    That order is what rules out the deadlock: a build holding a slot never
-    waits on a directory, because it had to take the directory first.
+    Within a build process that order is what keeps the two limiters from
+    interleaving: a build holding a slot never waits on a directory, because it had
+    to take the directory first. (The daemon/child pair leaves one bounded window —
+    the daemon spends a slot at admission and the child takes the directory a moment
+    later — which is bounded by whichever budget expires first, not removed by this
+    order.)
     """
     order: list[str] = []
     monkeypatch.setattr(factory, '_route_to_daemon', lambda *a, **k: (None, 'disabled'))
@@ -805,6 +809,37 @@ def test_cmd_run_reports_the_directory_wait_it_paid(monkeypatch, capsys):
 
     assert rc == 0
     assert 'queued_seconds: 12' in capsys.readouterr().out
+
+
+def test_cmd_run_omits_queued_seconds_when_there_was_no_wait(monkeypatch, capsys):
+    """A sub-second acquisition is not a wait, and says nothing.
+
+    The lease is a float, so ``> 0`` would be true for the microseconds a free
+    directory takes — and ``int()`` would then print ``queued_seconds: 0`` on every
+    in-process build, erasing the very distinction the field exists to make.
+    """
+    monkeypatch.setattr(factory, '_route_to_daemon', lambda *a, **k: (None, 'disabled'))
+    monkeypatch.setattr(
+        factory,
+        'execute_direct_base',
+        lambda **kw: {'status': 'success', 'exit_code': 0, 'duration_seconds': 1, 'log_file': 'l', 'command': 'c'},
+    )
+
+    @contextmanager
+    def _lease(directory, **_kwargs):
+        yield SimpleNamespace(waited_seconds=0.4)
+
+    @contextmanager
+    def _slot(plan_id, *, routed=False):
+        yield
+
+    monkeypatch.setattr(factory, 'directory_lock', _lease)
+    monkeypatch.setattr(factory, 'build_queue_slot', _slot)
+
+    _, cmd_run = factory.create_execute_handlers(_config(), parse_log_fn=lambda *a: None)
+    assert cmd_run(_run_args()) == 0
+
+    assert 'queued_seconds' not in capsys.readouterr().out
 
 
 def test_routed_build_for_a_plan_submits_and_records_that_plan(use_fake_client, monkeypatch, tmp_path):
