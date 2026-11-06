@@ -34,7 +34,7 @@ The branch is read as ONE test set rather than one path at a time:
   tip and its tree is clean), and refused as ``evidence_root_unresolved``
   otherwise; the evidence root the check chose is reported on the payload.
 
-A loss is reported in exactly four cases: the set total drops, a named test disappears from every after-file, one test's count drops while that test still exists, or a surviving path's own total drops and no identity accounts for it. The per-path report is the unit of the finding row. An identity survives only to the extent that the after-set carries MORE of it than the before-set already carried outside the deleted or modified path, so a same-named test in another changed file cannot absorb a loss and a function moved out of a surviving file is not a loss. Both key the accepted set by the test identity plus the number of removed assertions.
+A loss is reported in exactly four cases: the set total drops, a named test disappears from every after-file, one test's count drops while that test still exists, or a surviving path's own total drops and no identity accounts for it. The per-path report is the unit of the finding row. A deleted test identity is a MOVE only when its assertion CONTENT reappears in an after-file: a bare name there proves nothing, so a same-named test in another changed file cannot absorb a loss, while a function moved with its assertions is not a loss. Both key the accepted set by the test identity plus the number of removed assertions.
 
 Importable as ``from _review_support_integrity import ...`` by ``review_support.py``.
 Every verb emits TOON and exits 0 on every outcome; an input that cannot be read is
@@ -45,6 +45,7 @@ from __future__ import annotations
 
 import re
 import subprocess
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -330,6 +331,27 @@ def _function_assertion_counts(text: str) -> dict[str, int]:
     return counts
 
 
+def _identity_bodies(text: str) -> dict[str, str]:
+    """The whitespace-normalized BODY of every test identity, in document order.
+
+    The body runs from the identity's own header to the next identity's header, so a
+    move is proven by the test's assertion content rather than by its name. Two
+    different tests that share a name therefore carry different bodies, and a bare
+    name in another file proves nothing.
+    """
+    spans = _identity_spans(text) or _class_spans(text)
+    bodies: dict[str, str] = {}
+    for index, (start, name) in enumerate(spans):
+        end = spans[index + 1][0] if index + 1 < len(spans) else len(text)
+        bodies[name] = _normalized_body(text[start:end])
+    return bodies
+
+
+def _assertion_lines(text: str) -> list[str]:
+    """The stripped assertion-bearing LINES of a body — the fingerprint a move is proven by."""
+    return [line.strip() for line in text.splitlines() if any(pattern.search(line) for pattern in ASSERTION_PATTERNS)]
+
+
 def _identity_spans(text: str) -> list[tuple[int, str]]:
     """The Python/JS test-function identities, in document order.
 
@@ -466,7 +488,13 @@ def _evidence_root(plan_id: str) -> tuple[Path | None, str | None]:
     return root, 'main_checkout'
 
 
-def _row(path: str, removed: int, removed_tests: list[dict[str, Any]], detail: str) -> dict[str, Any]:
+def _row(
+    path: str,
+    removed: int,
+    removed_tests: list[dict[str, Any]],
+    detail: str,
+    acceptance_kind: str | None = None,
+) -> dict[str, Any]:
     row: dict[str, Any] = {
         'path': path,
         'kind': 'assertion_removed',
@@ -474,6 +502,11 @@ def _row(path: str, removed: int, removed_tests: list[dict[str, Any]], detail: s
         'removed_tests': removed_tests,
         'detail': detail,
     }
+    if acceptance_kind is not None:
+        # Which ROW KIND a path-level acceptance must name. A residual entry, a
+        # file total and a set total are three different claims; one key must not
+        # stand for another even when the counts coincide.
+        row['acceptance_kind'] = acceptance_kind
     names = [entry['identity'] for entry in removed_tests]
     if names:
         row['weakened_functions'] = names
@@ -494,11 +527,10 @@ def compute_test_integrity(plan_id: str, base_ref: str | None = None, head_ref: 
     * ``test_filtered`` — the branch adds a skip/xfail marker the pre-image did
       not carry.
 
-    The survival comparison is decided per IDENTITY against what the same identity
-    already carried OUTSIDE the deleted or modified path: an identity survives only
-    to the extent that the after-set carries MORE of it than the before-set already
-    carried elsewhere. A same-named test in another file therefore cannot absorb a
-    loss, and a function moved from a surviving file to a new file is not a loss.
+    The survival comparison is decided per IDENTITY against a CONTENT match: the
+    removed identity's body must reappear in an after-file. A bare name there proves
+    nothing — a same-named test with different assertions cannot absorb a loss — while
+    a function moved with its assertions is not a loss.
 
     A file the branch ADDS is not reported: removing an assertion means removing
     one that existed before the change. The comparator reads the whole changed
@@ -584,10 +616,41 @@ def _grade_test_integrity(
 
     before_fns_by_path = {path: _function_assertion_counts(text) for path, text in before.items()}
     after_fns_by_path = {path: _function_assertion_counts(text) for path, text in after.items()}
-    after_identities: dict[str, int] = {}
-    for counts in after_fns_by_path.values():
-        for identity, count in counts.items():
-            after_identities[identity] = after_identities.get(identity, 0) + count
+    before_bodies_by_path = {path: _identity_bodies(text) for path, text in before.items()}
+    after_bodies: dict[str, set[str]] = {}
+    for text in after.values():
+        for identity, body in _identity_bodies(text).items():
+            after_bodies.setdefault(identity, set()).add(body)
+
+    def _surviving_assertions(path: str, identity: str, count: int) -> int:
+        """How many of ``identity``'s assertions a MOVE proves survived, in ``count``'s unit.
+
+        A move is proven by content, never by a bare name: the after-file must carry
+        the before body's assertion lines as EXCESS over what another before-file
+        already carried for the same identity. A full superset is a full move (the
+        test moved, possibly strengthened); a body wholly contained in the before is a
+        weakened move and survives by that body's own count. Anything else — an
+        unrelated test that merely shares the name, even one that shares a line —
+        survives nothing.
+        """
+        before_lines = Counter(_assertion_lines(before_bodies_by_path[path].get(identity, '')))
+        if not before_lines:
+            return 0
+        carried: Counter[str] = Counter()
+        for other, bodies in before_bodies_by_path.items():
+            if other == path:
+                continue
+            carried += Counter(_assertion_lines(bodies.get(identity, '')))
+        best = 0
+        for body in after_bodies.get(identity, set()):
+            excess = Counter(_assertion_lines(body)) - carried
+            if not excess:
+                continue
+            if not (before_lines - excess):
+                return count
+            if not (excess - before_lines):
+                best = max(best, min(count, _count(body)))
+        return best
 
     findings: list[dict[str, Any]] = []
     for path, pre in before.items():
@@ -595,20 +658,17 @@ def _grade_test_integrity(
         before_file = _count(pre)
         post = after.get(path)
         if post is None:
-            # An identity survives only to the extent that the after-set carries
-            # MORE of it than the before-set already carried outside THIS path:
-            # a same-named test in another changed file cannot absorb the loss.
+            # A deleted test identity is a MOVE only to the extent its assertion
+            # lines reappear elsewhere; a bare name there proves nothing.
             missing: dict[str, int] = {}
             kinds: dict[str, str] = {}
             for identity, count in before_fns.items():
-                carried = sum(counts.get(identity, 0) for other, counts in before_fns_by_path.items() if other != path)
-                surviving = max(0, after_identities.get(identity, 0) - carried)
+                surviving = _surviving_assertions(path, identity, count)
                 lost = count - surviving
                 if lost > 0:
                     missing[identity] = lost
                     # A count-less declaration decides a whole REMOVAL only; an
-                    # identity that still runs elsewhere with fewer assertions is a
-                    # DROP of a surviving test.
+                    # identity whose content is only partly elsewhere is a DROP.
                     kinds[identity] = 'removed' if surviving == 0 else 'dropped'
             if missing:
                 findings.append(
@@ -634,6 +694,7 @@ def _grade_test_integrity(
                         before_file,
                         [],
                         f'{before_file} assertion(s) present at {base_tree} are gone from the file',
+                        acceptance_kind='file_total',
                     )
                 )
             continue
@@ -651,8 +712,9 @@ def _grade_test_integrity(
         for identity, count in before_fns.items():
             if identity in after_fns:
                 continue
-            carried = sum(counts.get(identity, 0) for other, counts in before_fns_by_path.items() if other != path)
-            surviving = max(0, after_identities.get(identity, 0) - carried)
+            # Same rule as the deleted-file arm: only assertion CONTENT that really
+            # reappears counts, so a same-named test in another file absorbs nothing.
+            surviving = _surviving_assertions(path, identity, count)
             carried_away += min(count, surviving)
             lost = count - surviving
             if lost > 0:
@@ -678,34 +740,54 @@ def _grade_test_integrity(
                 detail = f'{removed} assertion(s) present at {base_tree} are gone from {", ".join(names)}'
                 if file_loss <= 0:
                     detail += ', while the file total is not reduced by the same amount'
-            findings.append(_row(path, removed, removed_tests, detail))
+            findings.append(
+                _row(
+                    path,
+                    removed,
+                    removed_tests,
+                    detail,
+                    acceptance_kind='mixed_residual' if removed_tests else 'file_total',
+                )
+            )
 
     # Case 1: the total across the whole changed test set dropped. This is the
     # last-net guard — a genuine loss the per-identity pass could not explain (a
     # language whose test headers are not parsed) is still reported, never dropped.
-    # The row is attributed to the file that LOST the assertions, and carries the
-    # path key so a close can accept it.
+    # The row is attributed to the file whose loss no identity explains, not to the
+    # file with the largest raw drop, and carries the path key so a close can accept it.
     before_total = sum(_count(text) for text in before.values())
     after_total = sum(_count(text) for text in after.values())
     explained = sum(finding['removed_assertions'] for finding in findings)
     if after_total < before_total and before_total - after_total > explained:
-        losers = [
-            (count - _count(after.get(path, '')), path) for path, text in before.items() for count in (_count(text),)
-        ]
-        positive = [entry for entry in losers if entry[0] > 0]
-        if positive:
-            loss, path = max(positive)
+        # Attribute the leftover to the file whose own loss is NOT explained by an
+        # identity row, never to the file with the largest raw drop: a larger drop
+        # that identities already account for is not where the unexplained loss sits.
+        reported_by_path: dict[str, int] = {}
+        for finding in findings:
+            reported_by_path[finding['path']] = reported_by_path.get(finding['path'], 0) + int(
+                finding.get('removed_assertions') or 0
+            )
+        raw_losses = {path: _count(text) - _count(after.get(path, '')) for path, text in before.items()}
+        unexplained = [(raw - reported_by_path.get(path, 0), path) for path, raw in raw_losses.items() if raw > 0]
+        positive_unexplained = [entry for entry in unexplained if entry[0] > 0]
+        if positive_unexplained:
+            _loss, path = max(positive_unexplained)
         else:
-            holders = sorted(before.items(), key=lambda item: -_count(item[1]))
-            if not holders:
-                return _payload(plan_id, resolved_base, base_tree, evidence_kind, findings)
-            path = holders[0][0]
+            positive = [(raw, path) for path, raw in raw_losses.items() if raw > 0]
+            if positive:
+                _loss, path = max(positive)
+            else:
+                holders = sorted(before.items(), key=lambda item: -_count(item[1]))
+                if not holders:
+                    return _payload(plan_id, resolved_base, base_tree, evidence_kind, findings)
+                path = holders[0][0]
         findings.append(
             _row(
                 path,
                 before_total - after_total - explained,
                 [],
                 f'the changed test set holds {before_total - after_total} assertion(s) fewer than at {base_tree}',
+                acceptance_kind='set_total',
             )
         )
 
@@ -724,16 +806,21 @@ def _grade_test_integrity(
             pre = _moved_pre_image(post, before, after)
             if pre is None:
                 continue
-        added_markers = sorted(_added_markers(post, pre))
-        if added_markers:
-            findings.append(
-                {
-                    'path': path,
-                    'kind': 'test_filtered',
-                    'markers': added_markers,
-                    'detail': f'the branch adds {", ".join(added_markers)}: the test no longer runs',
-                }
-            )
+        units = _added_marker_units(post, pre)
+        if units:
+            added_markers = sorted({marker for markers in units.values() for marker in markers})
+            marked_tests = sorted(identity for identity in units if identity)
+            row: dict[str, Any] = {
+                'path': path,
+                'kind': 'test_filtered',
+                'markers': added_markers,
+                'detail': f'the branch adds {", ".join(added_markers)}: the test no longer runs',
+            }
+            if marked_tests:
+                # WHAT the acceptance covers: the identity of each marked test, so a
+                # later skip of a further test in the same file is a new row.
+                row['marked_tests'] = marked_tests
+            findings.append(row)
 
     return _payload(plan_id, resolved_base, base_tree, evidence_kind, findings)
 
@@ -838,25 +925,29 @@ def _identity_markers(text: str) -> dict[str, set[str]]:
     return markers
 
 
-def _added_markers(post: str, pre: str) -> set[str]:
-    """The markers the branch ADDED, compared per test identity where both sides have one.
+def _added_marker_units(post: str, pre: str) -> dict[str, set[str]]:
+    """The markers the branch ADDED, keyed by the test identity that gained them.
 
     An identity present only after the change is a new test: it has no pre-image to
     compare against, so its markers are not read as additions. When EITHER side
     carries no test identity at all — a language the header arms do not parse — the
     comparison falls back to the whole file, which is the only granularity available
-    and the pre-existing behaviour.
+    and the pre-existing behaviour. The returned map is what lets a filter acceptance
+    name the identity of each marked test rather than only the marker kind.
     """
     after_markers = _identity_markers(post)
     before_markers = _identity_markers(pre)
     if set(after_markers) == {''} or set(before_markers) == {''}:
-        return _markers(post) - _markers(pre)
-    added: set[str] = set()
+        added = _markers(post) - _markers(pre)
+        return {'': added} if added else {}
+    units: dict[str, set[str]] = {}
     for identity, markers in after_markers.items():
         if identity not in before_markers:
             continue
-        added |= markers - before_markers[identity]
-    return added
+        added = markers - before_markers[identity]
+        if added:
+            units[identity] = added
+    return units
 
 
 __all__ = [

@@ -268,7 +268,16 @@ def test_a_declaration_naming_two_does_not_accept_a_three_assertion_removal(
 # --- D2 (b): the close reads the validated head, never a later one -------------------------
 
 
-def test_a_close_at_a_later_head_does_not_record_the_later_removal(plan_context, tmp_path, monkeypatch) -> None:
+def test_a_close_at_a_later_head_is_refused_and_the_later_removal_is_not_recorded(
+    plan_context, tmp_path, monkeypatch
+) -> None:
+    """A close whose head differs from the validated one is refused with a named state.
+
+    The review validated head A; the operator tries to close at head B, where test_b
+    has since disappeared. Recording rows from A silently would let the close stand
+    done at B while B was never graded, so the removal at B would ship unseen. The
+    close is refused instead, and the next validation still raises test_b.
+    """
     repo = _repo(tmp_path)
     _commit(repo, {'README.md': 'readme\n'})
     _commit(repo, {'test/sample_test.py': BEFORE})
@@ -283,14 +292,26 @@ def test_a_close_at_a_later_head_does_not_record_the_later_removal(plan_context,
     # head B: test_b disappears entirely, after the review validated head A.
     _commit(repo, {'test/sample_test.py': 'def test_a():\n    assert 1 == 1\n'}, 'remove test_b later')
     head_b = _git(repo, 'rev-parse', 'HEAD')
+    assert head_a != head_b
 
-    _close(head_b, hash_id)
+    closed = _loop_back.cmd_loop_back_close(
+        Namespace(
+            plan_id=PLAN_ID,
+            step=_loop_back.FUNCTIONAL_REVIEW_STEP,
+            head=head_b,
+            accept=[hash_id],
+            rationale='the test removal is the deliverable',
+            waive_refire=[],
+        )
+    )
+
+    assert closed is not None and closed['status'] == 'error', closed
+    assert closed['error'] == 'close_head_not_validated', closed
 
     payload = review_support.run_validate(PLAN_ID, 'functional', _sealed(tmp_path, criteria), None)
     identities = {entry.get('identity') for entry in payload['accepted_removals']}
     assert 'test_b' not in identities, payload['accepted_removals']
     assert _blocking(payload), payload['findings']
-    assert head_a != head_b
 
 
 # --- D2 (c): every row of a path is kept, not the last -------------------------------------
@@ -501,3 +522,185 @@ def test_the_three_texts_state_the_loss_cases_and_the_key_identically() -> None:
     for label, text in texts.items():
         assert LOSS_CASES_RULE in text, label
         assert ACCEPTED_KEY_RULE in text, label
+
+
+# =============================================================================
+# D3 — an acceptance covers exactly what was accepted
+# =============================================================================
+
+
+def test_accepting_one_skip_then_skipping_another_raises_a_row(plan_context, tmp_path, monkeypatch) -> None:
+    """The accepted filter row names the MARKED TEST, so a later skip is a new row.
+
+    The first close accepts ``it.skip('a')`` only. Adding ``it.skip('b')`` to the same
+    file leaves the marker KIND set unchanged, so a kind-only key accepts it silently.
+    The row must name the identity of each marked test. Red at 75b5780d0.
+    """
+    repo = _repo(tmp_path)
+    _commit(repo, {'README.md': 'readme\n'})
+    before = "it('a', () => {\n  expect(1).toBe(1);\n});\n\nit('b', () => {\n  expect(2).toBe(2);\n});\n"
+    _commit(repo, {'src/thing.test.js': before})
+    _git(repo, 'checkout', '--quiet', '-b', 'feature')
+    head_a_text = before.replace("it('a'", "it.skip('a'")
+    _commit(repo, {'src/thing.test.js': head_a_text})
+    monkeypatch.chdir(repo)
+    monkeypatch.setattr(_integrity, 'resolve_live_worktree', lambda _plan_id: repo)
+    monkeypatch.setattr(_attr, 'resolve_live_worktree', lambda _plan_id: None)
+    criteria = ['parser accepts input']
+    head_a, hash_id = _mark_and_file(repo, plan_context, criteria, 'src/thing.test.js')
+
+    _close(head_a, hash_id)
+    _commit(repo, {'src/thing.test.js': head_a_text.replace("it('b'", "it.skip('b'")})
+
+    payload = review_support.run_validate(PLAN_ID, 'functional', _sealed(tmp_path, criteria), None)
+
+    assert _blocking(payload), payload['findings']
+
+
+def _mark_loop_back_and_file(head: str, path: str, marker: str = '') -> str:
+    """Mark the review looped back at ``head`` and file a fresh pending finding for ``path``."""
+    marked = _loop_back.cmd_mark_step_done(
+        Namespace(
+            plan_id=PLAN_ID,
+            phase='6-finalize',
+            step=_loop_back.FUNCTIONAL_REVIEW_STEP,
+            outcome='loop_back',
+            display_detail='functional review found 1 blocking, 0 advisory',
+            head_at_completion=head,
+            loop_back_target='6-finalize',
+            fact=None,
+            force=False,
+            no_completion_log=False,
+        )
+    )
+    assert marked is not None and marked['status'] == 'success', marked
+    filed = _findings_core.add_qgate_finding(
+        PLAN_ID,
+        '6-finalize',
+        'qgate',
+        'bug',
+        f'weakened_test at {path}',
+        f'a removed assertion [fix_kind correction] {marker}'.strip(),
+        rule='functional-review',
+    )
+    assert filed['status'] in ('success', 'reopened'), filed
+    return str(filed['hash_id'])
+
+
+def test_a_second_filter_close_with_a_different_marker_set_is_recorded(plan_context, tmp_path, monkeypatch) -> None:
+    """A second close whose marker set differs is APPENDED, so the row stays accepted.
+
+    The accepted-set key omits ``markers``/``marked_tests`` pre-fix, so the second
+    close collides with the first and the newer marker kind is never accepted. Red at
+    75b5780d0.
+    """
+    repo = _repo(tmp_path)
+    _commit(repo, {'README.md': 'readme\n'})
+    before = (
+        "describe('suite', () => {\n"
+        "  it('a', () => {\n"
+        '    expect(1).toBe(1);\n'
+        '  });\n\n'
+        "  it('b', () => {\n"
+        '    expect(2).toBe(2);\n'
+        '  });\n'
+        '});\n'
+    )
+    _commit(repo, {'src/thing.test.js': before})
+    _git(repo, 'checkout', '--quiet', '-b', 'feature')
+    head_a_text = before.replace("  it('a'", "  it.skip('a'")
+    _commit(repo, {'src/thing.test.js': head_a_text})
+    monkeypatch.chdir(repo)
+    monkeypatch.setattr(_integrity, 'resolve_live_worktree', lambda _plan_id: repo)
+    monkeypatch.setattr(_attr, 'resolve_live_worktree', lambda _plan_id: None)
+    criteria = ['parser accepts input']
+    head_a, hash_id = _mark_and_file(repo, plan_context, criteria, 'src/thing.test.js')
+    _close(head_a, hash_id)
+
+    head_b_text = head_a_text.replace("describe('suite'", "describe.skip('suite'")
+    head_b = _commit(repo, {'src/thing.test.js': head_b_text}, 'skip the suite too')
+    second_hash = _mark_loop_back_and_file(head_b, 'src/thing.test.js', 'second round')
+    _close(head_b, second_hash)
+
+    recorded = _snap.accepted_test_removals(PLAN_ID)
+    filter_entries = [
+        entry for entry in recorded if entry.get('path') == 'src/thing.test.js' and entry.get('kind') == 'test_filtered'
+    ]
+    assert len(filter_entries) == 2, recorded
+    assert any('describe.skip' in (entry.get('markers') or []) for entry in filter_entries), recorded
+
+    _commit(repo, {'src/other.py': 'x\n'})
+    payload = review_support.run_validate(PLAN_ID, 'functional', _sealed(tmp_path, criteria), None)
+
+    assert _blocking(payload) == [], payload['findings']
+
+
+def test_reseeding_the_same_entry_neither_duplicates_nor_drops_it(plan_context) -> None:
+    """Control: the union key is stable across a re-seed."""
+    _plan(plan_context)
+    entry = {
+        'path': 'src/a.test.js',
+        'kind': 'test_filtered',
+        'markers': ['it.skip'],
+        'marked_tests': ['a'],
+    }
+    assert _snap.record_accepted_removals(PLAN_ID, [entry]) is True
+    assert _snap.record_accepted_removals(PLAN_ID, [entry]) is True
+
+    recorded = _snap.accepted_test_removals(PLAN_ID)
+    assert len([e for e in recorded if e.get('path') == 'src/a.test.js']) == 1, recorded
+
+
+def test_an_entry_that_normalizes_to_nothing_is_not_reported_success(plan_context) -> None:
+    """The writer reports success only when the entry appended or was already present."""
+    _plan(plan_context)
+
+    assert _snap.record_accepted_removals(PLAN_ID, [{'identity': '', 'path': ''}]) is False
+
+
+# --- D2 (h): a path-level acceptance is typed by row kind ---------------------------------
+
+
+def test_a_mixed_residual_entry_does_not_accept_a_file_total_row_of_the_same_count(
+    plan_context, tmp_path, monkeypatch
+) -> None:
+    """A mixed-residual acceptance covers the residual, not a file-total row of that count.
+
+    Head A leaves one identity drop plus a one-assertion residual (mixed row); the
+    close accepts both. Head B leaves the identity intact and only a module-level
+    assertion gone: a one-assertion FILE-TOTAL row. The residual entry must not cover
+    it. Red at 75b5780d0.
+    """
+    repo = _repo(tmp_path)
+    _commit(repo, {'README.md': 'readme\n'})
+    _commit(
+        repo,
+        {'test/residual_test.py': 'assert m1\nassert m2\ndef test_a():\n    assert 1 == 1\n    assert 2 == 2\n'},
+    )
+    _git(repo, 'checkout', '--quiet', '-b', 'feature')
+    _commit(repo, {'test/residual_test.py': 'assert m1\ndef test_a():\n    assert 1 == 1\n'})
+    monkeypatch.chdir(repo)
+    monkeypatch.setattr(_integrity, 'resolve_live_worktree', lambda _plan_id: repo)
+    monkeypatch.setattr(_attr, 'resolve_live_worktree', lambda _plan_id: None)
+    criteria = ['parser accepts input']
+    head_a, hash_id = _mark_and_file(repo, plan_context, criteria, 'test/residual_test.py')
+
+    _close(head_a, hash_id)
+    _commit(repo, {'test/residual_test.py': 'assert m1\ndef test_a():\n    assert 1 == 1\n    assert 2 == 2\n'})
+
+    payload = review_support.run_validate(PLAN_ID, 'functional', _sealed(tmp_path, criteria), None)
+
+    assert _blocking(payload), payload['findings']
+
+
+# --- D4: the Branch B escape is pinned -----------------------------------------------------
+
+
+def test_the_branch_b_escape_sentence_is_pinned() -> None:
+    """The pre-marker ``taken_into_account`` escape is stated in Branch B, not only in manage-findings."""
+    finalize = get_skill_dir('plan-marshall', 'phase-6-finalize')
+    text = (finalize / 'workflow' / 'functional-review.md').read_text(encoding='utf-8')
+    branch_b = text.split('### Branch B', 1)[1].split('### Branch C', 1)[0]
+
+    assert '--resolution pending' in branch_b
+    assert 'pre-marker' in branch_b or 'Pre-marker' in branch_b

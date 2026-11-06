@@ -278,8 +278,13 @@ def _row_acceptance_record(row: dict[str, Any]) -> dict[str, Any]:
     }
     if record['kind'] == 'test_filtered':
         record['markers'] = list(row.get('markers') or [])
+        if row.get('marked_tests'):
+            record['marked_tests'] = list(row.get('marked_tests') or [])
     else:
         record['assertions_removed'] = row.get('removed_assertions')
+        # The row KIND the acceptance names: a mixed residual, a file total and a
+        # set total are three different claims and must not share one key.
+        record['acceptance_kind'] = row.get('acceptance_kind') or 'file_total'
     return record
 
 
@@ -288,8 +293,8 @@ def _row_is_accepted(row: dict[str, Any], accepted: list[dict[str, Any]]) -> boo
 
     An identity-bearing row is accepted when every removed identity is, plus any
     residual the identities do not cover. A row with no identity is accepted by its
-    explicit path-level key (`{path, kind, assertions_removed}`, or `{path, kind:
-    test_filtered, markers}`).
+    explicit path-level key (`{path, kind, assertions_removed, acceptance_kind}`, or
+    `{path, kind: test_filtered, markers, marked_tests}`).
     """
     removed_tests = [entry for entry in row.get('removed_tests') or [] if isinstance(entry, dict)]
     path = row.get('path')
@@ -307,21 +312,26 @@ def _row_is_accepted(row: dict[str, Any], accepted: list[dict[str, Any]]) -> boo
         return any(
             entry.get('path') == path
             and str(entry.get('kind') or 'assertion_removed') != 'test_filtered'
+            and entry.get('acceptance_kind') == 'mixed_residual'
             and (entry.get('assertions_removed') is None or entry.get('assertions_removed') == residual)
             for entry in accepted
         )
     if kind == 'test_filtered':
         wanted = set(row.get('markers') or [])
+        wanted_tests = set(row.get('marked_tests') or [])
         return any(
             str(entry.get('kind') or '') == 'test_filtered'
             and entry.get('path') == path
             and set(entry.get('markers') or []) >= wanted
+            and (not wanted_tests or set(entry.get('marked_tests') or []) >= wanted_tests)
             for entry in accepted
         )
     count = row.get('removed_assertions')
+    row_kind = row.get('acceptance_kind') or 'file_total'
     return any(
         entry.get('path') == path
         and str(entry.get('kind') or 'assertion_removed') != 'test_filtered'
+        and (entry.get('acceptance_kind') or 'file_total') == row_kind
         and (entry.get('assertions_removed') is None or entry.get('assertions_removed') == count)
         for entry in accepted
     )

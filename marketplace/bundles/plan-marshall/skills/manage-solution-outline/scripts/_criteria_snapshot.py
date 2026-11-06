@@ -358,17 +358,32 @@ def accepted_test_removals(plan_id: str) -> list[dict[str, Any]]:
         normalized = _normalized_removal_entry(entry)
         if normalized is None:
             continue
-        key = (
-            normalized.get('identity'),
-            normalized.get('path'),
-            normalized.get('kind'),
-            normalized.get('assertions_removed'),
-        )
+        key = _removal_key(normalized)
         if key in seen:
             continue
         seen.add(key)
         entries.append(normalized)
     return entries
+
+
+def _removal_key(entry: dict[str, Any]) -> tuple[Any, ...]:
+    """The accepted-set key: everything the entry NAMES, not just its identity.
+
+    A filter acceptance names its marker set and the identity of each marked test; a
+    path-level acceptance names the row KIND it covers (mixed residual / file total /
+    set total) beside its count. Two entries that differ in ANY of those are different
+    acceptances, so the key must carry them — a key that omits them makes a second
+    close collide with the first.
+    """
+    return (
+        entry.get('identity'),
+        entry.get('path'),
+        entry.get('kind'),
+        entry.get('acceptance_kind'),
+        tuple(sorted(entry.get('markers') or [])),
+        tuple(sorted(entry.get('marked_tests') or [])),
+        entry.get('assertions_removed'),
+    )
 
 
 def _normalized_removal_entry(entry: dict[str, Any]) -> dict[str, Any] | None:
@@ -390,9 +405,15 @@ def _normalized_removal_entry(entry: dict[str, Any]) -> dict[str, Any] | None:
     kind = entry.get('kind')
     if isinstance(kind, str) and kind:
         normalized['kind'] = kind
+    acceptance_kind = entry.get('acceptance_kind')
+    if isinstance(acceptance_kind, str) and acceptance_kind:
+        normalized['acceptance_kind'] = acceptance_kind
     markers = entry.get('markers')
     if isinstance(markers, list):
         normalized['markers'] = [marker for marker in markers if isinstance(marker, str)]
+    marked_tests = entry.get('marked_tests')
+    if isinstance(marked_tests, list):
+        normalized['marked_tests'] = [identity for identity in marked_tests if isinstance(identity, str)]
     return normalized
 
 
@@ -402,39 +423,36 @@ def record_accepted_removals(plan_id: str, entries: list[dict[str, Any]]) -> boo
     The one writer shape both owning verbs call: ``snapshot-criteria`` seeds it
     from the outline's declarations, and ``loop-back close --accept`` appends the
     identities a ``weakened_test`` finding removed. The merge is a union keyed by
-    ``(identity, path, kind, assertions_removed)``, so re-seeding a re-freeze
-    neither duplicates an entry nor drops one an operator accepted.
+    :func:`_removal_key`, so re-seeding a re-freeze neither duplicates an entry nor
+    drops one an operator accepted, while a second close that names a DIFFERENT
+    marker set or row kind is a new entry.
+
+    Success means every requested entry is in the set afterwards — appended now or
+    already present. An entry that normalizes to nothing was neither appended nor
+    present, so it makes the call fail rather than reporting a silent success.
     """
     wanted: list[dict[str, Any]] = []
+    unnamed = 0
     for entry in entries:
         if not isinstance(entry, dict):
+            unnamed += 1
             continue
         normalized = _normalized_removal_entry(entry)
-        if normalized is not None:
-            wanted.append(normalized)
+        if normalized is None:
+            unnamed += 1
+            continue
+        wanted.append(normalized)
+    if unnamed:
+        return False
     if not wanted:
         return True
 
     def _apply(metadata: dict[str, Any]) -> None:
         current = metadata.get(ACCEPTED_TEST_REMOVALS_KEY)
         values = list(current) if isinstance(current, list) else []
-        existing = {
-            (
-                value.get('identity'),
-                value.get('path'),
-                value.get('kind'),
-                value.get('assertions_removed'),
-            )
-            for value in values
-            if isinstance(value, dict)
-        }
+        existing = {_removal_key(value) for value in values if isinstance(value, dict)}
         for entry in wanted:
-            key = (
-                entry.get('identity'),
-                entry.get('path'),
-                entry.get('kind'),
-                entry.get('assertions_removed'),
-            )
+            key = _removal_key(entry)
             if key not in existing:
                 values.append(entry)
                 existing.add(key)
