@@ -389,3 +389,23 @@ def test_the_production_discovery_path_resolves_the_declared_fact(step, expected
     against the repository's own declared and undeclared steps.
     """
     assert gate._head_dependence(step) == (expected, None)
+
+
+def test_the_undeclared_control_step_is_discovered_and_declares_no_fact():
+    """Anti-vacuity for D2(a): ``(False, None)`` must mean "undeclared", not "unknown step".
+
+    ``_derive_head_dependence`` answers ``(False, None)`` both for a step that
+    declares no ``head_dependent`` fact and for one absent from the discovered
+    implementor population. Without this assertion the (a) case would stay green if
+    ``finalize-step-sync-baseline`` silently fell out of discovery — and the gate
+    would stop enforcing a real head-dependent step with no failure to show it.
+    """
+    from _cmd_mark_step import _FINALIZE_STEP_EXT_POINT
+    from _step_key_canonical import canonicalize_step_key
+    from extension_discovery import find_implementors
+
+    discovered = {
+        canonicalize_step_key(str(record.get('name', ''))) for record in find_implementors(_FINALIZE_STEP_EXT_POINT)
+    }
+
+    assert 'finalize-step-sync-baseline' in discovered

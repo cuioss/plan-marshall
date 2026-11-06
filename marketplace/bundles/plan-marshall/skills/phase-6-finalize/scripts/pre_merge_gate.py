@@ -96,7 +96,6 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from _cmd_merge_authorization import BARRIER_OVERRIDE_LABELS
 from _handshake_commands import cmd_findings_check
 from file_ops import get_executor_path
 from toon_parser import parse_toon, serialize_toon
@@ -127,10 +126,6 @@ _VERDICT_CURRENCY_NOTATION = 'plan-marshall:phase-6-finalize:verdict_currency'
 
 #: The phase whose step records carry gate heads.
 HEAD_BINDING_PHASE = '6-finalize'
-
-#: The sibling key ``manage-status loop-back close`` stamps onto an existing
-#: ``done`` record: ``{head, basis}``. ``mark-step-done`` never writes it.
-REFIRE_WAIVER_KEY = 'refire_waiver'
 
 #: Refusal code for a merge candidate a head-dependent gate record never saw.
 MERGE_HEAD_NOT_GATED = 'merge_candidate_not_gated'
@@ -300,11 +295,24 @@ def _valid_waiver_head(record: dict[str, Any]) -> str | None:
     a dict, a missing/non-string ``head`` and an abbreviated SHA are all void, and
     the caller then judges the record exactly as if no waiver existed.
     """
-    waiver = record.get(REFIRE_WAIVER_KEY)
-    if not isinstance(waiver, dict):
+    waiver = _refire_waiver(record)
+    if waiver is None:
         return None
     head = waiver.get('head')
     return head if _is_full_sha(head) else None
+
+
+def _refire_waiver(record: dict[str, Any]) -> dict[str, Any] | None:
+    """Return ``record``'s re-fire waiver, reading the key from its owner.
+
+    The key literal belongs to :mod:`_cmd_mark_step` (the module that defines it and
+    the sibling ``write_refire_waiver``); importing it there rather than spelling it
+    again is what keeps the writer and this reader naming one key.
+    """
+    from _cmd_mark_step import REFIRE_WAIVER_KEY
+
+    waiver = record.get(REFIRE_WAIVER_KEY)
+    return waiver if isinstance(waiver, dict) else None
 
 
 def _head_dependence(step: str) -> tuple[bool, str | None]:
@@ -316,17 +324,23 @@ def _head_dependence(step: str) -> tuple[bool, str | None]:
     the one ``mark-step-done`` enforces.
 
     Returns ``(is_head_dependent, unresolved_reason)`` exactly as that function
-    does — ``(False, reason)`` when the discovery machinery could not run at all.
+    does — ``(False, reason)`` when the derivation could not run at all. The whole
+    call is guarded because the delegated function's own frontmatter read is not:
+    a raise there must take the fail-closed field-presence fallback, never
+    traceback the merge gate.
 
     The step key is canonicalized first. ``_derive_head_dependence`` compares
     ``canonicalize_step_key(discovered_name)`` against its argument, and a legacy
     ``default:``-prefixed record key would otherwise resolve to "undeclared" — which
     would file the record as never-consulted instead of judging it.
     """
-    import _cmd_mark_step
-    from _step_key_canonical import canonicalize_step_key
+    try:
+        import _cmd_mark_step
+        from _step_key_canonical import canonicalize_step_key
 
-    return _cmd_mark_step._derive_head_dependence(canonicalize_step_key(step))
+        return _cmd_mark_step._derive_head_dependence(canonicalize_step_key(step))
+    except Exception as exc:  # any derivation fault is the declared fallback, never a crash
+        return False, f'the head-dependence derivation raised ({exc})'
 
 
 def _classify_verdict_currency(step: str, project_dir: str, recorded_sha: str, head: str) -> dict[str, Any]:
@@ -443,7 +457,7 @@ def _head_binding_refusal(
         if record.get('outcome') == 'done':
             waiver_head = _valid_waiver_head(record)
             if waiver_head == head:
-                waiver = record[REFIRE_WAIVER_KEY]
+                waiver = _refire_waiver(record) or {}
                 waived.append(
                     {
                         'step': step_id,
@@ -1062,8 +1076,11 @@ def _participation_refusal(plan_id: str, head: str | None, verdict: dict[str, An
     ``override_options``. They are :data:`BARRIER_OVERRIDE_LABELS` itself — the one
     constant ``merge-authorization grant`` validates against — never a copy, so the
     operator prompt built from this payload cannot drift from the check that will
-    judge the answer.
+    judge the answer. The import is deferred to this path so a fault elsewhere in
+    manage-status' import chain cannot take down the merge gate's module load.
     """
+    from _cmd_merge_authorization import BARRIER_OVERRIDE_LABELS
+
     unproven = verdict['unproven_bots']
     detail = verdict.get('detail') or 'no reason was reported'
     authorizable = bool(verdict.get('authorizable'))
