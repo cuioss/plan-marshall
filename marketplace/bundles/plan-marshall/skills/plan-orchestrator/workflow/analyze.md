@@ -186,7 +186,7 @@ Nothing the analysis finds in the merged code is fixed inline. Route by layer:
   | `checked` — the reading settled the point and found it wrong | `blocker` / `major` / `minor` / `info` | `contradicted` |
   | `not_shown_by_reading` — no reading can settle it | any of the four | `unverifiable` |
 
-  `corroborated` is persisted only from a Step 2 corroboration row that settled a claim in the spec's favour; a layer-1 finding never yields it. **Layer 1 only.** A layer-2 finding is a trace problem — a deliverable with no test that can fail, a file no deliverable explains — not a claim about a spec premise, so it persists no verdict, and a layer-3 defect is never persisted by this run at all.
+  `corroborated` is persisted only from a Step 2 corroboration row that settled a claim in the spec's favour; a layer-1 finding never yields it. **Never downgrade a verdict Step 2b already settled:** when the claim already carries `corroborated` and its evidence, a `not_shown_by_reading` finding on it persists nothing — Step 2 had evidence the leaf does not, so the stronger verdict and its evidence stand, and the landing records the reading's limit in its own layer-1 row instead. **Layer 1 only.** A layer-2 finding is a trace problem — a deliverable with no test that can fail, a file no deliverable explains — not a claim about a spec premise, so it persists no verdict, and a layer-3 defect is never persisted by this run at all.
 
 The report's `## Three-Layer Analysis` verdict line names every layer that carried a finding, so a layer-3 defect is visible without reading the section.
 
