@@ -400,12 +400,11 @@ def test_the_undeclared_control_step_is_discovered_and_declares_no_fact():
     ``finalize-step-sync-baseline`` silently fell out of discovery — and the gate
     would stop enforcing a real head-dependent step with no failure to show it.
     """
-    from _cmd_mark_step import _FINALIZE_STEP_EXT_POINT
-    from _step_key_canonical import canonicalize_step_key
     from extension_discovery import find_implementors
 
+    ext_point = 'plan-marshall:extension-api/standards/ext-point-finalize-step'
     discovered = {
-        canonicalize_step_key(str(record.get('name', ''))) for record in find_implementors(_FINALIZE_STEP_EXT_POINT)
+        str(record.get('name', '')).rsplit(':', 1)[-1] for record in find_implementors(ext_point)
     }
 
     assert 'finalize-step-sync-baseline' in discovered
