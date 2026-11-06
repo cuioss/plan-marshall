@@ -1027,3 +1027,28 @@ def test_a_sourcery_comment_with_no_signal_is_still_dropped_as_noise(plan_contex
 
     assert result['count_stored'] == 0
     assert result['count_skipped_noise'] == 1
+
+
+_SOURCERY_MULTILINE_FOOTER_CLEAN = (
+    'Sourcery is free for open source.\n'
+    'If you like Sourcery, please consider sponsoring the project.\n'
+    'Help me be more useful! Please click 👍 or 👎 to share feedback.'
+)
+
+
+def test_a_clean_sourcery_body_with_a_multiline_footer_is_not_filed(plan_context):
+    """A footer spread over several lines leaves no markup, so a clean body is still noise.
+
+    Red at 5fd240a5e: only the marker LINES were removed, so the middle continuation
+    line survived and the footer-only body was filed as a finding needing triage.
+    """
+    from _findings_core import query_findings
+
+    plan_id = 'gh-pr-sourcery-multiline-footer-clean'
+    plan_context.plan_dir_for(plan_id)
+
+    result = _fetch_over([_sourcery_review('sr-multiline', _SOURCERY_MULTILINE_FOOTER_CLEAN)], _StoreArgs(522, plan_id))
+
+    assert result['count_stored'] == 0
+    assert result['count_skipped_noise'] == 1
+    assert query_findings(plan_id, finding_type='pr-comment')['findings'] == []

@@ -423,27 +423,31 @@ def _is_whole_comment_acknowledgment(body: str) -> bool:
 
 
 def _strip_footer_markers(body: str, bot_kind: str | None) -> str:
-    """Remove ``bot_kind``'s declared FOOTER lines from ``body`` before the signal test.
+    """Remove ``bot_kind``'s declared FOOTER block from ``body`` before the signal test.
 
     A footer marker is a branding / feedback-prompt line a bot appends to a SUCCESSFUL
-    review, never a section that replaces it. The unit removed is the LINE carrying the
-    marker, because a footer is a line: its own sentence continues past the literal a
-    registry can pin (an emoji prompt, a link, a sentence tail), and stripping only the
-    pinned fragment would leave those words behind as if they were review signal.
+    review, never a section that replaces it. The footer is a BLOCK, not a line: the
+    marker line carries the start of the prose and several further lines follow it (a
+    sponsorship sentence, the feedback prompt), so stripping only the marker LINE left
+    the rest behind as if it were review signal. Everything from the first marker line
+    to the end of the body is removed — a footer is terminal — which handles a footer
+    spread over one line or several and leaves a body that is nothing but footer empty.
 
     That is what keeps a review body carrying real findings AND the footer from being
     dropped wholesale, while a body that is nothing but footer still reduces to nothing
     and is dropped as noise. A bot declaring no footer markers gets its body back
-    unchanged, so every other bot's filtering is exactly as it was. The accepted
-    residual is a body packing signal and a footer marker onto ONE line: that line is
-    removed, which is the cost of not guessing where the footer's prose ends.
+    unchanged, so every other bot's filtering is exactly as it was.
     """
     if not bot_kind:
         return body
     markers = bot_registry.footer_patterns(bot_kind)
     if not markers:
         return body
-    return '\n'.join(line for line in body.splitlines() if not any(marker in line for marker in markers))
+    lines = body.splitlines()
+    for index, line in enumerate(lines):
+        if any(marker in line for marker in markers):
+            return '\n'.join(lines[:index])
+    return body
 
 
 def _is_obvious_noise(body: str, bot_kind: str | None = None) -> bool:

@@ -43,6 +43,7 @@ import threading
 from pathlib import Path
 from typing import Any
 
+import _github_pr
 from _flat_install_fixtures import flat_install_tree, run_script_in_flat
 
 from conftest import (
@@ -336,8 +337,9 @@ def test_merge_gate_counts_the_marker_bearing_summary_comment() -> None:
 #: so neither carries a second reading of the same fields.
 _COVERAGE_PARSER = 'review_coverage_verdict'
 
-#: The fields the parser reads out of the marker's JSON payload.
-_COVERAGE_FIELDS = ('sourceCommitId', 'coveredCommitId', 'kind')
+#: The fields the parser reads out of the marker's JSON payload. Read from the parser
+#: itself, not restated here: a hand list drifts the moment the parser gains a field.
+_COVERAGE_FIELDS = _github_pr.REVIEW_COVERAGE_FIELDS
 
 
 def test_the_lane_and_the_registry_name_one_coverage_parser() -> None:
@@ -388,19 +390,16 @@ def _summary_review_state_qualifies(state: dict[str, Any]) -> bool:
     """Whether a pull request's review state satisfies the summary-comment leg.
 
     Derived from the state ALONE: a formal review is absent, and one summary
-    comment carries the marker whose covered commit is the head and whose kind
-    is ``reviewed``.
+    comment's marker covers the head as a finished review. It reads the marker with
+    the production parser, so this fixture cannot pass on a shape production reads
+    differently.
     """
     if state['review_count'] or state['reviews']:
         return False
-    for comment in state['summary_comments']:
-        marker = re.search(r'final_review_risk_coverage:(\{.*?\})', comment['body'])
-        if marker is None:
-            continue
-        fields = json.loads(marker.group(1))
-        if fields.get('coveredCommitId') == state['head'] and fields.get('kind') == 'reviewed':
-            return True
-    return False
+    return any(
+        _github_pr.review_coverage_verdict(comment['body'], state['head']) is True
+        for comment in state['summary_comments']
+    )
 
 
 def test_the_plan_lb_72_merge_gate_state_qualifies_as_a_review() -> None:

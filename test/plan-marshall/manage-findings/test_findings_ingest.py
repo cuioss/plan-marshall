@@ -24,6 +24,7 @@ PLAN_IDS = (
     'ingest-body-under-cap',
     'ingest-clamp',
     'ingest-cut-tail',
+    'ingest-cut-tail-over-quarantine',
     'ingest-cut-then-short',
     'ingest-empty',
     'ingest-idem',
@@ -172,6 +173,23 @@ def test_ingest_keeps_the_tail_of_a_cut_body_and_says_it_was_cut(plan_context):
     assert record['original_length'] == 36938
     # The pass summary names WHICH finding was cut, not only that something was.
     assert any(record['hash_id'] in report for report in result['clamped'])
+
+
+def test_ingest_keeps_the_tail_of_a_body_over_the_quarantine_cap(plan_context):
+    """A body over 64 KiB keeps the conclusion that sits past the quarantine cap. Red at 5fd240a5e."""
+    pid = 'ingest-cut-tail-over-quarantine'
+    request = 'CHANGE REQUEST: the conclusion sits past the 64 KiB quarantine cap.'
+    body = ('a' * ((64 * 1024) + 50000 - len(request))) + request
+    assert request not in body[: 64 * 1024]
+    add_finding(plan_id=pid, finding_type='bug', title='t', detail='ph', raw_input={'body': body})
+
+    result = ingest_findings(pid)
+    assert result.get('promoted') == 1, result
+
+    record = query_findings(pid)['findings'][0]
+    assert request in record['body'], 'the quarantine cut was head-only and dropped the conclusion'
+    assert record['truncated'] is True
+    assert record['original_length'] == len(body), 'original_length must name the body the reviewer wrote'
 
 
 def test_ingest_promotes_a_body_under_the_cap_byte_identically_with_no_flag(plan_context):

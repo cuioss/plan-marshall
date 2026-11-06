@@ -2535,3 +2535,37 @@ def test_a_refusal_with_no_marker_still_credits_nothing(plan_context, monkeypatc
     assert result['status'] == 'success'
     assert result['participated_bots'] == []
     assert 'coderabbit' in result['refused_bots']
+
+
+# =============================================================================
+# D7 — a quoted marker and a nested payload
+# =============================================================================
+
+
+def test_a_quoted_coverage_marker_makes_no_claim():
+    """A marker in a blockquote, a fence or inline code is a QUOTE, not the bot's claim."""
+    payload = '{"sourceCommitId":"a","coveredCommitId":"a","kind":"reviewed"}'
+    for body in (
+        f'> <!-- final_review_risk_coverage:{payload} -->',
+        f'```\n<!-- final_review_risk_coverage:{payload} -->\n```',
+        f'`<!-- final_review_risk_coverage:{payload} -->`',
+    ):
+        assert _github_pr.review_coverage_verdict(body, 'a') is None, body
+
+
+def test_a_quoted_marker_does_not_override_the_provider_commit():
+    """The provider's own commit_id stands when the body only quotes a marker. Red at 5fd240a5e."""
+    quoted = '> <!-- final_review_risk_coverage:{"coveredCommitId":"b","kind":"reviewed"} -->'
+    comment = {'kind': 'review_body', 'body': quoted, 'commit_id': _HEAD_A}
+
+    assert github_pr._evidence_named_verdict(comment, _HEAD_A) is True
+
+
+def test_a_nested_coverage_payload_is_read():
+    """A non-greedy brace match stopped at the inner ``}``; the payload is read now."""
+    body = (
+        '<!-- final_review_risk_coverage:'
+        '{"sourceCommitId":"a","coveredCommitId":"a","kind":"reviewed","meta":{"tool":"x"}} -->'
+    )
+
+    assert _github_pr.review_coverage_verdict(body, 'a') is True
