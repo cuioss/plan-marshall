@@ -867,6 +867,41 @@ class TestFailureDetailRoundTrip:
         assert 'src/calc.py:42' in detail_text
         assert 'AssertionError: bad state' in detail_text
 
+    def test_maven_compiler_continuations_reach_the_finding_store(self, plan_context):
+        """A Maven compiler error's symbol:/location: detail survives into the store.
+
+        The parser attaches the continuation fields to the error's ``detail``;
+        this pins that the SHARED store path carries them through, so a triage
+        reader gets the missing name without a raw-log re-read.
+        """
+        from pathlib import Path
+
+        from _build_shared import _store_build_findings
+        from _findings_core import query_findings
+
+        from conftest import load_script_module
+
+        maven_parse = load_script_module(
+            'plan-marshall', 'build-maven', '_maven_cmd_parse.py', '_maven_cmd_parse_store_probe'
+        )
+        fixture = (
+            Path(__file__).parent.parent / 'build-maven' / 'fixtures' / 'log-test-data' / 'maven-failure-epilogue.log'
+        )
+        issues, _, _ = maven_parse.parse_log(fixture)
+
+        _store_build_findings(
+            plan_id=plan_context.plan_id,
+            tool_name='maven',
+            issues=issues,
+            command_str='verify',
+        )
+
+        stored = query_findings(plan_context.plan_id, finding_type='build-error')
+        detail_text = '\n'.join(finding.get('detail') or '' for finding in stored['findings'])
+
+        assert 'symbol:   class Missing' in detail_text
+        assert 'location: class probe.c.Broken' in detail_text
+
     def test_finding_detail_omits_block_when_issue_carries_none(self, plan_context):
         from _build_parse import Issue
         from _build_shared import _store_build_findings
