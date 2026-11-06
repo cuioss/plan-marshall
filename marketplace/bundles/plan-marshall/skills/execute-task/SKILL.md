@@ -295,7 +295,7 @@ Apply throughout all subsequent steps:
    3. **Branch on the result in this order** — the order of branches 4, 5 and 6 of [`pre-push-quality-gate.md`](../phase-6-finalize/standards/pre-push-quality-gate.md) § "Whole-tree module-tests divergence gate":
 
       - **`divergence_possible: true`** → the wider run is the whole tree, whatever `scoped_modules` holds. This branch is evaluated first because `scoped_modules` is also empty for a non-empty footprint that resolves to no module (a change to `pyproject.toml` or `build.py` alone, say): the resolver lists those paths in `unresolved_paths` and fails closed, so that case runs the whole tree, never no test run. Continue with sub-step 4.
-      - **`divergence_possible: false` and `scoped_modules` is empty** → the footprint is empty and there is nothing to test — run NO pytest for this task; the breakable-test gate is a no-op. Proceed to Step 6.
+      - **`divergence_possible: false` and `scoped_modules` is empty** → the footprint is empty and there is nothing to test — run NO tests for this task; the breakable-test gate is a no-op. Proceed to Step 6.
       - **`divergence_possible: false` and exactly one scoped module** → `recommended_target` names that module. Continue with sub-step 4.
    4. On either continuing branch the gate runs in a fixed three-part order — **resolve the scope, run the narrow units inline, then hand back only what is left**:
 

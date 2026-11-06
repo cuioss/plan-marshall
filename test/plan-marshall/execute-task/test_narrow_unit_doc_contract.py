@@ -46,8 +46,8 @@ WORKED_CASE_ANSWER = 'run the narrow unit inline, then hand back the module-wide
 #: The branch Step 5 (b) decides first: the whole tree, whatever the scope holds.
 WHOLE_TREE_BRANCH = '**`divergence_possible: true`**'
 
-#: The only condition under which Step 5 (b) runs no pytest — both halves.
-NO_PYTEST_BRANCH = '**`divergence_possible: false` and `scoped_modules` is empty**'
+#: The only condition under which Step 5 (b) runs no tests — both halves.
+NO_TEST_RUN_BRANCH = '**`divergence_possible: false` and `scoped_modules` is empty**'
 
 #: What Step 5 (b) tells a leaf whose own change list is empty, in order: omit
 #: the flag, resolve from the plan alone, and never hand the resolver an empty list.
@@ -174,15 +174,15 @@ def test_step_5b_answers_the_worked_case_on_its_own() -> None:
     assert WORKED_CASE_ANSWER in passage
 
 
-def test_step_5b_decides_the_whole_tree_before_it_skips_pytest_for_an_empty_scope() -> None:
-    """Step 5 (b) skips pytest only for an empty scope that cannot diverge, and decides the whole tree first."""
+def test_step_5b_decides_the_whole_tree_before_it_skips_the_run_for_an_empty_scope() -> None:
+    """Step 5 (b) skips the test run only for an empty scope that cannot diverge, and decides the whole tree first."""
     document, start, end = PASSAGES[0]
     passage = _passage(document, start, end)
 
     whole_tree = passage.find(WHOLE_TREE_BRANCH)
-    no_pytest = passage.find(NO_PYTEST_BRANCH)
+    no_test_run = passage.find(NO_TEST_RUN_BRANCH)
 
-    assert -1 < whole_tree < no_pytest
+    assert -1 < whole_tree < no_test_run
 
 
 def empty_change_list_gaps(passage: str) -> list[str]:
@@ -219,15 +219,15 @@ def test_step_5b_states_the_empty_change_list_instruction_before_it_branches() -
     """The instruction sits with the resolve, ahead of the branch that runs no pytest.
 
     A leaf reads the branches in order, so an instruction placed after the
-    no-pytest branch would be read only once that branch had already decided.
+    no-test-run branch would be read only once that branch had already decided.
     """
     document, start, end = PASSAGES[0]
     passage = _passage(document, start, end)
 
     instruction = passage.find(EMPTY_CHANGE_LIST_MARKERS[0])
-    no_pytest = passage.find(NO_PYTEST_BRANCH)
+    no_test_run = passage.find(NO_TEST_RUN_BRANCH)
 
-    assert -1 < instruction < no_pytest
+    assert -1 < instruction < no_test_run
 
 
 def test_a_passage_that_drops_one_empty_change_list_part_reports_exactly_that_part() -> None:
