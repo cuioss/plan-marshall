@@ -673,10 +673,11 @@ def _grade_test_integrity(
         A move is proven by content, never by a bare name: the after-file must carry
         the before body's assertion lines as EXCESS over what another before-file
         already carried for the same identity. A full superset is a full move (the
-        test moved, possibly strengthened); a body wholly contained in the before is a
-        weakened move and survives by that body's own count. Anything else — an
-        unrelated test that merely shares the name, even one that shares a line —
-        survives nothing.
+        test moved, possibly strengthened); excess wholly contained in the before
+        is a weakened move and survives by the EXCESS lines' assertion count, never
+        by the whole after body's (the body may repeat assertions another before-file
+        already carried). Anything else — an unrelated test that merely shares the
+        name, even one that shares a line — survives nothing.
         """
         before_lines = Counter(_assertion_lines(before_bodies_by_path[path].get(identity, '')))
         if not before_lines:

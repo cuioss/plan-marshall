@@ -369,6 +369,42 @@ def test_a_repeated_identity_in_a_deleted_file_is_not_fully_credited_to_one_move
     assert row['removed_assertions'] == 3, row
 
 
+def test_a_weakened_move_counts_the_excess_lines_not_the_whole_body(plan_context, tmp_path, monkeypatch) -> None:
+    """A moved body whose assertion line is already carried elsewhere proves no move.
+
+    ``other_test.py`` carries ``assert 1 == 1`` for the same identity both before and
+    after; the deleted file's only moved line is that same one, so the EXCESS is empty
+    and the whole two-assertion test is lost. Counting the after body's assertions
+    instead would credit one of them.
+    """
+    repo = _repo(tmp_path)
+    _commit(repo, {'README.md': 'readme\n'})
+    _commit(
+        repo,
+        {
+            'test/source_test.py': 'def test_a():\n    assert 1 == 1\n    assert 2 == 2\n',
+            'test/other_test.py': 'def test_a():\n    assert 1 == 1\n',
+        },
+    )
+    _git(repo, 'checkout', '--quiet', '-b', 'feature')
+    _git(repo, 'rm', 'test/source_test.py')
+    _commit(
+        repo,
+        {
+            'test/other_test.py': 'def test_a():\n    assert 1 == 1\n# changed\n',
+            'test/moved_test.py': 'def test_a():\n    assert 1 == 1\n',
+        },
+        'move the weakened test',
+    )
+
+    payload = _run(repo, plan_context, monkeypatch)
+
+    assert payload['status'] == 'success', payload
+    rows = [row for row in _rows(payload) if row['path'] == 'test/source_test.py']
+    assert rows, payload
+    assert rows[0]['removed_assertions'] == 2, rows
+
+
 # --- D2 (g): the set-total row is attributed to the unexplained loss ------------------------
 
 
