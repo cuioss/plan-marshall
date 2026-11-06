@@ -224,12 +224,14 @@ def test_the_resolved_notation_publishes_the_scope_verb_the_arm_calls_next(tmp_p
 def test_a_persisted_maven_architecture_resolves_module_tests_at_default_scope(tmp_path: Path) -> None:
     """The PERSISTED architecture view resolves step 0 too.
 
-    The consumer's read path is a live crawl, but a persisted
-    ``project-architecture/<module>/derived.json`` set is the other shape the
-    resolver accepts (a project whose build files are absent from the checkout).
-    Seeding it from a REAL discovery of a Maven reactor keeps the fixture honest:
-    at the branch base that discovery emits no root canonical, so the persisted
-    view resolves nothing either.
+    The consumer's read path is a live crawl; a ``project-architecture`` tree on
+    disk is the resolver's fallback for a project whose checkout exposes no build
+    files (the synthetic-project seam, which is also what test fixtures use). It
+    is NOT a durability guarantee: ``derived.json`` is never the source of
+    current state where a live crawl finds modules. Seeding it from a REAL
+    discovery of a Maven reactor keeps the fixture honest: at the branch base
+    that discovery emits no root canonical, so the persisted view resolves
+    nothing either.
     """
     source = tmp_path / 'source'
     _write_reactor(source)

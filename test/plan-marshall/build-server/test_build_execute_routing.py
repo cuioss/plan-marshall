@@ -1297,3 +1297,25 @@ class TestIndeterminateReasonCarry:
 
         assert result['status'] == 'error'
         assert result['error'] == 'build_failed'
+
+    def test_a_non_finish_verdict_arriving_as_failure_is_rendered_as_itself(self, tmp_path):
+        """A ``timeout``/``killed`` log verdict survives the same collapse.
+
+        The wire has no row for either non-finish, so they too arrive as
+        ``failure``. Folding them into a red build is the misattribution the
+        re-render exists to remove, for these statuses as much as for
+        ``indeterminate``.
+        """
+        log = tmp_path / 'timeout.log'
+        log.write_text(
+            'status: timeout\nexit_code: -1\ntimeout_used_seconds: 300\ntimeout_source: explicit\n',
+            encoding='utf-8',
+        )
+
+        result = factory._daemon_result_to_direct(
+            {'job_status': 'failure', 'exit_code': -1, 'duration_seconds': 300, 'log_file': str(log)},
+            'cmd',
+        )
+
+        assert result['status'] == 'timeout'
+        assert result['timeout_used_seconds'] == 300

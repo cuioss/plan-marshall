@@ -650,11 +650,14 @@ def test_failure_epilogue_is_not_filed_and_real_diagnostics_are(
     assert not set(messages) & set(not_filed)
     assert messages == diagnostics
     # The compiler's continuation fields survive as the error's DETAIL — they
-    # carry the missing name, so dropping them would lose the diagnostic.
+    # carry the missing name, so dropping them would lose the diagnostic. Each
+    # appears ONCE: the fixture prints them bare under the error and again at
+    # [ERROR] in the goal-failure block, and a blind append would publish both
+    # copies.
     compiler_error = next(issue for issue in issues if issue.message == _COMPILER_ERROR)
     assert compiler_error.detail is not None
-    assert _SYMBOL_CONTINUATION in compiler_error.detail
-    assert _LOCATION_CONTINUATION in compiler_error.detail
+    assert compiler_error.detail.count(_SYMBOL_CONTINUATION) == 1
+    assert compiler_error.detail.count(_LOCATION_CONTINUATION) == 1
 
 
 def test_older_surefire_report_pointer_is_not_filed():
@@ -766,6 +769,40 @@ def test_a_compile_only_log_attaches_its_unprefixed_continuation_lines(tmp_path)
     # Assert
     assert [issue.message for issue in issues] == [_COMPILER_ERROR]
     assert issues[0].detail == f'{_SYMBOL_CONTINUATION}\n{_LOCATION_CONTINUATION}'
+
+
+def test_control_dtest_run_whose_compile_failed_is_not_a_selector_miss(tmp_path):
+    """CONTROL: a ``-Dtest`` run that failed before any test summary claims nothing.
+
+    The absent population is UNKNOWN, never zero: reporting a selector miss here
+    would relabel a compile failure as a wrong selector.
+    """
+    log_file = tmp_path / 'dtest-compile-failure.log'
+    log_file.write_text(f'[ERROR] {_COMPILER_ERROR}\n[INFO] BUILD FAILURE\n', encoding='utf-8')
+
+    assert selector_miss_reason(log_file.read_text(encoding='utf-8'), _DTEST_COMMAND) is None
+
+
+def test_a_continuation_field_after_an_unrelated_line_is_not_adopted(tmp_path):
+    """CONTROL: the continuation window closes on any other unprefixed line.
+
+    Without the close, a `symbol:` line far below a compiler error — a stack
+    frame, another tool's output — would be silently absorbed into that error's
+    detail and never filed itself.
+    """
+    # Arrange
+    log_file = tmp_path / 'stray-continuation.log'
+    log_file.write_text(
+        f'[ERROR] {_COMPILER_ERROR}\n[INFO] unrelated line\n[ERROR] symbol:   class Elsewhere\n',
+        encoding='utf-8',
+    )
+
+    # Act
+    issues, _, _ = parse_log(log_file)
+
+    # Assert — the stray field is its own issue, and the compiler error has no detail.
+    assert [issue.message for issue in issues] == [_COMPILER_ERROR, 'symbol:   class Elsewhere']
+    assert issues[0].detail is None
 
 
 _CONSUMER_PASSING_LINE = (

@@ -658,8 +658,11 @@ def _daemon_result_to_direct(
     mapping is status-preserving in BOTH non-finish directions: ``timeout`` maps
     to a timeout result and ``killed`` maps to a ``killed`` result carrying the
     no-blind-retry message, so a harness reap on the daemon side is never
-    mistaken for a flaky build — and never for a red one. Only the daemon's
-    ``failure`` becomes an ``error``.
+    mistaken for a flaky build — and never for a red one. A ``failure`` job
+    becomes an ``error`` ONLY when the child's own log verdict says the build ran
+    and failed: a verdict the wire cannot carry (``timeout``, ``killed``,
+    ``indeterminate``) is re-rendered as itself, because the four-valued wire
+    status has no row for it.
 
     The ``killed`` leg previously produced an ``error_result`` whose ``error``
     field said ``killed``; ``cmd_run_common`` reconstructed its own payload from
