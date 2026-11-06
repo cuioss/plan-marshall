@@ -174,8 +174,13 @@ def _elide_for_byte_cap(text: str, max_bytes: int) -> str:
     encoded = text.encode('utf-8')
     if len(encoded) <= max_bytes:
         return text
-    budget = max(max_bytes - 20, 0)
+    budget = max(max_bytes - 48, 0)
     half = budget // 2
+    if half == 0:
+        # A degenerate cap leaves no room for a head+tail pair. Keep the head and the
+        # truncation marker, which is also what makes a zero cap quarantine to
+        # nothing (the marker-only value is not text).
+        return encoded[:max_bytes].decode('utf-8', errors='ignore') + RAW_INPUT_TRUNCATION_MARKER
     head = encoded[:half].decode('utf-8', errors='ignore')
     tail = encoded[len(encoded) - (budget - half) :].decode('utf-8', errors='ignore')
     elided = len(text) - len(head) - len(tail)
