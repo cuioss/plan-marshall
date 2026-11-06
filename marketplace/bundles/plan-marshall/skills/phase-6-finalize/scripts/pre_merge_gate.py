@@ -283,7 +283,10 @@ def _is_full_sha(value: Any) -> bool:
     """
     if not isinstance(value, str):
         return False
-    from _cmd_loop_back import _FULL_SHA_RE
+    try:
+        from _cmd_loop_back import _FULL_SHA_RE
+    except Exception:  # a broken import makes the waiver VOID, never a crash
+        return False
 
     return _FULL_SHA_RE.match(value) is not None
 
@@ -307,9 +310,13 @@ def _refire_waiver(record: dict[str, Any]) -> dict[str, Any] | None:
 
     The key literal belongs to :mod:`_cmd_mark_step` (the module that defines it and
     the sibling ``write_refire_waiver``); importing it there rather than spelling it
-    again is what keeps the writer and this reader naming one key.
+    again is what keeps the writer and this reader naming one key. A broken import
+    makes the waiver VOID, which is the fail-closed answer.
     """
-    from _cmd_mark_step import REFIRE_WAIVER_KEY
+    try:
+        from _cmd_mark_step import REFIRE_WAIVER_KEY
+    except Exception:
+        return None
 
     waiver = record.get(REFIRE_WAIVER_KEY)
     return waiver if isinstance(waiver, dict) else None

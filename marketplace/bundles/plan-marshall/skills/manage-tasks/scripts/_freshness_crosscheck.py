@@ -193,11 +193,12 @@ about the argv's *structure*, which nothing here makes.
 
 A flag after the canonical is a different matter, and :func:`parse_row_scope`
 resolves it conservatively: a KNOWN scope-bearing flag (maven's ``-pl`` /
-``--projects``, gradle's ``-p``, npm's ``-w`` / ``--workspace``) contributes its
-value to the scope, while **any other flag makes the row unreadable**. Reading an
-unknown flag as "no scope" would assert whole-tree over a run that might have been
-narrowed inside the lost quoting — the false-green direction — so it is an
-inability with its reason recorded instead.
+``--projects`` and npm's ``--workspace``, each grounded in the resolver that emits
+it) contributes its value to the scope, a known non-narrowing companion
+(``-am`` / ``--also-make``) is ignored, and **any other flag makes the row
+unreadable**. Reading an unknown flag as "no scope" would assert whole-tree over a
+run that might have been narrowed inside the lost quoting — the false-green
+direction — so it is an inability with its reason recorded instead.
 
 The claim the gate now makes, and why it is bounded
 ====================================================

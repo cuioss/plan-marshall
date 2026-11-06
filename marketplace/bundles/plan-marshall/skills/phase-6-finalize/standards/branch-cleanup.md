@@ -2210,7 +2210,7 @@ Pass a `--display-detail` value alongside `--outcome done` so the output-templat
 
 ### Structured facts recorded here
 
-This step declares the `records_facts` union `action`, `upstream_commit_count`, `merge_mechanism`, `merge_state`, `work_performed`, `cleanup_owed`. The union is a step-level declaration, NOT a per-branch mandate — each of the eight terminal call sites below (**Branches A through E**, plus **F1/F2/F3**; seven record `--outcome done` and F1 records `--outcome loop_back`, which is terminal for this dispatch and so carries the same fact obligation) records only the **honest subset** its own path produced, per [ext-point-finalize-step.md](../../extension-api/standards/ext-point-finalize-step.md) § "Structured step facts". The path conditions:
+This step declares the `records_facts` union `action`, `upstream_commit_count`, `merge_mechanism`, `merge_state`, `work_performed`, `cleanup_owed`, `head_binding_waived`. The union is a step-level declaration, NOT a per-branch mandate — each of the eight terminal call sites below (**Branches A through E**, plus **F1/F2/F3**; seven record `--outcome done` and F1 records `--outcome loop_back`, which is terminal for this dispatch and so carries the same fact obligation) records only the **honest subset** its own path produced, per [ext-point-finalize-step.md](../../extension-api/standards/ext-point-finalize-step.md) § "Structured step facts". The path conditions:
 
 | Fact | Recorded iff |
 |------|--------------|
@@ -2220,6 +2220,7 @@ This step declares the `records_facts` union `action`, `upstream_commit_count`, 
 | `merge_state` | **Every** terminal call site below, `done` and Branch F's `loop_back` alike. Unlike `merge_mechanism` — which records HOW a merge landed and is therefore absent wherever none did — `merge_state` records WHAT STATE the PR is in, and every branch determines that: `merged` on the two branches that landed a merge (A, E); `open` where a live PR is left unmerged (C declined, F1 still queued or on a GitLab merge train, F2 on `settle: dequeued` — ejected from the queue but still open); `closed` where the PR was closed without merging (F2 on `settle: closed`); `unknown` where the PR state was not observed (F3); and `n/a` where no PR exists (B local-only, D no-PR-found). The five values are distinct claims and are not interchangeable — `closed` is not `open`, and `unknown` asserts only that nothing was observed. Recording it everywhere is the honest subset, not an exception: no branch lacks the value. Its consumer is the terminal `default:emit-landing` step, whose `landing-facts` block carries a required `merge_state` key. ⚠ `unknown` is a COULD-NOT-READ marker, and the drain's completeness check treats that class as a gap at every key with no carve-out: a landing carrying `merge_state=unknown` is reported INCOMPLETE at that key. That is the intended honest outcome, not a defect to avoid — never substitute an observed-looking value for a state the run could not read, because a fabricated merge state is worse than a recorded gap. |
 | `work_performed` | **Every** terminal call site below, `true` or `false`, never omitted — the one declared exception to the honest-subset rule. |
 | `cleanup_owed` | **Every** terminal call site below, `done` and Branch F1's `loop_back` alike, for the same reason `merge_state` is: every branch determines whether this run still owes branch cleanup, so no branch lacks the value. `false` where the cleanup was completed or there was nothing to clean up — A and E (merged and cleaned up), B (local-only cleanup performed), D (no PR, nothing to clean up); `true` where cleanup is left owed — C (declined: the live PR and branch are left standing), F1 (deferred until the queue merge lands), F2 (dequeued or closed without merging), F3. It is the structured carrier of owed cleanup: F2's `merge_state` (`closed` or `open`) is a fully-readable value, so without this fact an F2 landing reads complete and clean and its owed-ness survives only in a `display_detail` string no consumer routes on. Its consumer is the terminal `default:emit-landing` step, whose `landing-facts` block carries a required `cleanup_owed` key. |
+| `head_binding_waived` | **Branches A and E only**, and only when the dispatched merge payload carried `waived_steps[]`: the value is the comma-separated step names read from it. A step admitted on the operator's re-fire waiver was NOT validated at this head, so without the fact a waived merge is indistinguishable at the record site from one every gate validated. Absent when no waiver was honoured (the ordinary path) and on every branch that never dispatched a merge. |
 
 `--display-detail` on every branch is a **rendering of the facts that branch recorded**. In particular it MUST NOT assert a rebase or a merge the recorded facts do not support — a fixed literal claiming a rebase unconditionally is exactly what the per-branch facts exist to prevent. It MUST equally not render an *enqueue* as a merge, nor a queue merge as a merge this step performed: `merge_mechanism == merge_queue` records that the PLATFORM merged the PR and this step corroborated the landing, so its rendering says so rather than reusing the direct-merge phrasing.
 
@@ -2242,7 +2243,8 @@ python3 .plan/execute-script.py plan-marshall:phase-6-finalize:pre_merge_gate re
   --fact merge_mechanism={merge_mechanism} \
   --fact merge_state=merged \
   --fact cleanup_owed=false \
-  --fact work_performed=true
+  --fact work_performed=true \
+  {--fact head_binding_waived={waived_steps} (if the dispatched payload carries waived_steps[])}
 ```
 
 The two rebase facts carry the same `{… (if …)}` conditional form the rest of this document uses for a per-path payload, because they are **conditional, not optional-by-taste**: they are recorded iff this run reached the rebase. That is the `use_merge_queue == false` path, and ALSO the `queue_wait: forbidden` reroute, which runs § "Rebase Branch onto Base" while `use_merge_queue == true` (§ "Merge routing" → the queue-wait suppression). The condition is therefore "did this run rebase", never the knob: conditioning it on `use_merge_queue == false` alone would omit the facts on the reroute, where the rebase DID run. The verb enforces the consequence — a `pr_safe_merge` record with no `action` is refused, because a direct merge always reached the rebase and would otherwise render "rebase deferred to queue" on a path that never enqueued.
@@ -2316,7 +2318,8 @@ python3 .plan/execute-script.py plan-marshall:phase-6-finalize:pre_merge_gate re
   --fact merge_mechanism={merge_mechanism} \
   --fact merge_state=merged \
   --fact cleanup_owed=false \
-  --fact work_performed=true
+  --fact work_performed=true \
+  {--fact head_binding_waived={waived_steps} (if the dispatched payload carries waived_steps[])}
 ```
 
 **Branch F — enqueued, merge not yet landed** (PR mode, `use_merge_queue == true`: the `ci pr merge-queue` enqueue succeeded, but § "Wait for the Queue Merge to Land (bounded)" did not observe the queue merge the PR within `merge_queue_wait_budget_seconds` — or observed it closed or dequeued, or could not observe its state at all, or, on a GitLab merge train, had no landing wait to run). The post-merge tail was skipped and the merge mutex released; the head branch and its remote-tracking ref are intact.
