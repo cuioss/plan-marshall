@@ -290,17 +290,6 @@ def _after_image(root: Path, path: str, head_ref: str | None = None) -> str | No
     return _show(root, 'HEAD', path)
 
 
-def _pre_image(worktree: Path, base_ref: str, path: str, head_ref: str = 'HEAD') -> str | None:
-    """Return the file's content at ``merge-base {base_ref} {head_ref}``, or ``None``.
-
-    ``base_ref`` is expected to be an already-resolved commit-ish; the merge base
-    is resolved here so a caller passing a branch name still reads the tree the
-    changed set was taken from.
-    """
-    base = merge_base(worktree, base_ref, head_ref) or base_ref
-    return _show(worktree, base, path)
-
-
 def is_test_path(path: str) -> bool:
     """Whether a path is a test surface by the repository's own naming conventions."""
     return any(indicator in path for indicator in TEST_PATH_INDICATORS)
@@ -410,6 +399,11 @@ def _rev_parse(root: Path, ref: str) -> str | None:
     return resolved or None
 
 
+def _is_ancestor(root: Path, ancestor: str, descendant: str) -> bool:
+    """Whether ``ancestor`` is an ancestor of (or equal to) ``descendant``."""
+    return _git(root, ['merge-base', '--is-ancestor', ancestor, descendant]).returncode == 0
+
+
 def _tree_is_dirty(root: Path) -> bool:
     """Whether the checkout carries uncommitted changes.
 
@@ -458,9 +452,13 @@ def _evidence_root(plan_id: str) -> tuple[Path | None, str | None]:
     # name is ``<base>``. A detached HEAD is covered too.
     head_sha = _rev_parse(root, 'HEAD')
     base_sha = _rev_parse(root, base_ref)
-    if head_sha is not None and base_sha is not None and head_sha == base_sha:
-        # On the base tip the three-dot diff is empty: grading it would report
-        # success with zero rows, i.e. a pass, for work that is not checked out.
+    head_is_behind_or_at_base = (
+        head_sha is not None and base_sha is not None and (head_sha == base_sha or _is_ancestor(root, 'HEAD', base_ref))
+    )
+    if head_is_behind_or_at_base:
+        # HEAD at OR BEHIND the base ref makes the three-dot diff empty: grading it
+        # would report success with zero rows, i.e. a pass, for work not checked
+        # out. (A stale local main behind origin/main is the same false pass.)
         return None, 'main_checkout_on_base_branch'
     if _tree_is_dirty(root):
         # A dirty checkout feeds unrelated uncommitted text into the after-image.
@@ -521,7 +519,7 @@ def compute_test_integrity(plan_id: str, base_ref: str | None = None, head_ref: 
                 f'the main checkout cannot grade the branch diff: {evidence_kind or "no checkout"}',
             )
         return _grade_test_integrity(plan_id, root, evidence_kind, base_ref, head_ref)
-    except _GitFailure as exc:
+    except (_GitFailure, UnicodeDecodeError) as exc:
         return _error(plan_id, 'test_integrity_not_run', str(exc))
 
 
@@ -577,7 +575,7 @@ def _grade_test_integrity(
                 if text is not None:
                     after[path] = text
         elif is_test_path(path):
-            pre = _pre_image(root, resolved_base, path, head)
+            pre = _show(root, base_tree, path)
             post = _after_image(root, path, head_ref)
             if pre is not None:
                 before[path] = pre

@@ -92,6 +92,28 @@ def test_prose_before_the_first_bullet_makes_the_retired_replay_empty() -> None:
     assert _snap._retired_criteria(body) == []
 
 
+def test_a_fence_before_a_criterion_stops_the_retired_replay(plan_context) -> None:
+    """An older snapshot whose live outline has a fence before the bullet is a rewrite."""
+    plan_dir = _plan(plan_context, '```\ncode\n```\n- a criterion that wraps\n  onto a second line\n')
+    snapshot = {
+        'schema': _snap.SCHEMA,
+        'plan_id': PLAN_ID,
+        'deliverables': [{'number': 1, 'title': 'Deliver the change', 'criteria': ['a criterion that wraps']}],
+        'request': {'done_when': [], 'source': 'absent'},
+        'spec': None,
+        'authorized_changes': [],
+    }
+    path = _snap.snapshot_path(PLAN_ID)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(snapshot, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+    assert _snap.record_snapshot_digest(PLAN_ID)
+    assert (plan_dir / 'solution_outline.md').is_file()
+
+    drift = _snap.criteria_drift(PLAN_ID)
+
+    assert [row['kind'] for row in drift] == ['rewritten'], drift
+
+
 # --- D5 (c): the snapshot carries the parser that froze it --------------------------------
 
 
@@ -184,4 +206,4 @@ def test_the_cited_lines_carry_no_transitional_wording_or_plan_id() -> None:
     assert 'It replaces a regex' not in texts['_criteria_snapshot.py']
     for label, text in texts.items():
         # Derived from the general rule, not a hand list of plan ids.
-        assert re.search(r'PLAN-LB-\d+', text) is None, label
+        assert re.search(r'PLAN-[A-Z]+-\d+', text) is None, label

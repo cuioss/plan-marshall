@@ -266,6 +266,8 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 
 `QGATE_PERSIST_OK` is exactly `success` / `deduplicated` / `reopened` / `kept` — every status that leaves the record in the store. Callers test membership in that set, never `status == 'success'`. In other words: an observation alone re-arms a `taken_into_account` record only when a loop-back round resolved it by rule (`resolution_source: rule`); `--reopen` re-arms a `fixed` record; and no observation re-arms an operator decision, a triage Hold included.
 
+**Pre-marker `taken_into_account` records.** A record resolved before `resolution_source` existed carries no marker, so an identical re-file is `kept` — the fail-closed direction, because an operator Hold and a legacy rule supersession are indistinguishable by data. An operator who needs to re-arm such a record does so explicitly: `qgate resolve --hash-id <id> --phase <phase> --resolution pending --detail "<why>"`, then file it again (or accept it).
+
 **Iteration**: The optional `--iteration N` parameter tracks which verification cycle produced the finding (e.g., iteration 1 = first build attempt, iteration 2 = after fixes). Useful for filtering findings from a specific cycle via `qgate list --iteration N`.
 
 **Phase 1-init**: Not included in Q-Gate phases — init creates plan infrastructure and has no verification step that would produce findings.

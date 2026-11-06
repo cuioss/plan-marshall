@@ -111,6 +111,25 @@ def test_a_no_worktree_plan_on_the_base_branch_with_an_origin_does_not_pass(
     assert 'main_checkout_on_base_branch' in payload['message'], payload
 
 
+def test_a_checkout_behind_the_base_ref_does_not_pass(plan_context, tmp_path, monkeypatch) -> None:
+    """A local main behind origin/main has an empty diff and must be refused."""
+    repo = _repo(tmp_path)
+    first = _commit(repo, {'README.md': 'readme\n'})
+    second = _commit(repo, {'README.md': 'readme\nsecond\n'})
+    _git(repo, 'remote', 'add', 'origin', str(repo))
+    _git(repo, 'update-ref', 'refs/remotes/origin/main', second)
+    _git(repo, 'reset', '--hard', first)
+    _plan(plan_context)
+    monkeypatch.setattr(_integrity, 'resolve_live_worktree', lambda _plan_id: None)
+    monkeypatch.setattr(_integrity, 'main_checkout_root', lambda: repo)
+
+    payload = _integrity.compute_test_integrity(PLAN_ID)
+
+    assert payload['status'] == 'error', payload
+    assert payload['error'] == 'evidence_root_unresolved', payload
+    assert 'main_checkout_on_base_branch' in payload['message'], payload
+
+
 def test_a_dirty_no_worktree_checkout_does_not_pass(plan_context, tmp_path, monkeypatch) -> None:
     repo = _repo(tmp_path)
     _commit(repo, {'README.md': 'readme\n'})
