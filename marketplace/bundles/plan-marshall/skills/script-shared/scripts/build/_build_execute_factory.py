@@ -55,7 +55,7 @@ from _build_execute import (  # noqa: E402
     execute_direct_base,
 )
 from _build_execute import detect_wrapper as _detect_wrapper  # noqa: E402
-from _build_queue_slot import BuildQueueTimeout, build_queue_slot  # noqa: E402
+from _build_queue_slot import BuildQueueTimeout, DirectoryBusy, build_queue_slot, directory_lock  # noqa: E402
 from _build_result import (  # noqa: E402
     ERROR_BUILD_FAILED,
     ERROR_QUEUE_SATURATED,
@@ -77,6 +77,7 @@ from _build_server_protocol import (  # noqa: E402
 from _build_server_protocol import STATUS_FAILURE as WIRE_STATUS_FAILURE  # noqa: E402
 from _build_server_protocol import STATUS_KILLED as WIRE_STATUS_KILLED  # noqa: E402
 from _build_server_protocol import STATUS_TIMEOUT as WIRE_STATUS_TIMEOUT  # noqa: E402
+from _build_server_protocol import LIVE_STATUSES as WIRE_LIVE_STATUSES  # noqa: E402
 
 # Two vocabularies meet in this module and their members happen to share
 # spellings, so an unqualified `STATUS_KILLED` reads as correct while silently
@@ -96,6 +97,11 @@ from toon_parser import serialize_toon  # noqa: E402
 # failure, NOT a silent in-process fallback. Never reachable from a daemon CHILD: the
 # child's own routing returns ``in_daemon_job``, which the fail-loud guard exempts.
 ERROR_DAEMON_REQUIRED = 'daemon_required'
+
+# Error type emitted when a build's own directory stays held past its wait bound.
+# The build never runs — the difference between waiting/refusing and running a
+# second build over the first one's `target/`.
+ERROR_DIRECTORY_BUSY = 'directory_busy'
 
 # ---------------------------------------------------------------------------
 # marshalld build-execute routing seam (D5)
@@ -648,6 +654,25 @@ def _applied_bound_extra(source: str | None, command_key: str | None) -> dict[st
 def _daemon_result_to_direct(
     waited: dict[str, Any], command_str: str, command_key: str | None = None
 ) -> DirectCommandResult:
+    """Map a client ``wait`` payload to a ``DirectCommandResult``, carrying the wait.
+
+    The status mapping lives in :func:`_map_daemon_result`; this wrapper exists
+    for ONE field: ``queued_seconds``, the wait this build paid for its
+    directory/slot. It travels on the terminal result too, not only on the
+    hand-back, so a build that waited and then failed still reports what the wait
+    cost. It is carried at the boundary rather than added to each of that
+    function's returns, so a new terminal leg cannot silently drop it.
+    """
+    result = _map_daemon_result(waited, command_str, command_key)
+    queued_seconds = _coerce_queued_seconds(waited)
+    if queued_seconds is not None:
+        result['queued_seconds'] = queued_seconds
+    return result
+
+
+def _map_daemon_result(
+    waited: dict[str, Any], command_str: str, command_key: str | None = None
+) -> DirectCommandResult:
     """Map a client ``wait`` status-TOON to a ``DirectCommandResult``.
 
     The daemon's terminal job statuses (``success|failure|timeout|killed``) are
@@ -973,9 +998,26 @@ def _running_hand_back(
     """
     duration = int(time.monotonic() - started_monotonic)
     log_file = ''
+    queued_seconds = 0
     if waited is not None:
         log_file = str(waited.get('log_file', '') or '')
-    return running_result(job_id, duration, log_file, command_str)  # type: ignore[return-value]
+        queued_seconds = _coerce_queued_seconds(waited)
+    result = running_result(job_id, duration, log_file, command_str)
+    if queued_seconds is not None:
+        result['queued_seconds'] = queued_seconds
+    return result  # type: ignore[return-value]
+
+
+def _coerce_queued_seconds(waited: dict[str, Any]) -> int | None:
+    """Read a wait payload's ``queued_seconds``, or ``None`` when it carries none.
+
+    Absence is preserved: a daemon that predates the field must not have a
+    fabricated zero substituted for how long the job waited.
+    """
+    raw = waited.get('queued_seconds')
+    if isinstance(raw, bool) or not isinstance(raw, int) or raw < 0:
+        return None
+    return raw
 
 
 _PLAN_ID_FLAG = '--plan-id'
@@ -1213,7 +1255,11 @@ def _route_to_daemon(
         waited = client.run_wait(Namespace(job_id=job_id, plan_id=routing_plan_id, bound=bound))
         if waited.get('status') == 'degraded':
             return None, str(waited.get('reason') or 'wait_degraded')
-        if str(waited.get('job_status', '')) == 'running':
+        # ``queued`` is NON-TERMINAL, exactly like ``running``: the job is
+        # admitted-but-not-started, so the loop keeps waiting within its bound
+        # instead of falling through to the unrecognised-terminal-status leg (an
+        # ``indeterminate`` verdict for a build that has not begun).
+        if str(waited.get('job_status', '')) in WIRE_LIVE_STATUSES:
             if (time.monotonic() - started) >= _DAEMON_WAIT_BOUND_SECONDS:
                 return _running_hand_back(job_id, command_str, started, waited), ''
             continue
@@ -1252,6 +1298,29 @@ def _emit_queue_timeout(tool_name: str, command_args: str, output_format: str, e
         'command': command_args,
         'max_retries': exc.max_retries,
         'plan_id': exc.plan_id,
+    }
+    return _emit_error_envelope(output_format, output)
+
+
+def _emit_directory_busy(tool_name: str, command_args: str, output_format: str, exc: DirectoryBusy) -> int:
+    """Render a structured ``directory_busy`` error naming the blocking holder.
+
+    The build did not run: another build of the same directory held it past this
+    build's wait bound. The holder's four facts (plan id, command, pid, seconds
+    held) are what make the refusal actionable — without them the operator sees
+    only "busy" and has no way to find the build that is in the way.
+    """
+    output = {
+        'status': 'error',
+        'error': ERROR_DIRECTORY_BUSY,
+        'message': str(exc),
+        'tool': tool_name,
+        'command': command_args,
+        'project_dir': exc.directory,
+        'holder_plan_id': exc.holder_plan_id,
+        'holder_command': exc.holder_command,
+        'holder_pid': exc.holder_pid,
+        'holder_held_seconds': exc.holder_seconds,
     }
     return _emit_error_envelope(output_format, output)
 
@@ -1548,10 +1617,14 @@ def create_execute_handlers(
         #                 ``in_daemon_job`` — this process IS the daemon child
         #                 re-running the build and MUST proceed in-process.
         #
-        # A routed build takes NO fallback slot (the daemon child holds the
-        # single machine-global slot), so a build takes exactly one limiter
-        # path, never stacked. ``fallback_reason`` carries the degradation
-        # reason (or None) into the single resolved=in_process audit line.
+        # A routed build takes NO fallback slot: the machine-global slot for a
+        # routed job is held by the daemon's scheduler (D1 admission), never by
+        # this process, and a job admitted inside the daemon child acquires one
+        # here only when it carries a REAL --plan-id — a plan-less lane build
+        # takes the per-directory lock and no slot. Either way a build takes
+        # exactly one slot path, never two. ``fallback_reason`` carries the
+        # degradation reason (or None) into the single resolved=in_process audit
+        # line.
         #
         # ``in_daemon_child`` marks the daemon-child re-entrancy path: this
         # process IS the daemon job re-running the build, and the routing PARENT
@@ -1644,27 +1717,43 @@ def create_execute_handlers(
         if not in_daemon_child:
             _record_resolution(execution_mode, 'in_process', fallback_reason, notation, plan_id)
 
-        # In-process fallback: acquire a build-queue slot on the single
-        # machine-global queue file when plan_id names a REAL plan; NO-OP
-        # passthrough for a falsy id or the NO_PLAN sentinel (plan-less builds
-        # run unqueued, unchanged). The slot is released in the context
-        # manager's finally.
+        # In-process leg — TWO limiters, in one fixed order:
+        #
+        #   1. the PER-DIRECTORY lock, taken for EVERY in-process build including
+        #      the plan-less ones (a `--project-dir` lane build is `NO_PLAN`).
+        #      The hazard is the shared `target/`, not the slot budget, so this
+        #      lock is not conditional on a real plan id. The daemon child re-runs
+        #      this same leg and therefore holds it too.
+        #   2. the machine-global build-queue slot, taken only when `plan_id`
+        #      names a REAL plan (`NO_PLAN` passthrough, as before).
+        #
+        # Directory FIRST, slot SECOND, always: a build that holds a slot must
+        # never wait on a directory, which is what rules out a deadlock between
+        # the daemon's slots and the in-process lock. The slot is released by its
+        # context manager's finally; the directory lease the same way.
         try:
-            with build_queue_slot(plan_id):
-                result = in_process_execute(
-                    args=command_args,
-                    command_key=command_key,
-                    default_timeout=config.default_timeout,
-                    project_dir=project_dir,
-                    env_vars=env_vars,
-                    working_dir=working_dir,
-                    explicit_timeout=explicit_timeout,
-                    # Build results carry the sentinel exactly as the routing
-                    # and ledger values do (see _route_to_daemon): a plan-less
-                    # build is attributed to NO_PLAN, never to the empty
-                    # string, so its log always has an owning directory.
-                    plan_id=plan_id or NO_PLAN_SENTINEL,
-                )
+            with directory_lock(
+                project_dir,
+                plan_id=plan_id,
+                command=command_args,
+            ):
+                with build_queue_slot(plan_id):
+                    result = in_process_execute(
+                        args=command_args,
+                        command_key=command_key,
+                        default_timeout=config.default_timeout,
+                        project_dir=project_dir,
+                        env_vars=env_vars,
+                        working_dir=working_dir,
+                        explicit_timeout=explicit_timeout,
+                        # Build results carry the sentinel exactly as the routing
+                        # and ledger values do (see _route_to_daemon): a plan-less
+                        # build is attributed to NO_PLAN, never to the empty
+                        # string, so its log always has an owning directory.
+                        plan_id=plan_id or NO_PLAN_SENTINEL,
+                    )
+        except DirectoryBusy as exc:
+            return _emit_directory_busy(config.tool_name, command_args, getattr(args, 'format', 'toon'), exc)
         except BuildQueueTimeout as exc:
             return _emit_queue_timeout(config.tool_name, command_args, getattr(args, 'format', 'toon'), exc)
 

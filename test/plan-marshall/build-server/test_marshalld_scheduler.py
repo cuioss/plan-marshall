@@ -4,6 +4,12 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
+import os
+import time
+from types import SimpleNamespace
+
 import _build_server_protocol as proto
 import _machine_config
 import _marshalld_scheduler as scheduler_mod
@@ -39,8 +45,10 @@ def test_distinct_submits_get_distinct_ids():
 
 def test_max_slots_bounds_admission():
     sched = scheduler_mod.Scheduler(max_slots=2)
-    for notation in ('a:1:x', 'b:1:x', 'c:1:x'):
-        sched.submit(_spec(notation), '/proj')
+    # Distinct directories, because the cap is what this test bounds: one
+    # directory can never hold two jobs however many slots are free (D1).
+    for index, notation in enumerate(('a:1:x', 'b:1:x', 'c:1:x')):
+        sched.submit(_spec(notation, tree=f'/dir-{index}'), '/proj')
 
     first = sched.admit_next()
     second = sched.admit_next()
@@ -73,8 +81,14 @@ def test_complete_frees_slot_and_fingerprint():
 def test_round_robin_fairness_across_projects():
     sched = scheduler_mod.Scheduler(max_slots=10)
     # Two jobs for A, one for B, submitted A, A, B.
-    sched.submit(_spec('a:1:x', tree='/A'), '/A')
-    sched.submit(_spec('a:2:x', tree='/A'), '/A')
+    #
+    # The two A jobs live in DISTINCT directories (their own trees) while sharing
+    # one registered project root: a project's fairness slot is not a directory,
+    # and D1 never runs two jobs of ONE directory at once — so two jobs that
+    # shared a directory could not both be admitted, and the rotation this test
+    # pins would be unobservable rather than merely changed.
+    sched.submit(_spec('a:1:x', tree='/A/worktree-1'), '/A')
+    sched.submit(_spec('a:2:x', tree='/A/worktree-2'), '/A')
     sched.submit(_spec('b:1:x', tree='/B'), '/B')
 
     first = sched.admit_next()
@@ -140,8 +154,8 @@ def test_admit_next_empty_returns_none():
 
 def test_set_max_slots_raises_the_admission_bound():
     sched = scheduler_mod.Scheduler(max_slots=1)
-    for notation in ('a:1:x', 'b:1:x', 'c:1:x'):
-        sched.submit(_spec(notation), '/proj')
+    for index, notation in enumerate(('a:1:x', 'b:1:x', 'c:1:x')):
+        sched.submit(_spec(notation, tree=f'/dir-{index}'), '/proj')
     assert sched.admit_next() is not None
     assert sched.admit_next() is None  # the cap of 1 is what blocks here
 
@@ -197,8 +211,8 @@ def test_lowering_the_cap_never_evicts_a_running_job():
     other half wrong.
     """
     sched = scheduler_mod.Scheduler(max_slots=3)
-    for notation in ('a:1:x', 'b:1:x', 'c:1:x'):
-        sched.submit(_spec(notation), '/proj')
+    for index, notation in enumerate(('a:1:x', 'b:1:x', 'c:1:x')):
+        sched.submit(_spec(notation, tree=f'/dir-{index}'), '/proj')
     first = sched.admit_next()
     second = sched.admit_next()
     assert first is not None and second is not None
@@ -249,3 +263,206 @@ def test_set_max_slots_preserves_queues_running_jobs_and_fingerprints():
     assert sched.has_job(queued_spec.fingerprint)
     assert sched.submit(running_spec, '/proj').job_id == running_submit.job_id
     assert sched.submit(queued_spec, '/proj').job_id == queued_submit.job_id
+
+
+# =============================================================================
+# One build per project directory (PLAN-LB-108 D1)
+# =============================================================================
+# Two builds of one worktree write the same `target/`, so the daemon admits at
+# most one job per DIRECTORY at a time — the directory, never the registry
+# fairness key (which is the main checkout, shared by every worktree). These
+# tests drive the real Scheduler; nothing here stubs admission.
+
+
+def _dir_spec(notation: str, directory: str) -> proto.JobSpec:
+    """Build a spec whose own directory (``project_path``) is ``directory``."""
+    return _spec(notation, tree=directory)
+
+
+def test_admit_next_admits_one_job_per_directory_and_never_the_second():
+    """W1's second job waits while W1's first runs; W2's job is admitted.
+
+    The three assertions are one claim each: W1's second job is NEVER the
+    second admission (the defect), W2's job is not held up behind it (no
+    head-of-line blocking), and the second W1 job runs only once the first
+    completes (the release is what admits it).
+    """
+    sched = scheduler_mod.Scheduler(max_slots=2)
+    a = sched.submit(_dir_spec('a:1:module-tests', '/W1'), '/proj', directory='/W1')
+    b = sched.submit(_dir_spec('b:1:integration-tests', '/W1'), '/proj', directory='/W1')
+    c = sched.submit(_dir_spec('c:1:module-tests', '/W2'), '/proj', directory='/W2')
+
+    first = sched.admit_next()
+    second = sched.admit_next()
+
+    assert first is not None and first.job_id == a.job_id
+    assert second is not None and second.job_id == c.job_id, 'W1 must not run a second job while its first runs'
+    assert sched.admit_next() is None, 'the two slots are spent on two directories'
+
+    sched.complete(a.job_id)
+    third = sched.admit_next()
+
+    assert third is not None and third.job_id == b.job_id, 'B is admitted only after complete(A)'
+
+
+def test_admit_next_keeps_fifo_order_within_one_directory():
+    """W1's queue is served in submit order, and a blocked W1 head does not
+    reorder the two W1 jobs behind each other."""
+    sched = scheduler_mod.Scheduler(max_slots=2)
+    a = sched.submit(_dir_spec('a:1:x', '/W1'), '/proj', directory='/W1')
+    b = sched.submit(_dir_spec('b:1:x', '/W1'), '/proj', directory='/W1')
+    d = sched.submit(_dir_spec('d:1:x', '/W1'), '/proj', directory='/W1')
+
+    assert sched.admit_next().job_id == a.job_id
+    sched.complete(a.job_id)
+    assert sched.admit_next().job_id == b.job_id
+    sched.complete(b.job_id)
+    assert sched.admit_next().job_id == d.job_id
+
+
+def test_a_directory_held_in_process_is_not_admitted_until_it_releases():
+    """A live in-process holder keeps a daemon job for the same directory queued.
+
+    Admitting it would spend a machine-global slot on a child that would then
+    wait on the directory anyway (the lock order is directory first, then slot).
+    """
+    sched = scheduler_mod.Scheduler(max_slots=2)
+    a = sched.submit(_dir_spec('a:1:x', '/W1'), '/proj', directory='/W1')
+
+    assert sched.admit_next(busy_directories={'/W1'}) is None
+
+    admitted = sched.admit_next(busy_directories=set())
+
+    assert admitted is not None and admitted.job_id == a.job_id
+
+
+def test_running_in_directory_names_the_job_the_next_submit_would_wait_on():
+    """``queued_behind`` needs the id of the job running in the same directory."""
+    sched = scheduler_mod.Scheduler(max_slots=2)
+    a = sched.submit(_dir_spec('a:1:x', '/W1'), '/proj', directory='/W1')
+    sched.submit(_dir_spec('b:1:x', '/W2'), '/proj', directory='/W2')
+    sched.admit_next()
+
+    assert sched.running_in_directory('/W1') == a.job_id
+    assert sched.running_in_directory('/W2') == ''
+
+
+# -- daemon level ------------------------------------------------------------
+
+
+class _StubVerifier:
+    """Accept every submit and report one canonical root (the fairness key)."""
+
+
+def _install_stub_verifier(monkeypatch, canonical_root: str = '/proj') -> None:
+    import marshalld
+
+    outcome = SimpleNamespace(accepted=True, record={'canonical_root': canonical_root})
+    monkeypatch.setattr(marshalld, 'read_registry', lambda: {})
+    monkeypatch.setattr(marshalld, 'verify_submit', lambda *_a, **_k: outcome)
+
+
+def _stub_run_job(monkeypatch, gate):
+    """Install a ``run_job`` that blocks until ``gate`` is set, then succeeds."""
+    import marshalld
+
+    seen: list[str] = []
+
+    async def fake_run_job(command, project_path, **_kwargs):
+        seen.append(project_path)
+        await gate.wait()
+        return {'status': 'success', 'exit_code': 0, 'duration_seconds': 1, 'log_file': ''}
+
+    monkeypatch.setattr(marshalld, 'run_job', fake_run_job)
+    return seen
+
+
+def _daemon(tmp_path, max_slots: int = 2):
+    import marshalld
+    from _marshalld_journal import Journal
+
+    return marshalld.Daemon(
+        scheduler=scheduler_mod.Scheduler(max_slots=max_slots),
+        journal=Journal(),
+        log_dir=tmp_path / 'job-logs',
+    )
+
+
+def _write_directory_holders(home, holders: dict) -> None:
+    """Stage the machine-global queue file's in-process-holder map."""
+    path = home / 'build-queue.json'
+    path.write_text(json.dumps({'directory_locks': holders}), encoding='utf-8')
+
+
+def test_handle_request_keeps_a_second_job_for_one_directory_queued(tmp_path, monkeypatch):
+    """B's journal status stays ``queued`` while A of the same directory runs."""
+    monkeypatch.setenv('PLAN_MARSHALL_HOME', str(tmp_path))
+    _install_stub_verifier(monkeypatch)
+    gate = asyncio.Event()
+
+    async def scenario():
+        seen = _stub_run_job(monkeypatch, gate)
+        daemon = _daemon(tmp_path)
+        w1 = str(tmp_path / 'W1')
+        a = await daemon.handle_request({'op': 'submit', 'job': _dir_spec('a:1:x', w1).to_dict()})
+        b = await daemon.handle_request({'op': 'submit', 'job': _dir_spec('b:1:x', w1).to_dict()})
+
+        await asyncio.sleep(0)  # let A's execution task start and block on the gate
+        assert daemon._journal.get(a['job_id'])['status'] == 'running'
+        assert daemon._journal.get(b['job_id'])['status'] == 'queued', 'B must wait for its directory'
+        assert seen == [w1], 'only A ran'
+
+        gate.set()
+        for _ in range(50):
+            await asyncio.sleep(0)
+            if str((daemon._journal.get(b['job_id']) or {}).get('status', '')) == 'success':
+                break
+        assert daemon._journal.get(b['job_id'])['status'] == 'success'
+
+    asyncio.run(scenario())
+
+
+def test_handle_request_keeps_a_job_queued_while_an_in_process_holder_is_live(tmp_path, monkeypatch):
+    """A live in-process holder on W1 keeps a W1 job queued; its release admits it.
+
+    The release arrives through the daemon's next ``wait`` — the daemon has no
+    timer, and a queued client is always waiting, so admission is re-evaluated
+    there rather than on a poll loop the daemon does not run.
+    """
+    monkeypatch.setenv('PLAN_MARSHALL_HOME', str(tmp_path))
+    _install_stub_verifier(monkeypatch)
+
+    async def scenario():
+        gate = asyncio.Event()
+        _stub_run_job(monkeypatch, gate)
+        daemon = _daemon(tmp_path)
+        w1 = str(tmp_path / 'W1')
+        _write_directory_holders(
+            tmp_path,
+            {
+                str((tmp_path / 'W1').resolve()): {
+                    'plan_id': 'another-lane-build',
+                    'command': 'module-tests',
+                    'pid': os.getpid(),
+                    'acquired_at': time.time(),
+                }
+            },
+        )
+
+        a = await daemon.handle_request({'op': 'submit', 'job': _dir_spec('a:1:x', w1).to_dict()})
+
+        await asyncio.sleep(0)
+        assert daemon._journal.get(a['job_id'])['status'] == 'queued'
+
+        _write_directory_holders(tmp_path, {})
+        await daemon.handle_request({'op': 'wait', 'job_id': a['job_id'], 'bound': 0})
+
+        assert daemon._journal.get(a['job_id'])['status'] == 'running'
+        gate.set()
+        for _ in range(50):
+            await asyncio.sleep(0)
+            if str((daemon._journal.get(a['job_id']) or {}).get('status', '')) == 'success':
+                break
+        assert daemon._journal.get(a['job_id'])['status'] == 'success'
+
+    asyncio.run(scenario())

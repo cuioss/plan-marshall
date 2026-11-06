@@ -13,6 +13,8 @@ Its sections, in order:
 
 from __future__ import annotations
 
+import json
+import time
 from argparse import Namespace
 
 from _build_queue_fixtures import (
@@ -279,3 +281,112 @@ class TestIdempotentAcquire:
         active_plans = {e['plan_id'] for e in state['active']}
         assert active_plans == {'plan-h2', 'plan-w1'}
         assert [e['id'] for e in state['waiting']] == [w2['id']]
+
+
+# =============================================================================
+# D4: a slot is held per build INVOCATION, not per plan
+# =============================================================================
+# ``acquire`` used to hand a second concurrent build of the same plan the
+# EXISTING active id: both builds then ran on one entry, and the first release
+# freed the slot while the second was still running. The acquire now carries a
+# per-invocation token; a re-poll with its own token keeps its FIFO place, and a
+# second invocation of the same plan is a second entry. Without a token the
+# identity falls back to the plan id, which is exactly the pre-token behaviour a
+# re-poll of a legacy caller needs.
+
+_DOCUMENTED_RESULT_FIELDS = (
+    'id',
+    'admission',
+    'active_count',
+    'waiting_count',
+    'warnings',
+    'max_slots',
+    'max_slots_source',
+    'cap_agreement',
+    'cap_compared_count',
+    'cap_unstamped_count',
+    'cap_disagreement',
+)
+
+
+class TestPerInvocationToken:
+    def test_two_tokens_for_one_plan_are_two_invocations(self, isolated_base: dict) -> None:
+        """At cap 1 the second invocation of one plan is BLOCKED, keeps its own
+        FIFO place across a re-poll, and is promoted when the first releases."""
+        _set_max_slots(isolated_base['home'], 1)
+        _make_live_plan(isolated_base['base'], 'plan-a')
+
+        first = build_queue.run_acquire(Namespace(plan_id='plan-a', token='token-1'))
+        second = build_queue.run_acquire(Namespace(plan_id='plan-a', token='token-2'))
+
+        assert first['admission'] == 'admitted'
+        assert second['admission'] == 'blocked', 'a second invocation is its own queue entry'
+        assert second['id'] != first['id']
+
+        # A re-poll with its OWN token keeps the entry, in place.
+        again = build_queue.run_acquire(Namespace(plan_id='plan-a', token='token-2'))
+        assert again['id'] == second['id']
+        assert again['admission'] == 'blocked'
+        state = _read_queue(isolated_base['queue_path'])
+        assert [e['id'] for e in state['waiting']] == [second['id']]
+
+        # Releasing the first invocation promotes the second.
+        build_queue.run_release(Namespace(plan_id='plan-a', id=first['id']))
+        promoted = build_queue.run_acquire(Namespace(plan_id='plan-a', token='token-2'))
+        assert promoted['admission'] == 'admitted'
+        assert promoted['id'] == second['id']
+
+    def test_the_documented_result_fields_survive_the_token(self, isolated_base: dict) -> None:
+        """Every field a consumer reads is still reported, with its own value."""
+        result = build_queue.run_acquire(Namespace(plan_id='plan-a', token='token-1'))
+
+        for field in _DOCUMENTED_RESULT_FIELDS:
+            assert field in result, f'{field} is a documented result field'
+        assert result['id'].startswith('plan-a:')
+        assert result['warnings'] == []
+        assert result['active_count'] == 1
+        assert result['waiting_count'] == 0
+
+    def test_a_legacy_entry_without_a_token_is_not_matched_by_a_token_acquire(self, isolated_base: dict) -> None:
+        """An entry written before the token existed is a different invocation.
+
+        It is left untouched (existing reap/prune still owns it) rather than
+        adopted, because adopting it would put two invocations on one slot —
+        the very defect this deliverable removes.
+        """
+        _set_max_slots(isolated_base['home'], 5)
+        # A LIVE plan dir, so the dead-holder prune does not reclaim the legacy
+        # entry before the token logic can be observed.
+        _make_live_plan(isolated_base['base'], 'plan-a')
+        legacy = {
+            'id': 'plan-a:legacy-uuid',
+            'plan_id': 'plan-a',
+            'ts': 1.0,
+            'active_since': time.time(),
+            'project_root': str(isolated_base['main_repo']),
+            'admitted_under_max_slots': 5,
+        }
+        (isolated_base['queue_path']).write_text(
+            json.dumps({'active': [legacy], 'waiting': [], 'run_log': []}), encoding='utf-8'
+        )
+
+        result = build_queue.run_acquire(Namespace(plan_id='plan-a', token='token-1'))
+
+        assert result['id'] != legacy['id'], 'the token names a new invocation, never the legacy entry'
+        state = _read_queue(isolated_base['queue_path'])
+        assert len(state['active']) == 2
+        assert {e['id'] for e in state['active']} == {legacy['id'], result['id']}
+
+    def test_a_tokenless_acquire_keeps_the_legacy_plan_identity(self, isolated_base: dict) -> None:
+        """Without a token the identity is the plan id — a re-poll is idempotent.
+
+        This is the compatibility half of the change: an older caller that knows
+        nothing of tokens keeps the behaviour it had.
+        """
+        _make_live_plan(isolated_base['base'], 'plan-a')
+
+        first = build_queue.run_acquire(Namespace(plan_id='plan-a'))
+        second = build_queue.run_acquire(Namespace(plan_id='plan-a'))
+
+        assert second['id'] == first['id']
+        assert second['admission'] == 'admitted'

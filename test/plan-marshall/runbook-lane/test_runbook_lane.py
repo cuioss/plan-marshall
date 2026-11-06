@@ -1033,10 +1033,22 @@ def test_skill_states_the_preflight_degraded_and_killed_rules() -> None:
         assert phrase in text, f'the skill does not state {phrase!r}'
 
 
-def test_skill_states_the_one_daemon_routed_build_rule() -> None:
+def test_skill_states_the_per_directory_serialisation_rule() -> None:
+    """The lane states the MECHANISM, not a prose rule the mechanism supersedes.
+
+    Two builds of one worktree used to be a hazard the reader was told to avoid
+    ("one daemon-routed build at a time"). The daemon now admits one job per
+    project directory and every in-process build holds the same per-directory
+    lock, so the hazard is gone rather than merely forbidden — and a lane that
+    still asked for hand-avoidance would describe a constraint the runtime no
+    longer has. Both halves are pinned: the mechanism is stated, and the old
+    prose rule is gone.
+    """
     lowered = _skill_text().lower()
-    assert 'one daemon-routed build at a time' in lowered
-    assert 'sub-agents included' in lowered
+    assert 'one build per worktree at a time' in lowered
+    assert 'directory_busy' in lowered
+    assert 'queued_seconds' in lowered
+    assert 'one daemon-routed build at a time' not in lowered
 
 
 def test_skill_routes_every_build_and_retries_a_launch_fault_once() -> None:

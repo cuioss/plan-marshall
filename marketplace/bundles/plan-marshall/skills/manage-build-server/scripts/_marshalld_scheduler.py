@@ -24,6 +24,13 @@ properties the request demands:
 * **Per-project round-robin fairness** — when several projects contend for the
   slot budget, admission rotates across projects rather than draining one
   project's queue before serving another. Within a project, order is FIFO.
+* **One job per directory** — two jobs whose own working directory is the same
+  are never admitted at once, because two builds of one worktree write the same
+  ``target/``. The serialisation key is the job's directory, NOT the fairness
+  key: the main checkout and each of its worktrees are separate directories even
+  though they share one registered ``project_root``. A job blocked on its
+  directory is skipped in favour of the next job for a free directory, so it
+  never blocks another directory's job queued behind it.
 * **Idempotent submit** — an identical concurrent submit (same
   ``plan_id + notation + args + tree`` fingerprint) ATTACHES to the existing
   in-flight job and returns its id, instead of double-running the build.
@@ -45,8 +52,10 @@ Usage:
 
 from __future__ import annotations
 
+import time
 import uuid
 from collections import deque
+from collections.abc import Collection
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -64,6 +73,12 @@ class JobEntry:
         project_root: The registered canonical root (the fairness key).
         plan_id: The submitting plan id.
         spec: The job spec dict.
+        directory: The job's own working directory (the serialisation key) —
+            the canonicalised ``spec.project_path``. Distinct worktrees of one
+            checkout share a ``project_root`` but never a ``directory``, which
+            is why admission keys on this rather than on the fairness key.
+        enqueued_at: ``time.monotonic()`` when the job entered the queue, so a
+            queued client can be told how long it has been waiting.
     """
 
     job_id: str
@@ -71,6 +86,8 @@ class JobEntry:
     project_root: str
     plan_id: str
     spec: dict[str, Any] = field(default_factory=dict)
+    directory: str = ''
+    enqueued_at: float = 0.0
 
 
 @dataclass
@@ -107,7 +124,6 @@ class Scheduler:
         self._rotation = 0
         self._running: dict[str, JobEntry] = {}
         self._by_fingerprint: dict[str, str] = {}
-
     # -- introspection -----------------------------------------------------
 
     @property
@@ -166,13 +182,18 @@ class Scheduler:
         self._max_slots = max(1, int(max_slots))
         return self._max_slots
 
-    def submit(self, job_spec: Any, project_root: str) -> SubmitResult:
+    def submit(self, job_spec: Any, project_root: str, directory: str | None = None) -> SubmitResult:
         """Enqueue a job, or attach to an identical in-flight one.
 
         Args:
             job_spec: A :class:`_build_server_protocol.JobSpec` (needs
                 ``fingerprint``, ``plan_id``, and a ``to_dict`` method).
             project_root: The registered canonical root (fairness key).
+            directory: The job's own working directory — the serialisation
+                key. The DAEMON passes the canonicalised ``spec.project_path``
+                (it owns the resolution, so two spellings of one worktree are
+                one key); left unset, it is read from the spec's own
+                ``project_path``, which keeps this module free of path I/O.
 
         Returns:
             A :class:`SubmitResult`; ``attached=True`` when an identical job was
@@ -190,6 +211,8 @@ class Scheduler:
             project_root=project_root,
             plan_id=getattr(job_spec, 'plan_id', '') or '',
             spec=spec_dict,
+            directory=directory if directory is not None else str(spec_dict.get('project_path', '')),
+            enqueued_at=time.monotonic(),
         )
         if project_root not in self._queues:
             self._queues[project_root] = deque()
@@ -199,28 +222,87 @@ class Scheduler:
             self._by_fingerprint[fingerprint] = job_id
         return SubmitResult(job_id=job_id, attached=False)
 
-    def admit_next(self) -> JobEntry | None:
-        """Admit and return the next job under fairness, or ``None``.
+    def admit_next(self, busy_directories: Collection[str] = ()) -> JobEntry | None:
+        """Admit and return the next admissible job, or ``None``.
 
-        Returns ``None`` when no slot is free or no job is queued. Selection
-        rotates across projects (round-robin), FIFO within a project.
+        Returns ``None`` when no slot is free, no job is queued, or every queued
+        job belongs to a directory that is already busy. Selection rotates
+        across projects (round-robin), FIFO within a project, and — within one
+        project — the first job whose DIRECTORY is free, so a job blocked on its
+        directory never holds up a job for another directory queued behind it
+        (no head-of-line blocking). Two jobs of one directory always share the
+        same admissibility at any instant, so skipping to the next admissible
+        job cannot reorder them relative to each other: FIFO within a directory
+        is preserved.
+
+        Args:
+            busy_directories: Directories held by something OUTSIDE this
+                scheduler — today, an in-process build holding the
+                per-directory lock (D3). Admitting a job for such a directory
+                would spend a machine-global slot on a child that would then
+                wait on the directory anyway, so it is skipped exactly like a
+                directory this scheduler is already running a job for.
         """
         if self.available_slots() == 0 or not self._order:
             return None
 
+        busy = set(busy_directories) | self._running_directories()
         count = len(self._order)
         for offset in range(count):
             idx = (self._rotation + offset) % count
             project = self._order[idx]
             queue = self._queues.get(project)
-            if queue:
-                entry = queue.popleft()
-                # Advance rotation PAST the served project so the next admit
-                # starts at the following project (true round-robin).
-                self._rotation = (idx + 1) % count
-                self._running[entry.job_id] = entry
-                return entry
+            if not queue:
+                continue
+            entry = next((candidate for candidate in queue if candidate.directory not in busy), None)
+            if entry is None:
+                continue
+            queue.remove(entry)
+            # Advance rotation PAST the served project so the next admit
+            # starts at the following project (true round-robin).
+            self._rotation = (idx + 1) % count
+            self._running[entry.job_id] = entry
+            return entry
         return None
+
+    # -- directory queries (what a waiting client is told) -----------------
+
+    def _running_directories(self) -> set[str]:
+        """Return the directories this scheduler is running a job for."""
+        return {entry.directory for entry in self._running.values()}
+
+    def running_in_directory(self, directory: str) -> str:
+        """Return the id of the job running in ``directory``, or ``''``.
+
+        This is the daemon-side answer to two questions at once: ``queued_behind``
+        on a submit, and ``waiting_on`` for a job queued in the same directory.
+        """
+        for entry in self._running.values():
+            if entry.directory == directory:
+                return entry.job_id
+        return ''
+
+    def directory_of(self, job_id: str) -> str:
+        """Return the recorded directory of ``job_id``, running or queued, or ``''``."""
+        running = self._running.get(job_id)
+        if running is not None:
+            return running.directory
+        for queue in self._queues.values():
+            for entry in queue:
+                if entry.job_id == job_id:
+                    return entry.directory
+        return ''
+
+    def queued_seconds(self, job_id: str) -> int:
+        """Return how many whole seconds ``job_id`` has been waiting, or ``0``."""
+        running = self._running.get(job_id)
+        if running is not None:
+            return max(0, int(time.monotonic() - running.enqueued_at))
+        for queue in self._queues.values():
+            for entry in queue:
+                if entry.job_id == job_id:
+                    return max(0, int(time.monotonic() - entry.enqueued_at))
+        return 0
 
     def complete(self, job_id: str) -> JobEntry | None:
         """Mark a running job finished, freeing its slot and fingerprint.

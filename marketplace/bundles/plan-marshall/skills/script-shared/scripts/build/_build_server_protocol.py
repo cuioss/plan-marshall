@@ -144,6 +144,15 @@ STATUS_REFUSED = 'refused'
 TERMINAL_STATUSES = frozenset({STATUS_SUCCESS, STATUS_FAILURE, STATUS_TIMEOUT, STATUS_KILLED})
 """The four terminal job statuses — a wait resolves once one of these is seen."""
 
+LIVE_STATUSES = frozenset({STATUS_RUNNING, STATUS_QUEUED})
+"""The non-terminal statuses a ``wait`` can return with a live payload.
+
+``running`` means the child is executing; ``queued`` means the job is accepted
+and admitted-but-not-started. Neither is a verdict, so the routed client keeps
+waiting inside its bound on either — treating ``queued`` as an unrecognised
+TERMINAL value is what turned a job that had not begun into ``indeterminate``.
+"""
+
 _RESULT_STATUSES: frozenset[str] = frozenset(
     value for name, value in vars(_build_result).items() if name.startswith('STATUS_') and isinstance(value, str)
 )

@@ -55,6 +55,13 @@ EXTRA_FIELDS = [
     'analyses_examined',
     'job_id',
     'job_status',
+    'queued_seconds',
+    'queued_behind',
+    'waiting_on',
+    'holder_plan_id',
+    'holder_command',
+    'holder_pid',
+    'holder_held_seconds',
 ]
 """Additional scalar fields that appear after core fields.
 
@@ -117,7 +124,17 @@ absence says something, and this field is what says it.
 (``compile``, ``lint``, ``test``), or the literal ``unknown`` when the invocation
 is not one the canonical vocabulary describes. It is the OTHER half of the
 reconciliation population: a finding type is cleared only when the run performed
-an analysis that can reach it, and this field publishes which those were."""
+an analysis that can reach it, and this field publishes which those were.
+
+``queued_seconds`` / ``queued_behind`` / ``waiting_on`` make a WAIT visible: a
+build serialised behind another build of the same directory reports how long it
+waited and what it waited on, on the hand-back and on the terminal result. Without
+them a queued build is indistinguishable from a slow one.
+
+``holder_plan_id`` / ``holder_command`` / ``holder_pid`` / ``holder_held_seconds``
+are the four facts of a ``directory_busy`` refusal: the build did not run, and
+these name the build that was holding the directory. They are whitelisted together
+for the same reason the launch-fault trio is — the class alone is not actionable."""
 
 # Structured fields handled specially
 STRUCTURED_FIELDS = {'errors', 'warnings', 'tests'}

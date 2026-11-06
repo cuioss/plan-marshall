@@ -80,6 +80,28 @@ Two primitives live here:
   `build-queue.json` itself — see **The cap and the reap threshold are
   machine-global** below.
 
+  The same file holds the **per-directory build lock**, as the top-level
+  `directory_locks` map plus the `directory_waiters` FIFO. It answers a different
+  question from the slot: not "how many builds may run on this host" but "is a
+  build already writing THIS directory's `target/`". Two builds of one worktree
+  serialise on it; two builds of different worktrees do not.
+  - **Keyed on the build's own directory**, canonicalised, so the main checkout and
+    each of its worktrees are separate keys — unlike the slot, which is one
+    machine-global budget.
+  - **Taken by every in-process build, plan-less ones included** (`NO_PLAN`, which
+    every `--project-dir` lane build is): the hazard is the shared `target/`, not
+    the slot budget. The daemon child runs the same leg and therefore holds it too.
+  - **Lock order is directory first, then slot, everywhere.** No build waits for a
+    directory while holding a slot, and the daemon never admits a job whose
+    directory a live in-process holder has, so the two layers cannot deadlock.
+  - Liveness is by **pid**, not by plan directory: a plan-less holder has no plan
+    directory, so a plan-anchored check would declare a running lane build dead and
+    steal its directory. A dead holder's record is reclaimed, so a crashed build
+    cannot block a directory forever.
+  - Waiting is a FIFO queue, never a refusal. A caller whose wait bound runs out
+    does not run the build and reports a `directory_busy` error naming the holder
+    (plan id or `NO_PLAN`, command, pid, seconds held).
+
 ## Enforcement
 
 > **Base contract**: See [manage-contract.md](../ref-workflow-architecture/standards/manage-contract.md) for shared enforcement rules, TOON output format, and error-response patterns.
@@ -110,7 +132,7 @@ cwd. The build-queue file is machine-global — it lives under the home root
 ```text
 <main>/.plan/local/merge.lock          # the unified merge mutex (one-line holder plan_id)
 <main>/.plan/local/merge-queue.json    # the merge-lock store: `waiting` (FIFO admission) + `rate_windows` (per-bot claims)
-~/.plan-marshall/build-queue.json      # the machine-global build-queue active + waiting + run-log state, plus the top-level `upper_limit_seconds` reap threshold
+~/.plan-marshall/build-queue.json      # the machine-global build-queue active + waiting + run-log state, plus the top-level `upper_limit_seconds` reap threshold and the `directory_locks` / `directory_waiters` per-directory build lock
 ~/.plan-marshall/marshalld/machine-config.json  # the machine-global build-slot cap `max_slots` (read here, written only by manage-build-server `config set` / `config migrate`)
 ```
 

@@ -537,11 +537,19 @@ publishes no test part supplies no `{build.module-tests}`:
   its `reason` in the progress file and the landing message.
 - **A `killed` job is never blind-retried.** Read its status and record it; whether to run it again
   is the operator's decision, asked with the question tool.
-- **One daemon-routed build at a time per worktree**, sub-agents included. The build-server client's
-  prohibitions — a routed build is never backgrounded, and a `running` result is re-attached with a
-  bounded wait — are stated in `build-server-client/SKILL.md` and bind here as written, not
-  restated. A second concurrent submission is the case that client cannot see: two routed builds
-  from one worktree can interleave, and a result can carry its sibling job's counts.
+- **One build per worktree at a time — enforced by the mechanism, not by discipline.** A second build
+  for a busy worktree WAITS: the submit's `queued_behind` names the job ahead, a wait on a job that is
+  not yet admitted reports `queued` with `waiting_on` and `queued_seconds`, and a wait bound that runs
+  out returns the named `directory_busy` error, which names the holder (plan id or `NO_PLAN`, command,
+  pid, seconds held). Nothing needs to be avoided by hand: the daemon admits at most one job per
+  project directory, and every in-process build — the daemon child included — holds the same
+  per-directory lock (directory first, then the slot), so running builds in parallel in one worktree
+  gains nothing; they serialise anyway. The daemon child holds a machine-global slot only when it runs
+  a real plan: a plan-less build takes the directory lock and no slot. What that makes impossible is
+  the hazard the old prose rule named — two builds of one worktree interleaving, with a result
+  carrying its sibling job's counts. The build-server client's prohibitions — a routed build is never
+  backgrounded, and a live (`running` or `queued`) result is re-attached with a bounded wait — are
+  stated in `build-server-client/SKILL.md` and bind here as written, not restated.
 - **Shell timeout:** an in-process build holds the shell call for its whole duration, and a routed
   build also holds the call — its wait is bounded and re-polled inside the same call, never
   backgrounded. Give each call the shell tool's `timeout` parameter, set at or above the build's own

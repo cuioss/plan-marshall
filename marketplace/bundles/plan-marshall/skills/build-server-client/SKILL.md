@@ -57,18 +57,24 @@ The exit-code contract for every `python3 .plan/execute-script.py` call in this 
 2. **wait** — ONE server-side bounded long-poll (the caller chooses `--bound`,
    defaulting to the foreground-safe 300s ceiling). The daemon holds the connection up to `bound`
    seconds; on a terminal result it returns the full status-TOON, and on bound
-   expiry it returns a LIVE `running` status — the caller re-issues `wait`. The
-   wait NEVER returns an empty / timeout-shaped body on bound expiry.
+   expiry it returns a LIVE `running` OR `queued` status — the caller re-issues
+   `wait`. The wait NEVER returns an empty / timeout-shaped body on bound expiry.
 
 ## The status-TOON contract (two hard properties + `killed`)
 
 A `wait` result carries `job_status` — the daemon's own status vocabulary. Two
 properties are load-bearing:
 
-- **Bound expiry is a live `running` status, never a timeout.** A `wait` that
-  reaches its `bound` without a terminal result returns `job_status: running` with
-  `elapsed` / `eta` / `last_progress` — a caller can always tell "still working"
-  from "finished", and re-issues `wait`. There is no timeout-shaped empty body.
+- **Bound expiry is a LIVE status, never a timeout.** A `wait` that reaches its
+  `bound` without a terminal result returns either `job_status: running` with
+  `elapsed` / `eta` / `last_progress`, or — for a job that is accepted but not yet
+  admitted — `job_status: queued` with `waiting_on` (the job id, or the identity
+  of the in-process holder, it waits for) and `queued_seconds` (how long it has
+  waited). A caller can always tell "still working" from "still waiting" from
+  "finished", and re-issues `wait` in the first two cases. There is no
+  timeout-shaped empty body. A `submit` response carries the same signal at the
+  point of submission as `queued_behind`: the id of the job running in the same
+  project directory, empty when there is none.
 - **`killed` is its own terminal state.** A job whose child was reaped externally
   (harness kill, daemon restart) renders `job_status: killed` with the message
   `externally killed — not flaky, do not blind-retry`. It is NEVER folded into

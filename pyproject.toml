@@ -236,7 +236,7 @@ timeout = 300
 # than through ``config.addinivalue_line`` in ``test/conftest.py::pytest_configure``
 # so the registry is data, not code. A whole-tree sweep of ``@pytest.mark.<name>`` plus the
 # markers applied programmatically in ``pytest_collection_modifyitems`` confirms
-# these six are the complete set of custom markers in use; ``timeout`` and
+# these seven are the complete set of custom markers in use; ``timeout`` and
 # ``parametrize`` are excluded from that set as plugin- and pytest-owned.
 markers = [
     # ``allow_pollution`` is a DELIBERATE ESCAPE HATCH, retained by design: it
@@ -259,6 +259,14 @@ markers = [
     # that lives OUTSIDE that directory and must therefore re-arm the real seam
     # explicitly.
     "allow_daemon_routing: test owns the marshalld build-routing seam as its subject and must run against the real _route_to_daemon (opts out of the autouse _neutralize_daemon_routing fixture; unnecessary under test/plan-marshall/build-server/, which is carved out by location).",
+    # ``real_directory_lock`` is the escape hatch for the OTHER autouse
+    # neutralization: ``_neutralize_directory_lock`` replaces the per-directory
+    # build lock with a non-blocking no-op everywhere, because the real lock lives
+    # in the machine-global ``build-queue.json`` that the per-test sandboxes do not
+    # own. A test that owns the lock's serialisation as its subject — the real-lock
+    # tests in ``test/plan-marshall/script-shared/test_build_queue_slot.py`` — must
+    # say so, or it would assert against the no-op and prove nothing.
+    "real_directory_lock: test owns the per-directory build lock as its subject and must run against the real lock (opts out of the autouse _neutralize_directory_lock fixture).",
     # ``allow_root_filesystem_pollution`` is the third escape hatch and the
     # sibling of ``allow_pollution`` for the filesystem ROOT. The autouse
     # ``_root_fs_pollution_guard`` fixture in ``test/conftest.py`` clears the

@@ -34,6 +34,7 @@ import json
 import sys
 from contextlib import contextmanager
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import _build_execute_factory as factory
@@ -398,6 +399,59 @@ def test_route_wait_reissues_on_running(use_fake_client):
     assert len(client.wait_calls) == 2  # re-issued once on the running return
 
 
+def test_route_wait_treats_queued_as_non_terminal(use_fake_client):
+    """A ``queued`` wait payload keeps the loop waiting — it is not a verdict.
+
+    At HEAD the routed client recognised only ``running`` as non-terminal, so a
+    ``queued`` job_status fell through to ``_daemon_result_to_direct`` and landed
+    on its "terminal job_status this client does not recognise" leg: an
+    ``indeterminate`` result for a build that had not even started. The two
+    scripted waits are the whole claim: the first is ``queued`` (must NOT stop
+    the loop) and the second is terminal (must be the result).
+    """
+    client = use_fake_client(
+        preflight={'status': 'success', 'preflight': 'ready'},
+        submit={'status': 'success', 'job_id': 'JOB-Q'},
+        waits=[
+            {'status': 'success', 'job_status': 'queued', 'waiting_on': 'JOB-A', 'queued_seconds': 3},
+            {'status': 'success', 'job_status': 'success', 'duration_seconds': 1, 'log_file': 'l', 'queued_seconds': 9},
+        ],
+    )
+
+    result, reason = factory._route_to_daemon(_config(), '/tree', 'plan-x')
+
+    assert reason == ''
+    assert result is not None
+    assert len(client.wait_calls) == 2, 'a queued return must be followed by another wait'
+    assert result['status'] == 'success'
+    assert result.get('error') != 'indeterminate'
+    # The wait the build paid travels on the terminal result.
+    assert result['queued_seconds'] == 9
+
+
+def test_route_hand_back_carries_queued_seconds_when_the_bound_expires(use_fake_client, monkeypatch):
+    """A job still ``queued`` at the bound returns a hand-back, never
+    ``indeterminate`` — and the hand-back says how long it has waited.
+
+    The bound is shortened so the test exercises the real expiry path (one wait,
+    then the hand-back) instead of sleeping the production 300 s.
+    """
+    monkeypatch.setattr(factory, '_DAEMON_WAIT_BOUND_SECONDS', 0.0001)
+    client = use_fake_client(
+        preflight={'status': 'success', 'preflight': 'ready'},
+        submit={'status': 'success', 'job_id': 'JOB-S'},
+        waits=[{'status': 'success', 'job_status': 'queued', 'waiting_on': 'JOB-B', 'queued_seconds': 12}],
+    )
+
+    result, reason = factory._route_to_daemon(_config(), '/tree', 'plan-x')
+
+    assert reason == ''
+    assert result is not None
+    assert result['status'] == 'running', 'a still-queued job is a live hand-back, not a verdict'
+    assert result['job_id'] == 'JOB-S'
+    assert result['queued_seconds'] == 12
+
+
 def test_route_refused_falls_back(use_fake_client):
     client = use_fake_client(
         preflight={'status': 'success', 'preflight': 'ready'},
@@ -626,6 +680,74 @@ def test_cmd_run_falls_back_under_a_slot_when_not_routed(monkeypatch):
     assert rc == 0
     assert entered['slot'] is True  # not routed ⇒ in-process under a fallback slot
     assert entered['plan_id'] == 'plan-x'
+
+
+def test_cmd_run_takes_the_directory_lock_before_the_slot(monkeypatch):
+    """The lock order is directory first, then slot — one order, everywhere.
+
+    That order is what rules out the deadlock: a build holding a slot never
+    waits on a directory, because it had to take the directory first.
+    """
+    order: list[str] = []
+    monkeypatch.setattr(factory, '_route_to_daemon', lambda *a, **k: (None, 'disabled'))
+    monkeypatch.setattr(
+        factory,
+        'execute_direct_base',
+        lambda **kw: {'status': 'success', 'exit_code': 0, 'duration_seconds': 1, 'log_file': 'l', 'command': 'c'},
+    )
+
+    @contextmanager
+    def _directory_lock(directory, **_kwargs):
+        order.append('directory')
+        yield SimpleNamespace(waited_seconds=0.0)
+
+    @contextmanager
+    def _slot(plan_id, *, routed=False):
+        order.append('slot')
+        yield
+
+    monkeypatch.setattr(factory, 'directory_lock', _directory_lock)
+    monkeypatch.setattr(factory, 'build_queue_slot', _slot)
+    monkeypatch.setattr(factory, 'cmd_run_common', lambda **kw: 0)
+
+    _, cmd_run = factory.create_execute_handlers(_config(), parse_log_fn=lambda *a: None)
+    rc = cmd_run(_run_args())
+
+    assert rc == 0
+    assert order == ['directory', 'slot']
+
+
+def test_cmd_run_reports_directory_busy_and_never_spawns_the_build(monkeypatch, capsys):
+    """A directory that stays busy yields the named ``directory_busy`` error.
+
+    The build never runs: the refusal happens before ``execute_direct`` is
+    reached, which is the difference between waiting/refusing and running
+    concurrently.
+    """
+    spawned: list[bool] = []
+    monkeypatch.setattr(factory, '_route_to_daemon', lambda *a, **k: (None, 'disabled'))
+
+    @contextmanager
+    def _busy(directory, **_kwargs):
+        raise factory.DirectoryBusy(
+            directory=directory,
+            holder={'plan_id': 'other-plan', 'command': 'module-tests', 'pid': 4242, 'acquired_at': 0.0},
+            waited_seconds=600.0,
+        )
+        yield  # pragma: no cover
+
+    monkeypatch.setattr(factory, 'directory_lock', _busy)
+    monkeypatch.setattr(factory, 'execute_direct_base', lambda **kw: spawned.append(True))
+
+    _, cmd_run = factory.create_execute_handlers(_config(), parse_log_fn=lambda *a: None)
+    rc = cmd_run(_run_args())
+
+    assert rc == 1
+    assert spawned == [], 'the build must not run while its directory is held'
+    out = capsys.readouterr().out
+    assert factory.ERROR_DIRECTORY_BUSY in out
+    assert 'other-plan' in out
+    assert '4242' in out
 
 
 def test_routed_build_for_a_plan_submits_and_records_that_plan(use_fake_client, monkeypatch, tmp_path):
