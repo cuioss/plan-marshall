@@ -893,20 +893,24 @@ python3 .plan/execute-script.py plan-marshall:manage-locks:build_queue directory
 ```
 
 `directory status` reports the per-directory build holder(s) and waiter(s) —
-`holders[]` carrying `directory`, `plan_id`, `command`, `pid`, `held_seconds` and
-`reclaimable`, plus `waiters[]` and `reclaimable_count`. It is read-only, and it is
-the sanctioned way to ask who holds a directory: a hand-read of `build-queue.json`
-has to re-derive pid liveness and staleness, which is the same reason every other
-read here goes through the script.
+`holders[]` carrying `directory`, `plan_id`, `command`, `pid`, `held_seconds`,
+`aged` and `reclaimable`, plus `waiters[]` and `reclaimable_count`. `reclaimable`
+means the pid is gone (or is an unreaped zombie), which is the only state
+`directory clear` acts on without `--force`; `aged` says the record has outlived
+the two-hour ceiling, which is evidence something is wrong but NOT that the holder
+is dead. It is read-only, and it is the sanctioned way to ask who holds a
+directory: a hand-read of `build-queue.json` has to re-derive pid liveness and
+staleness, which is the same reason every other read here goes through the script.
 
-`directory clear` reclaims one. Without `--force` only a STALE holder is cleared —
-its pid is gone (or is an unreaped zombie) or it has outlived the two-hour
-ceiling; `--force` clears it whatever its state, on the operator's assertion that
-no build is running there. `action` is `cleared`, `noop` (nothing to clear) or
-`refused_live` (a live holder and no `--force`), and `cleared_holder` carries the
-record that was removed. Use it when a build was killed past its own release: a
-recycled pid can keep such a record looking alive, and nothing in the admission
-path may steal a live build's directory.
+`directory clear` reclaims one. Without `--force` only a DEAD holder is cleared —
+its pid is gone or is an unreaped zombie. Age alone is not enough: a build may
+legitimately run for hours and its directory is exactly what must not be stolen, so
+an aged record whose pid still reads alive needs `--force`, the operator's own
+assertion that no build is running there. `action` is `cleared`, `noop` (nothing to
+clear) or `refused_live` (a live holder and no `--force`), and `cleared_holder`
+carries the record that was removed. Use it when a build was killed past its own
+release: a recycled pid can keep such a record looking alive, and nothing in the
+admission path may steal a live build's directory.
 
 ### build_queue — the `limit` verbs and the threshold's home
 

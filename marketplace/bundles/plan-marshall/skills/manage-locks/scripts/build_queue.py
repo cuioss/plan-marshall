@@ -251,13 +251,20 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import time
 import uuid
 from argparse import Namespace
 from pathlib import Path
 from typing import Any
 
+from _build_directory_state import (
+    DIRECTORY_LOCKS_FIELD,
+    DIRECTORY_WAITERS_FIELD,
+    directory_locks,
+    directory_waiters,
+    is_zombie,
+    pid_alive,
+)
 from _locks_core import holder_is_dead, log_lock_event, read_json_guarded, rmw_json
 from _machine_config import (
     SOURCE_MACHINE_CONFIG,
@@ -267,6 +274,15 @@ from _machine_config import (
     report_safe,
     resolve_max_slots,
 )
+
+# One implementation of the directory-lock reader and its pid liveness lives in
+# ``_build_directory_state``, because the DAEMON needs the same answer at
+# admission. These aliases keep this module's call sites readable without a second
+# copy of the rule.
+_pid_alive = pid_alive
+_is_zombie = is_zombie
+_directory_locks = directory_locks
+_directory_waiters = directory_waiters
 from file_ops import get_marshal_path
 from marketplace_paths import (
     ensure_home_root,
@@ -345,38 +361,19 @@ The code — not the message text — is what consumers deduplicate on, mirrorin
 :data:`_machine_config.WARNING_PER_REPO_MAX_SLOTS_NOT_IN_EFFECT`.
 """
 
-DIRECTORY_LOCKS_FIELD = 'directory_locks'
-"""Top-level field holding the per-directory build holders.
-
-A directory lock is a RECORD, not an OS lock: it answers "which build is running
-in this working directory", so a second build of the same ``target/`` waits
-instead of running beside it. It lives as a top-level key of this same queue file
-because both are machine-global build-exclusion state owned by this one file, and
-one file means one ``rmw_json`` critical section — no second store to keep in step.
-
-The map is ``{canonical_directory: {plan_id, command, pid, acquired_at, ticket}}``.
-Liveness is judged by ``pid`` (a plan-less lane build has no plan directory for the
-plan-anchored check to find).
-"""
-
-DIRECTORY_WAITERS_FIELD = 'directory_waiters'
-"""Top-level FIFO list of builds waiting for a directory, in arrival order.
-
-``[{directory, ticket, plan_id, command, pid, ts}]``. Position is arrival order —
-every mutation runs inside the serialized :func:`_locks_core.rmw_json` section —
-so the first waiter for a directory is admitted first, and a directory released
-by its holder is taken by the build that has waited longest for it.
-"""
-
 DIRECTORY_LOCK_CEILING_SECONDS = 7200
-"""Age past which a directory holder counts as STALE for recovery (`directory clear`).
+"""Age past which a queued WAITER counts as abandoned.
 
-Not a reaper: nothing in the admission path honours this bound, because stealing a
-directory from a legitimately long build would corrupt the very output tree the
-lock protects. It exists for the OPERATOR-recovery verb, so a lock whose pid reads
-as alive (a recycled pid, an unreaped zombie) can still be cleared by a person who
-knows no build is running — after two hours, no build of one directory is
-legitimately still going.
+Two different rules apply to the two record kinds, and the asymmetry is deliberate:
+
+* a WAITER older than this loses its FIFO place. A waiter's own wait bound is 30
+  minutes (``_DIRECTORY_WAIT_SECONDS``), so nothing legitimately queues for two
+  hours — and a stuck waiter blocks everyone behind it, because the FIFO rule
+  admits nobody ahead of a queued waiter.
+* a HOLDER is NOT reclaimed for age by the admission path: a build can legitimately
+  run for hours, and stealing its directory would corrupt the very output tree the
+  lock protects. Age does not make a holder safe to clear; ``directory clear``
+  therefore requires ``--force`` for one whose pid still reads alive.
 """
 
 
@@ -767,95 +764,17 @@ def _entry_identity(entry: dict[str, Any]) -> str:
     return str(entry.get('plan_id', ''))
 
 
-def _pid_alive(pid: Any) -> bool:
-    """Return whether ``pid`` names a live process.
-
-    Raises no exception and never guesses: a malformed pid is NOT alive, so a
-    corrupt record is reclaimable rather than wedging a directory forever, and
-    ``PermissionError`` means the process exists (another user owns it) so it IS
-    alive.
-
-    A ZOMBIE is not alive for this purpose. ``os.kill(pid, 0)`` succeeds for a
-    process that has exited but has not been reaped by its parent, and a build
-    child the daemon killed can stay unreaped for a while — counting that as a live
-    holder would block its directory for as long as the zombie lives. On Linux the
-    process state is read from ``/proc``; where ``/proc`` is unavailable the
-    signal probe alone decides, which is the pre-existing behaviour.
-    """
-    if isinstance(pid, bool) or not isinstance(pid, int) or pid <= 0:
-        return False
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return not _is_zombie(pid)
-    except OSError:
-        # Any OTHER errno (ENOSYS under a seccomp filter, EINVAL, …) means the
-        # probe could not answer. Failing toward ALIVE keeps a possibly-live
-        # holder's directory; failing toward dead would admit a second build into
-        # a directory a live build is writing, which is the hazard this lock
-        # exists to prevent. Staleness then has only the age ceiling as its exit.
-        return True
-    return not _is_zombie(pid)
-
-
-def _is_zombie(pid: int) -> bool:
-    """Return whether ``pid`` is an unreaped zombie (Linux ``/proc``), else False."""
-    try:
-        stat = Path(f'/proc/{pid}/stat').read_text(encoding='utf-8', errors='replace')
-    except OSError:
-        return False
-    # Field 3 is the process state; the comm field (2) may contain spaces, so the
-    # state is read after the LAST ')' of the comm field.
-    _, _, tail = stat.rpartition(')')
-    state = tail.strip().split(' ', 1)[0] if tail.strip() else ''
-    return state == 'Z'
-
-
-def _directory_locks(state: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    """Return the directory-holder map, dropping unusable records.
-
-    A record is usable only when it is a mapping: anything else cannot be
-    described, so it is dropped rather than kept as an unreadable blocker.
-    """
-    raw = state.get(DIRECTORY_LOCKS_FIELD)
-    if not isinstance(raw, dict):
-        return {}
-    return {str(key): value for key, value in raw.items() if isinstance(value, dict)}
-
-
-def _directory_waiters(state: dict[str, Any]) -> list[dict[str, Any]]:
-    """Return the directory FIFO waiters list, treating junk as empty.
-
-    A record must carry BOTH a string ``ticket`` (its identity) and a string
-    ``directory`` (the queue it belongs to): the admission scan keys on both, so a
-    record missing either would raise inside the read-modify-write and take every
-    acquire down with it. Malformed records are DROPPED rather than kept, so a
-    corrupt store cannot wedge the lock — the same fail-open-to-reclaim direction
-    the dead-holder prune takes.
-    """
-    raw = state.get(DIRECTORY_WAITERS_FIELD)
-    if not isinstance(raw, list):
-        return []
-    return [
-        entry
-        for entry in raw
-        if isinstance(entry, dict) and isinstance(entry.get('ticket'), str) and isinstance(entry.get('directory'), str)
-    ]
-
-
 def _waiter_is_live(waiter: dict[str, Any], now: float) -> bool:
     """Return whether a queued directory waiter may still hold its FIFO place.
 
     Two ways to lose it: the owning process is gone (dead, or an unreaped zombie),
     or the record has outlived :data:`DIRECTORY_LOCK_CEILING_SECONDS`. The second is
     the backstop for a record whose pid was RECYCLED by an unrelated process — no
-    build legitimately waits two hours for one directory, and without this a single
-    leaked waiter would pin its directory for every caller, since the FIFO rule
-    admits nobody ahead of a queued waiter.
+    build legitimately waits two hours for one directory (its own wait bound is 30
+    minutes), and without this a single leaked waiter would pin its directory for
+    every caller, since the FIFO rule admits nobody ahead of a queued waiter.
     """
-    if not _pid_alive(waiter.get('pid')):
+    if not pid_alive(waiter.get('pid')):
         return False
     queued_at = waiter.get('ts')
     if not isinstance(queued_at, (int, float)):
@@ -882,7 +801,11 @@ def _holder_view(holder: dict[str, Any] | None, now: float) -> dict[str, Any]:
     return {
         'plan_id': report_safe(str(holder.get('plan_id', ''))),
         'command': report_safe(str(holder.get('command', ''))),
-        'pid': holder.get('pid'),
+        # A pid is an int or absent. A string pid from a corrupt/foreign record must
+        # not reach the TOON: `report_safe` handles newlines, but a mapping or an
+        # arbitrary string is not a pid at all, so it is replaced with the empty
+        # value the absent case already uses.
+        'pid': holder.get('pid') if isinstance(holder.get('pid'), int) else '',
         'held_seconds': held,
     }
 
@@ -1551,9 +1474,12 @@ def run_directory_status(args: Namespace) -> dict[str, Any]:
     Returns:
         ``{status, holders[], waiters[], reclaimable_count, queue_path}``. Each
         holder carries ``directory``, ``plan_id``, ``command``, ``pid``,
-        ``held_seconds`` and ``reclaimable`` — reclaimable meaning its pid is gone
-        (or is a zombie) or it has outlived
-        :data:`DIRECTORY_LOCK_CEILING_SECONDS`.
+        ``held_seconds``, ``aged`` and ``reclaimable``. ``reclaimable`` means its
+        pid is gone (or is an unreaped zombie) — the only state ``directory clear``
+        will act on WITHOUT ``--force``. ``aged`` is informational: the record has
+        outlived :data:`DIRECTORY_LOCK_CEILING_SECONDS`, which is evidence that
+        SOMETHING is wrong but not that the holder is dead — a build may legitimately
+        run for hours, so clearing such a record still needs ``--force``.
     """
     wanted = getattr(args, 'directory', None)
     queue_path = _resolve_queue_path()
@@ -1570,14 +1496,15 @@ def run_directory_status(args: Namespace) -> dict[str, Any]:
                 **{key: report_safe(holder.get(key, '')) for key in ('plan_id', 'command', 'pid')},
                 'directory': report_safe(directory),
                 'held_seconds': int(held),
-                'reclaimable': (not _pid_alive(holder.get('pid'))) or held > DIRECTORY_LOCK_CEILING_SECONDS,
+                'aged': held > DIRECTORY_LOCK_CEILING_SECONDS,
+                'reclaimable': not _pid_alive(holder.get('pid')),
             }
         )
     waiters = [
         {
             'directory': report_safe(waiter.get('directory', '')),
             'plan_id': report_safe(waiter.get('plan_id', '')),
-            'pid': waiter.get('pid', ''),
+            'pid': waiter.get('pid') if isinstance(waiter.get('pid'), int) else '',
         }
         for waiter in _directory_waiters(state)
         if not wanted or str(Path(wanted).resolve()) == waiter.get('directory')
@@ -1601,11 +1528,12 @@ def run_directory_clear(args: Namespace) -> dict[str, Any]:
     live build's directory corrupts the shared output tree the lock exists to
     protect — so the escape is this explicit, operator-invoked verb.
 
-    Without ``--force`` only a STALE holder is cleared: one whose pid is gone (or
-    is a zombie) or one that has outlived
-    :data:`DIRECTORY_LOCK_CEILING_SECONDS`. ``--force`` clears the named directory's
-    holder whatever its state — the operator's own assertion that no build is
-    running there. A directory with no holder is an idempotent no-op success.
+    Without ``--force`` only a DEAD holder is cleared: its pid is gone, or is an
+    unreaped zombie. Age alone is NOT enough — a build may legitimately run for
+    hours, and its directory is exactly what must not be stolen — so an aged record
+    whose pid still reads alive needs ``--force``, the operator's own assertion that
+    no build is running there. A directory with no holder is an idempotent no-op
+    success.
 
     Args:
         args: Namespace with ``directory`` and ``force``.
@@ -1613,7 +1541,8 @@ def run_directory_clear(args: Namespace) -> dict[str, Any]:
     Returns:
         ``{status, action, directory, cleared_holder, queue_path}`` where ``action``
         is ``cleared``, ``noop`` (nothing to clear) or ``refused_live`` (a live
-        holder and no ``--force``).
+        holder and no ``--force``; its ``held_seconds`` tell the operator whether it
+        is merely old or implausible).
     """
     directory = str(Path(args.directory).resolve())
     force = bool(getattr(args, 'force', False))
@@ -1625,10 +1554,7 @@ def run_directory_clear(args: Namespace) -> dict[str, Any]:
         holder = locks.get(directory)
         if not isinstance(holder, dict):
             return state
-        since = holder.get('acquired_at')
-        held = max(0.0, time.time() - float(since)) if isinstance(since, (int, float)) else 0.0
-        stale = (not _pid_alive(holder.get('pid'))) or held > DIRECTORY_LOCK_CEILING_SECONDS
-        if not stale and not force:
+        if not force and _pid_alive(holder.get('pid')):
             outcome['action'] = 'refused_live'
             outcome['cleared_holder'] = _holder_view(holder, time.time())
             return state
@@ -1839,7 +1765,7 @@ Examples:
 
     p_directory_clear = directory_subparsers.add_parser(
         'clear',
-        help=f'Reclaim a STALE holder (dead pid or older than {DIRECTORY_LOCK_CEILING_SECONDS}s); --force overrides',
+        help='Reclaim a DEAD holder (pid gone or zombie); --force for a live one',
         allow_abbrev=False,
     )
     p_directory_clear.add_argument(

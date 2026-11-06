@@ -46,6 +46,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+from _build_directory_state import held_directories
+from _build_directory_state import pid_alive as _shared_pid_alive
 from _build_server_protocol import (
     STATUS_KILLED,
     STATUS_NOT_FOUND,
@@ -173,60 +175,15 @@ def write_pid(pidfile: Path, pid: int) -> None:
 
 
 def pid_alive(pid: int) -> bool:
-    """Return whether a process with ``pid`` is alive (probe via signal 0).
+    """Return whether a process with ``pid`` is alive.
 
-    A ZOMBIE counts as dead: ``signal 0`` succeeds for a process that has exited
-    but has not been reaped, and treating that as alive would both keep a bounded
-    directory wait spinning on a holder that no longer exists and let a dead
-    daemon's pidfile defend its socket. On Linux the process state is read from
-    ``/proc``; elsewhere the signal probe alone decides.
+    Delegates to the shared probe (:func:`_build_directory_state.pid_alive`) so the
+    daemon and the build wrapper's lock cannot disagree: one rule decides, and it
+    treats an unreaped ZOMBIE as dead — ``signal 0`` succeeds for a exited-but-
+    unreaped child, and counting that as alive would let a dead daemon's pidfile
+    defend its socket and a dead build child pin its directory.
     """
-    if pid <= 0:
-        return False
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        # The process exists but is owned by another user — treat as alive.
-        return not _is_zombie(pid)
-    return not _is_zombie(pid)
-
-
-def _is_zombie(pid: int) -> bool:
-    """Return whether ``pid`` is an unreaped zombie (Linux ``/proc``), else False."""
-    try:
-        stat = Path(f'/proc/{pid}/stat').read_text(encoding='utf-8', errors='replace')
-    except OSError:
-        return False
-    # Field 3 is the process state; the comm field (2) may contain spaces, so the
-    # state is read after the LAST ')' of the comm field.
-    _, _, tail = stat.rpartition(')')
-    state = tail.strip().split(' ', 1)[0] if tail.strip() else ''
-    return state == 'Z'
-
-
-def _holder_is_alive(holder: Any) -> bool:
-    """Return whether a recorded in-process directory holder is still alive.
-
-    A holder record is ``{plan_id, command, pid, acquired_at}``; only ``pid``
-    decides liveness, because a plan-less lane build (``NO_PLAN``) has no plan
-    directory for a plan-anchored check to find. A malformed record — not a
-    mapping, a missing/invalid pid — reads as NOT alive, so a corrupt record is
-    reclaimable rather than wedging a directory forever.
-    """
-    if not isinstance(holder, dict):
-        return False
-    pid = holder.get('pid')
-    if isinstance(pid, bool) or not isinstance(pid, int):
-        return False
-    try:
-        return pid_alive(pid)
-    except OSError:
-        # Cannot prove the holder is gone, so do NOT steal its directory: the
-        # directory lock is a serialisation guarantee, and a failed liveness probe
-        # is not evidence of death (ADR-009).
-        return True
+    return _shared_pid_alive(pid)
 
 
 def stale_socket_takeover(sock_path: Path, pidfile: Path) -> None:
@@ -638,22 +595,26 @@ class Daemon:
         return ''
 
     def _held_directories(self) -> dict[str, dict[str, Any]]:
-        """Read the in-process per-directory holders from the machine-global queue.
+        """Read the live in-process per-directory holders from the machine-global queue.
+
+        The field names and the pid-liveness rule are NOT restated here: they come
+        from :func:`_build_directory_state.held_directories`, the same reader the
+        build wrapper's lock uses. Two copies of that rule is one copy too many — a
+        change to either would silently desynchronise admission (which must not
+        spend a slot on a directory that is held) from the lock itself.
 
         Best-effort by contract: the daemon must never fail a request because a
         lock record could not be read. An unreadable store therefore reads as
-        "no directory is held in process", which is exactly the pre-existing
-        behaviour — never as a claim that a holder exists.
+        "no directory is held in process" — never as a claim that a holder exists.
         """
         try:
             path = home_root() / 'build-queue.json'
             payload = json.loads(path.read_text(encoding='utf-8'))
         except (OSError, ValueError):
             return {}
-        locks = payload.get('directory_locks') if isinstance(payload, dict) else None
-        if not isinstance(locks, dict):
+        if not isinstance(payload, dict):
             return {}
-        return {str(key): value for key, value in locks.items() if _holder_is_alive(value)}
+        return held_directories(payload)
 
     # -- admission / execution --------------------------------------------
 
