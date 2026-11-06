@@ -1650,14 +1650,14 @@ def test_the_consequence_knob_flag_admits_only_the_two_declared_values():
 
 
 # --------------------------------------------------------------------------- #
-# PLAN-LB-107 D3 — the operator prompt is built from the labels the grant accepts
+# The operator prompt is built from the labels the grant accepts
 # --------------------------------------------------------------------------- #
 #
-# The barrier's prompt named its override options in PROSE while ``merge-authorization
-# grant`` validated against a constant, so the two could drift and an operator answer
-# copied from the prompt could be refused. The gate now publishes the constant's
-# labels in its participation refusal, and the documents tell the agent to take them
-# verbatim. These two cases pin both halves.
+# The barrier's prompt must name its override options from the same constant
+# ``merge-authorization grant`` validates against: a prose list drifts from the
+# constant and an operator answer copied from the prompt is then refused. The gate
+# publishes the constant's labels in its participation refusal, and the documents
+# tell the agent to take them verbatim. These two cases pin both halves.
 
 _PHASE_6_SKILL = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-6-finalize' / 'SKILL.md'
 

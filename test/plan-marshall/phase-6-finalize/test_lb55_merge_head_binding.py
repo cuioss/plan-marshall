@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""PLAN-LB-55 D1 — the merge barrier refuses a candidate its gates never saw.
+"""The merge barrier refuses a candidate its gates never saw.
 
-``pre_merge_gate merge`` dispatched the merge verb on a clean findings store alone.
-Every head-dependent finalize gate stamps ``head_at_completion``, and nothing
-compared those stamps with the tree being merged, so a run could ship a head its
-gates had never seen (PLAN-LB-26: gates stamped ``3db65fc05``, ``74e6bfda`` merged).
+``pre_merge_gate merge`` must not dispatch the merge verb on a clean findings
+store alone. Every head-dependent finalize gate stamps ``head_at_completion``,
+and a merge that does not compare those stamps with the tree being merged can
+ship a head its gates had never seen.
 """
 
 from __future__ import annotations
@@ -107,7 +107,7 @@ def _merge_pre_seam(status, head, **kwargs):
 
 
 def test_a_merge_candidate_newer_than_the_functional_review_head_refuses():
-    """The PLAN-LB-26 shape: the gates stamped one head, the merge ships another."""
+    """The unbound case: the gates stamped one head, the merge ships another."""
     status = _status(
         {
             'functional-review': HEAD_GATED,
@@ -165,16 +165,15 @@ def test_an_unreadable_local_head_passes():
 
 
 # ---------------------------------------------------------------------------
-# PLAN-LB-107 D1 — the merge gate honours the operator's re-fire waiver
+# The merge gate honours the operator's re-fire waiver
 # ---------------------------------------------------------------------------
 #
 # The dispatcher's re-entry table SKIPs a head-dependent step whose
-# ``refire_waiver.head`` equals the live HEAD. The gate used to ignore the
-# waiver entirely, so a step the operator had explicitly waived was refused
-# again at merge — and the waived reviews ran again hours later. Every case
-# below is paired: a waiver honoured at its own head, and the same waiver void
-# at any other head, so neither direction can pass by refusing (or admitting)
-# everything.
+# ``refire_waiver.head`` equals the live HEAD. The merge gate must read the same
+# waiver the same way: a step the operator explicitly waived is not refused again
+# at merge, and the waiver is void at any other head. Every case below is paired —
+# a waiver honoured at its own head, and the same waiver void at any other head —
+# so neither direction can pass by refusing (or admitting) everything.
 
 HEAD_C = 'c' * 40
 
@@ -276,14 +275,14 @@ def test_a_waiver_on_one_step_does_not_admit_a_second_stale_step():
 
 
 # ---------------------------------------------------------------------------
-# PLAN-LB-107 D2 — head-dependence comes from the declared fact
+# Head-dependence comes from the declared fact
 # ---------------------------------------------------------------------------
 #
 # The dispatcher decides head-dependence from the step doc's own
-# ``head_dependent: true``; the gate decided it from whether a SHA happened to
-# be on the record. An undeclared step that carried a stamp could therefore be
-# refused with a remedy ("re-run those steps") the dispatcher would never act
-# on, because it never re-fires that step at all.
+# ``head_dependent: true``, and the gate must decide it from the same fact: a
+# stamp alone does not make a step head-dependent, so an undeclared step that
+# carries one is listed as never consulted rather than refused with a remedy the
+# dispatcher would never act on.
 
 
 def test_an_undeclared_step_with_a_stale_stamp_is_listed_not_refused():
@@ -436,16 +435,15 @@ def test_the_undeclared_control_step_is_discovered_and_declares_no_fact():
 
 
 # ---------------------------------------------------------------------------
-# PLAN-LB-107 D2 — the status transport must preserve namespaced step keys
+# The status transport must preserve namespaced step keys
 # ---------------------------------------------------------------------------
 #
 # ``mark-step-done`` stores a project-tier step under its ``project:`` id
 # (``canonicalize_step_key`` preserves that prefix). The executor's TOON
 # rendering then splits a ``project:step:`` line at its FIRST colon, so a gate
 # that parsed that text would receive ``{'project': 'step: ...'}`` and skip the
-# record — merging without checking a declared head-dependent step, which is
-# exactly the PLAN-LB-26 class. The read is therefore the JSON resolver's, not
-# the TOON rendering's.
+# record — merging without checking a declared head-dependent step. The read is
+# therefore the JSON resolver's, not the TOON rendering's.
 
 
 def test_a_project_namespaced_step_record_survives_the_status_read(monkeypatch):

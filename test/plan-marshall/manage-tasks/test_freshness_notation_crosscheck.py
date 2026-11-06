@@ -791,14 +791,14 @@ def test_required_coverage_is_derived_from_the_footprint_not_fixed() -> None:
 
 
 # =============================================================================
-# PLAN-LB-107 D4 — a narrowing expressed as a flag inside ``--command-args``
+# A narrowing expressed as a flag inside ``--command-args``
 # =============================================================================
 #
-# ``parse_row_scope`` used to stop collecting scope at the FIRST flag after the
-# canonical command, so a Maven row stamped ``--command-args module-tests -pl mod-a``
-# read as no scope at all — which the coverage dimension reads as whole-tree, the
-# false-green direction. These three cases are the refusal, its unknown-flag
-# sibling, and the matched control.
+# ``parse_row_scope`` collects scope at a flag after the canonical command, so a
+# Maven row stamped ``--command-args module-tests -pl mod-a`` reads as scope
+# ``mod-a`` rather than as no scope at all — which the coverage dimension reads as
+# whole-tree, the false-green direction. These three cases are the refusal, its
+# unknown-flag sibling, and the matched control.
 
 
 def test_a_scope_bearing_flag_narrows_the_row_and_is_refused_for_a_whole_tree_change(monkeypatch) -> None:

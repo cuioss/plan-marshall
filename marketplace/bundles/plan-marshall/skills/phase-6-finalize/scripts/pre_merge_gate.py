@@ -471,19 +471,29 @@ def _head_binding_refusal(
     A stale declared record is admitted in exactly the two ways the dispatcher
     SKIPs it: a ``refire_waiver`` whose ``head`` is the candidate's own (full-SHA
     equality, the dispatcher's waiver row) and, with no waiver for this HEAD, a
-    ``verdict_currency classify`` answer of ``preserved``. Every other answer —
-    including every uncertainty — refuses. The offending set therefore equals the
-    set of steps the dispatcher would re-fire, which is what makes the remedy
-    text true.
+    ``verdict_currency classify`` answer of ``preserved``. Every other stale
+    declared record is refused, so the offending set is the steps the dispatcher
+    would re-fire, LESS the two it re-fires on a different condition:
+
+    * a declared record with ``outcome == done`` and no ``head_at_completion`` —
+      the dispatcher re-fires it (nothing anchors the verdict), while the gate has
+      no SHA to compare and so records nothing at all;
+    * a declared record with a ``failed`` or ``loop_back`` outcome whose
+      ``head_at_completion`` equals the candidate — the dispatcher retries those
+      regardless of HEAD, while the gate sees a consulted head and admits it.
+
+    Both are cases where the gate is the weaker of the two, and naming them keeps
+    the remedy text honest: "re-run those steps" clears the refusal, but it is not
+    the set the dispatcher would re-run.
 
     Three unknown answers pass rather than refuse, and none is a claim that the
     binding is sound: an unreadable plan status (its fault is named in
     ``status_read_fault``), an unreadable local HEAD, and a record set that carries
     no head at all.
 
-    The PLAN-LB-26 case this closes: gates stamped ``3db65fc05`` while the PR head
-    merged was ``74e6bfda``. Nothing compared them, so the merge shipped a tree no
-    gate had seen.
+    The defect this closes: the head-dependent gates stamp ``head_at_completion``
+    and nothing compared those stamps with the tree being merged, so a merge could
+    ship a tree no gate had seen.
 
     Returns ``(refusal, evidence)``. ``refusal`` is ``None`` when the candidate is
     admitted; ``evidence`` always carries ``waived_steps``,
