@@ -178,6 +178,22 @@ def test_a_missing_merge_base_is_reported_by_name(plan_context, tmp_path, monkey
     assert payload['error'] == 'merge_base_unresolved', payload
 
 
+def test_an_unreadable_git_status_is_a_named_state(plan_context, tmp_path, monkeypatch) -> None:
+    repo = _repo(tmp_path)
+    _commit(repo, {'README.md': 'readme\n'})
+    _plan(plan_context)
+    monkeypatch.setattr(_integrity, 'resolve_live_worktree', lambda _plan_id: None)
+    monkeypatch.setattr(_integrity, 'main_checkout_root', lambda: repo)
+    monkeypatch.setattr(_integrity, '_rev_parse', lambda _root, ref: 'a' if ref == 'HEAD' else 'b')
+    failed = subprocess.CompletedProcess(args=['git'], returncode=128, stdout='', stderr='fatal: not a repo')
+    monkeypatch.setattr(_integrity, '_git', lambda *_args, **_kwargs: failed)
+
+    payload = _integrity.compute_test_integrity(PLAN_ID)
+
+    assert payload['status'] == 'error', payload
+    assert payload['error'] == 'test_integrity_not_run', payload
+
+
 def test_the_git_seam_translates_a_timeout(monkeypatch) -> None:
     def _timeout(*_args, **_kwargs):
         raise subprocess.TimeoutExpired(cmd='git', timeout=60)

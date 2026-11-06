@@ -515,7 +515,11 @@ def compute_test_integrity(plan_id: str, base_ref: str | None = None, head_ref: 
         if root is None:
             if plan_uses_worktree(plan_id):
                 return _error(plan_id, 'worktree_unresolved', 'no worktree is materialized for the plan')
-            return _error(plan_id, 'evidence_root_unresolved', 'no tree could be resolved to grade the branch diff')
+            return _error(
+                plan_id,
+                'evidence_root_unresolved',
+                f'the main checkout cannot grade the branch diff: {evidence_kind or "no checkout"}',
+            )
         return _grade_test_integrity(plan_id, root, evidence_kind, base_ref, head_ref)
     except _GitFailure as exc:
         return _error(plan_id, 'test_integrity_not_run', str(exc))

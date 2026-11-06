@@ -8,8 +8,9 @@ finding is ``kept`` (so it is not pending), it still blocks ``validate``, and
 ``loop-back close --accept`` refuses it with ``finding_not_pending``.
 
 After this plan a re-observed blocking finding is pending again through an
-explicit, documented outcome, ``--reopen`` says WHY when it does not re-arm, and a
-re-observation alone never re-arms an operator-accepted record.
+explicit, documented outcome, ``--reopen`` re-arms a rule-sourced record exactly as
+a plain re-add does and says WHY when it does not re-arm, and a re-observation
+alone never re-arms an operator decision — a triage Hold included.
 """
 
 from __future__ import annotations

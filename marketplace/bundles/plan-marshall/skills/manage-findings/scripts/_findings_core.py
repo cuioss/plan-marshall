@@ -1576,8 +1576,10 @@ def add_qgate_finding(
     prior disposition was recorded under. The prior
     resolution, detail and timestamp move into the record's ``history`` instead
     of being nulled, so the disposition the re-detection overrides stays
-    readable. A ``fixed`` record re-observed without the opt-in is kept, and a
-    non-``fixed`` resolution re-observed with the opt-in is kept.
+    readable. A ``fixed`` record re-observed without the opt-in is kept; a
+    ``taken_into_account`` record resolved by a loop-back round reopens with or
+    without the opt-in; any other non-``fixed`` resolution re-observed with the
+    opt-in is kept.
 
     REFUSES against an absent plan directory, for the same reason
     :func:`add_finding` does: the terminal ``append_jsonl`` would mkdir the whole
@@ -1637,8 +1639,10 @@ def add_qgate_finding(
         # ``fixed`` re-arms the gate only when the filing step passes the opt-in.
         # The prior resolution, detail and timestamp move into the record's
         # ``history`` instead of being nulled, so the overridden disposition stays
-        # readable. A ``fixed`` record re-observed without the opt-in is kept, and
-        # any non-``fixed`` resolution re-observed with the opt-in is kept.
+        # readable. A ``fixed`` record re-observed without the opt-in is kept; a
+        # ``taken_into_account`` record resolved by a loop-back round reopens with or
+        # without the opt-in; any other non-``fixed`` resolution re-observed with the
+        # opt-in is kept.
         if reopen and resolution == FIXED_RESOLUTION:
             return _reopen_qgate_record(
                 qgate_path,

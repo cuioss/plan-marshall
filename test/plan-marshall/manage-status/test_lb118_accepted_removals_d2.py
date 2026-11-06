@@ -403,6 +403,89 @@ def test_a_set_total_row_is_accepted_by_path(plan_context, tmp_path, monkeypatch
     ]
 
 
+def test_a_second_skip_marker_on_the_same_path_is_raised_again(plan_context, tmp_path, monkeypatch) -> None:
+    """The accepted filter row names its markers; a new marker kind is raised again."""
+    repo = _repo(tmp_path)
+    _commit(repo, {'README.md': 'readme\n'})
+    before = (
+        "describe('suite', () => {\n"
+        "  it('a', () => {\n"
+        '    expect(1).toBe(1);\n'
+        '  });\n\n'
+        "  it('b', () => {\n"
+        '    expect(2).toBe(2);\n'
+        '  });\n'
+        '});\n'
+    )
+    _commit(repo, {'src/thing.test.js': before})
+    _git(repo, 'checkout', '--quiet', '-b', 'feature')
+    head_a_text = before.replace("  it('a'", "  it.skip('a'")
+    _commit(repo, {'src/thing.test.js': head_a_text})
+    monkeypatch.chdir(repo)
+    monkeypatch.setattr(_integrity, 'resolve_live_worktree', lambda _plan_id: repo)
+    monkeypatch.setattr(_attr, 'resolve_live_worktree', lambda _plan_id: None)
+    criteria = ['parser accepts input']
+    head_a, hash_id = _mark_and_file(repo, plan_context, criteria, 'src/thing.test.js')
+
+    _close(head_a, hash_id)
+    # A new marker KIND on the same path, after the accepted filter row.
+    _commit(repo, {'src/thing.test.js': head_a_text.replace("describe('suite'", "describe.skip('suite'")})
+
+    payload = review_support.run_validate(PLAN_ID, 'functional', _sealed(tmp_path, criteria), None)
+
+    assert _blocking(payload), payload['findings']
+
+
+def test_a_mixed_residual_row_is_accepted_by_path(plan_context, tmp_path, monkeypatch) -> None:
+    """A row whose residual no identity explains needs its own path-level acceptance."""
+    repo = _repo(tmp_path)
+    _commit(repo, {'README.md': 'readme\n'})
+    _commit(
+        repo,
+        {'test/residual_test.py': 'assert preamble\ndef test_a():\n    assert 1 == 1\n    assert 2 == 2\n'},
+    )
+    _git(repo, 'checkout', '--quiet', '-b', 'feature')
+    _commit(repo, {'test/residual_test.py': 'def test_a():\n    assert 1 == 1\n'})
+    monkeypatch.chdir(repo)
+    monkeypatch.setattr(_integrity, 'resolve_live_worktree', lambda _plan_id: repo)
+    monkeypatch.setattr(_attr, 'resolve_live_worktree', lambda _plan_id: None)
+    criteria = ['parser accepts input']
+    head_a, hash_id = _mark_and_file(repo, plan_context, criteria, 'test/residual_test.py')
+
+    _close(head_a, hash_id)
+    _commit(repo, {'src/other.py': 'x\n'})
+
+    payload = review_support.run_validate(PLAN_ID, 'functional', _sealed(tmp_path, criteria), None)
+
+    assert _blocking(payload) == [], payload['findings']
+
+
+def test_a_grown_residual_is_raised_again(plan_context, tmp_path, monkeypatch) -> None:
+    """The residual is accepted by its count, so a larger residual is raised again."""
+    repo = _repo(tmp_path)
+    _commit(repo, {'README.md': 'readme\n'})
+    _commit(
+        repo,
+        {'test/residual_test.py': ('assert p1\nassert p2\ndef test_a():\n    assert 1 == 1\n    assert 2 == 2\n')},
+    )
+    _git(repo, 'checkout', '--quiet', '-b', 'feature')
+    # head A: one preamble assertion and one test assertion removed (residual 1).
+    _commit(repo, {'test/residual_test.py': 'assert p2\ndef test_a():\n    assert 1 == 1\n'})
+    monkeypatch.chdir(repo)
+    monkeypatch.setattr(_integrity, 'resolve_live_worktree', lambda _plan_id: repo)
+    monkeypatch.setattr(_attr, 'resolve_live_worktree', lambda _plan_id: None)
+    criteria = ['parser accepts input']
+    head_a, hash_id = _mark_and_file(repo, plan_context, criteria, 'test/residual_test.py')
+
+    _close(head_a, hash_id)
+    # head B: the other preamble assertion goes too (residual grows to 2).
+    _commit(repo, {'test/residual_test.py': 'def test_a():\n    assert 1 == 1\n'})
+
+    payload = review_support.run_validate(PLAN_ID, 'functional', _sealed(tmp_path, criteria), None)
+
+    assert _blocking(payload), payload['findings']
+
+
 # --- D2 (e): the three texts state the cases and the key identically -----------------------
 
 

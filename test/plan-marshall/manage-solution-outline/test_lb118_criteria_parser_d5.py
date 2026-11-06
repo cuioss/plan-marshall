@@ -119,6 +119,28 @@ def test_an_old_snapshot_still_migrates_as_parser_extended(plan_context) -> None
     assert [row['kind'] for row in drift] == ['parser_extended'], drift
 
 
+def test_a_future_parser_marker_is_not_treated_as_older(plan_context) -> None:
+    """A marker at or above the current parser is not a migration."""
+    _plan(plan_context, '- a criterion that wraps\n  onto a second line\n')
+    snapshot = {
+        'schema': _snap.SCHEMA,
+        'plan_id': PLAN_ID,
+        _snap.PARSER_KEY: _snap.CURRENT_PARSER + 1,
+        'deliverables': [{'number': 1, 'title': 'Deliver the change', 'criteria': ['a criterion that wraps']}],
+        'request': {'done_when': [], 'source': 'absent'},
+        'spec': None,
+        'authorized_changes': [],
+    }
+    path = _snap.snapshot_path(PLAN_ID)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(snapshot, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+    assert _snap.record_snapshot_digest(PLAN_ID)
+
+    drift = _snap.criteria_drift(PLAN_ID)
+
+    assert [row['kind'] for row in drift] == ['rewritten'], drift
+
+
 # --- D5 (d): the cited lines state the current behaviour ----------------------------------
 
 

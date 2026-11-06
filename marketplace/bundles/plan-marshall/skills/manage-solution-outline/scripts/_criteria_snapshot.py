@@ -884,6 +884,10 @@ def parse_success_criteria(body: str) -> tuple[list[str], list[str]]:
         else:
             unparsed.append(stripped)
         after_blank = False
+    if in_fence:
+        # An unterminated fence would otherwise swallow every later criterion
+        # silently. Name it so the reader sees what the parser could not read.
+        unparsed.append('unterminated fenced block')
     return [normalize_criterion(' '.join(parts)) for parts in criteria if parts], unparsed
 
 

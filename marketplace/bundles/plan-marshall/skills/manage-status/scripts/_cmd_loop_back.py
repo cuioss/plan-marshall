@@ -684,18 +684,14 @@ def cmd_loop_back_close(args: argparse.Namespace) -> dict | None:
     # ``weakened_test`` finding records the identities the finding removed, keyed by
     # the D1 identity plus the removed count — not the closing head — so the same
     # removal is not asked about again at a later head. They are read from the head
-    # the finding was VALIDATED at; a close at another head records nothing.
+    # the finding was VALIDATED at (the step's previous record), never from a later
+    # head: a removal made after the review is not accepted unseen. The close itself
+    # still records done at the closing head, and the named finding is resolved, so
+    # the operator who closed on it is not left with an unacceptable row.
     validated_head = _validated_head(status, step)
-    if validated_head is not None and validated_head != head:
-        accepted_removal_entries: list[dict[str, Any]] = []
-        accepted_removals_warning: str | None = (
-            f'the step was validated at {validated_head} and this close is at {head}; '
-            'no removal is recorded, so the row is raised again at the next head'
-        )
-    else:
-        accepted_removal_entries, accepted_removals_warning = _removed_identities_for_accept(
-            plan_id, set(accept), list(pending['findings']), head_ref=validated_head or head
-        )
+    accepted_removal_entries, accepted_removals_warning = _removed_identities_for_accept(
+        plan_id, set(accept), list(pending['findings']), head_ref=validated_head or head
+    )
     accepted_removals_recorded = True
     accepted_removals_error: str | None = None
     if accepted_removal_entries:
