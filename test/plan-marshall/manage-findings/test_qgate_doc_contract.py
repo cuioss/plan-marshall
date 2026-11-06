@@ -55,6 +55,24 @@ def test_qgate_doc_states_reopen_opt_in_and_lists_all_persist_ok_statuses():
     )
 
 
+#: The termination-cause rows the phase-5 classification table must carry,
+#: declared by NAME. The count is then whatever this enumeration holds — a cause
+#: added to or removed from the table is a deliberate edit here rather than a
+#: hand count re-pinned to a new literal.
+EXPECTED_TERMINATION_ROWS = frozenset(
+    {
+        'task_complete_returned_verbatim',
+        'budget_yield',
+        'verification_handback',
+        'voluntary_checkpoint',
+        'harness_cancellation',
+        'error',
+        'baseline_drift',
+        'clean_exit_queue_empty',
+    }
+)
+
+
 def test_termination_table_carries_pending_verify_steps_in_every_row():
     """Contract (b): every termination-cause table row carries the hand-back field."""
     text = EXECUTION_MD.read_text(encoding='utf-8')
@@ -68,6 +86,10 @@ def test_termination_table_carries_pending_verify_steps_in_every_row():
             break
         if line.startswith('| `'):
             rows.append(line)
-    assert len(rows) == 8, f'termination-cause table must carry 8 rows, found {len(rows)}'
+    row_causes = {row.split('|')[1].strip().strip('`') for row in rows}
+    assert row_causes == EXPECTED_TERMINATION_ROWS, (
+        f'termination-cause table rows changed: missing {EXPECTED_TERMINATION_ROWS - row_causes}, '
+        f'unexpected {row_causes - EXPECTED_TERMINATION_ROWS}'
+    )
     for row in rows:
         assert 'pending_verify_steps' in row, f'termination table row carries no hand-back field: {row[:80]}'

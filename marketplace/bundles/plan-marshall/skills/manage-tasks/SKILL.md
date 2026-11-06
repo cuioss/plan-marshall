@@ -80,7 +80,7 @@ Script: `plan-marshall:manage-tasks:manage-tasks`
 | `remove-step` | `--plan-id --task-number --step` | Remove step from task |
 | `rename-path` | `--plan-id --old-path --new-path [--include-completed]` | Record path rename and rewrite step targets. By default only unfinished work is rewritten — a `done` task is skipped whole, and elsewhere only `pending` steps are touched — so a finished task's record stays a faithful account of the paths it edited. `--include-completed` lifts both guards, for the case that default cannot serve: an upstream rename landing mid-plan, where the path a completed step names no longer exists, so leaving it alone strands the task on a dead path that `declared_set_closure` then flags with no sanctioned way to correct it. Returns `rewritten_completed_count` and, per entry, BOTH the `step_status` and the `task_status` the record carried BEFORE the rewrite, so an edit to finished work is visible in the result rather than merely inferable from the flag. Both statuses are reported, and the count treats an entry as finished work when EITHER is finished, because either guard alone can be the one lifted — a done task whose step rows still read `pending` is finished work just as much as a done step is |
 | `qgate-mechanical-checks` | `--plan-id [--no-emit]` | Run the deterministic Q-Gate checks for phase-4-plan Step 8: coverage, skill-resolution, acyclic, files-exist, keyword-drift, structural-token-drift, plus the two CLOSURE checks — declared-set-closure and declared-scope-reconciliation. The first six ask whether each declared thing is well-formed and resolves; the closure pair asks whether the declared SET is complete, which none of the others can see. Pure regex + graph + filesystem; no LLM dispatch. Each failure becomes a Q-Gate finding under `--source qgate` so phase-4-plan's existing aggregate consumes it. Returns `total_failed`, per-check counts, a `population` block reporting what each population-publishing check actually scanned (with `population_complete`), and an `ambiguous` flag the caller uses to decide whether the LLM q-gate-validation dispatch still needs to fire — `ambiguous` flips on an unparseable outline OR an incomplete population, since a zero over an unscanned set is not a verdict. The block covers **three** checks, not only the two closure ones: `acyclic` publishes alongside them because it also loses records before it measures — a task number it cannot use is dropped from the graph, and two records claiming one number collapse to a single node — so its `duplicate_task_numbers` / `unusable_task_numbers` / `nodes_indexed` are what keep a "no cycle" from being a verdict over a shortened node set. Also returns `qgate_persist_failed` (bool) and `qgate_persist_failures` (list of `{title, message}`) — a persist the Q-Gate primitive rejected means the check failed but its finding never reached the store, so the caller MUST fail loudly on `qgate_persist_failed: true` rather than trusting `total_failed` alone. Alongside `findings_emitted` (newly appended records only) returns `reobserved_count` — how many persists re-detected an already-resolved finding and kept its recorded resolution (the primitive's `kept` outcome) — and `still_detected_but_fixed_count` — how many of those kept records carry the `fixed` resolution. An unchanged-plan re-run therefore reports `findings_emitted` zero with the re-observed counts stating what it re-saw, instead of a bare zero that reads as "nothing detected"; the kept resolutions are untouched. |
-| `loop-exit-guard` | `--plan-id [--consumed-tokens N] [--completed-tasks-delta N] [--pending-verify-steps "ids"] [--verification-handback] [--provisional-cause CAUSE]` | Script-level enforcement of the phase-5-execute "unfinished > 0 → must continue" invariant. The predicate is the union of `pending` AND `in_progress` tasks. Emits `status: continue` (with `pending_count`, `pending_ids`, `in_progress_count`, `in_progress_ids`, `owed_count`, `owed_ids`) when EITHER bucket is non-empty — the non-success status forces the orchestrator to re-dispatch the execution-context. Emits `status: success` (with all six fields present and zero-valued) only when BOTH counts are zero. `owed_count`/`owed_ids` name the `in_progress` tasks held open by `verification_owed: true`; they still block the clean exit. Supplying any predicate input switches the verb into the deterministic B7 no-progress evaluation and adds `predicate_*`, `verification_handback_valid`, `classification` and `classification_reason`. See "Loop-Exit Guard" below for both contracts. |
+| `loop-exit-guard` | `--plan-id [--consumed-tokens N] [--completed-tasks-delta N] [--pending-verify-steps "ids"] [--verification-handback] [--provisional-cause CAUSE]` | Script-level enforcement of the phase-5-execute "unfinished > 0 → must continue" invariant. The predicate is the union of `pending` AND `in_progress` tasks. Emits `status: continue` (with `pending_count`, `pending_ids`, `in_progress_count`, `in_progress_ids`, `owed_count`, `owed_ids`, `done_count`) when EITHER bucket is non-empty — the non-success status forces the orchestrator to re-dispatch the execution-context. Emits `status: success` (with `pending_count`, `in_progress_count` and `owed_count` zero; `done_count` carries the completed total) only when BOTH unfinished counts are zero. `owed_count`/`owed_ids` name the `in_progress` tasks held open by `verification_owed: true`; they still block the clean exit. `done_count` is the delta's source: the orchestrator subtracts the previous iteration's figure. Supplying any predicate input switches the verb into the deterministic B7 no-progress evaluation and adds `predicate_*`, `verification_handback_valid`, `verification_handback_unknown_steps`, `classification` and `classification_reason`; the evaluation needs BOTH measurements, and one without the other returns `status: error, error: no_progress_not_decidable`. See "Loop-Exit Guard" below for both contracts. |
 | `pre-commit-verify-freshness` | `--plan-id` | Script-level enforcement that the current working-tree state has been observed by a successful build before any pre-commit transition — but only where a build was necessary at all. Consults the command-free `build-decision` verdict first, then queries the unified change-ledger for a `kind=build` entry with `status == success` whose `worktree_sha` matches the recomputed working-tree currency hash, and finally cross-checks the matching rows on two dimensions — their notations against the build notations this project's architecture resolves, and the canonical + scope they recorded against the blast radius of the change. Emits `status: exempt` (verdict `not_necessary` — no build was owed, so the gate returns BEFORE the ledger scan with the verdict's own `reason` forwarded verbatim; nothing about the tree was examined), `status: fresh` (one or more matching successful build entries citable on BOTH dimensions and covering the change, alone or between them — `notation_cross_check` and `scope_cross_check` say whether each was audited or merely undetermined, and the record names every row the verdict rests on and every candidate's recorded scope), `status: stale` (no successful build matches the current working-tree sha, or every one that does names a build this project never runs, or the ones that do fall short of the change alone and combined — carrying a `reason` that names WHICH route: `worktree_mutated`, `build_error`, `build_timeout`, `build_killed`, `build_indeterminate`, `notation_unrelated`, `notation_absent`, `build_scope_narrow`, or `no_row_both_attributable_and_adequate`, since the routes need different remedies and a `killed` build must never be blind-retried), or `status: undecidable` (no positive proof — `no_registry` when the ledger is absent/empty, `head_unresolvable` when the working-tree sha cannot be computed). Fail-closed contract: exactly `exempt` and `fresh` permit transition, and they permit on different bases — read the member, never the absence of a refusal. See "Pre-Commit Verify Freshness" below for the contract. |
 
 ### Loop-Exit Guard (`loop-exit-guard`)
@@ -112,8 +112,8 @@ broadened predicate. Either non-empty bucket forces `status: continue`.
 
 **TOON return contract:**
 
-Both `continue` and `success` branches emit all six count/id fields so
-callers can read either axis without conditional presence checks:
+Both `continue` and `success` branches emit every count/id field so callers can
+read either axis without conditional presence checks:
 
 ```toon
 status: continue | success
@@ -124,6 +124,7 @@ in_progress_count: M
 in_progress_ids[M]: [task_numbers]
 owed_count: K
 owed_ids[K]: [task_numbers]
+done_count: D
 message: "..."
 ```
 
@@ -142,11 +143,23 @@ message: "..."
   bucket: an owed task still forces `status: continue`, because the build it
   waits on has not reported. The split exists for the no-progress predicate
   below, which must not count a task the workflow itself is holding open.
+- `done_count` — the `done` count from the same queue walk. It is the source
+  of `completed_tasks_delta`: the orchestrator snapshots it per iteration and
+  subtracts the previous snapshot, so the delta and the queue state can never
+  disagree about which tasks completed.
 
-**No-progress mode (B7).** Passing `--consumed-tokens` (or any other
-predicate input: `--completed-tasks-delta`, `--verification-handback`)
+**No-progress mode (B7).** Entered for a return provisionally classified
+`voluntary_checkpoint`, and for a return that carries a hand-back pair (passed
+with `--provisional-cause voluntary_checkpoint`); every other return keeps its
+own cause and is not evaluated. Passing any predicate input — `--consumed-tokens`,
+`--completed-tasks-delta`, `--pending-verify-steps` or `--verification-handback` —
 switches the verb into the deterministic B7 evaluation the orchestrator runs
-after a dispatch returns and before `record-dispatch-boundary`. The result
+after a dispatch returns and before `record-dispatch-boundary`. The evaluation
+needs BOTH `--consumed-tokens` and `--completed-tasks-delta`; a call that
+supplies one without the other returns `status: error` with
+`error: no_progress_not_decidable` and no classification, and carries the queue
+verdict separately as `queue_status` (`continue` | `success`) — `status: error`
+in that result never means the queue is empty. The result
 then also carries:
 
 ```toon
@@ -155,6 +168,7 @@ predicate_completed_tasks_delta: {D}
 predicate_consumed_tokens: {X}
 predicate_holds: {true|false}
 verification_handback_valid: {true|false}
+verification_handback_unknown_steps[N]: [step_ids]
 classification: {error|verification_handback|voluntary_checkpoint|<provisional cause>}
 classification_reason: {...}
 ```
@@ -162,11 +176,16 @@ classification_reason: {...}
 The predicate is `predicate_in_progress_count > 0 AND
 predicate_completed_tasks_delta == 0 AND predicate_consumed_tokens > 50000`
 — stated once, with its exemptions, in `plan-marshall/workflow/execution.md`
-§ "B7 — voluntary_checkpoint no-progress reclassification". Two exemptions
-precede it: a return carrying `--verification-handback` beside a non-empty
-`--pending-verify-steps` classifies as `verification_handback` and never
-reaches the predicate, and the owed-task subtraction means an owed task can
-never manufacture a stall. `classification` is the cause to record.
+§ "B7 — voluntary_checkpoint no-progress reclassification". The predicate is
+consulted for its two qualifying returns — a return provisionally classified
+`voluntary_checkpoint` and one that hands a build back: the
+owed-task subtraction keeps the handed-back task out of `predicate_in_progress_count`,
+a non-owed task that stalled in the same dispatch is still classified `error`,
+and a hand-back naming a step id outside the manifest's composed
+`phase_5.verification_steps` exempts nothing. The verb reports
+`verification_handback_unknown_steps[]` — the named ids the manifest does not
+carry — so a rejected hand-back is observable rather than inferred.
+`classification` is the cause to record.
 
 **Rationale:** before this verb, the loop-exit decision was driven by the
 dispatched agent's terminal payload, which the agent could echo verbatim

@@ -1067,6 +1067,32 @@ def test_verification_owed_flag_is_ignored_on_a_deferred_rung_task(plan_context)
     assert 'verification_owed' not in persisted
 
 
+def test_a_record_with_null_verification_is_read_without_error(plan_context):
+    """A `verification: null` record must not raise on a close that reads it.
+
+    The deferral rule reads `verification.owed_rung` on every close. A record
+    whose `verification` is null (hand-written, or partially composed) has no
+    rung to read, so the rule simply does not fire — the close proceeds on the
+    caller's flag exactly as a record with no stamp does.
+    """
+    add_basic_task(
+        plan_id='owed-null-verification',
+        title='Null Verification Task',
+        deliverable=1,
+        steps=['src/main/java/A.java'],
+    )
+    task = _persisted_task(plan_context, 'owed-null-verification')
+    task['verification'] = None
+    _write_persisted_task(plan_context, 'owed-null-verification', task)
+
+    result = cmd_finalize_step(_owed_ns(plan_id='owed-null-verification', task=1, step=1, owed=True))
+
+    assert result['status'] == 'success'
+    assert result['owed_rung_deferred_dropped'] is False
+    assert result['verification_owed'] is True
+    assert _persisted_task(plan_context, 'owed-null-verification')['verification_owed'] is True
+
+
 def test_next_skips_an_owed_task_with_no_actionable_step(plan_context):
     """The owed wait belongs to the orchestrator, not to the leaf loop."""
     _add_module_testing_task(plan_context, 'owed-skip', title='Owed First')

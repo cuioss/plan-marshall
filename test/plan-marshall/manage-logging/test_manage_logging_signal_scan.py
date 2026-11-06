@@ -164,8 +164,38 @@ class TestTheWriterAndTheScannerShareOneMarker:
         assert '_signal_scan.py' in text, 'the marker string must be cited from its single source'
         assert 'verification_handback' in text, 'a prescribed hand-back must be named as not lesson-bearing'
 
+    def test_the_marker_and_its_log_type_are_bound_in_one_command(self):
+        """The marker and the `decision` subcommand must live in the SAME block.
+
+        Asserting them separately would pass on a document whose B7 section writes
+        the marker with one subcommand and carries `decision` somewhere else — the
+        exact shape a scanner-vs-writer mismatch takes.
+        """
+        text = EXECUTION_MD.read_text(encoding='utf-8')
+
+        marker_blocks = [block for block in text.split('```') if _scan.NO_PROGRESS_MARKER in block]
+        assert marker_blocks, 'the B7 marker must appear inside a fenced command block'
+        for block in marker_blocks:
+            assert 'decision --plan-id {plan_id}' in block, (
+                'the block carrying the B7 marker must write it with the decision subcommand'
+            )
+            assert _scan.NO_PROGRESS_SCOPE in block
+
     def test_the_workflow_body_cites_the_same_scanner(self):
         text = LESSONS_CAPTURE_MD.read_text(encoding='utf-8')
 
         assert 'signal-scan' in text, 'lessons-capture.md must cite the scanner that produces its input field'
         assert 'verification_handback' in text, 'the field description must name the excluded hand-back'
+
+    def test_the_dispatcher_names_the_log_its_marker_is_scanned_in(self):
+        """Signal 3's marker is scoped to the log it is written to, and to no other consumer."""
+        text = FINALIZE_SKILL_MD.read_text(encoding='utf-8')
+
+        assert 'the WORK log carries no copy of it' in text, (
+            'the dispatcher must state which log class 3 is read from, as current behaviour'
+        )
+        assert 'so the two read one string from one writer' not in text, (
+            'the retrospective does not read this marker: its script-failure analysis reads '
+            'script-execution.log, so no cross-surface marker set exists to align'
+        )
+        assert 'script-execution.log' in text

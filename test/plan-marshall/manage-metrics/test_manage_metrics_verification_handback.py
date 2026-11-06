@@ -66,7 +66,9 @@ class TestHandbackCauseIsNamedInItsTwoDocuments:
         # with the cause and states how it is detected.
         assert f'| `{NEW_CAUSE}` |' in text, 'execution.md must carry the hand-back as a termination-table row'
         assert 'verification_handback: true' in text, 'the row must name the discriminator it keys on'
-        assert 'the B7 predicate never decides it' in text, 'the row must state the B7 exemption'
+        assert 'The exemption is scoped to the owed task(s) the return names' in text, (
+            'the row must state the SCOPED exemption: a hand-back exempts the owed task it names, not a stall beside it'
+        )
 
     def test_phase_5_return_contract_carries_the_discriminator(self):
         text = PHASE_5_SKILL_MD.read_text(encoding='utf-8')
@@ -89,3 +91,43 @@ class TestHandbackCauseIsNamedInItsTwoDocuments:
         )
         assert 'The two legitimate yields' in text, 'both yields must be named, with their signals'
         assert 'verification_handback' in text and 'budget_yield' in text
+
+    def test_phase_5_names_the_four_task_boundary_points_consistently(self):
+        """The "only yields" claim must not contradict the four sanctioned points."""
+        text = PHASE_5_SKILL_MD.read_text(encoding='utf-8')
+
+        assert 'These two are the ONLY yields' not in text, (
+            'phase-5-execute lists four TASK-boundary re-dispatch points; two of them are '
+            'prescribed non-completions with their own ledger causes, not clean yields'
+        )
+        assert 'These two are the only yields that are NOT error handling' in text
+        for point in ('budget_yield', 'verification_handback', 'triage_required', 'baseline_drift'):
+            assert point in text, f'the four sanctioned points must keep naming {point}'
+
+    def test_the_voluntary_checkpoint_row_covers_a_malformed_handback_pair(self):
+        """A `verification_handback: true` with an empty list must match a row.
+
+        The hand-back row requires a non-empty list, and the voluntary_checkpoint
+        row used to exclude every return carrying the discriminator — so a
+        discriminator with an empty list matched neither row.
+        """
+        text = EXECUTION_MD.read_text(encoding='utf-8')
+
+        assert 'without a valid hand-back pair' in text
+        assert 'beside an empty `pending_verify_steps[]`' in text
+
+    def test_b7_is_evaluated_on_both_qualifying_returns(self):
+        """A hand-back return must still reach the predicate, or D1 can never fire.
+
+        The table classifies a valid hand-back as `verification_handback`, so a
+        trigger scoped to returns "provisionally classified voluntary_checkpoint"
+        would skip the very return the scoped exemption exists for; a trigger
+        covering EVERY non-error return would instead reclassify a legitimate
+        `budget_yield`. The trigger names exactly the two cases.
+        """
+        text = EXECUTION_MD.read_text(encoding='utf-8')
+
+        assert 'in exactly two cases' in text
+        assert 'the return is provisionally classified `voluntary_checkpoint`' in text
+        assert 'the return carries a hand-back pair' in text
+        assert 'keeps its own classification and is not passed through the predicate' in text
