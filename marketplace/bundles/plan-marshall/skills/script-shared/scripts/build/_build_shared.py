@@ -373,10 +373,11 @@ def _store_build_findings(
             detail_lines.append('')
             detail_lines.append('--- stack trace ---')
             detail_lines.append(issue.stack_trace)
-        # The representative per-signature failure block (deliverable 9) carries
-        # the *why* of a failure — round-trip it into the finding store so a
-        # triage reader gets the traceback/assertion body without a raw-log
-        # re-read. Present only for parsers that populate it (pyproject today).
+        # The representative detail block carries the *why* of an issue —
+        # round-trip it into the finding store so a triage reader gets it without
+        # a raw-log re-read. Populated by the parsers that capture one: the
+        # pyproject one (a per-signature traceback/assertion body) and the Maven
+        # one (a compiler error's ``symbol:`` / ``location:`` continuation lines).
         if issue.detail:
             detail_lines.append('')
             detail_lines.append('--- failure detail ---')

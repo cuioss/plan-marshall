@@ -22,12 +22,15 @@ from _build_parse import (
     categorize_issue,
 )
 
-from conftest import get_script_path, load_script_module, run_script
+from conftest import MARKETPLACE_ROOT, get_script_path, load_script_module, run_script
 
 _maven_cmd_parse_mod = load_script_module('plan-marshall', 'build-maven', '_maven_cmd_parse.py', '_maven_cmd_parse')
 
 parse_log = _maven_cmd_parse_mod.parse_log
 MAVEN_PATTERNS = _maven_cmd_parse_mod.MAVEN_PATTERNS
+selector_miss_reason = _maven_cmd_parse_mod.selector_miss_reason
+dtest_selector = _maven_cmd_parse_mod.dtest_selector
+TEST_SELECTOR_MATCHED_NOTHING = _maven_cmd_parse_mod.TEST_SELECTOR_MATCHED_NOTHING
 
 # CLI entry point for the parse subcommand (routes through cmd_parse_common,
 # where the seam-(b) truthful-status derivation lives).
@@ -542,41 +545,44 @@ _COMPILER_GOAL_FAILURE = (
 )
 _COMPILER_ERROR = '/home/dev/probe/c/src/main/java/probe/c/Broken.java:[5,9] cannot find symbol'
 
+#: The compiler's continuation fields, as javac prints them and Maven re-prints
+#: them at `[ERROR]` in the goal-failure block. They belong to the `cannot find
+#: symbol` error that precedes them.
+_SYMBOL_CONTINUATION = 'symbol:   class Missing'
+_LOCATION_CONTINUATION = 'location: class probe.c.Broken'
+
 #: The Maven 3.9.16 fixture's real diagnostics, in log order (the repeated compiler
-#: error in the goal-failure block is deduplicated).
+#: error in the goal-failure block is deduplicated, and the continuation fields are
+#: the compiler error's detail rather than issues of their own).
 _MAVEN3_DIAGNOSTICS = [
     'Tests run: 1, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 0.031 s <<< FAILURE! -- in probe.b.BTest',
     'probe.b.BTest.fails -- Time elapsed: 0.012 s  <<< FAILURE!',
-    'Failures:',
     'BTest.fails:10 expected: <1> but was: <2>',
     'Tests run: 1, Failures: 1, Errors: 0, Skipped: 0',
-    'COMPILATION ERROR :',
     _COMPILER_ERROR,
     _SUREFIRE_GOAL_FAILURE,
     _COMPILER_GOAL_FAILURE,
-    'symbol:   class Missing',
-    'location: class probe.c.Broken',
 ]
 
 #: The Maven 4.0.0-rc-7 fixture's real diagnostics, in log order.
 _MAVEN4_DIAGNOSTICS = [
     'Tests run: 1, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 0.029 s <<< FAILURE! -- in probe.b.BTest',
     'probe.b.BTest.fails -- Time elapsed: 0.011 s  <<< FAILURE!',
-    'Failures:',
     'BTest.fails:10 expected: <1> but was: <2>',
     'Tests run: 1, Failures: 1, Errors: 0, Skipped: 0',
-    'COMPILATION ERROR :',
     _COMPILER_ERROR,
     _SUREFIRE_GOAL_FAILURE,
     _COMPILER_GOAL_FAILURE,
-    'symbol:   class Missing',
-    'location: class probe.c.Broken',
 ]
 
 #: The Maven 3 fixture's `[ERROR]` / `[WARNING]` lines that must never be filed.
 _MAVEN3_NOT_FILED = [
     'Tests run: 2, Failures: 0, Errors: 0, Skipped: 1, Time elapsed: 0.041 s -- in probe.a.ATest',
     'Tests run: 2, Failures: 0, Errors: 0, Skipped: 1',
+    'Failures:',
+    'COMPILATION ERROR :',
+    _SYMBOL_CONTINUATION,
+    _LOCATION_CONTINUATION,
     'See /home/dev/probe/b/target/surefire-reports for the individual test results.',
     'See dump files (if any exist) [date].dump, [date]-jvmRun[N].dump and [date].dumpstream.',
     'To see the full stack trace of the errors, re-run Maven with the -e switch.',
@@ -591,6 +597,10 @@ _MAVEN3_NOT_FILED = [
 _MAVEN4_NOT_FILED = [
     'Tests run: 2, Failures: 0, Errors: 0, Skipped: 1, Time elapsed: 0.044 s -- in probe.a.ATest',
     'Tests run: 2, Failures: 0, Errors: 0, Skipped: 1',
+    'Failures:',
+    'COMPILATION ERROR :',
+    _SYMBOL_CONTINUATION,
+    _LOCATION_CONTINUATION,
     'b .................................................. FAILURE [  0.953 s]',
     'c .................................................. FAILURE [  0.388 s]',
     'BUILD FAILURE',
@@ -639,6 +649,15 @@ def test_failure_epilogue_is_not_filed_and_real_diagnostics_are(
     messages = [issue.message for issue in issues]
     assert not set(messages) & set(not_filed)
     assert messages == diagnostics
+    # The compiler's continuation fields survive as the error's DETAIL — they
+    # carry the missing name, so dropping them would lose the diagnostic. Each
+    # appears ONCE: the fixture prints them bare under the error and again at
+    # [ERROR] in the goal-failure block, and a blind append would publish both
+    # copies.
+    compiler_error = next(issue for issue in issues if issue.message == _COMPILER_ERROR)
+    assert compiler_error.detail is not None
+    assert compiler_error.detail.count(_SYMBOL_CONTINUATION) == 1
+    assert compiler_error.detail.count(_LOCATION_CONTINUATION) == 1
 
 
 def test_older_surefire_report_pointer_is_not_filed():
@@ -688,6 +707,125 @@ def test_control_failing_test_count_line_is_still_filed(tmp_path):
     assert len(filed) == 1
     assert filed[0].category == 'test_failure'
     assert filed[0].severity == SEVERITY_ERROR
+
+
+def test_surefire_and_compiler_section_headers_are_not_issues(tmp_path):
+    """``Failures:``, ``Errors:`` and ``COMPILATION ERROR :`` head a block; they are not rows.
+
+    Each is printed at `[ERROR]` and matched in full, so a reworded header is
+    filed again rather than a real diagnostic being dropped.
+    """
+    # Arrange
+    log_file = tmp_path / 'section-headers.log'
+    log_file.write_text(
+        '[ERROR] Failures:\n[ERROR] Errors:\n[ERROR] COMPILATION ERROR :\n',
+        encoding='utf-8',
+    )
+
+    # Act
+    issues, _, _ = parse_log(log_file)
+
+    # Assert
+    assert issues == []
+
+
+def test_control_orphan_compiler_continuation_is_still_filed(tmp_path):
+    """CONTROL: a `symbol:` / `location:` line with no compiler error before it stays filed.
+
+    The continuation fields are only a compiler error's detail. Filing them
+    unconditionally would attach them to nothing; dropping them unconditionally
+    would lose the one line that names the missing symbol. So the guard must
+    depend on what precedes them, and a bare one is fail-visible.
+    """
+    # Arrange / Act / Assert
+    for index, message in enumerate((_SYMBOL_CONTINUATION, _LOCATION_CONTINUATION)):
+        log_file = tmp_path / f'orphan-continuation-{index}.log'
+        log_file.write_text(f'[ERROR] {message}\n', encoding='utf-8')
+
+        issues, _, _ = parse_log(log_file)
+
+        assert [issue.message for issue in issues] == [message]
+
+
+def test_a_compile_only_log_attaches_its_unprefixed_continuation_lines(tmp_path):
+    """A compile-only run prints the continuation fields BARE, with no [ERROR] re-print.
+
+    Maven re-prints the compiler error and its continuation fields at `[ERROR]`
+    in the goal-failure block, which is what the epilogue fixtures carry. A log
+    that fails at compile and stops there (no Surefire, no goal-failure block)
+    prints them with no prefix at all, so a parser that only reads prefixed
+    lines loses the name the error refers to.
+    """
+    # Arrange
+    log_file = tmp_path / 'compile-only.log'
+    log_file.write_text(
+        f'[ERROR] {_COMPILER_ERROR}\n  symbol:   class Missing\n  location: class probe.c.Broken\n[INFO] 1 error\n',
+        encoding='utf-8',
+    )
+
+    # Act
+    issues, _, _ = parse_log(log_file)
+
+    # Assert
+    assert [issue.message for issue in issues] == [_COMPILER_ERROR]
+    assert issues[0].detail == f'{_SYMBOL_CONTINUATION}\n{_LOCATION_CONTINUATION}'
+
+
+def test_control_dtest_run_whose_compile_failed_is_not_a_selector_miss(tmp_path):
+    """CONTROL: a ``-Dtest`` run that failed before any test summary claims nothing.
+
+    The absent population is UNKNOWN, never zero: reporting a selector miss here
+    would relabel a compile failure as a wrong selector.
+    """
+    log_file = tmp_path / 'dtest-compile-failure.log'
+    log_file.write_text(f'[ERROR] {_COMPILER_ERROR}\n[INFO] BUILD FAILURE\n', encoding='utf-8')
+
+    assert selector_miss_reason(log_file.read_text(encoding='utf-8'), _DTEST_COMMAND) is None
+
+
+def test_a_continuation_field_after_an_unrelated_line_is_not_adopted(tmp_path):
+    """CONTROL: the continuation window closes on any other unprefixed line.
+
+    Without the close, a `symbol:` line far below a compiler error — a stack
+    frame, another tool's output — would be silently absorbed into that error's
+    detail and never filed itself.
+    """
+    # Arrange
+    log_file = tmp_path / 'stray-continuation.log'
+    log_file.write_text(
+        f'[ERROR] {_COMPILER_ERROR}\n[INFO] unrelated line\n[ERROR] symbol:   class Elsewhere\n',
+        encoding='utf-8',
+    )
+
+    # Act
+    issues, _, _ = parse_log(log_file)
+
+    # Assert — the stray field is its own issue, and the compiler error has no detail.
+    assert [issue.message for issue in issues] == [_COMPILER_ERROR, 'symbol:   class Elsewhere']
+    assert issues[0].detail is None
+
+
+_CONSUMER_PASSING_LINE = (
+    '[WARNING] Tests run: 10, Failures: 0, Errors: 0, Skipped: 1, Time elapsed: 0.412 s -- in Awaits'
+)
+
+
+def test_consumer_passing_line_without_a_test_suffix_is_not_filed():
+    """PIN (order: none) — the consumer's passing Surefire line, class name not ending in `Test`.
+
+    A line reporting zero failures and zero errors is not a diagnostic whatever
+    the class name is. This behaviour shipped before this plan; the test pins it
+    against the consumer's exact wording rather than claiming a fix.
+    """
+    # Arrange
+    log_file = TEST_DATA_DIR / 'maven-consumer-passing-line.log'
+    assert _CONSUMER_PASSING_LINE in log_file.read_text(encoding='utf-8')
+
+    # Act
+    issues, _, _ = parse_log(log_file)
+
+    # Assert
+    assert [issue.message for issue in issues] == []
 
 
 # =============================================================================
@@ -801,3 +939,99 @@ def test_control_maven_in_process_arm_still_parses_its_own_log(capsys):
     emitted = _emit_maven_success(capsys, _full_run_parser)
 
     assert emitted['tests_run'] == 4892
+
+
+# =============================================================================
+# A Surefire -Dtest selector that matched nothing
+# =============================================================================
+#
+# Three states the run must keep apart: a selector Surefire itself rejected
+# (the goal failure), a selector that ran nothing because
+# ``-Dsurefire.failIfNoSpecifiedTests=false`` turned the miss into a pass, and a
+# selector that really executed a test. Only the last one may read as green.
+
+
+_SELECTOR_MISS_LOG = TEST_DATA_DIR / 'maven-selector-miss.log'
+_DTEST_ZERO_EXECUTED_LOG = TEST_DATA_DIR / 'maven-dtest-zero-executed.log'
+_DTEST_ONE_EXECUTED_LOG = TEST_DATA_DIR / 'maven-dtest-one-executed.log'
+
+_DTEST_COMMAND = 'mvnw test -Dtest=Awaits#runs'
+
+
+def test_selector_miss_goal_failure_yields_the_named_reason_and_no_test_failure_issue():
+    """Surefire's `No tests matching pattern` is a command error, not a test failure.
+
+    It is a usage error in the selector, so it must not be filed as a
+    ``test_failure`` finding — and it must surface as the named reason instead
+    of being read as a test that failed.
+    """
+    text = _SELECTOR_MISS_LOG.read_text(encoding='utf-8')
+
+    issues, _, _ = parse_log(_SELECTOR_MISS_LOG)
+
+    assert selector_miss_reason(text, _DTEST_COMMAND) == TEST_SELECTOR_MATCHED_NOTHING
+    assert not [issue for issue in issues if issue.category == 'test_failure']
+
+
+def test_dtest_run_with_zero_executed_tests_yields_the_named_reason():
+    """A passing-looking `-Dtest` run that executed nothing is a selector miss."""
+    text = _DTEST_ZERO_EXECUTED_LOG.read_text(encoding='utf-8')
+
+    assert dtest_selector(_DTEST_COMMAND) == 'Awaits#runs'
+    assert selector_miss_reason(text, _DTEST_COMMAND) == TEST_SELECTOR_MATCHED_NOTHING
+
+
+def test_control_dtest_run_with_an_executed_test_is_not_a_selector_miss():
+    """CONTROL: the same command beside a run that executed a test is not a miss."""
+    text = _DTEST_ONE_EXECUTED_LOG.read_text(encoding='utf-8')
+
+    assert selector_miss_reason(text, _DTEST_COMMAND) is None
+
+
+def test_control_dtest_run_that_collected_a_skipped_test_is_not_a_selector_miss():
+    """CONTROL: a selector that MATCHED a class whose tests are all skipped is not a miss.
+
+    ``executed`` is passed + failed, so a ``@Disabled`` match reports zero
+    executed while collecting one. Reading that as a selector miss would turn a
+    truthful green into a blocking verdict and assert something untrue of the
+    run — the population that answers "did the selector match anything" is the
+    COLLECTED total.
+    """
+    text = (TEST_DATA_DIR / 'maven-dtest-one-skipped.log').read_text(encoding='utf-8')
+
+    assert selector_miss_reason(text, _DTEST_COMMAND) is None
+
+
+#: The three clauses the selector-grammar sentence must state, as build-maven
+#: renders them. Classes are comma-separated, a method follows `#`, and a `+`
+#: list is ONE pattern — the form that silently matches nothing.
+_SELECTOR_GRAMMAR_CLAUSES = (
+    'Classes are separated by commas',
+    'a method goes after `#`',
+    'joined with `+` is one pattern',
+)
+
+#: The clause no other corpus document may restate — the grammar is stated once.
+_GRAMMAR_MARKER = 'Classes are separated by commas'
+
+
+def test_build_maven_skill_states_the_selector_grammar():
+    """``build-maven/SKILL.md`` states the `-Dtest` grammar in all three clauses."""
+    skill_text = (MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'build-maven' / 'SKILL.md').read_text(
+        encoding='utf-8'
+    )
+
+    for clause in _SELECTOR_GRAMMAR_CLAUSES:
+        assert clause in skill_text, clause
+
+
+def test_no_other_corpus_document_restates_the_selector_grammar():
+    """The grammar is stated ONCE in the corpus — build-maven is its only home."""
+    restating = []
+    for document in sorted(MARKETPLACE_ROOT.rglob('*.md')):
+        if document.parts[-2:] == ('build-maven', 'SKILL.md'):
+            continue
+        if _GRAMMAR_MARKER in document.read_text(encoding='utf-8', errors='replace'):
+            restating.append(str(document.relative_to(MARKETPLACE_ROOT)))
+
+    assert restating == []

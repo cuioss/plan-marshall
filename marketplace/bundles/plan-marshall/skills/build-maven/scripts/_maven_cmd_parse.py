@@ -28,6 +28,7 @@ from _build_parse import (
     add_issue_deduped,
     categorize_issue,
     collect_stack_traces,
+    make_dedup_key,
     read_log_text,
 )
 from _build_parse import (
@@ -69,12 +70,47 @@ _MAVEN_EPILOGUE_PATTERNS: tuple[re.Pattern[str], ...] = (
     # Maven 4 logs the failing reactor-summary rows and the banner at [ERROR].
     re.compile(r'\S.* \.{3,} (SUCCESS|FAILURE|SKIPPED)( \[.+\])?'),
     re.compile(r'BUILD FAILURE'),
+    # Section banners: Surefire's results-section headers and the compiler
+    # plugin's banner. The rows UNDER the header carry the diagnostics; the
+    # header itself carries none.
+    re.compile(r'Failures:'),
+    re.compile(r'Errors:'),
+    re.compile(r'COMPILATION ERROR :'),
+)
+
+# Javac's continuation fields. They are printed under the compiler error line
+# that produced them and carry the name that line refers to, so they are
+# attached to that error as its DETAIL rather than filed as issues of their
+# own — but never dropped, and never attached to nothing: a continuation line
+# with no compiler error before it stays filed (fail-visible).
+_COMPILER_CONTINUATION_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r'symbol:\s+\S.*'),
+    re.compile(r'location:\s+\S.*'),
 )
 
 
 def _is_epilogue(message: str) -> bool:
     """Whether a prefix-stripped message is a line of Maven's failure epilogue."""
     return any(pattern.fullmatch(message) for pattern in _MAVEN_EPILOGUE_PATTERNS)
+
+
+def _is_compiler_continuation(message: str) -> bool:
+    """Whether a prefix-stripped message is a javac continuation field."""
+    return any(pattern.fullmatch(message) for pattern in _COMPILER_CONTINUATION_PATTERNS)
+
+
+def _append_detail(issue: Issue, line: str) -> None:
+    """Attach a continuation line to an issue's detail once, preserving order.
+
+    Maven re-prints the compiler's continuation fields at ``[ERROR]`` inside the
+    goal-failure block, so the same line can arrive twice for one issue (the
+    second time after the error itself was de-duplicated). Appending blindly
+    would publish each field twice.
+    """
+    existing = issue.detail.split('\n') if issue.detail else []
+    if line in existing:
+        return
+    issue.detail = '\n'.join([*existing, line])
 
 
 def _is_passing_test_count(message: str) -> bool:
@@ -127,11 +163,18 @@ def _extract_issues(content: str) -> list[Issue]:
 
     Deduplicates issues by key (category:file:line:message_prefix) to avoid
     duplicates from reactor summary and per-module output in multi-module builds.
-    Lines of Maven's failure epilogue and ``Tests run:`` lines with zero failures
-    and zero errors are not issues and are skipped.
+    Lines of Maven's failure epilogue, section banners and ``Tests run:`` lines
+    with zero failures and zero errors are not issues and are skipped.
+
+    Javac's ``symbol:`` / ``location:`` continuation fields are attached to the
+    compiler error they follow as its ``detail``, because dropping them would
+    lose the name the error refers to. A continuation field with no compiler
+    error before it is filed like any other diagnostic.
     """
     issues: list[Issue] = []
     seen: set[str] = set()
+    issues_by_key: dict[str, Issue] = {}
+    last_compiler_error: Issue | None = None
 
     for line in content.split('\n'):
         stripped = line.strip()
@@ -151,7 +194,11 @@ def _extract_issues(content: str) -> list[Issue]:
             # Skip empty messages and continuation lines
             if not message or message.startswith('->'):
                 continue
+            if last_compiler_error is not None and _is_compiler_continuation(message):
+                _append_detail(last_compiler_error, message)
+                continue
             if _is_epilogue(message) or _is_passing_test_count(message):
+                last_compiler_error = None
                 continue
 
             location = parse_file_location(line)
@@ -159,7 +206,7 @@ def _extract_issues(content: str) -> list[Issue]:
             loc_file = location.get('file')
             loc_line = location.get('line')
 
-            add_issue_deduped(
+            added = add_issue_deduped(
                 issues,
                 seen,
                 file=str(loc_file) if loc_file is not None else None,
@@ -168,6 +215,32 @@ def _extract_issues(content: str) -> list[Issue]:
                 severity=severity,
                 category=category,
             )
+            key = make_dedup_key(
+                category,
+                str(loc_file) if loc_file is not None else None,
+                int(loc_line) if loc_line is not None else None,
+                message,
+            )
+            if added:
+                issue = issues[-1]
+                issues_by_key[key] = issue
+            else:
+                issue = issues_by_key[key]
+            # A compiler error opens the window its continuation fields attach
+            # to; any other diagnostic closes it.
+            last_compiler_error = issue if category == 'compilation_error' else None
+            continue
+
+        # An UNPREFIXED javac continuation line under a compiler error is that
+        # error's detail: a compile-only log prints them bare, without Maven
+        # re-printing the block at [ERROR], so dropping them here would lose the
+        # name that the error's own message does not carry. Any other unprefixed
+        # line closes the window, so a stray `symbol:` far below the error is
+        # never adopted.
+        if last_compiler_error is not None and _is_compiler_continuation(stripped):
+            _append_detail(last_compiler_error, stripped)
+        else:
+            last_compiler_error = None
 
     # Attach stack traces to issues
     collect_stack_traces(content.split('\n'), issues)
@@ -311,3 +384,79 @@ def _extract_test_summary(content: str) -> UnitTestSummary | None:
         by_runner=by_runner,
         population=POPULATION_UNMEASURED if unmeasured else POPULATION_MEASURED,
     )
+
+
+# =============================================================================
+# Surefire -Dtest selectors that matched nothing
+# =============================================================================
+
+TEST_SELECTOR_MATCHED_NOTHING = 'test_selector_matched_nothing'
+"""Reason token for a Surefire ``-Dtest`` selector that matched no test.
+
+Distinct from a test failure: nothing ran, so there is no failing test to fix —
+the selector is wrong. Kept as a token rather than prose so the run path, the
+emitted result and a report can agree on one name.
+"""
+
+# Surefire's goal failure when a selector matched nothing:
+#   No tests matching pattern "Awaits#runs" were executed!
+#   (Set -Dsurefire.failIfNoSpecifiedTests=false to ignore this error.)
+_SELECTOR_MISS_PATTERN = re.compile(r'No tests matching pattern "?([^"!\n]*)"? were executed')
+
+# The selector a Maven command carries, e.g. ``-Dtest=Awaits#runs`` or
+# ``-Dtest="Awaits#runs"``.
+_DTEST_SELECTOR_PATTERN = re.compile(r'-Dtest="?([^"\s]+)"?')
+
+
+def dtest_selector(command: str | None) -> str | None:
+    """Return the ``-Dtest`` selector a Maven command carries, or None.
+
+    Args:
+        command: The full Maven command string, when the run path knows it.
+
+    Returns:
+        The selector as written after ``-Dtest=``, or None when the command
+        carries none.
+    """
+    if not command:
+        return None
+    match = _DTEST_SELECTOR_PATTERN.search(command)
+    return match.group(1) if match else None
+
+
+def selector_miss_reason(log_text: str, command: str | None = None) -> str | None:
+    """Return the named reason a Surefire selector matched nothing, or None.
+
+    Two shapes mean the same thing, and both are checked because only one of
+    them reaches a failing build:
+
+    - Surefire's own goal failure, ``No tests matching pattern … were executed``,
+      which ends the build non-zero.
+    - A ``-Dtest`` run that parsed a summary claiming ZERO collected tests. With
+      ``-Dsurefire.failIfNoSpecifiedTests=false`` the same miss exits 0 and
+      prints a passing-looking summary, so the command is needed to know a
+      selector was in play at all. A selector that matched a class whose tests
+      are all skipped collects them, so it is NOT a miss however many executed.
+
+    Args:
+        log_text: The captured build log, already read as text.
+        command: The Maven command string, when the caller knows it.
+
+    Returns:
+        ``TEST_SELECTOR_MATCHED_NOTHING`` when a selector matched nothing,
+        otherwise None. None is also the answer when the population cannot be
+        determined — a run with no parsed summary is not evidence of zero tests.
+    """
+    if _SELECTOR_MISS_PATTERN.search(log_text):
+        return TEST_SELECTOR_MATCHED_NOTHING
+    if dtest_selector(command) is None:
+        return None
+    summary = _extract_test_summary(log_text)
+    # ``total`` — the COLLECTED count — is the population test, not ``executed``.
+    # A selector that matched a class whose tests are all ``@Disabled`` collects
+    # them and runs none: ``executed`` is zero there too, yet the selector did
+    # match and the run is a truthful green. A selector that matched NOTHING
+    # collects nothing at all, so ``total`` is zero.
+    if summary is not None and summary.total == 0:
+        return TEST_SELECTOR_MATCHED_NOTHING
+    return None

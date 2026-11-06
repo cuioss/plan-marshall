@@ -62,6 +62,19 @@ Use `-rf` to restart a failed build:
 ./mvnw clean install -rf :module-name
 ```
 
+### Test canonicals of a reactor root
+
+A root `pom` aggregator owns no test files, so discovery gives it no test ladder of its own — but it is the module the architecture's **default scope** resolves, and `mvn test` at the reactor root runs every module's tests. Discovery therefore emits, for a root `pom` aggregator only, when at least one reactor module has test files:
+
+| Canonical | Command |
+|-----------|---------|
+| `module-tests` | `test` |
+| `test-compile` | `test-compile` |
+
+No `-pl` is added: the whole reactor is the scope. A reactor with no test module gets neither entry — a canonical that would run nothing is a false green, worse than an absent one. A nested aggregator and a single-module `jar` root keep their own answers unchanged.
+
+**Why.** The pre-push gate's whole-tree module-tests arm resolves `module-tests` at default scope first, and that scope answers from the root module. Without the canonicals the arm finds no target and records DEGRADED even though the whole-tree `verify` runs the entire suite.
+
 ### Test ladder for reactor test artifacts
 
 Discovery emits `module-tests` = `test -pl {module} -am` and `test-compile` = `test-compile -pl {module} -am` for a module with tests. A module that consumes a reactor sibling's test artifact gets the `package`-phase ladder instead:

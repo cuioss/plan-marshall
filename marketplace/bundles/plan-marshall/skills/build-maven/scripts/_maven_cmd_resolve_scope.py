@@ -157,6 +157,13 @@ def cmd_resolve_test_scope(args: argparse.Namespace) -> int:
                 'unresolved_paths': list(resolution.unresolved_paths),
                 'root_guards_required': resolution.root_guards_required,
                 'excluded_population': list(resolution.excluded_population),
+                # The shared resolver's narrow-unit fields. Maven narrows to
+                # MODULES, not to a test directory or file, so these are empty —
+                # but the KEYS must be present: the per-task gate parses them, and
+                # an absent key is not the same answer as an empty list.
+                'narrow_units': list(resolution.narrow_units),
+                'narrow_units_unresolved': list(resolution.narrow_units_unresolved),
+                'narrow_unit_module': resolution.narrow_unit_module,
                 'whole_tree_available': modules_resolvable,
                 'footprint_resolvable': footprint_resolvable,
                 'modules_resolvable': modules_resolvable,
