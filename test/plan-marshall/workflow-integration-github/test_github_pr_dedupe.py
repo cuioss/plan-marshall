@@ -116,6 +116,11 @@ _COMMENTS = [
         'path': 'src/a.py',
         'line': 10,
         'resolved': False,
+        # An inline comment is evidence only when the provider places it at the head
+        # the fixture is fetched at; ``deadbeef`` is that head, unchanged across both
+        # fetches, so this case stays about the dedup rather than about placement.
+        'commit_id': 'deadbeef',
+        'thread_reply': False,
     },
     {
         'id': 'c2',
@@ -134,6 +139,8 @@ _COMMENTS = [
         'path': 'src/b.py',
         'line': 5,
         'resolved': False,
+        'commit_id': 'deadbeef',
+        'thread_reply': False,
     },
     {
         'id': 'c4',

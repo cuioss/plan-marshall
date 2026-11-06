@@ -47,6 +47,39 @@ _SHIPPED_BOTS = ['coderabbit', 'cuioss-review-bot', 'sourcery']
 # =============================================================================
 
 
+def test_sourcery_declares_its_oss_footer_separately_from_its_whole_comment_markers():
+    """A footer marker is removed from the body before the signal test, never a drop.
+
+    The two marketing lines are the only footer markers any shipped bot declares.
+    Keeping them out of ``ignore_patterns`` is what lets a review body that carries
+    Overall Comments AND the footer be filed.
+    """
+    footer = bot_registry.footer_patterns('sourcery')
+    whole_comment = bot_registry.ignore_patterns('sourcery')
+
+    assert footer, 'sourcery declares no footer markers'
+    assert set(footer).isdisjoint(whole_comment), 'a footer marker is still a whole-comment drop'
+    assert any('Sourcery is free for open source' in marker for marker in footer)
+    assert any('Help me be more useful' in marker for marker in footer)
+
+
+def test_only_sourcery_declares_footer_markers():
+    """⛔ MATCHED NEGATIVE CONTROL: every other bot's markers stay whole-comment drops."""
+    for bot_kind in bot_registry.bot_kinds():
+        if bot_kind == 'sourcery':
+            continue
+        assert bot_registry.footer_patterns(bot_kind) == [], f'{bot_kind} declares a footer marker'
+
+
+def test_the_sourcery_doc_states_the_footer_rule_once():
+    """The doc's two contradictory statements collapse into one rule, stated once."""
+    text = (bot_registry.STANDARDS_DIR / 'sourcery.md').read_text(encoding='utf-8')
+
+    rule = 'never causes a drop by itself'
+    assert text.count(rule) == 1, f'the footer rule is stated {text.count(rule)} times'
+    assert 'filtered downstream via the `ignore_patterns`' not in text
+
+
 def test_severity_map_per_bot():
     """Each bot's marker->severity map is parsed as a nested mapping."""
     coderabbit = bot_registry.severity_map('coderabbit')

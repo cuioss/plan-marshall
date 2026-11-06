@@ -66,8 +66,13 @@ SEED_SYMBOLS: tuple[str, ...] = (
     'participation_evidence',
     'participation_evidence_marker',
     'participation_evidence_markers',
+    'participation_evidence_markers_for',
     '_validate_participation_evidence_markers',
     '_is_participation_evidence',
+    'review_coverage_verdict',
+    '_evidence_named_verdict',
+    'review_coverage_is_finished',
+    'review_coverage_marker_present',
     'head_sha_verified',
     'stale_participation',
     'existing_comment_keys',
@@ -214,6 +219,15 @@ SITE_EXPECTATIONS: dict[str, SiteExpectation] = {
         'yes',
         'Per-bot registry record. Declares participation_requires_update: false.',
     ),
+    f'{_SKILLS}/runbook-lane/SKILL.md': SiteExpectation(
+        'normative_text',
+        'commit_sha',
+        'not_applicable',
+        'The merge gate states the qualifying-review rule for a quota-limited reviewer: a '
+        'marker-bearing summary comment whose sourceCommitId / coveredCommitId name one of the '
+        'PR’s heads and whose kind is reviewed. It points at review_coverage_verdict as the ONE '
+        'parser of those fields and evaluates nothing itself.',
+    ),
     f'{_SKILLS}/phase-6-finalize/SKILL.md': SiteExpectation(
         'normative_text',
         'commit_sha',
@@ -354,6 +368,11 @@ CANDIDATE_EXCLUSIONS: dict[str, str] = {
         'describes a notice, never a review — it shares the word with stale_participation and '
         'nothing else. It credits no bot and anchors on no commit; its one consumer is the '
         'recovery selector, which uses it to decide that no rate window is claimed.'
+    ),
+    '_REVIEW_COVERAGE_REVIEWED_KIND': (
+        'The KIND VALUE a review-coverage marker must carry to be a finished review: a label on '
+        'the marker payload, not a decision. The decision that reads it is review_coverage_verdict, '
+        'which anchors the credit on the marker’s covered commit; this constant owns no site.'
     ),
 }
 

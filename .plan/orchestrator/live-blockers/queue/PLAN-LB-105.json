@@ -2,10 +2,10 @@
   "id": "PLAN-LB-105",
   "slug": "review-gate-grading-truth",
   "workstream": "WS-03",
-  "status": "running",
+  "status": "shipped",
   "lane": "runbook",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "plan_marshall_plan_id": "lb-105-review-gate-grading-truth",
+  "pr": "1913",
+  "landing": "landings/PLAN-LB-105.md",
   "seq": 106
 }
