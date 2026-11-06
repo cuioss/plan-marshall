@@ -299,12 +299,13 @@ REASON_REQUIRED_COVERAGE_UNKNOWN = 'required_coverage_unknown'
 #: dimension this means THIS CHECK IS BROKEN rather than that the project is
 #: un-crawlable, so it is named apart.
 REASON_VOCABULARY_UNIMPORTABLE = 'analysis_vocabulary_unimportable'
-#: ``scope_cross_check_reason`` when no candidate row's ``args`` carries a
-#: readable ``--command-args``, or every canonical it names is outside the known
-#: vocabulary, or a row carries a flag that is neither a known scope-bearing one
-#: nor a known non-narrowing companion — so its blast radius cannot be placed
-#: inside or outside the command's lost quoting. The rows were read and said
-#: nothing usable — distinct from a row that said something and was refuted.
+#: ``scope_cross_check_reason`` when no candidate row can be read for scope: its
+#: ``args`` carries no ``--command-args``, or every canonical it names is outside
+#: the known vocabulary, or a row carries a flag that is neither a known
+#: scope-bearing one nor a known non-narrowing companion — so its blast radius
+#: cannot be placed inside or outside the command's lost quoting. The rows were
+#: read and said nothing usable about coverage — distinct from a row that said
+#: something and was refuted.
 REASON_SCOPE_UNREADABLE = 'build_scope_unreadable'
 #: ``stale`` reason (and ``scope_cross_check_reason``). THE refusal this
 #: dimension exists to make.
@@ -335,11 +336,12 @@ _COMMAND_ARGS_FLAG = '--command-args'
 
 #: Flags a build tool's resolved executable carries that NARROW the run to a
 #: subset of modules, mapped to the number of value tokens each consumes. Each
-#: entry is the flag its own skill's executable actually accepts:
+#: entry is grounded in a resolver in this repository:
 #:
-#: * ``-pl`` / ``--projects`` — maven's module list (``mod-a`` or ``mod-a,mod-b``);
-#: * ``-p`` — gradle's project-directory selector;
-#: * ``-w`` / ``--workspace`` — npm's workspace selector.
+#: * ``-pl`` / ``--projects`` — maven's module list (``mod-a`` or ``mod-a,mod-b``),
+#:   emitted beside ``-am`` by ``_maven_cmd_discover``;
+#: * ``--workspace`` — npm's workspace selector, emitted as ``--workspace=<name>``
+#:   by ``_npm_cmd_discover``.
 #:
 #: ⛔ A flag NOT in this map is deliberately NOT propagated as scope. The ledger
 #: joins its argv without quoting, so a flag after the canonical command cannot be
@@ -349,8 +351,6 @@ _COMMAND_ARGS_FLAG = '--command-args'
 _SCOPE_FLAGS: dict[str, int] = {
     '-pl': 1,
     '--projects': 1,
-    '-p': 1,
-    '-w': 1,
     '--workspace': 1,
 }
 
