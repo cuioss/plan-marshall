@@ -135,6 +135,70 @@ derive, for rows still live.
     repository, and D3 is dropped if the operator rules the Sonar ruling covers it. Sequence after PLAN-LB-106 and PLAN-LB-108
     (shared `runbook-lane/SKILL.md` and `test_runbook_lane.py`).
 
+- **PLAN-LB-109** (shipped #1911, merge `051fda6a0`, runbook lane, WS-01) — read on three layers; see `landings/PLAN-LB-109.md`. D1 and D3
+  shipped as specified, D2 and D4 modified (D4's unmeasured-arm Done-when is reported not met as written by the lane; this reading
+  does not settle it). Layer 3 has no blocker, **one major** (B7's `completed_tasks_delta` has no stated source, so a dispatch that did
+  complete tasks can be reclassified `error`) and a layer-1 major (the hand-back check runs before the predicate, as the spec asked, so
+  a stall beside a hand-back on a non-owed task is never seen); 13 minor and 2 info. No collision with a running plan; the diff adds 22
+  paths beyond the declared surface, all explained.
+  - **Open Defect (layer 3, carried by PLAN-LB-117):** the two majors above and the minor manifest bookkeeping defects L3-2 to L3-4
+    (`owed_rung_command` overwritten, staleness by deliverable, chain order ignoring outside dependencies).
+  - **Open Defect (my spec, carried by PLAN-LB-117 D3):** "owed rung" is undefined in the spec and bullet 3 and the D4 Done-when read as
+    contradictory; the shipped spec is not rewritten, and the fix plan states the definition.
+  - **Open Defect (landing facts):** `rb-lb-109-execute-prescribed-yield-not-error-001.md` is `complete: false`, `missing_keys:
+    total_tokens` (the standing runbook-lane recurrence; measurement out of scope, nothing staged).
+  - **Watch:** the lane's "CodeRabbit confirmed the fix and resolved its thread" is unverified (one review thread, resolution and the
+    11:46 review body not read). Retire when read.
+  - **Queue annotation, PLAN-LB-110:** this merge changed `execute-task/SKILL.md`, which PLAN-LB-110 D4 declares; re-read its line
+    references at its outline.
+  - **Fix plan staged 2026-11-05 on the operator's word: PLAN-LB-117** (WS-01, runbook lane, five deliverables). D1 a stall on a
+    non-owed task beside a hand-back is still decided, and a hand-back's step ids are checked against the manifest (the layer-1 major);
+    D2 `completed_tasks_delta` has a stated source and an absent input is not read as zero (the layer-3 major); D3 "owed rung" defined
+    once and a leaf-side test of the unmeasured arm (settles the disputed Done-when); D4 the manifest bookkeeping (L3-2 to L3-5,
+    separable); D5 the contradicting documentation lines and the transitional wording (separable). Declarative, 11 entries, 0
+    unresolved; no overlap with the running plans. It shares `execute-task/SKILL.md` and the `test/plan-marshall/execute-task/`
+    directory with the staged PLAN-LB-110, so the two together need an overlap prompt. Not carried: the leads L3-12, L3-13 and L3-16, the
+    `verify` timeout residue and the Sourcery size limit.
+
+- **PLAN-LB-105** (shipped #1913, merge `ce29d4b1f` (a squash on parent `60aa555e5`), runbook lane, WS-03) — read on three layers; see
+  `landings/PLAN-LB-105.md`. The lane reports 3 of 4 deliverables (D1's literal merge-base Done-when "not met as written"; the lane is
+  right, it is a defect of my spec: the changed set is a three-dot diff, so an untouched file is never read). D2 and D1 shipped modified,
+  D3 and D4 as specified. The diff adds 3 paths beyond the declared surface and leaves 3 declared paths untouched, all explained. No
+  collision with a running plan. Every CodeRabbit review thread is resolved; the final head has no bot review (rate limited).
+  - **Open Defect (layer 3, reported, nothing staged):** five majors in the gate this plan made: the changed test set pools the
+    after-counts of a test name across every file, so a same-named test elsewhere hides a deleted file's loss (more permissive than the
+    base); a test function moved out of a surviving file reports a blocking row with no identity that can never be accepted (a fourth
+    loss case, against "a moved test is not a lost assertion" and the docs' "exactly three cases"); a plan without a worktree is graded
+    against whatever the main checkout holds, with no HEAD or dirty-tree check; the re-arm of `taken_into_account` has no rule, source
+    or phase filter; and a no-identity row is never accepted (not shown by reading). Twelve minor and one info, including an uncaught
+    git timeout and transitional wording. Carried by the fix plan PLAN-LB-118.
+  - **Open Defect (layer 2, carried by PLAN-LB-118 D2):** a `**Tests to remove:**` bullet without a count accepts the identity for any
+    count, drops of surviving tests included, against the spec's identity-plus-count key.
+  - **Open Defect (my spec, carried by PLAN-LB-118 D3 and D5):** D3's premise that `taken_into_account` is only the review's own
+    disposition is false (the triage workflow records an operator Hold as `taken_into_account`); D4's migration rule has no
+    discriminator and D3's `--reopen` clause is inverted for that resolution. The shipped spec is not rewritten; the fix plan states the
+    corrected premise.
+  - **Open Defect (landing facts):** `rb-lb-105-review-gate-grading-truth-001.md` is `complete: false`, `missing_keys: total_tokens`
+    (the standing runbook-lane recurrence; measurement out of scope, nothing staged).
+  - **Watch (answered):** the `quality-report` drain asked that this landing be read for the base anchor. The changed set was already a
+    three-dot diff; the pre-image now reads at the merge base (`_review_support_integrity.py:213-222`), with a near-dead fall-back to the
+    tip. Retire that item.
+  - **Watch (unverified):** the review at 12:57 (body not read), the doc test and fixture claims, and whether a close without
+    `--accept` is a working exit for a no-identity row. Retire when read.
+  - **Queue annotation, parked PLAN-LB-75:** this merge changed `review_support.py` and `_criteria_snapshot.py`, which LB-75 D1 and D4
+    declare; re-read its function and line references at its re-grounding and against the no-identity and pooled-count defects.
+  - **Queue annotation, PLAN-LB-107:** it shares `phase-6-finalize` with this merge; re-read its references at its outline.
+  - **Started by the operator 2026-11-05 (row `running`):** PLAN-LB-107 (after PLAN-LB-117). Running now: PLAN-LB-106, PLAN-LB-114,
+    PLAN-LB-117, PLAN-LB-107 (four of four slots).
+  - **Fix plan staged 2026-11-05 on the operator's word: PLAN-LB-118** (WS-03, runbook lane, five deliverables; the single fix plan for
+    the layer-1, layer-2 and layer-3 findings above). D1 a loss decided per identity (the pooled-count hole, a moved function is not a
+    loss, every row acceptable, class scope and indented skip marker); D2 an accepted removal is exactly what was accepted (the
+    count-less declaration, the close reads the validated head and keeps every row of a path); D3 a re-file re-arms only what the loop
+    back superseded, never an operator Hold; D4 the evidence root and the git calls fail closed (separable); D5 the parser edges and the
+    contradicting and transitional text (separable). Declarative, 17 entries (explicit files, no directory), 0 unresolved; no shared
+    file with the four running plans. Queued: all four slots are full. Sequence against parked PLAN-LB-75 (shares `review_support.py`
+    and `_criteria_snapshot.py`). Not carried: nothing of the five majors; the leads settle first at outline.
+
 - **PLAN-LB-39** (shipped #1768, 2026-10-14) — 0 met / 4 partial / 3 unmet against its spec,
   counted 7/7, five regressions; see `landings/PLAN-LB-39.md`. Fix-forward PLAN-LB-50; unshipped
   deliverables re-staged as PLAN-LB-51 (Antigravity) and PLAN-LB-52 (harness-agnostic, as scripts).
@@ -743,6 +807,43 @@ derive, for rows still live.
 
 ## Decisions
 
+- 2026-11-05 — **Inbox drain (one message: `quality-report-001`, a collected `finding` the operator filed from the `quality-report`
+  epic: seven themes plus six dated addenda, about sixty sender messages, plugin versions 0.1.2027 to 0.1.2046).** Valid and live.
+  Disposition **observed**: nothing staged and no spec edited. The message says its content was not verified by its own orchestrator,
+  and it was not verified here either: this entry only maps it against this ledger, so every claim below is a lead.
+  - Theme 1, CodeRabbit one-review-per-hour quota (and its recurrences in PLAN-12, 20 and 10): out of focus. The standing rulings are
+    that a quota refusal means wait and that, with one valid review, moving on is correct and is never asked. PLAN-LB-101 D4 (shipped
+    #1890) made the quota wait default-on at 5400 s and ten windows. **Watch (unverified):** PLAN-20 reports switching
+    `review_rate_window_await` on by hand after its first refusal; if the new default had reached that project it would not have
+    been needed, so an existing consumer `marshal.json` may keep the old value. One check, not a plan.
+  - Theme 2, merge gate bound to the exact HEAD (PLAN-01-001/002, PLAN-02-002, PLAN-06-002, PLAN-10-005/006, PLAN-12-004,
+    PLAN-20-004, PLAN-21-002/003): the ledger already holds this class. PLAN-LB-107 (staged, not started) owns the waiver, the
+    head-dependence source and the published grant labels; PLAN-LB-55 D1 and PLAN-LB-93 D5 shipped in part; PLAN-LB-100 shipped
+    `record-merge` and `consequence-text`. **Read this message at PLAN-LB-107's outline.** Two items it may not name, because its spec
+    was not read for them here: the pre-push gate making its own source commit that moves HEAD past the validated build
+    (PLAN-10-005), and a forwarded `--head-at-completion` the step does not own (PLAN-21-002).
+  - Theme 3, installed scripts lag the docs: `pre_merge_gate record-merge` and `consequence-text` shipped with PLAN-LB-100 and are
+    installed since the sync of 2026-10-30; the report itself says PLAN-21 ran with the executor equal to the plugin version and the
+    drift was gone. The rest are invented or misplaced flags, the argparse-rejection class the repository already has a recipe for.
+    One lead has no home: a failure marker keeps the argv but not the argparse error text (PLAN-01-006).
+  - Theme 4, bookkeeping slips: PLAN-LB-91 (shipped #1847) covers a history rewrite (rows remapped, `history_rewritten` against
+    `bookkeeping_gap`). **Watch (unverified, candidate blocking):** an inline commit made after the per-deliverable commits (a finalize
+    review-fix, a triage fix) carries no `kind=change` row, and the 5-execute to 6-finalize transition was refused for it in
+    PLAN-03-004 and twice in PLAN-08-010, whose log names only the first missing SHA. The guard is right; the inline paths would
+    append their own row. Not checked here against LB-91's merged code.
+  - Addenda, two items with an owner: `review_support test-integrity` anchors on the `origin/main` tip with a two-dot comparison, so
+    a branch that lags a moved `main` gets a false `weakened_test` (PLAN-23-001): PLAN-LB-105 (running) owns `weakened_test` grading
+    truth, so **read its landing for the base anchor** (merge-base). A pre-push `test-compile` that cannot resolve a test-jar consumer,
+    filed as 120 `build-error` findings that held a merge dispatch until each was rejected by hand, and a Maven `module-tests` arm
+    reported un-gated on every push (PLAN-21-001, PLAN-11-002, PLAN-08, PLAN-23-002; seven plans): PLAN-LB-110 (staged, not started,
+    Maven consumer test truth) and the shipped PLAN-LB-58 D3 are the owners, so **read it at PLAN-LB-110's outline**.
+  - Discarded under the focus rule, none blocking: theme 5 (outline and plan quality) and theme 6 (a stale PR body after a
+    loop-back), the `manage-tasks list --status` multi-value request, the lessons-capture routing slip (PLAN-23), and every
+    measurement item (`effort` unknown, `total_tokens`, placeholder metric rows, phase-boundary stamps). Project-owned lessons were
+    excluded by the sender and are not part of the message.
+  - Not done: no message was delivered to a running plan's mailbox. Putting unverified leads into a running lane is the operator's
+    call. If the operator wants a plan, the candidate blocking set is the inline-commit ledger row, the gate's own source commit, and
+    the test-integrity base anchor, in that order, each only after a read of the owning plan's merged code.
 - 2026-11-04 — **Inbox drain (ten messages: `lessons-routing-075` to `-083` and `pm-mcp-core-m2-m4-v2-001`).** Every message was valid
   and live. Three took a recorded action and seven were first **discarded** under the FOCUS RULE; the operator then asked for the
   domain changes ("put all the domain changes into one plan"), so those seven are **staged as one plan, PLAN-LB-113** (see the

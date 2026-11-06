@@ -35,6 +35,7 @@ never on an internal call.
 from __future__ import annotations
 
 import argparse
+import json
 
 import bot_registry
 import github_re_review
@@ -137,13 +138,16 @@ def _participation_flag(find_result):
     return ','.join(f'{row["bot_kind"]}:{row["evidence_kind"]}' for row in find_result['participated_bots'])
 
 
-def _classify(plan_id, find_result, declined_bots=None):
+def _classify(plan_id, find_result, declined_bots=None, refused_bots=None):
     """The step-done participation guard over CodeRabbit as the only required bot."""
+    stale = [row['bot_kind'] for row in find_result.get('stale_participation_bots') or []]
     return rc.check_completeness(
         plan_id,
         [_BOT],
         participated_bots=rc.parse_participation(_participation_flag(find_result)),
         declined_bots=declined_bots or [],
+        refused_bots=refused_bots or [],
+        stale_participation_bots=stale,
     )
 
 
@@ -306,3 +310,254 @@ def test_a_verdict_naming_no_head_is_recorded_as_a_decline(plan_context, monkeyp
     assert envelope['head_sha_verified'] is False
     assert declined == [_BOT]
     assert _state_of(result, _BOT) == rc.STATE_PARTICIPATED_BUT_EMPTY
+
+
+# ---------------------------------------------------------------------------
+# The current CodeRabbit summary format — credited from its own head marker
+# ---------------------------------------------------------------------------
+
+#: The prefix of CodeRabbit's coverage marker, read from the one place that
+#: documents the shape: the merge-gate prose the runbook lane and the registry
+#: doc both name. The field set is parsed out of the JSON that follows it.
+_COVERAGE_PREFIX = '<!-- final_review_risk_coverage:'
+
+
+def _coverage_summary(covered, kind='reviewed', source=None):
+    """A new-format CodeRabbit summary whose coverage marker names ``covered``.
+
+    ``covered`` is the commit the review covered — the field the credit is bound
+    to. ``kind`` is the verdict; only ``reviewed`` is a finished review.
+    """
+    payload = {
+        'sourceCommitId': source or covered,
+        'coveredCommitId': covered,
+        'kind': kind,
+    }
+    body = f'{_COVERAGE_PREFIX}{json.dumps(payload, separators=(",", ":"))} -->'
+    return f'{body}\nNo actionable comments were generated in the recent review.'
+
+
+def _stub_provider_at(monkeypatch, comments, head):
+    """Stub the provider surface at ``head`` rather than the module's fixed HEAD."""
+    _stub_provider(monkeypatch, comments)
+    for module in (github_pr, github_re_review):
+        monkeypatch.setattr(module._github, 'fetch_pr_head_sha', lambda pr_number: head)
+
+
+def test_a_new_format_summary_credits_the_head_it_covers(plan_context, monkeypatch):
+    """The current summary format proves a finished review of the head it names.
+
+    The rewritten summary carries ``final_review_risk_coverage`` instead of the
+    retired ``<!-- recent_review_start -->`` marker, so before this rule the bot
+    that published it was credited nothing and the quorum stayed open on a review
+    that had finished.
+    """
+    plan_id = 'crr-new-format-summary'
+    _stub_provider(monkeypatch, [_comment('cr-coverage', _coverage_summary(_HEAD_SHA))])
+
+    find_result = _find(plan_context, plan_id)
+    result = _classify(plan_id, find_result)
+
+    assert find_result['participated_bots'] == [{'bot_kind': _BOT, 'evidence_kind': 'issue_comment'}]
+    assert find_result['count_stored'] == 0
+    assert result['participation_complete'] is True
+    assert _state_of(result, _BOT) == rc.STATE_PARTICIPATED_BUT_EMPTY
+
+
+def test_a_new_format_summary_covering_an_earlier_head_is_stale(plan_context, monkeypatch):
+    """⛔ MATCHED NEGATIVE CONTROL: the same shape covering another head proves no review of this one."""
+    plan_id = 'crr-new-format-earlier-head'
+    _stub_provider(monkeypatch, [_comment('cr-coverage', _coverage_summary(_OTHER_SHA))])
+
+    find_result = _find(plan_context, plan_id)
+    result = _classify(plan_id, find_result)
+
+    assert find_result['participated_bots'] == []
+    assert find_result['stale_participation_bots'] == [{'bot_kind': _BOT, 'evidence_kind': 'issue_comment'}]
+    assert _state_of(result, _BOT) == rc.STATE_PARTICIPATED_STALE
+    assert result['participation_complete'] is False
+
+
+def test_a_new_format_summary_with_a_non_reviewed_kind_credits_nothing(plan_context, monkeypatch):
+    """⛔ A coverage marker whose ``kind`` is not ``reviewed`` is not a finished review."""
+    plan_id = 'crr-new-format-not-a-review'
+    _stub_provider(monkeypatch, [_comment('cr-coverage', _coverage_summary(_HEAD_SHA, kind='walkthrough'))])
+
+    find_result = _find(plan_context, plan_id)
+
+    assert find_result['participated_bots'] == []
+
+
+def test_a_new_format_summary_answers_the_re_review_for_its_head(plan_context, monkeypatch):
+    """The re-review wait ends on the finished summary rather than timing out on it."""
+    _stub_provider(monkeypatch, [_comment('cr-coverage', _coverage_summary(_HEAD_SHA))])
+
+    envelope = _re_review()
+
+    assert envelope['matched'] is True
+    assert envelope['head_sha_verified'] is True
+
+
+def test_a_new_format_summary_covering_another_head_declines_the_re_review(plan_context, monkeypatch):
+    """⛔ MATCHED NEGATIVE CONTROL: an answer that names another commit is a decline, not a verification."""
+    _stub_provider(monkeypatch, [_comment('cr-coverage', _coverage_summary(_OTHER_SHA))])
+
+    envelope = _re_review()
+
+    assert envelope['matched'] is True
+    assert envelope['head_sha_verified'] is False
+
+
+#: CodeRabbit's command-invocation refusal — the older quota reply that used to
+#: withhold a finished review's credit.
+_QUOTA_REFUSAL = (
+    '<!-- This is an auto-generated reply by CodeRabbit --> '
+    '<details> <summary>(warning) Action not completed</summary> '
+    'Review rate limited. </details>'
+)
+
+
+def _refusal_comment(comment_id):
+    """One CodeRabbit refusal reply, created before the finished review."""
+    comment = _comment(comment_id, _QUOTA_REFUSAL)
+    comment['created_at'] = '2025-12-31T23:00:00Z'
+    comment['updated_at'] = '2025-12-31T23:00:00Z'
+    return comment
+
+
+def test_a_finished_head_review_outranks_an_older_quota_refusal(plan_context, monkeypatch):
+    """A refusal that predates a head-bound review no longer withholds that review's credit."""
+    plan_id = 'crr-refusal-superseded'
+    _stub_provider(
+        monkeypatch,
+        [_refusal_comment('cr-refusal'), _comment('cr-coverage', _coverage_summary(_HEAD_SHA))],
+    )
+
+    find_result = _find(plan_context, plan_id)
+    result = _classify(plan_id, find_result, refused_bots=['coderabbit'])
+
+    assert find_result['refused_bots'] == ['coderabbit']
+    assert find_result['participated_bots'] == [{'bot_kind': _BOT, 'evidence_kind': 'issue_comment'}]
+    assert _state_of(result, _BOT) == rc.STATE_PARTICIPATED_BUT_EMPTY
+    assert result['participation_complete'] is True
+
+
+def test_a_refusal_with_no_head_bound_review_still_withholds_the_credit(plan_context, monkeypatch):
+    """⛔ MATCHED NEGATIVE CONTROL: the refusal alone still blocks — nothing was superseded."""
+    plan_id = 'crr-refusal-alone'
+    _stub_provider(monkeypatch, [_refusal_comment('cr-refusal')])
+
+    find_result = _find(plan_context, plan_id)
+    result = _classify(plan_id, find_result, refused_bots=['coderabbit'])
+
+    assert find_result['participated_bots'] == []
+    assert _state_of(result, _BOT) == rc.STATE_REFUSED_AWAITABLE
+    assert result['participation_complete'] is False
+
+
+def test_a_review_body_edited_in_place_naming_an_earlier_commit_credits_nothing(plan_context, monkeypatch):
+    """An in-place edit alone credits nothing when the evidence names another commit.
+
+    The review body carries the commit the provider says it was submitted against.
+    At the later HEAD the edit moves ``updated_at``, which the fresh-edit arm used
+    to credit; the reported commit decides instead.
+    """
+    plan_id = 'crr-review-edited-earlier'
+    original = _comment('cr-review', 'Actionable comments posted: 1.')
+    original.update({'kind': 'review_body', 'commit_id': _HEAD_SHA})
+
+    _stub_provider_at(monkeypatch, [original], head=_HEAD_SHA)
+    first = _find(plan_context, plan_id)
+    assert first['participated_bots'] == [{'bot_kind': _BOT, 'evidence_kind': 'review_body'}]
+
+    edited = {**original, 'updated_at': '2026-01-01T00:20:00Z'}
+    _stub_provider_at(monkeypatch, [edited], head=_OTHER_SHA)
+    second = _find(plan_context, plan_id)
+
+    assert second['participated_bots'] == []
+    assert second['stale_participation_bots'] == [{'bot_kind': _BOT, 'evidence_kind': 'review_body'}]
+
+
+def test_a_summary_edited_in_place_still_naming_an_earlier_commit_credits_nothing(plan_context, monkeypatch):
+    """The same rule through the coverage marker: the covered commit decides, not the edit.
+
+    The summary carries BOTH markers — the retired one so the pre-fix producer
+    admits it at all, and the coverage marker naming the earlier head.
+    """
+    plan_id = 'crr-coverage-edited-earlier'
+    body = f'{bot_registry.participation_evidence_marker(_BOT, "issue_comment")}\n{_coverage_summary(_HEAD_SHA)}'
+    original = _comment('cr-coverage', body)
+
+    _stub_provider_at(monkeypatch, [original], head=_HEAD_SHA)
+    first = _find(plan_context, plan_id)
+    assert first['participated_bots'] == [{'bot_kind': _BOT, 'evidence_kind': 'issue_comment'}]
+
+    edited = {**original, 'updated_at': '2026-01-01T00:20:00Z'}
+    _stub_provider_at(monkeypatch, [edited], head=_OTHER_SHA)
+    second = _find(plan_context, plan_id)
+
+    assert second['participated_bots'] == []
+    assert second['stale_participation_bots'] == [{'bot_kind': _BOT, 'evidence_kind': 'issue_comment'}]
+
+
+def test_the_registry_declares_the_marker_the_parser_reads():
+    """The registry's declared literal and the parser's marker name are one fact.
+
+    The parser names the marker in code, the gate names it in registry data. A rename
+    in either place would leave the gate passing on the new literal while the parser
+    stopped finding the old one — a silent fall-through to the ledger arms.
+    """
+    from _github_pr import _REVIEW_COVERAGE_MARKER
+
+    markers = bot_registry.participation_evidence_markers_for(_BOT, 'issue_comment')
+    assert any(_REVIEW_COVERAGE_MARKER in marker for marker in markers), (
+        'the registry declares no literal carrying the parser marker name'
+    )
+
+
+def test_a_non_reviewed_coverage_marker_is_not_a_re_review_answer(plan_context, monkeypatch):
+    """⛔ An in-progress / non-reviewed coverage marker is no answer, so nothing is declined.
+
+    The marker gate admits it on the literal, so without the finished check the await
+    would end on it as ``matched: true`` / ``head_sha_verified: false`` — a decline the
+    bot never made.
+    """
+    _stub_provider(monkeypatch, [_comment('cr-coverage', _coverage_summary(_HEAD_SHA, kind='in_progress'))])
+
+    envelope = _re_review()
+
+    assert envelope['matched'] is False
+
+
+def test_a_present_but_unreadable_coverage_marker_never_credits(plan_context, monkeypatch):
+    """A marker whose payload cannot be parsed is a claim nobody can evaluate, so it never credits.
+
+    Presence is tested on the marker's HTML-comment opener, not on the parsing pattern:
+    a body carrying the opener with a broken payload must not be read as "no marker" and
+    fall through to a ledger arm that would credit it.
+    """
+    plan_id = 'crr-coverage-unreadable'
+    body = f'<!-- final_review_risk_coverage: not-json -->\n{_COVERAGE_PREFIX}{{broken'
+    _stub_provider(monkeypatch, [_comment('cr-coverage', body)])
+
+    find_result = _find(plan_context, plan_id)
+
+    assert find_result['participated_bots'] == []
+
+
+def test_prose_mentioning_the_marker_name_is_not_a_marker(plan_context, monkeypatch):
+    """⛔ A review body that merely names the marker is decided by its own reported commit.
+
+    The identifier appears in prose and in code spans in this very repository, so a
+    presence test on the bare name would read such a body as an unreadable marker and
+    discard the provider's `commit_id` — the stronger evidence.
+    """
+    plan_id = 'crr-coverage-prose-mention'
+    body = 'This change makes `final_review_risk_coverage` the one marker the gate reads.'
+    comment = _comment('cr-review', body)
+    comment.update({'kind': 'review_body', 'commit_id': _HEAD_SHA})
+    _stub_provider(monkeypatch, [comment])
+
+    find_result = _find(plan_context, plan_id)
+
+    assert find_result['participated_bots'] == [{'bot_kind': _BOT, 'evidence_kind': 'review_body'}]

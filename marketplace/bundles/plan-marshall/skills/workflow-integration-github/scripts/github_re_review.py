@@ -138,21 +138,21 @@ a bot that never responded at all. A refusal the stack can READ still outranks
 it; the class displaces only the enumerative arm, which would otherwise read the
 short anchor-less acknowledgment as a refusal nobody could read.
 
-**A comment without the bot's verdict marker is not an answer.** A bot that
-declares an ``issue_comment`` marker in its registry
-``participation_evidence_markers`` publishes its finished review inside that
-marker — CodeRabbit wraps its verdict in ``<!-- recent_review_start -->``. The
-same comment without the marker is a review that has not finished: the
-walkthrough, or the summary CodeRabbit edits to its in-progress state while a
-review runs. That in-progress summary names the head SHA as the end of the range
-under review, so before the gate it was eligible, verified the head, and ended
-the wait as ``head_sha_verified: true`` on a review still running.
+**A comment without one of the bot's finished-review markers is not an answer.** A bot
+that declares ``issue_comment`` markers in its registry
+``participation_evidence_markers`` publishes its finished review inside one of them —
+CodeRabbit wraps it in ``<!-- recent_review_start -->``, or in the current
+``final_review_risk_coverage`` artifact. The same comment without any of them is a
+review that has not finished: the walkthrough, or the summary CodeRabbit edits to its
+in-progress state while a review runs. That in-progress summary names the head SHA as
+the end of the range under review, so before the gate it was eligible, verified the
+head, and ended the wait as ``head_sha_verified: true`` on a review still running.
 :meth:`_ReReviewStrategy._match_bot_comment` therefore admits a comment of such a
-bot only when its body carries the marker. The gate runs after the refusal stack
-and the acknowledgment test, so a marker-less refusal is still recorded; a
-marker-less comment neither of them classified is skipped without a record. This
+bot only when its body carries one of the declared literals. The gate runs after the
+refusal stack and the acknowledgment test, so a marker-less refusal is still recorded;
+a marker-less comment neither of them classified is skipped without a record. This
 is the gate the producer
-already applies to participation credit (``bot_registry.participation_evidence_marker``),
+already applies to participation credit (``bot_registry.participation_evidence_markers_for``),
 now applied to the re-review answer too. A bot declaring no marker for the shape
 is unaffected.
 
@@ -284,6 +284,9 @@ from _github_pr import (
     refusal_cause,
     refusal_condition,
     refusal_size_cap,
+    review_coverage_is_finished,
+    review_coverage_marker_present,
+    review_coverage_verdict,
 )
 from ci_base import (
     DEFAULT_CI_INTERVAL,
@@ -424,8 +427,23 @@ def _verifies_head_sha(matched_signal: str, record: dict | None, head_sha: str) 
     if matched_signal == 'review':
         return True
     if matched_signal == 'issue_comment':
-        return _references_head_sha(str(record.get('body') or ''), head_sha)
+        return _body_names_head(str(record.get('body') or ''), head_sha)
     return False
+
+
+def _body_names_head(body: str, head_sha: str) -> bool:
+    """Whether ``body`` names ``head_sha`` as the commit its review covered.
+
+    A review-coverage marker is the comment's own STRUCTURED claim about the commit it
+    covered, so it decides whenever it is present — including answering NO when it
+    names another commit. Bare token extraction is the fallback for a comment that
+    carries no marker, and it is what keeps a bot whose answer names the commit in prose
+    (or in a permalink) verifying it.
+    """
+    coverage = review_coverage_verdict(body, head_sha)
+    if coverage is not None:
+        return coverage
+    return _references_head_sha(body, head_sha)
 
 
 def _resolve_refusal_class(bot_kind: str | None, refusals: list[dict]) -> str:
@@ -1581,23 +1599,29 @@ class _ReReviewStrategy:
           ``trigger_dt``. Taking the later of the two is what makes an EDITED
           persistent comment count: such a bot updates one comment in place, so
           ``created_at`` stops advancing after the first review;
-        - when the bot declares an ``issue_comment`` marker in its registry
+        - when the bot declares ``issue_comment`` markers in its registry
           ``participation_evidence_markers``
-          (:func:`bot_registry.participation_evidence_marker`), the body carries
-          that marker. Such a bot publishes its finished review inside the marker,
-          and the same comment without it is a review that has not finished —
-          CodeRabbit's walkthrough, or its summary edited to the in-progress state,
-          which names the head SHA as the end of the range under review. A
+          (:func:`bot_registry.participation_evidence_markers_for`), the body carries
+          one of those literals. Such a bot publishes its finished review inside a
+          marker, and the same comment carrying none of them is a review that has not
+          finished — CodeRabbit's walkthrough, or its summary edited to the in-progress
+          state, which names the head SHA as the end of the range under review. A
           marker-less comment the refusal stack and the acknowledgment test left
           unclassified is skipped without a record, so it never ends the wait. A
           bot declaring no marker for the shape is unaffected — every comment of it
           stays eligible on the other gates alone;
+        - when one of those literals is a review-coverage marker, it must describe a
+          READABLE, FINISHED review — the marker present with an unparseable payload,
+          or with a ``kind`` other than ``reviewed``, is skipped without a record
+          exactly as a marker-less comment is. Admitting it would end the wait on an
+          in-progress summary and publish a decline the bot never made;
         - it is not a refusal notice (:meth:`_refusal_record`) — a "the bot could
           not review" comment is the bot talking about itself, not a completed
           review.
 
-        Among the eligible comments the one whose BODY references ``head_sha``
-        (:func:`_references_head_sha`) is PREFERRED; the first eligible comment is
+        Among the eligible comments the one whose BODY names ``head_sha``
+        (:func:`_body_names_head` — a review-coverage marker decides when present,
+        otherwise :func:`_references_head_sha`) is PREFERRED; the first eligible comment is
         the fallback when none does. Returning the first eligible comment outright
         let an earlier comment naming no commit hide a later one naming the
         current HEAD, so ``await_fresh_review`` published
@@ -1648,7 +1672,7 @@ class _ReReviewStrategy:
         """
         if not bot_kind or trigger_dt is None:
             return None
-        answer_marker = bot_registry.participation_evidence_marker(bot_kind, 'issue_comment')
+        answer_markers = bot_registry.participation_evidence_markers_for(bot_kind, 'issue_comment')
         eligible: list[dict] = []
         for comment in comments:
             if bot_kind_for_author(comment.get('author')) != bot_kind:
@@ -1693,14 +1717,20 @@ class _ReReviewStrategy:
             # already declined it and it is no acknowledgment, so there is nothing
             # to report about it. Running the gate after the refusal stack keeps a
             # marker-less refusal recorded rather than silently skipped.
-            if answer_marker and answer_marker not in body:
+            if answer_markers and not any(marker in body for marker in answer_markers):
+                continue
+            # A coverage marker that is not a finished, readable review is not an
+            # answer — the summary still in progress, or one whose payload cannot be
+            # parsed. Skipped WITHOUT a record, exactly as the marker-less case above,
+            # so the poll continues instead of reporting a decline the bot never made.
+            if review_coverage_marker_present(body) and not review_coverage_is_finished(body):
                 continue
             if written_after_trigger:
                 eligible.append(comment)
         if not eligible:
             return None
         return next(
-            (c for c in eligible if _references_head_sha(str(c.get('body') or ''), head_sha)),
+            (c for c in eligible if _body_names_head(str(c.get('body') or ''), head_sha)),
             eligible[0],
         )
 

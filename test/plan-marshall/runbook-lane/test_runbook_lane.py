@@ -332,6 +332,37 @@ def test_merge_gate_counts_the_marker_bearing_summary_comment() -> None:
     assert 'not quota-limited' in gate and 'current head' in gate
 
 
+#: The single function that parses the coverage marker. Both documents point at it,
+#: so neither carries a second reading of the same fields.
+_COVERAGE_PARSER = 'review_coverage_verdict'
+
+#: The fields the parser reads out of the marker's JSON payload.
+_COVERAGE_FIELDS = ('sourceCommitId', 'coveredCommitId', 'kind')
+
+
+def test_the_lane_and_the_registry_name_one_coverage_parser() -> None:
+    """Both documents name the same marker fields and the same parser, or they drift.
+
+    The lane states the merge rule in prose and the registry doc states it for the
+    producer; the parser in ``_github_pr`` is the only code that reads it. A document
+    that names a different field set from the parser is the drift this guard exists to
+    catch.
+    """
+    gate = _section('## 7. Merge gate')
+    registry_doc = (
+        MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'automatic-review' / 'standards' / 'coderabbit.md'
+    ).read_text(encoding='utf-8')
+
+    for text, origin in ((gate, 'runbook-lane/SKILL.md § 7'), (registry_doc, 'coderabbit.md')):
+        assert _COVERAGE_PARSER in text, f'{origin} names no coverage-marker parser'
+        for field in _COVERAGE_FIELDS:
+            assert field in text, f'{origin} does not name the marker field {field}'
+        # `kind` alone is satisfied by any prose containing the word; the guard has to
+        # pin the VALUE it must carry for the marker to be a finished review.
+        assert 'reviewed' in text, f'{origin} does not name the `kind` value a finished review carries'
+        assert 'coveredCommitId' in text, f'{origin} does not name the covered commit field'
+
+
 #: The merge-gate state PLAN-LB-72 shipped: both required bots reported clean,
 #: ``ci pr reviews`` is empty, and CodeRabbit's clean-review summary comment
 #: covers the head. A clean review has no formal review body, so the comment is

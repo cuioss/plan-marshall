@@ -699,7 +699,9 @@ Merge only when all of these hold:
      only as a summary comment, the marker-bearing summary comment whose `sourceCommitId` /
      `coveredCommitId` name one of this PR's heads and whose `kind=reviewed` (the
      `final_review_risk_coverage` marker the reviewer's summary comment carries; read it from the
-     comment itself, because the marker names the head the review covered).
+     comment itself, because the marker names the head the review covered, and parse it with
+     `_github_pr.review_coverage_verdict` — the one reader of `sourceCommitId`,
+     `coveredCommitId` and `kind`).
      Rate-limit notices, marker-less walkthroughs and thread replies do not count;
   2. **every finding is handled** — each finding from that review and from any later one is fixed in
      a pushed commit, or answered with a reason, and every one of that reviewer's threads is
