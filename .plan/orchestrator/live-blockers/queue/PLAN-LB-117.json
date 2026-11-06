@@ -2,10 +2,10 @@
   "id": "PLAN-LB-117",
   "slug": "execute-handback-fix",
   "workstream": "WS-01",
-  "status": "running",
+  "status": "shipped",
   "lane": "runbook",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "plan_marshall_plan_id": "lb-117-execute-handback-fix",
+  "pr": "1918",
+  "landing": "landings/PLAN-LB-117.md",
   "seq": 117
 }

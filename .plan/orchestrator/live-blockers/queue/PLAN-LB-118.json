@@ -2,10 +2,10 @@
   "id": "PLAN-LB-118",
   "slug": "review-gate-grading-fix",
   "workstream": "WS-03",
-  "status": "staged",
+  "status": "shipped",
   "lane": "runbook",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "plan_marshall_plan_id": "lb-118-review-gate-grading-fix",
+  "pr": "1919",
+  "landing": "landings/PLAN-LB-118.md",
   "seq": 118
 }

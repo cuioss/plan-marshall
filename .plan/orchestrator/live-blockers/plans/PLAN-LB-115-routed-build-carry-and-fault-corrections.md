@@ -82,8 +82,27 @@ a routed fault carries the fields the child emitted under the names it emitted t
    *Done when:* each changed test fails when the property it names is broken (shown by a mutation or a red run, recorded in the PR),
    and no comment in the touched modules describes a change rather than the current behaviour.
 
-Split guard: three deliverables, one fault path. D1 is the only behaviour fork and can be run alone; D2 is six small corrections that
-share the result path; D3 is the test and comment pass over both.
+4. **The routed-result mapping that PLAN-LB-110 widened is decided, and its reach is pinned.** *(L1-4, L3-6 of `landings/PLAN-LB-110.md`;
+   delivered with D2, which edits the same mapping)*
+   - PLAN-LB-110 (merge `9c8eb94c2`) changed the shared routed result for every tool: on the routed failure leg a child verdict that is
+     neither success nor error is re-rendered as itself instead of `error/build_failed` (`_build_execute_factory.py:786-799`), and an
+     indeterminate result carries the child's own `message:` (`:943-963`), with `LogVerdict.message` added in
+     `_build_server_protocol.py`. The spec of that plan limited shared changes to one reason value; the first hunk is not needed for
+     the Maven selector reason and moves pyproject, Gradle and npm routed results.
+   - D2's field-name rule and this hunk are one mapping: the outline settles one rule for what a routed child verdict becomes, states
+     it once in the result emitter's `Returns` statement, and keeps the Maven selector reason carried across the routed hop.
+   - Settle first which routed verdicts the gates receive: whether a child that reports timeout or killed arrives on the wire as
+     `failure`, and how the pre-push gate and the per-task gate react to `timeout` and `killed` (Mark Failure before, STOP now, per the
+     analysis leaf; the reaction was not read).
+   - The five tests of `TestIndeterminateReasonCarry` (`test_build_execute_routing.py:1245-1344`) stay green or are rewritten to the
+     settled rule with a docstring that says why.
+
+   *Done when:* a fixture shows a routed pyproject child that reports `timeout` returns the settled result (red at HEAD if the settled
+   rule differs from the shipped one, otherwise a pin labelled `order: none`); the Maven selector-miss reason still reaches the caller
+   across the routed hop on both wire legs; a routed child that failed after running keeps `build_failed` and its rows (control).
+
+Split guard: four deliverables, one fault path. D1 is the only behaviour fork and can be run alone; D2 and D4 edit the same result
+mapping and are delivered together; D3 is the test and comment pass over all.
 
 ## Standing Constraints
 
@@ -148,6 +167,14 @@ share the result path; D3 is the test and comment pass over both.
 - HYPOTHESIS: the child, run from the worktree with the plan directory absent, performs plan-id-keyed work there (queue slot and
   liveness, the work log, the build-results path) that can recreate `.plan/local/plans/{id}` in the worktree or fail — confirm/refute
   at `_build_execute_factory.py` § `cmd_run` and `_build_queue_slot.py` (verify-at-outline). If it does, it is part of D1.
+- OBSERVED: the routed failure leg re-renders a verdict whose status is not success or error through `_result_for_log_verdict`, and an
+  indeterminate result uses the log's `message` with whitespace collapsed — `_build_execute_factory.py` L786-799 and L943-963, read at
+  `9c8eb94c2`.
+- HYPOTHESIS: a routed pyproject, Gradle or npm child that reports timeout or killed arrives on the wire as `failure`, and the gates
+  that previously saw `build_failed` now see `timeout` or `killed` — confirm/refute at `_build_server_protocol.py` § the log verdict
+  reader, `marshalld.py` § the job outcome, and the gate steps in `pre-push-quality-gate.md` (verify-at-outline). It decides D4.
+- Verify-first clause (D4): read PLAN-LB-110's hunks in `_build_execute_factory.py` and `test_build_execute_routing.py` as they stand on
+  `main` and re-read this spec's line references against them; every L-number above moved.
 - Verify-first clause (D1): reproduce the stale-executor refusal at HEAD before changing anything, by a fixture whose executor surface
   lacks the carry flag. If the refusal does not occur, D1 is closed and only the documentation of the residual remains.
 - Verify-first clause (D2): settle each HYPOTHESIS bullet above before its fix is scoped. LB-108's in-process lock work may already

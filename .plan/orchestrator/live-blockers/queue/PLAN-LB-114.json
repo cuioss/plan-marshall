@@ -2,10 +2,10 @@
   "id": "PLAN-LB-114",
   "slug": "landing-and-link-checker-corrections",
   "workstream": "WS-03",
-  "status": "running",
+  "status": "shipped",
   "lane": "runbook",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "plan_marshall_plan_id": "lb-114-landing-and-link-checker-corrections",
+  "pr": "1915",
+  "landing": "landings/PLAN-LB-114.md",
   "seq": 114
 }
