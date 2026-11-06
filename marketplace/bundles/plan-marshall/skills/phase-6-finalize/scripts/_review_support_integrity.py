@@ -344,18 +344,26 @@ def _function_assertion_counts(text: str) -> dict[str, int]:
 
 
 def _identity_bodies(text: str) -> dict[str, str]:
-    """The whitespace-normalized BODY of every test identity, in document order.
+    """The whitespace-normalized BODY of every UNIQUE test identity.
 
     The body runs from the identity's own header to the next identity's header, so a
     move is proven by the test's assertion content rather than by its name. Two
     different tests that share a name therefore carry different bodies, and a bare
-    name in another file proves nothing.
+    name in another file proves nothing. An identity that occurs MORE THAN ONCE in
+    one file is omitted: its count is a sum no single body can prove, so crediting a
+    move would over-credit it — the identity then survives nothing and its loss is
+    reported, the fail-closed direction.
     """
     spans = _identity_spans(text) or _class_spans(text)
     bodies: dict[str, str] = {}
+    repeated: set[str] = set()
     for index, (start, name) in enumerate(spans):
+        if name in bodies:
+            repeated.add(name)
         end = spans[index + 1][0] if index + 1 < len(spans) else len(text)
         bodies[name] = _normalized_body(text[start:end])
+    for name in repeated:
+        bodies.pop(name, None)
     return bodies
 
 
@@ -686,10 +694,11 @@ def _grade_test_integrity(
             if not (before_lines - excess):
                 return count
             if not (excess - before_lines):
-                best = max(best, min(count, _count(body)))
+                best = max(best, min(count, sum(_count(line) * n for line, n in excess.items())))
         return best
 
     findings: list[dict[str, Any]] = []
+    moved_by_path: dict[str, int] = {}
     for path, pre in before.items():
         before_fns = before_fns_by_path[path]
         before_file = _count(pre)
@@ -701,6 +710,7 @@ def _grade_test_integrity(
             kinds: dict[str, str] = {}
             for identity, count in before_fns.items():
                 surviving = _surviving_assertions(path, identity, count)
+                moved_by_path[path] = moved_by_path.get(path, 0) + surviving
                 lost = count - surviving
                 if lost > 0:
                     missing[identity] = lost
@@ -758,6 +768,7 @@ def _grade_test_integrity(
                 missing[identity] = lost
                 missing_kinds[identity] = 'removed' if surviving == 0 else 'dropped'
         identity_loss = sum(drops.values()) + sum(missing.values())
+        moved_by_path[path] = moved_by_path.get(path, 0) + carried_away
         # A surviving path's own total is only reported when NO identity accounts
         # for the drop: a function moved to another file is not a loss.
         residual = file_loss - identity_loss - carried_away
@@ -805,12 +816,16 @@ def _grade_test_integrity(
                 finding.get('removed_assertions') or 0
             )
         raw_losses = {path: _count(text) - _count(after.get(path, '')) for path, text in before.items()}
-        unexplained = [(raw - reported_by_path.get(path, 0), path) for path, raw in raw_losses.items() if raw > 0]
+        unexplained = [
+            (raw - moved_by_path.get(path, 0) - reported_by_path.get(path, 0), path)
+            for path, raw in raw_losses.items()
+            if raw > 0
+        ]
         positive_unexplained = [entry for entry in unexplained if entry[0] > 0]
         if positive_unexplained:
             _loss, path = max(positive_unexplained)
         else:
-            positive = [(raw, path) for path, raw in raw_losses.items() if raw > 0]
+            positive = [(raw - moved_by_path.get(path, 0), path) for path, raw in raw_losses.items() if raw > 0]
             if positive:
                 _loss, path = max(positive)
             else:

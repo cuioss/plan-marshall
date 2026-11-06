@@ -339,6 +339,36 @@ def test_a_function_moved_with_its_assertions_still_yields_no_row(plan_context, 
     assert _rows(payload) == [], payload
 
 
+def test_a_repeated_identity_in_a_deleted_file_is_not_fully_credited_to_one_move(
+    plan_context, tmp_path, monkeypatch
+) -> None:
+    """Two same-named tests in one file: moving the last must not credit the summed count.
+
+    The identity's count is the SUM of both bodies, and a single moved body cannot
+    prove that sum. The repeated identity therefore survives nothing and the whole
+    loss is reported.
+    """
+    repo = _repo(tmp_path)
+    _commit(repo, {'README.md': 'readme\n'})
+    _commit(
+        repo,
+        {
+            'test/dup_test.py': 'def test_x():\n    assert 1 == 1\n    assert 2 == 2\n\ndef test_x():\n    assert 3 == 3\n'
+        },
+    )
+    _git(repo, 'checkout', '--quiet', '-b', 'feature')
+    _git(repo, 'rm', 'test/dup_test.py')
+    _commit(repo, {'test/moved_test.py': 'def test_x():\n    assert 3 == 3\n'}, 'move only the last one')
+
+    payload = _run(repo, plan_context, monkeypatch)
+
+    assert payload['status'] == 'success', payload
+    rows = _rows(payload)
+    assert any(row['path'] == 'test/dup_test.py' for row in rows), payload
+    row = next(row for row in rows if row['path'] == 'test/dup_test.py')
+    assert row['removed_assertions'] == 3, row
+
+
 # --- D2 (g): the set-total row is attributed to the unexplained loss ------------------------
 
 
@@ -373,6 +403,6 @@ def test_the_set_total_row_goes_to_the_file_whose_loss_no_identity_explains(
 
     payload = _run(repo, plan_context, monkeypatch)
 
-    set_total = [row for row in _rows(payload) if 'changed test set holds' in row['detail']]
+    set_total = [row for row in _rows(payload) if row.get('acceptance_kind') == 'set_total']
     assert set_total, payload
     assert set_total[0]['path'] == 'test/q_test.py', payload

@@ -327,6 +327,7 @@ def test_raw_input_bytecap_truncation(plan_context):
     assert 'raw_input' in record
     body = record['raw_input']['body']
     assert 'elided' in body
+    assert '198 characters elided' in body
     assert body.startswith('x') and body.endswith('x')
     assert len(body.encode('utf-8')) <= 50
 

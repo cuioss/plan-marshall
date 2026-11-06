@@ -68,6 +68,8 @@ SEED_SYMBOLS: tuple[str, ...] = (
     '_evidence_named_verdict',
     'review_coverage_is_finished',
     'review_coverage_marker_present',
+    '_inline_comment_placement',
+    '_reported_commit_matches_candidate',
     'head_sha_verified',
     'stale_participation',
     'existing_comment_keys',
@@ -279,6 +281,14 @@ SITE_EXPECTATIONS: dict[str, SiteExpectation] = {
         'not_applicable',
         'Publishes the producer’s SHA-anchored return contract AND the timestamp-anchored '
         'github_ops pr wait-for-comments completion predicate — two anchors on one surface.',
+    ),
+    f'{_SKILLS}/workflow-integration-github/scripts/github_ops.py': SiteExpectation(
+        'live_comment_scan',
+        'commit_sha',
+        'yes',
+        "The inline placement parser. Reads the comment's originalCommit, its review's "
+        'commit and only then its own mutable commit, plus replyTo, to place a review '
+        'comment at the commit it was POSTED at and decide whether it opens a thread.',
     ),
     f'{_SKILLS}/workflow-integration-github/scripts/_github_pr.py': SiteExpectation(
         'live_comment_scan',
