@@ -417,9 +417,11 @@ indistinguishable there, and either read as "no scope" would assert whole-tree
 over a run that may have been narrowed. The one exception is a flag known NOT to
 narrow the run — maven's `-am` / `--also-make`, which only adds the selected
 modules' dependencies and is always emitted beside `-pl`: ignoring it cannot
-widen a claim, so the row stays readable and its `-pl` scope is still judged. An
-unreadable row contributes no coverage and is never labelled whole-tree; the
-inability is recorded, and no requirement is credited to it.
+widen a claim, so the row stays readable and its `-pl` scope is still judged. A
+neutral flag with NO scope of any kind (`package -am`) is unreadable instead,
+because nothing selected the modules. An unreadable row contributes no coverage
+and is never labelled whole-tree; the inability is recorded, and no requirement
+is credited to it.
 
 **What the change requires is DERIVED, not fixed.** A non-empty footprint
 requires the `test` analysis unconditionally (markdown under the bundle tree is a

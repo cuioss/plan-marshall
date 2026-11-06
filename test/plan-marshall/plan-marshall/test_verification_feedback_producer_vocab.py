@@ -257,7 +257,7 @@ _CI_VERIFY_DOC = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-6-finali
 
 #: ``producer=ci-verify`` (the dispatcher's invocation) and ``producers: [a, b]``
 #: (the executor's return) are the two shapes the doc states a producer value in.
-_PRODUCER_ASSIGNMENT = re.compile(r'\bproducer=([A-Za-z0-9_-]+)')
+_PRODUCER_ASSIGNMENT = re.compile(r'\bproducer\s*=\s*`?([A-Za-z0-9_-]+)`?')
 _PRODUCER_LIST = re.compile(r'\bproducers:\s*\[([^\]]*)\]')
 
 
@@ -290,8 +290,10 @@ def test_every_producer_the_ci_verify_doc_names_is_accepted():
     [
         '\n- The executor returns `producers: [ci-verify-policy]` for this row.\n',
         '\n- The dispatcher then runs it with `producer=ci-verify-policy`.\n',
+        '\n- The dispatcher then runs it with `producer = `ci-verify-policy``.\n',
+        '\n- The executor returns:\n  producers: [\n    ci-verify-policy,\n  ]\n',
     ],
-    ids=['producers-list', 'producer-assignment'],
+    ids=['producers-list', 'producer-assignment', 'producer-spaced-assignment', 'producers-multiline-list'],
 )
 def test_a_mutated_copy_naming_an_unaccepted_producer_turns_the_guard_red(tmp_path, added_line):
     """Mutation control: the guard ITSELF rejects a mutated copy, not just the parser.

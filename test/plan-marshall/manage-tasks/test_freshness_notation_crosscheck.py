@@ -710,6 +710,9 @@ def test_a_canonical_outside_the_vocabulary_is_undetermined_not_refuted(
         # so the resolved module row stays scoped instead of unreadable.
         ('run --command-args package -pl consumer -am', ('package', ('consumer',))),
         ('run --command-args package -pl consumer --also-make', ('package', ('consumer',))),
+        # A neutral companion with NO scope of any kind is not a whole-tree claim.
+        ('run --command-args package -am', None),
+        ('run --command-args package --also-make', None),
         # An UNKNOWN flag is neither whole-tree nor a scope: it is unreadable.
         ('run --command-args module-tests -k foo', None),
         ('run --command-args module-tests -pl', None),

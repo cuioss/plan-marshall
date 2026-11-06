@@ -360,8 +360,9 @@ _SCOPE_FLAGS: dict[str, int] = {
 #: tool's resolved executable emits next to it: maven's ``-am`` / ``--also-make``
 #: is always emitted beside ``-pl`` (:mod:`_maven_cmd_discover`), and it only
 #: ADDS the selected modules' dependencies. Ignoring it cannot create a
-#: whole-tree claim: the ``-pl`` value beside it still names the scope, and
-#: without ``-pl`` the row is scoped to whatever the invocation already built.
+#: whole-tree claim while a scope was actually selected: the ``-pl`` value beside
+#: it (or a positional module) still names the scope. With NO scope of any kind
+#: the row is unreadable instead — ``package -am`` alone selects nothing.
 _SCOPE_NEUTRAL_FLAGS: frozenset[str] = frozenset({'-am', '--also-make'})
 
 
@@ -622,10 +623,12 @@ def parse_row_scope(entry: dict[str, Any]) -> RowScope | None:
         return None
     payload: list[str] = []
     scope: list[str] = []
+    saw_neutral = False
     index = 0
     while index < len(rest):
         token = rest[index]
         if token in _SCOPE_NEUTRAL_FLAGS:
+            saw_neutral = True
             index += 1
             continue
         if token.startswith('-'):
@@ -655,6 +658,13 @@ def parse_row_scope(entry: dict[str, Any]) -> RowScope | None:
             payload.append(token)
         index += 1
     if not payload:
+        return None
+    if saw_neutral and not scope and len(payload) == 1:
+        # A neutral companion with NO scope of any kind (``package -am``) is not a
+        # whole-tree claim: the flag only means "also the selected modules'
+        # dependencies", and the resolver never emits it without ``-pl``. Nothing
+        # selected the modules, so the blast radius is unreadable rather than the
+        # widest possible one.
         return None
     return RowScope(canonical=payload[0], scope_tokens=tuple(payload[1:] + scope))
 

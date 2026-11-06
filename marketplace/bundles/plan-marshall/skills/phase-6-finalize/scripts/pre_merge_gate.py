@@ -1083,11 +1083,10 @@ def _participation_refusal(plan_id: str, head: str | None, verdict: dict[str, An
     ``override_options``. They are :data:`BARRIER_OVERRIDE_LABELS` itself — the one
     constant ``merge-authorization grant`` validates against — never a copy, so the
     operator prompt built from this payload cannot drift from the check that will
-    judge the answer. The import is deferred to this path so a fault elsewhere in
-    manage-status' import chain cannot take down the merge gate's module load.
+    judge the answer. The import is deferred to the authorizable branch (and guarded)
+    so a fault in that module can neither fail the module load nor break a refusal
+    that never uses the labels.
     """
-    from _cmd_merge_authorization import BARRIER_OVERRIDE_LABELS
-
     unproven = verdict['unproven_bots']
     detail = verdict.get('detail') or 'no reason was reported'
     authorizable = bool(verdict.get('authorizable'))
@@ -1123,7 +1122,14 @@ def _participation_refusal(plan_id: str, head: str | None, verdict: dict[str, An
         # The operator prompt's option labels ARE this tuple: ``merge-authorization
         # grant`` accepts exactly these, so publishing them here is what lets a prompt
         # be built from the gate's own verdict instead of from prose that can drift.
-        payload['override_options'] = list(BARRIER_OVERRIDE_LABELS)
+        # Guarded: a fault in the label source must not break a refusal that is still
+        # correct without them.
+        try:
+            from _cmd_merge_authorization import BARRIER_OVERRIDE_LABELS
+        except Exception:
+            pass
+        else:
+            payload['override_options'] = list(BARRIER_OVERRIDE_LABELS)
     if isinstance(authorization, dict):
         payload['authorization'] = {
             'gap_class': REVIEW_BARRIER_GAP_CLASS,
