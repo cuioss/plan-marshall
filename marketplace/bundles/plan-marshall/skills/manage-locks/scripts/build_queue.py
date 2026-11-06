@@ -274,15 +274,6 @@ from _machine_config import (
     report_safe,
     resolve_max_slots,
 )
-
-# One implementation of the directory-lock reader and its pid liveness lives in
-# ``_build_directory_state``, because the DAEMON needs the same answer at
-# admission. These aliases keep this module's call sites readable without a second
-# copy of the rule.
-_pid_alive = pid_alive
-_is_zombie = is_zombie
-_directory_locks = directory_locks
-_directory_waiters = directory_waiters
 from file_ops import get_marshal_path
 from marketplace_paths import (
     ensure_home_root,
@@ -295,6 +286,15 @@ from triage_helpers import (
     print_toon,
     safe_main,
 )
+
+# One implementation of the directory-lock reader and its pid liveness lives in
+# ``_build_directory_state``, because the DAEMON needs the same answer at
+# admission. These aliases keep this module's call sites readable without a second
+# copy of the rule.
+_pid_alive = pid_alive
+_is_zombie = is_zombie
+_directory_locks = directory_locks
+_directory_waiters = directory_waiters
 
 _QUEUE_FILENAME = 'build-queue.json'
 
