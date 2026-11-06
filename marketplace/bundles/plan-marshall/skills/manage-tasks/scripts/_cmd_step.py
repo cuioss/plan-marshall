@@ -142,7 +142,13 @@ def cmd_finalize_step(args) -> dict:
     # is exactly the per-task build the deferral exists to prevent. The leaf's
     # prose states the same rule; enforcing it here means a leaf that passes the
     # flag anyway cannot stall the task.
-    owed_rung_dropped = verification_owed_call and task.get('verification', {}).get('owed_rung') == 'deferred'
+    #
+    # `verification` is read defensively: a record can carry `verification: null`
+    # (a hand-written or partially composed task), and `None.get` would raise on a
+    # close that has nothing to do with the deferral rule.
+    task_verification = task.get('verification')
+    owed_rung = task_verification.get('owed_rung') if isinstance(task_verification, dict) else None
+    owed_rung_dropped = verification_owed_call and owed_rung == 'deferred'
     if owed_rung_dropped:
         verification_owed_call = False
     owed_open = all_terminal and not has_failed and verification_owed_call

@@ -1238,16 +1238,37 @@ def _module_tests_step_for(command: str, plan_id: str) -> tuple[str | None, dict
 def _chain_order(numbers: list[int], depends_on: dict[int, list[int]]) -> list[int]:
     """Order one deliverable's task numbers by their ``depends_on`` chain.
 
-    A stable topological order restricted to *numbers*: a task whose
-    dependencies are all outside the set (or already emitted) is eligible, and
-    ties break on the task number so the result is deterministic. A cycle
-    cannot swallow a task — any reminder is appended in number order — because a
-    planning defect must not silently drop a rung.
+    A stable topological order restricted to *numbers*, where a dependency that
+    leaves the set is followed THROUGH: task 1 depending on outside task 2, which
+    in turn depends on group task 3, must place 3 before 1. Reading only the
+    dependencies inside the set would call 1 ready immediately and put the tail
+    ahead of the task it depends on. Ties break on the task number so the result
+    is deterministic. A cycle cannot swallow a task — any remainder is appended
+    in number order — because a planning defect must not silently drop a rung.
     """
+    group = set(numbers)
+    predecessors: dict[int, set[int]] = {}
+    for number in numbers:
+        reached: set[int] = set()
+        stack = list(depends_on.get(number, []))
+        visited: set[int] = set()
+        while stack:
+            dependency = stack.pop()
+            if dependency in visited:
+                continue
+            visited.add(dependency)
+            if dependency in group:
+                reached.add(dependency)
+                continue
+            # Outside the group: keep walking so a group member behind it is
+            # still ordered before this task.
+            stack.extend(depends_on.get(dependency, []))
+        predecessors[number] = reached
+
     remaining = sorted(numbers)
     emitted: list[int] = []
     while remaining:
-        ready = [n for n in remaining if all(dep not in remaining for dep in depends_on.get(n, []))]
+        ready = [n for n in remaining if all(dep not in remaining for dep in predecessors[n])]
         if not ready:
             emitted.extend(remaining)
             break
@@ -1258,15 +1279,15 @@ def _chain_order(numbers: list[int], depends_on: dict[int, list[int]]) -> list[i
 
 def _plan_module_tests_chain_tail_deferral(
     plan_id: str,
-) -> tuple[dict[int, str], list[dict[str, Any]], set[int]]:
-    """Decide which task of each deliverable carries the owed module-tests rung.
+) -> tuple[dict[int, str], list[dict[str, Any]], set[tuple[int, str]]]:
+    """Decide which task of each (deliverable, rung command) group carries the owed rung.
 
     The operator ruling this implements: **one full module build per
     deliverable.** When a deliverable's per-task ``module-tests`` rung resolves
     ``orchestrator`` from a MEASURED learned duration that exceeds the Bash
     ceiling, every task deferring on its own would pay the same build once per
-    task. So the rung is placed on the LAST task of the deliverable's chain and
-    the earlier tasks close without the owed hold.
+    task. So the rung is placed on the LAST task of that (deliverable, command)
+    group's chain and the earlier tasks close without the owed hold.
 
     The discriminator is ``exceeds_bash_ceiling`` on the resolve TOON, NOT the
     tier alone: ``orchestrator`` is also what an UNMEASURED command resolves to
@@ -1276,12 +1297,15 @@ def _plan_module_tests_chain_tail_deferral(
     the leaf still re-resolves live, so a run that later measures below the
     limit is not forced to defer.
 
-    Returns ``(decisions, summary, decided_deliverables)`` where ``decisions``
+    Returns ``(decisions, summary, decided_pairs)`` where ``decisions``
     maps task number to ``chain_tail`` or ``deferred``, ``summary`` is the
     manifest record list (one entry per deliverable the decision touched), and
-    ``decided_deliverables`` names the deliverables a live decision still
-    covers — a deliverable absent from it has no current evidence and its
-    recorded stamps are stale.
+    ``decided_pairs`` names the ``(deliverable, rung command)`` pairs a live
+    decision still covers — a stamp whose own pair is absent from it has no
+    current evidence and is stale. Keying staleness on the PAIR, not the
+    deliverable alone, is what keeps a two-module deliverable's modules
+    independent: re-measuring one module below the limit clears that module's
+    stamps and leaves the other module's untouched.
     """
     tasks_dir = get_plan_dir(plan_id) / 'tasks'
     if not tasks_dir.is_dir():
@@ -1363,7 +1387,7 @@ def _plan_module_tests_chain_tail_deferral(
                 'cause': 'measured_module_tests_above_ceiling',
             }
         )
-    return decisions, summary, {deliverable for deliverable, _command in by_group}
+    return decisions, summary, set(by_group)
 
 
 def _route_task_verification_commands(plan_id: str, body: dict[str, Any]) -> tuple[int, list[tuple[Path, str]]]:
@@ -1424,10 +1448,10 @@ def _route_task_verification_commands(plan_id: str, body: dict[str, Any]) -> tup
     seen_steps: set[str] = set(verification_steps)
 
     # The chain-tail deferral decision, computed BEFORE the walk so the pass can
-    # keep the rung on the deliverable's last task and drop it from the earlier
-    # ones. An empty map means no deliverable has a measured over-ceiling
-    # module-tests rung — today's behaviour, untouched.
-    rung_decisions, rung_summary, decided_deliverables = _plan_module_tests_chain_tail_deferral(plan_id)
+    # keep each group's rung on that group's last task and drop it from the
+    # earlier ones. An empty map means no (deliverable, command) group has a
+    # measured over-ceiling module-tests rung — today's behaviour, untouched.
+    rung_decisions, rung_summary, decided_pairs = _plan_module_tests_chain_tail_deferral(plan_id)
     if rung_summary:
         phase_5['owed_rung_deferral'] = rung_summary
     else:
@@ -1451,12 +1475,19 @@ def _route_task_verification_commands(plan_id: str, body: dict[str, Any]) -> tup
         task_number = task.get('number')
         rung = rung_decisions.get(task_number) if isinstance(task_number, int) else None
         deliverable = task.get('deliverable', 0)
+        deliverable = deliverable if isinstance(deliverable, int) else 0
+        recorded_command = verification.get('owed_rung_command')
         # A stamp the live decision no longer covers is stale — the duration was
-        # re-measured, or the deliverable's chain tail no longer qualifies. Clear
-        # it even on a task whose rung command was dropped by an earlier compose
-        # (that task has no command left to re-measure).
+        # re-measured, or that group's chain tail no longer qualifies. The
+        # check is per (deliverable, command), never per deliverable: a two-module
+        # deliverable whose module B is re-measured below the limit must clear
+        # module B's stamps while module A's stay. It also covers a task whose
+        # rung command was dropped by an earlier compose (no command left to
+        # re-measure): its recorded command is what the pair is formed from.
         stale_rung = (
-            verification.get('owed_rung') is not None and rung is None and deliverable not in decided_deliverables
+            verification.get('owed_rung') is not None
+            and rung is None
+            and (deliverable, recorded_command) not in decided_pairs
         )
         if stale_rung:
             verification.pop('owed_rung', None)
@@ -1475,6 +1506,8 @@ def _route_task_verification_commands(plan_id: str, body: dict[str, Any]) -> tup
         kept_commands: list[Any] = []
         per_task_timeout: int | None = None
         changed = stale_rung or restamped
+        # One rung command is recorded per task in one pass; see the stamp site.
+        recorded_this_pass = False
         for raw in commands:
             if not isinstance(raw, str):
                 kept_commands.append(raw)
@@ -1501,11 +1534,21 @@ def _route_task_verification_commands(plan_id: str, body: dict[str, Any]) -> tup
                     # through the end-of-phase step. The recorded command is what
                     # a later compose re-measures, since the command itself is
                     # gone by then.
+                    #
+                    # The FIRST module-tests command seen in this pass wins. A task
+                    # can carry two modules' rungs (a deliverable spanning two
+                    # modules), and a later command must not overwrite the one the
+                    # decision was taken on — the field is one command and the task
+                    # is one tail.
                     verification['owed_rung'] = OWED_RUNG_CHAIN_TAIL
-                    verification['owed_rung_command'] = raw
+                    if not recorded_this_pass:
+                        verification['owed_rung_command'] = raw
+                        recorded_this_pass = True
                 elif rung == OWED_RUNG_DEFERRED and verb == 'module-tests':
                     verification['owed_rung'] = OWED_RUNG_DEFERRED
-                    verification['owed_rung_command'] = raw
+                    if not recorded_this_pass:
+                        verification['owed_rung_command'] = raw
+                        recorded_this_pass = True
                 if step_id is None:
                     candidate = f'verify:{verb}'
                     # A build-phase canonical the deriver legitimately emits

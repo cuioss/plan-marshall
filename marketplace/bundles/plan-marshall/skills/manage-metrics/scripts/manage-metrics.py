@@ -122,12 +122,11 @@ DISPATCH_TERMINATION_CAUSES = (
     # context — the yield the workflow PRESCRIBES at Step 11b, Step 11c, the
     # `running` hand-back and a per-task close that resolved to the orchestrator
     # tier. The return carries `verification_handback: true` beside a non-empty
-    # `pending_verify_steps[]`; the orchestrator owes the build. Before this
-    # member the return was provisionally classified `voluntary_checkpoint`, and
-    # B7's no-progress predicate then reclassified it as `error` — so a working
-    # hand-back was recorded as a failure and fed the lessons script-failure
-    # signal. It is a PRESCRIBED, productive yield: the leaf did the one thing
-    # it is allowed to do with a build outside its runnable slice.
+    # `pending_verify_steps[]` whose entries the manifest composed; the
+    # orchestrator owes the build. It is a PRESCRIBED, productive yield — the
+    # leaf did the one thing it is allowed to do with a build outside its
+    # runnable slice — and it is recorded as its own cause, so it never reaches
+    # the lessons script-failure signal.
     'verification_handback',
 )
 

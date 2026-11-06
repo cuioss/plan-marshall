@@ -29,8 +29,8 @@ dispatch did not return}, and the orchestrator re-read every point recorded as
 run, no write**: what only a run could show is tagged `not shown by reading`,
 never left as clean.}
 
-- **Dispatch:** one read-only leaf per landing — reason: {why this landing got its own leaf}
-- **Verdict:** layer 1 {clean | findings}; layer 2 {clean | findings}; layer 3 {clean | findings | not shown by reading} —
+- **Dispatch:** {one read-only leaf per landing | the orchestrator inline, because the dispatch did not return} — reason: {why this landing got its own leaf, or why the dispatch did not return}
+- **Verdict:** layer 1 {clean | findings | not shown by reading}; layer 2 {clean | findings | not shown by reading}; layer 3 {clean | findings | not shown by reading} —
   every layer that carried a finding is named here, so a layer-3 defect is visible
   without reading the section.
 
@@ -44,7 +44,7 @@ it.}
 |---------|-------|---------|----------------------|
 | {none, or L1-N} | {claim} | {checked \| not_shown_by_reading} | {file:line} |
 
-**Layer 1 verdict:** {clean | findings — N}
+**Layer 1 verdict:** {clean | findings — N | not shown by reading — N}
 
 ### Layer 2 — Implemented
 
@@ -56,7 +56,7 @@ report the diff does not bear out.}
 |-------------|------------|--------------------|---------------------------------|---------|
 | {deliverable} | {file:line} | {test} | {path or claim, or none} | {checked \| not_shown_by_reading} |
 
-**Layer 2 verdict:** {clean | findings — N}
+**Layer 2 verdict:** {clean | findings — N | not shown by reading — N}
 
 ### Layer 3 — Correct
 

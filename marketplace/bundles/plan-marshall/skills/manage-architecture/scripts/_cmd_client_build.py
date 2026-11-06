@@ -41,9 +41,12 @@ from toon_parser import parse_toon
 #   ``execute_direct_base`` enforces at build time — so the stamp can never
 #   report a bound below what the real run will measure against.
 # * ``exceeds_bash_ceiling`` (bool) —
-#   ``bash_timeout_seconds > HARNESS_BASH_CEILING_SECONDS``. It keeps its
-#   literal ceiling meaning and nothing else: it answers "is the stamped bound
-#   passable on a Bash call?", not "which tier runs this command".
+#   ``measured AND bash_timeout_seconds > HARNESS_BASH_CEILING_SECONDS``. It
+#   answers "is a MEASURED stamped bound passable on a Bash call?", not "which
+#   tier runs this command". Gating it on ``measured`` is what keeps it from
+#   claiming a ceiling overflow on a stamp nobody has observed: an unmeasured
+#   command's stamp is a floor plus a buffer, and a floor above the ceiling says
+#   nothing about this command's own duration.
 # * ``execution_tier`` — driven by the MEASUREMENT, not by the floor:
 #   ``"per_task"`` only when the command's run-config key has actually been
 #   measured AND the stamp is within the ceiling; ``"orchestrator"`` otherwise.
@@ -388,8 +391,10 @@ def _compute_execution_tier_fields(bash_timeout_seconds: int, measured: bool) ->
     The tier follows the MEASUREMENT: ``per_task`` only when the command has
     been measured AND the stamp is within the harness ceiling; ``orchestrator``
     otherwise, so an unmeasured command fails closed uniformly across all four
-    engines. ``exceeds_bash_ceiling`` keeps its literal ceiling meaning and is
-    NOT forced true on that fail-closed branch.
+    engines. ``exceeds_bash_ceiling`` is the ceiling's own answer about a
+    MEASURED stamp and is false on that fail-closed branch — an unmeasured
+    command has no observed duration to compare against the ceiling, and its
+    stamp is a declared floor plus a buffer rather than a measurement.
 
     The hint is selected from the ``(execution_tier, exceeds_bash_ceiling)``
     PAIR rather than from ``exceeds_bash_ceiling`` alone — selecting on either
@@ -397,7 +402,9 @@ def _compute_execution_tier_fields(bash_timeout_seconds: int, measured: bool) ->
     that contradicts its own tier. Hint strings are pinned recognition tokens
     consumers match on; see module docstring.
     """
-    exceeds = HARNESS_BASH_CEILING_SECONDS is not None and bash_timeout_seconds > HARNESS_BASH_CEILING_SECONDS
+    exceeds = (
+        measured and HARNESS_BASH_CEILING_SECONDS is not None and bash_timeout_seconds > HARNESS_BASH_CEILING_SECONDS
+    )
     tier = 'per_task' if (measured and not exceeds) else 'orchestrator'
     if exceeds:
         hint = _HINT_ORCHESTRATOR

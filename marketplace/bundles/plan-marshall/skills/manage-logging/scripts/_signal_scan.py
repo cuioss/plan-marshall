@@ -12,13 +12,12 @@ the distinct failing notation:
    writes when the no-progress predicate reclassifies a
    ``voluntary_checkpoint`` return as ``error``.
 
-Class 3 used to be looked for in the WORK log, while the writer has always
-written it to the DECISION log — so a genuine reclassification was invisible
-and the signal under-counted. The marker string below is the single statement
-of what the writer emits and what this scanner matches; the writer's prose in
-``plan-marshall/workflow/execution.md`` and the scanner's prose in
-``phase-6-finalize/SKILL.md`` are doc-tested against it, so the two cannot
-drift apart again.
+Class 3 is read from the DECISION log, which is the log the B7 writer writes;
+the WORK log carries no copy of that line. The marker string below is the single
+statement of what the writer emits and what this scanner matches; the writer's
+prose in ``plan-marshall/workflow/execution.md`` and the scanner's prose in
+``phase-6-finalize/SKILL.md`` are doc-tested against it, so the two cannot drift
+apart.
 
 A prescribed orchestrator-tier build hand-back (``termination_cause:
 verification_handback``) is NOT lesson-bearing: the leaf did exactly what the

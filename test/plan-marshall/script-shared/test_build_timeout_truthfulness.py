@@ -589,8 +589,10 @@ def test_unmeasured_stamp_is_floored_and_the_tier_fails_closed(
     assert measured is False, f'{tool_name}: an absent persisted entry must read as unmeasured'
 
     fields = _compute_execution_tier_fields(stamp, False)
-    # exceeds_bash_ceiling keeps its LITERAL ceiling meaning...
-    expected_exceeds = expected_stamp > HARNESS_BASH_CEILING_SECONDS
+    # exceeds_bash_ceiling states a MEASURED stamp's relation to the ceiling, so
+    # an unmeasured command never claims an overflow — even where the engine's
+    # floor pushes the stamp above a low ceiling.
+    expected_exceeds = measured and expected_stamp > HARNESS_BASH_CEILING_SECONDS
     assert fields['exceeds_bash_ceiling'] is expected_exceeds
     # ...while the tier decouples from it on exactly this branch.
     assert fields['execution_tier'] == 'orchestrator', (
