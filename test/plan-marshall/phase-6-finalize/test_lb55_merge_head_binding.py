@@ -403,8 +403,6 @@ def test_the_undeclared_control_step_is_discovered_and_declares_no_fact():
     from extension_discovery import find_implementors
 
     ext_point = 'plan-marshall:extension-api/standards/ext-point-finalize-step'
-    discovered = {
-        str(record.get('name', '')).rsplit(':', 1)[-1] for record in find_implementors(ext_point)
-    }
+    discovered = {str(record.get('name', '')).rsplit(':', 1)[-1] for record in find_implementors(ext_point)}
 
     assert 'finalize-step-sync-baseline' in discovered
