@@ -124,6 +124,7 @@ class Scheduler:
         self._rotation = 0
         self._running: dict[str, JobEntry] = {}
         self._by_fingerprint: dict[str, str] = {}
+
     # -- introspection -----------------------------------------------------
 
     @property

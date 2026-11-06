@@ -436,7 +436,7 @@ def test_route_hand_back_carries_queued_seconds_when_the_bound_expires(use_fake_
     The bound is shortened so the test exercises the real expiry path (one wait,
     then the hand-back) instead of sleeping the production 300 s.
     """
-    monkeypatch.setattr(factory, '_DAEMON_WAIT_BOUND_SECONDS', 0.0001)
+    monkeypatch.setattr(factory, '_DAEMON_WAIT_BOUND_SECONDS', 0.05)
     client = use_fake_client(
         preflight={'status': 'success', 'preflight': 'ready'},
         submit={'status': 'success', 'job_id': 'JOB-S'},
@@ -447,6 +447,7 @@ def test_route_hand_back_carries_queued_seconds_when_the_bound_expires(use_fake_
 
     assert reason == ''
     assert result is not None
+    assert client.wait_calls, 'the loop really waited before the bound expired'
     assert result['status'] == 'running', 'a still-queued job is a live hand-back, not a verdict'
     assert result['job_id'] == 'JOB-S'
     assert result['queued_seconds'] == 12

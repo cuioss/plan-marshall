@@ -852,9 +852,7 @@ def test_two_plan_less_builds_of_one_directory_do_not_overlap(tmp_path, isolated
     events: list[tuple] = []
 
     def _build(tag: str) -> None:
-        with bqs.directory_lock(
-            str(directory), plan_id=NO_PLAN_SENTINEL, command=tag, timeout_seconds=10
-        ) as lease:
+        with bqs.directory_lock(str(directory), plan_id=NO_PLAN_SENTINEL, command=tag, timeout_seconds=10) as lease:
             events.append(('start', tag, lease.waited_seconds))
             time.sleep(0.1)
             events.append(('end', tag))

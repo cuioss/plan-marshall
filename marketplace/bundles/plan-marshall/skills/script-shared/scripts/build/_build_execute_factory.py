@@ -69,6 +69,7 @@ from _build_result import (  # noqa: E402
 )
 from _build_result import STATUS_KILLED as RESULT_STATUS_KILLED  # noqa: E402
 from _build_result import STATUS_RUNNING as RESULT_STATUS_RUNNING  # noqa: E402
+from _build_server_protocol import LIVE_STATUSES as WIRE_LIVE_STATUSES  # noqa: E402
 from _build_server_protocol import (  # noqa: E402
     MARSHALLD_JOB_ENV,
     STATUS_SUCCESS,
@@ -77,7 +78,6 @@ from _build_server_protocol import (  # noqa: E402
 from _build_server_protocol import STATUS_FAILURE as WIRE_STATUS_FAILURE  # noqa: E402
 from _build_server_protocol import STATUS_KILLED as WIRE_STATUS_KILLED  # noqa: E402
 from _build_server_protocol import STATUS_TIMEOUT as WIRE_STATUS_TIMEOUT  # noqa: E402
-from _build_server_protocol import LIVE_STATUSES as WIRE_LIVE_STATUSES  # noqa: E402
 
 # Two vocabularies meet in this module and their members happen to share
 # spellings, so an unqualified `STATUS_KILLED` reads as correct while silently
@@ -670,9 +670,7 @@ def _daemon_result_to_direct(
     return result
 
 
-def _map_daemon_result(
-    waited: dict[str, Any], command_str: str, command_key: str | None = None
-) -> DirectCommandResult:
+def _map_daemon_result(waited: dict[str, Any], command_str: str, command_key: str | None = None) -> DirectCommandResult:
     """Map a client ``wait`` status-TOON to a ``DirectCommandResult``.
 
     The daemon's terminal job statuses (``success|failure|timeout|killed``) are
@@ -998,7 +996,7 @@ def _running_hand_back(
     """
     duration = int(time.monotonic() - started_monotonic)
     log_file = ''
-    queued_seconds = 0
+    queued_seconds: int | None = 0
     if waited is not None:
         log_file = str(waited.get('log_file', '') or '')
         queued_seconds = _coerce_queued_seconds(waited)

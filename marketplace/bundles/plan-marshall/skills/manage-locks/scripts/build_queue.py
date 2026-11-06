@@ -1365,7 +1365,14 @@ def run_directory_acquire(args: Namespace) -> dict[str, Any]:
         else:
             if not any(waiter['ticket'] == ticket for waiter in waiters):
                 waiters.append(
-                    {'directory': directory, 'ticket': ticket, 'plan_id': plan_id, 'command': command, 'pid': pid, 'ts': now}
+                    {
+                        'directory': directory,
+                        'ticket': ticket,
+                        'plan_id': plan_id,
+                        'command': command,
+                        'pid': pid,
+                        'ts': now,
+                    }
                 )
             outcome['waiting_on'] = _holder_view(holder or (ahead[0] if ahead else None), now)
         state[DIRECTORY_LOCKS_FIELD] = locks

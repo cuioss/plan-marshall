@@ -2185,7 +2185,7 @@ def _neutralize_directory_lock(request, monkeypatch):
         return
 
     import _build_execute_factory
-    import _build_queue_slot  # noqa: F401
+    import _build_queue_slot
 
     for namespace in _seam_namespaces(
         getattr(request, 'module', None), _DIRECTORY_LOCK_SEAM_NAME, ('_build_execute_factory', '_build_queue_slot')

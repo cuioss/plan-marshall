@@ -149,9 +149,7 @@ def test_submit_carries_queued_behind_for_a_busy_directory(home, tmp_path, monke
     async def _drive():
         gate = asyncio.Event()
         _gated_run_job(monkeypatch, gate)
-        daemon = marshalld.Daemon(
-            scheduler=Scheduler(max_slots=2), journal=Journal(), log_dir=tmp_path / 'job-logs'
-        )
+        daemon = marshalld.Daemon(scheduler=Scheduler(max_slots=2), journal=Journal(), log_dir=tmp_path / 'job-logs')
         w1 = tmp_path / 'W1'
         w2 = tmp_path / 'W2'
         a = await daemon.handle_request({'op': 'submit', 'job': _spec_for(w1, 'a:1:x').to_dict()})
@@ -176,9 +174,7 @@ def test_submit_reports_an_empty_queued_behind_when_no_job_runs(home, tmp_path, 
     async def _drive():
         gate = asyncio.Event()
         _gated_run_job(monkeypatch, gate)
-        daemon = marshalld.Daemon(
-            scheduler=Scheduler(max_slots=1), journal=Journal(), log_dir=tmp_path / 'job-logs'
-        )
+        daemon = marshalld.Daemon(scheduler=Scheduler(max_slots=1), journal=Journal(), log_dir=tmp_path / 'job-logs')
         response = await daemon.handle_request({'op': 'submit', 'job': _spec_for(tmp_path / 'W1', 'a:1:x').to_dict()})
         gate.set()
         await asyncio.gather(*list(daemon._tasks.values()), return_exceptions=True)
@@ -197,9 +193,7 @@ def test_wait_for_a_queued_job_reports_queued_waiting_on_and_queued_seconds(home
     async def _drive():
         gate = asyncio.Event()
         _gated_run_job(monkeypatch, gate)
-        daemon = marshalld.Daemon(
-            scheduler=Scheduler(max_slots=2), journal=Journal(), log_dir=tmp_path / 'job-logs'
-        )
+        daemon = marshalld.Daemon(scheduler=Scheduler(max_slots=2), journal=Journal(), log_dir=tmp_path / 'job-logs')
         w1 = tmp_path / 'W1'
         a = await daemon.handle_request({'op': 'submit', 'job': _spec_for(w1, 'a:1:x').to_dict()})
         b = await daemon.handle_request({'op': 'submit', 'job': _spec_for(w1, 'b:1:x').to_dict()})
@@ -224,9 +218,7 @@ def test_terminal_result_carries_the_queued_seconds_it_waited(home, tmp_path, mo
     async def _drive():
         gate = asyncio.Event()
         _gated_run_job(monkeypatch, gate)
-        daemon = marshalld.Daemon(
-            scheduler=Scheduler(max_slots=2), journal=Journal(), log_dir=tmp_path / 'job-logs'
-        )
+        daemon = marshalld.Daemon(scheduler=Scheduler(max_slots=2), journal=Journal(), log_dir=tmp_path / 'job-logs')
         w1 = tmp_path / 'W1'
         await daemon.handle_request({'op': 'submit', 'job': _spec_for(w1, 'a:1:x').to_dict()})
         b = await daemon.handle_request({'op': 'submit', 'job': _spec_for(w1, 'b:1:x').to_dict()})
