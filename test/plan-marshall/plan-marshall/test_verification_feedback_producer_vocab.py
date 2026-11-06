@@ -290,7 +290,7 @@ def test_every_producer_the_ci_verify_doc_names_is_accepted():
     [
         '\n- The executor returns `producers: [ci-verify-policy]` for this row.\n',
         '\n- The dispatcher then runs it with `producer=ci-verify-policy`.\n',
-        '\n- The dispatcher then runs it with `producer = `ci-verify-policy``.\n',
+        '\n- The dispatcher then runs it with `producer = ci-verify-policy`.\n',
         '\n- The executor returns:\n  producers: [\n    ci-verify-policy,\n  ]\n',
     ],
     ids=['producers-list', 'producer-assignment', 'producer-spaced-assignment', 'producers-multiline-list'],

@@ -217,38 +217,26 @@ def _check_findings(plan_id: str) -> dict[str, Any]:
 def _read_plan_status(plan_id: str) -> dict[str, Any] | None:
     """Return the plan's status payload, or ``None`` when it cannot be read.
 
-    Goes through the executor (``manage-status read``) — the plan-context resolution
-    is that skill's own, so a plan whose directory moved into its worktree is still
-    found. ``None`` is the declared unknown, never an empty plan.
+    Reads through manage-status' own resolver — ``_status_core.resolve_plan_status``,
+    the function behind ``manage-status read`` — and NOT through that verb's TOON
+    rendering. TOON splits a line at its FIRST colon, so a namespaced step key
+    (``project:finalize-step-plugin-doctor:``) arrives as ``{'project':
+    'finalize-step-plugin-doctor: …'}``: the scalar is skipped and the record is
+    never judged, which is how a declared head-dependent step could be missed at
+    merge. The resolver hands back the JSON document with every key intact, and the
+    plan-context resolution (including the sibling-worktree read) is still that
+    skill's own.
     """
     try:
-        executor = get_executor_path()
-    except RuntimeError:
-        # ``get_executor_path`` raises when no plan root resolves; an unresolvable
-        # executor is the declared unknown here, never a crash inside the gate.
-        return None
-    if executor is None:
+        from _status_core import resolve_plan_status
+    except Exception:  # an unimportable resolver is the declared unknown
         return None
     try:
-        completed = subprocess.run(
-            [sys.executable, str(executor), _MANAGE_STATUS_NOTATION, 'read', '--plan-id', plan_id],
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=60,
-        )
-    except (OSError, subprocess.SubprocessError):
+        resolution = resolve_plan_status(plan_id, any_checkout=True)
+    except Exception:  # any read/resolution failure is the declared unknown
         return None
-    if not (completed.stdout or '').strip():
-        return None
-    try:
-        parsed = parse_toon(completed.stdout)
-    except Exception:
-        return None
-    if parsed.get('status') != 'success':
-        return None
-    plan = parsed.get('plan')
-    return plan if isinstance(plan, dict) else None
+    status = resolution.status
+    return status if isinstance(status, dict) else None
 
 
 def _resolve_local_head(project_dir: str) -> str | None:

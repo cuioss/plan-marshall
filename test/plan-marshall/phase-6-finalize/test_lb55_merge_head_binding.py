@@ -53,14 +53,20 @@ def _merge(status, head, **kwargs):
     the same reason: the production forms read the repository's own finalize-step docs
     and spawn a ``verdict_currency`` executor call. A case that exercises one of those
     paths overrides the corresponding seam, and the production classifier has its own
-    case in this module.
+    case in this module. Passing ``status_reader=None`` selects the production read.
     """
-    kwargs.setdefault('participation_check', lambda _pid, _pr, _project_dir: _participating())
-    kwargs.setdefault('head_dependence_reader', lambda _step: (True, None))
-    kwargs.setdefault(
-        'classifier',
-        lambda _step, _project_dir, _recorded: {'status': 'success', 'verdict': 'invalidated', 'reason': 'stub'},
-    )
+    flags = {
+        'participation_check': lambda _pid, _pr, _project_dir: _participating(),
+        'head_dependence_reader': lambda _step: (True, None),
+        'classifier': lambda _step, _project_dir, _recorded: {
+            'status': 'success',
+            'verdict': 'invalidated',
+            'reason': 'stub',
+        },
+        'status_reader': lambda _pid: status,
+        'head_reader': lambda _dir: head,
+    }
+    flags.update(kwargs)
     return gate.merge(
         'lb55-plan',
         route='safe-merge',
@@ -69,9 +75,7 @@ def _merge(status, head, **kwargs):
         strategy='squash',
         findings_check=lambda _pid: {'status': 'success', 'blocking_count': 0},
         merge_runner=lambda _args: {'status': 'success', 'merged': True},
-        status_reader=lambda _pid: status,
-        head_reader=lambda _dir: head,
-        **kwargs,
+        **flags,
     )
 
 
@@ -406,3 +410,64 @@ def test_the_undeclared_control_step_is_discovered_and_declares_no_fact():
     discovered = {str(record.get('name', '')).rsplit(':', 1)[-1] for record in find_implementors(ext_point)}
 
     assert 'finalize-step-sync-baseline' in discovered
+
+
+# ---------------------------------------------------------------------------
+# PLAN-LB-107 D2 — the status transport must preserve namespaced step keys
+# ---------------------------------------------------------------------------
+#
+# ``mark-step-done`` stores a project-tier step under its ``project:`` id
+# (``canonicalize_step_key`` preserves that prefix). The executor's TOON
+# rendering then splits a ``project:step:`` line at its FIRST colon, so a gate
+# that parsed that text would receive ``{'project': 'step: ...'}`` and skip the
+# record — merging without checking a declared head-dependent step, which is
+# exactly the PLAN-LB-26 class. The read is therefore the JSON resolver's, not
+# the TOON rendering's.
+
+
+def test_a_project_namespaced_step_record_survives_the_status_read(monkeypatch):
+    """The status read keeps a ``project:`` key as a dict record, not a scalar."""
+    from types import SimpleNamespace
+
+    import _status_core
+
+    status = _status(
+        {
+            'functional-review': HEAD_GATED,
+            'project:finalize-step-plugin-doctor': HEAD_GATED,
+        }
+    )
+    monkeypatch.setattr(
+        _status_core,
+        'resolve_plan_status',
+        lambda _plan_id, any_checkout=False: SimpleNamespace(status=status),
+    )
+
+    read = gate._read_plan_status('lb55-plan')
+
+    records = read['metadata']['phase_steps']['6-finalize']
+    assert isinstance(records['project:finalize-step-plugin-doctor'], dict)
+
+
+def test_a_namespaced_declared_step_is_judged_not_silently_skipped(monkeypatch):
+    """End-to-end: a stale project-tier declared record refuses the merge."""
+    from types import SimpleNamespace
+
+    import _status_core
+
+    status = _status({'project:finalize-step-plugin-doctor': HEAD_GATED})
+    monkeypatch.setattr(
+        _status_core,
+        'resolve_plan_status',
+        lambda _plan_id, any_checkout=False: SimpleNamespace(status=status),
+    )
+
+    result = _merge(
+        status,
+        HEAD_MERGED,
+        status_reader=None,
+        head_dependence_reader=lambda _step: (True, None),
+    )
+
+    assert result['status'] == 'error', result
+    assert {item['step'] for item in result['steps']} == {'project:finalize-step-plugin-doctor'}
