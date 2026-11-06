@@ -1245,10 +1245,11 @@ class TestPreToolFaultPassThrough:
 class TestIndeterminateReasonCarry:
     """A child's ``indeterminate`` verdict keeps the REASON it stated.
 
-    The daemon's wire vocabulary collapses ``indeterminate`` onto ``failure``,
-    and the client's cross-check rebuilds the verdict from the job log. Before
-    the carry, that rebuild substituted a generic "outside the build-result
-    vocabulary" sentence, so a producer's named reason never reached the caller.
+    The daemon's wire vocabulary collapses ``indeterminate`` onto ``failure``, so
+    ``failure`` is the shape a routed ``indeterminate`` really arrives in. The
+    client used to rebuild that as a generic ``build_failed``, discarding the
+    producer's named reason and taking the build-failure path — the fabrication
+    the producer's own status existed to prevent.
     """
 
     def test_an_indeterminate_child_verdict_keeps_its_own_reason(self, tmp_path):
@@ -1258,7 +1259,7 @@ class TestIndeterminateReasonCarry:
         log.write_text(f'status: indeterminate\nexit_code: 0\nmessage: "{reason}"\n', encoding='utf-8')
 
         result = factory._daemon_result_to_direct(
-            {'job_status': 'success', 'exit_code': 0, 'duration_seconds': 4, 'log_file': str(log)},
+            {'job_status': 'failure', 'exit_code': 0, 'duration_seconds': 4, 'log_file': str(log)},
             'cmd',
         )
 
@@ -1271,10 +1272,28 @@ class TestIndeterminateReasonCarry:
         log.write_text('status: quiesced\nexit_code: 0\n', encoding='utf-8')
 
         result = factory._daemon_result_to_direct(
-            {'job_status': 'success', 'exit_code': 0, 'duration_seconds': 4, 'log_file': str(log)},
+            {'job_status': 'failure', 'exit_code': 0, 'duration_seconds': 4, 'log_file': str(log)},
             'cmd',
         )
 
         assert result['status'] == 'indeterminate'
         assert 'quiesced' in result['message']
         assert 'outside the build-result vocabulary' in result['message']
+
+    def test_a_real_failure_stays_a_build_failure(self, tmp_path):
+        """Matched control: only a non-``error`` verdict is re-rendered as itself."""
+        log = tmp_path / 'failed.log'
+        log.write_text(
+            'status: error\nexit_code: 1\nerror: build_failed\n'
+            'errors[1]{file,line,message,category}:\n'
+            '  test/a.py,3,"assert 0",test_failure\n',
+            encoding='utf-8',
+        )
+
+        result = factory._daemon_result_to_direct(
+            {'job_status': 'failure', 'exit_code': 1, 'duration_seconds': 4, 'log_file': str(log)},
+            'cmd',
+        )
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'build_failed'

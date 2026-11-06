@@ -273,6 +273,8 @@ def test_execute_direct_is_wired_to_the_guard(tmp_path, monkeypatch):
             'log_file': str(_LOG_TEST_DATA / 'maven-dtest-zero-executed.log'),
             'command': f'./mvnw -l /tmp/maven.log {_SELECTOR_COMMAND}',
             'wrapper': './mvnw',
+            'command_key': 'maven:test',
+            'project_dir': str(tmp_path),
         }
 
     monkeypatch.setattr(_factory, 'execute_direct_base', _recorder)
@@ -287,3 +289,5 @@ def test_execute_direct_is_wired_to_the_guard(tmp_path, monkeypatch):
     assert result['status'] == 'indeterminate'
     assert TEST_SELECTOR_MATCHED_NOTHING in result['message']
     assert result['wrapper'] == './mvnw', 'the executor fields travel with the verdict'
+    assert result['command_key'] == 'maven:test'
+    assert result['project_dir'] == str(tmp_path)

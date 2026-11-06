@@ -67,8 +67,10 @@ from _build_result import (  # noqa: E402
     success_result,
     timeout_result,
 )
+from _build_result import STATUS_ERROR as RESULT_STATUS_ERROR  # noqa: E402
 from _build_result import STATUS_KILLED as RESULT_STATUS_KILLED  # noqa: E402
 from _build_result import STATUS_RUNNING as RESULT_STATUS_RUNNING  # noqa: E402
+from _build_result import STATUS_SUCCESS as RESULT_STATUS_SUCCESS  # noqa: E402
 from _build_server_protocol import (  # noqa: E402
     MARSHALLD_JOB_ENV,
     STATUS_SUCCESS,
@@ -778,6 +780,20 @@ def _daemon_result_to_direct(
             )
         if verdict is not None and verdict.child_fault is not None:
             return _child_fault_result(verdict.child_fault, exit_code, duration, log_file, command_str)
+        # The wire vocabulary collapses EVERY non-success verdict onto
+        # ``failure``, so a child that reported ``indeterminate`` arrives here
+        # too. Re-render the child's own verdict rather than collapsing it into a
+        # red build: only ``error`` means the build ran and failed. This is what
+        # carries a producer's named reason (and its ``message``) across the
+        # routed hop instead of substituting a generic failure for it.
+        if verdict is not None and verdict.status not in (RESULT_STATUS_SUCCESS, RESULT_STATUS_ERROR):
+            return _result_for_log_verdict(
+                verdict,
+                duration=duration,
+                log_file=log_file,
+                command_str=command_str,
+                command_key=command_key,
+            )
         return error_result(  # type: ignore[return-value]
             ERROR_BUILD_FAILED,
             exit_code or 1,
