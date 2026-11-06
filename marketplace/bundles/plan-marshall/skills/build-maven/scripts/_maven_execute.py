@@ -5,6 +5,7 @@
 Provides:
 - execute_direct(): Foundation API for Maven command execution
 - cmd_run(): Run subcommand handler (execute + auto-parse on failure)
+- apply_selector_miss_guard(): the run-path truth check for a ``-Dtest`` miss
 
 Usage:
     from _maven_execute import execute_direct, cmd_run
@@ -14,8 +15,15 @@ import re
 
 from _build_execute import CaptureStrategy
 from _build_execute_factory import ExecuteConfig, create_execute_handlers, default_command_key_fn
+from _build_parse import read_log_text
+from _build_result import STATUS_ERROR, STATUS_SUCCESS, indeterminate_result
 from _build_shared import DEFAULT_BUILD_TIMEOUT
-from _maven_cmd_parse import parse_log
+from _maven_cmd_parse import (
+    TEST_SELECTOR_MATCHED_NOTHING,
+    dtest_selector,
+    parse_log,
+    selector_miss_reason,
+)
 
 # Outer timeout floor (seconds) for Maven builds. Maven resolves dependencies
 # and downloads plugins on a cold local repository before a single module
@@ -46,6 +54,72 @@ def _maven_build_command_fn(wrapper: str, args: str, log_file: str) -> tuple[lis
     return cmd_parts, command_str
 
 
+def apply_selector_miss_guard(result: dict) -> dict:
+    """Refuse to call a run green when its Surefire selector matched nothing.
+
+    A ``-Dtest`` selector that matches no test is a wrong command, not a
+    passing run and not a failing test. Surefire ends such a run non-zero by
+    default and green with ``-Dsurefire.failIfNoSpecifiedTests=false``; both
+    shapes are turned into one ``indeterminate`` result naming
+    ``TEST_SELECTOR_MATCHED_NOTHING``.
+
+    ``indeterminate`` rather than ``error`` is the recorded choice: an ``error``
+    result with a zero exit code reaches the build-failure path, which stores
+    every parsed issue and manufactures a synthetic failure row — a verdict out
+    of a run that ran no test. Indeterminate stores no finding, synthesises no
+    ``errors[]`` row, and still blocks every gate that requires ``success``.
+
+    Args:
+        result: A finished execution result (``execute_direct``'s dict).
+
+    Returns:
+        The same result unchanged when no selector miss was detected — the
+        identity is preserved so a control case can assert it — or an
+        ``indeterminate`` result naming the reason.
+    """
+    status = result.get('status')
+    if status not in (STATUS_SUCCESS, STATUS_ERROR):
+        return result
+    command = str(result.get('command') or '')
+    # A failed build is suspect whatever the command says (Surefire's own goal
+    # failure). A successful one is only suspect when a selector was in play.
+    if status == STATUS_SUCCESS and dtest_selector(command) is None:
+        return result
+    try:
+        log_text = read_log_text(result['log_file'])
+    except (KeyError, OSError):
+        # No readable log means no evidence; the run's own status stands.
+        return result
+    if selector_miss_reason(log_text, command) is None:
+        return result
+
+    selector = dtest_selector(command)
+    named = f"'{selector}'" if selector else 'the -Dtest selector'
+    return indeterminate_result(
+        f'{TEST_SELECTOR_MATCHED_NOTHING}: {named} matched no test, so the run executed nothing — '
+        'not a failure and not a green. Surefire prints "No tests matching pattern ... were '
+        'executed" unless -Dsurefire.failIfNoSpecifiedTests=false suppresses it.',
+        int(result.get('duration_seconds') or 0),
+        str(result.get('log_file') or ''),
+        command,
+        exit_code=int(result.get('exit_code') or 0),
+    )
+
+
+def _selector_miss_guard(inner):
+    """Wrap the factory's execute so the selector guard runs on every route.
+
+    A routed build re-enters this factory inside the daemon child, so the guard
+    applies there too; the wrapper forwards the full signature verbatim, so no
+    caller-supplied timeout or plan id is lost on either leg.
+    """
+
+    def wrapped(*args, **kwargs):
+        return apply_selector_miss_guard(inner(*args, **kwargs))
+
+    return wrapped
+
+
 _CONFIG = ExecuteConfig(
     tool_name='maven',
     unix_wrapper='mvnw',
@@ -59,4 +133,4 @@ _CONFIG = ExecuteConfig(
     min_timeout=MAVEN_OUTER_FLOOR_SECONDS,
 )
 
-execute_direct, cmd_run = create_execute_handlers(_CONFIG, parse_log)
+execute_direct, cmd_run = create_execute_handlers(_CONFIG, parse_log, wrap_execute_fn=_selector_miss_guard)

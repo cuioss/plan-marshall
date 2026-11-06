@@ -24,7 +24,7 @@ The exit-code contract for every `python3 .plan/execute-script.py` call in this 
 | Script | Purpose |
 |--------|---------|
 | `maven.py` | CLI dispatcher |
-| `_maven_execute.py` | Execution config via factory (uses shared `default_command_key_fn`) |
+| `_maven_execute.py` | Execution config via factory (uses shared `default_command_key_fn`); carries the run-path `-Dtest` selector-miss guard |
 | `_maven_cmd_discover.py` | Module discovery via pom.xml + Maven metadata commands |
 | `_maven_cmd_parse.py` | Log parsing with JVM base patterns + Maven-specific extensions |
 | `_maven_cmd_rewrite_log.py` | Additive OpenRewrite #118 log-parse consumption (Signal B) via the `rewrite-log-parse` domain verb, fail-closed |
@@ -76,6 +76,12 @@ The consumption is **fail-closed** (ADR-009) — it never reports a vacuous "cle
 | `parse_error` | The build reached `rewrite:run` and the verb resolves, but the dispatched parser returned an error payload (executor not found, output unparseable / not an object) or a non-dict | Findings could **not** be observed this run — fail closed rather than report a false `observed` with zero findings. |
 
 The existing Maven parse pipeline, the `openrewrite_info` categorization, and the tree-scan marker signal (`marker-detect`) are unchanged by this additive consumer.
+
+### Test selectors (`-Dtest`)
+
+The selector grammar, stated once here for the whole corpus: **Classes are separated by commas, and a method goes after `#`** — `-Dtest=AwaitsTest,CoreTest#runs`. A list **joined with `+` is one pattern**, and one pattern matches nothing, so `-Dtest=Awaits+Core` selects no test at all.
+
+A selector that matches nothing is a wrong command, not a test result. `run` reports it as `test_selector_matched_nothing` — an `indeterminate` result naming the selector — whether Surefire fails the build with `No tests matching pattern … were executed` or `-Dsurefire.failIfNoSpecifiedTests=false` turns the same miss into an exit-0 summary of zero executed tests.
 
 ## Module Discovery
 

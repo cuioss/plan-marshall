@@ -360,3 +360,73 @@ def _extract_test_summary(content: str) -> UnitTestSummary | None:
         by_runner=by_runner,
         population=POPULATION_UNMEASURED if unmeasured else POPULATION_MEASURED,
     )
+
+
+# =============================================================================
+# Surefire -Dtest selectors that matched nothing
+# =============================================================================
+
+TEST_SELECTOR_MATCHED_NOTHING = 'test_selector_matched_nothing'
+"""Reason token for a Surefire ``-Dtest`` selector that matched no test.
+
+Distinct from a test failure: nothing ran, so there is no failing test to fix —
+the selector is wrong. Kept as a token rather than prose so the run path, the
+emitted result and a report can agree on one name.
+"""
+
+# Surefire's goal failure when a selector matched nothing:
+#   No tests matching pattern "Awaits#runs" were executed!
+#   (Set -Dsurefire.failIfNoSpecifiedTests=false to ignore this error.)
+_SELECTOR_MISS_PATTERN = re.compile(r'No tests matching pattern "?([^"!\n]*)"? were executed')
+
+# The selector a Maven command carries, e.g. ``-Dtest=Awaits#runs`` or
+# ``-Dtest="Awaits#runs"``.
+_DTEST_SELECTOR_PATTERN = re.compile(r'-Dtest="?([^"\s]+)"?')
+
+
+def dtest_selector(command: str | None) -> str | None:
+    """Return the ``-Dtest`` selector a Maven command carries, or None.
+
+    Args:
+        command: The full Maven command string, when the run path knows it.
+
+    Returns:
+        The selector as written after ``-Dtest=``, or None when the command
+        carries none.
+    """
+    if not command:
+        return None
+    match = _DTEST_SELECTOR_PATTERN.search(command)
+    return match.group(1) if match else None
+
+
+def selector_miss_reason(log_text: str, command: str | None = None) -> str | None:
+    """Return the named reason a Surefire selector matched nothing, or None.
+
+    Two shapes mean the same thing, and both are checked because only one of
+    them reaches a failing build:
+
+    - Surefire's own goal failure, ``No tests matching pattern … were executed``,
+      which ends the build non-zero.
+    - A ``-Dtest`` run that parsed a summary claiming ZERO executed tests. With
+      ``-Dsurefire.failIfNoSpecifiedTests=false`` the same miss exits 0 and
+      prints a passing-looking summary, so the command is needed to know a
+      selector was in play at all.
+
+    Args:
+        log_text: The captured build log, already read as text.
+        command: The Maven command string, when the caller knows it.
+
+    Returns:
+        ``TEST_SELECTOR_MATCHED_NOTHING`` when a selector matched nothing,
+        otherwise None. None is also the answer when the population cannot be
+        determined — a run with no parsed summary is not evidence of zero tests.
+    """
+    if _SELECTOR_MISS_PATTERN.search(log_text):
+        return TEST_SELECTOR_MATCHED_NOTHING
+    if dtest_selector(command) is None:
+        return None
+    summary = _extract_test_summary(log_text)
+    if summary is not None and summary.executed == 0:
+        return TEST_SELECTOR_MATCHED_NOTHING
+    return None

@@ -5,6 +5,8 @@
 Tests the Maven execution config and factory-generated functions.
 """
 
+from pathlib import Path
+
 from conftest import load_script_module
 
 _maven_execute_mod = load_script_module('plan-marshall', 'build-maven', '_maven_execute.py', '_maven_execute')
@@ -197,3 +199,56 @@ def test_execute_direct_resolves_present_wrapper(tmp_path, monkeypatch):
 
     assert result['status'] == 'success'
     assert calls[0]['wrapper'] == './mvnw'
+
+
+# =============================================================================
+# A -Dtest selector that matched nothing is never green
+# =============================================================================
+#
+# The decision lives on the RUN path, not in the parser alone: Surefire can end
+# a selector miss with exit 0 (``-Dsurefire.failIfNoSpecifiedTests=false``), so
+# a parser verdict that the emit choke point never reads would still let the run
+# report ``success``.
+
+apply_selector_miss_guard = _maven_execute_mod.apply_selector_miss_guard
+TEST_SELECTOR_MATCHED_NOTHING = _maven_execute_mod.TEST_SELECTOR_MATCHED_NOTHING
+
+_LOG_TEST_DATA = Path(__file__).parent / 'fixtures' / 'log-test-data'
+
+_SELECTOR_COMMAND = 'mvnw test -Dtest=Awaits#runs'
+
+
+def _run_result(log_name: str, *, status: str, exit_code: int) -> dict:
+    """A build result shaped like the executor's, pointing at one log fixture."""
+    return {
+        'status': status,
+        'exit_code': exit_code,
+        'duration_seconds': 3,
+        'log_file': str(_LOG_TEST_DATA / log_name),
+        'command': _SELECTOR_COMMAND,
+    }
+
+
+def test_dtest_run_with_zero_executed_tests_is_not_success():
+    """A ``-Dtest`` run that executed no test is reported as the named reason, never green."""
+    guarded = apply_selector_miss_guard(_run_result('maven-dtest-zero-executed.log', status='success', exit_code=0))
+
+    assert guarded['status'] != 'success'
+    assert guarded['status'] == 'indeterminate'
+    assert guarded['message'].startswith(TEST_SELECTOR_MATCHED_NOTHING)
+
+
+def test_control_dtest_run_with_an_executed_test_stays_success():
+    """CONTROL: the same command beside a run that executed a test keeps its success."""
+    result = _run_result('maven-dtest-one-executed.log', status='success', exit_code=0)
+
+    assert apply_selector_miss_guard(result) is result
+
+
+def test_selector_miss_goal_failure_becomes_the_named_reason_not_a_build_failure():
+    """Surefire's own goal failure is carried as the named reason, not as a red build."""
+    guarded = apply_selector_miss_guard(_run_result('maven-selector-miss.log', status='error', exit_code=1))
+
+    assert guarded['status'] == 'indeterminate'
+    assert TEST_SELECTOR_MATCHED_NOTHING in guarded['message']
+    assert 'Awaits#runs' in guarded['message']

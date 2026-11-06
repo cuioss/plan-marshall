@@ -22,12 +22,15 @@ from _build_parse import (
     categorize_issue,
 )
 
-from conftest import get_script_path, load_script_module, run_script
+from conftest import MARKETPLACE_ROOT, get_script_path, load_script_module, run_script
 
 _maven_cmd_parse_mod = load_script_module('plan-marshall', 'build-maven', '_maven_cmd_parse.py', '_maven_cmd_parse')
 
 parse_log = _maven_cmd_parse_mod.parse_log
 MAVEN_PATTERNS = _maven_cmd_parse_mod.MAVEN_PATTERNS
+selector_miss_reason = _maven_cmd_parse_mod.selector_miss_reason
+dtest_selector = _maven_cmd_parse_mod.dtest_selector
+TEST_SELECTOR_MATCHED_NOTHING = _maven_cmd_parse_mod.TEST_SELECTOR_MATCHED_NOTHING
 
 # CLI entry point for the parse subcommand (routes through cmd_parse_common,
 # where the seam-(b) truthful-status derivation lives).
@@ -854,3 +857,85 @@ def test_control_maven_in_process_arm_still_parses_its_own_log(capsys):
     emitted = _emit_maven_success(capsys, _full_run_parser)
 
     assert emitted['tests_run'] == 4892
+
+
+# =============================================================================
+# A Surefire -Dtest selector that matched nothing
+# =============================================================================
+#
+# Three states the run must keep apart: a selector Surefire itself rejected
+# (the goal failure), a selector that ran nothing because
+# ``-Dsurefire.failIfNoSpecifiedTests=false`` turned the miss into a pass, and a
+# selector that really executed a test. Only the last one may read as green.
+
+
+_SELECTOR_MISS_LOG = TEST_DATA_DIR / 'maven-selector-miss.log'
+_DTEST_ZERO_EXECUTED_LOG = TEST_DATA_DIR / 'maven-dtest-zero-executed.log'
+_DTEST_ONE_EXECUTED_LOG = TEST_DATA_DIR / 'maven-dtest-one-executed.log'
+
+_DTEST_COMMAND = 'mvnw test -Dtest=Awaits#runs'
+
+
+def test_selector_miss_goal_failure_yields_the_named_reason_and_no_test_failure_issue():
+    """Surefire's `No tests matching pattern` is a command error, not a test failure.
+
+    It is a usage error in the selector, so it must not be filed as a
+    ``test_failure`` finding — and it must surface as the named reason instead
+    of being read as a test that failed.
+    """
+    text = _SELECTOR_MISS_LOG.read_text(encoding='utf-8')
+
+    issues, _, _ = parse_log(_SELECTOR_MISS_LOG)
+
+    assert selector_miss_reason(text, _DTEST_COMMAND) == TEST_SELECTOR_MATCHED_NOTHING
+    assert not [issue for issue in issues if issue.category == 'test_failure']
+
+
+def test_dtest_run_with_zero_executed_tests_yields_the_named_reason():
+    """A passing-looking `-Dtest` run that executed nothing is a selector miss."""
+    text = _DTEST_ZERO_EXECUTED_LOG.read_text(encoding='utf-8')
+
+    assert dtest_selector(_DTEST_COMMAND) == 'Awaits#runs'
+    assert selector_miss_reason(text, _DTEST_COMMAND) == TEST_SELECTOR_MATCHED_NOTHING
+
+
+def test_control_dtest_run_with_an_executed_test_is_not_a_selector_miss():
+    """CONTROL: the same command beside a run that executed a test is not a miss."""
+    text = _DTEST_ONE_EXECUTED_LOG.read_text(encoding='utf-8')
+
+    assert selector_miss_reason(text, _DTEST_COMMAND) is None
+
+
+#: The three clauses the selector-grammar sentence must state, as build-maven
+#: renders them. Classes are comma-separated, a method follows `#`, and a `+`
+#: list is ONE pattern — the form that silently matches nothing.
+_SELECTOR_GRAMMAR_CLAUSES = (
+    'Classes are separated by commas',
+    'a method goes after `#`',
+    'joined with `+` is one pattern',
+)
+
+#: The clause no other corpus document may restate — the grammar is stated once.
+_GRAMMAR_MARKER = 'Classes are separated by commas'
+
+
+def test_build_maven_skill_states_the_selector_grammar():
+    """``build-maven/SKILL.md`` states the `-Dtest` grammar in all three clauses."""
+    skill_text = (MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'build-maven' / 'SKILL.md').read_text(
+        encoding='utf-8'
+    )
+
+    for clause in _SELECTOR_GRAMMAR_CLAUSES:
+        assert clause in skill_text, clause
+
+
+def test_no_other_corpus_document_restates_the_selector_grammar():
+    """The grammar is stated ONCE in the corpus — build-maven is its only home."""
+    restating = []
+    for document in sorted(MARKETPLACE_ROOT.rglob('*.md')):
+        if document.parts[-2:] == ('build-maven', 'SKILL.md'):
+            continue
+        if _GRAMMAR_MARKER in document.read_text(encoding='utf-8', errors='replace'):
+            restating.append(str(document.relative_to(MARKETPLACE_ROOT)))
+
+    assert restating == []
