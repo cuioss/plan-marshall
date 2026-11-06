@@ -123,6 +123,7 @@ from _review_support_attribution import (
     load_outline_deliverables,
 )
 from _review_support_integrity import compute_test_integrity
+from _review_support_integrity import main_checkout_root as _integrity_main_checkout_root
 from _review_support_validate import (
     FIX_KIND_CORRECTION,
     FIX_KIND_IMPLEMENTATION,
@@ -141,7 +142,7 @@ from _review_support_validate import (
     validate_functional,
     verifier_status,
 )
-from file_ops import atomic_write_file, base_path, cwd_checkout_root
+from file_ops import atomic_write_file, base_path
 from input_validation import require_valid_plan_id
 from toon_parser import serialize_toon
 
@@ -151,12 +152,12 @@ TARGET_NONE = 'none'
 
 
 def _main_checkout_root() -> Path | None:
-    """The main checkout root, or ``None`` when it cannot be resolved."""
-    try:
-        root = Path(cwd_checkout_root())
-    except Exception:
-        return None
-    return root if root.is_dir() else None
+    """The main checkout root, or ``None`` when it cannot be resolved.
+
+    Delegates to ``_review_support_integrity.main_checkout_root`` — the one
+    definition of this seam in the two modules.
+    """
+    return _integrity_main_checkout_root()
 
 
 def _evidence_root(plan_id: str) -> Path | None:
@@ -166,13 +167,19 @@ def _evidence_root(plan_id: str) -> Path | None:
     a worktree (``use_worktree: false``) is graded against the MAIN CHECKOUT — the
     tree the finalize contract assigns it, and the tree its branch diff is read
     from — so its citations are still checked rather than read as the not-run state
-    (which is a blocking finding).
+    (which is a blocking finding). This reader resolves the CITATION root; the
+    diff grader ``_review_support_integrity._evidence_root`` additionally refuses a
+    checkout that is on the base tip or dirty.
 
     A plan that DECLARED a materialized worktree which does not resolve now is
     different again: falling back to the main checkout would check citations
     against a tree other than the graded head. That case returns ``None``, so the
     not-run finding stands. ``None`` disables the existence check rather than
     reading the absence as a pass.
+
+    The test-integrity grader resolves its own evidence root in
+    ``_review_support_integrity._evidence_root``: same worktree/main-checkout choice,
+    plus the fail-closed head and dirty checks that belong to grading a diff.
     """
     try:
         worktree = _attr.resolve_live_worktree(plan_id)
@@ -245,9 +252,17 @@ def _grade_test_integrity(grading: Grading, plan_id: str) -> list[dict[str, Any]
     for row in report.get('findings') or []:
         if not isinstance(row, dict):
             continue
-        removed_tests = [entry for entry in row.get('removed_tests') or [] if isinstance(entry, dict)]
-        if removed_tests and all(_removal_is_accepted(entry, accepted) for entry in removed_tests):
-            accepted_rows.extend(removed_tests)
+        if _row_is_accepted(row, accepted):
+            removed_tests = [entry for entry in row.get('removed_tests') or [] if isinstance(entry, dict)]
+            if removed_tests:
+                # The payload lists the accepted identity plus its count; the internal
+                # removal kind stays an implementation detail of the acceptance test.
+                accepted_rows.extend(
+                    {'identity': entry.get('identity'), 'assertions_removed': entry.get('assertions_removed')}
+                    for entry in removed_tests
+                )
+            else:
+                accepted_rows.append(_row_acceptance_record(row))
             continue
         path = str(row.get('path') or '-')
         detail = str(row.get('detail') or row.get('kind') or 'weakened test')
@@ -255,21 +270,84 @@ def _grade_test_integrity(grading: Grading, plan_id: str) -> list[dict[str, Any]
     return accepted_rows
 
 
+def _row_acceptance_record(row: dict[str, Any]) -> dict[str, Any]:
+    """The accepted-set record an identity-less row is accepted by."""
+    record: dict[str, Any] = {
+        'path': str(row.get('path') or ''),
+        'kind': str(row.get('kind') or 'assertion_removed'),
+    }
+    if record['kind'] == 'test_filtered':
+        record['markers'] = list(row.get('markers') or [])
+    else:
+        record['assertions_removed'] = row.get('removed_assertions')
+    return record
+
+
+def _row_is_accepted(row: dict[str, Any], accepted: list[dict[str, Any]]) -> bool:
+    """Whether a whole test-integrity row is covered by the accepted-removal set.
+
+    An identity-bearing row is accepted when every removed identity is, plus any
+    residual the identities do not cover. A row with no identity is accepted by its
+    explicit path-level key (`{path, kind, assertions_removed}`, or `{path, kind:
+    test_filtered, markers}`).
+    """
+    removed_tests = [entry for entry in row.get('removed_tests') or [] if isinstance(entry, dict)]
+    path = row.get('path')
+    kind = str(row.get('kind') or 'assertion_removed')
+    if removed_tests:
+        if not all(_removal_is_accepted(entry, accepted) for entry in removed_tests):
+            return False
+        total = row.get('removed_assertions')
+        known = sum(int(entry.get('assertions_removed') or 0) for entry in removed_tests)
+        if not isinstance(total, int) or total <= known:
+            return True
+        # The row also carries a residual no identity explains; it needs its own
+        # path-level acceptance, so a later growth of that residual is raised again.
+        residual = total - known
+        return any(
+            entry.get('path') == path
+            and str(entry.get('kind') or 'assertion_removed') != 'test_filtered'
+            and (entry.get('assertions_removed') is None or entry.get('assertions_removed') == residual)
+            for entry in accepted
+        )
+    if kind == 'test_filtered':
+        wanted = set(row.get('markers') or [])
+        return any(
+            str(entry.get('kind') or '') == 'test_filtered'
+            and entry.get('path') == path
+            and set(entry.get('markers') or []) >= wanted
+            for entry in accepted
+        )
+    count = row.get('removed_assertions')
+    return any(
+        entry.get('path') == path
+        and str(entry.get('kind') or 'assertion_removed') != 'test_filtered'
+        and (entry.get('assertions_removed') is None or entry.get('assertions_removed') == count)
+        for entry in accepted
+    )
+
+
 def _removal_is_accepted(removed: dict[str, Any], accepted: list[dict[str, Any]]) -> bool:
     """Whether one removed test identity is covered by the accepted-removal set.
 
     An entry recorded by an operator close names the exact number of assertions
     that finding removed, so a grown or changed removal is not covered. An outline
-    declaration may name no count; it then accepts the identity for whatever number
-    of assertions the removal took.
+    declaration may name no count; a count-less entry then decides a REMOVAL — a
+    test that disappeared from every after-file — and never a DROP of a surviving
+    test, so it cannot license weakening any test of the same name.
     """
     identity = removed.get('identity')
     count = removed.get('assertions_removed')
+    removal_kind = str(removed.get('kind') or 'removed')
     for entry in accepted:
         if entry.get('identity') != identity:
             continue
         recorded = entry.get('assertions_removed')
-        if recorded is None or recorded == count:
+        if recorded is None:
+            if removal_kind == 'removed':
+                return True
+            continue
+        if recorded == count:
             return True
     return False
 
