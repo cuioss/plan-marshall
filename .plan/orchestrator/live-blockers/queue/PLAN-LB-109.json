@@ -2,10 +2,10 @@
   "id": "PLAN-LB-109",
   "slug": "execute-prescribed-yield-not-error",
   "workstream": "WS-01",
-  "status": "running",
+  "status": "shipped",
   "lane": "runbook",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "plan_marshall_plan_id": "lb-109-execute-prescribed-yield-not-error",
+  "pr": "1911",
+  "landing": "landings/PLAN-LB-109.md",
   "seq": 109
 }

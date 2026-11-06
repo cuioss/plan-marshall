@@ -809,7 +809,7 @@ def declared_paths_population(outline_content: str) -> dict[str, int]:
 
 
 #: The deliverable heading that declares the tests a deliverable INTENDS to
-#: remove. The accepted-removal set (PLAN-LB-105 D2) has two sources, and this is
+#: remove. The accepted-removal set has two sources, and this is
 #: the authoring-time one: ``snapshot-criteria`` seeds the status record's set from
 #: these declarations at the freeze, and the reader reads that recorded set.
 _TESTS_TO_REMOVE_HEADING = 'Tests to remove'

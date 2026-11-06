@@ -9,6 +9,7 @@ and timestamp with the pending count unchanged. A changed detail, file or rule
 still files a new pending record (the identity rule is unchanged).
 """
 
+import _findings_core
 import pytest
 from _findings_store_fixtures import (
     QGATE_PERSIST_OK,
@@ -92,13 +93,14 @@ def test_unchanged_reemission_keeps_recorded_resolution(plan_context, resolution
 
 
 def test_a_refiled_taken_into_account_record_is_rearmed(plan_context):
-    """The review's supersession is not an operator decision: a re-file re-arms it.
+    """The review's rule-keyed supersession is not an operator decision: a re-file re-arms it.
 
-    ``taken_into_account`` is what a full loop-back round records for a finding it
-    superseded. A review that re-files the identical finding is reporting that it
-    still blocks, so the record is pending again and an operator close can accept
-    it. An operator ``accepted`` record is the opposite case and is covered by
-    ``test_unchanged_reemission_keeps_recorded_resolution``.
+    ``taken_into_account`` is what a full loop-back round records through its rule key
+    for a finding it superseded (``resolution_source: rule``). A review that re-files
+    the identical finding is reporting that it still blocks, so the record is pending
+    again and an operator close can accept it. An operator ``accepted`` record, and a
+    triage Hold resolved through ``resolve_qgate_finding``, are kept — the latter is
+    pinned by ``test_lb118_reobservation_d3``.
     """
     plan_id = 'qe-survives-taken-into-account'
     first = add_qgate_finding(
@@ -112,7 +114,9 @@ def test_a_refiled_taken_into_account_record_is_rearmed(plan_context):
         rule='rearmed-rule',
     )
     assert first['status'] == 'success'
-    resolve_qgate_finding(plan_id, '5-execute', first['hash_id'], _TAKEN_INTO_ACCOUNT, 'Superseded by the next round')
+    _findings_core.resolve_qgate_findings_by_rule(
+        plan_id, '5-execute', 'rearmed-rule', _TAKEN_INTO_ACCOUNT, 'Superseded by the next round'
+    )
 
     second = add_qgate_finding(
         plan_id,

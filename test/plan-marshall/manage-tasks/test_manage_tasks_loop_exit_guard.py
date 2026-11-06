@@ -25,6 +25,7 @@ same fixtures (both reads target the same on-disk machinery via
 from argparse import Namespace
 
 from conftest import run_script
+from toon_parser import serialize_toon
 
 from _manage_tasks_fixtures import (
     SCRIPT_PATH,
@@ -263,6 +264,7 @@ class TestNoProgressClassification:
     def test_plan_25_shape_is_the_handback_cause_not_error(self, plan_context):
         """One owed task + a declared hand-back classifies as `verification_handback`."""
         _owed_task('guard-plan-25', number=1)
+        _write_manifest(plan_context.plan_dir_for('guard-plan-25'), steps=['verify:module-tests'])
 
         result = cmd_loop_exit_guard(
             _ns_with_predicate(
@@ -376,6 +378,159 @@ class TestNoProgressClassification:
         assert 'predicate_holds:' not in result.stdout
 
 
+class TestTheHandbackExemptionCoversOnlyTheOwedTaskItNames:
+    """A hand-back is decided by what it names, never by its mere presence.
+
+    The two statements the shipped workflow carried — "a hand-back never reaches
+    the predicate" and "never weaken the no-progress rule for a genuine stall" —
+    reconcile only when the exemption is scoped to the owed task the hand-back
+    names. A non-owed task that stalled in the same dispatch is still decided by
+    the predicate, and a hand-back naming a step id the manifest does not carry
+    exempts nothing at all.
+    """
+
+    _TOKENS = 536031
+    _STEP = 'verify:module-tests'
+
+    def test_a_stall_beside_a_handback_is_classified_error(self, plan_context):
+        """One owed task handed back, one non-owed task stalled → the stall decides."""
+        plan_id = 'guard-handback-beside-stall'
+        _owed_task(plan_id, number=1)
+        add_basic_task(plan_id=plan_id, title='Stalled non-owed', deliverable=2, steps=['src/Stalled.java'])
+        cmd_update(_update_ns(plan_id=plan_id, number=2, status='in_progress'))
+        _write_manifest(plan_context.plan_dir_for(plan_id), steps=[self._STEP])
+
+        result = cmd_loop_exit_guard(
+            _ns_with_predicate(
+                plan_id,
+                consumed_tokens=self._TOKENS,
+                completed_tasks_delta=0,
+                verification_handback=True,
+                pending_verify_steps=self._STEP,
+            )
+        )
+
+        assert result['verification_handback_valid'] is True
+        assert result['predicate_in_progress_count'] == 1
+        assert result['predicate_holds'] is True
+        assert result['classification'] == 'error'
+        assert result['classification_reason'] == 'no_progress_predicate_holds_beside_handback'
+
+    def test_a_handback_alone_stays_the_handback_cause(self, plan_context):
+        """Only the owed task is in flight → the prescribed hand-back classifies."""
+        plan_id = 'guard-handback-alone'
+        _owed_task(plan_id, number=1)
+        _write_manifest(plan_context.plan_dir_for(plan_id), steps=[self._STEP])
+
+        result = cmd_loop_exit_guard(
+            _ns_with_predicate(
+                plan_id,
+                consumed_tokens=self._TOKENS,
+                completed_tasks_delta=0,
+                verification_handback=True,
+                pending_verify_steps=self._STEP,
+            )
+        )
+
+        assert result['verification_handback_valid'] is True
+        assert result['classification'] == 'verification_handback'
+        assert result['classification_reason'] == 'declared_orchestrator_build_handback'
+
+    def test_a_handback_naming_a_step_outside_the_manifest_does_not_exempt(self, plan_context):
+        """The manifest's composed list is the authority for what a hand-back may name."""
+        plan_id = 'guard-handback-unknown-step'
+        _owed_task(plan_id, number=1)
+        _write_manifest(plan_context.plan_dir_for(plan_id), steps=['verify:quality-gate'])
+
+        result = cmd_loop_exit_guard(
+            _ns_with_predicate(
+                plan_id,
+                consumed_tokens=self._TOKENS,
+                completed_tasks_delta=0,
+                verification_handback=True,
+                pending_verify_steps=self._STEP,
+            )
+        )
+
+        assert result['verification_handback_valid'] is False
+        assert result['classification'] == 'voluntary_checkpoint'
+        assert result['classification_reason'] == 'no_progress_predicate_false'
+
+
+class TestCompletedTasksDeltaHasAStatedSourceAndNoZeroDefault:
+    """An absent delta is undecidable, and the done count travels on the call."""
+
+    def test_consumed_tokens_without_the_delta_is_a_named_error(self, plan_context):
+        """A delta nobody supplied is not a delta of zero."""
+        add_basic_task(plan_id='guard-delta-absent', title='Mid', deliverable=1, steps=['src/Mid.java'])
+        cmd_update(_update_ns(plan_id='guard-delta-absent', number=1, status='in_progress'))
+
+        result = cmd_loop_exit_guard(
+            _ns_with_predicate('guard-delta-absent', consumed_tokens=536031, completed_tasks_delta=None)
+        )
+
+        assert result['status'] == 'error'
+        assert result['queue_status'] == 'continue', 'the queue verdict must survive the refusal'
+        assert result['error'] == 'no_progress_not_decidable'
+        assert '--completed-tasks-delta' in result['message']
+        assert 'classification' not in result
+
+    def test_the_delta_without_consumed_tokens_is_the_same_named_error(self, plan_context):
+        """The pair is required in both directions — neither input defaults."""
+        add_basic_task(plan_id='guard-tokens-absent', title='Mid', deliverable=1, steps=['src/Mid.java'])
+        cmd_update(_update_ns(plan_id='guard-tokens-absent', number=1, status='in_progress'))
+
+        result = cmd_loop_exit_guard(
+            _ns_with_predicate('guard-tokens-absent', consumed_tokens=None, completed_tasks_delta=0)
+        )
+
+        assert result['status'] == 'error'
+        assert result['queue_status'] == 'continue'
+        assert result['error'] == 'no_progress_not_decidable'
+        assert '--consumed-tokens' in result['message']
+
+    def test_a_supplied_delta_keeps_a_progressing_dispatch_out_of_error(self, plan_context):
+        """A non-owed task in progress with a completed task is progress, not a stall.
+
+        The control for the absent-delta case above: the SAME queue shape with the
+        delta supplied is decided by the predicate's second conjunct, so the
+        dispatch is not `error`. Only the missing input turns it undecidable.
+        """
+        add_basic_task(plan_id='guard-delta-supplied', title='Mid', deliverable=1, steps=['src/Mid.java'])
+        cmd_update(_update_ns(plan_id='guard-delta-supplied', number=1, status='in_progress'))
+
+        result = cmd_loop_exit_guard(
+            _ns_with_predicate('guard-delta-supplied', consumed_tokens=536031, completed_tasks_delta=1)
+        )
+
+        assert result['predicate_in_progress_count'] == 1
+        assert result['predicate_completed_tasks_delta'] == 1
+        assert result['predicate_holds'] is False
+        assert result['classification'] == 'voluntary_checkpoint'
+
+    def test_the_guard_reports_the_done_count_the_delta_is_measured_against(self, plan_context):
+        """The delta's source is the done count this same call reports."""
+        add_basic_task(plan_id='guard-done-count', title='Done one', deliverable=1, steps=['src/A.java'])
+        add_basic_task(plan_id='guard-done-count', title='Still pending', deliverable=2, steps=['src/B.java'])
+        cmd_finalize_step(_finalize_step_ns(plan_id='guard-done-count', task=1, step=1, outcome='done'))
+
+        result = cmd_loop_exit_guard(_loop_exit_guard_ns(plan_id='guard-done-count'))
+
+        assert result['done_count'] == 1
+
+
+def _write_manifest(plan_dir, *, steps):
+    """Write a minimal ``execution.toon`` carrying ``phase_5.verification_steps``."""
+    plan_dir.mkdir(parents=True, exist_ok=True)
+    manifest = {
+        'manifest_version': 1,
+        'plan_id': plan_dir.name,
+        'phase_5': {'verification_steps': list(steps)},
+        'phase_6': {'steps': []},
+    }
+    (plan_dir / 'execution.toon').write_text(serialize_toon(manifest), encoding='utf-8')
+
+
 def _ns_with_predicate(
     plan_id: str,
     *,
@@ -400,6 +555,7 @@ def _ns_with_predicate(
 def test_loop_exit_guard_cli_accepts_the_b7_predicate_flags(plan_context):
     """The documented invocation parses end-to-end through the real executor surface."""
     _owed_task('guard-cli-b7', number=1)
+    _write_manifest(plan_context.plan_dir_for('guard-cli-b7'), steps=['verify:module-tests'])
 
     result = run_script(
         SCRIPT_PATH,

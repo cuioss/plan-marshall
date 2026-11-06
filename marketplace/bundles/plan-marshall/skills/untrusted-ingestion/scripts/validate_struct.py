@@ -140,12 +140,45 @@ def _domain_allowed(url: str) -> bool:
     return True
 
 
+#: The elision marker the string clamp puts where it removed characters. It states
+#: the removed count so a reader can tell a cut body from a short one, and it sits
+#: between the head and the tail — the two parts a length cap must not cost. The
+#: marker carries NO line break: the clamped value travels through transports that
+#: are line-oriented (the CLI's TOON envelope among them), and an embedded newline
+#: would truncate the value there while the in-process path still looked correct.
+_ELISION_TEMPLATE = ' [... {} characters elided ...] '
+
+
+def _clamp_string_with_elision(value: str, max_length: int) -> tuple[str, int]:
+    """Keep the HEAD and the TAIL of ``value`` within ``max_length``, marking the gap.
+
+    Returns ``(clamped, elided_count)``. A head-only cut removes a review bot's
+    conclusion, because that bot writes its analysis before the request a reader can
+    act on. The marker names how many characters were removed, so a clamped body is
+    never mistaken for a complete one.
+
+    The whole result stays within ``max_length``, marker included. When no marker fits
+    the budget at all the head alone is the fail-closed floor: the value is still
+    bounded, and the caller's structured report still names the cut.
+    """
+    template_cost = len(_ELISION_TEMPLATE) - 2  # the ``{}`` placeholder's two braces
+    keep = max((max_length - template_cost - len(str(len(value)))) // 2, 0)
+    while keep > 0:
+        elided = len(value) - 2 * keep
+        candidate = value[:keep] + _ELISION_TEMPLATE.format(elided) + value[-keep:]
+        if len(candidate) <= max_length:
+            return candidate, elided
+        keep -= 1
+    return value[:max_length], len(value) - max_length
+
+
 def _validate_field(
     path: str,
     value: Any,
     spec: dict[str, Any],
     clamped: list[str],
     domain_errors: list[str],
+    clamps: list[dict[str, Any]],
 ) -> tuple[Any, list[str]]:
     """Validate and clamp a single field against its spec.
 
@@ -169,8 +202,17 @@ def _validate_field(
             return value, errors
         max_length = spec.get('max_length')
         if max_length is not None and len(value) > max_length:
-            clamped.append(f'{path} (string {len(value)}→{max_length})')
-            value = value[:max_length]
+            original_length = len(value)
+            value, elided = _clamp_string_with_elision(value, max_length)
+            clamped.append(f'{path} (string {original_length}→{max_length}, {elided} elided)')
+            clamps.append(
+                {
+                    'field': path,
+                    'original_length': original_length,
+                    'max_length': max_length,
+                    'elided': elided,
+                }
+            )
         return value, errors
 
     if isinstance(value, list):
@@ -194,7 +236,9 @@ def _validate_field(
         if item_spec is not None:
             new_list = []
             for i, item in enumerate(value):
-                clamped_item, item_errors = _validate_object(f'{path}[{i}]', item, item_spec, clamped, domain_errors)
+                clamped_item, item_errors = _validate_object(
+                    f'{path}[{i}]', item, item_spec, clamped, domain_errors, clamps
+                )
                 errors.extend(item_errors)
                 new_list.append(clamped_item)
             return new_list, errors
@@ -209,6 +253,7 @@ def _validate_object(
     schema: dict[str, dict[str, Any]],
     clamped: list[str],
     domain_errors: list[str],
+    clamps: list[dict[str, Any]],
 ) -> tuple[Any, list[str]]:
     """Validate an object against a schema with additionalProperties:false."""
     if not isinstance(obj, dict):
@@ -226,7 +271,7 @@ def _validate_object(
         if field not in obj:
             # Absent fields are permitted; the reader emits what it extracted.
             continue
-        clamped_value, field_errors = _validate_field(field_path, obj[field], spec, clamped, domain_errors)
+        clamped_value, field_errors = _validate_field(field_path, obj[field], spec, clamped, domain_errors, clamps)
         errors.extend(field_errors)
         result[field] = clamped_value
 
@@ -266,8 +311,9 @@ def validate_candidate(schema_name: str, candidate: Any) -> dict[str, Any]:
         )
 
     clamped: list[str] = []
+    clamps: list[dict[str, Any]] = []
     domain_errors: list[str] = []
-    validated, errors = _validate_object('', candidate, schema, clamped, domain_errors)
+    validated, errors = _validate_object('', candidate, schema, clamped, domain_errors, clamps)
 
     if errors:
         return make_error(
@@ -290,6 +336,7 @@ def validate_candidate(schema_name: str, candidate: Any) -> dict[str, Any]:
         'schema': schema_name,
         'struct': validated,
         'clamped': clamped,
+        'clamps': clamps,
     }
 
 

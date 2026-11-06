@@ -455,15 +455,18 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help=(
             'B7 no-progress mode: the total_tokens parsed from the returning dispatch. '
-            'Supplying it (or any other predicate input) adds the predicate evaluation '
-            'and the classification to the result.'
+            'Required beside --completed-tasks-delta; supplying one without the other '
+            'is refused as no_progress_not_decidable.'
         ),
     )
     p_loop_guard.add_argument(
         '--completed-tasks-delta',
         type=int,
         default=None,
-        help='B7 no-progress mode: done-task delta since the prior dispatch boundary.',
+        help=(
+            'B7 no-progress mode: the done-count delta since the previous iteration '
+            '(the difference of two successive done_count values this verb reports).'
+        ),
     )
     p_loop_guard.add_argument(
         '--pending-verify-steps',

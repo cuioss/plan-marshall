@@ -103,18 +103,21 @@ String label(TokenKind kind) {
 }
 ```
 
-Modeling the set as an enum is the valuable half: an exhaustive switch over an enum needs no `default`
+Modeling the set as an enum is the valuable half. **As a switch expression**, an exhaustive switch over an enum needs no `default`
 and no trailing `throw`, because the compiler already knows every constant is covered — and adding a
 constant later turns the now-missing case into a **compile error** rather than a runtime exception.
+The exemption belongs to the expression, not to the enum: a constant-only switch *statement* over the
+same enum gets no exhaustiveness check (see the statement caveat below).
 (When the constants must remain `String` — an external wire format, say — a `switch` expression over
 the string still beats the chain, but keep a `default -> throw` for the genuinely open input.)
 
 Removing the trailing `throw` is safe **only** where the compiler checks exhaustiveness: a switch
-**expression**, or a switch **statement** that uses pattern or `null` labels, or whose selector type is
-not one of the legacy types (`char`, `byte`, `short`, `int`, `Character`, `Byte`, `Short`, `Integer`,
-`String`, or an enum). A switch statement whose cases are plain constants — including an enum switch
-statement — is not exhaustiveness-checked, so an unmatched value falls through the statement with no
-result. A constant-only switch statement therefore keeps its
+**expression**, or a switch **statement** that uses pattern or `null` labels — an enhanced switch
+statement, which applies from Java 21, the release that introduced pattern switches — or whose
+selector type is not one of the legacy types (`char`, `byte`, `short`, `int`, `Character`, `Byte`,
+`Short`, `Integer`, `String`, or an enum). A switch statement whose cases are plain constants —
+including an enum switch statement — is not exhaustiveness-checked, so an unmatched value falls
+through the statement with no result. A constant-only switch statement therefore keeps its
 `default -> throw`; dropping it is a fail-open defect, and the access decision is the case
 that shows it: the statement falls through to whatever follows on an unmatched value instead of
 rejecting it.
