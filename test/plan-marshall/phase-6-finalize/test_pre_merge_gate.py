@@ -1692,7 +1692,43 @@ def test_the_participation_refusal_publishes_the_labels_the_grant_accepts():
     assert result['error'] == gate.MERGE_PARTICIPATION_UNPROVEN
     assert result['authorizable'] is True
     assert result['override_options'] == list(BARRIER_OVERRIDE_LABELS)
-    assert len(result['override_options']) == len(BARRIER_OVERRIDE_LABELS) == 2
+
+
+def test_an_unimportable_override_label_source_is_named_in_the_refusal(monkeypatch):
+    """A fault in the label source degrades the prompt, so the refusal says so.
+
+    Swallowing it left a refusal whose ``override_options`` was simply absent —
+    indistinguishable from a participation gap that needs no ask at all.
+    """
+    monkeypatch.setitem(sys.modules, '_cmd_merge_authorization', None)
+    runner = _Runner()
+
+    result = _merge(_CLEAN_VERDICT, runner, participation=_PARTICIPATION_ABSENT)
+
+    assert result['error'] == gate.MERGE_PARTICIPATION_UNPROVEN
+    assert 'override_options' not in result
+    assert 'could not be imported' in result['override_options_unavailable']
+
+
+def test_an_unreadable_status_names_the_fault_in_the_evidence(monkeypatch):
+    """The gate admits on an unreadable status, and the admission names the unknown.
+
+    A silent ``None`` from the in-process read was an empty admit: a plan whose
+    status could not be read merged with nothing saying the head binding was never
+    consulted.
+    """
+    import _status_core
+
+    def _raising(_plan_id, any_checkout=False):
+        raise RuntimeError('status store unreadable')
+
+    monkeypatch.setattr(_status_core, 'resolve_plan_status', _raising)
+    runner = _Runner()
+
+    result = _merge(_CLEAN_VERDICT, runner, status_reader=None)
+
+    assert result['dispatched'] is True
+    assert 'status store unreadable' in result['status_read_fault']
 
 
 def test_every_override_label_the_documents_name_is_one_the_grant_accepts():

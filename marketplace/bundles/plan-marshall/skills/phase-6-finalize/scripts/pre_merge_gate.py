@@ -94,7 +94,7 @@ import subprocess
 import sys
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 from _handshake_commands import cmd_findings_check
 from file_ops import get_executor_path
@@ -191,7 +191,24 @@ MERGE_CONSEQUENCE_WITH_ASKING = 'A confirmation question follows: the PR is merg
 
 FindingsCheck = Callable[[str], dict[str, Any]]
 MergeRunner = Callable[[list[str]], dict[str, Any]]
-StatusReader = Callable[[str], dict[str, Any] | None]
+
+
+class StatusRead(NamedTuple):
+    """A plan-status read: the payload, plus why it could not be read when it could not.
+
+    ``payload`` is ``None`` for an unreadable or absent document. ``reason`` names
+    the fault that produced that answer — an unimportable resolver, a raising read,
+    or a document that is not a mapping — so a gate that admits on the unknown says
+    WHICH unknown it admitted on rather than reporting an empty admission. A reader
+    that has no fault to name (a test seam, the ordinary unreadable-plan case)
+    leaves it ``None``.
+    """
+
+    payload: dict[str, Any] | None
+    reason: str | None
+
+
+StatusReader = Callable[[str], 'StatusRead | dict[str, Any] | None']
 HeadReader = Callable[[str], str | None]
 ParticipationCheck = Callable[[str, int, str], dict[str, Any]]
 AuthorizationCheck = Callable[[str, str], dict[str, Any]]
@@ -214,29 +231,49 @@ def _check_findings(plan_id: str) -> dict[str, Any]:
     return cmd_findings_check(argparse.Namespace(plan_id=plan_id, phase=FINDINGS_PHASE))
 
 
-def _read_plan_status(plan_id: str) -> dict[str, Any] | None:
-    """Return the plan's status payload, or ``None`` when it cannot be read.
+def _read_plan_status(plan_id: str) -> StatusRead:
+    """Return the plan's status payload, plus the fault when it cannot be read.
 
     Reads through manage-status' own resolver — ``_status_core.resolve_plan_status``,
     the function behind ``manage-status read`` — and NOT through that verb's TOON
     rendering. TOON splits a line at its FIRST colon, so a namespaced step key
     (``project:finalize-step-plugin-doctor:``) arrives as ``{'project':
     'finalize-step-plugin-doctor: …'}``: the scalar is skipped and the record is
-    never judged, which is how a declared head-dependent step could be missed at
-    merge. The resolver hands back the JSON document with every key intact, and the
+    never judged, and a declared head-dependent step is missed at merge. The
+    resolver hands back the JSON document with every key intact, and the
     plan-context resolution (including the sibling-worktree read) is still that
     skill's own.
+
+    A read that cannot run at all — an unimportable resolver, a raise, or a
+    resolution that is not a mapping — answers ``payload: None`` WITH the fault
+    named, so the merge evidence records which unknown it admitted on rather than
+    reporting an empty admission.
     """
     try:
         from _status_core import resolve_plan_status
-    except Exception:  # an unimportable resolver is the declared unknown
-        return None
+    except Exception as exc:  # an unimportable resolver is the declared unknown
+        return StatusRead(None, f'the plan-status resolver is not importable ({exc})')
     try:
         resolution = resolve_plan_status(plan_id, any_checkout=True)
-    except Exception:  # any read/resolution failure is the declared unknown
-        return None
+    except Exception as exc:  # any read/resolution failure is the declared unknown
+        return StatusRead(None, f'the plan-status read raised ({exc})')
     status = resolution.status
-    return status if isinstance(status, dict) else None
+    if not isinstance(status, dict):
+        return StatusRead(None, 'the plan-status read returned no document')
+    return StatusRead(status, None)
+
+
+def _status_read(reader: StatusReader, plan_id: str) -> StatusRead:
+    """Normalize a status-read seam's answer to a :class:`StatusRead`.
+
+    The seam accepts the tuple for a caller that must report a fault, and a bare
+    payload or ``None`` for every existing caller. A bare ``None`` carries no
+    fault: it is the seam's own "nothing to say" answer, never a masked read error.
+    """
+    read = reader(plan_id)
+    if isinstance(read, StatusRead):
+        return read
+    return StatusRead(read if isinstance(read, dict) else None, None)
 
 
 def _resolve_local_head(project_dir: str) -> str | None:
@@ -440,8 +477,9 @@ def _head_binding_refusal(
     text true.
 
     Three unknown answers pass rather than refuse, and none is a claim that the
-    binding is sound: an unreadable plan status, an unreadable local HEAD, and a
-    record set that carries no head at all.
+    binding is sound: an unreadable plan status (its fault is named in
+    ``status_read_fault``), an unreadable local HEAD, and a record set that carries
+    no head at all.
 
     The PLAN-LB-26 case this closes: gates stamped ``3db65fc05`` while the PR head
     merged was ``74e6bfda``. Nothing compared them, so the merge shipped a tree no
@@ -454,7 +492,8 @@ def _head_binding_refusal(
     declarations could not be derived.
     """
     head = (head_reader or _resolve_local_head)(project_dir)
-    status = (status_reader or _read_plan_status)(plan_id)
+    status_read = _status_read(status_reader or _read_plan_status, plan_id)
+    status = status_read.payload
     waived: list[dict[str, str]] = []
     unconsulted: list[dict[str, str]] = []
     fallbacks: list[dict[str, str]] = []
@@ -463,6 +502,10 @@ def _head_binding_refusal(
         'unconsulted_stamps': unconsulted,
         'head_dependence_fallback': fallbacks,
     }
+    if status_read.reason is not None:
+        # The gate admits on an unknown here; naming the fault is what keeps that
+        # admission legible as one rather than reporting an empty success.
+        evidence['status_read_fault'] = status_read.reason
     if not head or not isinstance(status, dict):
         return None, evidence
     metadata = status.get('metadata')
@@ -1156,11 +1199,12 @@ def _participation_refusal(plan_id: str, head: str | None, verdict: dict[str, An
         # grant`` accepts exactly these, so publishing them here is what lets a prompt
         # be built from the gate's own verdict instead of from prose that can drift.
         # Guarded: a fault in the label source must not break a refusal that is still
-        # correct without them.
+        # correct without them — but it must be NAMED, because a prompt built without
+        # the labels is a different (and silently degraded) refusal.
         try:
             from _cmd_merge_authorization import BARRIER_OVERRIDE_LABELS
-        except Exception:
-            pass
+        except Exception as exc:
+            payload['override_options_unavailable'] = f'the override-label source could not be imported ({exc})'
         else:
             payload['override_options'] = list(BARRIER_OVERRIDE_LABELS)
     if isinstance(authorization, dict):
@@ -1676,6 +1720,8 @@ def merge(
         result['unconsulted_stamps'] = head_evidence['unconsulted_stamps']
     if head_evidence['head_dependence_fallback']:
         result['head_dependence_fallback'] = head_evidence['head_dependence_fallback']
+    if head_evidence.get('status_read_fault'):
+        result['status_read_fault'] = head_evidence['status_read_fault']
     return result
 
 

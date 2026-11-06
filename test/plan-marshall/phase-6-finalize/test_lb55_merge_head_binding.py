@@ -227,7 +227,7 @@ def test_a_waiver_at_any_other_head_is_void_and_the_step_is_refused():
     'waiver',
     [
         {'basis': 'no head at all'},
-        {'head': 'abc1234', 'basis': 'abbreviated'},
+        {'head': HEAD_MERGED[:7], 'basis': 'abbreviated'},
         'not-a-dict',
         {'head': None},
     ],
@@ -450,7 +450,8 @@ def test_a_project_namespaced_step_record_survives_the_status_read(monkeypatch):
 
     read = gate._read_plan_status('lb55-plan')
 
-    records = read['metadata']['phase_steps']['6-finalize']
+    assert read.reason is None, read.reason
+    records = read.payload['metadata']['phase_steps']['6-finalize']
     assert isinstance(records['project:finalize-step-plugin-doctor'], dict)
 
 
@@ -621,6 +622,70 @@ def test_the_gate_discovers_the_population_once_per_merge(monkeypatch):
         'automatic-review',
     }
     assert len(calls) == 1, f'the discovery ran {len(calls)} times for one merge'
+
+
+def test_the_classifier_runs_only_for_the_records_the_dispatcher_would_retry(monkeypatch):
+    """One classifier call per stale DECLARED ``done`` record, and none elsewhere.
+
+    The classifier is the expensive half of the loop (an executor subprocess), and
+    it runs while the cross-plan merge mutex is held. A ``done`` record is the only
+    kind the classifier can preserve; a ``failed`` or ``loop_back`` record is
+    retried by the dispatcher regardless of HEAD, so it goes straight to the
+    refusal without paying for a verdict nobody would use.
+    """
+    calls: list[str] = []
+
+    def _counting_classifier(step, _project_dir, _recorded):
+        calls.append(step)
+        return {'status': 'success', 'verdict': 'invalidated'}
+
+    status = {
+        'metadata': {
+            'phase_steps': {
+                '6-finalize': {
+                    'functional-review': {'outcome': 'done', 'head_at_completion': HEAD_GATED},
+                    'pre-push-quality-gate': {'outcome': 'done', 'head_at_completion': HEAD_GATED},
+                    'automatic-review': {'outcome': 'loop_back', 'head_at_completion': HEAD_GATED},
+                    'ci-verify': {'outcome': 'failed', 'head_at_completion': HEAD_GATED},
+                }
+            }
+        }
+    }
+
+    result = _merge_pre_seam(status, HEAD_MERGED, classifier=_counting_classifier)
+
+    assert result['status'] == 'error', result
+    assert sorted(calls) == ['functional-review', 'pre-push-quality-gate']
+    assert {item['step'] for item in result['steps']} == {
+        'functional-review',
+        'pre-push-quality-gate',
+        'automatic-review',
+        'ci-verify',
+    }
+
+
+def test_the_classifier_call_carries_the_modules_finite_bound(monkeypatch):
+    """The delegated verb runs under the module's own timeout, never unbounded."""
+    import inspect
+
+    captured: dict = {}
+    bound = inspect.signature(gate._run_verb).parameters['timeout'].default
+    assert bound == gate._VERB_TIMEOUT_SECONDS
+    assert isinstance(bound, int) and bound > 0
+
+    def _fake_run_verb(notation, argv, **kwargs):
+        captured['notation'] = notation
+        captured['kwargs'] = kwargs
+        return {'status': 'success', 'verdict': 'preserved'}
+
+    monkeypatch.setattr(gate, '_run_verb', _fake_run_verb)
+    status = _status({'functional-review': HEAD_GATED})
+
+    result = _merge_pre_seam(status, HEAD_MERGED)
+
+    assert result['dispatched'] is True, result
+    assert captured['notation'] == 'plan-marshall:phase-6-finalize:verdict_currency'
+    assert 'timeout' not in captured['kwargs'], 'the classifier must inherit the module bound'
 
 
 @pytest.mark.parametrize(
