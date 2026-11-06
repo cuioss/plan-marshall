@@ -642,6 +642,7 @@ def test_an_unreadable_row_blocks_a_whole_tree_change_and_names_the_inability(
     assert result['status'] == 'stale', result
     assert result['reason'] == crosscheck.REASON_SCOPE_UNREADABLE_WHOLE_TREE
     assert result['scope_cross_check'] == crosscheck.UNDETERMINED
+    assert result['scope_cross_check'] == crosscheck.UNDETERMINED
 
 
 def test_an_underivable_requirement_passes_and_names_the_inability(plan_context, monkeypatch, tmp_path) -> None:
@@ -721,6 +722,11 @@ def test_a_canonical_outside_the_vocabulary_is_undetermined_not_refuted(
         ('run --command-args package --also-make', None),
         # An UNKNOWN flag is neither whole-tree nor a scope: it is unreadable.
         ('run --command-args module-tests -k foo', None),
+        # The executor's OWN flags, in the documented call shapes, land in the same
+        # unquoted stream and are therefore indistinguishable from the payload's.
+        ('run --command-args verify --format json', None),
+        ('run --command-args verify --mode errors --format json', None),
+        ('run --command-args verify -Ppre-commit -pl core-api', None),
         ('run --command-args module-tests -pl', None),
         ('run --command-args module-tests -pl=,', None),
     ],
@@ -1039,3 +1045,29 @@ def test_the_control_row_with_no_extra_flag_is_still_whole_tree_and_adequate(mon
 
     assert outcome['scope_verdict'] == crosscheck.COVERED, outcome
     assert outcome['contributing'] == [0]
+
+
+def test_a_broken_vocabulary_stays_visible_beside_an_unreadable_row(monkeypatch):
+    """A deployment fault is never relabelled as a property of the rows.
+
+    ``analysis_vocabulary_unimportable`` says THIS CHECK IS BROKEN. The whole-tree
+    refusal is about rows nobody could place, so when the vocabulary itself could
+    not be loaded the loud token must survive — the row is unreadable either way,
+    and blaming it would hide a broken deployment behind an ordinary refusal.
+    """
+    _stub_expected(monkeypatch, {_PYPROJECT})
+    monkeypatch.setattr(
+        crosscheck,
+        'load_analysis_vocabulary',
+        lambda: (None, crosscheck.REASON_VOCABULARY_UNIMPORTABLE),
+    )
+    row = _build_entry(args=_args_for('verify plan-marshall --format json'), outcome=_outcome_for(19007))
+    # Built literally: ``_required()`` loads the vocabulary this case has just
+    # broken, and the requirement is an input to the check, not its subject.
+    required = crosscheck.RequiredCoverage(analyses=frozenset({'test'}), whole_tree=True, modules=frozenset())
+
+    outcome = crosscheck.cross_check_candidates([row], '/nonexistent-project-dir', required)
+
+    assert outcome['scope_verdict'] == crosscheck.UNDETERMINED
+    assert outcome['scope_reason'] == crosscheck.REASON_VOCABULARY_UNIMPORTABLE
+    assert outcome['joint_reason'] is None, 'the broken-check token must stay the stated reason'

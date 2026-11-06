@@ -505,10 +505,6 @@ def _head_binding_refusal(
     ``status_read_fault``), an unreadable local HEAD, and a record set that carries
     no head at all.
 
-    The defect this closes: the head-dependent gates stamp ``head_at_completion``
-    and nothing compared those stamps with the tree being merged, so a merge could
-    ship a tree no gate had seen.
-
     Returns ``(refusal, evidence)``. ``refusal`` is ``None`` when the candidate is
     admitted; ``evidence`` always carries ``waived_steps``,
     ``unconsulted_stamps`` and ``head_dependence_fallback`` so the dispatched

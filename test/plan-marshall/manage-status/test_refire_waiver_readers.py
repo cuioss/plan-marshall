@@ -29,9 +29,15 @@ _SCRIPT_SUFFIX = '.py'
 
 
 def _bundle_scripts() -> list[tuple[str, str]]:
+    """Every Python file under the bundles, as ``(path, text)``.
+
+    The sweep is the whole bundle tree, not one skill's ``scripts/`` directory:
+    the sentence it guards says "every script under the bundles that names it",
+    so a nested helper directory must not be able to hide a new reader.
+    """
     return [
         (path.name, path.read_text(encoding='utf-8'))
-        for path in MARKETPLACE_ROOT.glob('**/skills/*/scripts/*.py')
+        for path in MARKETPLACE_ROOT.glob('**/*.py')
         if path.suffix == _SCRIPT_SUFFIX
     ]
 

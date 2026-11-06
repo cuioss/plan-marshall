@@ -1137,11 +1137,16 @@ def _unreadable_scope_blocks_whole_tree(
     Returns:
         True only for a whole-tree change whose coverage verdict is
         :data:`UNDETERMINED` and at least one candidate row cannot be read for
-        scope.
+        scope. A verdict whose reason is
+        :data:`REASON_VOCABULARY_UNIMPORTABLE` is never this refusal: that token
+        says THIS CHECK IS BROKEN, which must stay visible rather than be
+        relabelled as a property of the rows.
     """
     if required is None or not required.whole_tree:
         return False
     if scope['verdict'] != UNDETERMINED:
+        return False
+    if scope['reason'] == REASON_VOCABULARY_UNIMPORTABLE:
         return False
     return any(parse_row_scope(entry) is None for entry in candidates)
 
