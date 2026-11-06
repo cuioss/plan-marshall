@@ -375,27 +375,29 @@ def _record_override_head(plan_id: str, step: str, head: str) -> tuple[bool, str
 _WEAKENED_TITLE_PREFIX = 'weakened_test at '
 
 
-def _recompute_test_integrity(plan_id: str) -> dict[str, Any] | None:
-    """The plan's test-integrity report at the closing head, or ``None``.
+def _recompute_test_integrity(plan_id: str, head_ref: str | None = None) -> dict[str, Any] | None:
+    """The plan's test-integrity report at the validated head, or ``None``.
 
-    Imported lazily: the budget verbs in this module need no review surface, and a
-    checkout without the finalize bundle must keep working. ``None`` is a failure
-    to read, never an empty report — the caller reports it rather than recording an
-    empty accepted set.
+    ``head_ref`` pins the report to the head the finding was validated at, so the
+    close records what the operator saw rather than whatever the working tree holds
+    now. Imported lazily: the budget verbs in this module need no review surface,
+    and a checkout without the finalize bundle must keep working. ``None`` is a
+    failure to read, never an empty report — the caller reports it rather than
+    recording an empty accepted set.
     """
     try:
         import _review_support_integrity as integrity
     except ImportError:
         return None
     try:
-        report = integrity.compute_test_integrity(plan_id)
+        report = integrity.compute_test_integrity(plan_id, head_ref=head_ref)
     except Exception:
         return None
     return report if isinstance(report, dict) else None
 
 
 def _removed_identities_for_accept(
-    plan_id: str, accept: set[str], findings: list[dict[str, Any]]
+    plan_id: str, accept: set[str], findings: list[dict[str, Any]], head_ref: str | None = None
 ) -> tuple[list[dict[str, Any]], str | None]:
     """The removed identities the accepted ``weakened_test`` findings account for.
 
@@ -438,17 +440,49 @@ def _removed_identities_for_accept(
                 + ', '.join(unidentified)
             )
         return [], None
-    report = _recompute_test_integrity(plan_id)
+    report = _recompute_test_integrity(plan_id, head_ref)
     if report is None or report.get('status') != 'success':
-        return [], 'the test-integrity report could not be read at the closing head'
-    by_path = {row.get('path'): row for row in report.get('findings') or [] if isinstance(row, dict)}
+        return [], 'the test-integrity report could not be read at the validated head'
+    rows_by_path: dict[str, list[dict[str, Any]]] = {}
+    for row in report.get('findings') or []:
+        if isinstance(row, dict) and row.get('path'):
+            rows_by_path.setdefault(str(row['path']), []).append(row)
     entries: list[dict[str, Any]] = []
     unaccounted: list[str] = []
     for path in paths:
-        removed = [entry for entry in (by_path.get(path) or {}).get('removed_tests') or [] if isinstance(entry, dict)]
-        if removed:
-            entries.extend(removed)
-        else:
+        rows = rows_by_path.get(path, [])
+        if not rows:
+            unaccounted.append(path)
+            continue
+        # Every row of a path is kept, not the last: a path that both loses
+        # assertions and gains a skip marker records BOTH.
+        recorded = False
+        for row in rows:
+            removed = [entry for entry in row.get('removed_tests') or [] if isinstance(entry, dict)]
+            for entry in removed:
+                entries.append(entry)
+                recorded = True
+            if removed:
+                # A mixed row can also carry a residual no identity explains; record
+                # it by path so a later growth is raised again.
+                total = row.get('removed_assertions')
+                known = sum(int(entry.get('assertions_removed') or 0) for entry in removed)
+                if isinstance(total, int) and total > known:
+                    entries.append({'path': path, 'kind': 'assertion_removed', 'assertions_removed': total - known})
+                continue
+            # An identity-less row accepts by its explicit path-level key.
+            if str(row.get('kind') or '') == 'test_filtered':
+                entries.append({'path': path, 'kind': 'test_filtered', 'markers': list(row.get('markers') or [])})
+            else:
+                entries.append(
+                    {
+                        'path': path,
+                        'kind': 'assertion_removed',
+                        'assertions_removed': row.get('removed_assertions'),
+                    }
+                )
+            recorded = True
+        if not recorded:
             unaccounted.append(path)
     if unaccounted:
         return entries, (
@@ -476,6 +510,18 @@ def _holds_done_record(status: dict[str, Any], step: str) -> bool:
     """True when ``step`` already holds a ``done`` record in the close phase."""
     record = find_step_record(status, CLOSE_PHASE, step)
     return isinstance(record, dict) and record.get('outcome') == 'done'
+
+
+def _validated_head(status: dict[str, Any], step: str) -> str | None:
+    """The head the step's last record was completed at, or ``None``.
+
+    A close records the removals from the head the finding was VALIDATED at — the
+    previous record of the same step — never from a later head that happens to be
+    checked out now.
+    """
+    record = find_step_record(status, CLOSE_PHASE, step)
+    head = record.get('head_at_completion') if isinstance(record, dict) else None
+    return str(head) if head else None
 
 
 class _NoWaiverStamped(Exception):
@@ -637,9 +683,14 @@ def cmd_loop_back_close(args: argparse.Namespace) -> dict | None:
     # The close is also the owning writer of an accepted removal: accepting a
     # ``weakened_test`` finding records the identities the finding removed, keyed by
     # the D1 identity plus the removed count — not the closing head — so the same
-    # removal is not asked about again at a later head.
+    # removal is not asked about again at a later head. They are read from the head
+    # the finding was VALIDATED at (the step's previous record), never from a later
+    # head: a removal made after the review is not accepted unseen. The close itself
+    # still records done at the closing head, and the named finding is resolved, so
+    # the operator who closed on it is not left with an unacceptable row.
+    validated_head = _validated_head(status, step)
     accepted_removal_entries, accepted_removals_warning = _removed_identities_for_accept(
-        plan_id, set(accept), list(pending['findings'])
+        plan_id, set(accept), list(pending['findings']), head_ref=validated_head or head
     )
     accepted_removals_recorded = True
     accepted_removals_error: str | None = None
@@ -686,7 +737,9 @@ def cmd_loop_back_close(args: argparse.Namespace) -> dict | None:
         'rationale': rationale,
         'accepted_count': len(accepted),
         'accepted': accepted,
-        'accepted_removals': [str(entry.get('identity')) for entry in accepted_removal_entries],
+        'accepted_removals': [
+            str(entry.get('identity') or entry.get('path') or '') for entry in accepted_removal_entries
+        ],
         'accepted_removals_recorded': accepted_removals_recorded,
         'state_rule': rule,
         'state_findings_resolved': len(state.get('resolved', [])) if state_resolved else 0,

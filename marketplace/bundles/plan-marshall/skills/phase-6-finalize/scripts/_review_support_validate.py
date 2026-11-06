@@ -227,8 +227,8 @@ def missing_evidence(evidence_root: Path, evidence: list[str], plan_id: str) -> 
     """Return every cited path, or cited test name, absent from ``evidence_root``.
 
     A path that does not exist AT THE GRADED HEAD is a citation of something the
-    change never had; a ``path::name`` whose name appears nowhere in the file is
-    the PLAN-LB-40 fabrication — a cited test that exists nowhere. A dotted name
+    change never had; a ``path::name`` whose name appears nowhere in the file is a
+    fabricated citation — a cited test that exists nowhere. A dotted name
     is checked segment by segment, so a class-scoped citation counts when the
     file holds its class and its method.
 
@@ -464,16 +464,16 @@ def grade_frozen_criteria(grading: Grading, drift: list[dict[str, Any]]) -> int:
     and an operator decision authorized is not in ``drift`` at all, so it is a pass.
 
     One kind is ADVISORY, never blocking: ``parser_extended`` — a frozen criterion
-    that is a prefix of the criterion the improved parser now reads in full. Nothing
-    about the outline changed, so it is reported as `criterion_parser_extended` for
-    visibility and left out of the blocking set; retiring it is a re-freeze, which
-    needs its own authorization.
+    that is a prefix of the criterion the current parser reads in full, admitted only
+    for a snapshot written before the parser marker. It is reported as
+    `criterion_parser_extended` for visibility and left out of the blocking set;
+    retiring it is a re-freeze, which needs its own authorization.
     """
     for row in drift:
         kind = row.get('kind')
         number = row.get('deliverable')
         if kind == PARSER_EXTENDED:
-            # The parser now reads a wrapped bullet in full. Visible, never
+            # A wrapped bullet the current parser reads in full. Visible, never
             # blocking: nothing about the outline changed, and the operation that
             # would retire it is a re-freeze, which needs its own authorization.
             grading.add(
