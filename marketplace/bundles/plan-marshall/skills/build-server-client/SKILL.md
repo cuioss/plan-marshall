@@ -164,7 +164,7 @@ of three outcomes, doing NO daemon round-trip when the project is unregistered:
 | Verb | Purpose |
 |------|---------|
 | `submit` | S3-verify + submit a job; write `job_id` to the ledger; `degraded`/`refused` on failure |
-| `wait` | One bounded long-poll; terminal or live `running` status-TOON; re-attach via the ledger |
+| `wait` | One bounded long-poll; terminal, or a live `running`/`queued` status-TOON; re-attach via the ledger |
 | `ping` | Report the daemon identity (version + pid) or `down` + reason |
 | `preflight` | One call: `disabled` \| `ready` \| `down` + reason |
 

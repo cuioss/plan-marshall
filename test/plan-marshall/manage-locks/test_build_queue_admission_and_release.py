@@ -432,6 +432,27 @@ class TestDirectoryLockFifo:
         assert again_second['admission'] == 'blocked', 'a later waiter must not jump the queue'
         assert again_first['admission'] == 'admitted'
 
+    def test_a_newcomer_does_not_leapfrog_a_queued_waiter(self, isolated_base: dict) -> None:
+        """A brand-new build arriving after a release must not jump the queue.
+
+        The window is the re-poll interval: the holder releases, the queued build
+        has not polled yet, and a fresh build arrives. Admitting the newcomer there
+        inverts the FIFO guarantee on every release.
+        """
+        directory = isolated_base['base'] / 'W1'
+        directory.mkdir(parents=True, exist_ok=True)
+        build_queue.run_directory_acquire(_directory_namespace(directory, 't-holder', 'holder'))
+        build_queue.run_directory_acquire(_directory_namespace(directory, 't-waiter', 'waiter'))
+
+        build_queue.run_directory_release(Namespace(directory=str(directory.resolve()), ticket='t-holder'))
+
+        newcomer = build_queue.run_directory_acquire(_directory_namespace(directory, 't-newcomer', 'newcomer'))
+        assert newcomer['admission'] == 'blocked', 'the queued build was there first'
+        assert newcomer['waiting_on']['plan_id'] == 'waiter'
+
+        promoted = build_queue.run_directory_acquire(_directory_namespace(directory, 't-waiter', 'waiter'))
+        assert promoted['admission'] == 'admitted'
+
     def test_a_waiting_ticket_is_removed_on_release(self, isolated_base: dict) -> None:
         directory = isolated_base['base'] / 'W1'
         directory.mkdir(parents=True, exist_ok=True)

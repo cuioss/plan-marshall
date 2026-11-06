@@ -913,18 +913,20 @@ def test_an_exhausted_bound_raises_directory_busy_naming_the_holder(tmp_path, is
 
 @pytest.mark.real_directory_lock
 def test_a_directory_holder_waiting_on_a_slot_does_not_deadlock(tmp_path, isolated_home, monkeypatch):
-    """Directory-then-slot never deadlocks: a slot holder cannot want a directory.
+    """Directory-then-slot never deadlocks — and the spec's cross-order shape IS
+    reachable across processes, so this states what is actually true.
 
-    The spec's cross-order shape — "a directory holder waits on a slot while a
-    slot holder wants that directory" — states the deadlock exactly, and it is
-    UNREACHABLE under the enforced order this test exercises: a build takes the
-    directory BEFORE the slot, so no process ever holds a slot and then asks for a
-    directory. Constructing it would mean writing a build that violates the rule
-    and asserting it does not hang, which proves nothing about production.
+    Within ONE process the order is fixed (directory before slot), so that shape
+    cannot be built there. Across the daemon/child pair it can: the daemon's
+    scheduler spends a machine slot at admission, the child then takes the
+    directory, and an in-process build holding the directory while it waits for a
+    slot is the mirror image. That cycle is BROKEN, not absent — the in-process
+    build's slot retry budget runs out and it releases the directory first, so the
+    pair stalls within that budget rather than deadlocking.
 
-    What this test does prove is the reachable worst case: a directory holder
-    blocks on someone else's slot and proceeds the moment that slot is released,
-    with no cycle — the property that makes the missing second half harmless.
+    This test constructs the reachable worst case that fits in one process: a
+    directory holder blocks on someone else's slot and proceeds the moment that
+    slot is released, with no cycle.
     """
     base = tmp_path / 'main' / '.plan' / 'local'
     for plan_id in ('slot-holder', 'directory-waiter'):

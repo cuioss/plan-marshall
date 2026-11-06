@@ -162,10 +162,10 @@ def test_record_resolution_escalates_to_one_error_after_the_streak(captured, cap
     assert 'marshalld unreachable' in message
     # The one-time transition names the accurate failure model: daemon
     # scheduling unavailable, fallback-slot serialization active for plan
-    # builds, plan-less builds unserialized — and the OOM risk of running
-    # concurrent suites without serialization.
+    # builds, plan-less builds serialised only per directory — and the OOM risk
+    # of running concurrent suites of DIFFERENT directories without the slot.
     assert 'fallback slot' in message
-    assert 'unserialized' in message
+    assert 'per directory' in message
     assert 'OOM' in message
     # The stderr parity line is still present for THIS build.
     assert '[BUILD-SERVER] resolved build' in capsys.readouterr().err
@@ -216,12 +216,13 @@ def test_routed_build_names_daemon_scheduling(captured, capsys):
 
 
 def test_plan_less_fallback_is_labeled_unserialized(captured, capsys):
-    """A plan-less in-process build bypasses the fallback slot, so it must
-    not be labeled `fallback-slot`.
+    """A plan-less in-process build bypasses the SLOT, so it must not be labeled
+    `fallback-slot`.
 
-    Without this control, a label derived from `resolved` alone would report
-    a serialized lane for a build that ran with no serialization at all —
-    the exact failure model the OOM escalation warns about.
+    The label names the slot layer: a plan-less build enters no slot, while it IS
+    serialised against other builds of its own directory. Without this control, a
+    label derived from `resolved` alone would claim a slot lane for a build that
+    never took one.
     """
     factory._record_resolution('auto', 'in_process', 'socket_absent', _NOTATION, None)
 

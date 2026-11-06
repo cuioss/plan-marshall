@@ -173,7 +173,14 @@ def write_pid(pidfile: Path, pid: int) -> None:
 
 
 def pid_alive(pid: int) -> bool:
-    """Return whether a process with ``pid`` is alive (probe via signal 0)."""
+    """Return whether a process with ``pid`` is alive (probe via signal 0).
+
+    A ZOMBIE counts as dead: ``signal 0`` succeeds for a process that has exited
+    but has not been reaped, and treating that as alive would both keep a bounded
+    directory wait spinning on a holder that no longer exists and let a dead
+    daemon's pidfile defend its socket. On Linux the process state is read from
+    ``/proc``; elsewhere the signal probe alone decides.
+    """
     if pid <= 0:
         return False
     try:
@@ -182,8 +189,21 @@ def pid_alive(pid: int) -> bool:
         return False
     except PermissionError:
         # The process exists but is owned by another user — treat as alive.
-        return True
-    return True
+        return not _is_zombie(pid)
+    return not _is_zombie(pid)
+
+
+def _is_zombie(pid: int) -> bool:
+    """Return whether ``pid`` is an unreaped zombie (Linux ``/proc``), else False."""
+    try:
+        stat = Path(f'/proc/{pid}/stat').read_text(encoding='utf-8', errors='replace')
+    except OSError:
+        return False
+    # Field 3 is the process state; the comm field (2) may contain spaces, so the
+    # state is read after the LAST ')' of the comm field.
+    _, _, tail = stat.rpartition(')')
+    state = tail.strip().split(' ', 1)[0] if tail.strip() else ''
+    return state == 'Z'
 
 
 def _holder_is_alive(holder: Any) -> bool:

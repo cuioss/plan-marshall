@@ -821,11 +821,23 @@ def _directory_locks(state: dict[str, Any]) -> dict[str, dict[str, Any]]:
 
 
 def _directory_waiters(state: dict[str, Any]) -> list[dict[str, Any]]:
-    """Return the directory FIFO waiters list, treating junk as empty."""
+    """Return the directory FIFO waiters list, treating junk as empty.
+
+    A record must carry BOTH a string ``ticket`` (its identity) and a string
+    ``directory`` (the queue it belongs to): the admission scan keys on both, so a
+    record missing either would raise inside the read-modify-write and take every
+    acquire down with it. Malformed records are DROPPED rather than kept, so a
+    corrupt store cannot wedge the lock — the same fail-open-to-reclaim direction
+    the dead-holder prune takes.
+    """
     raw = state.get(DIRECTORY_WAITERS_FIELD)
     if not isinstance(raw, list):
         return []
-    return [entry for entry in raw if isinstance(entry, dict) and isinstance(entry.get('ticket'), str)]
+    return [
+        entry
+        for entry in raw
+        if isinstance(entry, dict) and isinstance(entry.get('ticket'), str) and isinstance(entry.get('directory'), str)
+    ]
 
 
 def _holder_view(holder: dict[str, Any] | None, now: float) -> dict[str, Any]:
@@ -1408,7 +1420,11 @@ def run_directory_acquire(args: Namespace) -> dict[str, Any]:
             None,
         )
         is_first = our_place is not None and our_place == places[0]
-        if holder is None and (our_place is None or is_first):
+        # A caller with NO waiter entry (``our_place is None``) is admitted only
+        # when NOBODY is queued for this directory: otherwise a brand-new build
+        # arriving in the moment between a release and the waiters' next re-poll
+        # would leapfrog every queued build, which is the FIFO guarantee inverted.
+        if holder is None and (our_place is None and not places or is_first):
             locks[directory] = {
                 'plan_id': plan_id,
                 'command': command,
@@ -1505,9 +1521,10 @@ def run_directory_status(args: Namespace) -> dict[str, Any]:
             canonical directory.
 
     Returns:
-        ``{status, holders[], waiters[], stale_count, queue_path}``. Each holder
-        carries ``directory``, ``plan_id``, ``command``, ``pid``, ``held_seconds``
-        and ``stale`` — stale meaning its pid is gone or it has outlived
+        ``{status, holders[], waiters[], reclaimable_count, queue_path}``. Each
+        holder carries ``directory``, ``plan_id``, ``command``, ``pid``,
+        ``held_seconds`` and ``reclaimable`` — reclaimable meaning its pid is gone
+        (or is a zombie) or it has outlived
         :data:`DIRECTORY_LOCK_CEILING_SECONDS`.
     """
     wanted = getattr(args, 'directory', None)

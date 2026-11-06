@@ -26,7 +26,9 @@ It owns a SECOND limiter beside the slot: :func:`directory_lock`, the
 per-directory build lock. The two answer different questions — the slot is "how
 many builds may run on this host", the directory lock is "is a build already
 writing THIS directory's ``target/``" — and they are taken in one fixed order,
-**directory first, then slot**; that order is what rules out a deadlock, because a
+**directory first, then slot**; that order is what rules out a build process
+waiting on a directory while it holds a slot (one bounded daemon/child window is
+described in :func:`directory_lock` and in the manage-locks contract), because a
 build holding a slot never waits on a directory. The directory lock is taken by
 EVERY in-process build, including the plan-less ones the slot path below skips:
 the hazard is the shared directory, not the slot budget.
@@ -542,8 +544,13 @@ def directory_lock(
     :class:`DirectoryBusy` names the holder — the build never runs concurrently
     and never passes silently.
 
-    Lock order: this is taken BEFORE the build-queue slot, everywhere. That is
-    what rules out a deadlock between the daemon's slots and the in-process lock.
+    Lock order: this is taken BEFORE the build-queue slot, everywhere, so no build
+    process ever waits for a directory while holding a slot. The ONE bounded
+    exception is the daemon/child pair: the daemon spends a machine slot at
+    admission and its child takes this lock a moment later, so an in-process build
+    that claims the directory in between makes the child wait with that slot spent.
+    The in-process build's own slot retry budget gives up and releases the
+    directory first, so the pair stalls (bounded) rather than deadlocking.
 
     Args:
         directory: The build's working directory (canonicalised here, so two

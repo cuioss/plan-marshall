@@ -368,9 +368,10 @@ def _update_fallback_streak(resolved: str, reason: str | None, plan_id: str | No
                 f'{state.get("first_unreachable", now)}, {count} builds degraded to in-process '
                 f'(reason={reason}). Daemon scheduling is unavailable for this streak: '
                 f'plan builds serialize through the machine-global fallback slot (single '
-                f'lane), while plan-less builds bypass the slot and run unserialized — '
-                f'concurrent suites without serialization may exhaust memory (OOM) where '
-                f'the daemon would have scheduled them. Further identical '
+                f'lane), while plan-less builds bypass the slot and serialize only per '
+                f'directory — concurrent suites of DIFFERENT directories still run '
+                f'together and may exhaust memory (OOM) where the daemon would have '
+                f'scheduled them. Further identical '
                 f'fallbacks are suppressed until the daemon is reachable again.'
             )
             return message, True
@@ -437,15 +438,17 @@ def _record_resolution(
     # fail-closed rule the serialization label below follows, so the two fields
     # of one record never disagree about a routing branch this map does not know.
     mechanism = _RESOLVED_TO_MECHANISM.get(resolved, 'unknown')
-    # The serialization state names which scheduler serialized this build:
+    # The serialization state names which SLOT scheduler serialized this build:
     # the daemon's cross-plan scheduling, the machine-global fallback slot,
     # or nothing (the fail-loud refusal ran no build). A down daemon is
     # greppable here from the first fallback — the degradation never reads
     # as a normally-scheduled build. Two fail-closed rules keep the label
     # honest: an unrecognized `resolved` value reports `unknown` (never a
     # guessed lane — a new routing branch must extend this map), and a
-    # plan-less in-process build reports `unserialized` (it bypasses the
-    # machine-global fallback slot, which only real plans enter).
+    # plan-less in-process build reports `unserialized` for THIS layer (it
+    # bypasses the machine-global fallback slot, which only real plans enter).
+    # It is still serialised against other builds of its own directory by the
+    # per-directory lock; the label names the slot layer, not the whole build.
     _RESOLVED_TO_SERIALIZATION = {
         'routed': 'daemon-scheduled',
         'in_process': 'fallback-slot',
@@ -1766,10 +1769,14 @@ def create_execute_handlers(
         except BuildQueueTimeout as exc:
             return _emit_queue_timeout(config.tool_name, command_args, getattr(args, 'format', 'toon'), exc)
 
-        # A build that waited for its directory SAYS SO. Only reported when there
-        # was a wait, so the ordinary in-process result is unchanged.
-        if isinstance(result, dict) and lease is not None and lease.waited_seconds > 0:
-            result.setdefault('queued_seconds', int(lease.waited_seconds))
+        # A build that waited for its directory SAYS SO. The lease is a float, so
+        # a sub-second acquisition is not a wait: truncating first keeps
+        # `queued_seconds: 0` meaning "this build waited no whole second" instead of
+        # appearing on every in-process result.
+        if isinstance(result, dict) and lease is not None:
+            waited = int(lease.waited_seconds)
+            if waited > 0:
+                result.setdefault('queued_seconds', waited)
 
         # The in-process row is appended AFTER the renderer ran, because the
         # renderer is what measures the executed-test population on this route

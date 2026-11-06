@@ -91,9 +91,14 @@ Two primitives live here:
   - **Taken by every in-process build, plan-less ones included** (`NO_PLAN`, which
     every `--project-dir` lane build is): the hazard is the shared `target/`, not
     the slot budget. The daemon child runs the same leg and therefore holds it too.
-  - **Lock order is directory first, then slot, everywhere.** No build waits for a
-    directory while holding a slot, and the daemon never admits a job whose
-    directory a live in-process holder has, so the two layers cannot deadlock.
+  - **Lock order is directory first, then slot, everywhere.** No build PROCESS waits
+    for a directory while holding a slot, and the daemon never admits a job whose
+    directory a live in-process holder has. One bounded window survives that
+    pre-check: the daemon spends a slot at admission and its child takes the
+    directory a moment later, so an in-process build slipping in between makes the
+    child wait with that slot spent. That wait is bounded by the in-process build's
+    own slot retry budget, which gives up and releases the directory first — a
+    bounded stall, not a deadlock.
   - Liveness is by **pid**, not by plan directory: a plan-less holder has no plan
     directory, so a plan-anchored check would declare a running lane build dead and
     steal its directory. A dead holder's record is reclaimed, so a crashed build
