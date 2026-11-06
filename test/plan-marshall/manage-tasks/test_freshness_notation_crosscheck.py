@@ -642,7 +642,7 @@ def test_an_unreadable_row_blocks_a_whole_tree_change_and_names_the_inability(
     assert result['status'] == 'stale', result
     assert result['reason'] == crosscheck.REASON_SCOPE_UNREADABLE_WHOLE_TREE
     assert result['scope_cross_check'] == crosscheck.UNDETERMINED
-    assert result['scope_cross_check'] == crosscheck.UNDETERMINED
+    assert result['missing_analyses'] == [], 'a row nobody read names no missing analysis'
 
 
 def test_an_underivable_requirement_passes_and_names_the_inability(plan_context, monkeypatch, tmp_path) -> None:

@@ -251,9 +251,17 @@ def _derive_head_dependence_from(step: str, records: list[dict[str, Any]]) -> tu
     for record in records:
         if canonicalize_step_key(str(record.get('name', ''))) != step:
             continue
-        fields, unreadable_reason = extension_discovery.read_frontmatter_fields_checked(
-            Path(str(record.get('path', ''))), (_HEAD_DEPENDENT_KEY,)
-        )
+        doc_path = Path(str(record.get('path', '')))
+        # The reader imports its parsing primitives at call time and runs the
+        # parser over the document, so an import or parser fault can escape the
+        # read guard inside it. An unreadable declaration is a failed derivation
+        # here too — never a traceback in ``mark-step-done``.
+        try:
+            fields, unreadable_reason = extension_discovery.read_frontmatter_fields_checked(
+                doc_path, (_HEAD_DEPENDENT_KEY,)
+            )
+        except Exception as exc:
+            return True, False, f'{doc_path} could not be inspected ({exc})'
         if unreadable_reason is not None:
             return True, False, unreadable_reason
         return True, bool(fields.get(_HEAD_DEPENDENT_KEY, False)), None

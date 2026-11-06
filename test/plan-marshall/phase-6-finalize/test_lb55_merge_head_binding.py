@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import pytest
 
-from conftest import load_script_module
+from conftest import PROJECT_ROOT, load_script_module
 
 gate = load_script_module('plan-marshall', 'phase-6-finalize', 'pre_merge_gate.py', register=False)
 
@@ -593,14 +593,20 @@ def test_a_declared_document_that_cannot_be_read_is_refused_not_listed(monkeypat
 
 
 @pytest.mark.parametrize('step', ['automatic-review', 'project:finalize-step-plugin-doctor'])
-def test_a_bundle_tier_and_a_project_tier_step_resolve_through_the_production_reader(step):
+def test_a_bundle_tier_and_a_project_tier_step_resolve_through_the_production_reader(step, monkeypatch):
     """Both tiers reach their own document through the production reader.
 
     ``automatic-review`` is discovered from a bundle's ``skills/*/SKILL.md`` and
-    ``project:finalize-step-plugin-doctor`` from this checkout's project-local
+    ``project:finalize-step-plugin-doctor`` from the checkout's project-local
     skill root. Stubbing either tier would leave the discovery surface that
     actually matters for a real plan unexercised.
+
+    The project-local scan resolves its root from the PROCESS cwd (the ADR-002
+    cwd rule), so the cwd is pinned to the checkout that holds the document:
+    otherwise the case would depend on where pytest happened to be launched.
     """
+    monkeypatch.chdir(PROJECT_ROOT)
+
     assert gate._head_dependence(step) == (True, None)
 
 

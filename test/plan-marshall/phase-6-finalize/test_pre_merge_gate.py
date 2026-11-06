@@ -1068,15 +1068,16 @@ def test_a_clean_merge_step_record_never_carries_the_gap():
     [
         'head_binding_unconsulted=finalize-step-sync-baseline',
         'head_binding_fallback=functional-review',
+        'head_binding_status_read_fault=the plan-status read raised (status store unreadable)',
     ],
-    ids=['unconsulted-stamp', 'derivation-fallback'],
+    ids=['unconsulted-stamp', 'derivation-fallback', 'status-read-fault'],
 )
 def test_record_merge_carries_what_the_head_binding_did_not_validate(fact):
-    """A merge that passed on an unconsulted stamp or a fallback leaves a trace.
+    """A merge that passed on an unconsulted stamp, a fallback or an unread status leaves a trace.
 
-    The head binding names both classes on the dispatched payload; without a fact
-    for each, a merge that passed without validating them is indistinguishable at
-    the record site from one every gate validated.
+    The head binding names all three classes on the dispatched payload; without a
+    fact for each, a merge that passed without validating them is
+    indistinguishable at the record site from one every gate validated.
     """
     written: list[list[str]] = []
 
@@ -1091,13 +1092,17 @@ def test_record_merge_carries_what_the_head_binding_did_not_validate(fact):
 
 
 def test_the_head_binding_facts_are_declared_by_the_step_record_contract():
-    """Both keys belong to the step's ``records_facts`` union, not only its wiring."""
+    """All three keys belong to the step's ``records_facts`` union, not only its wiring."""
     from extension_discovery import _read_frontmatter_fields
 
     fields = _read_frontmatter_fields(_BRANCH_CLEANUP, ('records_facts',))
     declared = set(fields.get('records_facts') or [])
 
-    assert {'head_binding_unconsulted', 'head_binding_fallback'} <= declared, sorted(declared)
+    assert {
+        'head_binding_unconsulted',
+        'head_binding_fallback',
+        'head_binding_status_read_fault',
+    } <= declared, sorted(declared)
 
 
 @pytest.mark.parametrize(
