@@ -1064,6 +1064,43 @@ def test_a_clean_merge_step_record_never_carries_the_gap():
 
 
 @pytest.mark.parametrize(
+    'fact',
+    [
+        'head_binding_unconsulted=finalize-step-sync-baseline',
+        'head_binding_fallback=functional-review',
+    ],
+    ids=['unconsulted-stamp', 'derivation-fallback'],
+)
+def test_record_merge_carries_what_the_head_binding_did_not_validate(fact):
+    """A merge that passed on an unconsulted stamp or a fallback leaves a trace.
+
+    The head binding names both classes on the dispatched payload; without a fact
+    for each, a merge that passed without validating them is indistinguishable at
+    the record site from one every gate validated.
+    """
+    written: list[list[str]] = []
+
+    result = gate.record_merge(
+        _PLAN_ID,
+        facts=[*_MERGE_FACTS_CLEAN, fact],
+        mark_done_runner=lambda argv: written.append(list(argv)) or {'status': 'success'},
+    )
+
+    assert result['status'] == 'success', result
+    assert fact in written[0]
+
+
+def test_the_head_binding_facts_are_declared_by_the_step_record_contract():
+    """Both keys belong to the step's ``records_facts`` union, not only its wiring."""
+    from extension_discovery import _read_frontmatter_fields
+
+    fields = _read_frontmatter_fields(_BRANCH_CLEANUP, ('records_facts',))
+    declared = set(fields.get('records_facts') or [])
+
+    assert {'head_binding_unconsulted', 'head_binding_fallback'} <= declared, sorted(declared)
+
+
+@pytest.mark.parametrize(
     ('action', 'merge_mechanism', 'expected'),
     [
         ('noop', 'pr_safe_merge', 'already current with base, merged directly, cleanup complete'),
