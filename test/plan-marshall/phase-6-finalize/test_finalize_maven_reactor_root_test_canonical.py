@@ -13,7 +13,7 @@ executable carries.
 This test drives the REAL resolver over a REAL Maven-shaped project tree — the
 crawl runs the shipped discovery, no stub and no hand-seeded command map — so it
 fails on the defect rather than on a model of it. It then checks that the
-notation the resolve returns is the one whose SKILL.md publishes
+notation the resolve returns is the one whose CLI publishes
 ``resolve-test-scope``, which is what makes the arm's branch 1 reachable instead
 of its DEGRADED branch.
 """
@@ -24,7 +24,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from conftest import MARKETPLACE_ROOT, load_script_module, parse_ns
+from conftest import get_script_path, load_script_module, parse_ns, run_script
 
 _ARCH_BUNDLE = 'plan-marshall'
 _ARCH_SKILL = 'manage-architecture'
@@ -205,20 +205,23 @@ def test_derive_verification_for_a_root_owned_pom_still_derives_verify(tmp_path:
 
 
 def test_the_resolved_notation_publishes_the_scope_verb_the_arm_calls_next(tmp_path: Path) -> None:
-    """The notation step 0 captures is the one whose skill publishes ``resolve-test-scope``.
+    """The notation step 0 captures is the one whose CLI publishes ``resolve-test-scope``.
 
     The arm's branch 1 calls that verb on the notation it took from the resolved
     executable, so an executable naming a skill without the verb would still
-    reach the missing-verb degradation. Both halves are checked: the notation is
-    the Maven one, and ``maven.py`` registers the subcommand.
+    reach the missing-verb degradation. The verb is read off the CLI surface
+    itself (``--help``), not searched for in the source: a comment or help string
+    would satisfy a text search without the subcommand being registered.
     """
     _write_reactor(tmp_path)
     result = _resolve_default_scope(tmp_path, 'module-tests')
     assert result['status'] == 'success', result
     assert _MAVEN_NOTATION in result['executable']
 
-    maven_script = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'build-maven' / 'scripts' / 'maven.py'
-    assert "'resolve-test-scope'" in maven_script.read_text(encoding='utf-8')
+    surface = run_script(get_script_path('plan-marshall', 'build-maven', 'maven.py'), '--help')
+
+    assert surface.returncode == 0, surface.stderr
+    assert 'resolve-test-scope' in surface.stdout
 
 
 def test_a_persisted_maven_architecture_resolves_module_tests_at_default_scope(tmp_path: Path) -> None:
