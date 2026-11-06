@@ -310,32 +310,77 @@ def _refire_waiver(record: dict[str, Any]) -> dict[str, Any] | None:
     return waiver if isinstance(waiver, dict) else None
 
 
+#: The fallback reason for a stale record whose step the discovery does not return.
+#: Distinct from an underivable declaration and from "declares no head-dependence":
+#: the first two take the fail-closed field-presence fallback, the third is listed
+#: as never consulted.
+POPULATION_ABSENT_REASON = 'step not found in the discovered population'
+
+
 def _head_dependence(step: str) -> tuple[bool, str | None]:
     """Read a step's declared ``head_dependent`` fact through manage-status' path.
 
-    Deliberately delegates to ``_cmd_mark_step._derive_head_dependence`` rather
-    than parsing ``standards/``/``workflow/`` frontmatter here: the declaration is
-    one fact with one reader, and a second parser would eventually disagree with
-    the one ``mark-step-done`` enforces.
+    Deliberately delegates to ``_cmd_mark_step``'s discovery rather than parsing
+    ``standards/``/``workflow/`` frontmatter here: the declaration is one fact with
+    one reader, and a second parser would eventually disagree with the one
+    ``mark-step-done`` enforces.
 
-    Returns ``(is_head_dependent, unresolved_reason)`` exactly as that function
-    does — ``(False, reason)`` when the derivation could not run at all. The whole
-    call is guarded because the delegated function's own frontmatter read is not:
-    a raise there must take the fail-closed field-presence fallback, never
-    traceback the merge gate.
+    Returns ``(is_head_dependent, unresolved_reason)``, where a non-``None`` reason
+    is the gate's fail-closed field-presence fallback. ``mark-step-done`` resolves a
+    step that is absent from the finalize-step population to "not head-dependent"
+    — correct for a phase-5 step, which legitimately matches no finalize-step
+    implementor — so this reader asks the same discovery the distinguishing
+    question: an absent step yields :data:`POPULATION_ABSENT_REASON`, and an
+    unreadable declared document yields the read fault. Neither is "undeclared".
 
-    The step key is canonicalized first. ``_derive_head_dependence`` compares
+    The step key is canonicalized first. The discovery compares
     ``canonicalize_step_key(discovered_name)`` against its argument, and a legacy
-    ``default:``-prefixed record key would otherwise resolve to "undeclared" — which
+    ``default:``-prefixed record key would otherwise resolve to "not found" — which
     would file the record as never-consulted instead of judging it.
+    """
+    return _head_dependence_probe()(step)
+
+
+def _head_dependence_probe() -> HeadDependenceReader:
+    """Build the default declaration reader, discovering the population ONCE.
+
+    The population scan walks every bundle, plugin-cache root and project-local
+    skill root, and the merge gate runs while the cross-plan merge mutex is held.
+    Deriving it per stale record would multiply that cost by the record count, so
+    the scan runs here and the returned closure answers every step from it.
+
+    A failure to discover at all — an unimportable module, a raising scan, an empty
+    population — becomes a constant answer carrying that reason, so every stale
+    record takes the fail-closed fallback and the payload names one cause rather
+    than repeating a per-step derivation that never ran.
     """
     try:
         import _cmd_mark_step
         from _step_key_canonical import canonicalize_step_key
 
-        return _cmd_mark_step._derive_head_dependence(canonicalize_step_key(step))
+        records, population_reason = _cmd_mark_step._finalize_step_population()
     except Exception as exc:  # any derivation fault is the declared fallback, never a crash
-        return False, f'the head-dependence derivation raised ({exc})'
+        raised = f'the head-dependence derivation raised ({exc})'
+        return lambda _step: (False, raised)
+
+    if records is None:
+        failure = population_reason or 'the finalize-step population could not be discovered'
+        return lambda _step: (False, failure)
+
+    def _read(step: str) -> tuple[bool, str | None]:
+        try:
+            found, declared, derivation_reason = _cmd_mark_step._derive_head_dependence_from(
+                canonicalize_step_key(step), records
+            )
+        except Exception as exc:  # any derivation fault is the declared fallback, never a crash
+            return False, f'the head-dependence derivation raised ({exc})'
+        if derivation_reason is not None:
+            return False, derivation_reason
+        if not found:
+            return False, POPULATION_ABSENT_REASON
+        return declared, None
+
+    return _read
 
 
 def _classify_verdict_currency(step: str, project_dir: str, recorded_sha: str, head: str) -> dict[str, Any]:
@@ -425,7 +470,7 @@ def _head_binding_refusal(
     phase_steps = steps.get(HEAD_BINDING_PHASE) if isinstance(steps, dict) else None
     if not isinstance(phase_steps, dict):
         return None, evidence
-    derive = head_dependence_reader or _head_dependence
+    derive = head_dependence_reader or _head_dependence_probe()
     classify = classifier or (
         lambda step, directory, recorded: _classify_verdict_currency(step, directory, recorded, head)
     )

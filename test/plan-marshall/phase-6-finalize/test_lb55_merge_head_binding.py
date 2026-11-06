@@ -79,14 +79,21 @@ def _merge(status, head, **kwargs):
     )
 
 
-def _merge_pre_seam(status, head):
+def _merge_pre_seam(status, head, **kwargs):
     """Run the gate with ONLY the seams the pre-change module already accepted.
 
     The two Done-whens marked "Red at HEAD" drive the production declaration reader
     and the production waiver row through these seams, so their failure at HEAD is
     the defect (a refused merge) rather than a missing keyword. They therefore must
-    not pass the new seams.
+    not pass the declaration seam. A case that needs the production declaration
+    reader but not the production classifier passes it through ``kwargs``.
     """
+    flags = {
+        'status_reader': lambda _pid: status,
+        'head_reader': lambda _dir: head,
+        'participation_check': lambda _pid, _pr, _project_dir: _participating(),
+    }
+    flags.update(kwargs)
     return gate.merge(
         'lb55-plan',
         route='safe-merge',
@@ -95,9 +102,7 @@ def _merge_pre_seam(status, head):
         strategy='squash',
         findings_check=lambda _pid: {'status': 'success', 'blocking_count': 0},
         merge_runner=lambda _args: {'status': 'success', 'merged': True},
-        status_reader=lambda _pid: status,
-        head_reader=lambda _dir: head,
-        participation_check=lambda _pid, _pr, _project_dir: _participating(),
+        **flags,
     )
 
 
@@ -471,3 +476,173 @@ def test_a_namespaced_declared_step_is_judged_not_silently_skipped(monkeypatch):
 
     assert result['status'] == 'error', result
     assert {item['step'] for item in result['steps']} == {'project:finalize-step-plugin-doctor'}
+
+
+# ---------------------------------------------------------------------------
+# "declares no head-dependence" and "could not be found" are different answers
+# ---------------------------------------------------------------------------
+#
+# The declaration reader resolves a step that is simply ABSENT from the
+# discovered finalize-step population to "not head-dependent", because
+# ``mark-step-done`` records steps for every phase and a phase-5 step
+# legitimately matches no finalize-step implementor. That answer is right for
+# ``mark-step-done`` and wrong for the merge gate: a stale record for a
+# head-dependent step the gate's own discovery does not return would be listed
+# as "never consulted" and ADMITTED. The gate therefore asks the same discovery
+# a distinguishing question, and an absent step takes the fail-closed
+# field-presence fallback exactly as an underivable declaration does.
+
+
+def _population_without(name: str, monkeypatch):
+    """Stub the discovery so it returns the real population minus ``name``."""
+    import extension_discovery
+
+    real = extension_discovery.find_implementors
+
+    def _filtered(ext_point: str):
+        return [record for record in real(ext_point) if str(record.get('name', '')) != name]
+
+    monkeypatch.setattr(extension_discovery, 'find_implementors', _filtered)
+
+
+_STALE_CLASSIFIER_RESULT = {'status': 'success', 'verdict': 'invalidated', 'reason': 'stub'}
+
+
+def _stale_classifier(_step, _project_dir, _recorded):
+    """A classifier that never preserves the stale record (the refusal default)."""
+    return dict(_STALE_CLASSIFIER_RESULT)
+
+
+def test_a_stale_record_for_a_step_the_discovery_does_not_return_is_refused(monkeypatch):
+    """A step absent from the discovered population is refused, never "undeclared"."""
+    _population_without('default:functional-review', monkeypatch)
+    status = _status({'functional-review': HEAD_GATED})
+
+    result = _merge_pre_seam(status, HEAD_MERGED, classifier=_stale_classifier)
+
+    assert result['status'] == 'error', result
+    assert result['error'] == gate.MERGE_HEAD_NOT_GATED
+    assert {item['step'] for item in result['steps']} == {'functional-review'}
+    assert result['head_dependence_fallback'] == [
+        {'step': 'functional-review', 'reason': gate.POPULATION_ABSENT_REASON},
+    ]
+    assert 'unconsulted_stamps' not in result
+
+
+def test_a_discovered_undeclared_step_is_still_listed_and_admitted():
+    """MATCHED CONTROL: the distinguishing answer must not narrow the admitted set.
+
+    ``finalize-step-sync-baseline`` IS discovered and declares no
+    ``head_dependent`` fact, so its stamp stays evidence rather than an offence.
+    Without this control a reader that simply refused every stale stamp would
+    pass the case above.
+    """
+    status = _status({'finalize-step-sync-baseline': HEAD_GATED})
+
+    result = _merge_pre_seam(status, HEAD_MERGED)
+
+    assert result['status'] == 'success', result
+    assert result['dispatched'] is True
+    assert result['unconsulted_stamps'] == [
+        {'step': 'finalize-step-sync-baseline', 'recorded_head': HEAD_GATED},
+    ]
+
+
+def test_a_declared_document_that_cannot_be_read_is_refused_not_listed(monkeypatch):
+    """An unreadable declared document is "not derived", never "undeclared"."""
+    import extension_discovery
+
+    real = extension_discovery.find_implementors
+
+    def _broken_path(ext_point: str):
+        records = []
+        for record in real(ext_point):
+            if str(record.get('name', '')) == 'default:functional-review':
+                record = {**record, 'path': '/nonexistent/functional-review.md'}
+            records.append(record)
+        return records
+
+    monkeypatch.setattr(extension_discovery, 'find_implementors', _broken_path)
+    status = _status({'functional-review': HEAD_GATED})
+
+    result = _merge_pre_seam(status, HEAD_MERGED, classifier=_stale_classifier)
+
+    assert result['status'] == 'error', result
+    assert {item['step'] for item in result['steps']} == {'functional-review'}
+    fallback = result['head_dependence_fallback']
+    assert [item['step'] for item in fallback] == ['functional-review']
+    assert 'could not be read' in fallback[0]['reason']
+    assert 'unconsulted_stamps' not in result
+
+
+@pytest.mark.parametrize('step', ['automatic-review', 'project:finalize-step-plugin-doctor'])
+def test_a_bundle_tier_and_a_project_tier_step_resolve_through_the_production_reader(step):
+    """Both tiers reach their own document through the production reader.
+
+    ``automatic-review`` is discovered from a bundle's ``skills/*/SKILL.md`` and
+    ``project:finalize-step-plugin-doctor`` from this checkout's project-local
+    skill root. Stubbing either tier would leave the discovery surface that
+    actually matters for a real plan unexercised.
+    """
+    assert gate._head_dependence(step) == (True, None)
+
+
+def test_the_gate_discovers_the_population_once_per_merge(monkeypatch):
+    """Three stale declared steps cost ONE discovery, not one each.
+
+    The discovery walks every bundle, cache root and project-local skill root,
+    and it runs while the cross-plan merge mutex is held: re-deriving the
+    population per stale step would multiply that cost by the record count.
+    """
+    import _cmd_mark_step
+
+    calls: list[int] = []
+    real = _cmd_mark_step._finalize_step_population
+
+    def _counted():
+        calls.append(1)
+        return real()
+
+    monkeypatch.setattr(_cmd_mark_step, '_finalize_step_population', _counted)
+    status = _status(
+        {
+            'functional-review': HEAD_GATED,
+            'pre-push-quality-gate': HEAD_GATED,
+            'automatic-review': HEAD_GATED,
+        }
+    )
+
+    result = _merge_pre_seam(status, HEAD_MERGED, classifier=_stale_classifier)
+
+    assert result['status'] == 'error', result
+    assert {item['step'] for item in result['steps']} == {
+        'functional-review',
+        'pre-push-quality-gate',
+        'automatic-review',
+    }
+    assert len(calls) == 1, f'the discovery ran {len(calls)} times for one merge'
+
+
+@pytest.mark.parametrize(
+    'verdict',
+    [
+        {'status': 'error', 'error': 'verdict_currency_unreadable'},
+        {'status': 'timeout'},
+        {'status': 'success'},
+        {'status': 'success', 'verdict': 'unknown'},
+    ],
+    ids=['error', 'timeout', 'no-verdict', 'unknown-verdict'],
+)
+def test_every_non_preserved_classifier_answer_refuses(verdict):
+    """Only ``success`` + ``preserved`` admits; every other answer refuses."""
+    status = _status({'functional-review': HEAD_GATED})
+
+    result = _merge(
+        status,
+        HEAD_MERGED,
+        classifier=lambda _step, _project_dir, _recorded: verdict,
+    )
+
+    assert result['status'] == 'error', result
+    assert result['error'] == gate.MERGE_HEAD_NOT_GATED
+    assert result['dispatched'] is False
