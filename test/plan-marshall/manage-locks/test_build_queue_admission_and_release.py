@@ -13,8 +13,13 @@ Its sections, in order:
 
 from __future__ import annotations
 
+import json
+import os
+import time
 from argparse import Namespace
+from pathlib import Path
 
+import pytest
 from _build_queue_fixtures import (
     _init_git_repo,
     _make_live_plan,
@@ -279,3 +284,375 @@ class TestIdempotentAcquire:
         active_plans = {e['plan_id'] for e in state['active']}
         assert active_plans == {'plan-h2', 'plan-w1'}
         assert [e['id'] for e in state['waiting']] == [w2['id']]
+
+
+# =============================================================================
+# D4: a slot is held per build INVOCATION, not per plan
+# =============================================================================
+# ``acquire`` used to hand a second concurrent build of the same plan the
+# EXISTING active id: both builds then ran on one entry, and the first release
+# freed the slot while the second was still running. The acquire now carries a
+# per-invocation token; a re-poll with its own token keeps its FIFO place, and a
+# second invocation of the same plan is a second entry. Without a token the
+# identity falls back to the plan id, which is exactly the pre-token behaviour a
+# re-poll of a legacy caller needs.
+
+_DOCUMENTED_RESULT_FIELDS = (
+    'id',
+    'admission',
+    'active_count',
+    'waiting_count',
+    'warnings',
+    'max_slots',
+    'max_slots_source',
+    'cap_agreement',
+    'cap_compared_count',
+    'cap_unstamped_count',
+    'cap_disagreement',
+)
+
+
+class TestPerInvocationToken:
+    def test_two_tokens_for_one_plan_are_two_invocations(self, isolated_base: dict) -> None:
+        """At cap 1 the second invocation of one plan is BLOCKED, keeps its own
+        FIFO place across a re-poll, and is promoted when the first releases."""
+        _set_max_slots(isolated_base['home'], 1)
+        _make_live_plan(isolated_base['base'], 'plan-a')
+
+        first = build_queue.run_acquire(Namespace(plan_id='plan-a', token='token-1'))
+        second = build_queue.run_acquire(Namespace(plan_id='plan-a', token='token-2'))
+
+        assert first['admission'] == 'admitted'
+        assert second['admission'] == 'blocked', 'a second invocation is its own queue entry'
+        assert second['id'] != first['id']
+
+        # A re-poll with its OWN token keeps the entry, in place.
+        again = build_queue.run_acquire(Namespace(plan_id='plan-a', token='token-2'))
+        assert again['id'] == second['id']
+        assert again['admission'] == 'blocked'
+        state = _read_queue(isolated_base['queue_path'])
+        assert [e['id'] for e in state['waiting']] == [second['id']]
+
+        # Releasing the first invocation promotes the second.
+        build_queue.run_release(Namespace(plan_id='plan-a', id=first['id']))
+        promoted = build_queue.run_acquire(Namespace(plan_id='plan-a', token='token-2'))
+        assert promoted['admission'] == 'admitted'
+        assert promoted['id'] == second['id']
+
+    def test_the_documented_result_fields_survive_the_token(self, isolated_base: dict) -> None:
+        """Every field a consumer reads is still reported, with its own value."""
+        result = build_queue.run_acquire(Namespace(plan_id='plan-a', token='token-1'))
+
+        for field in _DOCUMENTED_RESULT_FIELDS:
+            assert field in result, f'{field} is a documented result field'
+        assert result['id'].startswith('plan-a:')
+        assert result['warnings'] == []
+        assert result['active_count'] == 1
+        assert result['waiting_count'] == 0
+
+    def test_a_legacy_entry_without_a_token_is_not_matched_by_a_token_acquire(self, isolated_base: dict) -> None:
+        """An entry written before the token existed is a different invocation.
+
+        It is left untouched (existing reap/prune still owns it) rather than
+        adopted, because adopting it would put two invocations on one slot —
+        the very defect this deliverable removes.
+        """
+        _set_max_slots(isolated_base['home'], 5)
+        # A LIVE plan dir, so the dead-holder prune does not reclaim the legacy
+        # entry before the token logic can be observed.
+        _make_live_plan(isolated_base['base'], 'plan-a')
+        legacy = {
+            'id': 'plan-a:legacy-uuid',
+            'plan_id': 'plan-a',
+            'ts': 1.0,
+            'active_since': time.time(),
+            'project_root': str(isolated_base['main_repo']),
+            'admitted_under_max_slots': 5,
+        }
+        (isolated_base['queue_path']).write_text(
+            json.dumps({'active': [legacy], 'waiting': [], 'run_log': []}), encoding='utf-8'
+        )
+
+        result = build_queue.run_acquire(Namespace(plan_id='plan-a', token='token-1'))
+
+        assert result['id'] != legacy['id'], 'the token names a new invocation, never the legacy entry'
+        state = _read_queue(isolated_base['queue_path'])
+        assert len(state['active']) == 2
+        assert {e['id'] for e in state['active']} == {legacy['id'], result['id']}
+
+    def test_a_tokenless_acquire_keeps_the_legacy_plan_identity(self, isolated_base: dict) -> None:
+        """Without a token the identity is the plan id — a re-poll is idempotent.
+
+        This is the compatibility half of the change: an older caller that knows
+        nothing of tokens keeps the behaviour it had.
+        """
+        _make_live_plan(isolated_base['base'], 'plan-a')
+
+        first = build_queue.run_acquire(Namespace(plan_id='plan-a'))
+        second = build_queue.run_acquire(Namespace(plan_id='plan-a'))
+
+        assert second['id'] == first['id']
+        assert second['admission'] == 'admitted'
+
+
+# =============================================================================
+# D3: the per-directory lock's FIFO
+# =============================================================================
+# The lock is a queue, and "queue, never reject" only holds if a LATER waiter can
+# never block an EARLIER one. Ordering is list position among one directory's
+# waiters; a set-membership test ("is anybody else waiting for this directory?")
+# makes two waiters block each other forever, which is the failure these pin.
+
+
+def _directory_namespace(directory: Path, ticket: str, plan_id: str = 'plan-a') -> Namespace:
+    return Namespace(
+        directory=str(directory.resolve()), plan_id=plan_id, command='module-tests', pid=os.getpid(), ticket=ticket
+    )
+
+
+class TestDirectoryLockFifo:
+    def test_two_waiters_are_admitted_in_arrival_order(self, isolated_base: dict) -> None:
+        directory = isolated_base['base'] / 'W1'
+        directory.mkdir(parents=True, exist_ok=True)
+
+        holder = build_queue.run_directory_acquire(_directory_namespace(directory, 't-holder', 'holder'))
+        first = build_queue.run_directory_acquire(_directory_namespace(directory, 't-first', 'first'))
+        second = build_queue.run_directory_acquire(_directory_namespace(directory, 't-second', 'second'))
+
+        assert holder['admission'] == 'admitted'
+        assert first['admission'] == 'blocked'
+        assert second['admission'] == 'blocked'
+
+        build_queue.run_directory_release(Namespace(directory=str(directory.resolve()), ticket='t-holder'))
+
+        # The LATER waiter polls first and must stay blocked behind the earlier
+        # one; the earlier waiter is then admitted.
+        again_second = build_queue.run_directory_acquire(_directory_namespace(directory, 't-second', 'second'))
+        again_first = build_queue.run_directory_acquire(_directory_namespace(directory, 't-first', 'first'))
+
+        assert again_second['admission'] == 'blocked', 'a later waiter must not jump the queue'
+        assert again_first['admission'] == 'admitted'
+
+    def test_a_newcomer_does_not_leapfrog_a_queued_waiter(self, isolated_base: dict) -> None:
+        """A brand-new build arriving after a release must not jump the queue.
+
+        The window is the re-poll interval: the holder releases, the queued build
+        has not polled yet, and a fresh build arrives. Admitting the newcomer there
+        inverts the FIFO guarantee on every release.
+        """
+        directory = isolated_base['base'] / 'W1'
+        directory.mkdir(parents=True, exist_ok=True)
+        build_queue.run_directory_acquire(_directory_namespace(directory, 't-holder', 'holder'))
+        build_queue.run_directory_acquire(_directory_namespace(directory, 't-waiter', 'waiter'))
+
+        build_queue.run_directory_release(Namespace(directory=str(directory.resolve()), ticket='t-holder'))
+
+        newcomer = build_queue.run_directory_acquire(_directory_namespace(directory, 't-newcomer', 'newcomer'))
+        assert newcomer['admission'] == 'blocked', 'the queued build was there first'
+        assert newcomer['waiting_on']['plan_id'] == 'waiter'
+
+        promoted = build_queue.run_directory_acquire(_directory_namespace(directory, 't-waiter', 'waiter'))
+        assert promoted['admission'] == 'admitted'
+
+    def test_a_waiting_ticket_is_removed_on_release(self, isolated_base: dict) -> None:
+        directory = isolated_base['base'] / 'W1'
+        directory.mkdir(parents=True, exist_ok=True)
+        build_queue.run_directory_acquire(_directory_namespace(directory, 't-holder', 'holder'))
+        build_queue.run_directory_acquire(_directory_namespace(directory, 't-waiter', 'waiter'))
+
+        build_queue.run_directory_release(Namespace(directory=str(directory.resolve()), ticket='t-waiter'))
+
+        state = _read_queue(isolated_base['queue_path'])
+        assert state.get('directory_waiters') == []
+        assert str(directory.resolve()) in state['directory_locks'], "a waiter's release must not free the holder"
+
+
+def test_a_holder_identity_cannot_inject_a_toon_key() -> None:
+    """A foreign holder identity is sanitised at the emission boundary.
+
+    The holder record was written by ANOTHER checkout's build into the machine-global
+    queue, so its text is foreign. A newline in a `plan_id` would split the reported
+    identity across lines and be reparsed as a sibling TOON key.
+    """
+    view = build_queue._holder_view(
+        {'plan_id': 'evil\nadmission: admitted', 'command': 'x', 'pid': 1, 'acquired_at': time.time()},
+        time.time(),
+    )
+
+    assert '\n' not in view['plan_id']
+    assert '\n' not in view['command']
+
+
+class TestDirectoryRecovery:
+    """`directory status` / `directory clear` — the operator escape hatch.
+
+    A build killed past its own release can leave a holder whose pid still reads
+    as alive. Nothing in admission may steal that directory (it would corrupt a
+    live build's output tree), so the recovery is explicit and operator-invoked.
+    """
+
+    def _stage_holder(self, isolated_base: dict, directory: Path, **overrides) -> None:
+        record = {
+            'plan_id': 'dead-build',
+            'command': 'module-tests',
+            'pid': 999_999,
+            'acquired_at': time.time(),
+            'ticket': 't-dead',
+            **overrides,
+        }
+        (isolated_base['queue_path']).write_text(
+            json.dumps(
+                {'active': [], 'waiting': [], 'run_log': [], 'directory_locks': {str(directory.resolve()): record}}
+            ),
+            encoding='utf-8',
+        )
+
+    def test_status_reports_the_holder_and_marks_a_dead_pid_reclaimable(self, isolated_base: dict) -> None:
+        directory = isolated_base['base'] / 'W1'
+        directory.mkdir(parents=True, exist_ok=True)
+        self._stage_holder(isolated_base, directory)
+
+        result = build_queue.run_directory_status(Namespace(directory=str(directory)))
+
+        assert result['status'] == 'success'
+        assert len(result['holders']) == 1
+        holder = result['holders'][0]
+        assert holder['plan_id'] == 'dead-build'
+        assert holder['pid'] == 999_999
+        assert holder['reclaimable'] is True
+        assert result['reclaimable_count'] == 1
+
+    def test_clear_reclaims_a_dead_holder_without_force(self, isolated_base: dict) -> None:
+        directory = isolated_base['base'] / 'W1'
+        directory.mkdir(parents=True, exist_ok=True)
+        self._stage_holder(isolated_base, directory)
+
+        result = build_queue.run_directory_clear(Namespace(directory=str(directory), force=False))
+
+        assert result['action'] == 'cleared'
+        assert result['cleared_holder']['plan_id'] == 'dead-build'
+        assert _read_queue(isolated_base['queue_path']).get('directory_locks') == {}
+
+    def test_clear_refuses_a_live_holder_without_force(self, isolated_base: dict) -> None:
+        directory = isolated_base['base'] / 'W1'
+        directory.mkdir(parents=True, exist_ok=True)
+        self._stage_holder(isolated_base, directory, pid=os.getpid(), acquired_at=time.time())
+
+        result = build_queue.run_directory_clear(Namespace(directory=str(directory), force=False))
+
+        assert result['action'] == 'refused_live'
+        assert str(directory.resolve()) in _read_queue(isolated_base['queue_path'])['directory_locks']
+
+    def test_force_clears_a_live_holder_on_the_operators_assertion(self, isolated_base: dict) -> None:
+        directory = isolated_base['base'] / 'W1'
+        directory.mkdir(parents=True, exist_ok=True)
+        self._stage_holder(isolated_base, directory, pid=os.getpid(), acquired_at=time.time())
+
+        result = build_queue.run_directory_clear(Namespace(directory=str(directory), force=True))
+
+        assert result['action'] == 'cleared'
+        assert _read_queue(isolated_base['queue_path']).get('directory_locks') == {}
+
+    def test_clear_of_an_unheld_directory_is_an_idempotent_noop(self, isolated_base: dict) -> None:
+        result = build_queue.run_directory_clear(
+            Namespace(directory=str(isolated_base['base'] / 'nobody'), force=False)
+        )
+
+        assert result['status'] == 'success'
+        assert result['action'] == 'noop'
+
+    def test_a_malformed_waiter_record_is_dropped_not_raised(self, isolated_base: dict) -> None:
+        """A waiter record missing ``directory`` must not take every acquire down.
+
+        The admission scan indexes ``waiter['directory']``, so a junk record kept in
+        the list would raise inside the read-modify-write — and then EVERY
+        in-process build would fail until the machine-global file was hand-edited,
+        which no verb allows. Junk is dropped, the same fail-open direction the
+        dead-holder prune takes.
+        """
+        directory = isolated_base['base'] / 'W1'
+        directory.mkdir(parents=True, exist_ok=True)
+        (isolated_base['queue_path']).write_text(
+            json.dumps(
+                {
+                    'active': [],
+                    'waiting': [],
+                    'run_log': [],
+                    'directory_locks': {},
+                    'directory_waiters': [{'ticket': 'junk-only'}, {'directory': str(directory), 'pid': 'bad'}],
+                }
+            ),
+            encoding='utf-8',
+        )
+
+        result = build_queue.run_directory_acquire(_directory_namespace(directory, 't-mine', 'mine'))
+
+        assert result['status'] == 'success'
+        assert result['admission'] == 'admitted'
+        state = _read_queue(isolated_base['queue_path'])
+        assert [waiter['ticket'] for waiter in state['directory_waiters']] == []
+
+    def test_a_waiter_past_the_ceiling_loses_its_place(self, isolated_base: dict) -> None:
+        """A pid-recycled waiter must not pin its directory forever.
+
+        The FIFO rule admits nobody ahead of a queued waiter, so a leaked record
+        whose pid now belongs to an unrelated live process would block every later
+        build. The waiter's age is the backstop.
+        """
+        directory = isolated_base['base'] / 'W1'
+        directory.mkdir(parents=True, exist_ok=True)
+        stale_ts = time.time() - build_queue.DIRECTORY_LOCK_CEILING_SECONDS - 60
+        (isolated_base['queue_path']).write_text(
+            json.dumps(
+                {
+                    'active': [],
+                    'waiting': [],
+                    'run_log': [],
+                    'directory_locks': {},
+                    'directory_waiters': [
+                        {
+                            'directory': str(directory.resolve()),
+                            'ticket': 't-abandoned',
+                            'plan_id': 'abandoned',
+                            'pid': os.getpid(),
+                            'ts': stale_ts,
+                        }
+                    ],
+                }
+            ),
+            encoding='utf-8',
+        )
+
+        result = build_queue.run_directory_acquire(_directory_namespace(directory, 't-mine', 'mine'))
+
+        assert result['admission'] == 'admitted', 'an abandoned waiter must not hold the queue'
+
+    def test_a_zombie_holder_is_reclaimable(self) -> None:
+        """A holder whose process has exited but not been reaped is DEAD.
+
+        ``os.kill(pid, 0)`` succeeds for a zombie, so a signal probe alone would let
+        a daemon-killed build child pin its directory for as long as the corpse
+        lives. The probe reads the process state from ``/proc``; on a host without
+        ``/proc`` (macOS) the signal probe alone decides and the assertion below
+        would not hold, so the test skips there rather than failing the gate.
+        """
+        import subprocess
+        import sys
+
+        proc_root = Path('/proc')
+        if not proc_root.is_dir():
+            pytest.skip('no /proc on this host: zombie detection is Linux-only by design')
+
+        zombie = subprocess.Popen([sys.executable, '-c', 'import os; os._exit(0)'])
+        try:
+            # Wait for the state to become Z rather than sleeping a fixed interval:
+            # a slow host would otherwise read it as still running.
+            deadline = time.time() + 5
+            while time.time() < deadline and not build_queue._is_zombie(zombie.pid):
+                time.sleep(0.02)
+            assert build_queue._is_zombie(zombie.pid), 'the child never became an unreaped zombie'
+            assert not build_queue._pid_alive(zombie.pid), 'the exited-but-unreaped child must read as dead'
+        finally:
+            zombie.wait()
+        # The matched control: a live process still reads as alive.
+        assert build_queue._pid_alive(os.getpid())

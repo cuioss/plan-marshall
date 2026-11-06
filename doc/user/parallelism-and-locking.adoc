@@ -42,6 +42,21 @@ Two of the three are *machine-global* — one value per host, shared by every ch
 
 `max_slots` is the maximum number of builds that may run concurrently across every session on the host. A build that finds a free slot runs immediately; otherwise it is enqueued and promoted in FIFO order as slots free up.
 
+[#per-directory-lock]
+=== One build per directory, beside the slot
+
+The slot cap answers *how many* builds may run on this host. It says nothing about *which* directory they may run in, and that is a second, independent question: two builds of one worktree write the same `target/`, and running them together produces false failures (a `ClassNotFoundException`, a `NoClassDefFoundError`, a build tool refusing to start) that vanish on a serial re-run.
+
+Every build therefore also takes a **per-directory lock**, held for the whole build:
+
+* *Keyed on the build's own directory*, canonicalised — so the main checkout and each of its worktrees are separate keys, and two worktrees build in parallel while one worktree never builds twice at once.
+* *Taken by every in-process build, plan-less ones included* (`NO_PLAN`, which every `--project-dir` build is). The hazard is the shared output directory, not the slot budget, so this lock does not depend on having a plan. The daemon's own build child runs the same in-process leg and holds the lock too.
+* *Lock order: directory first, then slot, everywhere.* Every build process takes the directory before the slot, and the daemon does not admit a job whose directory a live in-process holder has — so no process ever waits for a directory while holding a slot. The daemon/child pair leaves one bounded window this pre-check cannot close: the daemon spends a machine slot at admission, its child takes the directory a moment later, and an in-process build slipping in between makes the child wait *with that slot spent*. That wait is closed by whichever budget lapses first — the in-process build's slot retries or the child's directory-wait bound — a bounded stall, not a deadlock.
+* *Waiting is a FIFO queue, never a refusal.* A second build for a busy directory waits, and the wait is visible: a submit reports `queued_behind` (the job running in the same directory), a wait on a not-yet-admitted job reports `queued` with `waiting_on` and `queued_seconds`, and only a wait bound that runs out refuses — with a named `directory_busy` error carrying the holder's plan id (or `NO_PLAN`), command, pid and seconds held. The build never runs concurrently and never passes silently.
+* *Liveness is by pid*, so a crashed build's lock is reclaimed rather than blocking the directory forever.
+
+Both lock records live in the same machine-global `build-queue.json`: the slot entries under `active` / `waiting`, the directory lock under `directory_locks` / `directory_waiters`. One file, one serialized read-modify-write, no second store to keep in step.
+
 [source,bash]
 ----
 python3 .plan/execute-script.py plan-marshall:manage-build-server:manage_build_server config get
@@ -223,6 +238,8 @@ When two plans appear to serialize against each other — one waiting while anot
 === No more builds are accepted / the queue appears stuck
 
 When new builds stop being admitted, work through these steps in order:
+
+0. *Check whether it is a directory wait, not a stuck queue.* A build for a directory another build is already using waits — by design. Its submit carries `queued_behind`, its wait reports `queued` with `waiting_on` and `queued_seconds`, and the wait ends when the holder finishes. Only a wait bound that runs out produces an error, and that error is the named `directory_busy` carrying the holder's plan id, command, pid and seconds held. A queued build whose `queued_seconds` is still under the bound needs no action.
 
 1. *Inspect the `[LOCK]` events.* Open the main-anchored global lock log and find the active build ids and their `acquired` timestamps. A slot held far longer than a real build takes is the likely culprit; the `held` duration on a later `reaped-stale` event confirms it.
 

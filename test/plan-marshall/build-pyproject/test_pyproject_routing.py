@@ -165,7 +165,7 @@ class _QueueSpy:
         self.acquire_calls: list[str] = []
         self.release_calls: list[tuple[str, str]] = []
 
-    def acquire(self, plan_id: str) -> dict:
+    def acquire(self, plan_id: str, token: str | None = None) -> dict:
         self.acquire_calls.append(plan_id)
         return {'status': 'success', 'admission': 'admitted', 'id': f'{plan_id}:uuid-1'}
 

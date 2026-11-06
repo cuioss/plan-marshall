@@ -22,6 +22,17 @@ ever called) enforce the no-stacking invariant.
 This module is a **pure concurrency limiter**: it admits, waits, and releases
 build-queue slots and does nothing else. It writes no terminal-title state.
 
+It owns a SECOND limiter beside the slot: :func:`directory_lock`, the
+per-directory build lock. The two answer different questions — the slot is "how
+many builds may run on this host", the directory lock is "is a build already
+writing THIS directory's ``target/``" — and they are taken in one fixed order,
+**directory first, then slot**; that order is what rules out a build process
+waiting on a directory while it holds a slot (one bounded daemon/child window is
+described in :func:`directory_lock` and in the manage-locks contract), because a
+build holding a slot never waits on a directory. The directory lock is taken by
+EVERY in-process build, including the plan-less ones the slot path below skips:
+the hazard is the shared directory, not the slot budget.
+
 The one thing it additionally *reports* is the queue's own ``warnings`` — today,
 a surviving per-repo ``build.queue.max_slots`` that no longer takes effect. Each
 is surfaced once per invocation, deduplicated by ``code`` across the blocked
@@ -31,10 +42,10 @@ warning never blocks, delays, or aborts the build; reporting is not gating.
 Behaviour:
 
 * **routed → NO-OP passthrough.** When ``routed`` is true the build already ran
-  on (or is being served by) the marshalld daemon, whose child holds the single
-  machine-global slot; taking a fallback slot here would double-count the build
-  (stacking). The context manager therefore yields immediately without touching
-  the queue — the explicit no-stacking guard.
+  on (or is being served by) the marshalld daemon, whose scheduler holds the
+  machine-global slot for it; taking a fallback slot here would double-count the
+  build (stacking). The context manager therefore yields immediately without
+  touching the queue — the explicit no-stacking guard.
 * **No plan_id → NO-OP passthrough.** When ``names_real_plan(plan_id)`` is false
   the context manager yields immediately and does nothing else. A build invoked
   without a plan (ad-hoc CLI run, the standalone ``run`` subcommand) therefore
@@ -45,11 +56,13 @@ Behaviour:
   acquire``. On ``admitted`` it yields so the caller runs the build. On
   ``blocked`` it sleeps ``_WAIT_SECONDS`` and re-polls ``acquire`` WITHOUT
   releasing first, up to ``build.queue.max_retries`` (default 10 from
-  marshal.json). Because ``run_acquire`` is idempotent for an already-queued
-  ``plan_id``, the plan KEEPS its FIFO position across retries rather than being
-  shuffled to the back. Whether the slot is admitted or the retries are
-  exhausted, the held / queued admission id is ALWAYS released in a ``finally``
-  block, so the queue never leaks a slot or a waiting entry.
+  marshal.json). Every re-poll carries the SAME per-invocation token, and the
+  queue matches by token, so this build KEEPS its FIFO position across retries
+  rather than being shuffled to the back — and a second concurrent build of the
+  same plan is a second entry rather than a second claimant on this one. Whether
+  the slot is admitted or the retries are exhausted, the held / queued admission
+  id is ALWAYS released in a ``finally`` block, so the queue never leaks a slot or
+  a waiting entry.
 * **Retries exhausted → BuildQueueTimeout.** When the build is still blocked
   after the final retry the queued id is released (cleanup) and
   :class:`BuildQueueTimeout` is raised, carrying a structured "try again later"
@@ -72,17 +85,20 @@ from __future__ import annotations
 
 import importlib.util
 import logging
+import os
 import sys
 import time
+import uuid
 from argparse import Namespace
 from collections.abc import Iterator
 from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from file_ops import get_marshal_path, read_json
 from marketplace_bundles import resolve_sibling_skill_path
-from marketplace_paths import names_real_plan
+from marketplace_paths import NO_PLAN_SENTINEL, names_real_plan
 from plan_logging import log_entry
 
 logger = logging.getLogger(__name__)
@@ -103,6 +119,13 @@ _BUILD_QUEUE_PATH = resolve_sibling_skill_path(
 _WAIT_SECONDS = 60
 
 _DEFAULT_MAX_RETRIES = 10
+
+# Re-poll interval and default wait bound for the PER-DIRECTORY lock. The bound
+# is generous on purpose: the standing rule is "queue, never reject", so an error
+# is allowed only when a wait bound runs out, and a normal build of one directory
+# is over well inside half an hour.
+_DIRECTORY_POLL_SECONDS = 5
+_DIRECTORY_WAIT_SECONDS = 1800
 
 # Lazily-imported build_queue module (file-path import; see _load_build_queue).
 _build_queue_mod: Any = None
@@ -192,8 +215,13 @@ def _resolve_max_retries() -> int:
     return raw if raw > 0 else _DEFAULT_MAX_RETRIES
 
 
-def _acquire(plan_id: str) -> dict[str, Any]:
+def _acquire(plan_id: str, token: str | None = None) -> dict[str, Any]:
     """Call ``build_queue.run_acquire`` in-process and return its result dict.
+
+    ``token`` is this build INVOCATION's identity. It is passed on every re-poll
+    so the queue keeps this build's own FIFO place, and so a second concurrent
+    build of the same plan is a second entry instead of inheriting this one's
+    slot.
 
     Any exception from the queue handler (file-path import failure, I/O error in
     the read-modify-write) degrades to a ``status: error`` dict so the caller can
@@ -202,7 +230,7 @@ def _acquire(plan_id: str) -> dict[str, Any]:
     """
     try:
         bq = _load_build_queue()
-        result = bq.run_acquire(Namespace(plan_id=plan_id))
+        result = bq.run_acquire(Namespace(plan_id=plan_id, token=token))
     except Exception as exc:  # surface as a structured error dict
         return {'status': 'error', 'error': f'acquire failed: {exc}'}
     return result if isinstance(result, dict) else {'status': 'error', 'error': 'non-dict acquire result'}
@@ -307,15 +335,16 @@ def _release_raw(plan_id: str, admission_id: str) -> dict[str, Any]:
     return result if isinstance(result, dict) else {'status': 'error', 'error': 'non-dict release result'}
 
 
-def _wait_for_admission(plan_id: str, max_retries: int) -> str:
+def _wait_for_admission(plan_id: str, max_retries: int, token: str) -> str:
     """Acquire a slot, polling while blocked, and return the admitted id.
 
-    Re-polls ``acquire`` WITHOUT releasing first. Because ``run_acquire`` is
-    idempotent for an already-queued ``plan_id`` — it reuses the existing waiting
-    entry in place rather than appending a new one — the plan KEEPS its FIFO
-    position across every retry. Releasing-then-re-acquiring (the prior
-    behaviour) pushed the plan to the back of the waiting queue on each poll,
-    defeating FIFO; that release is therefore gone from the loop. Raises
+    ``token`` is this invocation's identity, passed on EVERY re-poll WITHOUT
+    releasing first: the queue matches the entry by token, so this build keeps
+    its FIFO position in place. A tokenless caller would fall back to the plan id
+    — the pre-token idempotence — but the wrapper always mints one, so two
+    concurrent builds of one plan never share a slot. Releasing-then-re-acquiring
+    (the prior behaviour) pushed the plan to the back of the waiting queue on each
+    poll, defeating FIFO; that release is therefore gone from the loop. Raises
     :class:`BuildQueueTimeout` when still blocked after ``max_retries`` re-polls
     (the final queued id IS released first, as cleanup, so an exhausted plan does
     not leak a waiting entry).
@@ -333,7 +362,7 @@ def _wait_for_admission(plan_id: str, max_retries: int) -> str:
     build.
     """
     seen: set[str] = set()
-    result = _acquire(plan_id)
+    result = _acquire(plan_id, token)
     if result.get('status') != 'success':
         # acquire is NOT best-effort: a queue we cannot reach is a hard failure.
         raise RuntimeError(f'build_queue acquire failed for {plan_id!r}: {result.get("error")}')
@@ -371,11 +400,10 @@ def _wait_for_admission(plan_id: str, max_retries: int) -> str:
 
         for _ in range(max_retries):
             time.sleep(_WAIT_SECONDS)
-            # Re-poll WITHOUT releasing — run_acquire is idempotent for an
-            # already-queued plan_id, so the waiting entry keeps its FIFO
-            # position in place instead of being shuffled to the back on each
-            # retry.
-            result = _acquire(plan_id)
+            # Re-poll WITHOUT releasing — the queue matches this invocation by its
+            # own token, so the waiting entry keeps its FIFO position in place
+            # instead of being shuffled to the back on each retry.
+            result = _acquire(plan_id, token)
             if result.get('status') != 'success':
                 raise RuntimeError(f'build_queue acquire failed for {plan_id!r}: {result.get("error")}')
             _surface_warnings(result, plan_id, seen)
@@ -397,12 +425,14 @@ def build_queue_slot(plan_id: str | None, *, routed: bool = False) -> Iterator[N
     """Context manager wrapping a build in the machine-global build queue.
 
     When ``routed`` is true this is a pure no-op passthrough — the build was
-    routed to the marshalld daemon, whose child already holds the single
-    machine-global slot, so acquiring a fallback slot here would stack a second
-    slot on the same build (the no-stacking guard). When ``plan_id`` does not
-    name a real plan this is likewise a no-op passthrough — the body runs
-    unchanged with no queue interaction (the backward-compatibility guarantee
-    for plan-less builds). When ``plan_id`` names a REAL plan and the build was
+    routed to the marshalld daemon, whose SCHEDULER holds the machine-global slot
+    for it, so acquiring a fallback slot here would stack a second slot on the
+    same build (the no-stacking guard). When ``plan_id`` does not name a real plan
+    this is likewise a no-op passthrough for the SLOT — the body runs with no
+    slot interaction (the backward-compatibility guarantee for plan-less builds).
+    It is not a no-op for the per-directory lock: that is taken by
+    :func:`directory_lock` around this context manager, for every in-process build
+    regardless of plan. When ``plan_id`` names a REAL plan and the build was
     NOT routed, the body runs only after a slot is admitted on the shared
     machine-global ``build-queue.json``; the slot is released in a ``finally``
     regardless of how the body exits.
@@ -422,9 +452,147 @@ def build_queue_slot(plan_id: str | None, *, routed: bool = False) -> Iterator[N
     assert plan_id is not None  # names_real_plan() rejects None
 
     max_retries = _resolve_max_retries()
-    admission_id = _wait_for_admission(plan_id, max_retries)
+    admission_id = _wait_for_admission(plan_id, max_retries, uuid.uuid4().hex)
 
     try:
         yield
     finally:
         _release(plan_id, admission_id)
+
+
+# ---------------------------------------------------------------------------
+# Per-directory lock (D3)
+# ---------------------------------------------------------------------------
+
+
+class DirectoryBusy(RuntimeError):
+    """Raised when a build's directory stays held past its wait bound.
+
+    Carries the holder's identifying facts, so the caller can name WHO holds the
+    directory, what it is running and for how long — a bare "busy" would leave an
+    operator with nothing to act on.
+    """
+
+    def __init__(self, directory: str, holder: dict[str, Any], waited_seconds: float) -> None:
+        self.directory = directory
+        self.holder_plan_id = str(holder.get('plan_id') or NO_PLAN_SENTINEL)
+        self.holder_command = str(holder.get('command') or '')
+        self.holder_pid = holder.get('pid')
+        self.holder_seconds = int(float(holder.get('held_seconds') or 0))
+        super().__init__(
+            f'directory {directory} is busy: held by {self.holder_plan_id} '
+            f'(pid {self.holder_pid}) for {self.holder_seconds}s running {self.holder_command!r}; '
+            f'waited {int(waited_seconds)}s'
+        )
+
+
+@dataclass(frozen=True)
+class DirectoryLease:
+    """The lease a build holds on its directory for the whole build.
+
+    Attributes:
+        waited_seconds: How long this build waited for the directory before it
+            was admitted — ``0`` when it was free. The build reports it so a
+            serialised run is visible as serialised rather than merely slow.
+    """
+
+    waited_seconds: float
+
+
+def _directory_acquire(directory: str, plan_id: str, command: str, ticket: str) -> dict[str, Any]:
+    """Call ``build_queue.run_directory_acquire`` in-process (separated for tests)."""
+    try:
+        bq = _load_build_queue()
+        result = bq.run_directory_acquire(
+            Namespace(directory=directory, plan_id=plan_id, command=command, pid=os.getpid(), ticket=ticket)
+        )
+    except Exception as exc:  # surface as a structured error dict
+        return {'status': 'error', 'error': f'directory acquire failed: {exc}'}
+    return result if isinstance(result, dict) else {'status': 'error', 'error': 'non-dict directory result'}
+
+
+def _directory_release(directory: str, ticket: str) -> None:
+    """Best-effort release of the directory lease (logged, never raised)."""
+    try:
+        bq = _load_build_queue()
+        result = bq.run_directory_release(Namespace(directory=directory, ticket=ticket))
+    except Exception as exc:  # a finished build must not fail on its release
+        logger.warning('directory release failed for %s (ticket=%s): %s', directory, ticket, exc)
+        return
+    if isinstance(result, dict) and result.get('status') != 'success':
+        logger.warning('directory release failed for %s (ticket=%s): %s', directory, ticket, result.get('error'))
+
+
+@contextmanager
+def directory_lock(
+    directory: str,
+    *,
+    plan_id: str | None = None,
+    command: str = '',
+    timeout_seconds: float | None = None,
+) -> Iterator[DirectoryLease]:
+    """Hold the per-directory build lock for the whole wrapped build.
+
+    One build per directory at a time, on BOTH paths: an in-process build and the
+    daemon child that re-runs this same leg block each other, because they take
+    this same lock. The lock is SEPARATE from the slot and a plan-less build
+    (``NO_PLAN``, which every ``--project-dir`` lane build is) takes it too — the
+    hazard is the shared ``target/``, not the slot budget.
+
+    Waiting is a FIFO queue, re-polled. The build runs only once the directory is
+    free; if the wait bound runs out it does NOT run, and
+    :class:`DirectoryBusy` names the holder — the build never runs concurrently
+    and never passes silently.
+
+    Lock order: this is taken BEFORE the build-queue slot, everywhere, so no build
+    process ever waits for a directory while holding a slot. The ONE bounded
+    exception is the daemon/child pair: the daemon spends a machine slot at
+    admission and its child takes this lock a moment later, so an in-process build
+    that claims the directory in between makes the child wait with that slot spent.
+    Whichever budget lapses first closes it — the in-process build's slot retries or
+    this build's directory-wait bound — so the pair stalls (bounded) rather than
+    deadlocking.
+
+    Args:
+        directory: The build's working directory (canonicalised here, so two
+            spellings of one worktree are one key).
+        plan_id: The build's plan id — the ``NO_PLAN`` sentinel for a plan-less
+            build — reported to the next waiter as the holder's identity.
+        command: The build command, reported to the next waiter.
+        timeout_seconds: The wait bound; the module default when omitted.
+
+    Raises:
+        DirectoryBusy: when the bound runs out with the directory still held.
+    """
+    key = str(Path(directory).resolve())
+    identity = plan_id if names_real_plan(plan_id) else NO_PLAN_SENTINEL
+    ticket = uuid.uuid4().hex
+    bound = _DIRECTORY_WAIT_SECONDS if timeout_seconds is None else timeout_seconds
+    started = time.monotonic()
+
+    # The ticket is committed to the queue by the FIRST acquire attempt, so from
+    # then on every non-admitted exit must drop it again — including a
+    # BaseException (a harness reap lands as one). A leaked waiter holds a place in
+    # the directory's FIFO with a live pid, so a leak would pin the directory for
+    # everyone until the process dies. Releasing here is the guarantee; the
+    # age-based reclaim in `build_queue` is the backstop.
+    try:
+        while True:
+            result = _directory_acquire(key, identity, command, ticket)
+            if result.get('status') != 'success':
+                raise RuntimeError(f'directory lock acquire failed for {key!r}: {result.get("error")}')
+            if result.get('admission') == 'admitted':
+                break
+            waited = time.monotonic() - started
+            if waited >= bound:
+                raise DirectoryBusy(key, result.get('waiting_on') or {}, waited)
+            time.sleep(_DIRECTORY_POLL_SECONDS)
+    except BaseException:
+        _directory_release(key, ticket)
+        raise
+
+    with_lease = DirectoryLease(waited_seconds=round(time.monotonic() - started, 3))
+    try:
+        yield with_lease
+    finally:
+        _directory_release(key, ticket)

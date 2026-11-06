@@ -133,9 +133,10 @@ Per-test `@pytest.mark.timeout(N)` exemptions name why they need more rather
 than raising this default.
 * `[tool.pytest.ini_options].markers` — the custom-marker registry, the single
 source of truth for every non-built-in, non-plugin-provided
-`@pytest.mark.<name>` in the suite. The six registered names are
+`@pytest.mark.<name>` in the suite. The seven registered names are
 `allow_pollution`, `xdist_group`, `allow_daemon_routing`,
-`allow_root_filesystem_pollution`, `slow_live`, and `touches_real_state`.
+`allow_root_filesystem_pollution`, `real_directory_lock`, `slow_live`, and
+`touches_real_state`.
 `timeout` and `parametrize` are plugin-owned and excluded from this set.
 * `[tool.coverage.run].source = ["marketplace/bundles"]` with
 `[tool.coverage.run].branch = true` — the coverage denominator, restricted to

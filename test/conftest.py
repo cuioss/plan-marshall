@@ -24,7 +24,7 @@ import sys
 import tempfile
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 from typing import Any, Literal, overload
 from unittest import mock
 
@@ -2015,8 +2015,8 @@ def _no_daemon_routing(*_args, **_kwargs):
     return (None, 'no_notation')
 
 
-def _routing_namespaces(test_module) -> list[dict]:
-    """Return every globals dict a live ``cmd_run`` resolves the seam from.
+def _seam_namespaces(test_module, seam_name: str, module_names: tuple[str, ...]) -> list[dict]:
+    """Return every globals dict a live seam call resolves ``seam_name`` from.
 
     Patching by MODULE OBJECT is not sufficient here, and the reason is
     load-order dependent — which makes getting it wrong a FLAKY green rather
@@ -2033,14 +2033,14 @@ def _routing_namespaces(test_module) -> list[dict]:
        to the loader, not to any one caller, so the explanation stays true when a
        caller is renamed or a second one appears.
     2. ``cmd_run`` is a CLOSURE created by ``create_execute_handlers``, so it
-       resolves ``_route_to_daemon`` from ``cmd_run.__globals__`` — the dict of
-       whichever factory copy produced it, not from whatever ``sys.modules``
-       currently maps the name to.
+       resolves its seams from ``cmd_run.__globals__`` — the dict of whichever
+       factory copy produced it, not from whatever ``sys.modules`` currently maps
+       the name to.
 
     Targeting the ``__globals__`` DICT rather than the module object therefore
     reaches the exact binding the closure reads, regardless of how many copies
     exist or which one a given test happens to hold. Scanning is confined to the
-    canonical ``sys.modules`` entry plus the test module's own globals, so the
+    canonical ``sys.modules`` entries plus the test module's own globals, so the
     cost stays proportional to one module's namespace rather than to the whole
     import graph.
     """
@@ -2055,16 +2055,26 @@ def _routing_namespaces(test_module) -> list[dict]:
         # else that answers ``__globals__`` — or any object whose attribute access
         # is synthetic, as a mock's is — would report the seam name as present and
         # be handed to ``monkeypatch.setitem``, patching a binding no closure reads.
-        if isinstance(candidate, dict) and _ROUTING_SEAM_NAME in candidate:
+        if isinstance(candidate, dict) and seam_name in candidate:
             namespaces[id(candidate)] = candidate
 
-    canonical = sys.modules.get('_build_execute_factory')
-    if canonical is not None:
-        _consider(canonical)
+    for module_name in module_names:
+        canonical = sys.modules.get(module_name)
+        if canonical is not None:
+            _consider(canonical)
     if test_module is not None:
         for value in list(vars(test_module).values()):
             _consider(value)
     return list(namespaces.values())
+
+
+def _routing_namespaces(test_module) -> list[dict]:
+    """Return every globals dict a live ``cmd_run`` resolves the ROUTING seam from.
+
+    A thin binding of :func:`_seam_namespaces` to ``_route_to_daemon``: the
+    mechanism (and why a module-object patch is insufficient) is stated there.
+    """
+    return _seam_namespaces(test_module, _ROUTING_SEAM_NAME, ('_build_execute_factory',))
 
 
 @pytest.fixture(autouse=True)
@@ -2127,6 +2137,60 @@ def _neutralize_daemon_routing(request, monkeypatch):
 
     for namespace in _routing_namespaces(getattr(request, 'module', None)):
         monkeypatch.setitem(namespace, _ROUTING_SEAM_NAME, _no_daemon_routing)
+
+    yield
+
+
+#: The seam name ``cmd_run`` resolves at call time for the per-directory lock.
+_DIRECTORY_LOCK_SEAM_NAME = 'directory_lock'
+
+
+def _noop_directory_lock(*_args, **_kwargs):
+    """Stand-in for ``directory_lock``: a lease that never blocks and never writes.
+
+    Yields the same ``DirectoryLease`` shape the real context manager yields, so a
+    test that reads ``waited_seconds`` keeps working, but touches no shared store.
+    """
+    import contextlib
+
+    @contextlib.contextmanager
+    def _lease():
+        yield SimpleNamespace(waited_seconds=0.0)
+
+    return _lease()
+
+
+@pytest.fixture(autouse=True)
+def _neutralize_directory_lock(request, monkeypatch):
+    """Default the per-directory build lock to a no-op.
+
+    WHY THIS EXISTS. ``cmd_run`` now takes a PER-DIRECTORY lock around every
+    in-process build, and that lock lives in the machine-global
+    ``build-queue.json`` — outside the per-test sandboxes, because it is shared
+    across checkouts by design. A test that drives ``cmd_run`` without an isolated
+    home would therefore write the developer's real queue file, contend with a
+    live build on the host, and could block for the whole wait bound: a test that
+    passes on a quiet machine and hangs on a busy one is not evidence, and a test
+    that reads live state is a bug by operator ruling.
+
+    Neutralization is inherited BY CONSTRUCTION, exactly as
+    ``_neutralize_daemon_routing`` above: a test that genuinely wants the real
+    lock says so with ``@pytest.mark.real_directory_lock``. The lock's own
+    serialisation, FIFO ordering and boundary behaviour are owned by
+    ``test/plan-marshall/script-shared/test_build_queue_slot.py``, whose real-lock
+    tests carry that marker.
+    """
+    if request.node.get_closest_marker('real_directory_lock'):
+        yield
+        return
+
+    import _build_execute_factory
+    import _build_queue_slot
+
+    for namespace in _seam_namespaces(
+        getattr(request, 'module', None), _DIRECTORY_LOCK_SEAM_NAME, ('_build_execute_factory', '_build_queue_slot')
+    ):
+        monkeypatch.setitem(namespace, _DIRECTORY_LOCK_SEAM_NAME, _noop_directory_lock)
 
     yield
 
