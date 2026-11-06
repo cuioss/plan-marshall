@@ -473,9 +473,11 @@ def _int_arg(args, name: str) -> int | None:
 
     ``None`` is returned when the caller supplied no value, so the caller can
     refuse the evaluation instead of reading the absence as a measured zero.
+    ``type(value) is int`` rather than ``isinstance`` — a bool is an int
+    subclass, and ``True``/``False`` are not measurements.
     """
     value = getattr(args, name, None)
-    return value if isinstance(value, int) else None
+    return value if type(value) is int else None
 
 
 def _step_ids_arg(args) -> list[str]:

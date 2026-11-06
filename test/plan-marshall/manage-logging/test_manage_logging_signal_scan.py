@@ -164,6 +164,23 @@ class TestTheWriterAndTheScannerShareOneMarker:
         assert '_signal_scan.py' in text, 'the marker string must be cited from its single source'
         assert 'verification_handback' in text, 'a prescribed hand-back must be named as not lesson-bearing'
 
+    def test_the_marker_and_its_log_type_are_bound_in_one_command(self):
+        """The marker and the `decision` subcommand must live in the SAME block.
+
+        Asserting them separately would pass on a document whose B7 section writes
+        the marker with one subcommand and carries `decision` somewhere else — the
+        exact shape a scanner-vs-writer mismatch takes.
+        """
+        text = EXECUTION_MD.read_text(encoding='utf-8')
+
+        marker_blocks = [block for block in text.split('```') if _scan.NO_PROGRESS_MARKER in block]
+        assert marker_blocks, 'the B7 marker must appear inside a fenced command block'
+        for block in marker_blocks:
+            assert 'decision --plan-id {plan_id}' in block, (
+                'the block carrying the B7 marker must write it with the decision subcommand'
+            )
+            assert _scan.NO_PROGRESS_SCOPE in block
+
     def test_the_workflow_body_cites_the_same_scanner(self):
         text = LESSONS_CAPTURE_MD.read_text(encoding='utf-8')
 
