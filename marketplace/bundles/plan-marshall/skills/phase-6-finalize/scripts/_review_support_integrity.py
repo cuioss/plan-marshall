@@ -536,10 +536,9 @@ def _grade_test_integrity(
     head = head_ref or 'HEAD'
     refs = read_references(plan_id)
     resolved_base = resolve_base_ref(base_ref, refs if isinstance(refs, dict) else {}, root)
-    try:
-        entries = changed_statuses(root, resolved_base, head)
-    except (subprocess.SubprocessError, OSError) as exc:
-        return _error(plan_id, 'diff_unavailable', f'{resolved_base}...{head} could not be read: {exc}')
+    # Resolve the merge base BEFORE the diff: on unrelated histories the three-dot
+    # diff fails with "no merge base", which would otherwise be reported as
+    # diff_unavailable and hide the named state this check promises.
     base_tree = merge_base(root, resolved_base, head)
     if base_tree is None:
         return _error(
@@ -547,6 +546,10 @@ def _grade_test_integrity(
             'merge_base_unresolved',
             f'no merge base exists for {resolved_base} and {head}, so the pre-image cannot be read',
         )
+    try:
+        entries = changed_statuses(root, resolved_base, head)
+    except (subprocess.SubprocessError, OSError) as exc:
+        return _error(plan_id, 'diff_unavailable', f'{resolved_base}...{head} could not be read: {exc}')
 
     before: dict[str, str] = {}
     after: dict[str, str] = {}

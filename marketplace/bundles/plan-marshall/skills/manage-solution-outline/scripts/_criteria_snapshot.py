@@ -74,13 +74,33 @@ REQUEST_FILE = 'request.md'
 #: an indented sub-bullet belong to the bullet above them, and a `*` bullet is a
 #: criterion too.
 _SUCCESS_CRITERIA_MARKER_RE = re.compile(r'\*\*Success Criteria:\*\*[^\n]*\n?', re.IGNORECASE)
-#: A bold-field heading that ends the success-criteria block. Only a column-0
-#: heading ends it: an indented bold field under a criterion is that criterion's
-#: continuation, not the next document field.
+#: A bold-field heading. The retired-parser replay uses this indented-tolerant form
+#: to mirror the retired rule; the live parser uses the column-0 form below.
 _SUCCESS_BLOCK_END_RE = re.compile(r'^\s*\*\*[A-Za-z][^*\n]*:\*\*')
 #: The same heading at column 0 — the only form the live parser treats as the end
 #: of the block.
 _SUCCESS_BLOCK_END_COLUMN_RE = re.compile(r'^\*\*[A-Za-z][^*\n]*:\*\*')
+
+
+def _fence_marker(line: str) -> tuple[str, int, str] | None:
+    """Return ``(character, length, trailing)`` for a CommonMark fence line.
+
+    A fence is a run of at least three backticks or tildes. The caller decides
+    whether a line OPENS a fence (any trailing info string allowed) or CLOSES one
+    (same character, at least the opener's length, and only whitespace after it),
+    so a ``~~~`` line inside a backtick fence, a shorter run, or a marker with
+    trailing text never closes the wrong block.
+    """
+    stripped = line.strip()
+    if not stripped or stripped[0] not in '`~':
+        return None
+    character = stripped[0]
+    length = len(stripped) - len(stripped.lstrip(character))
+    if length < 3:
+        return None
+    return character, length, stripped[length:]
+
+
 #: One bullet, at any indent; the indentation decides top-level vs sub-bullet.
 _BULLET_RE = re.compile(r'^[-*][ \t]+(.*)$')
 #: A numbered bold deliverable heading in a request-named spec document.
@@ -360,7 +380,9 @@ def _normalized_removal_entry(entry: dict[str, Any]) -> dict[str, Any] | None:
     if not has_identity and not has_path:
         return None
     count = entry.get('assertions_removed')
-    normalized: dict[str, Any] = {'assertions_removed': count if isinstance(count, int) else None}
+    normalized: dict[str, Any] = {
+        'assertions_removed': count if isinstance(count, int) and not isinstance(count, bool) else None
+    }
     if has_identity:
         normalized['identity'] = identity
     if has_path:
@@ -370,7 +392,7 @@ def _normalized_removal_entry(entry: dict[str, Any]) -> dict[str, Any] | None:
         normalized['kind'] = kind
     markers = entry.get('markers')
     if isinstance(markers, list):
-        normalized['markers'] = list(markers)
+        normalized['markers'] = [marker for marker in markers if isinstance(marker, str)]
     return normalized
 
 
@@ -380,8 +402,8 @@ def record_accepted_removals(plan_id: str, entries: list[dict[str, Any]]) -> boo
     The one writer shape both owning verbs call: ``snapshot-criteria`` seeds it
     from the outline's declarations, and ``loop-back close --accept`` appends the
     identities a ``weakened_test`` finding removed. The merge is a union keyed by
-    ``(identity, assertions_removed)``, so re-seeding a re-freeze neither duplicates
-    an entry nor drops one an operator accepted.
+    ``(identity, path, kind, assertions_removed)``, so re-seeding a re-freeze
+    neither duplicates an entry nor drops one an operator accepted.
     """
     wanted: list[dict[str, Any]] = []
     for entry in entries:
@@ -856,13 +878,16 @@ def parse_success_criteria(body: str) -> tuple[list[str], list[str]]:
     unparsed: list[str] = []
     current: list[str] | None = None
     after_blank = False
-    in_fence = False
+    in_fence: tuple[str, int] | None = None
     for line in body[marker.end() :].splitlines():
         stripped = line.strip()
-        if stripped.startswith(('```', '~~~')):
-            in_fence = not in_fence
+        fence = _fence_marker(line)
+        if in_fence is not None:
+            if fence is not None and fence[0] == in_fence[0] and fence[1] >= in_fence[1] and not fence[2].strip():
+                in_fence = None
             continue
-        if in_fence:
+        if fence is not None:
+            in_fence = (fence[0], fence[1])
             continue
         if not stripped:
             after_blank = True
@@ -884,7 +909,7 @@ def parse_success_criteria(body: str) -> tuple[list[str], list[str]]:
         else:
             unparsed.append(stripped)
         after_blank = False
-    if in_fence:
+    if in_fence is not None:
         # An unterminated fence would otherwise swallow every later criterion
         # silently. Name it so the reader sees what the parser could not read.
         unparsed.append('unterminated fenced block')
@@ -934,14 +959,13 @@ def _retired_criteria(body: str) -> list[str]:
     if marker is None:
         return []
     retired: list[str] = []
-    in_fence = False
     for line in body[marker.end() :].splitlines():
         stripped = line.strip()
-        if stripped.startswith(('```', '~~~')):
-            in_fence = not in_fence
-            continue
-        if in_fence:
-            continue
+        # The retired rule kept only a contiguous run of ``- `` lines: a fence line
+        # is not one, so the run ends there (skipping it would let a later criterion
+        # pass the retired-parser check).
+        if _fence_marker(line) is not None:
+            break
         if not stripped:
             if retired:
                 break

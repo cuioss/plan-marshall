@@ -89,6 +89,7 @@ def test_a_no_worktree_plan_on_the_base_branch_does_not_pass(plan_context, tmp_p
 
     assert payload['status'] == 'error', payload
     assert payload['error'] == 'evidence_root_unresolved', payload
+    assert 'main_checkout_on_base_branch' in payload['message'], payload
 
 
 def test_a_no_worktree_plan_on_the_base_branch_with_an_origin_does_not_pass(
@@ -107,12 +108,16 @@ def test_a_no_worktree_plan_on_the_base_branch_with_an_origin_does_not_pass(
 
     assert payload['status'] == 'error', payload
     assert payload['error'] == 'evidence_root_unresolved', payload
+    assert 'main_checkout_on_base_branch' in payload['message'], payload
 
 
 def test_a_dirty_no_worktree_checkout_does_not_pass(plan_context, tmp_path, monkeypatch) -> None:
     repo = _repo(tmp_path)
     _commit(repo, {'README.md': 'readme\n'})
     _git(repo, 'checkout', '--quiet', '-b', 'feature')
+    # Commit branch work first, so HEAD is not the base tip and the dirty guard is
+    # the one that fires.
+    _commit(repo, {'test/sample_test.py': 'def test_a():\n    assert 1 == 1\n'}, 'branch work')
     (repo / 'README.md').write_text('uncommitted\n', encoding='utf-8')
     _plan(plan_context)
     monkeypatch.setattr(_integrity, 'resolve_live_worktree', lambda _plan_id: None)
@@ -122,6 +127,7 @@ def test_a_dirty_no_worktree_checkout_does_not_pass(plan_context, tmp_path, monk
 
     assert payload['status'] == 'error', payload
     assert payload['error'] == 'evidence_root_unresolved', payload
+    assert 'main_checkout_dirty' in payload['message'], payload
 
 
 def test_a_git_timeout_is_a_named_state(plan_context, tmp_path, monkeypatch) -> None:
@@ -192,6 +198,21 @@ def test_an_unreadable_git_status_is_a_named_state(plan_context, tmp_path, monke
 
     assert payload['status'] == 'error', payload
     assert payload['error'] == 'test_integrity_not_run', payload
+
+
+def test_an_unrelated_history_reports_the_missing_merge_base(plan_context, tmp_path, monkeypatch) -> None:
+    """A branch with no common ancestor names the merge base, not the diff."""
+    repo = _repo(tmp_path)
+    _commit(repo, {'README.md': 'readme\n'})
+    _git(repo, 'checkout', '--quiet', '--orphan', 'feature')
+    _commit(repo, {'test/sample_test.py': 'def test_a():\n    assert 1 == 1\n'}, 'orphan root')
+    _plan(plan_context)
+    monkeypatch.setattr(_integrity, 'resolve_live_worktree', lambda _plan_id: repo)
+
+    payload = _integrity.compute_test_integrity(PLAN_ID)
+
+    assert payload['status'] == 'error', payload
+    assert payload['error'] == 'merge_base_unresolved', payload
 
 
 def test_the_git_seam_translates_a_timeout(monkeypatch) -> None:

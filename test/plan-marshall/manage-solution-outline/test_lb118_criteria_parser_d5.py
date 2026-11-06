@@ -12,6 +12,7 @@ criterion the current parser froze is named ``rewritten``, not hidden as ``parse
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import _criteria_snapshot as _snap
@@ -58,6 +59,27 @@ def test_a_bullet_inside_a_fenced_block_is_not_a_criterion() -> None:
     criteria, unparsed = _snap.parse_success_criteria(body)
 
     assert criteria == ['a real criterion', 'a second criterion'], criteria
+    assert unparsed == [], unparsed
+
+
+def test_a_shorter_or_different_marker_does_not_close_a_fence() -> None:
+    body = (
+        '**Success Criteria:**\n- a real criterion\n'
+        '~~~~\n```\n- not a criterion\n```\n~~~\n- still not a criterion\n~~~~\n- a second criterion\n'
+    )
+
+    criteria, unparsed = _snap.parse_success_criteria(body)
+
+    assert criteria == ['a real criterion', 'a second criterion'], criteria
+    assert unparsed == [], unparsed
+
+
+def test_a_fence_marker_with_trailing_text_does_not_close() -> None:
+    body = '**Success Criteria:**\n- real\n```\n``` not a close\n- not a criterion\n```\n- second\n'
+
+    criteria, unparsed = _snap.parse_success_criteria(body)
+
+    assert criteria == ['real', 'second'], criteria
     assert unparsed == [], unparsed
 
 
@@ -160,6 +182,6 @@ def test_the_cited_lines_carry_no_transitional_wording_or_plan_id() -> None:
     }
     assert 'no longer suppressed' not in texts['_review_support_integrity.py']
     assert 'It replaces a regex' not in texts['_criteria_snapshot.py']
-    for label in ('review-rubric.md', '_criteria_snapshot.py', '_review_support_validate.py', '_plan_parsing.py'):
-        for plan_id in ('PLAN-LB-105', 'PLAN-LB-42', 'PLAN-LB-40'):
-            assert plan_id not in texts[label], (label, plan_id)
+    for label, text in texts.items():
+        # Derived from the general rule, not a hand list of plan ids.
+        assert re.search(r'PLAN-LB-\d+', text) is None, label
