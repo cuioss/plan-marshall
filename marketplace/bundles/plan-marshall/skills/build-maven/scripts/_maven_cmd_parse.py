@@ -28,6 +28,7 @@ from _build_parse import (
     add_issue_deduped,
     categorize_issue,
     collect_stack_traces,
+    make_dedup_key,
     read_log_text,
 )
 from _build_parse import (
@@ -69,12 +70,33 @@ _MAVEN_EPILOGUE_PATTERNS: tuple[re.Pattern[str], ...] = (
     # Maven 4 logs the failing reactor-summary rows and the banner at [ERROR].
     re.compile(r'\S.* \.{3,} (SUCCESS|FAILURE|SKIPPED)( \[.+\])?'),
     re.compile(r'BUILD FAILURE'),
+    # Section banners: Surefire's results-section headers and the compiler
+    # plugin's banner. The rows UNDER the header carry the diagnostics; the
+    # header itself carries none.
+    re.compile(r'Failures:'),
+    re.compile(r'Errors:'),
+    re.compile(r'COMPILATION ERROR :'),
+)
+
+# Javac's continuation fields. They are printed under the compiler error line
+# that produced them and carry the name that line refers to, so they are
+# attached to that error as its DETAIL rather than filed as issues of their
+# own — but never dropped, and never attached to nothing: a continuation line
+# with no compiler error before it stays filed (fail-visible).
+_COMPILER_CONTINUATION_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r'symbol:\s+\S.*'),
+    re.compile(r'location:\s+\S.*'),
 )
 
 
 def _is_epilogue(message: str) -> bool:
     """Whether a prefix-stripped message is a line of Maven's failure epilogue."""
     return any(pattern.fullmatch(message) for pattern in _MAVEN_EPILOGUE_PATTERNS)
+
+
+def _is_compiler_continuation(message: str) -> bool:
+    """Whether a prefix-stripped message is a javac continuation field."""
+    return any(pattern.fullmatch(message) for pattern in _COMPILER_CONTINUATION_PATTERNS)
 
 
 def _is_passing_test_count(message: str) -> bool:
@@ -127,11 +149,18 @@ def _extract_issues(content: str) -> list[Issue]:
 
     Deduplicates issues by key (category:file:line:message_prefix) to avoid
     duplicates from reactor summary and per-module output in multi-module builds.
-    Lines of Maven's failure epilogue and ``Tests run:`` lines with zero failures
-    and zero errors are not issues and are skipped.
+    Lines of Maven's failure epilogue, section banners and ``Tests run:`` lines
+    with zero failures and zero errors are not issues and are skipped.
+
+    Javac's ``symbol:`` / ``location:`` continuation fields are attached to the
+    compiler error they follow as its ``detail``, because dropping them would
+    lose the name the error refers to. A continuation field with no compiler
+    error before it is filed like any other diagnostic.
     """
     issues: list[Issue] = []
     seen: set[str] = set()
+    issues_by_key: dict[str, Issue] = {}
+    last_compiler_error: Issue | None = None
 
     for line in content.split('\n'):
         stripped = line.strip()
@@ -151,7 +180,13 @@ def _extract_issues(content: str) -> list[Issue]:
             # Skip empty messages and continuation lines
             if not message or message.startswith('->'):
                 continue
+            if last_compiler_error is not None and _is_compiler_continuation(message):
+                last_compiler_error.detail = (
+                    f'{last_compiler_error.detail}\n{message}' if last_compiler_error.detail else message
+                )
+                continue
             if _is_epilogue(message) or _is_passing_test_count(message):
+                last_compiler_error = None
                 continue
 
             location = parse_file_location(line)
@@ -159,7 +194,7 @@ def _extract_issues(content: str) -> list[Issue]:
             loc_file = location.get('file')
             loc_line = location.get('line')
 
-            add_issue_deduped(
+            added = add_issue_deduped(
                 issues,
                 seen,
                 file=str(loc_file) if loc_file is not None else None,
@@ -168,6 +203,20 @@ def _extract_issues(content: str) -> list[Issue]:
                 severity=severity,
                 category=category,
             )
+            key = make_dedup_key(
+                category,
+                str(loc_file) if loc_file is not None else None,
+                int(loc_line) if loc_line is not None else None,
+                message,
+            )
+            if added:
+                issue = issues[-1]
+                issues_by_key[key] = issue
+            else:
+                issue = issues_by_key[key]
+            # A compiler error opens the window its continuation fields attach
+            # to; any other diagnostic closes it.
+            last_compiler_error = issue if category == 'compilation_error' else None
 
     # Attach stack traces to issues
     collect_stack_traces(content.split('\n'), issues)

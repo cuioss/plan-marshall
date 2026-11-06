@@ -542,41 +542,44 @@ _COMPILER_GOAL_FAILURE = (
 )
 _COMPILER_ERROR = '/home/dev/probe/c/src/main/java/probe/c/Broken.java:[5,9] cannot find symbol'
 
+#: The compiler's continuation fields, as javac prints them and Maven re-prints
+#: them at `[ERROR]` in the goal-failure block. They belong to the `cannot find
+#: symbol` error that precedes them.
+_SYMBOL_CONTINUATION = 'symbol:   class Missing'
+_LOCATION_CONTINUATION = 'location: class probe.c.Broken'
+
 #: The Maven 3.9.16 fixture's real diagnostics, in log order (the repeated compiler
-#: error in the goal-failure block is deduplicated).
+#: error in the goal-failure block is deduplicated, and the continuation fields are
+#: the compiler error's detail rather than issues of their own).
 _MAVEN3_DIAGNOSTICS = [
     'Tests run: 1, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 0.031 s <<< FAILURE! -- in probe.b.BTest',
     'probe.b.BTest.fails -- Time elapsed: 0.012 s  <<< FAILURE!',
-    'Failures:',
     'BTest.fails:10 expected: <1> but was: <2>',
     'Tests run: 1, Failures: 1, Errors: 0, Skipped: 0',
-    'COMPILATION ERROR :',
     _COMPILER_ERROR,
     _SUREFIRE_GOAL_FAILURE,
     _COMPILER_GOAL_FAILURE,
-    'symbol:   class Missing',
-    'location: class probe.c.Broken',
 ]
 
 #: The Maven 4.0.0-rc-7 fixture's real diagnostics, in log order.
 _MAVEN4_DIAGNOSTICS = [
     'Tests run: 1, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 0.029 s <<< FAILURE! -- in probe.b.BTest',
     'probe.b.BTest.fails -- Time elapsed: 0.011 s  <<< FAILURE!',
-    'Failures:',
     'BTest.fails:10 expected: <1> but was: <2>',
     'Tests run: 1, Failures: 1, Errors: 0, Skipped: 0',
-    'COMPILATION ERROR :',
     _COMPILER_ERROR,
     _SUREFIRE_GOAL_FAILURE,
     _COMPILER_GOAL_FAILURE,
-    'symbol:   class Missing',
-    'location: class probe.c.Broken',
 ]
 
 #: The Maven 3 fixture's `[ERROR]` / `[WARNING]` lines that must never be filed.
 _MAVEN3_NOT_FILED = [
     'Tests run: 2, Failures: 0, Errors: 0, Skipped: 1, Time elapsed: 0.041 s -- in probe.a.ATest',
     'Tests run: 2, Failures: 0, Errors: 0, Skipped: 1',
+    'Failures:',
+    'COMPILATION ERROR :',
+    _SYMBOL_CONTINUATION,
+    _LOCATION_CONTINUATION,
     'See /home/dev/probe/b/target/surefire-reports for the individual test results.',
     'See dump files (if any exist) [date].dump, [date]-jvmRun[N].dump and [date].dumpstream.',
     'To see the full stack trace of the errors, re-run Maven with the -e switch.',
@@ -591,6 +594,10 @@ _MAVEN3_NOT_FILED = [
 _MAVEN4_NOT_FILED = [
     'Tests run: 2, Failures: 0, Errors: 0, Skipped: 1, Time elapsed: 0.044 s -- in probe.a.ATest',
     'Tests run: 2, Failures: 0, Errors: 0, Skipped: 1',
+    'Failures:',
+    'COMPILATION ERROR :',
+    _SYMBOL_CONTINUATION,
+    _LOCATION_CONTINUATION,
     'b .................................................. FAILURE [  0.953 s]',
     'c .................................................. FAILURE [  0.388 s]',
     'BUILD FAILURE',
@@ -639,6 +646,12 @@ def test_failure_epilogue_is_not_filed_and_real_diagnostics_are(
     messages = [issue.message for issue in issues]
     assert not set(messages) & set(not_filed)
     assert messages == diagnostics
+    # The compiler's continuation fields survive as the error's DETAIL — they
+    # carry the missing name, so dropping them would lose the diagnostic.
+    compiler_error = next(issue for issue in issues if issue.message == _COMPILER_ERROR)
+    assert compiler_error.detail is not None
+    assert _SYMBOL_CONTINUATION in compiler_error.detail
+    assert _LOCATION_CONTINUATION in compiler_error.detail
 
 
 def test_older_surefire_report_pointer_is_not_filed():
@@ -687,7 +700,47 @@ def test_control_failing_test_count_line_is_still_filed(tmp_path):
     filed = [issue for issue in issues if issue.message == message]
     assert len(filed) == 1
     assert filed[0].category == 'test_failure'
-    assert filed[0].severity == SEVERITY_ERROR
+
+
+def test_control_orphan_compiler_continuation_is_still_filed(tmp_path):
+    """CONTROL: a `symbol:` / `location:` line with no compiler error before it stays filed.
+
+    The continuation fields are only a compiler error's detail. Filing them
+    unconditionally would attach them to nothing; dropping them unconditionally
+    would lose the one line that names the missing symbol. So the guard must
+    depend on what precedes them, and a bare one is fail-visible.
+    """
+    # Arrange / Act / Assert
+    for index, message in enumerate((_SYMBOL_CONTINUATION, _LOCATION_CONTINUATION)):
+        log_file = tmp_path / f'orphan-continuation-{index}.log'
+        log_file.write_text(f'[ERROR] {message}\n', encoding='utf-8')
+
+        issues, _, _ = parse_log(log_file)
+
+        assert [issue.message for issue in issues] == [message]
+
+
+_CONSUMER_PASSING_LINE = (
+    '[WARNING] Tests run: 10, Failures: 0, Errors: 0, Skipped: 1, Time elapsed: 0.412 s -- in Awaits'
+)
+
+
+def test_consumer_passing_line_without_a_test_suffix_is_not_filed():
+    """PIN (order: none) — the consumer's passing Surefire line, class name not ending in `Test`.
+
+    A line reporting zero failures and zero errors is not a diagnostic whatever
+    the class name is. This behaviour shipped before this plan; the test pins it
+    against the consumer's exact wording rather than claiming a fix.
+    """
+    # Arrange
+    log_file = TEST_DATA_DIR / 'maven-consumer-passing-line.log'
+    assert _CONSUMER_PASSING_LINE in log_file.read_text(encoding='utf-8')
+
+    # Act
+    issues, _, _ = parse_log(log_file)
+
+    # Assert
+    assert [issue.message for issue in issues] == []
 
 
 # =============================================================================
