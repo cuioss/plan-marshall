@@ -618,10 +618,12 @@ def _parse_pom_xml(pom_path: Path) -> dict:
               ``<parent><groupId>`` when the child omits it (or ``None``).
             - ``modules``: the directories this POM's reactor builds —
               ``/project/modules/module`` plus the ``modules`` of every profile
-              activated by ``activeByDefault``, which is what a default
-              ``mvn test`` builds. A ``modules`` block inside a profile that
-              needs an explicit ``-P`` is NOT included: a default run does not
-              activate it.
+              activated by ``activeByDefault``, the one activation this cheap
+              parse can read. A ``modules`` block inside a profile that needs an
+              explicit ``-P``, or that is activated by a property or a JDK
+              condition, is NOT included: the root then keeps no reactor test
+              canonical, which under-grants and is backstopped by the run path's
+              zero-test check.
             - ``profile_ids``: declared ``/project/profiles/profile/id`` values.
             - ``description``: ``<description>`` text (or ``None``).
             - ``parent``: ``groupId:artifactId`` of ``<parent>`` (or ``None``).

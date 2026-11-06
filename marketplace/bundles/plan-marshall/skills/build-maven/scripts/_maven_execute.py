@@ -64,9 +64,10 @@ _INFORMATIONAL_ISSUE_CATEGORIES = frozenset(
 #: artifact is ``package`` (see ``_maven_cmd_discover._build_commands``).
 _TEST_PHASE_GOALS = ('test', 'package')
 
-#: Flags that make a test-phase invocation skip its tests, so an empty test
-#: population is what the command asked for rather than a surprise.
-_TEST_SKIP_FLAGS = ('-DskipTests', '-Dmaven.test.skip')
+#: The flag forms that make a test-phase invocation skip its tests, so an empty
+#: test population is what the command asked for rather than a surprise. The
+#: value is captured so an explicit ``=false`` is NOT read as a skip.
+_SKIP_FLAG_PATTERN = re.compile(r'-D(?:skipTests|maven\.test\.skip)(?:=(?P<value>true|false))?(?=\s|$)')
 
 #: What Surefire/Failsafe print when the build asked them to skip, so a
 #: ``-DskipTests`` set through ``.mvn/maven.config`` or ``MAVEN_OPTS`` — invisible
@@ -75,7 +76,10 @@ _TEST_SKIP_FLAGS = ('-DskipTests', '-Dmaven.test.skip')
 _TEST_SKIP_MARKER = 'Tests are skipped.'
 
 #: Maven options that take a SEPARATE value token, so that value is not mistaken
-#: for the leading goal (``mvn -pl core test`` runs ``test``).
+#: for the leading goal (``mvn -pl core test`` runs ``test``). The set covers the
+#: options the discovered canonicals emit and the common operator overrides; an
+#: option absent here costs only a missed test-run classification, never a wrong
+#: green.
 _VALUE_TAKING_OPTIONS = frozenset(
     {
         '-pl',
@@ -96,8 +100,25 @@ _VALUE_TAKING_OPTIONS = frozenset(
         '--builder',
         '-gs',
         '--global-settings',
+        '-t',
+        '--toolchains',
+        '-c',
+        '--color',
     }
 )
+
+
+def _asks_to_skip_tests(args: str) -> bool:
+    """Whether the arguments ask Maven to skip its tests.
+
+    ``-DskipTests`` and ``-Dmaven.test.skip`` count, and so does an explicit
+    ``=true``; ``=false`` does not — reading it as a skip would switch the
+    zero-test guard off for the invocations most likely to need it.
+    """
+    for match in _SKIP_FLAG_PATTERN.finditer(args):
+        if match.group('value') != 'false':
+            return True
+    return False
 
 
 def _maven_scope_fn(args: str) -> str:
@@ -178,23 +199,27 @@ def apply_selector_miss_guard(result: dict) -> dict:
         return result
     command = str(result.get('command') or '')
     selector = dtest_selector(command)
-    # A failed build is suspect whatever the command says (Surefire's own goal
-    # failure). A successful one is only suspect when a selector was in play.
-    if status == STATUS_SUCCESS and selector is None:
-        return result
     try:
         log_text = read_log_text(result['log_file'])
     except (KeyError, OSError):
         # No readable log means no evidence. For an exit-0 selector run that is
         # the whole question — a green would claim the selector ran tests — so
         # the run is named unreadable instead of being trusted.
-        if status == STATUS_SUCCESS:
+        if status == STATUS_SUCCESS and selector is not None:
             return _indeterminate(
                 result,
                 f'{TEST_LOG_UNREADABLE}: the -Dtest run exited 0 but its log could not be read, so '
                 'nothing establishes that a test ran — not a green.',
             )
         # A failed build is already not green; its own failure stands.
+        return result
+    log_pattern = selector_miss_pattern(log_text)
+    # A failed build is suspect whatever the command says (Surefire's own goal
+    # failure). A successful one is suspect when a selector was in play — on the
+    # command line OR in the log, because a selector set through
+    # `.mvn/maven.config`, `MAVEN_OPTS` or a profile never reaches the command
+    # line while the runner still names it when it matches nothing.
+    if status == STATUS_SUCCESS and selector is None and log_pattern is None:
         return result
     # The zero-collected shape is an EXIT-0 shape. On a failed build only
     # Surefire's explicit "No tests matching pattern" counts, because a reactor
@@ -223,7 +248,7 @@ def apply_selector_miss_guard(result: dict) -> dict:
     # Name the selector the log carries when the command line does not show it:
     # a selector set through `.mvn/maven.config`, `MAVEN_OPTS` or a profile, or
     # a Failsafe `-Dit.test` miss, is still printed by the runner.
-    pattern = selector or selector_miss_pattern(log_text)
+    pattern = selector or log_pattern
     named = f"'{pattern}'" if pattern else 'the -Dtest selector'
     executed = executed_test_count(log_text)
     if executed:
@@ -244,8 +269,9 @@ def apply_selector_miss_guard(result: dict) -> dict:
         )
     return _indeterminate(
         result,
-        f'{TEST_SELECTOR_MATCHED_NOTHING}: {claim} The test runner prints this as "No tests matching '
-        'pattern ... were executed"; a fail-if-no-tests flag suppresses the build error, not the miss.',
+        f'{TEST_SELECTOR_MATCHED_NOTHING}: {claim} A miss is a wrong selection, not a test result; '
+        "whether the runner prints its own 'No tests matching pattern' line depends on its "
+        'fail-if-no-tests setting.',
     )
 
 
@@ -279,7 +305,7 @@ def _test_phase_goal(args: str) -> str | None:
     goal = _leading_goal(args)
     if goal not in _TEST_PHASE_GOALS:
         return None
-    if any(flag in args for flag in _TEST_SKIP_FLAGS):
+    if _asks_to_skip_tests(args):
         return None
     return goal
 
@@ -289,8 +315,8 @@ def apply_zero_test_guard(result: dict, args: str) -> dict:
 
     A green exit code from ``mvn test`` reads as "the tests passed" to every
     consumer, but a run whose Surefire selector excluded every module — or a
-    reactor root that builds no test module — executes nothing and says exactly
-    that. Such a run is neither a failure nor a green:
+    reactor root that builds no test module — collects nothing, and no gate may
+    credit that. Such a run is neither a failure nor a green:
 
     - a parsed summary reporting zero COLLECTED tests is evidence of an empty
       population;
@@ -301,10 +327,12 @@ def apply_zero_test_guard(result: dict, args: str) -> dict:
       population is evidence there;
     - an unreadable log of a test-phase run is no evidence either, and no
       evidence never becomes a green for a run whose truth lives in its log;
-    - a log that states the build skipped its tests (``Tests are skipped.``) is
-      a requested skip, not an empty population, and the run keeps its green —
-      this is what recognises a ``-DskipTests`` set through ``.mvn/maven.config``
-      or ``MAVEN_OPTS``, which the arguments this guard is handed do not show.
+    - an empty population whose log states the build skipped its tests
+      (``Tests are skipped.``) is a requested skip, not a surprise, and keeps
+      its green — this is what recognises a ``-DskipTests`` set through
+      ``.mvn/maven.config`` or ``MAVEN_OPTS``, which the arguments this guard is
+      handed do not show. It is consulted only AFTER the count proved empty, so a
+      module that skipped cannot excuse another module's empty run.
 
     Args:
         result: A finished execution result (``execute_direct``'s dict).
@@ -312,8 +340,8 @@ def apply_zero_test_guard(result: dict, args: str) -> dict:
 
     Returns:
         The same result unchanged when the run collected a test, when it is no
-        test-phase run, when it was not green, or when it asked to skip its
-        tests — otherwise an ``indeterminate`` result naming
+        test-phase run, when it was not green, or when an empty population was a
+        requested skip — otherwise an ``indeterminate`` result naming
         ``TEST_RUN_EXECUTED_NOTHING``.
     """
     if result.get('status') != STATUS_SUCCESS:
@@ -329,8 +357,6 @@ def apply_zero_test_guard(result: dict, args: str) -> dict:
             f'{TEST_LOG_UNREADABLE}: the {goal} run exited 0 but its log could not be read, so '
             'nothing establishes that a test ran — not a green.',
         )
-    if _TEST_SKIP_MARKER in log_text:
-        return result
     collected = collected_test_count(log_text)
     if collected:
         return result
@@ -339,6 +365,8 @@ def apply_zero_test_guard(result: dict, args: str) -> dict:
     elif goal == 'test':
         evidence = 'the log carries no Surefire or Failsafe test summary, so the run collected and executed nothing'
     else:
+        return result
+    if _TEST_SKIP_MARKER in log_text:
         return result
     return _indeterminate(
         result,

@@ -417,6 +417,24 @@ def test_reactor_selector_miss_beside_an_executed_module_says_what_the_run_did()
     assert '3 test(s)' in guarded['message'], guarded['message']
 
 
+def test_exit_zero_config_selector_miss_is_detected_without_a_command_selector():
+    """A selector the command does not carry is still detected from the log.
+
+    `.mvn/maven.config`, `MAVEN_OPTS` and profiles put `-Dtest` out of the
+    command line's reach; the runner still names the pattern, and a run whose
+    selector excluded a module is not a green whatever put the selector there.
+    """
+    result = _run_result(
+        'maven-reactor-selector-miss-one-module.log', status='success', exit_code=0, command=_NO_COMMAND_SELECTOR
+    )
+
+    guarded = apply_selector_miss_guard(result)
+
+    assert guarded['status'] == 'indeterminate'
+    assert "'Awaits#runs'" in guarded['message']
+    assert '3 test(s)' in guarded['message']
+
+
 def test_control_a_selector_miss_that_ran_nothing_still_says_so():
     """CONTROL: the lone exit-0 miss keeps its 'executed nothing' wording."""
     guarded = apply_selector_miss_guard(_run_result('maven-dtest-zero-executed.log', status='success', exit_code=0))
@@ -521,6 +539,30 @@ def test_control_a_skip_tests_run_reports_zero_tests_by_design():
     )
 
     assert apply_zero_test_guard(result, 'test -DskipTests') is result
+
+
+def test_control_explicit_skip_false_does_not_disable_the_guard():
+    """CONTROL: `-DskipTests=false` asks for the tests, not for a skip."""
+    result = _run_result(
+        'maven-zero-tests-executed.log', status='success', exit_code=0, command='mvnw test -DskipTests=false'
+    )
+
+    guarded = apply_zero_test_guard(result, 'test -DskipTests=false')
+
+    assert guarded['status'] == 'indeterminate'
+    assert guarded['message'].startswith(TEST_RUN_EXECUTED_NOTHING)
+
+
+def test_the_package_ladder_run_with_a_zero_summary_is_not_success():
+    """The reactor-test-artifact `package` ladder is a test run too."""
+    result = _run_result(
+        'maven-zero-tests-executed.log', status='success', exit_code=0, command='mvnw package -pl consumer -am'
+    )
+
+    guarded = apply_zero_test_guard(result, 'package -pl consumer -am')
+
+    assert guarded['status'] == 'indeterminate'
+    assert guarded['message'].startswith(TEST_RUN_EXECUTED_NOTHING)
 
 
 def test_control_a_skip_stated_by_the_log_is_not_an_empty_population(tmp_path):

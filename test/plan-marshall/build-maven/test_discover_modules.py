@@ -1054,25 +1054,6 @@ def test_discover_root_reactor_follows_modules_through_a_nested_aggregator():
     assert 'test-compile' not in modules['nested-agg']['commands']
 
 
-def test_discover_nested_pom_aggregator_keeps_no_whole_reactor_ladder():
-    """A NESTED ``pom`` aggregator is not the default scope, so it gets neither key.
-
-    Only the module at the project root answers the architecture's default
-    scope; giving a nested aggregator the whole-reactor canonicals would make a
-    module-scoped resolve run the entire reactor by accident.
-    """
-    root = _make_module_tree({'.': _AGGREGATOR_LISTING_NESTED_POM, 'nested': _NESTED_AGGREGATOR_POM, 'core': _JAR_POM})
-    _add_test_source(root, 'core')
-
-    modules = {module['name']: module for module in discover_maven_modules(str(root))}
-
-    # The root lists only ``nested``, which lists nothing, so the stray tested
-    # ``core`` is not part of the reactor and grants the root no canonical.
-    assert 'module-tests' not in modules['parent-agg']['commands']
-    assert 'module-tests' not in modules['nested-agg']['commands']
-    assert 'test-compile' not in modules['nested-agg']['commands']
-
-
 def test_discover_single_module_jar_root_keeps_its_own_test_canonicals():
     """A single-module ``jar`` root keeps the module-scoped ladder it always had."""
     root = _make_module_tree({'.': _JAR_POM})

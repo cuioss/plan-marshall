@@ -1016,12 +1016,15 @@ def test_selector_miss_pattern_is_read_from_the_log_when_the_command_carries_non
 
 
 def test_only_the_runners_own_miss_line_is_recognised_as_the_miss():
-    """The back-off must not count the miss's own goal-failure line as a failure."""
-    text = (TEST_DATA_DIR / 'maven-selector-miss.log').read_text(encoding='utf-8')
+    """The miss's own goal-failure line is recognised as the miss, not as a failure.
+
+    The back-off that decides whether a real failure sits beside the miss is
+    pinned by `test_fae_reactor_keeps_a_real_failure_beside_a_selector_miss` in
+    the execute tests; here only the message classifier is pinned.
+    """
     issues, _, _ = parse_log(TEST_DATA_DIR / 'maven-selector-miss.log')
 
     assert [is_selector_miss_message(issue.message) for issue in issues] == [True]
-    assert text  # the fixture is read, not merely referenced
 
 
 def test_collected_and_executed_counts_keep_no_evidence_distinct_from_zero():
