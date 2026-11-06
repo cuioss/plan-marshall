@@ -91,7 +91,7 @@ def _write_reactor(root: Path) -> None:
     )
 
 
-def _resolve_default_scope_module_tests(root: Path) -> dict:
+def _resolve_default_scope_module_tests(root: Path) -> Any:
     """Resolve ``module-tests`` at default scope the way the gate's step 0 does."""
     return cmd_resolve(_variant(_RESOLVE_ARGS, project_dir=str(root), module=None))
 
