@@ -90,7 +90,12 @@ def apply_selector_miss_guard(result: dict) -> dict:
     except (KeyError, OSError):
         # No readable log means no evidence; the run's own status stands.
         return result
-    if selector_miss_reason(log_text, command) is None:
+    # The zero-collected shape is an EXIT-0 shape. On a failed build only
+    # Surefire's explicit "No tests matching pattern" counts, because a reactor
+    # can print a zero-test summary for an earlier module and then fail later —
+    # and that real failure must not be relabelled as a wrong selector.
+    reason = selector_miss_reason(log_text, command if status == STATUS_SUCCESS else None)
+    if reason is None:
         return result
 
     selector = dtest_selector(command)

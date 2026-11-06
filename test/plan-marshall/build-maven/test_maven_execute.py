@@ -217,6 +217,8 @@ _LOG_TEST_DATA = Path(__file__).parent / 'fixtures' / 'log-test-data'
 
 _SELECTOR_COMMAND = 'mvnw test -Dtest=Awaits#runs'
 
+_COMPILER_ERROR = '/home/dev/probe/c/src/main/java/probe/c/Broken.java:[5,9] cannot find symbol'
+
 
 def _run_result(log_name: str, *, status: str, exit_code: int) -> dict:
     """A build result shaped like the executor's, pointing at one log fixture."""
@@ -252,6 +254,40 @@ def test_selector_miss_goal_failure_becomes_the_named_reason_not_a_build_failure
     assert guarded['status'] == 'indeterminate'
     assert TEST_SELECTOR_MATCHED_NOTHING in guarded['message']
     assert 'Awaits#runs' in guarded['message']
+
+
+def test_control_a_real_failure_after_a_zero_test_module_keeps_its_failure(tmp_path):
+    """CONTROL: a later real failure is not relabelled as a selector miss.
+
+    The zero-collected shape is an exit-0 shape. In a reactor an earlier module
+    can print `Tests run: 0` and a later one then fail to compile; only
+    Surefire's explicit goal failure may claim a miss on a failed build, or the
+    real failure — and its findings — would be hidden.
+    """
+    # Arrange
+    log_file = tmp_path / 'zero-then-compile-failure.log'
+    log_file.write_text(
+        '[INFO] --- surefire:3.5.2:test (default-test) @ a ---\n'
+        '[INFO] Results:\n'
+        '[WARNING] Tests run: 0, Failures: 0, Errors: 0, Skipped: 0\n'
+        f'[ERROR] {_COMPILER_ERROR}\n'
+        '[INFO] BUILD FAILURE\n',
+        encoding='utf-8',
+    )
+    result = {
+        'status': 'error',
+        'exit_code': 1,
+        'duration_seconds': 5,
+        'log_file': str(log_file),
+        'command': _SELECTOR_COMMAND,
+    }
+
+    # Act
+    guarded = apply_selector_miss_guard(result)
+
+    # Assert
+    assert guarded is result
+    assert guarded['status'] == 'error'
 
 
 def test_execute_direct_is_wired_to_the_guard(tmp_path, monkeypatch):
