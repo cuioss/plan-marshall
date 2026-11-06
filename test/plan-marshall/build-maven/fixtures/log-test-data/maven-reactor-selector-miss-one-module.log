@@ -31,7 +31,7 @@
 [INFO]
 [INFO] --- surefire:3.5.2:test (default-test) @ b ---
 [INFO] Using auto detected provider org.apache.maven.surefire.junitplatform.JUnitPlatformProvider
-[INFO] No tests matching pattern "Awaits#runs" were executed! (Set -Dsurefire.failIfNoSpecifiedTests=false to ignore this error.)
+[INFO] No tests matching pattern "Awaits#runs" were executed!
 [INFO] ------------------------------------------------------------------------
 [INFO] Reactor Summary for probe-parent 1.0-SNAPSHOT:
 [INFO]

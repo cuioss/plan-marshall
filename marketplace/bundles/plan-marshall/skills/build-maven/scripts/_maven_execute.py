@@ -16,7 +16,7 @@ import re
 
 from _build_execute import CaptureStrategy
 from _build_execute_factory import ExecuteConfig, create_execute_handlers, default_command_key_fn
-from _build_parse import read_log_text
+from _build_parse import SEVERITY_ERROR, read_log_text
 from _build_result import STATUS_ERROR, STATUS_SUCCESS, indeterminate_result
 from _build_shared import DEFAULT_BUILD_TIMEOUT
 from _maven_cmd_parse import (
@@ -48,9 +48,13 @@ MAVEN_OUTER_FLOOR_SECONDS = 300
 #: last as extended for Maven by ``_maven_cmd_parse.MAVEN_PATTERNS``). Every
 #: other category — ``compilation_error``, ``test_failure``, ``dependency_error``
 #: and ``other``, the default ``categorize_issue`` returns for a diagnostic no
-#: pattern matches — names a real failure. The set is read from the category
-#: vocabulary's meaning, not inferred from a severity, because Maven prints
-#: real failures at ``[WARNING]`` on some plugins.
+#: pattern matches — names a real failure.
+#:
+#: A category alone is not enough: a failing javadoc or deprecation plugin prints
+#: its diagnostics at ``[ERROR]`` and a pattern keyed on the word "javadoc" files
+#: them under ``javadoc_warning``. Such a line IS the build failure, so the
+#: back-off also reads the severity — an ``[ERROR]``-level issue is real whatever
+#: its category, which only widens the back-off (fail-closed).
 _INFORMATIONAL_ISSUE_CATEGORIES = frozenset(
     {'javadoc_warning', 'deprecation_warning', 'unchecked_warning', 'openrewrite_info'}
 )
@@ -63,6 +67,37 @@ _TEST_PHASE_GOALS = ('test', 'package')
 #: Flags that make a test-phase invocation skip its tests, so an empty test
 #: population is what the command asked for rather than a surprise.
 _TEST_SKIP_FLAGS = ('-DskipTests', '-Dmaven.test.skip')
+
+#: What Surefire/Failsafe print when the build asked them to skip, so a
+#: ``-DskipTests`` set through ``.mvn/maven.config`` or ``MAVEN_OPTS`` — invisible
+#: on the command line this guard is handed — is still recognised as a requested
+#: skip rather than reported as an empty population.
+_TEST_SKIP_MARKER = 'Tests are skipped.'
+
+#: Maven options that take a SEPARATE value token, so that value is not mistaken
+#: for the leading goal (``mvn -pl core test`` runs ``test``).
+_VALUE_TAKING_OPTIONS = frozenset(
+    {
+        '-pl',
+        '--projects',
+        '-f',
+        '--file',
+        '-l',
+        '--log-file',
+        '-P',
+        '--activate-profiles',
+        '-s',
+        '--settings',
+        '-rf',
+        '--resume-from',
+        '-T',
+        '--threads',
+        '-b',
+        '--builder',
+        '-gs',
+        '--global-settings',
+    }
+)
 
 
 def _maven_scope_fn(args: str) -> str:
@@ -179,7 +214,8 @@ def apply_selector_miss_guard(result: dict) -> dict:
         except (KeyError, OSError):
             return result
         if any(
-            issue.category not in _INFORMATIONAL_ISSUE_CATEGORIES and not is_selector_miss_message(issue.message)
+            not is_selector_miss_message(issue.message)
+            and (issue.severity == SEVERITY_ERROR or issue.category not in _INFORMATIONAL_ISSUE_CATEGORIES)
             for issue in issues
         ):
             return result
@@ -197,20 +233,39 @@ def apply_selector_miss_guard(result: dict) -> dict:
             f'{named} matched no test in at least one module, while the modules that did match '
             f'executed {executed} test(s) — so the run is not a green.'
         )
-    else:
+    elif executed == 0:
         claim = f'{named} matched no test, so the run executed nothing — not a failure and not a green.'
+    else:
+        # An unmeasured summary cannot answer how much ran, so neither the
+        # "executed nothing" nor a count may be claimed.
+        claim = (
+            f'{named} matched no test in at least one module and the log does not measure how much '
+            f'else ran, so the run supports no green.'
+        )
     return _indeterminate(
         result,
-        f'{TEST_SELECTOR_MATCHED_NOTHING}: {claim} Surefire prints "No tests matching pattern ... '
-        'were executed" unless -Dsurefire.failIfNoSpecifiedTests=false suppresses it.',
+        f'{TEST_SELECTOR_MATCHED_NOTHING}: {claim} The test runner prints this as "No tests matching '
+        'pattern ... were executed"; a fail-if-no-tests flag suppresses the build error, not the miss.',
     )
 
 
 def _leading_goal(args: str) -> str | None:
-    """Return the first Maven goal of an invocation, or None when it names none."""
-    for token in args.split():
-        if not token.startswith('-'):
-            return token
+    """Return the first Maven goal of an invocation, or None when it names none.
+
+    Options that take a separate value token (``-pl core``, ``-f pom.xml``) are
+    stepped over with their value, so the value is never mistaken for the goal.
+    """
+    tokens = args.split()
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
+        if token in _VALUE_TAKING_OPTIONS:
+            index += 2
+            continue
+        if token.startswith('-'):
+            index += 1
+            continue
+        return token
     return None
 
 
@@ -244,8 +299,12 @@ def apply_zero_test_guard(result: dict, args: str) -> dict:
       collected. A leading ``package`` goal without a summary is a compile and
       package run that reported no tests — only a summary naming a zero
       population is evidence there;
-    - an unreadable log is no evidence either, and no evidence never becomes a
-      green for a run whose truth lives in its log.
+    - an unreadable log of a test-phase run is no evidence either, and no
+      evidence never becomes a green for a run whose truth lives in its log;
+    - a log that states the build skipped its tests (``Tests are skipped.``) is
+      a requested skip, not an empty population, and the run keeps its green —
+      this is what recognises a ``-DskipTests`` set through ``.mvn/maven.config``
+      or ``MAVEN_OPTS``, which the arguments this guard is handed do not show.
 
     Args:
         result: A finished execution result (``execute_direct``'s dict).
@@ -253,8 +312,9 @@ def apply_zero_test_guard(result: dict, args: str) -> dict:
 
     Returns:
         The same result unchanged when the run collected a test, when it is no
-        test-phase run, or when it was not green — otherwise an
-        ``indeterminate`` result naming ``TEST_RUN_EXECUTED_NOTHING``.
+        test-phase run, when it was not green, or when it asked to skip its
+        tests — otherwise an ``indeterminate`` result naming
+        ``TEST_RUN_EXECUTED_NOTHING``.
     """
     if result.get('status') != STATUS_SUCCESS:
         return result
@@ -269,6 +329,8 @@ def apply_zero_test_guard(result: dict, args: str) -> dict:
             f'{TEST_LOG_UNREADABLE}: the {goal} run exited 0 but its log could not be read, so '
             'nothing establishes that a test ran — not a green.',
         )
+    if _TEST_SKIP_MARKER in log_text:
+        return result
     collected = collected_test_count(log_text)
     if collected:
         return result

@@ -1061,11 +1061,13 @@ def _build_commands(
     - Profile-based: integration-tests, coverage, benchmark
 
     A root ``pom`` aggregator additionally carries the whole-reactor
-    ``module-tests`` (``test``) and ``test-compile`` (``test-compile``) when at
-    least one reactor module has tests. That fact is only known once every
-    module is built, so :func:`discover_maven_modules` applies the rule in its
-    final pass via :func:`_add_reactor_test_canonicals` instead of this
-    per-module builder guessing at it.
+    ``module-tests`` (``test``) and ``test-compile`` (``test-compile``) when the
+    reactor IT declares — its own ``<modules>``, followed through nested
+    aggregators — holds a test-bearing module, or when the root itself has
+    tests. That fact is only known once every module is built, so
+    :func:`discover_maven_modules` applies the rule in its final pass via
+    :func:`_add_reactor_test_canonicals` instead of this per-module builder
+    guessing at it.
 
     A non-root, non-pom module with tests that consumes a reactor sibling's
     test artifact (``consumes_reactor_test_artifact``) gets the ``package``-phase

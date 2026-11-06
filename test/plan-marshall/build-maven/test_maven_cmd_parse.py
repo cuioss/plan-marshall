@@ -818,8 +818,8 @@ def test_consumer_passing_line_without_a_test_suffix_is_not_filed():
     """PIN (order: none) — the consumer's passing Surefire line, class name not ending in `Test`.
 
     A line reporting zero failures and zero errors is not a diagnostic whatever
-    the class name is. This behaviour shipped before this plan; the test pins it
-    against the consumer's exact wording rather than claiming a fix.
+    the class name is. The behaviour is pinned against the consumer's exact
+    wording rather than presented as a fix.
     """
     # Arrange
     log_file = TEST_DATA_DIR / 'maven-consumer-passing-line.log'

@@ -523,6 +523,92 @@ def test_control_a_skip_tests_run_reports_zero_tests_by_design():
     assert apply_zero_test_guard(result, 'test -DskipTests') is result
 
 
+def test_control_a_skip_stated_by_the_log_is_not_an_empty_population(tmp_path):
+    """CONTROL: a run that SAYS it skipped is a requested skip, not a false green.
+
+    `-DskipTests` set in `.mvn/maven.config` or `MAVEN_OPTS` is invisible on the
+    command line this guard is handed, so the log's own skip marker is what keeps
+    such a run from being reported as an empty population.
+    """
+    log_file = tmp_path / 'skipped.log'
+    log_file.write_text(
+        '[INFO] --- surefire:3.5.2:test (default-test) @ awaits ---\n[INFO] Tests are skipped.\n[INFO] BUILD SUCCESS\n',
+        encoding='utf-8',
+    )
+
+    result = {
+        'status': 'success',
+        'exit_code': 0,
+        'duration_seconds': 1,
+        'log_file': str(log_file),
+        'command': 'mvnw test',
+    }
+
+    assert apply_zero_test_guard(result, 'test') is result
+
+
+def test_leading_goal_is_read_past_a_value_taking_option():
+    """`mvn -pl core test` is a test run: the option's value is not the goal."""
+    result = _run_result('maven-test-no-summary.log', status='success', exit_code=0, command='mvnw -pl core test')
+
+    guarded = apply_zero_test_guard(result, '-pl core test')
+
+    assert guarded['status'] == 'indeterminate'
+    assert guarded['message'].startswith(TEST_RUN_EXECUTED_NOTHING)
+
+
+def test_an_error_level_advisory_beside_a_miss_keeps_the_failure(tmp_path):
+    """An `[ERROR]`-level javadoc failure is a real failure, not an advisory.
+
+    The `javadoc` pattern files such a line under `javadoc_warning`, and a
+    category-only back-off would drop it when another module reports a miss.
+    Severity decides: an `[ERROR]` line is the build failure whatever its
+    category.
+    """
+    log_file = tmp_path / 'miss-and-javadoc.log'
+    log_file.write_text(
+        '[ERROR] Failed to execute goal org.apache.maven.plugins:maven-surefire-plugin:3.5.2:test '
+        '(default-test) on project b: No tests matching pattern "Awaits#runs" were executed!\n'
+        '[ERROR] Failed to execute goal org.apache.maven.plugins:maven-javadoc-plugin:3.11.2:jar '
+        '(attach-javadocs) on project a: Javadoc generation failed.\n'
+        '[INFO] BUILD FAILURE\n',
+        encoding='utf-8',
+    )
+    result = {
+        'status': 'error',
+        'exit_code': 1,
+        'duration_seconds': 4,
+        'log_file': str(log_file),
+        'command': _SELECTOR_COMMAND,
+    }
+
+    assert apply_selector_miss_guard(result) is result
+
+
+def test_unmeasured_summary_does_not_claim_the_run_executed_nothing(tmp_path):
+    """An unmeasured summary cannot answer how much ran, so nothing is claimed."""
+    log_file = tmp_path / 'miss-and-unmeasured.log'
+    log_file.write_text(
+        '[INFO] No tests matching pattern "Awaits#runs" were executed!\n'
+        '[ERROR] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0\n'
+        '[INFO] BUILD SUCCESS\n',
+        encoding='utf-8',
+    )
+    result = {
+        'status': 'success',
+        'exit_code': 0,
+        'duration_seconds': 4,
+        'log_file': str(log_file),
+        'command': _SELECTOR_COMMAND,
+    }
+
+    guarded = apply_selector_miss_guard(result)
+
+    assert guarded['status'] == 'indeterminate'
+    assert 'executed nothing' not in guarded['message'], guarded['message']
+    assert 'does not measure' in guarded['message'], guarded['message']
+
+
 def test_execute_direct_is_wired_to_the_zero_test_guard(tmp_path, monkeypatch):
     """The zero-test guard is REACHED by the executor, not merely available beside it."""
     monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
