@@ -251,8 +251,9 @@ Each line in `findings/qgate-{phase}.jsonl` is a JSON object:
 | `source` | string | `qgate` (automated verification) or `user_review` (user feedback) |
 | `iteration` | int | Verification cycle number (1 = first build attempt, 2 = after fixes) |
 | `content_discriminator` | string | 6-char stable hash over (`detail`, `file_path`, `rule`) folded into the dedup key (see [Deduplication](#deduplication)) |
-| `history` | array | Prior resolution snapshots, appended only by the fixed-only `--reopen` opt-in — each entry carries the overridden `resolution`, `resolution_detail`, `resolution_timestamp` and `timestamp` |
+| `history` | array | Prior resolution snapshots, appended by the fixed-only `--reopen` opt-in AND by an observation that re-arms a loop-back round's rule-keyed `taken_into_account` record — each entry carries the overridden `resolution`, `resolution_detail`, `resolution_timestamp` and `timestamp` |
 | `reobserved_count` | int | How many times an unchanged re-emission re-detected this record while its resolution was kept |
+| `resolution_source` | string | Absent on an operator decision; `rule` on a loop-back round's rule-keyed `taken_into_account` resolution. Only a `taken_into_account` record carrying `rule` is re-armed by an observation; a pre-marker record (no field) and an operator Hold are `kept` |
 
 Neither `history` nor `reobserved_count` is Q-Gate-only: a plan-scoped record gets both from `add`'s `deduplicate` opt-in (see [Deduplication](#deduplication)), whose `history` entries carry `resolution`, `resolution_detail` and `timestamp` — a plan-scoped record has no `resolution_timestamp`.
 
@@ -302,10 +303,13 @@ One key per store, each folding an unchanged re-emission into the record it repe
 | Match (title AND discriminator) with `pending` resolution | No change | `deduplicated` |
 | Match (title AND discriminator) with non-pending resolution | Keep resolution, detail and timestamp exactly; record the re-observation as a counter | `kept` |
 | Match with `fixed` resolution AND the `--reopen` opt-in | Return to `pending`; move the prior resolution, detail and timestamp into `history` | `reopened` |
+| Match with `taken_into_account` carrying `resolution_source: rule` (an observation alone, no flag needed) | Return to `pending`; move the prior resolution, detail and timestamp into `history` | `reopened` |
+
+A `taken_into_account` record an operator Hold wrote, and a pre-marker record with no `resolution_source` at all, are `kept`: the two are indistinguishable by data, which is the fail-closed direction. An operator who needs to re-arm a pre-marker record resolves it `pending` explicitly and files it again.
 
 A same-title finding whose `content_discriminator` differs (a different subject / file / rule) is a DISTINCT record — it never reopens the resolved one. Q-Gate dedup tests must use unique `plan_id`s per test (test-isolation constraint) so stale cross-test data cannot perturb the `(title, discriminator)` match.
 
-**Plan-scoped store.** A plan-scoped `add` folds a re-detected finding into its own record only under the caller's `deduplicate` opt-in (the build auto-store sets it; a plain `add` still appends). The key is `(type, title, file_path)` — the type selects the per-type store file, so the match is scoped to that type. The outcomes mirror the Q-Gate four above: no match appends (`success`); a match still `pending` stands (`deduplicated`); a match resolved under another disposition stands with the re-observation counted (`kept`); a match `fixed` is returned to `pending`, carrying its `fix_task_number` forward and clearing its `fix_commit_sha` (`reopened`), so a recurrence of an owned failure reads as still owned.
+**Plan-scoped store.** A plan-scoped `add` folds a re-detected finding into its own record only under the caller's `deduplicate` opt-in (the build auto-store sets it; a plain `add` still appends). The key is `(type, title, file_path)` — the type selects the per-type store file, so the match is scoped to that type. The outcomes mirror the Q-Gate five above: no match appends (`success`); a match still `pending` stands (`deduplicated`); a match resolved under another disposition stands with the re-observation counted (`kept`); a match `fixed` is returned to `pending`, carrying its `fix_task_number` forward and clearing its `fix_commit_sha` (`reopened`), so a recurrence of an owned failure reads as still owned.
 
 ## Valid Phases
 

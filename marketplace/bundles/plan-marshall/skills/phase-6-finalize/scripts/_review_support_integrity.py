@@ -34,7 +34,7 @@ The branch is read as ONE test set rather than one path at a time:
   tip and its tree is clean), and refused as ``evidence_root_unresolved``
   otherwise; the evidence root the check chose is reported on the payload.
 
-A loss is reported in exactly four cases: the set total drops, a named test disappears from every after-file, one test's count drops while that test still exists, or a surviving path's own total drops and no identity accounts for it. The per-path report is the unit of the finding row. A deleted test identity is a MOVE only when its assertion CONTENT reappears in an after-file: a bare name there proves nothing, so a same-named test in another changed file cannot absorb a loss, while a function moved with its assertions is not a loss. Both key the accepted set by the test identity plus the number of removed assertions.
+A loss is reported in exactly four cases: the set total drops, a named test disappears from every after-file, one test's count drops while that test still exists, or a surviving path's own total drops and no identity accounts for it. The per-path report is the unit of the finding row. A deleted test identity is a MOVE only when its assertion CONTENT reappears in an after-file: a bare name there proves nothing, so a same-named test in another changed file cannot absorb a loss, while a function moved with its assertions is not a loss. Both key the accepted set by the test identity plus the number of removed assertions. A declaration without a count decides a removal only, never a drop of a surviving test.
 
 Importable as ``from _review_support_integrity import ...`` by ``review_support.py``.
 Every verb emits TOON and exits 0 on every outcome; an input that cannot be read is
@@ -325,8 +325,9 @@ def _function_assertion_counts(text: str) -> dict[str, int]:
 
     A file that declares none of those — a test class in a language whose headers
     the two arms do not parse — falls back to its CLASS headers as the identity, one
-    entry per class. That fallback is what keeps such a removal decidable: a row
-    with no identity can be neither declared nor accepted.
+    entry per class. That fallback is what keeps such a removal decidable under an
+    identity; a row with NO identity at all is acceptable by its explicit path-level
+    key, so no row is unacceptable by construction.
 
     A file-level count misses an assertion removed from one test and added to
     another — the file total is unchanged — while the per-identity counts still

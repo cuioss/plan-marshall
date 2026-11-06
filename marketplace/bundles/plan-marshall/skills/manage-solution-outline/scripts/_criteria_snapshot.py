@@ -85,12 +85,18 @@ _SUCCESS_BLOCK_END_COLUMN_RE = re.compile(r'^\*\*[A-Za-z][^*\n]*:\*\*')
 def _fence_marker(line: str) -> tuple[str, int, str] | None:
     """Return ``(character, length, trailing)`` for a CommonMark fence line.
 
-    A fence is a run of at least three backticks or tildes. The caller decides
-    whether a line OPENS a fence (any trailing info string allowed) or CLOSES one
-    (same character, at least the opener's length, and only whitespace after it),
-    so a ``~~~`` line inside a backtick fence, a shorter run, or a marker with
-    trailing text never closes the wrong block.
+    A fence is a run of at least three backticks or tildes, indented at most three
+    spaces (a four-space or tab-indented run is an indented code block, not a fence).
+    A BACKTICK fence's info string may not contain a backtick, exactly as CommonMark
+    specifies — such a line is ordinary text, not a fence. The caller decides whether
+    a line OPENS a fence (any allowed trailing info string) or CLOSES one (same
+    character, at least the opener's length, and only whitespace after it), so a
+    ``~~~`` line inside a backtick fence, a shorter run, or a marker with trailing
+    text never closes the wrong block.
     """
+    leading = line[: len(line) - len(line.lstrip(' \t'))]
+    if '\t' in leading or len(leading) > 3:
+        return None
     stripped = line.strip()
     if not stripped or stripped[0] not in '`~':
         return None
@@ -98,7 +104,10 @@ def _fence_marker(line: str) -> tuple[str, int, str] | None:
     length = len(stripped) - len(stripped.lstrip(character))
     if length < 3:
         return None
-    return character, length, stripped[length:]
+    trailing = stripped[length:]
+    if character == '`' and '`' in trailing:
+        return None
+    return character, length, trailing
 
 
 #: One bullet, at any indent; the indentation decides top-level vs sub-bullet.
@@ -138,6 +147,10 @@ PARSER_KEY = 'parser'
 CURRENT_PARSER = 2
 #: The functional verdict that retires a deliverable: its criteria are not open.
 SUPERSEDED = 'superseded'
+CRITERION_UNPARSED = 'criterion_unparsed'
+#: The named state an unterminated fenced block leaves in ``unparsed``. It is a
+#: coalesced marker (not the raw line) so a gate reads a state rather than text.
+UNTERMINATED_FENCE = 'unterminated fenced block'
 #: A spec deliverable's own Done-when that no outline criterion covers.
 SPEC_MISSING = 'spec_criterion_missing'
 #: The request's own Done-when that no outline criterion covers.
@@ -886,8 +899,10 @@ def parse_success_criteria(body: str) -> tuple[list[str], list[str]]:
     the parser could not read must be visible, or the review grades part of a
     deliverable without saying so. An indented bold field under a criterion is a
     continuation of that criterion, not the end of the block; only a column-0
-    bold-field heading ends it. A fenced code block is skipped, so a ``- `` line
-    inside it is not read as a criterion.
+    bold-field heading ends it. A fenced code block is KEPT in the criterion it sits
+    under, so a ``- `` line inside it is not read as a criterion and an edit to the
+    example is an edit to the criterion; an unterminated fence is reported in
+    ``unparsed`` as a named state.
     """
     marker = _SUCCESS_CRITERIA_MARKER_RE.search(body)
     if marker is None:
@@ -901,10 +916,18 @@ def parse_success_criteria(body: str) -> tuple[list[str], list[str]]:
         stripped = line.strip()
         fence = _fence_marker(line)
         if in_fence is not None:
+            if current is not None:
+                current.append(stripped)
+            else:
+                unparsed.append(stripped)
             if fence is not None and fence[0] == in_fence[0] and fence[1] >= in_fence[1] and not fence[2].strip():
                 in_fence = None
             continue
         if fence is not None:
+            if current is not None:
+                current.append(stripped)
+            else:
+                unparsed.append(stripped)
             in_fence = (fence[0], fence[1])
             continue
         if not stripped:
@@ -930,7 +953,7 @@ def parse_success_criteria(body: str) -> tuple[list[str], list[str]]:
     if in_fence is not None:
         # An unterminated fence would otherwise swallow every later criterion
         # silently. Name it so the reader sees what the parser could not read.
-        unparsed.append('unterminated fenced block')
+        unparsed.append(UNTERMINATED_FENCE)
     return [normalize_criterion(' '.join(parts)) for parts in criteria if parts], unparsed
 
 
@@ -1417,7 +1440,25 @@ def criteria_drift(plan_id: str, current: list[dict[str, Any]] | None = None) ->
             )
     drift.extend(_spec_clause_drift(snapshot, by_number))
     drift.extend(_request_clause_drift(snapshot, by_number))
+    drift.extend(_unparsed_clause_drift(by_number))
     return drift
+
+
+def _unparsed_clause_drift(by_number: dict[Any, dict[str, Any]]) -> list[dict[str, Any]]:
+    """One row per unterminated fenced block the parser could not close.
+
+    The named ``unterminated fenced block`` state is a criterion the parser could not
+    read, so the gate reports it rather than leaving it in the freeze payload for
+    nobody to consume. Ordinary free text the parser does not place stays visible in
+    that payload's ``unparsed`` list; only the unterminated fence is a gate state.
+    """
+    rows: list[dict[str, Any]] = []
+    for number, row in by_number.items():
+        for line in row.get('unparsed_criteria') or []:
+            text = normalize_criterion(line)
+            if text == UNTERMINATED_FENCE:
+                rows.append({'deliverable': number, 'kind': CRITERION_UNPARSED, 'criterion': text, 'current': ''})
+    return rows
 
 
 def _covered_by_outline(clause: str, outline: list[str]) -> bool:

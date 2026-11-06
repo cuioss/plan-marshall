@@ -22,6 +22,7 @@ from typing import Any
 from _criteria_snapshot import (
     AUTHORED_KEY,
     AUTHORSHIP_SCHEMA,
+    CRITERION_UNPARSED,
     PARSER_EXTENDED,
     REQUEST_MISSING,
     SPEC_MISSING,
@@ -493,6 +494,16 @@ def grade_frozen_criteria(grading: Grading, drift: list[dict[str, Any]]) -> int:
                 True,
                 FIX_KIND_IMPLEMENTATION,
                 'request or spec Done-when',
+            )
+            continue
+        if kind == CRITERION_UNPARSED:
+            grading.add(
+                'criterion_unparsed',
+                f'D{number}',
+                str(row.get('criterion')),
+                True,
+                FIX_KIND_IMPLEMENTATION,
+                f'deliverable {number}',
             )
             continue
         if kind == 'rewritten':

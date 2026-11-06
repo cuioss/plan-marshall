@@ -1474,9 +1474,12 @@ def _reopen_qgate_record(
     """Return a matched resolved record to ``pending``, keeping its prior disposition.
 
     ``reopened_by`` names the trigger and travels on the result so a caller can tell
-    the two apart: ``observation`` (an identical re-file of a finding the review had
-    recorded ``taken_into_account`` — it is still blocking, so it is pending again)
-    and ``opt_in`` (a caller passing ``--reopen`` against a ``fixed`` record).
+    the two apart: ``observation`` (an identical re-file of a finding a loop-back
+    round resolved ``taken_into_account`` by its rule key — it still blocks, so it is
+    pending again) and ``opt_in`` (a caller passing ``--reopen`` against a ``fixed``
+    record). An observation alone does NOT reopen a ``taken_into_account`` record an
+    operator Hold wrote: such a record carries no ``resolution_source: rule`` marker,
+    so it is kept and the caller reports why.
 
     The prior resolution, detail and timestamp move into the record's ``history``
     instead of being nulled, so the disposition the re-detection overrides stays
