@@ -73,8 +73,10 @@ from _build_result import (  # noqa: E402
     success_result,
     timeout_result,
 )
+from _build_result import STATUS_ERROR as RESULT_STATUS_ERROR  # noqa: E402
 from _build_result import STATUS_KILLED as RESULT_STATUS_KILLED  # noqa: E402
 from _build_result import STATUS_RUNNING as RESULT_STATUS_RUNNING  # noqa: E402
+from _build_result import STATUS_SUCCESS as RESULT_STATUS_SUCCESS  # noqa: E402
 from _build_server_protocol import LIVE_STATUSES as WIRE_LIVE_STATUSES  # noqa: E402
 from _build_server_protocol import (  # noqa: E402
     MARSHALLD_JOB_ENV,
@@ -691,8 +693,11 @@ def _map_daemon_result(waited: dict[str, Any], command_str: str, command_key: st
     mapping is status-preserving in BOTH non-finish directions: ``timeout`` maps
     to a timeout result and ``killed`` maps to a ``killed`` result carrying the
     no-blind-retry message, so a harness reap on the daemon side is never
-    mistaken for a flaky build — and never for a red one. Only the daemon's
-    ``failure`` becomes an ``error``.
+    mistaken for a flaky build — and never for a red one. A ``failure`` job
+    becomes an ``error`` ONLY when the child's own log verdict says the build ran
+    and failed: a verdict the wire cannot carry (``timeout``, ``killed``,
+    ``indeterminate``) is re-rendered as itself, because the four-valued wire
+    status has no row for it.
 
     The ``killed`` leg previously produced an ``error_result`` whose ``error``
     field said ``killed``; ``cmd_run_common`` reconstructed its own payload from
@@ -813,6 +818,20 @@ def _map_daemon_result(waited: dict[str, Any], command_str: str, command_key: st
             )
         if verdict is not None and verdict.child_fault is not None:
             return _child_fault_result(verdict.child_fault, exit_code, duration, log_file, command_str)
+        # The wire vocabulary collapses EVERY non-success verdict onto
+        # ``failure``, so a child that reported ``indeterminate`` arrives here
+        # too. Re-render the child's own verdict rather than collapsing it into a
+        # red build: only ``error`` means the build ran and failed. This is what
+        # carries a producer's named reason (and its ``message``) across the
+        # routed hop instead of substituting a generic failure for it.
+        if verdict is not None and verdict.status not in (RESULT_STATUS_SUCCESS, RESULT_STATUS_ERROR):
+            return _result_for_log_verdict(
+                verdict,
+                duration=duration,
+                log_file=log_file,
+                command_str=command_str,
+                command_key=command_key,
+            )
         return error_result(  # type: ignore[return-value]
             ERROR_BUILD_FAILED,
             exit_code or 1,
@@ -957,8 +976,21 @@ def _result_for_log_verdict(
             **_routed_errors_extra(verdict),
         )
     return indeterminate_result(  # type: ignore[return-value]
-        f'job log reported status {status!r}, which is outside the build-result '
-        f'vocabulary; the build outcome is undetermined.',
+        # The producer's own wording wins when it stated one — the same rule the
+        # ``killed`` leg above applies. Its absence means the log stated no
+        # reason, so this client's sentence is the only content the result can
+        # honestly carry.
+        #
+        # Whitespace is collapsed before rendering: a log-sourced message can
+        # carry decoded newlines (the TOON reader unquotes escapes), and the
+        # result envelope's formatter does not re-escape them inside an ordinary
+        # string value.
+        ' '.join(str(verdict.message).split())
+        if getattr(verdict, 'message', None)
+        else (
+            f'job log reported status {status!r}, which is outside the build-result '
+            f'vocabulary; the build outcome is undetermined.'
+        ),
         duration,
         log_file,
         command_str,

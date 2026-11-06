@@ -44,6 +44,11 @@ Test fixtures derived from real build executions and research for testing parser
 | `maven-parallel-verify.log` | Parallel (`-T`) reactor | `MultiThreadedBuilder` banner, interleaved module output, two summary blocks |
 | `maven-failure-epilogue.log` | Fail-at-end (`-fae`) reactor, Maven 3.9.16 (epilogue identical on 3.8.8), Surefire 3.5.2 | Passing module with a skipped test, failing Surefire module, compile-error module, `[INFO]` reactor summary, two `Failed to execute goal` blocks, unquoted `-e` / `-X` advice, `[Help 1]` link, `mvn <args> -rf :b`, `See … for the individual test results.` / `See dump files …` |
 | `maven4-failure-epilogue.log` | Fail-at-end (`-fae`) reactor, Maven 4.0.0-rc-7, Surefire 3.5.2 | Same modules, `[ERROR]`-level reactor-summary rows and `BUILD FAILURE` banner, quoted `'-e'` / `'-X'` advice without trailing period and with the `verbose output` tail, `[Help 1]` and `[Help 2]` links, `mvn [args] -r` |
+| `maven-consumer-passing-line.log` | Passing Surefire block, Maven 3.9.16, Surefire 3.5.2 | Per-class `[WARNING] Tests run: …` with `Time elapsed: … s -- in Awaits` — a simple class name that does not end in `Test` — then the `Results:` summary |
+| `maven-selector-miss.log` | `-Dtest` selector that matched nothing, Maven 3.9.16, Surefire 3.5.2 | `Failed to execute goal …:test …: No tests matching pattern "Awaits#runs" were executed! (Set -Dsurefire.failIfNoSpecifiedTests=false to ignore this error.)`, `BUILD FAILURE` |
+| `maven-dtest-zero-executed.log` | Same miss with `-Dsurefire.failIfNoSpecifiedTests=false`, Maven 3.9.16, Surefire 3.5.2 | `Results:` followed by `Tests run: 0, Failures: 0, Errors: 0, Skipped: 0`, `BUILD SUCCESS` |
+| `maven-dtest-one-executed.log` | `-Dtest` selector that matched, Maven 3.9.16, Surefire 3.5.2 | `Results:` followed by `Tests run: 1, Failures: 0, Errors: 0, Skipped: 0`, `BUILD SUCCESS` |
+| `maven-dtest-one-skipped.log` | `-Dtest` selector that matched a `@Disabled` test, Maven 3.9.16, Surefire 3.5.2 | `Results:` followed by `Tests run: 1, Failures: 0, Errors: 0, Skipped: 1`, `BUILD SUCCESS` — collected one, executed none |
 
 ### npm/TypeScript/Node.js
 

@@ -46,8 +46,8 @@ WORKED_CASE_ANSWER = 'run the narrow unit inline, then hand back the module-wide
 #: The branch Step 5 (b) decides first: the whole tree, whatever the scope holds.
 WHOLE_TREE_BRANCH = '**`divergence_possible: true`**'
 
-#: The only condition under which Step 5 (b) runs no pytest — both halves.
-NO_PYTEST_BRANCH = '**`divergence_possible: false` and `scoped_modules` is empty**'
+#: The only condition under which Step 5 (b) runs no tests — both halves.
+NO_TEST_RUN_BRANCH = '**`divergence_possible: false` and `scoped_modules` is empty**'
 
 #: What Step 5 (b) tells a leaf whose own change list is empty, in order: omit
 #: the flag, resolve from the plan alone, and never hand the resolver an empty list.
@@ -63,6 +63,18 @@ EMPTY_CHANGE_LIST_REFUSAL = '`empty_changed_paths`'
 #: The plan-footprint-only resolve the empty-change-list case runs: the
 #: ``resolve-test-scope`` call carrying ``--plan-id`` and no ``--changed-paths``.
 PLAN_ONLY_RESOLVE = 'resolve-test-scope \\\n        --plan-id "{plan_id}"'
+
+#: The build skill notation Step 5 (b) must NOT pin. A leaf in a Maven project
+#: resolving this literal dispatches a verb the resolved skill does not have.
+PINNED_SCOPE_RESOLVE = 'build-pyproject:pyproject_build resolve-test-scope'
+
+#: The two halves of the derivation Step 5 (b) must state INSTEAD: the notation
+#: is the prefix of the resolved ``module-tests`` executable, so it follows the
+#: project's own build skill rather than one project's.
+SCOPE_VERB_DERIVATION_MARKERS = (
+    'resolved build skill',
+    '`{bundle}:{skill}:{script}` prefix of its `executable`',
+)
 
 
 def _passage(document: Path, start: str, end: str) -> str:
@@ -162,15 +174,15 @@ def test_step_5b_answers_the_worked_case_on_its_own() -> None:
     assert WORKED_CASE_ANSWER in passage
 
 
-def test_step_5b_decides_the_whole_tree_before_it_skips_pytest_for_an_empty_scope() -> None:
-    """Step 5 (b) skips pytest only for an empty scope that cannot diverge, and decides the whole tree first."""
+def test_step_5b_decides_the_whole_tree_before_it_skips_the_run_for_an_empty_scope() -> None:
+    """Step 5 (b) skips the test run only for an empty scope that cannot diverge, and decides the whole tree first."""
     document, start, end = PASSAGES[0]
     passage = _passage(document, start, end)
 
     whole_tree = passage.find(WHOLE_TREE_BRANCH)
-    no_pytest = passage.find(NO_PYTEST_BRANCH)
+    no_test_run = passage.find(NO_TEST_RUN_BRANCH)
 
-    assert -1 < whole_tree < no_pytest
+    assert -1 < whole_tree < no_test_run
 
 
 def empty_change_list_gaps(passage: str) -> list[str]:
@@ -207,15 +219,15 @@ def test_step_5b_states_the_empty_change_list_instruction_before_it_branches() -
     """The instruction sits with the resolve, ahead of the branch that runs no pytest.
 
     A leaf reads the branches in order, so an instruction placed after the
-    no-pytest branch would be read only once that branch had already decided.
+    no-test-run branch would be read only once that branch had already decided.
     """
     document, start, end = PASSAGES[0]
     passage = _passage(document, start, end)
 
     instruction = passage.find(EMPTY_CHANGE_LIST_MARKERS[0])
-    no_pytest = passage.find(NO_PYTEST_BRANCH)
+    no_test_run = passage.find(NO_TEST_RUN_BRANCH)
 
-    assert -1 < instruction < no_pytest
+    assert -1 < instruction < no_test_run
 
 
 def test_a_passage_that_drops_one_empty_change_list_part_reports_exactly_that_part() -> None:
@@ -240,3 +252,20 @@ def test_an_empty_scope_alone_does_not_tell_nothing_to_run_from_the_whole_tree()
 
     assert (unowned.scoped_modules, unowned.divergence_possible) == ((), True)
     assert (empty.scoped_modules, empty.divergence_possible) == ((), False)
+
+
+def test_step_5b_derives_the_scope_verb_from_the_resolved_build_skill() -> None:
+    """Step 5 (b) reaches the RESOLVED build skill's ``resolve-test-scope``, not a pinned notation.
+
+    The per-task gate runs in projects whose build skill is not pyprojectx. A
+    pinned ``build-pyproject:pyproject_build`` rejects the verb surface of the
+    resolved skill, so the leaf must take the notation from the resolved
+    ``module-tests`` executable — the same derivation the pre-push gate's step 0
+    uses.
+    """
+    document, start, end = PASSAGES[0]
+
+    assert PINNED_SCOPE_RESOLVE not in document.read_text(encoding='utf-8')
+    passage = _passage(document, start, end)
+    for marker in SCOPE_VERB_DERIVATION_MARKERS:
+        assert marker in passage, marker

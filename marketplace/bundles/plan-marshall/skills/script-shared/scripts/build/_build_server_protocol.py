@@ -1089,6 +1089,16 @@ class LogVerdict:
     qualify, and a list beside it drifts the moment a member is added.
     """
 
+    message: str | None = None
+    """The inner wrapper's own ``message:`` line, when the log carried one.
+
+    The child's ``message`` is the only place some non-green verdicts state WHY.
+    Without it a cross-checked ``indeterminate`` collapses to this client's generic
+    "outside the build-result vocabulary" sentence, discarding the producer's own
+    reason — the same substitution the ``killed`` leg already refuses to make (it
+    prefers the daemon's wording over its own fallback).
+    """
+
 
 # The wrapper's emitted ``errors[N]{cols}:`` table header, matched at column 0 so
 # an indented table row can never be mistaken for the start of a table. ``N`` is
@@ -1321,6 +1331,7 @@ def read_log_verdict(log_file: str) -> LogVerdict | None:
         command_key=command_key,
         fault=fault,
         child_fault=child_fault,
+        message=fault_message,
     )
 
 
@@ -1435,4 +1446,5 @@ def _json_log_verdict(log_file: str) -> LogVerdict | None:
         command_key=command_key,
         fault=fault,
         child_fault=child_fault,
+        message=message,
     )

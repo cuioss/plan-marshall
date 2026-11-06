@@ -50,6 +50,10 @@ from _build_shared import build_canonical_commands
 from _extension_constants import PROFILE_PATTERNS
 from marketplace_paths import NO_PLAN_SENTINEL
 
+#: The build skill notation every canonical command this discoverer emits
+#: dispatches through. One definition, so a command and a post-pass cannot drift.
+_SKILL = 'plan-marshall:build-maven:maven'
+
 # =============================================================================
 # Profile Pipeline Utilities (Maven-specific — only Maven uses build profiles)
 # =============================================================================
@@ -228,10 +232,12 @@ def discover_maven_modules(project_root: str) -> list:
     resolved-coordinate / inherited-profile / dependency-tree fields are filled
     lazily by :func:`enrich_maven_module` only when a consumer needs them.
 
-    Discovery runs in two passes. The first parses every POM and collects the
+    Discovery runs in three passes. The first parses every POM and collects the
     reactor's ``groupId:artifactId`` coordinates; the second builds each module
     against that set, so a module whose own POM depends on a sibling's test
-    artifact is recognised before its command map is built.
+    artifact is recognised before its command map is built; the third gives a
+    root ``pom`` aggregator the whole-reactor test canonicals, which requires the
+    reactor-wide test population only the completed module set knows.
 
     Args:
         project_root: Absolute path to project root.
@@ -260,7 +266,45 @@ def discover_maven_modules(project_root: str) -> list:
         if module_data:
             modules.append(module_data)
 
+    # Pass 3: a root ``pom`` aggregator drives the whole reactor, so it carries
+    # the whole-reactor test canonicals when ANY reactor module has tests. That
+    # fact is only known once every module is built, which is why the rule is
+    # applied here rather than inside ``_build_commands``.
+    reactor_has_tests = any(module.get('stats', {}).get('test_files', 0) > 0 for module in modules)
+    for module in modules:
+        _add_reactor_test_canonicals(module, reactor_has_tests)
+
     return modules
+
+
+def _add_reactor_test_canonicals(module: dict, reactor_has_tests: bool) -> None:
+    """Give a root ``pom`` aggregator the whole-reactor ``test`` canonicals.
+
+    A module at the project root with ``packaging: pom`` owns no test files of
+    its own, so ``_build_commands`` gives it no test ladder. It is, however, the
+    module the architecture's default scope resolves, and ``mvn test`` at the
+    reactor root runs every module's tests — so without the canonicals the
+    pre-push gate records module-tests DEGRADED while the whole-tree ``verify``
+    runs the entire suite.
+
+    Neither entry is emitted when no reactor module has tests: a canonical that
+    would run nothing is a false green, worse than an absent one. A nested
+    aggregator (``relative_path`` not the project root) and a single-module
+    ``jar`` root keep ``_build_commands``' own answers unchanged.
+
+    Args:
+        module: One discovered module dict, modified in place.
+        reactor_has_tests: Whether at least one reactor module has test files.
+    """
+    if not reactor_has_tests:
+        return
+    if module.get('metadata', {}).get('packaging') != 'pom':
+        return
+    if module.get('paths', {}).get('module') not in ('.', ''):
+        return
+    module['commands'].update(
+        build_canonical_commands(_SKILL, {'module-tests': 'test', 'test-compile': 'test-compile'})
+    )
 
 
 def _reactor_test_artifacts(pom_data: dict, reactor_coordinates: set[str]) -> list[str]:
@@ -871,6 +915,13 @@ def _build_commands(
     - Non-pom: clean-install
     - Profile-based: integration-tests, coverage, benchmark
 
+    A root ``pom`` aggregator additionally carries the whole-reactor
+    ``module-tests`` (``test``) and ``test-compile`` (``test-compile``) when at
+    least one reactor module has tests. That fact is only known once every
+    module is built, so :func:`discover_maven_modules` applies the rule in its
+    final pass via :func:`_add_reactor_test_canonicals` instead of this
+    per-module builder guessing at it.
+
     A non-root, non-pom module with tests that consumes a reactor sibling's
     test artifact (``consumes_reactor_test_artifact``) gets the ``package``-phase
     test ladder: ``module-tests`` = ``package -pl {path} -am`` and
@@ -902,7 +953,7 @@ def _build_commands(
         consumes_reactor_test_artifact: Whether the module's own POM depends on
             a reactor sibling's ``test-jar`` / classified artifact
     """
-    skill = 'plan-marshall:build-maven:maven'
+    skill = _SKILL
     is_root_module = not relative_path or relative_path == '.'
     # ``-am`` (--also-make) builds the selected module's upstream reactor
     # modules first, but only up to the requested phase. A sibling's
@@ -930,8 +981,9 @@ def _build_commands(
     }
 
     # 2. Non-pom modules get the combined clean+install and (when present) the
-    #    test ladder. pom aggregators have no own tests, so module-tests stays
-    #    non-pom-only.
+    #    test ladder. A root pom aggregator's whole-reactor ladder is applied by
+    #    ``_add_reactor_test_canonicals`` once the reactor's test population is
+    #    known — a pom module owns no test files of its own.
     if packaging != 'pom':
         cmd_map['clean-install'] = f'clean install{pl_arg}'
 
