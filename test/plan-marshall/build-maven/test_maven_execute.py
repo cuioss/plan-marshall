@@ -290,6 +290,40 @@ def test_control_a_real_failure_after_a_zero_test_module_keeps_its_failure(tmp_p
     assert guarded['status'] == 'error'
 
 
+def test_control_a_mixed_reactor_keeps_the_other_modules_failure(tmp_path):
+    """CONTROL: a selector miss beside another module's real failure does not claim the run.
+
+    ``--fail-at-end`` lets a reactor finish other modules after one fails. When
+    the log carries BOTH a selector miss and a real failure, converting the run
+    to ``indeterminate`` would drop the other module's errors and findings.
+    """
+    # Arrange
+    log_file = tmp_path / 'mixed-failure.log'
+    log_file.write_text(
+        '[ERROR] Failed to execute goal org.apache.maven.plugins:maven-surefire-plugin:3.5.2:test '
+        '(default-test) on project b: No tests matching pattern "Awaits#runs" were executed! '
+        '(Set -Dsurefire.failIfNoSpecifiedTests=false to ignore this error.)\n'
+        '[ERROR] Tests run: 3, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 0.02 s <<< FAILURE! '
+        '-- in probe.other.OtherTest\n'
+        '[INFO] BUILD FAILURE\n',
+        encoding='utf-8',
+    )
+    result = {
+        'status': 'error',
+        'exit_code': 1,
+        'duration_seconds': 5,
+        'log_file': str(log_file),
+        'command': _SELECTOR_COMMAND,
+    }
+
+    # Act
+    guarded = apply_selector_miss_guard(result)
+
+    # Assert — the real failure keeps the build-failure path.
+    assert guarded is result
+    assert guarded['status'] == 'error'
+
+
 def test_execute_direct_is_wired_to_the_guard(tmp_path, monkeypatch):
     """The guard is REACHED by the executor, not merely available beside it.
 
@@ -311,6 +345,7 @@ def test_execute_direct_is_wired_to_the_guard(tmp_path, monkeypatch):
             'wrapper': './mvnw',
             'command_key': 'maven:test',
             'project_dir': str(tmp_path),
+            'timeout_used_seconds': 300,
         }
 
     monkeypatch.setattr(_factory, 'execute_direct_base', _recorder)
@@ -327,3 +362,4 @@ def test_execute_direct_is_wired_to_the_guard(tmp_path, monkeypatch):
     assert result['wrapper'] == './mvnw', 'the executor fields travel with the verdict'
     assert result['command_key'] == 'maven:test'
     assert result['project_dir'] == str(tmp_path)
+    assert result['timeout_used_seconds'] == 300, 'fields the guard does not replace are carried'

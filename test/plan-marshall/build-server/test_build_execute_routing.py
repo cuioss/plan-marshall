@@ -1319,3 +1319,26 @@ class TestIndeterminateReasonCarry:
 
         assert result['status'] == 'timeout'
         assert result['timeout_used_seconds'] == 300
+
+    def test_a_multiline_log_message_is_collapsed_before_rendering(self, tmp_path):
+        """A log message that carries real newlines must not break the envelope.
+
+        The JSON log path decodes ``\\n`` escapes into real newlines, and the
+        result formatter does not re-escape them inside an ordinary string
+        value, so the carried message is collapsed to one line.
+        """
+        import json
+
+        log = tmp_path / 'multiline.log'
+        log.write_text(
+            json.dumps({'status': 'indeterminate', 'exit_code': 0, 'message': 'first line\nsecond line'}),
+            encoding='utf-8',
+        )
+
+        result = factory._daemon_result_to_direct(
+            {'job_status': 'failure', 'exit_code': 0, 'duration_seconds': 4, 'log_file': str(log)},
+            'cmd',
+        )
+
+        assert result['status'] == 'indeterminate'
+        assert result['message'] == 'first line second line'

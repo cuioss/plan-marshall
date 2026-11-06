@@ -945,7 +945,12 @@ def _result_for_log_verdict(
         # ``killed`` leg above applies. Its absence means the log stated no
         # reason, so this client's sentence is the only content the result can
         # honestly carry.
-        str(verdict.message)
+        #
+        # Whitespace is collapsed before rendering: a log-sourced message can
+        # carry decoded newlines (the TOON reader unquotes escapes), and the
+        # result envelope's formatter does not re-escape them inside an ordinary
+        # string value.
+        ' '.join(str(verdict.message).split())
         if getattr(verdict, 'message', None)
         else (
             f'job log reported status {status!r}, which is outside the build-result '

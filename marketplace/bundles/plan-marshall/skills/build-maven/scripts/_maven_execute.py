@@ -97,13 +97,35 @@ def apply_selector_miss_guard(result: dict) -> dict:
     reason = selector_miss_reason(log_text, command if status == STATUS_SUCCESS else None)
     if reason is None:
         return result
+    # A reactor run with `--fail-at-end` can carry this selector miss AND a real
+    # failure in another module. Converting the whole run to `indeterminate`
+    # would drop that module's errors and findings, so the miss only claims the
+    # run when it is the ONLY failure in the log.
+    if status != STATUS_SUCCESS:
+        issues, _, _ = parse_log(str(result.get('log_file') or ''))
+        if any(issue.category in ('test_failure', 'compilation_error') for issue in issues):
+            return result
 
     selector = dtest_selector(command)
     named = f"'{selector}'" if selector else 'the -Dtest selector'
-    # The executor's own optional fields travel with the verdict: a consumer
-    # reading `wrapper` or `command_key` off a selector-miss result would
-    # otherwise find them absent although the build did run.
-    carried = {name: result[name] for name in ('wrapper', 'command_key', 'project_dir') if result.get(name)}
+    # Everything the execution established travels with the verdict — the
+    # executor's optional fields included — so a consumer reading `wrapper`, a
+    # bound or a future field off this result does not find it absent although
+    # the build did run. Only the keys `indeterminate_result` sets itself (plus
+    # the failure-renderer inputs that no longer apply) are excluded.
+    replaced = {
+        'status',
+        'error',
+        'message',
+        'exit_code',
+        'duration_seconds',
+        'log_file',
+        'command',
+        'errors',
+        'routed_errors',
+        'routed_tests_run',
+    }
+    carried = {name: value for name, value in result.items() if name not in replaced}
     return indeterminate_result(
         f'{TEST_SELECTOR_MATCHED_NOTHING}: {named} matched no test, so the run executed nothing — '
         'not a failure and not a green. Surefire prints "No tests matching pattern ... were '
