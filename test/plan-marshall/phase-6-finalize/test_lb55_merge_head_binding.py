@@ -244,6 +244,24 @@ def test_a_malformed_waiver_is_void_and_the_step_is_refused(waiver):
     assert {item['step'] for item in result['steps']} == {'functional-review'}
 
 
+def test_an_abbreviated_waiver_head_is_void_at_the_candidates_own_prefix():
+    """The waiver head is FULL-SHA equality, never a prefix of the candidate.
+
+    The abbreviated value is the candidate's own first seven characters, which is
+    what a prefix-tolerant reader would honour. Asserting the predicate directly —
+    as well as the refused merge above — is what makes a lost full-SHA check turn
+    red instead of passing as "no waiver matched anyway".
+    """
+    assert gate._is_full_sha(HEAD_MERGED[:7]) is False
+    record = {
+        'outcome': 'done',
+        'head_at_completion': HEAD_GATED,
+        'refire_waiver': {'head': HEAD_MERGED[:7], 'basis': 'abbreviated'},
+    }
+
+    assert gate._valid_waiver_head(record) is None
+
+
 def test_a_waiver_on_one_step_does_not_admit_a_second_stale_step():
     """(d) A waiver is per step, never a blanket admission for the record set."""
     status = _status_with_waivers(
