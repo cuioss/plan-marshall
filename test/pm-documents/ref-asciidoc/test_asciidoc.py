@@ -1272,6 +1272,37 @@ def test_verify_links_a_permission_denied_target_is_reported_not_raised(tmp_path
     assert result['data']['broken_links'] == 0, 'an unreadable target is not a missing one'
 
 
+def test_verify_links_a_masked_xref_target_is_not_extracted_again_as_live(tmp_path):
+    """A masked xref target is counted under its mask class, never re-extracted as a live link."""
+    adoc = tmp_path / 'page.adoc'
+    adoc.write_text(
+        '= Page\n\n'
+        'A wrapped xref: xref:++a.adoc++[Wrapped].\n\n'
+        'A fragment with an inline passthrough: xref:missing.adoc#+x+[Fragment].\n',
+        encoding='utf-8',
+    )
+
+    result = cmd_verify_links(_ns(_VERIFY_LINKS_NS, file=str(adoc), directory=None, recursive=False, report=None))
+
+    assert result['data']['total_links'] == 0, 'a masked xref target is not a live link'
+    assert result['data']['broken_links'] == 0, 'a masked example must not become a false broken link'
+    assert _ns_classes(result) == {'passthrough': 1, 'inline-passthrough': 1}, (
+        'each masked xref is counted once under its own mask class'
+    )
+
+
+def test_verify_links_a_live_xref_target_with_a_space_still_resolves(tmp_path):
+    """The masked-target guard does not drop a live xref whose target legitimately carries a space."""
+    (tmp_path / 'my doc.adoc').write_text('= Doc\n\nbody\n', encoding='utf-8')
+    adoc = tmp_path / 'page.adoc'
+    adoc.write_text('= Page\n\nSee xref:my doc.adoc[Doc].\n', encoding='utf-8')
+
+    result = cmd_verify_links(_ns(_VERIFY_LINKS_NS, file=str(adoc), directory=None, recursive=False, report=None))
+
+    assert result['data']['total_links'] == 1, 'the live xref must still be extracted'
+    assert result['data']['broken_links'] == 0, 'its target exists'
+
+
 def test_verify_links_an_unterminated_block_is_named(tmp_path):
     """A delimited block left open at EOF is reported, never silently skipped."""
     adoc = tmp_path / 'page.adoc'

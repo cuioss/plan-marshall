@@ -651,7 +651,7 @@ class TestThreeLayerCorrections:
             assert len(corpus) <= 1, (
                 f'the row {row} names more than one corpus verdict, so one finding could persist two values'
             )
-            assert corpus or 'none' in cell, f'the row {row} maps to neither a corpus verdict nor `none`'
+            assert corpus or cell.strip() == 'none', f'the row {row} maps to neither a corpus verdict nor `none`'
 
     def test_the_two_corroboration_statements_agree(self):
         """One rule states which verdicts a layer persists; the contradiction is gone."""
@@ -671,10 +671,12 @@ class TestThreeLayerCorrections:
     def test_the_never_downgrade_rule_covers_every_settled_verdict(self):
         """A `not_shown_by_reading` finding never overwrites a settled `contradicted`."""
         routing = _routing_block(_read(_ANALYZE_MD))
-        settle = re.search(r'(?is)never downgrade a settled verdict(.{0,900})', routing)
+        settle = re.search(r'(?is)never downgrade a settled verdict', routing)
 
         assert settle, 'the routing rule carries no never-downgrade rule'
-        body = settle.group(1)
+        # The rest of the routing block, not a fixed character window: a rule that
+        # merely grew would otherwise push its own verdict names out of the slice.
+        body = routing[settle.start() :]
         for settled in ('`contradicted`', '`corroborated`', '`unverifiable`'):
             assert settled in body, (
                 f'the never-downgrade rule does not name the settled verdict {settled}, so a '

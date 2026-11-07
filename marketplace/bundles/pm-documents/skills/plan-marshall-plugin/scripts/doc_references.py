@@ -179,13 +179,15 @@ def extract_references(text: str) -> list[tuple[str, str]]:
         if in_code_block:
             continue
 
-        # Strip inline code spans (`` `...` ``) before extracting. A reference
-        # shown as inline code — ``<<step-configuration>>`` quoted in prose, an
-        # ``xref:`` written as a syntax example — is documentation ABOUT a
-        # reference, not a live one, exactly like the fenced-block case above.
-        # Not stripping it produces a false dangling-reference report on a report
-        # that merely mentions the reference.
-        line = re.sub(r'`[^`]*`', '', raw_line)
+        # Strip inline code spans (`` `...` `` and `` ``...`` ``) before extracting. A
+        # reference shown as inline code — ``<<step-configuration>>`` quoted in prose,
+        # an ``xref:`` written as a syntax example — is documentation ABOUT a
+        # reference, not a live one, exactly like the fenced-block case above. Not
+        # stripping it produces a false dangling-reference report on a report that
+        # merely mentions the reference. The closer must carry the opener's own run
+        # length, so a double-backtick example is stripped whole rather than paired
+        # as two empty spans that leave the reference live between them.
+        line = re.sub(r'(`+)[^`\n]*?\1', '', raw_line)
 
         # AsciiDoc same-file cross-reference: <<anchor>> / <<anchor,label>>. A
         # form carrying a path (<<file.adoc#a>>) is the deprecated spelling and is

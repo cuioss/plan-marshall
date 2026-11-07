@@ -74,6 +74,17 @@ def test_inline_code_references_are_skipped():
     assert refs == []
 
 
+def test_double_backtick_code_references_are_skipped():
+    """A double-backtick span is stripped whole, not paired as two empty spans."""
+    refs = extract_references('A double-backtick example: ``xref:foo.adoc[]`` and ``<<an-anchor>>``.')
+    assert refs == []
+
+
+def test_a_live_reference_beside_a_double_backtick_example_survives():
+    refs = extract_references('Example ``xref:example.adoc[]`` then live xref:real.adoc[Real].')
+    assert [target for target, _anchor in refs] == ['real.adoc']
+
+
 # --------------------------------------------------------------------------- #
 # Anchor extraction — every valid id form a reference might use
 # --------------------------------------------------------------------------- #

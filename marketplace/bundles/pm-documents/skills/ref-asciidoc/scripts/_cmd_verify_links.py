@@ -286,6 +286,22 @@ def extract_anchors_from_file(filepath: str) -> set[str]:
     return anchors
 
 
+def _target_was_masked(masked: str, original: str, match: re.Match[str]) -> bool:
+    """Whether a match's TARGET capture was blanked by a mask, or truncates at one.
+
+    A masked reference is counted under its mask class, so it must not be
+    extracted again as a live one. The label is compared nowhere: a live
+    cross-reference may legitimately carry a masked label, and its anchor must
+    still be checked.
+    """
+    start, end = match.span(1)
+    if masked[start:end] != original[start:end]:
+        return True
+    # A whitespace-free target grammar (`link:`) stops where the mask begins,
+    # leaving a truncated target; the char past it was blanked.
+    return end < len(original) and masked[end] != original[end] and original[end] not in ' \t'
+
+
 def _extract_from_file(filepath: str) -> tuple[list[Link], list[Link], int | None]:
     """Extract the live links, the masked examples and an unterminated block's line.
 
@@ -336,6 +352,8 @@ def _extract_from_file(filepath: str) -> tuple[list[Link], list[Link], int | Non
             )
 
         for match in re.finditer(r'<<([^,>]+)(?:,([^>]+))?>>', masked):
+            if _target_was_masked(masked, original_line, match):
+                continue
             links.append(
                 Link(
                     file=filepath,
@@ -348,6 +366,8 @@ def _extract_from_file(filepath: str) -> tuple[list[Link], list[Link], int | Non
             )
 
         for match in re.finditer(r'xref:([^\[]+)\[([^\]]*)\]', masked):
+            if _target_was_masked(masked, original_line, match):
+                continue
             target_full = match.group(1).strip()
             target, anchor = (target_full.split('#', 1) + [''])[:2] if '#' in target_full else (target_full, '')
             links.append(
@@ -365,6 +385,8 @@ def _extract_from_file(filepath: str) -> tuple[list[Link], list[Link], int | Non
             )
 
         for match in re.finditer(r'<<([^>]*\.adoc[^>]*)>>', masked):
+            if _target_was_masked(masked, original_line, match):
+                continue
             links.append(
                 Link(
                     file=filepath,
@@ -376,6 +398,8 @@ def _extract_from_file(filepath: str) -> tuple[list[Link], list[Link], int | Non
             )
 
         for match in re.finditer(_LINK_MACRO_RE, masked):
+            if _target_was_masked(masked, original_line, match):
+                continue
             links.append(
                 Link(
                     file=filepath,
