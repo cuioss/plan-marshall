@@ -618,6 +618,103 @@ def test_the_notation_property_survives_the_scope_widening(monkeypatch) -> None:
 
 
 # =============================================================================
+# A READABLE scope is judged before the canonical vocabulary
+# =============================================================================
+
+
+@pytest.mark.parametrize('canonical', ['test', 'package'])
+def test_a_maven_row_outside_the_vocabulary_is_narrow_before_it_is_unknown(monkeypatch, canonical) -> None:
+    """A READ row that built one module refutes a whole-tree change.
+
+    ``test`` and ``package`` are deliberately outside ``CANONICAL_ANALYSES``, and
+    the canonical-unknown route is an INABILITY: it passes with the inability
+    recorded. Judged in that order, a ``{canonical} -pl core-api -am`` row — which
+    measurably built one module — certified a whole-tree change. The scope is
+    readable and decisive, so the row is refuted rather than unknown; the
+    vocabulary's documented partiality must not outrank positive knowledge.
+    """
+    _stub_expected(monkeypatch, {_PYPROJECT})
+    outcome = crosscheck.cross_check_candidates(
+        [_build_entry(args=_args_for(f'{canonical} -pl core-api -am'))],
+        '/nonexistent-project-dir',
+        _required(),
+    )
+
+    assert outcome['scope_verdict'] == crosscheck.NARROW, outcome
+    assert outcome['scope_reason'] == crosscheck.REASON_SCOPE_NARROW
+    assert outcome['row_scopes'] == [f'{canonical} core-api: ' + crosscheck.ROW_SCOPE_TOO_NARROW]
+    assert outcome['contributing'] == []
+
+
+def test_a_vocabulary_canonical_at_the_same_scope_is_still_narrow(monkeypatch) -> None:
+    """Control: the reordering does not change a canonical the vocabulary knows.
+
+    The same row and the same whole-tree change, with ``verify`` in place of the
+    unmapped canonical, must reach the identical scope refusal — the reordering
+    removes a mask, it does not widen or narrow the vocabulary branch.
+    """
+    _stub_expected(monkeypatch, {_PYPROJECT})
+    outcome = crosscheck.cross_check_candidates(
+        [_build_entry(args=_args_for('verify -pl core-api -am'))],
+        '/nonexistent-project-dir',
+        _required(),
+    )
+
+    assert outcome['scope_verdict'] == crosscheck.NARROW, outcome
+    assert outcome['row_scopes'] == ['verify core-api: ' + crosscheck.ROW_SCOPE_TOO_NARROW]
+
+
+def test_a_whole_tree_vocabulary_row_stays_covered(monkeypatch) -> None:
+    """Control: a row that names no scope still certifies the whole tree."""
+    _stub_expected(monkeypatch, {_PYPROJECT})
+    outcome = crosscheck.cross_check_candidates(
+        [_build_entry(args=_args_for('verify'), outcome=_outcome_for(19007))],
+        '/nonexistent-project-dir',
+        _required(),
+    )
+
+    assert outcome['scope_verdict'] == crosscheck.COVERED, outcome
+    assert outcome['contributing'] == [0]
+
+
+def test_a_confined_change_is_not_refused_by_a_vocabulary_silent_row(monkeypatch) -> None:
+    """Control: with an adequate scope, the canonical-unknown route stays an inability.
+
+    Nothing about that route changed for a change the row's recorded scope really
+    covers: the canonical is still outside the vocabulary, so the row is
+    undetermined and passes rather than being refused.
+    """
+    _stub_expected(monkeypatch, {_PYPROJECT})
+    outcome = crosscheck.cross_check_candidates(
+        [_build_entry(args=_args_for('test -pl core-api -am'))],
+        '/nonexistent-project-dir',
+        _required(whole_tree=False, modules={'core-api'}),
+    )
+
+    assert outcome['scope_verdict'] == crosscheck.UNDETERMINED, outcome
+    assert outcome['scope_reason'] == crosscheck.REASON_SCOPE_UNREADABLE
+    assert outcome['contributing'] == [0]
+
+
+def test_a_whole_tree_vocabulary_silent_row_stays_undetermined(monkeypatch) -> None:
+    """Control: a whole-tree row names no scope, so the scope does not decide.
+
+    With nothing scoped there is no scope refusal to reach first, and the row
+    keeps the absence-of-knowledge verdict it has always had.
+    """
+    _stub_expected(monkeypatch, {_PYPROJECT})
+    outcome = crosscheck.cross_check_candidates(
+        [_build_entry(args=_args_for('test'))],
+        '/nonexistent-project-dir',
+        _required(),
+    )
+
+    assert outcome['scope_verdict'] == crosscheck.UNDETERMINED, outcome
+    assert outcome['scope_reason'] == crosscheck.REASON_SCOPE_UNREADABLE
+    assert outcome['contributing'] == [0]
+
+
+# =============================================================================
 # Every scope inability passes, and says which one it was
 # =============================================================================
 
