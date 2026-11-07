@@ -1514,6 +1514,17 @@ def _route_task_verification_commands(plan_id: str, body: dict[str, Any]) -> tup
                 continue
             resolve_toon = _resolve_command_tier(raw, plan_id)
             tier = resolve_toon.get('execution_tier') if isinstance(resolve_toon, dict) else None
+            # The DECISION this pass records rests on a command whose tier is
+            # orchestrator AND whose duration was MEASURED above the ceiling. A
+            # command that is merely orchestrator-tier (an unmeasured one fails
+            # closed to that tier) did not decide anything, so recording it would
+            # hand a later compose a command it re-measures as non-qualifying —
+            # the deferral would vanish on the second compose.
+            qualifies = (
+                tier == 'orchestrator'
+                and isinstance(resolve_toon, dict)
+                and resolve_toon.get('exceeds_bash_ceiling') is True
+            )
             if tier == 'orchestrator':
                 parsed = _parse_verification_command(raw)
                 if parsed is None:
@@ -1535,18 +1546,21 @@ def _route_task_verification_commands(plan_id: str, body: dict[str, Any]) -> tup
                     # a later compose re-measures, since the command itself is
                     # gone by then.
                     #
-                    # The FIRST module-tests command seen in this pass wins. A task
-                    # can carry two modules' rungs (a deliverable spanning two
-                    # modules), and a later command must not overwrite the one the
-                    # decision was taken on — the field is one command and the task
-                    # is one tail.
+                    # The FIRST QUALIFYING module-tests command seen in this pass
+                    # wins. A task can carry two modules' rungs (a deliverable
+                    # spanning two modules); a later qualifying command must not
+                    # overwrite the one the decision was taken on, and a merely
+                    # orchestrator-tier (unmeasured) command ahead of it did not
+                    # decide anything and must not be recorded at all — the field
+                    # is one command, the task is one tail, and a re-compose
+                    # re-measures exactly this command.
                     verification['owed_rung'] = OWED_RUNG_CHAIN_TAIL
-                    if not recorded_this_pass:
+                    if qualifies and not recorded_this_pass:
                         verification['owed_rung_command'] = raw
                         recorded_this_pass = True
                 elif rung == OWED_RUNG_DEFERRED and verb == 'module-tests':
                     verification['owed_rung'] = OWED_RUNG_DEFERRED
-                    if not recorded_this_pass:
+                    if qualifies and not recorded_this_pass:
                         verification['owed_rung_command'] = raw
                         recorded_this_pass = True
                 if step_id is None:

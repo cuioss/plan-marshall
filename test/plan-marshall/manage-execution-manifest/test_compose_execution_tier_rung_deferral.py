@@ -363,3 +363,92 @@ class TestTheLeafHonoursTheRecordedDecision:
 
         assert 'owed_rung_deferral' in text
         assert 'one full module build per deliverable' in text
+
+
+class TestTheRecordedCommandIsTheOneTheDecisionRestedOn:
+    """The routing pass must record the QUALIFYING command, not merely the first one.
+
+    A task may list an unmeasured `module-tests` command first and a measured
+    over-ceiling command second. The decision pass admits only the sum of
+    ``orchestrator`` tier and an over-ceiling measurement, so the second decides.
+    Recording the first (merely orchestrator-tier) command hands a later compose a
+    command it re-measures as non-qualifying, and the deferral then vanishes.
+    """
+
+    _COMMAND_UNMEASURED = (
+        'python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build '
+        'run --command-args "module-tests marketplace"'
+    )
+    _COMMAND_QUALIFYING = (
+        'python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build '
+        'run --command-args "module-tests plan-marshall"'
+    )
+
+    _UNMEASURED = {'execution_tier': 'orchestrator', 'exceeds_bash_ceiling': False}
+    _QUALIFYING = {'execution_tier': 'orchestrator', 'exceeds_bash_ceiling': True, 'bash_timeout_seconds': 800}
+
+    def _write_one_task(self, tasks_dir: Path, commands: list[str]) -> Path:
+        tasks_dir.mkdir(parents=True, exist_ok=True)
+        task = {
+            'number': 1,
+            'deliverable': 1,
+            'depends_on': [],
+            'verification': {'commands': commands},
+        }
+        path = tasks_dir / 'TASK-001.json'
+        path.write_text(json.dumps(task, indent=2) + '\n', encoding='utf-8')
+        return path
+
+    def _patch_by_command(self, monkeypatch, tmp_path: Path) -> None:
+        by_command = {
+            self._COMMAND_UNMEASURED: self._UNMEASURED,
+            self._COMMAND_QUALIFYING: self._QUALIFYING,
+        }
+
+        def _resolve(command: str, _plan_id: str) -> dict:
+            return dict(by_command[command])
+
+        monkeypatch.setattr(_mem, 'get_plan_dir', lambda pid: tmp_path)
+        monkeypatch.setattr(_mem, '_resolve_command_tier', _resolve)
+        monkeypatch.setattr(_mem, '_emit_decision_log', lambda pid, msg: None)
+
+    def test_the_qualifying_second_command_is_the_one_recorded(self, monkeypatch, tmp_path):
+        path = self._write_one_task(tmp_path / 'tasks', [self._COMMAND_UNMEASURED, self._COMMAND_QUALIFYING])
+        self._patch_by_command(monkeypatch, tmp_path)
+
+        body = _run_routing()
+
+        task = _read(path)
+        assert task['verification']['owed_rung'] == 'chain_tail'
+        assert task['verification']['owed_rung_command'] == self._COMMAND_QUALIFYING, (
+            'the unmeasured command did not decide the deferral and must not be recorded'
+        )
+        assert body['phase_5']['owed_rung_deferral'][0]['chain_tail_task'] == 1
+
+    def test_a_recompose_over_the_same_input_is_idempotent(self, monkeypatch, tmp_path):
+        """The second compose re-measures the recorded (qualifying) command and agrees."""
+        path = self._write_one_task(tmp_path / 'tasks', [self._COMMAND_UNMEASURED, self._COMMAND_QUALIFYING])
+        self._patch_by_command(monkeypatch, tmp_path)
+        _run_routing()
+
+        body = _run_routing()
+
+        task = _read(path)
+        assert task['verification']['owed_rung'] == 'chain_tail', 'the deferral must survive a re-compose'
+        assert task['verification']['owed_rung_command'] == self._COMMAND_QUALIFYING
+        summary = body['phase_5']['owed_rung_deferral']
+        assert len(summary) == 1
+        assert summary[0]['chain_tail_task'] == 1
+        assert summary[0]['deferred_task_count'] == 0
+
+    def test_a_single_qualifying_command_is_unchanged(self, monkeypatch, tmp_path):
+        """Control: one qualifying command records itself, as before."""
+        path = self._write_one_task(tmp_path / 'tasks', [self._COMMAND_QUALIFYING])
+        self._patch_by_command(monkeypatch, tmp_path)
+
+        body = _run_routing()
+
+        task = _read(path)
+        assert task['verification']['owed_rung'] == 'chain_tail'
+        assert task['verification']['owed_rung_command'] == self._COMMAND_QUALIFYING
+        assert body['phase_5']['owed_rung_deferral'][0]['chain_tail_task'] == 1

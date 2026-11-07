@@ -179,8 +179,10 @@ predicate_completed_tasks_delta == 0 AND predicate_consumed_tokens > 50000`
 § "B7 — voluntary_checkpoint no-progress reclassification". The predicate is
 consulted for its two qualifying returns — a return provisionally classified
 `voluntary_checkpoint` and one that hands a build back: the
-owed-task subtraction keeps the handed-back task out of `predicate_in_progress_count`,
-a non-owed task that stalled in the same dispatch is still classified `error`,
+owed-task subtraction keeps the handed-back task out of `predicate_in_progress_count`;
+a `running` hand-back, whose task stays `in_progress` without the owed hold, is credited
+to the return's own marker when no owed task is in flight; a FURTHER non-owed task that
+stalled in the same dispatch is still classified `error`;
 and a hand-back naming a step id outside the manifest's composed
 `phase_5.verification_steps` exempts nothing. The verb reports
 `verification_handback_unknown_steps[]` — the named ids the manifest does not
