@@ -55,6 +55,13 @@ EXTRA_FIELDS = [
     'analyses_examined',
     'job_id',
     'job_status',
+    'queued_seconds',
+    'queued_behind',
+    'waiting_on',
+    'holder_plan_id',
+    'holder_command',
+    'holder_pid',
+    'holder_held_seconds',
 ]
 """Additional scalar fields that appear after core fields.
 
@@ -117,7 +124,24 @@ absence says something, and this field is what says it.
 (``compile``, ``lint``, ``test``), or the literal ``unknown`` when the invocation
 is not one the canonical vocabulary describes. It is the OTHER half of the
 reconciliation population: a finding type is cleared only when the run performed
-an analysis that can reach it, and this field publishes which those were."""
+an analysis that can reach it, and this field publishes which those were.
+
+``queued_seconds`` / ``queued_behind`` / ``waiting_on`` make a WAIT visible: a
+build serialised behind another build of the same directory reports how long it
+waited and what it waited on, on the hand-back and on the terminal result. Without
+them a queued build is indistinguishable from a slow one. Only ``queued_seconds``
+reaches this formatter today — it rides the build result — while ``queued_behind``
+belongs to the submit response and ``waiting_on`` to a wait payload; they are
+whitelisted here because the result shape is the one place a consumer looks and the
+cost of listing an unused key is a no-op, whereas the cost of omitting a used one
+is a silently dropped field.
+
+``holder_plan_id`` / ``holder_command`` / ``holder_pid`` / ``holder_held_seconds``
+are the four facts of a ``directory_busy`` refusal: the build did not run, and
+these name the build that was holding the directory. That refusal is printed by the
+routing seam's generic serializer, so they do not flow through this formatter
+today; they are whitelisted beside the rest of the wait vocabulary so a future
+result that carries them is not silently stripped."""
 
 # Structured fields handled specially
 STRUCTURED_FIELDS = {'errors', 'warnings', 'tests'}

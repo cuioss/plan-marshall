@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""PLAN-LB-55 D1 — the merge barrier refuses a candidate its gates never saw.
+"""The merge barrier refuses a candidate its gates never saw.
 
-``pre_merge_gate merge`` dispatched the merge verb on a clean findings store alone.
-Every head-dependent finalize gate stamps ``head_at_completion``, and nothing
-compared those stamps with the tree being merged, so a run could ship a head its
-gates had never seen (PLAN-LB-26: gates stamped ``3db65fc05``, ``74e6bfda`` merged).
+``pre_merge_gate merge`` must not dispatch the merge verb on a clean findings
+store alone. Every head-dependent finalize gate stamps ``head_at_completion``,
+and a merge that does not compare those stamps with the tree being merged can
+ship a head its gates had never seen.
 """
 
 from __future__ import annotations
 
 import pytest
 
-from conftest import load_script_module
+from conftest import PROJECT_ROOT, load_script_module
 
 gate = load_script_module('plan-marshall', 'phase-6-finalize', 'pre_merge_gate.py', register=False)
 
@@ -79,14 +79,21 @@ def _merge(status, head, **kwargs):
     )
 
 
-def _merge_pre_seam(status, head):
+def _merge_pre_seam(status, head, **kwargs):
     """Run the gate with ONLY the seams the pre-change module already accepted.
 
     The two Done-whens marked "Red at HEAD" drive the production declaration reader
     and the production waiver row through these seams, so their failure at HEAD is
     the defect (a refused merge) rather than a missing keyword. They therefore must
-    not pass the new seams.
+    not pass the declaration seam. A case that needs the production declaration
+    reader but not the production classifier passes it through ``kwargs``.
     """
+    flags = {
+        'status_reader': lambda _pid: status,
+        'head_reader': lambda _dir: head,
+        'participation_check': lambda _pid, _pr, _project_dir: _participating(),
+    }
+    flags.update(kwargs)
     return gate.merge(
         'lb55-plan',
         route='safe-merge',
@@ -95,14 +102,12 @@ def _merge_pre_seam(status, head):
         strategy='squash',
         findings_check=lambda _pid: {'status': 'success', 'blocking_count': 0},
         merge_runner=lambda _args: {'status': 'success', 'merged': True},
-        status_reader=lambda _pid: status,
-        head_reader=lambda _dir: head,
-        participation_check=lambda _pid, _pr, _project_dir: _participating(),
+        **flags,
     )
 
 
 def test_a_merge_candidate_newer_than_the_functional_review_head_refuses():
-    """The PLAN-LB-26 shape: the gates stamped one head, the merge ships another."""
+    """The unbound case: the gates stamped one head, the merge ships another."""
     status = _status(
         {
             'functional-review': HEAD_GATED,
@@ -160,16 +165,15 @@ def test_an_unreadable_local_head_passes():
 
 
 # ---------------------------------------------------------------------------
-# PLAN-LB-107 D1 — the merge gate honours the operator's re-fire waiver
+# The merge gate honours the operator's re-fire waiver
 # ---------------------------------------------------------------------------
 #
 # The dispatcher's re-entry table SKIPs a head-dependent step whose
-# ``refire_waiver.head`` equals the live HEAD. The gate used to ignore the
-# waiver entirely, so a step the operator had explicitly waived was refused
-# again at merge — and the waived reviews ran again hours later. Every case
-# below is paired: a waiver honoured at its own head, and the same waiver void
-# at any other head, so neither direction can pass by refusing (or admitting)
-# everything.
+# ``refire_waiver.head`` equals the live HEAD. The merge gate must read the same
+# waiver the same way: a step the operator explicitly waived is not refused again
+# at merge, and the waiver is void at any other head. Every case below is paired —
+# a waiver honoured at its own head, and the same waiver void at any other head —
+# so neither direction can pass by refusing (or admitting) everything.
 
 HEAD_C = 'c' * 40
 
@@ -222,7 +226,7 @@ def test_a_waiver_at_any_other_head_is_void_and_the_step_is_refused():
     'waiver',
     [
         {'basis': 'no head at all'},
-        {'head': 'abc1234', 'basis': 'abbreviated'},
+        {'head': HEAD_MERGED[:7], 'basis': 'abbreviated'},
         'not-a-dict',
         {'head': None},
     ],
@@ -239,6 +243,24 @@ def test_a_malformed_waiver_is_void_and_the_step_is_refused(waiver):
     assert {item['step'] for item in result['steps']} == {'functional-review'}
 
 
+def test_an_abbreviated_waiver_head_is_void_at_the_candidates_own_prefix():
+    """The waiver head is FULL-SHA equality, never a prefix of the candidate.
+
+    The abbreviated value is the candidate's own first seven characters, which is
+    what a prefix-tolerant reader would honour. Asserting the predicate directly —
+    as well as the refused merge above — is what makes a lost full-SHA check turn
+    red instead of passing as "no waiver matched anyway".
+    """
+    assert gate._is_full_sha(HEAD_MERGED[:7]) is False
+    record = {
+        'outcome': 'done',
+        'head_at_completion': HEAD_GATED,
+        'refire_waiver': {'head': HEAD_MERGED[:7], 'basis': 'abbreviated'},
+    }
+
+    assert gate._valid_waiver_head(record) is None
+
+
 def test_a_waiver_on_one_step_does_not_admit_a_second_stale_step():
     """(d) A waiver is per step, never a blanket admission for the record set."""
     status = _status_with_waivers(
@@ -253,14 +275,14 @@ def test_a_waiver_on_one_step_does_not_admit_a_second_stale_step():
 
 
 # ---------------------------------------------------------------------------
-# PLAN-LB-107 D2 — head-dependence comes from the declared fact
+# Head-dependence comes from the declared fact
 # ---------------------------------------------------------------------------
 #
 # The dispatcher decides head-dependence from the step doc's own
-# ``head_dependent: true``; the gate decided it from whether a SHA happened to
-# be on the record. An undeclared step that carried a stamp could therefore be
-# refused with a remedy ("re-run those steps") the dispatcher would never act
-# on, because it never re-fires that step at all.
+# ``head_dependent: true``, and the gate must decide it from the same fact: a
+# stamp alone does not make a step head-dependent, so an undeclared step that
+# carries one is listed as never consulted rather than refused with a remedy the
+# dispatcher would never act on.
 
 
 def test_an_undeclared_step_with_a_stale_stamp_is_listed_not_refused():
@@ -413,16 +435,15 @@ def test_the_undeclared_control_step_is_discovered_and_declares_no_fact():
 
 
 # ---------------------------------------------------------------------------
-# PLAN-LB-107 D2 — the status transport must preserve namespaced step keys
+# The status transport must preserve namespaced step keys
 # ---------------------------------------------------------------------------
 #
 # ``mark-step-done`` stores a project-tier step under its ``project:`` id
 # (``canonicalize_step_key`` preserves that prefix). The executor's TOON
 # rendering then splits a ``project:step:`` line at its FIRST colon, so a gate
 # that parsed that text would receive ``{'project': 'step: ...'}`` and skip the
-# record — merging without checking a declared head-dependent step, which is
-# exactly the PLAN-LB-26 class. The read is therefore the JSON resolver's, not
-# the TOON rendering's.
+# record — merging without checking a declared head-dependent step. The read is
+# therefore the JSON resolver's, not the TOON rendering's.
 
 
 def test_a_project_namespaced_step_record_survives_the_status_read(monkeypatch):
@@ -445,7 +466,8 @@ def test_a_project_namespaced_step_record_survives_the_status_read(monkeypatch):
 
     read = gate._read_plan_status('lb55-plan')
 
-    records = read['metadata']['phase_steps']['6-finalize']
+    assert read.reason is None, read.reason
+    records = read.payload['metadata']['phase_steps']['6-finalize']
     assert isinstance(records['project:finalize-step-plugin-doctor'], dict)
 
 
@@ -471,3 +493,241 @@ def test_a_namespaced_declared_step_is_judged_not_silently_skipped(monkeypatch):
 
     assert result['status'] == 'error', result
     assert {item['step'] for item in result['steps']} == {'project:finalize-step-plugin-doctor'}
+
+
+# ---------------------------------------------------------------------------
+# "declares no head-dependence" and "could not be found" are different answers
+# ---------------------------------------------------------------------------
+#
+# The declaration reader resolves a step that is simply ABSENT from the
+# discovered finalize-step population to "not head-dependent", because
+# ``mark-step-done`` records steps for every phase and a phase-5 step
+# legitimately matches no finalize-step implementor. That answer is right for
+# ``mark-step-done`` and wrong for the merge gate: a stale record for a
+# head-dependent step the gate's own discovery does not return would be listed
+# as "never consulted" and ADMITTED. The gate therefore asks the same discovery
+# a distinguishing question, and an absent step takes the fail-closed
+# field-presence fallback exactly as an underivable declaration does.
+
+
+def _population_without(name: str, monkeypatch):
+    """Stub the discovery so it returns the real population minus ``name``."""
+    import extension_discovery
+
+    real = extension_discovery.find_implementors
+
+    def _filtered(ext_point: str):
+        return [record for record in real(ext_point) if str(record.get('name', '')) != name]
+
+    monkeypatch.setattr(extension_discovery, 'find_implementors', _filtered)
+
+
+_STALE_CLASSIFIER_RESULT = {'status': 'success', 'verdict': 'invalidated', 'reason': 'stub'}
+
+
+def _stale_classifier(_step, _project_dir, _recorded):
+    """A classifier that never preserves the stale record (the refusal default)."""
+    return dict(_STALE_CLASSIFIER_RESULT)
+
+
+def test_a_stale_record_for_a_step_the_discovery_does_not_return_is_refused(monkeypatch):
+    """A step absent from the discovered population is refused, never "undeclared"."""
+    _population_without('default:functional-review', monkeypatch)
+    status = _status({'functional-review': HEAD_GATED})
+
+    result = _merge_pre_seam(status, HEAD_MERGED, classifier=_stale_classifier)
+
+    assert result['status'] == 'error', result
+    assert result['error'] == gate.MERGE_HEAD_NOT_GATED
+    assert {item['step'] for item in result['steps']} == {'functional-review'}
+    assert result['head_dependence_fallback'] == [
+        {'step': 'functional-review', 'reason': gate.POPULATION_ABSENT_REASON},
+    ]
+    assert 'unconsulted_stamps' not in result
+
+
+def test_a_discovered_undeclared_step_is_still_listed_and_admitted():
+    """MATCHED CONTROL: the distinguishing answer must not narrow the admitted set.
+
+    ``finalize-step-sync-baseline`` IS discovered and declares no
+    ``head_dependent`` fact, so its stamp stays evidence rather than an offence.
+    Without this control a reader that simply refused every stale stamp would
+    pass the case above.
+    """
+    status = _status({'finalize-step-sync-baseline': HEAD_GATED})
+
+    result = _merge_pre_seam(status, HEAD_MERGED)
+
+    assert result['status'] == 'success', result
+    assert result['dispatched'] is True
+    assert result['unconsulted_stamps'] == [
+        {'step': 'finalize-step-sync-baseline', 'recorded_head': HEAD_GATED},
+    ]
+
+
+def test_a_declared_document_that_cannot_be_read_is_refused_not_listed(monkeypatch):
+    """An unreadable declared document is "not derived", never "undeclared"."""
+    import extension_discovery
+
+    real = extension_discovery.find_implementors
+
+    def _broken_path(ext_point: str):
+        records = []
+        for record in real(ext_point):
+            if str(record.get('name', '')) == 'default:functional-review':
+                record = {**record, 'path': '/nonexistent/functional-review.md'}
+            records.append(record)
+        return records
+
+    monkeypatch.setattr(extension_discovery, 'find_implementors', _broken_path)
+    status = _status({'functional-review': HEAD_GATED})
+
+    result = _merge_pre_seam(status, HEAD_MERGED, classifier=_stale_classifier)
+
+    assert result['status'] == 'error', result
+    assert {item['step'] for item in result['steps']} == {'functional-review'}
+    fallback = result['head_dependence_fallback']
+    assert [item['step'] for item in fallback] == ['functional-review']
+    assert 'could not be read' in fallback[0]['reason']
+    assert 'unconsulted_stamps' not in result
+
+
+@pytest.mark.parametrize('step', ['automatic-review', 'project:finalize-step-plugin-doctor'])
+def test_a_bundle_tier_and_a_project_tier_step_resolve_through_the_production_reader(step, monkeypatch):
+    """Both tiers reach their own document through the production reader.
+
+    ``automatic-review`` is discovered from a bundle's ``skills/*/SKILL.md`` and
+    ``project:finalize-step-plugin-doctor`` from the checkout's project-local
+    skill root. Stubbing either tier would leave the discovery surface that
+    actually matters for a real plan unexercised.
+
+    The project-local scan resolves its root from the PROCESS cwd (the ADR-002
+    cwd rule), so the cwd is pinned to the checkout that holds the document:
+    otherwise the case would depend on where pytest happened to be launched.
+    """
+    monkeypatch.chdir(PROJECT_ROOT)
+
+    assert gate._head_dependence(step) == (True, None)
+
+
+def test_the_gate_discovers_the_population_once_per_merge(monkeypatch):
+    """Three stale declared steps cost ONE discovery, not one each.
+
+    The discovery walks every bundle, cache root and project-local skill root,
+    and it runs while the cross-plan merge mutex is held: re-deriving the
+    population per stale step would multiply that cost by the record count.
+    """
+    calls: list[int] = []
+    real = gate._finalize_step_population
+
+    def _counted():
+        calls.append(1)
+        return real()
+
+    monkeypatch.setattr(gate, '_finalize_step_population', _counted)
+    status = _status(
+        {
+            'functional-review': HEAD_GATED,
+            'pre-push-quality-gate': HEAD_GATED,
+            'automatic-review': HEAD_GATED,
+        }
+    )
+
+    result = _merge_pre_seam(status, HEAD_MERGED, classifier=_stale_classifier)
+
+    assert result['status'] == 'error', result
+    assert {item['step'] for item in result['steps']} == {
+        'functional-review',
+        'pre-push-quality-gate',
+        'automatic-review',
+    }
+    assert len(calls) == 1, f'the discovery ran {len(calls)} times for one merge'
+
+
+def test_the_classifier_runs_only_for_the_records_the_dispatcher_would_retry(monkeypatch):
+    """One classifier call per stale DECLARED ``done`` record, and none elsewhere.
+
+    The classifier is the expensive half of the loop (an executor subprocess), and
+    it runs while the cross-plan merge mutex is held. A ``done`` record is the only
+    kind the classifier can preserve; a ``failed`` or ``loop_back`` record is
+    retried by the dispatcher regardless of HEAD, so it goes straight to the
+    refusal without paying for a verdict nobody would use.
+    """
+    calls: list[str] = []
+
+    def _counting_classifier(step, _project_dir, _recorded):
+        calls.append(step)
+        return {'status': 'success', 'verdict': 'invalidated'}
+
+    status = {
+        'metadata': {
+            'phase_steps': {
+                '6-finalize': {
+                    'functional-review': {'outcome': 'done', 'head_at_completion': HEAD_GATED},
+                    'pre-push-quality-gate': {'outcome': 'done', 'head_at_completion': HEAD_GATED},
+                    'automatic-review': {'outcome': 'loop_back', 'head_at_completion': HEAD_GATED},
+                    'ci-verify': {'outcome': 'failed', 'head_at_completion': HEAD_GATED},
+                }
+            }
+        }
+    }
+
+    result = _merge_pre_seam(status, HEAD_MERGED, classifier=_counting_classifier)
+
+    assert result['status'] == 'error', result
+    assert sorted(calls) == ['functional-review', 'pre-push-quality-gate']
+    assert {item['step'] for item in result['steps']} == {
+        'functional-review',
+        'pre-push-quality-gate',
+        'automatic-review',
+        'ci-verify',
+    }
+
+
+def test_the_classifier_call_carries_the_modules_finite_bound(monkeypatch):
+    """The delegated verb runs under the module's own timeout, never unbounded."""
+    import inspect
+
+    captured: dict = {}
+    bound = inspect.signature(gate._run_verb).parameters['timeout'].default
+    assert bound == gate._VERB_TIMEOUT_SECONDS
+    assert isinstance(bound, int) and bound > 0
+
+    def _fake_run_verb(notation, argv, **kwargs):
+        captured['notation'] = notation
+        captured['kwargs'] = kwargs
+        return {'status': 'success', 'verdict': 'preserved'}
+
+    monkeypatch.setattr(gate, '_run_verb', _fake_run_verb)
+    status = _status({'functional-review': HEAD_GATED})
+
+    result = _merge_pre_seam(status, HEAD_MERGED)
+
+    assert result['dispatched'] is True, result
+    assert captured['notation'] == 'plan-marshall:phase-6-finalize:verdict_currency'
+    assert 'timeout' not in captured['kwargs'], 'the classifier must inherit the module bound'
+
+
+@pytest.mark.parametrize(
+    'verdict',
+    [
+        {'status': 'error', 'error': 'verdict_currency_unreadable'},
+        {'status': 'timeout'},
+        {'status': 'success'},
+        {'status': 'success', 'verdict': 'unknown'},
+    ],
+    ids=['error', 'timeout', 'no-verdict', 'unknown-verdict'],
+)
+def test_every_non_preserved_classifier_answer_refuses(verdict):
+    """Only ``success`` + ``preserved`` admits; every other answer refuses."""
+    status = _status({'functional-review': HEAD_GATED})
+
+    result = _merge(
+        status,
+        HEAD_MERGED,
+        classifier=lambda _step, _project_dir, _recorded: verdict,
+    )
+
+    assert result['status'] == 'error', result
+    assert result['error'] == gate.MERGE_HEAD_NOT_GATED
+    assert result['dispatched'] is False

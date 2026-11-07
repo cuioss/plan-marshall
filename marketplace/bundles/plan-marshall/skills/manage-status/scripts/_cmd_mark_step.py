@@ -190,15 +190,107 @@ _HEAD_DEPENDENT_KEY = 'head_dependent'
 REFIRE_WAIVER_KEY = 'refire_waiver'
 
 
+def _finalize_step_population() -> tuple[list[dict[str, Any]] | None, str | None]:
+    """Discover the finalize-step implementor population ONCE, or name why it could not.
+
+    The population read is a filesystem scan over every bundle, plugin-cache root
+    and project-local skill root. A caller judging several steps — the merge gate
+    judges one per stale record it holds — reads it here once rather than paying
+    the scan per step.
+
+    Returns:
+        ``(records, None)`` when the discovery ran and found at least one
+        implementor, or ``(None, reason)`` when the machinery could not run at
+        all: an unimportable ``extension_discovery``, a raising
+        ``find_implementors``, or an empty population. An empty population is a
+        failure rather than an answer because no step could then be derived at
+        all, and reporting every one of them as "undeclared" would be a
+        manufactured declaration.
+    """
+    try:
+        from extension_discovery import find_implementors
+    except ImportError as exc:
+        return None, f'extension_discovery is not importable ({exc})'
+
+    try:
+        records = find_implementors(_FINALIZE_STEP_EXT_POINT)
+    except Exception as exc:  # any discovery failure is diagnosable, not fatal
+        return None, f'find_implementors({_FINALIZE_STEP_EXT_POINT!r}) failed ({exc})'
+
+    if not records:
+        return None, (
+            f'find_implementors({_FINALIZE_STEP_EXT_POINT!r}) discovered no finalize-step '
+            'implementors, so head-dependence could not be derived for any step'
+        )
+    return records, None
+
+
+def _derive_head_dependence_from(step: str, records: list[dict[str, Any]]) -> tuple[bool, bool, str | None]:
+    """Return ``(found, is_head_dependent, unresolved_reason)`` for ``step`` in ``records``.
+
+    The distinguishing reading :func:`_derive_head_dependence` cannot give its
+    callers: ``found`` separates "this step declares no head-dependence" from
+    "this step is not in the population at all", which are different facts with
+    opposite consequences at a gate that must refuse an unexamined tree.
+
+    A matched implementor whose own document cannot be read is ``found`` with a
+    reason — never "undeclared" — because an unreadable declaration is an absent
+    derivation, not a declaration of absence.
+
+    Args:
+        step: The canonicalized step key to match.
+        records: A population from :func:`_finalize_step_population`.
+
+    Returns:
+        ``(False, False, None)`` when no record matches; ``(True, declared,
+        None)`` when the matched document was read; ``(True, False, reason)`` when
+        the matched document could not be read.
+    """
+    import extension_discovery
+
+    for record in records:
+        if canonicalize_step_key(str(record.get('name', ''))) != step:
+            continue
+        doc_path = Path(str(record.get('path', '')))
+        # The reader imports its parsing primitives at call time and runs the
+        # parser over the document, so an import or parser fault can escape the
+        # read guard inside it. An unreadable declaration is a failed derivation
+        # here too — never a traceback in ``mark-step-done``.
+        try:
+            fields, unreadable_reason = extension_discovery.read_frontmatter_fields_checked(
+                doc_path, (_HEAD_DEPENDENT_KEY,)
+            )
+        except Exception as exc:
+            return True, False, f'{doc_path} could not be inspected ({exc})'
+        if unreadable_reason is not None:
+            return True, False, unreadable_reason
+        return True, bool(fields.get(_HEAD_DEPENDENT_KEY, False)), None
+
+    return False, False, None
+
+
+def _derive_head_dependence_fact(step: str) -> tuple[bool, bool, str | None]:
+    """Discover the population and derive ``step``'s declaration as a three-way fact.
+
+    The single-step entry point over :func:`_finalize_step_population` and
+    :func:`_derive_head_dependence_from`. A caller judging several steps reads the
+    population itself and calls the second function, so the scan runs once.
+    """
+    records, population_reason = _finalize_step_population()
+    if records is None:
+        return False, False, population_reason or 'the finalize-step population could not be discovered'
+    return _derive_head_dependence_from(step, records)
+
+
 def _derive_head_dependence(step: str) -> tuple[bool, str | None]:
     """Derive whether ``step`` declares ``head_dependent: true`` in its own doc.
 
     Reuses the registry's OWN discovery path — ``find_implementors`` for the
-    population and ``extension_discovery._read_frontmatter_fields`` for the fact —
-    so no second frontmatter parser exists to drift from the one the dispatcher
-    and the derivation guard already read. Both sides of the comparison are run
-    through :func:`canonicalize_step_key`, because discovery names a built-in step
-    ``default:{name}`` while the caller writes the bare canonical key.
+    population and ``extension_discovery.read_frontmatter_fields_checked`` for the
+    fact — so no second frontmatter parser exists to drift from the one the
+    dispatcher and the derivation guard already read. Both sides of the comparison
+    are run through :func:`canonicalize_step_key`, because discovery names a
+    built-in step ``default:{name}`` while the caller writes the bare canonical key.
 
     Returns ``(is_head_dependent, unresolved_reason)``:
 
@@ -206,38 +298,21 @@ def _derive_head_dependence(step: str) -> tuple[bool, str | None]:
       is simply absent from the finalize-step population resolves to ``False``
       rather than "unresolved": ``mark-step-done`` records steps for every phase,
       so a phase-5 step legitimately matches no finalize-step implementor and must
-      not raise a warning on every call.
-    * ``(False, reason)`` — the derivation MACHINERY could not run at all (import
-      failure, discovery error, or an empty implementor population). The caller
-      writes the record and carries the reason as a ``warning``, following this
-      project's diagnosable-WARNING idiom: an unresolvable derivation must not
-      manufacture an unsubstantiated refusal, but it must not pass silently
+      not raise a warning on every call. A caller that must distinguish this
+      answer from "the step was not found" asks
+      :func:`_derive_head_dependence_fact`.
+    * ``(False, reason)`` — the derivation could not be performed: the machinery
+      did not run (import failure, discovery error, or an empty implementor
+      population), or the matched step's own document could not be read. The
+      caller writes the record and carries the reason as a ``warning``, following
+      this project's diagnosable-WARNING idiom: an unresolvable derivation must
+      not manufacture an unsubstantiated refusal, but it must not pass silently
       either.
     """
-    try:
-        import extension_discovery
-        from extension_discovery import find_implementors
-    except ImportError as exc:
-        return False, f'extension_discovery is not importable ({exc})'
-
-    try:
-        records = find_implementors(_FINALIZE_STEP_EXT_POINT)
-    except Exception as exc:  # any discovery failure is diagnosable, not fatal
-        return False, f'find_implementors({_FINALIZE_STEP_EXT_POINT!r}) failed ({exc})'
-
-    if not records:
-        return False, (
-            f'find_implementors({_FINALIZE_STEP_EXT_POINT!r}) discovered no finalize-step '
-            'implementors, so head-dependence could not be derived for any step'
-        )
-
-    for record in records:
-        if canonicalize_step_key(str(record.get('name', ''))) != step:
-            continue
-        fields = extension_discovery._read_frontmatter_fields(Path(str(record.get('path', ''))), (_HEAD_DEPENDENT_KEY,))
-        return bool(fields.get(_HEAD_DEPENDENT_KEY, False)), None
-
-    return False, None
+    _found, declared, derivation_reason = _derive_head_dependence_fact(step)
+    if derivation_reason is not None:
+        return False, derivation_reason
+    return declared, None
 
 
 def _derive_phase_roster(phase: str, plan_id: str) -> tuple[set[str] | None, str | None]:

@@ -2,10 +2,10 @@
   "id": "PLAN-LB-107",
   "slug": "finalize-gate-waiver-and-step-truth",
   "workstream": "WS-01",
-  "status": "running",
+  "status": "shipped",
   "lane": "runbook",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "plan_marshall_plan_id": "lb-107-finalize-gate-waiver-and-step-truth",
+  "pr": "1920",
+  "landing": "landings/PLAN-LB-107.md",
   "seq": 107
 }

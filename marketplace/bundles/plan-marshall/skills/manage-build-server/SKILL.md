@@ -196,6 +196,29 @@ survive, and any job that was in flight when the daemon died is marked `killed`
 (never silently resumed). **Log rotation** is automatic — `daemon.log` rotates to
 `daemon.log.1` once it passes its size cap, so daemon logging never grows unbounded.
 
+## What the daemon runs at once, and where
+
+Admission has two independent dimensions, and they answer different questions:
+
+- **The machine-global slot cap** (below) — how many builds may run on this host
+  at all. One budget, every registered project.
+- **The per-directory rule** — at most one job per project DIRECTORY. Two builds
+  of one worktree write the same `target/`, so running them together produces
+  false failures from the shared output tree; the scheduler therefore skips a
+  queued job whose directory already has a running job (or a live in-process
+  holder) and admits the next eligible job instead. Within a project, order stays
+  FIFO; a job blocked on its directory never holds up a job for another directory
+  queued behind it, and the per-project round-robin is unchanged.
+
+The serialisation key is the job's own directory — the canonicalised
+`project_path` — NOT the registry's `canonical_root` the fairness queue uses: the
+main checkout and each of its worktrees are separate keys, so two worktrees can
+build in parallel while one worktree never builds twice at once. A second job for a
+busy directory waits and says so: the submit reports `queued_behind`, `wait` reports
+`queued` with `waiting_on` and `queued_seconds`, and the in-process leg holds the
+same lock (directory first, then slot) so a routed and an in-process build of one
+directory block each other too.
+
 ## The machine-global build-slot cap
 
 `build.queue.max_slots` has exactly one home: the machine-global

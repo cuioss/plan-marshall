@@ -22,6 +22,7 @@ from typing import Any
 from _criteria_snapshot import (
     AUTHORED_KEY,
     AUTHORSHIP_SCHEMA,
+    CRITERION_UNPARSED,
     PARSER_EXTENDED,
     REQUEST_MISSING,
     SPEC_MISSING,
@@ -465,7 +466,7 @@ def grade_frozen_criteria(grading: Grading, drift: list[dict[str, Any]]) -> int:
 
     One kind is ADVISORY, never blocking: ``parser_extended`` — a frozen criterion
     that is a prefix of the criterion the current parser reads in full, admitted only
-    for a snapshot written before the parser marker. It is reported as
+    for a snapshot whose marker names an earlier parser generation. It is reported as
     `criterion_parser_extended` for visibility and left out of the blocking set;
     retiring it is a re-freeze, which needs its own authorization.
     """
@@ -493,6 +494,16 @@ def grade_frozen_criteria(grading: Grading, drift: list[dict[str, Any]]) -> int:
                 True,
                 FIX_KIND_IMPLEMENTATION,
                 'request or spec Done-when',
+            )
+            continue
+        if kind == CRITERION_UNPARSED:
+            grading.add(
+                'criterion_unparsed',
+                f'D{number}',
+                str(row.get('criterion')),
+                True,
+                FIX_KIND_IMPLEMENTATION,
+                f'deliverable {number}',
             )
             continue
         if kind == 'rewritten':

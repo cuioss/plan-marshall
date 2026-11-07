@@ -43,6 +43,7 @@ import threading
 from pathlib import Path
 from typing import Any
 
+import _github_pr
 from _flat_install_fixtures import flat_install_tree, run_script_in_flat
 
 from conftest import (
@@ -336,8 +337,9 @@ def test_merge_gate_counts_the_marker_bearing_summary_comment() -> None:
 #: so neither carries a second reading of the same fields.
 _COVERAGE_PARSER = 'review_coverage_verdict'
 
-#: The fields the parser reads out of the marker's JSON payload.
-_COVERAGE_FIELDS = ('sourceCommitId', 'coveredCommitId', 'kind')
+#: The fields the parser reads out of the marker's JSON payload. Read from the parser
+#: itself, not restated here: a hand list drifts the moment the parser gains a field.
+_COVERAGE_FIELDS = _github_pr.REVIEW_COVERAGE_FIELDS
 
 
 def test_the_lane_and_the_registry_name_one_coverage_parser() -> None:
@@ -388,19 +390,16 @@ def _summary_review_state_qualifies(state: dict[str, Any]) -> bool:
     """Whether a pull request's review state satisfies the summary-comment leg.
 
     Derived from the state ALONE: a formal review is absent, and one summary
-    comment carries the marker whose covered commit is the head and whose kind
-    is ``reviewed``.
+    comment's marker covers the head as a finished review. It reads the marker with
+    the production parser, so this fixture cannot pass on a shape production reads
+    differently.
     """
     if state['review_count'] or state['reviews']:
         return False
-    for comment in state['summary_comments']:
-        marker = re.search(r'final_review_risk_coverage:(\{.*?\})', comment['body'])
-        if marker is None:
-            continue
-        fields = json.loads(marker.group(1))
-        if fields.get('coveredCommitId') == state['head'] and fields.get('kind') == 'reviewed':
-            return True
-    return False
+    return any(
+        _github_pr.review_coverage_verdict(comment['body'], state['head']) is True
+        for comment in state['summary_comments']
+    )
 
 
 def test_the_plan_lb_72_merge_gate_state_qualifies_as_a_review() -> None:
@@ -1033,10 +1032,22 @@ def test_skill_states_the_preflight_degraded_and_killed_rules() -> None:
         assert phrase in text, f'the skill does not state {phrase!r}'
 
 
-def test_skill_states_the_one_daemon_routed_build_rule() -> None:
+def test_skill_states_the_per_directory_serialisation_rule() -> None:
+    """The lane states the MECHANISM, not a prose rule the mechanism supersedes.
+
+    Two builds of one worktree used to be a hazard the reader was told to avoid
+    ("one daemon-routed build at a time"). The daemon now admits one job per
+    project directory and every in-process build holds the same per-directory
+    lock, so the hazard is gone rather than merely forbidden — and a lane that
+    still asked for hand-avoidance would describe a constraint the runtime no
+    longer has. Both halves are pinned: the mechanism is stated, and the old
+    prose rule is gone.
+    """
     lowered = _skill_text().lower()
-    assert 'one daemon-routed build at a time' in lowered
-    assert 'sub-agents included' in lowered
+    assert 'one build per worktree at a time' in lowered
+    assert 'directory_busy' in lowered
+    assert 'queued_seconds' in lowered
+    assert 'one daemon-routed build at a time' not in lowered
 
 
 def test_skill_routes_every_build_and_retries_a_launch_fault_once() -> None:

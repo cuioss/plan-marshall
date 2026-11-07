@@ -144,7 +144,19 @@ def _promotion_payload(
         if isinstance(existing_fields, dict)
         else {}
     )
+    # The quarantine's own middle cut happens BEFORE this pass, so the validator only
+    # sees the already-elided text and would report THAT shorter length as original.
+    # The producer records the true length per cut field; fold it in here so
+    # ``original_length`` names the body the reviewer actually wrote.
+    quarantined_lengths = existing.get('raw_input_original_lengths')
+    true_lengths = (
+        {str(field): int(length) for field, length in quarantined_lengths.items() if isinstance(length, int)}
+        if isinstance(quarantined_lengths, dict)
+        else {}
+    )
     merged = {**carried, **{str(clamp['field']): int(clamp['original_length']) for clamp in clamps}}
+    for field, length in true_lengths.items():
+        merged[field] = max(merged.get(field, 0), length)
     promoted = {**payload, **_truncation_fields(clamps)}
     if merged:
         promoted.update(

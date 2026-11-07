@@ -80,6 +80,33 @@ Two primitives live here:
   `build-queue.json` itself — see **The cap and the reap threshold are
   machine-global** below.
 
+  The same file holds the **per-directory build lock**, as the top-level
+  `directory_locks` map plus the `directory_waiters` FIFO. It answers a different
+  question from the slot: not "how many builds may run on this host" but "is a
+  build already writing THIS directory's `target/`". Two builds of one worktree
+  serialise on it; two builds of different worktrees do not.
+  - **Keyed on the build's own directory**, canonicalised, so the main checkout and
+    each of its worktrees are separate keys — unlike the slot, which is one
+    machine-global budget.
+  - **Taken by every in-process build, plan-less ones included** (`NO_PLAN`, which
+    every `--project-dir` lane build is): the hazard is the shared `target/`, not
+    the slot budget. The daemon child runs the same leg and therefore holds it too.
+  - **Lock order is directory first, then slot, everywhere.** No build PROCESS waits
+    for a directory while holding a slot, and the daemon never admits a job whose
+    directory a live in-process holder has. One bounded window survives that
+    pre-check: the daemon spends a slot at admission and its child takes the
+    directory a moment later, so an in-process build slipping in between makes the
+    child wait with that slot spent. That wait is closed by whichever budget lapses
+    first (the in-process build's slot retries, or the child's directory-wait
+    bound) — a bounded stall, not a deadlock.
+  - Liveness is by **pid**, not by plan directory: a plan-less holder has no plan
+    directory, so a plan-anchored check would declare a running lane build dead and
+    steal its directory. A dead holder's record is reclaimed, so a crashed build
+    cannot block a directory forever.
+  - Waiting is a FIFO queue, never a refusal. A caller whose wait bound runs out
+    does not run the build and reports a `directory_busy` error naming the holder
+    (plan id or `NO_PLAN`, command, pid, seconds held).
+
 ## Enforcement
 
 > **Base contract**: See [manage-contract.md](../ref-workflow-architecture/standards/manage-contract.md) for shared enforcement rules, TOON output format, and error-response patterns.
@@ -110,7 +137,7 @@ cwd. The build-queue file is machine-global — it lives under the home root
 ```text
 <main>/.plan/local/merge.lock          # the unified merge mutex (one-line holder plan_id)
 <main>/.plan/local/merge-queue.json    # the merge-lock store: `waiting` (FIFO admission) + `rate_windows` (per-bot claims)
-~/.plan-marshall/build-queue.json      # the machine-global build-queue active + waiting + run-log state, plus the top-level `upper_limit_seconds` reap threshold
+~/.plan-marshall/build-queue.json      # the machine-global build-queue active + waiting + run-log state, plus the top-level `upper_limit_seconds` reap threshold and the `directory_locks` / `directory_waiters` per-directory build lock
 ~/.plan-marshall/marshalld/machine-config.json  # the machine-global build-slot cap `max_slots` (read here, written only by manage-build-server `config set` / `config migrate`)
 ```
 
@@ -809,10 +836,16 @@ be reproducible.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-locks:build_queue acquire \
-  --plan-id PLAN_ID
+  --plan-id PLAN_ID [--token TOKEN]
 ```
 
-Accepted flags: `--plan-id` (**required**).
+Accepted flags: `--plan-id` (**required**), `--token` (optional).
+
+`--token` is the per-INVOCATION identity. A re-poll with the same token keeps this
+build's FIFO place, and a second token for the same plan is a SECOND entry — two
+concurrent builds of one plan each hold their own slot, so the first release
+cannot free the second's. Omitted, the identity falls back to `--plan-id`, which
+is the pre-token idempotence an older caller relies on.
 
 Beyond `id` / `admission` / `active_count` / `waiting_count` / `queue_path`, every
 result reports the cap it admitted under and the two cap reports:
@@ -850,12 +883,40 @@ carry `warnings`, `per_repo_max_slots`, or any `cap_*` field: the demotion repor
 the disagreement verdict are properties of an ADMISSION decision, and a release makes
 none.
 
-### build_queue — limit verbs not exposed
+### build_queue — directory verbs
 
-This script exposes no `limit` verb. The accepted verbs are exactly `acquire`
-and `release` (see `--help`). Queue thresholds resolve from the machine-global
-configuration paths the implementation reads; they are not set through this
-script.
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-locks:build_queue directory status \
+  [--directory DIRECTORY]
+python3 .plan/execute-script.py plan-marshall:manage-locks:build_queue directory clear \
+  --directory DIRECTORY [--force]
+```
+
+`directory status` reports the per-directory build holder(s) and waiter(s) —
+`holders[]` carrying `directory`, `plan_id`, `command`, `pid`, `held_seconds`,
+`aged` and `reclaimable`, plus `waiters[]` and `reclaimable_count`. `reclaimable`
+means the pid is gone (or is an unreaped zombie), which is the only state
+`directory clear` acts on without `--force`; `aged` says the record has outlived
+the two-hour ceiling, which is evidence something is wrong but NOT that the holder
+is dead. It is read-only, and it is the sanctioned way to ask who holds a
+directory: a hand-read of `build-queue.json` has to re-derive pid liveness and
+staleness, which is the same reason every other read here goes through the script.
+
+`directory clear` reclaims one. Without `--force` only a DEAD holder is cleared —
+its pid is gone or is an unreaped zombie. Age alone is not enough: a build may
+legitimately run for hours and its directory is exactly what must not be stolen, so
+an aged record whose pid still reads alive needs `--force`, the operator's own
+assertion that no build is running there. `action` is `cleared`, `noop` (nothing to
+clear) or `refused_live` (a live holder and no `--force`), and `cleared_holder`
+carries the record that was removed. Use it when a build was killed past its own
+release: a recycled pid can keep such a record looking alive, and nothing in the
+admission path may steal a live build's directory.
+
+### build_queue — the `limit` verbs and the threshold's home
+
+`limit get` / `limit set --value N` read and write the adaptive stale-reclaim
+threshold, a top-level field of `build-queue.json` itself (see **The cap and the
+reap threshold are machine-global**).
 
 ## Integration
 
