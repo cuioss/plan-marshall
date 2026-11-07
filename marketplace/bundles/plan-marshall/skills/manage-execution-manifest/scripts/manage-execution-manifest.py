@@ -1514,9 +1514,10 @@ def _route_task_verification_commands(plan_id: str, body: dict[str, Any]) -> tup
         # qualifying) command here would diverge from the decision on the next
         # compose, because the decision would then re-measure this one instead.
         if rung is not None and isinstance(recorded_command, str):
-            recorded_toon = _resolve_command_tier(recorded_command, plan_id)
+            recorded_step, recorded_toon = _module_tests_step_for(recorded_command, plan_id)
             if (
-                isinstance(recorded_toon, dict)
+                recorded_step == _MODULE_TESTS_STEP
+                and isinstance(recorded_toon, dict)
                 and recorded_toon.get('execution_tier') == 'orchestrator'
                 and recorded_toon.get('exceeds_bash_ceiling') is True
             ):

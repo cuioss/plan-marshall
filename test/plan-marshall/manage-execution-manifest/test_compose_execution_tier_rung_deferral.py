@@ -432,7 +432,12 @@ class TestTheRecordedCommandIsTheOneTheDecisionRestedOn:
         assert body['phase_5']['owed_rung_deferral'][0]['chain_tail_task'] == 1
 
     def test_a_recompose_over_the_same_input_is_idempotent(self, monkeypatch, tmp_path):
-        """The second compose re-measures the recorded (qualifying) command and agrees."""
+        """The routing pass is idempotent over one composed manifest body.
+
+        The real ``compose`` seeds ``phase_5`` from the default step list, so the
+        full manifest is stable too; this seam asserts the half the routing pass
+        owns, and that the second pass adds nothing.
+        """
         path = self._write_one_task(tmp_path / 'tasks', [self._COMMAND_UNMEASURED, self._COMMAND_QUALIFYING])
         self._patch_by_command(monkeypatch, tmp_path)
         body: dict = {}
@@ -444,9 +449,8 @@ class TestTheRecordedCommandIsTheOneTheDecisionRestedOn:
         task = _read(path)
         assert task['verification']['owed_rung'] == 'chain_tail', 'the deferral must survive a re-compose'
         assert task['verification']['owed_rung_command'] == self._COMMAND_QUALIFYING
-        # The criterion is that the two COMPOSED manifests are identical, not
-        # merely that a few selected fields survived.
-        assert body == first, 'the second compose must produce the same manifest'
+        # The criterion is that the second pass composes nothing different.
+        assert body == first, 'the second compose must produce the same manifest body'
 
     def test_a_new_qualifying_command_does_not_displace_the_recorded_one(self, monkeypatch, tmp_path):
         """The decision prefers the recorded command; the routing pass must too.
