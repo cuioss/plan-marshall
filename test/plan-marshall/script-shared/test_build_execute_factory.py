@@ -1562,17 +1562,21 @@ class TestPerTaskRoutedBuildOutliving300s:
         assert routed['job_status'] == 'running'
 
 
-def _stage_plan_record(tree: Path, plan_id: str) -> Path:
+def _stage_plan_record(tree: Path, plan_id: str, *, worktree_path: Path | None = None) -> Path:
     """Create the plan record a cwd-relative ``--plan-id`` resolution reads.
 
-    The record's presence in a tree is exactly what decides whether a child
-    standing there can resolve the plan itself, so tests about the carry stage it
-    rather than describing it.
+    The record's content is exactly what decides whether a child standing there can
+    resolve the plan *to this tree*, so tests stage it rather than describing it: no
+    metadata reads as ``disabled`` (the checkout root, i.e. this tree), and a
+    ``worktree_path`` reads as ``materialized`` and may name another tree.
     """
     plan_dir = tree / '.plan' / 'local' / 'plans' / plan_id
     plan_dir.mkdir(parents=True, exist_ok=True)
+    metadata: dict[str, str] = {}
+    if worktree_path is not None:
+        metadata = {'use_worktree': 'true', 'worktree_path': str(worktree_path)}
     record = plan_dir / 'status.json'
-    record.write_text(json.dumps({'plan_id': plan_id, 'metadata': {}}), encoding='utf-8')
+    record.write_text(json.dumps({'plan_id': plan_id, 'metadata': metadata}), encoding='utf-8')
     return record
 
 
@@ -1647,6 +1651,20 @@ class TestResolvedTreeDocContract:
         assert factory._carry_resolved_tree(equals_form, str(bare))[-2:] == ['--resolved-project-dir', str(bare)], (
             'both spellings the child accepts name the same plan'
         )
+
+    def test_a_tree_whose_record_names_another_tree_still_gets_the_carry(self, tmp_path):
+        """Agreement is what omits the carry, not the record's mere presence.
+
+        A record that resolves to a DIFFERENT tree would send the child to build
+        that tree while the caller attributes the result to this one, so the carry
+        travels and the child builds where the routing process decided.
+        """
+        tree = tmp_path / 'worktree'
+        other = tmp_path / 'some-other-worktree'
+        _stage_plan_record(tree, 'plan-x', worktree_path=other)
+        argv = ['run', '--command-args', 'verify', '--plan-id', 'plan-x']
+
+        assert factory._carry_resolved_tree(argv, str(tree)) == [*argv, '--resolved-project-dir', str(tree)]
 
     def test_the_seam_ignores_an_argv_with_no_real_plan(self, tmp_path):
         """Only a real plan id has a resolution a carry could replace."""

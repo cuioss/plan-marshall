@@ -98,6 +98,7 @@ from _build_server_protocol import STATUS_TIMEOUT as WIRE_STATUS_TIMEOUT  # noqa
 # accident of naming" hazard that made the explicit `killed` row necessary in
 # `_build_server_protocol._RESULT_STATUS_TO_WIRE`.
 from _build_shared import cmd_run_common  # noqa: E402
+from file_ops import WORKTREE_STATE_MATERIALIZED, derive_worktree_state  # noqa: E402
 from marketplace_bundles import resolve_sibling_skill_path  # noqa: E402
 from marketplace_paths import NO_PLAN_SENTINEL, PLAN_DIR_NAME, home_root, names_real_plan  # noqa: E402
 from plan_logging import log_entry  # noqa: E402
@@ -1140,14 +1141,15 @@ def _carry_resolved_tree(argv: list[str], project_dir: str) -> list[str]:
     and it names the still-existing worktree) and the child refuses (its tree no
     longer holds the record). The carry is what removes the second resolution.
 
-    The carry is therefore appended only when the plan record is absent from
-    ``project_dir`` — the tree the child will start in. In the move-back window that
-    is exactly the case the carry exists for. Elsewhere the child re-resolves the
-    same record to the same tree, so appending the flag buys nothing — and costs the
-    build outright when the child's executor was generated before the flag existed,
-    because such an executor refuses an undeclared flag and there is no in-process
-    fallback after a routed result. A tree that carries no ``.plan/local`` of its own
-    is read the same way, and gets the carry.
+    The carry is therefore appended unless the child's own resolution lands on
+    ``project_dir`` — the tree the routing process resolved. In the move-back window
+    the plan record is absent from that tree and the carry is required. Elsewhere
+    the record present there resolves back to the same tree, so appending the flag
+    buys nothing — and costs the build outright when the child's executor was
+    generated before the flag existed, because such an executor refuses an
+    undeclared flag and there is no in-process fallback after a routed result. A
+    record that names a DIFFERENT tree is not agreement, so the carry travels and
+    the child builds where the routing process decided.
 
     Only an argv that names a REAL plan is considered at all: a ``--project-dir``
     dispatch already travels as an absolute value, and the ``NO_PLAN`` sentinel is
@@ -1172,28 +1174,43 @@ def _carry_resolved_tree(argv: list[str], project_dir: str) -> list[str]:
 
 
 def _child_resolves_plan_itself(plan_id: str, tree: str) -> bool:
-    """Whether a child starting in ``tree`` can resolve ``plan_id`` without the carry.
+    """Whether a child starting in ``tree`` resolves ``plan_id`` to ``tree`` itself.
 
     The child's ``--plan-id`` resolution is cwd-relative (ADR-002): it walks up from
-    its working directory to the nearest ``.plan/local`` and reads the plan record
-    under it. The routing process has already resolved that same record, so the
-    record being present under ``tree`` is what makes the child's resolution the one
-    the routing process performed, and the carry may be left off.
+    its working directory to the nearest ``.plan/local``, reads the plan record
+    under it, and takes the persisted ``worktree_path`` when the record's
+    ``worktree_state`` is ``materialized`` — otherwise its own checkout root. The
+    carry exists to REPLACE that resolution, so it may be omitted only when the
+    resolution it would produce is this same tree.
 
-    A tree WITHOUT its own ``.plan/local`` is read as unable to resolve the plan and
-    therefore gets the carry. That is the fail-safe direction: the carry is what
-    removes the child's second resolution, and the only cost of carrying it where it
-    was not needed is the flag a surface-predating executor refuses — never a build
-    stranded in the window.
+    A record that is present but names a DIFFERENT tree is the case that makes this
+    a comparison rather than an existence check: omitting the carry there would let
+    the child build that other tree while the caller attributes the result to this
+    one. A tree without its own ``.plan/local``, and a record that cannot be read or
+    carries no recognised discriminator, are all read as "does not resolve to this
+    tree" — the fail-safe direction, because the carry is what makes the child
+    build where the routing process decided.
 
     Args:
         plan_id: The real plan id the routed argv names.
-        tree: The absolute tree the child will start in.
+        tree: The absolute tree the child will start in, and the tree the routing
+            process resolved.
 
     Returns:
-        ``True`` when the plan record is present in that tree.
+        ``True`` only when the child's own resolution lands on ``tree``.
     """
-    return (Path(tree) / PLAN_DIR_NAME / 'local' / 'plans' / plan_id / 'status.json').is_file()
+    record = Path(tree) / PLAN_DIR_NAME / 'local' / 'plans' / plan_id / 'status.json'
+    try:
+        metadata = json.loads(record.read_text(encoding='utf-8')).get('metadata') or {}
+        state, worktree_path = derive_worktree_state(metadata)
+    except Exception:
+        return False
+    if state != WORKTREE_STATE_MATERIALIZED:
+        # `pending` and `disabled` both resolve to the child's own checkout root.
+        return True
+    if not worktree_path:
+        return False
+    return os.path.abspath(str(worktree_path)) == os.path.abspath(tree)
 
 
 def _flag_value(argv: list[str], flag: str) -> str | None:
