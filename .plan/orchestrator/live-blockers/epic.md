@@ -1163,6 +1163,49 @@ derive, for rows still live.
     fixes are tracked in the landing reports, the Queue annotations of this file and the condensed anchor. Revisit, and propose a
     row field (`fix_owed` naming the owning plan, stamped by `queue --set-row`, rendered in the view), if the chain keeps producing
     majors after the five fix plans.
+  - **(24) The `verify-links` mid-target mask finding (PLAN-LB-122 layer-3 major), ruled by the operator 2026-11-07 ("fold it"):** it is
+    not staged as its own plan; it is carried as a finding to fold into the next plan that touches `_cmd_verify_links.py`,
+    `ref-asciidoc/SKILL.md` or `analyze.md` Step 4. No such plan is staged today (none of the five fix-plan specs touches those
+    files), so the finding waits as a carried item: the probe must match a label anywhere after a mask on the line, a mid-target mask
+    must be named when no label is found, and `SKILL.md:221` must state the guarantee the code gives. The Step 4 minors of the same
+    landing (the `confirms` row qualifier, the write boundary of `corpus set-verdict`, the weak doc tests, the template polarity column)
+    are carried to the reconciliation of parked PLAN-LB-69 D1, which edits the same `analyze.md` text.
+  - **(25) The five fix-plan specs, ruled 2026-11-07 ("spec them"):** PLAN-LB-124 (push gate rows and Maven guard merged, WS-01),
+    PLAN-LB-125 (review gate with the PLAN-LB-75 D1 triage exemption, WS-03), PLAN-LB-126 (finalize commit rows with the foreign-PR
+    branch, WS-01, runs after the running PLAN-LB-123) and PLAN-LB-127 (CodeRabbit registry, PLAN-LB-46 D1 and D2, WS-03); drafted by
+    read-only leaves and written here with rows. The verify-links item is not a fifth spec (item 24). The steward upgrade of the
+    parallel session landed (PR 1934, commit `cdfd6e7a7`).
+  - **(26) The `cuioss-review-bot` removal (PLAN-LB-46 D7), ruled by the operator 2026-11-07 ("spec it, or preferably add it to an
+    existing plan"):** folded into PLAN-LB-127 as its D4, not a plan of its own. A read-only `grep` through Bash (Grep and Glob were
+    unavailable) at HEAD `5cd8ccd92` found the literal in 29 non-test files and 63 test files, so D4 lists about 90 files explicitly
+    (the plan's surface is now 98 files, all `declarative`). Two verify-first clauses go with it: a consumer `marshal.json` roster that
+    still names the bot may be refused once the registry entry is gone (the roster read fails closed), so the outline decides a
+    migration that strips it, with one documented tombstone constant the content search may still find; and removing the entry must
+    change nothing for CodeRabbit or Sourcery. **Cost, stated:** the gate now reads PLAN-LB-127 as overlapping PLAN-LB-125 on 6 files
+    (`_github_pr.py`, `github_ops.py`, `github_re_review.py`, `test_comments_stage_fetch.py`, `test_github_ops_pr_comments.py`,
+    `test_github_pr_currency.py`), PLAN-LB-116 on 2, PLAN-LB-124 and PLAN-LB-126 on 1 each, so D4 runs last and splits off first if
+    the PR grows; no overlap with the running plans. Parked PLAN-LB-41 D1 and D5 are retired when D4 merges. PLAN-LB-46 keeps D3 to D6
+    parked.
+  - **(25) result, 2026-11-07:** the four specs are written and staged with rows (drafted by four read-only leaves, every cited line
+    re-read by the leaf at HEAD `5cd8ccd92`, the orchestrator wrote the files and the rows). Row order in the queue is by seq: PLAN-LB-127
+    (seq 124), 125, 126, 124 (seq 127); the plan ids are the names. PLAN-LB-124 has eight deliverables (D1 canonical judged after
+    scope, D2 trailing executor flag with a row field recorded by the executor template, D3 the zero-test guard false stop with a
+    route in the per-task gate, D4 a standalone POM keeps no `-pl` canonical, D5 an unreadable POM is a named stop; then D6 guard false
+    negatives and under-grants, D7 refusal hints, bounded probe and fact keys, D8 documentation; split order D8, D7, D6; **D2 changes
+    the executor template, so an executor regeneration is owed after it merges**). PLAN-LB-125 has five (D1 JVM method identity and a
+    paired acceptance key, D2 triage honours a dropped review with two verify-first clauses, D3 placement and marker fail closed, D4
+    close and move proof, D5 documents; split order D5, D4, D3). PLAN-LB-126 has three (D1 finalize commits write their
+    `kind=change` row through one owner, preferably the `git-workflow commit` verb; D2 the foreign-PR gate reads the foreign branch;
+    D3 documents) and runs after PLAN-LB-123. PLAN-LB-127 has three (D1 summary-only concerns, with a reproduction-first clause that
+    can close it; D2 the file-limit notice as a structural refusal; D3 documents). **Gate read at HEAD `5cd8ccd92`:** all four are
+    declarative, determinate, `blocking_count` 0. Gate overlap with the running plans: PLAN-LB-125 and 127 none; PLAN-LB-124 two test
+    files with PLAN-LB-123 (`test_freshness_notation_crosscheck.py`, `test_pre_commit_verify_freshness.py`; PLAN-LB-123 declares them,
+    an overlap prompt is due at emit); PLAN-LB-126 two files with PLAN-LB-123 (`phase-6-finalize/SKILL.md`,
+    `plan-marshall/workflow/execution.md`; sequence after it). Among the staged: PLAN-LB-116, 125, 126 and 127 each name
+    `_github_pr.py` (a hypothesis entry in 116, 126, 127; observed in 125 D3), a single file each; PLAN-LB-124 and 126 share
+    `manage-change-ledger/SKILL.md` and `_ledger_core.py` (hypothesis entries in 124; in 126 an observed documentation entry);
+    PLAN-LB-125 and 126 share `_plan_parsing.py`, `_cmd_lifecycle.py` and `_github_pr.py` (3 files, so run them in sequence, 125
+    first). Staging is a separate ruling: none of the four is emitted.
   - **PLAN-LB-57 retired** (enrolment of the dormant bot and a measurement instrument; the `--repo` flag on the `ci` verbs is open
     but not high and is re-staged as its own fix only if a consumer epic still needs cross-repo merges).
   - **Parked specs, kept parked with parts dropped:** PLAN-LB-41 (D1 and D5 moot while the bot is removed; D2 to D4 hygiene),
