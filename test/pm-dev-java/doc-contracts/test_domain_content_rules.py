@@ -271,13 +271,16 @@ def test_java_security_skill_points_at_the_code_home_and_the_persona_standard():
 
 
 def test_cui_logging_points_at_the_value_neutralisation_rule():
+    """The CUI section points at the owner and does not restate its check set."""
     text = (get_skill_dir('pm-dev-java-cui', 'cui-logging') / 'standards' / 'logging-standards.md').read_text(
         encoding='utf-8'
     )
 
-    assert 'Character.isISOControl' in text, 'the pointer must name the check the rule uses'
-    assert 'U+2028' in text, 'the pointer must keep the line separators the control-range check misses'
     assert 'secure-logging.md' in text, 'the pointer must name the standard that owns the rule'
+    for restated in ('Character.isISOControl', 'U+2028', 'U+2029'):
+        assert restated not in text, (
+            f'the pointer restates the check set the owner holds with {restated!r} — state once, point elsewhere'
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -295,25 +298,47 @@ def test_java_security_neutralise_escapes_a_control_character_instead_of_droppin
 
     assert '\\\\u%04X' in masking, 'the neutralise example must escape the control character as a \\uXXXX escape'
     assert "? '?' : c" not in masking, 'the example still replaces the character with `?`, which drops it'
-    assert 'escapes' in masking.lower() or 'escape' in masking.lower(), 'the example must name the escape'
+    assert 'reversible' in masking.lower(), (
+        'the encoding must be reversible, so a literal `\\u000A` stays distinguishable from a newline'
+    )
+    assert 'escape introducer' in masking.lower(), 'the example must say the escape introducer itself is escaped'
 
 
-def test_java_security_json_statement_names_only_what_json_escapes():
-    """JSON escapes the quote, the backslash and the C0 range — not DEL, C1 or U+2028/U+2029."""
+def test_secure_logging_narrows_the_json_claim_to_the_string_grammar():
+    """The owner states what JSON escapes and what it leaves for defence-in-depth.
+
+    The former claim — JSON "automatically escape[s] CRLF and special characters,
+    so forged entries cannot be injected" — was false: the string grammar covers
+    the quote, the backslash and the C0 range only, so DEL, the C1 range and
+    U+2028/U+2029 still have to be neutralised.
+    """
+    standard = get_skill_dir('plan-marshall', 'persona-security-expert') / 'standards' / 'secure-logging.md'
+    section = _section(standard.read_text(encoding='utf-8'), '## Log Injection (CWE-117): Attack and Prevention')
+
+    assert 'automatically escape' not in section, 'the owner still claims JSON escapes CRLF and all special characters'
+    assert re.search(r'(?i)JSON string grammar', section), 'the owner must scope the claim to the JSON string grammar'
+    assert 'quote' in section.lower() and 'backslash' in section.lower(), 'the owner must name what JSON escapes'
+    assert 'U+0000' in section and 'U+001F' in section, 'the owner must name the escaped C0 range'
+    assert 'DEL' in section and 'C1' in section, 'the owner must name the characters JSON leaves over'
+    assert 'U+2028' in section and 'U+2029' in section, 'the owner must name the line separators it leaves over'
+    assert re.search(r'(?i)still neutralised before the value is logged', section), (
+        'the owner must say the residual set is neutralised before the value is logged'
+    )
+
+
+def test_java_security_points_at_the_owner_for_the_json_claim():
+    """The leaf keeps the Java mechanics and points at the owner instead of restating the rule."""
     text = (get_skill_dir('pm-dev-java', 'java-security') / 'standards' / 'java-security-patterns.md').read_text(
         encoding='utf-8'
     )
     masking = _section(text, '### Masking Pattern')
 
-    assert 'reversible' in masking.lower(), (
-        'the encoding must be reversible, so a literal `\\u000A` stays distinguishable from a newline'
-    )
-    assert 'escape introducer' in masking.lower(), 'the example must say the escape introducer itself is escaped'
-    assert 'escapes all three' not in masking, 'the statement still claims JSON escapes all three'
-    assert 'quote' in masking.lower() and 'backslash' in masking.lower(), 'the statement must name what JSON escapes'
-    assert 'U+0000' in masking and 'U+001F' in masking, 'the statement must name the escaped C0 range'
-    assert 'U+2028' in masking and 'U+2029' in masking, 'the statement must say the line separators are neutralised'
-    assert 'DEL' in masking and 'C1' in masking, 'the statement must say DEL and the C1 range are neutralised'
+    assert 'secure-logging.md' in masking, 'the Java leaf must point at the standard that owns the JSON claim'
+    assert 'does not restate' in masking.lower(), 'the Java leaf must say it points rather than restates'
+    for restated in ('U+0000', 'U+001F', 'quote', 'backslash'):
+        assert restated not in masking, (
+            f'the Java leaf still restates the owner rule with {restated!r} — state once, point elsewhere'
+        )
 
 
 def test_secure_logging_owns_u2028_u2029_and_scopes_the_cntrl_note():

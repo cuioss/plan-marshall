@@ -33,6 +33,7 @@ Output:
     JSON array of module objects conforming to module-discovery.md contract.
 """
 
+import posixpath
 import re
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -236,8 +237,9 @@ def discover_maven_modules(project_root: str) -> list:
     reactor's ``groupId:artifactId`` coordinates; the second builds each module
     against that set, so a module whose own POM depends on a sibling's test
     artifact is recognised before its command map is built; the third gives a
-    root ``pom`` aggregator the whole-reactor test canonicals, which requires the
-    reactor-wide test population only the completed module set knows.
+    root ``pom`` aggregator the whole-reactor test canonicals, which requires
+    the test population of the modules the root itself builds — known only once
+    every declared module is built.
 
     Args:
         project_root: Absolute path to project root.
@@ -267,14 +269,102 @@ def discover_maven_modules(project_root: str) -> list:
             modules.append(module_data)
 
     # Pass 3: a root ``pom`` aggregator drives the whole reactor, so it carries
-    # the whole-reactor test canonicals when ANY reactor module has tests. That
-    # fact is only known once every module is built, which is why the rule is
-    # applied here rather than inside ``_build_commands``.
-    reactor_has_tests = any(module.get('stats', {}).get('test_files', 0) > 0 for module in modules)
+    # the whole-reactor test canonicals when the reactor IT builds has tests.
+    # Which modules that is, and whether any of them has test files, is only
+    # known once every module is built — hence the rule here rather than inside
+    # ``_build_commands``.
+    known_modules = {module['paths']['module'] or '.': module for module in modules}
+    declared = {
+        (str(pom_path.parent.relative_to(root)) if pom_path.parent != root else '.'): pom_data.get('modules', [])
+        for pom_path, pom_data in parsed_poms
+    }
+    reactor_has_tests = _root_reactor_has_tests(declared, known_modules)
     for module in modules:
         _add_reactor_test_canonicals(module, reactor_has_tests)
 
     return modules
+
+
+def _normalise_module_path(aggregator_dir: str, entry: str) -> str | None:
+    """Resolve one ``<module>`` entry to a project-relative module directory.
+
+    Maven resolves a module entry against the aggregator's own directory, so a
+    nested aggregator's ``core`` is ``nested/core`` at the project root. An entry
+    naming a ``pom.xml`` is resolved to the directory holding it, and an entry
+    that escapes the project root is refused — it is not part of this reactor.
+
+    Args:
+        aggregator_dir: The declaring aggregator's project-relative directory
+            (``'.'`` for the root POM).
+        entry: The ``<module>`` text as written in the POM.
+
+    Returns:
+        The module directory relative to the project root (``'.'`` for the root
+        itself), or ``None`` when the entry names no in-project directory.
+    """
+    text = entry.strip().replace('\\', '/').rstrip('/')
+    if not text:
+        return None
+    if text.endswith('/pom.xml'):
+        text = text[: -len('/pom.xml')]
+    elif text == 'pom.xml':
+        return None
+    joined = posixpath.normpath(posixpath.join(aggregator_dir, text))
+    if posixpath.isabs(joined) or joined == '..' or joined.startswith('../'):
+        return None
+    return '.' if joined in ('', '.') else joined
+
+
+def _root_reactor_module_paths(declared: dict[str, list[str]], known: dict[str, dict]) -> set[str]:
+    """Return the module directories the root POM's reactor builds, transitively.
+
+    "Reactor" is the set of modules the root actually builds: its own
+    ``<modules>`` list, followed through every nested aggregator it lists. A POM
+    the filesystem walk found but the root does not list is not part of the
+    reactor — a default ``mvn test`` at the root never builds it.
+
+    Args:
+        declared: ``{module directory: declared <module> entries}``.
+        known: The discovered modules keyed by their project-relative directory.
+
+    Returns:
+        The reactor's member directories, the root excluded; empty when the root
+        module is not a ``pom`` aggregator or lists nothing.
+    """
+    root_module = known.get('.')
+    if root_module is None or root_module.get('metadata', {}).get('packaging') != 'pom':
+        return set()
+    members: set[str] = set()
+    pending = ['.']
+    while pending:
+        aggregator = pending.pop()
+        for entry in declared.get(aggregator, []):
+            target = _normalise_module_path(aggregator, entry)
+            if target is None or target in members:
+                continue
+            members.add(target)
+            if target in known:
+                pending.append(target)
+    return members
+
+
+def _root_reactor_has_tests(declared: dict[str, list[str]], known: dict[str, dict]) -> bool:
+    """Whether the root POM's reactor, or the root itself, holds a test file.
+
+    Args:
+        declared: ``{module directory: declared <module> entries}``.
+        known: The discovered modules keyed by their project-relative directory.
+
+    Returns:
+        True when the root module or any module of its own reactor has tests.
+    """
+    root_module = known.get('.')
+    if root_module is None:
+        return False
+    if root_module.get('stats', {}).get('test_files', 0) > 0:
+        return True
+    members = _root_reactor_module_paths(declared, known)
+    return any(known[path].get('stats', {}).get('test_files', 0) > 0 for path in members if path in known)
 
 
 def _add_reactor_test_canonicals(module: dict, reactor_has_tests: bool) -> None:
@@ -283,18 +373,19 @@ def _add_reactor_test_canonicals(module: dict, reactor_has_tests: bool) -> None:
     A module at the project root with ``packaging: pom`` owns no test files of
     its own, so ``_build_commands`` gives it no test ladder. It is, however, the
     module the architecture's default scope resolves, and ``mvn test`` at the
-    reactor root runs every module's tests — so without the canonicals the
-    pre-push gate records module-tests DEGRADED while the whole-tree ``verify``
-    runs the entire suite.
+    reactor root runs the tests of the modules the root builds — so without the
+    canonicals the pre-push gate records module-tests DEGRADED while the
+    whole-tree ``verify`` runs the entire suite.
 
-    Neither entry is emitted when no reactor module has tests: a canonical that
-    would run nothing is a false green, worse than an absent one. A nested
-    aggregator (``relative_path`` not the project root) and a single-module
-    ``jar`` root keep ``_build_commands``' own answers unchanged.
+    Neither entry is emitted when the root's own reactor holds no test file: a
+    canonical that would run nothing is a false green, worse than an absent one.
+    A nested aggregator (``relative_path`` not the project root) and a
+    single-module ``jar`` root keep ``_build_commands``' own answers unchanged.
 
     Args:
         module: One discovered module dict, modified in place.
-        reactor_has_tests: Whether at least one reactor module has test files.
+        reactor_has_tests: Whether the module the caller is deciding for is the
+            root of a reactor that holds a test file (or has tests of its own).
     """
     if not reactor_has_tests:
         return
@@ -525,6 +616,14 @@ def _parse_pom_xml(pom_path: Path) -> dict:
             - ``artifact_id``: ``<artifactId>`` text (or ``None``).
             - ``group_id``: ``<groupId>`` text, falling back to
               ``<parent><groupId>`` when the child omits it (or ``None``).
+            - ``modules``: the directories this POM's reactor builds —
+              ``/project/modules/module`` plus the ``modules`` of every profile
+              activated by ``activeByDefault``, the one activation this cheap
+              parse can read. A ``modules`` block inside a profile that needs an
+              explicit ``-P``, or that is activated by a property or a JDK
+              condition, is NOT included, so the root keeps no reactor test
+              canonical for those modules and the gate records DEGRADED rather
+              than running them.
             - ``profile_ids``: declared ``/project/profiles/profile/id`` values.
             - ``description``: ``<description>`` text (or ``None``).
             - ``parent``: ``groupId:artifactId`` of ``<parent>`` (or ``None``).
@@ -541,6 +640,7 @@ def _parse_pom_xml(pom_path: Path) -> dict:
             'packaging': 'jar',
             'artifact_id': None,
             'group_id': None,
+            'modules': [],
             'profile_ids': [],
             'description': None,
             'parent': None,
@@ -579,11 +679,67 @@ def _parse_pom_xml(pom_path: Path) -> dict:
         'packaging': packaging,
         'artifact_id': artifact_id,
         'group_id': group_id,
+        'modules': _parse_module_entries(root),
         'profile_ids': profile_ids,
         'description': description,
         'parent': parent,
         'dependencies': _parse_own_dependencies(root, group_id, parent_group_id),
     }
+
+
+def _parse_module_entries(root: ET.Element) -> list[str]:
+    """Read the module directories a POM's default build includes.
+
+    ``/project/modules/module`` is always the reactor. A profile's ``modules``
+    block is included only when that profile declares
+    ``activation/activeByDefault`` true — the one activation a cheap POM parse can
+    evaluate. Two directions follow, and they differ:
+
+    - A profile activated by a property, a JDK or OS condition, a file's presence,
+      or an explicit ``-P`` is not followed, so the root keeps no test canonical
+      for those modules. That UNDER-grants: the gate records DEGRADED instead of
+      running them, and no false green is produced.
+    - Maven switches an ``activeByDefault`` profile OFF when another profile in the
+      same POM is activated, which this parse cannot see, so such a profile may be
+      counted for a build that does not include it. That may OVER-grant a
+      canonical, and the run path's zero-test check is what reports the resulting
+      empty run as ``test_run_executed_nothing`` instead of green.
+
+    Args:
+        root: The POM's root ``<project>`` element.
+
+    Returns:
+        The module entries as written, in declaration order, de-duplicated.
+    """
+    entries: list[str] = []
+    seen: set[str] = set()
+
+    def _collect(container: ET.Element | None) -> None:
+        if container is None:
+            return
+        for module_el in container:
+            if _strip_ns(module_el.tag) != 'module':
+                continue
+            entry = (module_el.text or '').strip()
+            if entry and entry not in seen:
+                seen.add(entry)
+                entries.append(entry)
+
+    _collect(_find_child(root, 'modules'))
+
+    profiles_el = _find_child(root, 'profiles')
+    if profiles_el is not None:
+        for profile_el in profiles_el:
+            if _strip_ns(profile_el.tag) != 'profile':
+                continue
+            activation_el = _find_child(profile_el, 'activation')
+            if activation_el is None:
+                continue
+            if (_child_text(activation_el, 'activeByDefault') or '').lower() != 'true':
+                continue
+            _collect(_find_child(profile_el, 'modules'))
+
+    return entries
 
 
 def _parse_own_dependencies(root: ET.Element, group_id: str | None, parent_group_id: str | None) -> list[dict]:
@@ -916,11 +1072,13 @@ def _build_commands(
     - Profile-based: integration-tests, coverage, benchmark
 
     A root ``pom`` aggregator additionally carries the whole-reactor
-    ``module-tests`` (``test``) and ``test-compile`` (``test-compile``) when at
-    least one reactor module has tests. That fact is only known once every
-    module is built, so :func:`discover_maven_modules` applies the rule in its
-    final pass via :func:`_add_reactor_test_canonicals` instead of this
-    per-module builder guessing at it.
+    ``module-tests`` (``test``) and ``test-compile`` (``test-compile``) when the
+    reactor IT declares — its own ``<modules>``, followed through nested
+    aggregators — holds a test-bearing module, or when the root itself has
+    tests. That fact is only known once every module is built, so
+    :func:`discover_maven_modules` applies the rule in its final pass via
+    :func:`_add_reactor_test_canonicals` instead of this per-module builder
+    guessing at it.
 
     A non-root, non-pom module with tests that consumes a reactor sibling's
     test artifact (``consumes_reactor_test_artifact``) gets the ``package``-phase
