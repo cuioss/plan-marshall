@@ -40,9 +40,9 @@ never left as clean.}
 each other and with `main`? Each finding names the spec line and what contradicts
 it.}
 
-| Finding | Claim | Verdict | Evidence (file:line) |
-|---------|-------|---------|----------------------|
-| {none, or L1-N} | {claim} | {checked \| not_shown_by_reading} | {file:line} |
+| Finding | Claim | Verdict | Polarity | Evidence (file:line) |
+|---------|-------|---------|----------|----------------------|
+| {none, or L1-N} | {claim} | {checked \| not_shown_by_reading} | {confirms \| refutes \| none} | {file:line} |
 
 **Layer 1 verdict:** {clean | findings — N | not shown by reading — N}
 

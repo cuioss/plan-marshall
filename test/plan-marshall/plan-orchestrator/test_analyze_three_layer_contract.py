@@ -68,6 +68,39 @@ _DISPATCH_WORKFLOW_DOC = 'plan-marshall:plan-orchestrator/standards/three-layer-
 #: The one-line summary verdict the template carries, naming every layer.
 _VERDICT_LINE_RE = re.compile(r'(?im)^- \*\*Verdict:\*\*.*layer 1.*layer 2.*layer 3')
 
+#: The three columns of the Step 4 mapping table this file derives from. A table
+#: that renames or drops one of them fails the helper rather than parsing half.
+_VERDICT_COLUMN = 'Leaf `verdict`'
+_POLARITY_COLUMN = 'Leaf `polarity`'
+_PERSISTED_COLUMN = 'Persisted corpus verdict'
+
+
+def _ticked_values(cell: str) -> list[str]:
+    """The backticked tokens of one table cell, in order."""
+    return [f'`{value}`' for value in re.findall(r'`([^`]+)`', cell)]
+
+
+def _mapping_rows(routing: str) -> list[dict[str, str]]:
+    """The Step 4 mapping table as row dicts keyed by its own header cells."""
+    lines = [line for line in routing.splitlines() if line.strip().startswith('|')]
+    assert len(lines) >= 3, 'the routing rule carries no mapping table (a header, a separator and at least one row)'
+    header = [cell.strip() for cell in lines[0].strip().strip('|').split('|')]
+    for column in (_VERDICT_COLUMN, _POLARITY_COLUMN, _PERSISTED_COLUMN):
+        assert column in header, f'the mapping table has no {column!r} column — header read: {header}'
+    rows = []
+    for line in lines[2:]:
+        cells = [cell.strip() for cell in line.strip().strip('|').split('|')]
+        rows.append(dict(zip(header, cells, strict=False)))
+    assert rows, 'the mapping table carries no data row'
+    return rows
+
+
+def _leaf_vocabulary(field: str) -> tuple[str, ...]:
+    """The values the leaf document declares for one return field, as backticked tokens."""
+    match = re.search(rf'`{field}` is one of (.+?);', _read(_THREE_LAYER_DOC))
+    assert match, f'the leaf document declares no closed vocabulary for {field!r}'
+    return tuple(_ticked_values(match.group(1)))
+
 
 def _read(path: Path) -> str:
     assert path.is_file(), f'the contract source is missing: {path}'
@@ -248,7 +281,7 @@ class TestThreeLayerAlwaysDispatched:
         assert 'must not share context' in lowered, (
             "Step 4 does not give the one-leaf reason — one landing's read must not share context with another's"
         )
-        assert '`findings[N]{layer,severity,file,line,claim,verdict}`' in analysis, (
+        assert '`findings[N]{layer,severity,file,line,claim,verdict,polarity}`' in analysis, (
             'Step 4 does not give the findings return shape'
         )
         assert '`checked`' in analysis and '`not_shown_by_reading`' in analysis, (
@@ -350,8 +383,8 @@ class TestThreeLayerAlwaysDispatched:
     def test_the_dispatch_states_the_return_shape_and_both_verdicts(self):
         bullet = _dispatch_bullet(_read(_ANALYZE_MD))
 
-        assert '`findings[N]{layer,severity,file,line,claim,verdict}`' in bullet, (
-            'the dispatch does not state the return shape `findings[N]{layer,severity,file,line,claim,verdict}`'
+        assert '`findings[N]{layer,severity,file,line,claim,verdict,polarity}`' in bullet, (
+            'the dispatch does not state the return shape `findings[N]{layer,severity,file,line,claim,verdict,polarity}`'
         )
         assert '`checked`' in bullet and '`not_shown_by_reading`' in bullet, (
             'the dispatch does not give BOTH `verdict` values (`checked` and `not_shown_by_reading`)'
@@ -533,6 +566,12 @@ class TestThreeLayerCorrections:
         )
 
     def test_the_inline_only_index_names_only_the_item_one_write(self):
+        """Guard: the Inline-only APPLY index stays at exactly one `Write`.
+
+        This is a guard, not a red-first test: the index is untouched by the change
+        that introduced the single report write, so it holds at the parent too. It
+        stays to catch a second landing-report write slipping into the index.
+        """
         text = _read(_ANALYZE_MD)
         inline_only = _between(text, _DISPATCH_END, '#### Step 2b:', 'analyze.md Step 2')
 
@@ -544,19 +583,107 @@ class TestThreeLayerCorrections:
         )
 
     def test_the_routing_maps_the_leaf_vocabulary_to_the_corpus_vocabulary(self):
-        routing = _routing_block(_read(_ANALYZE_MD))
+        """The mapping is derived from the routing table, not from a hard-coded list.
 
-        for token in ('`checked`', '`contradicted`', '`not_shown_by_reading`', '`unverifiable`', '`corroborated`'):
-            assert token in routing, (
-                f'the routing rule does not name {token} — the leaf vocabulary and the corpus vocabulary are '
-                'not mapped, so two runs can persist different values for the same finding'
-            )
+        The table's own persisted-verdict column is the population, so a table
+        whose rows were swapped, dropped or pointed at a value the script refuses
+        fails here — a phrase-presence check over the same text would pass on any
+        arrangement of the words.
+        """
+        routing = _routing_block(_read(_ANALYZE_MD))
+        rows = _mapping_rows(routing)
+        persisted = {
+            value for row in rows for value in _ticked_values(row[_PERSISTED_COLUMN]) if value in CORPUS_VERDICTS
+        }
+
+        assert CORPUS_VERDICTS, 'the corpus verdict vocabulary resolved empty — the mapping check would be vacuous'
+        assert persisted == set(CORPUS_VERDICTS), (
+            f'the mapping table does not reach every corpus verdict the script accepts: table={sorted(persisted)} '
+            f'vocabulary={sorted(CORPUS_VERDICTS)}'
+        )
         assert re.search(r'(?i)two orchestrator runs persist the same value', routing), (
             'the routing rule does not state that the mapping is deterministic'
         )
-        assert re.search(r'(?i)layer 1 only', routing), 'the routing rule does not state which layers persist a verdict'
-        assert re.search(r'(?is)layer-2 finding.{0,240}persists no verdict', routing), (
-            'the routing rule does not say a layer-2 finding persists no verdict'
+        assert re.search(r'(?i)layer-2 or layer-3 finding persists none', routing), (
+            'the routing rule does not state which layers persist a verdict'
+        )
+
+    def test_the_mapping_covers_a_checked_finding_that_confirms_a_premise(self):
+        """A confirming `checked` finding must have its own row, never a contradiction.
+
+        At the parent the table had no polarity at all, so a `checked` finding that
+        confirms a premise fell through to `contradicted` (or to no row). A wrong
+        `contradicted` on a staged spec's claim blocks that spec at the prep-ready
+        test, which is why the confirming row is asserted directly.
+        """
+        routing = _routing_block(_read(_ANALYZE_MD))
+        rows = _mapping_rows(routing)
+        confirming = [
+            row
+            for row in rows
+            if '`checked`' in row[_VERDICT_COLUMN]
+            and 'confirms' in row[_POLARITY_COLUMN]
+            and _ticked_values(row[_PERSISTED_COLUMN])
+        ]
+
+        assert confirming, (
+            'the mapping has no row for a `checked` finding whose polarity confirms a premise — a confirming '
+            'finding would be read as a contradiction'
+        )
+        assert any('`corroborated`' in _ticked_values(row[_PERSISTED_COLUMN]) for row in confirming), (
+            'a `checked`/`confirms` layer-1 finding maps to no corpus verdict, so its row is not total'
+        )
+
+    def test_the_mapping_is_total_over_the_leaf_verdict_values(self):
+        """Every leaf verdict value maps to exactly one corpus verdict or to none."""
+        routing = _routing_block(_read(_ANALYZE_MD))
+        rows = _mapping_rows(routing)
+        leaf_verdicts = _leaf_vocabulary('verdict')
+
+        assert leaf_verdicts, 'the leaf verdict vocabulary resolved empty — the totality check would be vacuous'
+        for verdict in leaf_verdicts:
+            assert any(verdict in row[_VERDICT_COLUMN] for row in rows), (
+                f'the leaf verdict {verdict!r} has no row in the mapping — the mapping is not total'
+            )
+        for row in rows:
+            persisted = _ticked_values(row[_PERSISTED_COLUMN])
+            corpus = [value for value in persisted if value in CORPUS_VERDICTS]
+            assert len(corpus) <= 1, (
+                f'the row {row} names more than one corpus verdict, so one finding could persist two values'
+            )
+            for value in persisted:
+                assert value in CORPUS_VERDICTS or value == '`none`', (
+                    f'the row {row} maps to {value!r}, which is neither a corpus verdict nor `none`'
+                )
+
+    def test_the_two_corroboration_statements_agree(self):
+        """One rule states which verdicts a layer persists; the contradiction is gone."""
+        routing = _routing_block(_read(_ANALYZE_MD))
+
+        assert 'a layer-1 finding never yields' not in routing, (
+            'the routing rule still says a layer-1 finding never yields `corroborated`, which contradicts the '
+            '`corpus set-verdict` bullet beside it'
+        )
+        assert re.search(r'(?i)one rule states which verdicts a layer persists', routing), (
+            'the routing rule does not state the single persistence rule the two former statements collapse into'
+        )
+        assert re.search(r'(?i)layer-1 finding persists', routing), (
+            'the routing rule does not say which verdicts a layer-1 finding persists'
+        )
+
+    def test_the_never_downgrade_rule_covers_every_settled_verdict(self):
+        """A `not_shown_by_reading` finding never overwrites a settled `contradicted`."""
+        routing = _routing_block(_read(_ANALYZE_MD))
+        settle = re.search(r'(?is)never downgrade a settled verdict(.{0,900})', routing)
+
+        assert settle, 'the routing rule carries no never-downgrade rule'
+        body = settle.group(1)
+        assert '`contradicted`' in body, (
+            'the never-downgrade rule names only `corroborated`, so a `not_shown_by_reading` finding would '
+            'overwrite a claim settled as `contradicted`'
+        )
+        assert re.search(r'(?i)precedence between two findings on one claim', routing), (
+            'two findings on one claim with different verdicts have no stated precedence'
         )
 
     def test_the_conformance_shape_is_spelled_once_across_the_contract(self):
