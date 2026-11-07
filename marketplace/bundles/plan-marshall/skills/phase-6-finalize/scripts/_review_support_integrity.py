@@ -710,6 +710,9 @@ def _grade_test_integrity(
             # file-level proof is what keeps a repeated identity (which the
             # per-identity pass deliberately omits) from reading as removed.
             if _content_survives(pre, after):
+                # Credit the moved assertions so set-total attribution does not
+                # mistake this file's raw drop for an unexplained loss.
+                moved_by_path[path] = moved_by_path.get(path, 0) + before_file
                 continue
             # A deleted test identity is a MOVE only to the extent its assertion
             # lines reappear elsewhere; a bare name there proves nothing.
