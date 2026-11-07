@@ -1,0 +1,251 @@
+= Installation (Google Antigravity)
+:nofooter:
+:toc: left
+:toclevels: 3
+:toc-title: Table of Contents
+:sectnums:
+:source-highlighter: highlight.js
+
+xref:../../README.md[Plan Marshall] » xref:README.adoc[User Guide]
+
+Plan Marshall installs into Google Antigravity as a native plugin containing skills, agents, and commands. Installation is performed directly from the published `dist-antigravity` distribution branch or immutable release tags (`antigravity/v*`), either via a one-line installer script or manual clone.
+
+== Prerequisites
+
+[IMPORTANT]
+====
+Python 3 must be available as `python3` in your PATH.
+
+[source,bash]
+----
+python3 --version
+----
+====
+
+=== Supported platforms
+
+The platform requirement is assistant-independent and stated once in xref:install-claude.adoc[Installation (Claude Code) › Supported platforms]: a single POSIX runtime, macOS and Linux native, Windows exclusively inside WSL2. On Windows, install Antigravity inside the WSL distro alongside the rest of the runtime.
+
+== Fast Installation (Recommended)
+
+Run the one-line installer script directly in your terminal:
+
+[source,bash]
+----
+curl -fsSL https://raw.githubusercontent.com/cuioss/plan-marshall/dist-antigravity/install.sh | bash
+----
+
+This script automatically downloads the latest snapshot from `dist-antigravity` and installs the plugin into the standard global Antigravity plugin directory:
+`~/.gemini/config/plugins/plan-marshall/`
+
+Restart Antigravity or open a new conversation. Antigravity automatically discovers the installed skills and agents.
+
+== Selective Bundle Installation
+
+Plan Marshall supports installing only the domain modules needed for your project or workflow:
+
+* **Mandatory Core**: `plan-marshall` is always installed and provides the runtime foundation, stewards, and architecture tools.
+* **Domain Bundles**: Tailored skill and agent bundles for specific tech stacks.
+
+=== Domain Aliases and Bundles
+
+The installer provides shorthand aliases for domain bundles:
+
+[cols="1,2,2",options="header"]
+|===
+| Alias | Bundles | Description
+| `core` | `plan-marshall` | Core execution context, stewards, and architecture tools (mandatory).
+| `java` | `pm-dev-java`, `pm-dev-java-cui` | Java, JUnit 5, Quarkus/CDI, Maven, and CUI Java standards.
+| `python` | `pm-dev-python` | Python 3.10+, pytest, pyprojectx, and import linting.
+| `frontend` | `pm-dev-frontend`, `pm-dev-frontend-cui` | TypeScript/JavaScript, CSS, Lit, ESLint, and CUI frontend standards.
+| `oci` | `pm-dev-oci` | Container images, Dockerfile standards, and container security.
+| `docs` | `pm-documents` | AsciiDoc and documentation verification tools.
+| `reqs` | `pm-requirements` | Requirements engineering and traceability.
+| `plugin-dev` | `pm-plugin-development` | Plugin maintenance and doctor tools.
+| `all` | All available bundles | Default installation set.
+|===
+
+[NOTE]
+====
+Dependency closure is automatic: selecting `pm-dev-java-cui` automatically includes `pm-dev-java`, and selecting `pm-dev-frontend-cui` automatically includes `pm-dev-frontend`.
+====
+
+=== CLI Options
+
+You can specify bundle selection directly via CLI flags:
+
+* `--core-only`: Install only the mandatory core bundle.
+* `-b, --bundles <csv>`: Install specific bundles or aliases (e.g. `--bundles python,docs`).
+* `--without-bundles <csv>`: Exclude specific bundles or aliases from the full set (e.g. `--without-bundles java,frontend`). Core cannot be excluded.
+* `--all`: Install all bundles.
+
+Example with specific bundles:
+
+[source,bash]
+----
+curl -fsSL https://raw.githubusercontent.com/cuioss/plan-marshall/dist-antigravity/install.sh | bash -s -- --bundles python,docs
+----
+
+Example with core only:
+
+[source,bash]
+----
+curl -fsSL https://raw.githubusercontent.com/cuioss/plan-marshall/dist-antigravity/install.sh | bash -s -- --core-only
+----
+
+=== Interactive Selection
+
+When `install.sh` is executed in an interactive terminal without bundle flags, it prompts you to choose bundles:
+
+[source,text]
+----
+Plan Marshall Bundle Selection:
+  Core: plan-marshall [MANDATORY]
+  Available domain aliases: java, python, frontend, oci, docs, reqs, plugin-dev
+Install [A]ll (default), [C]ore only, or comma-separated bundles/aliases:
+----
+
+In non-interactive or CI environments (`CI=true` or `PLAN_MARSHALL_NON_INTERACTIVE=1`), the prompt is bypassed and all bundles are installed by default.
+
+== Pinned Release (Specific Version)
+
+For reproducible installations, download the installer directly from the desired immutable release tag:
+
+[source,bash]
+----
+curl -fsSL https://raw.githubusercontent.com/cuioss/plan-marshall/antigravity/v0.1.0/install.sh | bash -s -- --ref antigravity/v0.1.0
+----
+
+== Workspace-Scoped Installation
+
+To install Plan Marshall into a specific project repository rather than globally, pass `--workspace` (or `-w`):
+
+[source,bash]
+----
+cd /path/to/my-project
+curl -fsSL https://raw.githubusercontent.com/cuioss/plan-marshall/dist-antigravity/install.sh | bash -s -- --workspace
+----
+
+This installs into `<project-root>/.agents/plugins/plan-marshall/`, making the plugin available to anyone working in that workspace.
+
+=== Workspace Rules & Zero-Token Rule Delivery
+
+When installing with `--workspace` (or when `--emit-rules` is explicitly supplied), the installer automatically synchronizes Antigravity operational rules from `plan-marshall-antigravity` into:
+
+`<project-root>/.agents/rules/plan-marshall-target-rules.md`
+
+Antigravity automatically discovers and loads workspace rules from `.agents/rules/` into assistant context, delivering tool invariants, command discipline, and sandbox constraints without consuming tool calls or prompt tokens.
+
+* `--emit-rules`: Explicitly forces target rules synchronization into `.agents/rules/` regardless of scope.
+* Clean Uninstallation: Full uninstallation or removal of `plan-marshall-antigravity` automatically cleans up `.agents/rules/plan-marshall-target-rules.md`.
+
+== Manual Installation (Clone or Download)
+
+If you prefer to inspect the files or install offline, clone the `dist-antigravity` branch directly:
+
+[source,bash]
+----
+git clone -b dist-antigravity https://github.com/cuioss/plan-marshall.git ~/.gemini/config/plugins/plan-marshall
+----
+
+Alternatively, download and extract the branch tarball:
+
+[source,bash]
+----
+mkdir -p ~/.gemini/config/plugins/plan-marshall
+curl -fsSL https://github.com/cuioss/plan-marshall/archive/refs/heads/dist-antigravity.tar.gz | tar -xz -C ~/.gemini/config/plugins/plan-marshall --strip-components=1
+----
+
+== Updating
+
+=== Atomic Update (`-U, --update`)
+
+To update an existing installation, pass `-U` or `--update`:
+
+[source,bash]
+----
+curl -fsSL https://raw.githubusercontent.com/cuioss/plan-marshall/dist-antigravity/install.sh | bash -s -- --update
+----
+
+Or via local script:
+
+[source,bash]
+----
+~/.gemini/config/plugins/plan-marshall/install.sh --update
+----
+
+* **Preserves Installed Selection**: If no bundle flags are provided with `--update`, the existing bundle selection recorded in `.install-manifest.json` is preserved.
+* **Modifying Bundles on Update**: You can change your installed bundles by passing `--bundles` or prune bundles with `--without-bundles` alongside `--update`.
+* **Atomic Rollback**: If an error occurs during update, all files, `plugin.json`, and `.install-manifest.json` are automatically rolled back from an in-memory backup snapshot.
+
+=== Snapshot Users
+
+Re-run the installer script:
+
+[source,bash]
+----
+curl -fsSL https://raw.githubusercontent.com/cuioss/plan-marshall/dist-antigravity/install.sh | bash
+----
+
+If installed via `git clone`:
+
+[source,bash]
+----
+cd ~/.gemini/config/plugins/plan-marshall && git pull
+----
+
+=== Pinned Users
+
+Run the installer specifying the new release tag directly:
+
+[source,bash]
+----
+curl -fsSL https://raw.githubusercontent.com/cuioss/plan-marshall/antigravity/v0.1.1/install.sh | bash -s -- --ref antigravity/v0.1.1
+----
+
+== Uninstallation
+
+=== Full Uninstallation
+
+To remove the installed plugin entirely, pass `--uninstall`:
+
+[source,bash]
+----
+curl -fsSL https://raw.githubusercontent.com/cuioss/plan-marshall/dist-antigravity/install.sh | bash -s -- --uninstall
+----
+
+Or if you have the local installation:
+
+[source,bash]
+----
+~/.gemini/config/plugins/plan-marshall/install.sh --uninstall
+----
+
+For a workspace-scoped install:
+
+[source,bash]
+----
+./install.sh --workspace --uninstall
+----
+
+=== Selective Bundle Uninstallation
+
+To remove specific domain bundles while keeping the rest of the plugin installed, use `--uninstall --bundles <csv>`:
+
+[source,bash]
+----
+~/.gemini/config/plugins/plan-marshall/install.sh --uninstall --bundles python,docs
+----
+
+[NOTE]
+====
+The mandatory core bundle (`plan-marshall`) cannot be uninstalled selectively. Similarly, base bundles cannot be removed while a dependent child bundle remains installed (e.g. `pm-dev-java` cannot be removed without also removing `pm-dev-java-cui`).
+====
+
+== Next Step
+
+Run xref:getting-started.adoc[`/marshall-steward`] in your target repository to configure the project workspace and initialize `marshal.json`.
+
+== Distribution Contract
+
+Publish triggers, source-vs-dist tag semantics, and the multi-target architecture are documented under xref:../developer/distribution.adoc[Developer Guide › Distribution]. Further details on the Antigravity port architecture are in xref:../developer/antigravity.adoc[Developer Guide › Antigravity Target Port].
