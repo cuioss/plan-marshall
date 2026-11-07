@@ -23,6 +23,7 @@ same fixtures (both reads target the same on-disk machinery via
 """
 
 from argparse import Namespace
+from pathlib import Path
 
 from conftest import run_script
 from toon_parser import serialize_toon
@@ -576,3 +577,222 @@ def test_loop_exit_guard_cli_accepts_the_b7_predicate_flags(plan_context):
     assert result.returncode == 0
     assert 'classification: verification_handback' in result.stdout
     assert 'owed_count: 1' in result.stdout
+
+
+class TestARunningHandbackOnANotOwedTaskIsNotAStall:
+    """A `running` hand-back leaves its task in_progress WITHOUT the owed hold.
+
+    The leaf cannot close the task while a step is still in flight, so the owed
+    subtraction does not exclude it. The return's own marker stands in for that
+    hold and credits the one task the hand-back is about; a further non-owed
+    in-progress task still decides the dispatch.
+    """
+
+    _TOKENS = 536031
+    _STEP = 'verify:module-tests'
+
+    def test_a_running_handback_on_a_not_owed_task_is_the_handback_cause(self, plan_context):
+        """One non-owed in-progress task + a valid hand-back → verification_handback."""
+        plan_id = 'guard-running-not-owed'
+        add_basic_task(plan_id=plan_id, title='Running build', deliverable=1, steps=['src/Run.java'])
+        cmd_update(_update_ns(plan_id=plan_id, number=1, status='in_progress'))
+        _write_manifest(plan_context.plan_dir_for(plan_id), steps=[self._STEP])
+
+        result = cmd_loop_exit_guard(
+            _ns_with_predicate(
+                plan_id,
+                consumed_tokens=self._TOKENS,
+                completed_tasks_delta=0,
+                verification_handback=True,
+                pending_verify_steps=self._STEP,
+            )
+        )
+
+        assert result['predicate_in_progress_count'] == 0, (
+            'the hand-back credits its own not-owed task, so it is not a stall'
+        )
+        assert result['predicate_holds'] is False
+        assert result['verification_handback_valid'] is True
+        assert result['classification'] == 'verification_handback'
+        assert result['classification_reason'] == 'declared_orchestrator_build_handback'
+
+    def test_a_further_not_owed_task_beside_the_handback_still_decides(self, plan_context):
+        """The credit is exactly one task; a second non-owed task is a genuine stall."""
+        plan_id = 'guard-running-plus-stall'
+        add_basic_task(plan_id=plan_id, title='Running build', deliverable=1, steps=['src/Run.java'])
+        _write_manifest(plan_context.plan_dir_for(plan_id), steps=[self._STEP])
+        add_basic_task(plan_id=plan_id, title='Stalled', deliverable=2, steps=['src/Stall.java'])
+        cmd_update(_update_ns(plan_id=plan_id, number=1, status='in_progress'))
+        cmd_update(_update_ns(plan_id=plan_id, number=2, status='in_progress'))
+
+        result = cmd_loop_exit_guard(
+            _ns_with_predicate(
+                plan_id,
+                consumed_tokens=self._TOKENS,
+                completed_tasks_delta=0,
+                verification_handback=True,
+                pending_verify_steps=self._STEP,
+            )
+        )
+
+        assert result['predicate_in_progress_count'] == 1
+        assert result['predicate_holds'] is True
+        assert result['classification'] == 'error'
+        assert result['classification_reason'] == 'no_progress_predicate_holds_beside_handback'
+
+
+class TestNegativeMeasurementsAreNotDecidable:
+    """A negative figure is neither progress nor a measured zero."""
+
+    def _in_progress_task(self, plan_id: str) -> None:
+        add_basic_task(plan_id=plan_id, title='Mid', deliverable=1, steps=['src/Mid.java'])
+        cmd_update(_update_ns(plan_id=plan_id, number=1, status='in_progress'))
+
+    def test_a_negative_delta_is_refused(self, plan_context):
+        """A reopened done task makes the delta negative; that is not progress."""
+        self._in_progress_task('guard-negative-delta')
+
+        result = cmd_loop_exit_guard(
+            _ns_with_predicate('guard-negative-delta', consumed_tokens=536031, completed_tasks_delta=-1)
+        )
+
+        assert result['status'] == 'error'
+        assert result['queue_status'] == 'continue'
+        assert result['error'] == 'no_progress_not_decidable'
+        assert '--completed-tasks-delta' in result['message']
+        assert 'negative' in result['message']
+        assert 'classification' not in result
+
+    def test_a_negative_token_figure_is_refused(self, plan_context):
+        """A negative token figure is impossible and cannot be a measurement."""
+        self._in_progress_task('guard-negative-tokens')
+
+        result = cmd_loop_exit_guard(
+            _ns_with_predicate('guard-negative-tokens', consumed_tokens=-1, completed_tasks_delta=0)
+        )
+
+        assert result['status'] == 'error'
+        assert result['queue_status'] == 'continue'
+        assert result['error'] == 'no_progress_not_decidable'
+        assert '--consumed-tokens' in result['message']
+        assert 'classification' not in result
+
+
+class TestTheBesideHandbackReasonRequiresAValidHandback:
+    """The reason names a hand-back only when the hand-back was actually valid."""
+
+    def test_a_bare_discriminator_with_an_empty_list_is_a_plain_stall(self, plan_context):
+        plan_id = 'guard-bare-flag'
+        add_basic_task(plan_id=plan_id, title='Mid', deliverable=1, steps=['src/Mid.java'])
+        cmd_update(_update_ns(plan_id=plan_id, number=1, status='in_progress'))
+
+        result = cmd_loop_exit_guard(
+            _ns_with_predicate(
+                plan_id,
+                consumed_tokens=536031,
+                completed_tasks_delta=0,
+                verification_handback=True,
+            )
+        )
+
+        assert result['verification_handback_valid'] is False
+        assert result['classification'] == 'error'
+        assert result['classification_reason'] == 'no_progress_predicate_holds'
+
+    def test_a_mixed_valid_and_unknown_id_list_exempts_nothing(self, plan_context):
+        """One unknown id makes the whole hand-back invalid and names the unknown id."""
+        plan_id = 'guard-mixed-steps'
+        _owed_task(plan_id, number=1)
+        _write_manifest(plan_context.plan_dir_for(plan_id), steps=['verify:module-tests'])
+
+        result = cmd_loop_exit_guard(
+            _ns_with_predicate(
+                plan_id,
+                consumed_tokens=536031,
+                completed_tasks_delta=0,
+                verification_handback=True,
+                pending_verify_steps='verify:module-tests,verify:not-composed',
+            )
+        )
+
+        assert result['verification_handback_valid'] is False
+        assert result['verification_handback_unknown_steps'] == ['verify:not-composed']
+        assert result['classification'] == 'voluntary_checkpoint'
+
+    def test_a_missing_manifest_exempts_nothing(self, plan_context):
+        """No manifest means no composed list to check the named ids against."""
+        plan_id = 'guard-missing-manifest'
+        _owed_task(plan_id, number=1)
+
+        result = cmd_loop_exit_guard(
+            _ns_with_predicate(
+                plan_id,
+                consumed_tokens=536031,
+                completed_tasks_delta=0,
+                verification_handback=True,
+                pending_verify_steps='verify:module-tests',
+            )
+        )
+
+        assert result['verification_handback_valid'] is False
+        assert result['verification_handback_unknown_steps'] == ['verify:module-tests']
+        assert result['classification'] == 'voluntary_checkpoint'
+
+    def test_an_unreadable_manifest_exempts_nothing(self, plan_context):
+        """A corrupt manifest fails closed exactly like an absent one."""
+        plan_id = 'guard-unreadable-manifest'
+        _owed_task(plan_id, number=1)
+        plan_dir = plan_context.plan_dir_for(plan_id)
+        plan_dir.mkdir(parents=True, exist_ok=True)
+        (plan_dir / 'execution.toon').write_text('not: [valid: toon', encoding='utf-8')
+
+        result = cmd_loop_exit_guard(
+            _ns_with_predicate(
+                plan_id,
+                consumed_tokens=536031,
+                completed_tasks_delta=0,
+                verification_handback=True,
+                pending_verify_steps='verify:module-tests',
+            )
+        )
+
+        assert result['verification_handback_valid'] is False
+        assert result['classification'] == 'voluntary_checkpoint'
+
+
+class TestExecutionDocStatesTheDeltaSequence:
+    """D1: the B7 text names the before/after plain calls and the subtraction."""
+
+    _EXECUTION_MD = (
+        Path(__file__).resolve().parents[3]
+        / 'marketplace'
+        / 'bundles'
+        / 'plan-marshall'
+        / 'skills'
+        / 'plan-marshall'
+        / 'workflow'
+        / 'execution.md'
+    )
+
+    def _b7_section(self) -> str:
+        text = self._EXECUTION_MD.read_text(encoding='utf-8')
+        start = text.index('**B7 — voluntary_checkpoint no-progress reclassification')
+        end = text.index('**Pre-dispatch queue peek**', start)
+        return text[start:end]
+
+    def test_the_text_names_the_before_and_after_plain_calls_and_the_subtraction(self):
+        section = self._b7_section()
+
+        assert 'issue a plain call' in section
+        assert 'before-snapshot' in section
+        assert 'after-count' in section
+        assert 'subtract the before figure from the after figure' in section
+        assert 'both counts are read from' not in section.lower(), (
+            'the evaluating call takes the delta as input; it cannot be the source of both counts'
+        )
+
+    def test_the_resume_rule_names_re_derivation_not_a_zero(self):
+        section = self._b7_section()
+
+        assert 'resumed session re-derives' in section
+        assert 'never invents a zero' in section
