@@ -120,12 +120,12 @@ Every producer that files untrusted external free-text (a PR-comment body, a Son
   "title": "Review comment on Validator.java",
   "resolution": "pending",
   "raw_input": {
-    "body": "…untrusted reviewer comment text (capped, may end in [truncated])…"
+    "body": "…untrusted reviewer comment text (capped; head and tail kept, middle elided)…"
   }
 }
 ```
 
-- **Per-field byte cap.** Each `raw_input.{field}` value is UTF-8 capped at `plan.finding_raw_input_max_bytes` (default 64 KiB — see [`manage-config/standards/data-model.md`](../../manage-config/standards/data-model.md)). An overflowing value is truncated to the byte budget (decoded defensively so a split multi-byte character never raises) and a `[truncated]` marker is appended so a reader can tell the value was clipped. The cap is threaded in via `manage-findings ... --raw-input-max-bytes`.
+- **Per-field byte cap.** Each `raw_input.{field}` value is UTF-8 capped at `plan.finding_raw_input_max_bytes` (default 64 KiB — see [`manage-config/standards/data-model.md`](../../manage-config/standards/data-model.md)). An overflowing value keeps its HEAD and its TAIL and its middle is replaced by an elision marker naming how many characters were removed, so a long review body keeps its conclusion; a cap too small for a head+tail pair keeps the head plus a `[truncated]` marker. The cap is threaded in via `manage-findings ... --raw-input-max-bytes`.
 - **Ingestion promotion → top-level.** A single batched `manage-findings ingest` pass runs the deterministic `validate_struct` validator over every pending finding's `raw_input.{field}` values and promotes only the `status: success` clamped output into the clean top-level field of the same name (`title` / `detail` / `message` / `body`). A validator rejection resolves the finding instead of promoting. The `raw_input.*` sub-object is left in place, un-ingested, for audit.
 - **A promoted value that was cut says so on its own record.** The validator keeps the head and the tail of an over-cap string and marks the removed middle in the value itself (see [`untrusted-ingestion` output-schema rules](../../untrusted-ingestion/standards/output-schema-rules.md)). Ingest copies that fact onto the finding as trusted, producer-computed fields: `truncated: true`, `original_length` (the longest cut field's pre-clamp length), and `truncated_fields` (each cut field's original length). A finding that has never been cut carries none of the three keys. When a stored cut is replaced by text that fits, the keys remain in a CLEARED state (`truncated: false`, `original_length: 0`, `truncated_fields: {}`): the store merges and never deletes, so key PRESENCE alone is never a cut claim — read `truncated`. Each promotion rebuilds the map per field: a field it cuts gets its length, a field it replaces with a fitting value loses its entry, and a field it does not mention keeps its entry, so a pass that cuts `summary` while a cut `body` remains reports both. The pass summary's `clamped[]` names the finding's `hash_id` beside each clamp, so a reader can find WHICH finding was cut rather than only that something was.
 - **Containment invariant.** `raw_input.*` = un-ingested untrusted quarantine; top-level = clean-by-construction. Triage reads the promoted **top-level** fields only, never `raw_input.*` — reading the quarantine re-opens the prompt-injection surface the ingestion boundary closes. The invariant is statically enforced by the plugin-doctor `triage-reads-top-level-only` rule. See [`untrusted-ingestion/SKILL.md`](../../untrusted-ingestion/SKILL.md) and [`findings-pipeline.md`](../../ref-workflow-architecture/standards/findings-pipeline.md).
@@ -251,8 +251,9 @@ Each line in `findings/qgate-{phase}.jsonl` is a JSON object:
 | `source` | string | `qgate` (automated verification) or `user_review` (user feedback) |
 | `iteration` | int | Verification cycle number (1 = first build attempt, 2 = after fixes) |
 | `content_discriminator` | string | 6-char stable hash over (`detail`, `file_path`, `rule`) folded into the dedup key (see [Deduplication](#deduplication)) |
-| `history` | array | Prior resolution snapshots, appended only by the fixed-only `--reopen` opt-in — each entry carries the overridden `resolution`, `resolution_detail`, `resolution_timestamp` and `timestamp` |
+| `history` | array | Prior resolution snapshots, appended by the fixed-only `--reopen` opt-in AND by an observation that re-arms a loop-back round's rule-keyed `taken_into_account` record — each entry carries the overridden `resolution`, `resolution_detail`, `resolution_timestamp` and `timestamp` |
 | `reobserved_count` | int | How many times an unchanged re-emission re-detected this record while its resolution was kept |
+| `resolution_source` | string \| null | Absent or `null` on an operator decision; `rule` on a loop-back round's rule-keyed `taken_into_account` resolution. Only a `taken_into_account` record carrying `rule` is re-armed by an observation; a pre-marker record (no field) and an operator Hold are `kept` |
 
 Neither `history` nor `reobserved_count` is Q-Gate-only: a plan-scoped record gets both from `add`'s `deduplicate` opt-in (see [Deduplication](#deduplication)), whose `history` entries carry `resolution`, `resolution_detail` and `timestamp` — a plan-scoped record has no `resolution_timestamp`.
 
@@ -302,10 +303,13 @@ One key per store, each folding an unchanged re-emission into the record it repe
 | Match (title AND discriminator) with `pending` resolution | No change | `deduplicated` |
 | Match (title AND discriminator) with non-pending resolution | Keep resolution, detail and timestamp exactly; record the re-observation as a counter | `kept` |
 | Match with `fixed` resolution AND the `--reopen` opt-in | Return to `pending`; move the prior resolution, detail and timestamp into `history` | `reopened` |
+| Match with `taken_into_account` carrying `resolution_source: rule` (an observation alone, no flag needed) | Return to `pending`; move the prior resolution, detail and timestamp into `history` | `reopened` |
+
+A `taken_into_account` record an operator Hold wrote, and a pre-marker record with no `resolution_source` at all, are `kept`: the two are indistinguishable by data, which is the fail-closed direction. An operator who needs to re-arm a pre-marker record resolves it `pending` explicitly and files it again.
 
 A same-title finding whose `content_discriminator` differs (a different subject / file / rule) is a DISTINCT record — it never reopens the resolved one. Q-Gate dedup tests must use unique `plan_id`s per test (test-isolation constraint) so stale cross-test data cannot perturb the `(title, discriminator)` match.
 
-**Plan-scoped store.** A plan-scoped `add` folds a re-detected finding into its own record only under the caller's `deduplicate` opt-in (the build auto-store sets it; a plain `add` still appends). The key is `(type, title, file_path)` — the type selects the per-type store file, so the match is scoped to that type. The outcomes mirror the Q-Gate four above: no match appends (`success`); a match still `pending` stands (`deduplicated`); a match resolved under another disposition stands with the re-observation counted (`kept`); a match `fixed` is returned to `pending`, carrying its `fix_task_number` forward and clearing its `fix_commit_sha` (`reopened`), so a recurrence of an owned failure reads as still owned.
+**Plan-scoped store.** A plan-scoped `add` folds a re-detected finding into its own record only under the caller's `deduplicate` opt-in (the build auto-store sets it; a plain `add` still appends). The key is `(type, title, file_path)` — the type selects the per-type store file, so the match is scoped to that type. The outcomes mirror the Q-Gate five above: no match appends (`success`); a match still `pending` stands (`deduplicated`); a match resolved under another disposition stands with the re-observation counted (`kept`); a match `fixed` is returned to `pending`, carrying its `fix_task_number` forward and clearing its `fix_commit_sha` (`reopened`), so a recurrence of an owned failure reads as still owned.
 
 ## Valid Phases
 

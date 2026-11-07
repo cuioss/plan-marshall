@@ -2336,3 +2336,238 @@ def test_a_thread_opening_inline_comment_placed_at_an_earlier_head_is_stale(plan
 
     assert result['participated_bots'] == []
     assert result['stale_participation_bots'] == [{'bot_kind': 'coderabbit', 'evidence_kind': 'inline'}]
+
+
+# =============================================================================
+# The end-to-end merge-gate fixture: placement corrected, refusal still outranks
+# =============================================================================
+
+
+def _patch_real_comment_parser(monkeypatch, payload, head_sha):
+    """Drive the REAL ``fetch_pr_comments_data`` by stubbing only the GraphQL seam.
+
+    ``_patch_provider`` replaces ``fetch_pr_comments_data`` wholesale, which would
+    bypass the placement parser this case exists to exercise. Here the transport,
+    auth and head reads are stubbed and the genuine parser runs, so the record the
+    producer credits is the one ``github_ops`` builds from provider fields.
+    """
+    monkeypatch.setattr(github_pr._github, 'check_auth', lambda: (True, ''))
+    monkeypatch.setattr(github_pr._github, 'get_repo_info', lambda: ('cuioss', 'plan-marshall'))
+    monkeypatch.setattr(github_pr._github, 'run_graphql', lambda query, variables: (0, payload, ''))
+    monkeypatch.setattr(github_pr._github, 'fetch_pr_head_sha', lambda pr_number: head_sha)
+    monkeypatch.setattr(github_pr._github, 'fetch_pr_head_committed_at', lambda pr_number: '')
+    monkeypatch.setattr(github_pr._github, 'run_gh', lambda *_a, **_k: (0, '{"additions": 900, "deletions": 340}', ''))
+
+
+def _inline_and_refusal_payload(inline_comment, refusal_body) -> dict:
+    """A payload with one inline thread comment plus one issue-level refusal."""
+    return {
+        'repository': {
+            'pullRequest': {
+                'reviewThreads': {
+                    'nodes': [
+                        {
+                            'id': 'PRRT_live',
+                            'isResolved': False,
+                            'path': 'src/a.py',
+                            'line': 4,
+                            'comments': {'nodes': [inline_comment]},
+                        }
+                    ]
+                },
+                'reviews': {'nodes': []},
+                'comments': {
+                    'nodes': [
+                        {
+                            'id': 'IC_refusal',
+                            'body': refusal_body,
+                            'author': {'login': 'coderabbitai'},
+                            'createdAt': '2026-11-05T20:57:53Z',
+                            'updatedAt': '2026-11-05T20:57:53Z',
+                        }
+                    ]
+                },
+            }
+        }
+    }
+
+
+_LIVE_HEAD_1912 = 'b09d230fcdec045effcd4cf1c48547b10f0ab561'
+_LIVE_REVIEWED_1912 = 'dabb78c064ec606915ac19ae645cc53f71f1dcf7'
+
+
+def _live_inline_comment(**placement) -> dict:
+    comment = {
+        'id': 'PRRC_kwDOQ3xasM8AAAABCyVDVA',
+        'body': 'This slice drops the final element; use len(items).',
+        'author': {'login': 'coderabbitai'},
+        'createdAt': '2026-11-05T14:52:35Z',
+        'updatedAt': '2026-11-05T14:52:35Z',
+    }
+    comment.update(placement)
+    return comment
+
+
+def test_a_live_shape_inline_comment_beside_a_current_refusal_is_not_participation(plan_context, monkeypatch):
+    """The PLAN-LB-106 false green, end to end: placement, then credit, then refusal.
+
+    Built from the live PR 1912 shape — the comment's mutable ``commit`` is the final
+    head while ``originalCommit`` is the head the review actually covered. With the
+    placement read from the stable field the comment is stale, so the bot's own quota
+    refusal for the merge candidate is not outranked. Red at the merge, where the
+    mutable ``commit`` placed the old comment at the candidate.
+    """
+    payload = _inline_and_refusal_payload(
+        _live_inline_comment(
+            originalCommit={'oid': _LIVE_REVIEWED_1912},
+            commit={'oid': _LIVE_HEAD_1912},
+            pullRequestReview={'commit': {'oid': _LIVE_REVIEWED_1912}},
+        ),
+        _RATE_LIMIT_NOTICES['coderabbit'],
+    )
+    _patch_real_comment_parser(monkeypatch, payload, head_sha=_LIVE_HEAD_1912)
+
+    result = _run_fetch(214, 'gh-pr-lb119-live-shape-placement')
+
+    assert result['status'] == 'success'
+    assert result['participated_bots'] == [], 'an old comment must not review the newest head'
+    assert 'coderabbit' in result['refused_bots']
+
+
+def test_an_inline_comment_reply_beside_a_current_refusal_is_still_never_evidence(plan_context, monkeypatch):
+    """Control: a REPLY at the candidate is not evidence, whatever placement says."""
+    payload = _inline_and_refusal_payload(
+        _live_inline_comment(
+            originalCommit={'oid': _LIVE_HEAD_1912},
+            commit={'oid': _LIVE_HEAD_1912},
+            replyTo={'id': 'PRRC_parent'},
+        ),
+        _RATE_LIMIT_NOTICES['coderabbit'],
+    )
+    _patch_real_comment_parser(monkeypatch, payload, head_sha=_LIVE_HEAD_1912)
+
+    result = _run_fetch(215, 'gh-pr-lb119-live-shape-reply')
+
+    assert result['status'] == 'success'
+    assert result['participated_bots'] == []
+
+
+def _coverage_marker(head: str, kind: str = 'reviewed') -> str:
+    return (
+        f'<!-- final_review_risk_coverage:{{"sourceCommitId":"{head}","coveredCommitId":"{head}","kind":"{kind}"}} -->'
+    )
+
+
+def _marker_plus_limit_body(head: str) -> str:
+    """The settled live shape: a finished-review marker and a limit block in one summary.
+
+    The PR 1912 summary comment carries BOTH the ``final_review_risk_coverage`` marker
+    and a "Review limit reached" block, so the limit text alone cannot be read as a
+    refusal of the head the marker covered.
+    """
+    return (
+        f'{_coverage_marker(head)}\n\n'
+        '> [!WARNING]\n'
+        '> ## Review limit reached\n'
+        '>\n'
+        '> You have used all free OSS reviews for now.\n\n'
+        'Latest commit, not reviewed: 1111111111111111111111111111111111111111'
+    )
+
+
+def test_a_finished_marker_beside_a_limit_block_credits_the_head_it_covers(plan_context, monkeypatch):
+    """The L3-2 lead, settled: the marker is read before the refusal skip.
+
+    CodeRabbit keeps the limit block in the summary after a review finishes (observed
+    on PR 1912), so skipping the whole comment as a refusal throws away a finished
+    review's own coverage claim. The marker names the merge candidate, so the bot is
+    credited. Red at the merge: the refusal skip ran first and the marker was never read.
+    """
+    summary = _evidence_comment(
+        'coderabbit',
+        'issue_comment',
+        'cr-summary-marker',
+        _marker_plus_limit_body(_HEAD_A),
+        created_at=_at(2),
+        updated_at=_at(2),
+    )
+    _patch_provider(monkeypatch, [summary], head_sha=_HEAD_A)
+
+    result = _run_fetch(216, 'gh-pr-lb119-marker-beside-limit')
+
+    assert result['status'] == 'success'
+    assert result['participated_bots'] == [{'bot_kind': 'coderabbit', 'evidence_kind': 'issue_comment'}]
+
+
+def test_a_marker_naming_another_head_beside_a_limit_block_is_not_credited(plan_context, monkeypatch):
+    """⛔ Control: reading the marker must not credit a summary that covers an older head."""
+    summary = _evidence_comment(
+        'coderabbit',
+        'issue_comment',
+        'cr-summary-other-head',
+        _marker_plus_limit_body(_HEAD_B),
+        created_at=_at(2),
+        updated_at=_at(2),
+    )
+    _patch_provider(monkeypatch, [summary], head_sha=_HEAD_A)
+
+    result = _run_fetch(217, 'gh-pr-lb119-marker-other-head')
+
+    assert result['status'] == 'success'
+    assert result['participated_bots'] == []
+    assert result['stale_participation_bots'] == [{'bot_kind': 'coderabbit', 'evidence_kind': 'issue_comment'}]
+
+
+def test_a_refusal_with_no_marker_still_credits_nothing(plan_context, monkeypatch):
+    """⛔ Control: the refusal skip remains in force for a marker-less refusal."""
+    refusal = _evidence_comment(
+        'coderabbit',
+        'issue_comment',
+        'cr-refusal-only',
+        _RATE_LIMIT_NOTICES['coderabbit'],
+        created_at=_at(2),
+        updated_at=_at(2),
+    )
+    _patch_provider(monkeypatch, [refusal], head_sha=_HEAD_A)
+
+    result = _run_fetch(218, 'gh-pr-lb119-refusal-no-marker')
+
+    assert result['status'] == 'success'
+    assert result['participated_bots'] == []
+    assert 'coderabbit' in result['refused_bots']
+
+
+# =============================================================================
+# D7 — a quoted marker and a nested payload
+# =============================================================================
+
+
+def test_a_quoted_coverage_marker_makes_no_claim():
+    """A marker in a blockquote, a fence or inline code is a QUOTE, not the bot's claim."""
+    payload = '{"sourceCommitId":"a","coveredCommitId":"a","kind":"reviewed"}'
+    for body in (
+        f'> <!-- final_review_risk_coverage:{payload} -->',
+        f'```\n<!-- final_review_risk_coverage:{payload} -->\n```',
+        f'`<!-- final_review_risk_coverage:{payload} -->`',
+        f'\t<!-- final_review_risk_coverage:{payload} -->',
+        f'    <!-- final_review_risk_coverage:{payload} -->',
+    ):
+        assert _github_pr.review_coverage_verdict(body, 'a') is None, body
+
+
+def test_a_quoted_marker_does_not_override_the_provider_commit():
+    """The provider's own commit_id stands when the body only quotes a marker. Red at 5fd240a5e."""
+    quoted = '> <!-- final_review_risk_coverage:{"coveredCommitId":"b","kind":"reviewed"} -->'
+    comment = {'kind': 'review_body', 'body': quoted, 'commit_id': _HEAD_A}
+
+    assert github_pr._evidence_named_verdict(comment, _HEAD_A) is True
+
+
+def test_a_nested_coverage_payload_is_read():
+    """A non-greedy brace match stopped at the inner ``}``; the payload is read now."""
+    body = (
+        '<!-- final_review_risk_coverage:'
+        '{"sourceCommitId":"a","coveredCommitId":"a","kind":"reviewed","meta":{"tool":"x"}} -->'
+    )
+
+    assert _github_pr.review_coverage_verdict(body, 'a') is True

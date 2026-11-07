@@ -388,42 +388,122 @@ def bot_claimed_sha_matches_head(body: str, head_sha: str) -> bool:
 #:          {"sourceCommitId":"…","coveredCommitId":"…","kind":"reviewed"} -->
 #:
 #: The two literals live here, in the ONE parser, so a consumer never restates the
-#: field set.
+#: field set. This is a stated departure from the registry-data rule: the marker's
+#: NAME and its field names are owned by this parser because the parser must decide
+#: which of several markers is a claim, and `coderabbit.md` names this function as
+#: the one reader of those fields rather than duplicating them.
 _REVIEW_COVERAGE_MARKER = 'final_review_risk_coverage'
 _REVIEW_COVERAGE_REVIEWED_KIND = 'reviewed'
-#: The HTML-comment OPENER the marker appears in. Presence is tested against this,
-#: not against the bare identifier: a review body may MENTION the marker name in
-#: prose, and treating that as a present-but-unreadable marker would discard the
-#: provider's own `commit_id` — real evidence — in favour of a claim nobody made.
-_REVIEW_COVERAGE_OPENING = re.compile(r'<!--\s*' + re.escape(_REVIEW_COVERAGE_MARKER))
-_REVIEW_COVERAGE_PATTERN = re.compile(
-    r'<!--\s*' + re.escape(_REVIEW_COVERAGE_MARKER) + r':\s*(\{.*?\})\s*(?:-->|$)',
-    re.DOTALL,
-)
+#: The fields the marker's JSON payload carries. One list, consumed by the parser
+#: below and by the runbook-lane guard, so neither restates a private vocabulary.
+REVIEW_COVERAGE_FIELDS = ('sourceCommitId', 'coveredCommitId', 'kind')
+#: The HTML-comment OPENER the marker appears in. Presence is tested against this
+#: literal at the START of a line, not against the bare identifier: a review body may
+#: MENTION the marker name in prose, quote the marker in a blockquote or a fenced
+#: example, or wrap it in inline code — none of those is the bot's own claim.
+_REVIEW_COVERAGE_OPENING = '<!-- ' + _REVIEW_COVERAGE_MARKER + ':'
+
+
+def _balanced_json_object(text: str) -> str | None:
+    """Return the first balanced ``{...}`` object in ``text``, or ``None``.
+
+    A non-greedy ``\\{.*?\\}`` stops at the FIRST ``}``, so a nested payload is read
+    as unparseable. This scans by brace depth and honours JSON strings, so a nested
+    object or a brace inside a string is part of the same payload.
+    """
+    start = text.find('{')
+    if start < 0:
+        return None
+    depth = 0
+    in_string = False
+    escaped = False
+    for index in range(start, len(text)):
+        character = text[index]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif character == '\\':
+                escaped = True
+            elif character == '"':
+                in_string = False
+            continue
+        if character == '"':
+            in_string = True
+        elif character == '{':
+            depth += 1
+        elif character == '}':
+            depth -= 1
+            if depth == 0:
+                return text[start : index + 1]
+    return None
+
+
+def _coverage_payload_here(line: str) -> tuple[bool, dict | None]:
+    """Return ``(present, fields)`` for a coverage marker at the START of ``line``.
+
+    A line whose prefix before the opener is anything but spaces — a blockquote
+    marker (``>``), inline code (a backtick) — is a QUOTE of the marker, not the
+    bot's claim, and is read as no marker at all. That is what lets the provider's
+    own ``commit_id`` stand when a review body merely quotes a marker.
+    """
+    position = line.find(_REVIEW_COVERAGE_OPENING)
+    prefix = line[:position] if position >= 0 else ''
+    if position < 0 or prefix.strip() or len(prefix) > 3 or '\t' in prefix:
+        return False, None
+    payload = _balanced_json_object(line[position + len(_REVIEW_COVERAGE_OPENING) :])
+    if payload is None:
+        return True, None
+    try:
+        fields = json.loads(payload)
+    except (TypeError, ValueError):
+        return True, None
+    return True, fields if isinstance(fields, dict) else None
 
 
 def _coverage_payload(body: str) -> tuple[bool, dict | None]:
     """Return ``(present, fields)`` for a review-coverage marker in ``body``.
 
-    ``present`` says the marker's HTML-comment OPENER occurs at all — it is tested on
-    the opener, not on the bare identifier, so a review body that merely mentions the
-    name in prose is not a claim. ``fields`` is its parsed JSON object, or ``None`` when
+    ``present`` says a marker line occurs outside a fenced code block — tested on
+    the opener at the start of a line, not on the bare identifier, so a review body
+    that merely mentions the name, quotes the marker, or shows it in a fenced
+    example is not a claim. ``fields`` is its parsed JSON object, or ``None`` when
     the payload is absent or unreadable. The pair keeps "no marker" and "marker that
     cannot be read" distinguishable, which is exactly the distinction a fail-closed
     consumer needs: the first is no claim, the second is a claim nobody can evaluate —
     and the second must never fall through to an arm that would credit.
     """
     text = body or ''
-    if _REVIEW_COVERAGE_OPENING.search(text) is None:
-        return False, None
-    match = _REVIEW_COVERAGE_PATTERN.search(text)
-    if match is None:
-        return True, None
-    try:
-        fields = json.loads(match.group(1))
-    except (TypeError, ValueError):
-        return True, None
-    return True, fields if isinstance(fields, dict) else None
+    fence: tuple[str, int] | None = None
+    for line in text.splitlines():
+        marker = _fence_marker(line)
+        if fence is not None:
+            if marker is not None and marker[0] == fence[0] and marker[1] >= fence[1] and not marker[2].strip():
+                fence = None
+            continue
+        if marker is not None:
+            fence = (marker[0], marker[1])
+            continue
+        present, fields = _coverage_payload_here(line)
+        if present:
+            return True, fields
+    return False, None
+
+
+def _fence_marker(line: str) -> tuple[str, int, str] | None:
+    """Return ``(character, length, trailing)`` for a CommonMark fence line, or ``None``."""
+    stripped = line.lstrip(' ')
+    if len(line) - len(stripped) > 3 or not stripped:
+        return None
+    character = stripped[0]
+    if character not in '`~':
+        return None
+    run = len(stripped) - len(stripped.lstrip(character))
+    if run < 3:
+        return None
+    trailing = stripped[run:]
+    if character == '`' and '`' in trailing:
+        return None
+    return character, run, trailing
 
 
 def review_coverage_marker_present(body: str) -> bool:

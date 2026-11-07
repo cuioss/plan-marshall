@@ -449,8 +449,8 @@ def test_a_second_close_for_the_same_head_does_not_duplicate_the_override_head(p
 def test_a_close_of_another_step_records_no_override_head(plan_context, tmp_path, monkeypatch):
     plan_id = 'loop-back-close-other-step-no-override'
     _make_plan(plan_id)
-    head, completed_at = _tmp_repo_two_heads(tmp_path, monkeypatch)
-    _mark(plan_id, _WAIVED_STEP, 'done', completed_at, 'quality gate green')
+    head, _completed_at = _tmp_repo_two_heads(tmp_path, monkeypatch)
+    _mark(plan_id, _WAIVED_STEP, 'done', head, 'quality gate green')
 
     result = _close(plan_id, head, step=_WAIVED_STEP)
 

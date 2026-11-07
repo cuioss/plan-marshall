@@ -152,11 +152,73 @@ BOT_KINDS = _registry_bot_kinds()
 # this default; callers thread the resolved value in via `raw_input_max_bytes`.
 DEFAULT_RAW_INPUT_MAX_BYTES = 65536
 
-# Marker appended to a raw_input value that exceeded the per-field byte cap.
+# Marker appended to a raw_input value whose head the degenerate byte cap kept.
 RAW_INPUT_TRUNCATION_MARKER = '[truncated]'
+#: The elision marker a middle cut writes. Same shape as the untrusted-ingestion
+#: clamp's marker, so a reader sees ONE vocabulary for a cut value.
+RAW_INPUT_ELISION_TEMPLATE = ' [... {} characters elided ...] '
 
 
 # --- Untrusted free-text quarantine ---
+
+
+def _elide_for_byte_cap(text: str, max_bytes: int) -> str:
+    """Keep a value's head AND tail within ``max_bytes``, eliding the middle.
+
+    A head-only cut removes a review bot's conclusion — the verdict paragraph and the
+    links live at the END of a long body — so the quarantine must keep both ends. The
+    elision marker names how many characters were removed, matching the clamp
+    ``validate_struct`` applies later. Forty-eight bytes are reserved for the marker's
+    own digits so a realistic result fits the byte budget; a budget too small for a
+    head+tail pair falls back to the head plus the truncation marker.
+    """
+    encoded = text.encode('utf-8')
+    if len(encoded) <= max_bytes:
+        return text
+    budget = max(max_bytes - 48, 0)
+    half = budget // 2
+    if half == 0:
+        # A degenerate cap leaves no room for a head+tail pair. Keep the head and the
+        # truncation marker, which is also what makes a zero cap quarantine to
+        # nothing (the marker-only value is not text).
+        return encoded[:max_bytes].decode('utf-8', errors='ignore') + RAW_INPUT_TRUNCATION_MARKER
+    head = encoded[:half].decode('utf-8', errors='ignore')
+    tail = encoded[len(encoded) - (budget - half) :].decode('utf-8', errors='ignore')
+    elided = len(text) - len(head) - len(tail)
+    return head + RAW_INPUT_ELISION_TEMPLATE.format(max(elided, 0)) + tail
+
+
+def _quarantine_raw_input_with_lengths(
+    raw_input: dict[str, Any] | None,
+    max_bytes: int = DEFAULT_RAW_INPUT_MAX_BYTES,
+) -> tuple[dict[str, str] | None, dict[str, int]]:
+    """Quarantine ``raw_input`` and report the TRUE original length of every cut field.
+
+    Each field's value is stringified, UTF-8 encoded, and — when it overflows
+    ``max_bytes`` — elided in the middle by :func:`_elide_for_byte_cap`, so the
+    conclusion survives. The second return value maps each cut field to its original
+    CHARACTER length, which the ingest pass reports as ``original_length``; without
+    it the validator only ever sees the already-elided text and reports that shorter
+    length as the original.
+    """
+    if not raw_input:
+        return None, {}
+
+    # Clamp the cap to a non-negative budget: a misconfigured non-positive
+    # `max_bytes` would otherwise make a negative slice select from the end and
+    # silently bypass the byte cap. A zero budget elides the whole value.
+    safe_max_bytes = max(max_bytes, 0)
+
+    quarantined: dict[str, str] = {}
+    original_lengths: dict[str, int] = {}
+    for field, value in raw_input.items():
+        text = value if isinstance(value, str) else str(value)
+        encoded = text.encode('utf-8')
+        if len(encoded) > safe_max_bytes:
+            original_lengths[field] = len(text)
+            text = _elide_for_byte_cap(text, safe_max_bytes)
+        quarantined[field] = text
+    return quarantined, original_lengths
 
 
 def _quarantine_raw_input(
@@ -165,29 +227,11 @@ def _quarantine_raw_input(
 ) -> dict[str, str] | None:
     """Store untrusted free-text under a quarantined `raw_input.{field}` namespace.
 
-    Each field's value is stringified, UTF-8 encoded, and capped at ``max_bytes``.
-    A value that overflows the cap is truncated to the byte budget (decoding
-    defensively so a multi-byte character split at the boundary never raises) and
-    the ``RAW_INPUT_TRUNCATION_MARKER`` is appended so downstream readers can tell
-    the value was clipped. Returns ``None`` for an empty/absent mapping so callers
-    omit the key entirely.
+    The value is kept whole up to ``max_bytes``; beyond that its head and tail survive
+    and the middle is elided, so a long review body keeps its conclusion. Returns
+    ``None`` for an empty/absent mapping so callers omit the key entirely.
     """
-    if not raw_input:
-        return None
-
-    # Clamp the cap to a non-negative budget: a misconfigured non-positive
-    # `max_bytes` would otherwise make `encoded[:max_bytes]` slice from the end
-    # (Python negative-index semantics) and silently bypass the byte cap. A zero
-    # budget truncates the value to just the marker.
-    safe_max_bytes = max(max_bytes, 0)
-
-    quarantined: dict[str, str] = {}
-    for field, value in raw_input.items():
-        text = value if isinstance(value, str) else str(value)
-        encoded = text.encode('utf-8')
-        if len(encoded) > safe_max_bytes:
-            text = encoded[:safe_max_bytes].decode('utf-8', errors='ignore') + RAW_INPUT_TRUNCATION_MARKER
-        quarantined[field] = text
+    quarantined, _original_lengths = _quarantine_raw_input_with_lengths(raw_input, max_bytes)
     return quarantined
 
 
@@ -708,9 +752,11 @@ def add_finding(
     if bot_kind:
         record['bot_kind'] = bot_kind
 
-    quarantined = _quarantine_raw_input(raw_input, raw_input_max_bytes)
+    quarantined, original_lengths = _quarantine_raw_input_with_lengths(raw_input, raw_input_max_bytes)
     if quarantined:
         record['raw_input'] = quarantined
+        if original_lengths:
+            record['raw_input_original_lengths'] = original_lengths
 
     append_jsonl(_store_findings_path(store, finding_type), record)
 
@@ -1386,7 +1432,7 @@ def update_finding_text(
     if not parent or parent.get('status') != 'success':
         return _not_found(plan_id, store, hash_id, 'Finding')
 
-    quarantined = _quarantine_raw_input(raw_input, raw_input_max_bytes)
+    quarantined, original_lengths = _quarantine_raw_input_with_lengths(raw_input, raw_input_max_bytes)
     if not _carries_text(quarantined):
         return {
             'status': 'error',
@@ -1416,6 +1462,9 @@ def update_finding_text(
 
     if outcome != 'kept_resolved':
         updates['raw_input'] = quarantined
+        # Always REPLACE the map, so a replacement that now fits clears an earlier
+        # cut's true length instead of leaving it to over-report truncation.
+        updates['raw_input_original_lengths'] = original_lengths
         if reviewed_commit_sha:
             updates['reviewed_commit_sha'] = reviewed_commit_sha
 
@@ -1474,9 +1523,12 @@ def _reopen_qgate_record(
     """Return a matched resolved record to ``pending``, keeping its prior disposition.
 
     ``reopened_by`` names the trigger and travels on the result so a caller can tell
-    the two apart: ``observation`` (an identical re-file of a finding the review had
-    recorded ``taken_into_account`` — it is still blocking, so it is pending again)
-    and ``opt_in`` (a caller passing ``--reopen`` against a ``fixed`` record).
+    the two apart: ``observation`` (an identical re-file of a finding a loop-back
+    round resolved ``taken_into_account`` by its rule key — it still blocks, so it is
+    pending again) and ``opt_in`` (a caller passing ``--reopen`` against a ``fixed``
+    record). An observation alone does NOT reopen a ``taken_into_account`` record an
+    operator Hold wrote: such a record carries no ``resolution_source: rule`` marker,
+    so it is kept and the caller reports why.
 
     The prior resolution, detail and timestamp move into the record's ``history``
     instead of being nulled, so the disposition the re-detection overrides stays
@@ -1703,9 +1755,11 @@ def add_qgate_finding(
     if rule:
         record['rule'] = rule
 
-    quarantined = _quarantine_raw_input(raw_input, raw_input_max_bytes)
+    quarantined, original_lengths = _quarantine_raw_input_with_lengths(raw_input, raw_input_max_bytes)
     if quarantined:
         record['raw_input'] = quarantined
+        if original_lengths:
+            record['raw_input_original_lengths'] = original_lengths
 
     append_jsonl(qgate_path, record)
 

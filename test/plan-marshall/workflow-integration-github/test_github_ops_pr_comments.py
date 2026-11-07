@@ -569,7 +569,11 @@ _ISSUE_COMMENT_PATHS: frozenset[str] = frozenset({'id', 'body', 'author', 'autho
 #: The PATHS ``github_ops._inline_comment_placement`` READS. Pinned independently of
 #: the thread fragment, and path-qualified, so removing the comment's own direct
 #: `commit { oid }` fails even while `pullRequestReview { commit { oid } }` remains.
-_INLINE_PLACEMENT_PATHS: frozenset[str] = frozenset({'replyTo.id', 'commit.oid', 'pullRequestReview.commit.oid'})
+#: ``originalCommit`` is the commit the comment was POSTED against; it does not follow
+#: a newest head the way the comment's own mutable ``commit`` does.
+_INLINE_PLACEMENT_PATHS: frozenset[str] = frozenset(
+    {'replyTo.id', 'originalCommit.oid', 'commit.oid', 'pullRequestReview.commit.oid'}
+)
 
 
 def _issue_comment_selections() -> list[tuple[str, str]]:
@@ -693,3 +697,126 @@ def test_inline_records_publish_the_placement_the_producer_reads(monkeypatch):
     assert by_id['PRRC_reply']['thread_reply'] is True
     assert by_id['PRRC_reply']['reply_to_id'] == 'PRRC_opening'
     assert by_id['PRRC_reply']['commit_id'] == 'b' * 40
+
+
+# ============================================================================
+# Placement: the commit the comment was POSTED at, from a field that does not
+# follow the newest head
+# ============================================================================
+#
+# A provider comment on a line that stays in the diff reports its own ``commit`` at
+# the NEWEST head, so a comment posted at an older head reads as a review of the
+# merge candidate. ``originalCommit`` is the commit the comment was originally made
+# against and does not move; the review's ``commit`` is the second stable placement.
+# The mutable comment ``commit`` is a last resort only, because it is exactly the
+# field that produced the false green on PR 1912.
+#
+# Live shape this is built from (PLAN-LB-106 report L3-1): comment
+# ``PRRC_kwDOQ3xasM8AAAABCyVDVA`` reports ``commit_id b09d230fc…`` — the final head —
+# while CodeRabbit's own summary says "Latest commit, not reviewed: b09d230", and the
+# review that opened the thread covered ``dabb78c06…``.
+
+_LIVE_FINAL_HEAD = 'b09d230fcdec045effcd4cf1c48547b10f0ab561'
+_LIVE_REVIEWED_HEAD = 'dabb78c064ec606915ac19ae645cc53f71f1dcf7'
+
+
+def _placement_payload(**placement) -> dict:
+    """A one-thread payload whose only inline comment carries ``placement`` fields."""
+    comment = {
+        'id': 'PRRC_placement',
+        'body': 'This slice drops the final element; use len(items).',
+        'author': {'login': 'coderabbitai'},
+        'createdAt': '2026-11-05T14:52:35Z',
+        'updatedAt': '2026-11-05T14:52:35Z',
+    }
+    comment.update(placement)
+    return {
+        'repository': {
+            'pullRequest': {
+                'reviewThreads': {
+                    'nodes': [
+                        {
+                            'id': 'PRRT_placement',
+                            'isResolved': False,
+                            'path': 'src/foo.py',
+                            'line': 7,
+                            'comments': {'nodes': [comment]},
+                        }
+                    ]
+                },
+                'reviews': {'nodes': []},
+                'comments': {'nodes': []},
+            }
+        }
+    }
+
+
+def _fetch_placement(monkeypatch, payload: dict) -> dict:
+    monkeypatch.setattr(github_ops, 'check_auth', lambda: (True, ''))
+    monkeypatch.setattr(github_ops, 'get_repo_info', lambda: ('cuioss', 'plan-marshall'))
+    monkeypatch.setattr(github_ops, 'run_graphql', lambda query, variables: (0, payload, ''))
+    result = github_ops.fetch_pr_comments_data(1912)
+    assert result['status'] == 'success'
+    return {record['id']: record for record in result['comments']}
+
+
+def test_placement_reads_the_original_commit_before_the_mutable_comment_commit(monkeypatch):
+    """THE fail-first case: an old comment whose mutable ``commit`` moved to the new head.
+
+    ``originalCommit`` names where the comment was posted; the comment's own ``commit``
+    has followed the newest head. Reading ``commit`` first places the old comment at
+    the merge candidate and credits a review of an older head — the PLAN-LB-106 false
+    green. Red at the merge: this assertion fails there with ``commit_id == newest``.
+    """
+    newest = 'c' * 40
+    posted = 'a' * 40
+    by_id = _fetch_placement(
+        monkeypatch,
+        _placement_payload(
+            originalCommit={'oid': posted},
+            commit={'oid': newest},
+            pullRequestReview={'commit': {'oid': 'b' * 40}},
+        ),
+    )
+
+    assert by_id['PRRC_placement']['commit_id'] == posted
+
+
+def test_placement_falls_back_to_the_review_commit_when_no_original_commit(monkeypatch):
+    """The review's own commit is the second stable placement field, not the mutable one."""
+    posted = 'a' * 40
+    by_id = _fetch_placement(
+        monkeypatch,
+        _placement_payload(
+            commit={'oid': 'c' * 40},
+            pullRequestReview={'commit': {'oid': posted}},
+        ),
+    )
+
+    assert by_id['PRRC_placement']['commit_id'] == posted
+
+
+def test_placement_uses_the_comment_commit_only_when_neither_stable_field_exists(monkeypatch):
+    """Last resort: a synthetic record with no stable placement still reports its commit."""
+    by_id = _fetch_placement(monkeypatch, _placement_payload(commit={'oid': 'c' * 40}))
+
+    assert by_id['PRRC_placement']['commit_id'] == 'c' * 40
+
+
+def test_the_live_pr_1912_comment_shape_is_placed_at_the_reviewed_head(monkeypatch):
+    """A fixture built from PR 1912's live comment is not placed at the final head.
+
+    The comment reports ``commit`` = the final head and the review it belongs to
+    covered ``dabb78c06``; only the stable fields can tell it did not review the head.
+    """
+    by_id = _fetch_placement(
+        monkeypatch,
+        _placement_payload(
+            originalCommit={'oid': _LIVE_REVIEWED_HEAD},
+            commit={'oid': _LIVE_FINAL_HEAD},
+            pullRequestReview={'commit': {'oid': _LIVE_REVIEWED_HEAD}},
+        ),
+    )
+
+    assert by_id['PRRC_placement']['commit_id'] == _LIVE_REVIEWED_HEAD
+    assert by_id['PRRC_placement']['commit_id'] != _LIVE_FINAL_HEAD

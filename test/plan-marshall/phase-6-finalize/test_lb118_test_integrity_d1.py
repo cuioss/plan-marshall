@@ -276,3 +276,215 @@ def test_class_body_survives_a_dedented_string(plan_context, tmp_path, monkeypat
     payload = _run(repo, plan_context, monkeypatch)
 
     assert _rows(payload) == [], payload
+
+
+# --- D2 (f): a bare name in another file does not prove a move -----------------------------
+
+
+def test_a_bare_name_in_a_new_file_does_not_absorb_a_modified_files_loss(plan_context, tmp_path, monkeypatch) -> None:
+    """An unrelated same-named test in a NEW file cannot absorb a modified file's loss.
+
+    Pre-fix, the survival comparison read a bare name in the after-set as a move: the
+    deleted ``test_parse`` had ``carried = 0`` and ``surviving = 2`` from a new file
+    whose ``test_parse`` asserts ``True`` twice, so no row was raised. A move is now
+    proven only when the deleted identity's assertion CONTENT reappears elsewhere.
+    """
+    repo = _repo(tmp_path)
+    _commit(repo, {'README.md': 'readme\n'})
+    _commit(
+        repo,
+        {'test/mod_test.py': 'def test_parse():\n    assert 1 == 1\n    assert 2 == 2\n'},
+    )
+    _git(repo, 'checkout', '--quiet', '-b', 'feature')
+    _commit(
+        repo,
+        {
+            'test/mod_test.py': 'def test_other():\n    assert 3 == 3\n',
+            'test/new_test.py': 'def test_parse():\n    assert True\n    assert True\n',
+        },
+        'remove one test, add an unrelated same-named one',
+    )
+
+    payload = _run(repo, plan_context, monkeypatch)
+
+    rows = _rows(payload)
+    assert any(row['path'] == 'test/mod_test.py' for row in rows), payload
+    row = next(row for row in rows if row['path'] == 'test/mod_test.py')
+    assert any(entry['identity'] == 'test_parse' for entry in row['removed_tests']), row
+
+
+def test_a_function_moved_with_its_assertions_still_yields_no_row(plan_context, tmp_path, monkeypatch) -> None:
+    """Control: content-identical move across files is not a loss."""
+    repo = _repo(tmp_path)
+    _commit(repo, {'README.md': 'readme\n'})
+    _commit(
+        repo,
+        {
+            'test/source_test.py': 'def test_a():\n    assert 1 == 1\n    assert 2 == 2\n\ndef test_b():\n    assert 3 == 3\n'
+        },
+    )
+    _git(repo, 'checkout', '--quiet', '-b', 'feature')
+    _commit(
+        repo,
+        {
+            'test/source_test.py': 'def test_b():\n    assert 3 == 3\n',
+            'test/moved_test.py': 'def test_a():\n    assert 1 == 1\n    assert 2 == 2\n',
+        },
+        'move one function',
+    )
+
+    payload = _run(repo, plan_context, monkeypatch)
+
+    assert payload['status'] == 'success', payload
+    assert _rows(payload) == [], payload
+
+
+def test_an_unchanged_moved_file_with_repeated_identities_yields_no_row(plan_context, tmp_path, monkeypatch) -> None:
+    """A whole-file move is not a loss, even when the file repeats a test identity."""
+    repo = _repo(tmp_path)
+    _commit(repo, {'README.md': 'readme\n'})
+    _commit(repo, {'test/dup_test.py': 'def test_x():\n    assert 1 == 1\n\ndef test_x():\n    assert 2 == 2\n'})
+    _git(repo, 'checkout', '--quiet', '-b', 'feature')
+    _git(repo, 'mv', 'test/dup_test.py', 'test/dup_moved_test.py')
+    _git(repo, 'commit', '--quiet', '-m', 'move the whole file')
+
+    payload = _run(repo, plan_context, monkeypatch)
+
+    assert payload['status'] == 'success', payload
+    assert _rows(payload) == [], payload
+
+
+def test_a_repeated_identity_in_a_deleted_file_is_not_fully_credited_to_one_move(
+    plan_context, tmp_path, monkeypatch
+) -> None:
+    """Two same-named tests in one file: moving the last must not credit the summed count.
+
+    The identity's count is the SUM of both bodies, and a single moved body cannot
+    prove that sum. The repeated identity therefore survives nothing and the whole
+    loss is reported.
+    """
+    repo = _repo(tmp_path)
+    _commit(repo, {'README.md': 'readme\n'})
+    _commit(
+        repo,
+        {
+            'test/dup_test.py': 'def test_x():\n    assert 1 == 1\n    assert 2 == 2\n\ndef test_x():\n    assert 3 == 3\n'
+        },
+    )
+    _git(repo, 'checkout', '--quiet', '-b', 'feature')
+    _git(repo, 'rm', 'test/dup_test.py')
+    _commit(repo, {'test/moved_test.py': 'def test_x():\n    assert 3 == 3\n'}, 'move only the last one')
+
+    payload = _run(repo, plan_context, monkeypatch)
+
+    assert payload['status'] == 'success', payload
+    rows = _rows(payload)
+    assert any(row['path'] == 'test/dup_test.py' for row in rows), payload
+    row = next(row for row in rows if row['path'] == 'test/dup_test.py')
+    assert row['removed_assertions'] == 3, row
+
+
+def test_a_weakened_move_counts_the_excess_lines_not_the_whole_body(plan_context, tmp_path, monkeypatch) -> None:
+    """A moved body whose assertion line is already carried elsewhere proves no move.
+
+    ``other_test.py`` carries ``assert 1 == 1`` for the same identity both before and
+    after; the deleted file's only moved line is that same one, so the EXCESS is empty
+    and the whole two-assertion test is lost. Counting the after body's assertions
+    instead would credit one of them.
+    """
+    repo = _repo(tmp_path)
+    _commit(repo, {'README.md': 'readme\n'})
+    _commit(
+        repo,
+        {
+            'test/source_test.py': 'def test_a():\n    assert 1 == 1\n    assert 2 == 2\n',
+            'test/other_test.py': 'def test_a():\n    assert 1 == 1\n',
+        },
+    )
+    _git(repo, 'checkout', '--quiet', '-b', 'feature')
+    _git(repo, 'rm', 'test/source_test.py')
+    _commit(
+        repo,
+        {
+            'test/other_test.py': 'def test_a():\n    assert 1 == 1\n# changed\n',
+            'test/moved_test.py': 'def test_a():\n    assert 1 == 1\n',
+        },
+        'move the weakened test',
+    )
+
+    payload = _run(repo, plan_context, monkeypatch)
+
+    assert payload['status'] == 'success', payload
+    rows = [row for row in _rows(payload) if row['path'] == 'test/source_test.py']
+    assert rows, payload
+    assert rows[0]['removed_assertions'] == 2, rows
+
+
+def test_a_partial_move_survives_by_its_excess_lines_only(plan_context, tmp_path, monkeypatch) -> None:
+    """A weakened move with a NON-empty excess survives by those excess assertions only."""
+    repo = _repo(tmp_path)
+    _commit(repo, {'README.md': 'readme\n'})
+    _commit(
+        repo,
+        {
+            'test/source_test.py': 'def test_a():\n    assert 1 == 1\n    assert 2 == 2\n    assert 3 == 3\n',
+            'test/other_test.py': 'def test_a():\n    assert 2 == 2\n',
+        },
+    )
+    _git(repo, 'checkout', '--quiet', '-b', 'feature')
+    _git(repo, 'rm', 'test/source_test.py')
+    _commit(
+        repo,
+        {
+            'test/other_test.py': 'def test_a():\n    assert 2 == 2\n# changed\n',
+            'test/moved_test.py': 'def test_a():\n    assert 1 == 1\n    assert 2 == 2\n',
+        },
+        'move the weakened test',
+    )
+
+    payload = _run(repo, plan_context, monkeypatch)
+
+    assert payload['status'] == 'success', payload
+    rows = [row for row in _rows(payload) if row['path'] == 'test/source_test.py']
+    assert rows, payload
+    # excess = {assert 1 == 1}; assert 2 is carried by other_test, assert 3 is lost.
+    assert rows[0]['removed_assertions'] == 2, rows
+
+
+# --- D2 (g): the set-total row is attributed to the unexplained loss ------------------------
+
+
+def test_the_set_total_row_goes_to_the_file_whose_loss_no_identity_explains(
+    plan_context, tmp_path, monkeypatch
+) -> None:
+    """File Q has a small UNEXPLAINED loss; file P has a larger explained drop.
+
+    Both files are deleted. P's test identity explains its whole drop; Q's identity
+    row is reported and its module-level assertion is not, so the leftover set-total
+    loss belongs to Q. Pre-fix the row went to ``max(positive)`` of the RAW drop — P.
+    """
+    repo = _repo(tmp_path)
+    _commit(repo, {'README.md': 'readme\n'})
+    _commit(
+        repo,
+        {
+            'test/p_test.py': (
+                'def test_p():\n'
+                '    assert 1 == 1\n'
+                '    assert 2 == 2\n'
+                '    assert 3 == 3\n'
+                '    assert 4 == 4\n'
+                '    assert 5 == 5\n'
+            ),
+            'test/q_test.py': 'assert module_check\ndef test_q():\n    assert 1 == 1\n    assert 2 == 2\n',
+        },
+    )
+    _git(repo, 'checkout', '--quiet', '-b', 'feature')
+    _git(repo, 'rm', 'test/p_test.py', 'test/q_test.py')
+    _git(repo, 'commit', '--quiet', '-m', 'remove both')
+
+    payload = _run(repo, plan_context, monkeypatch)
+
+    set_total = [row for row in _rows(payload) if row.get('acceptance_kind') == 'set_total']
+    assert set_total, payload
+    assert set_total[0]['path'] == 'test/q_test.py', payload

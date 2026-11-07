@@ -82,14 +82,13 @@ _SUCCESS_BLOCK_END_RE = re.compile(r'^\s*\*\*[A-Za-z][^*\n]*:\*\*')
 _SUCCESS_BLOCK_END_COLUMN_RE = re.compile(r'^\*\*[A-Za-z][^*\n]*:\*\*')
 
 
-def _fence_marker(line: str) -> tuple[str, int, str] | None:
-    """Return ``(character, length, trailing)`` for a CommonMark fence line.
+def _legacy_fence_marker(line: str) -> tuple[str, int, str] | None:
+    """Return the PREVIOUS parser generation's fence marker for ``line``, or ``None``.
 
-    A fence is a run of at least three backticks or tildes. The caller decides
-    whether a line OPENS a fence (any trailing info string allowed) or CLOSES one
-    (same character, at least the opener's length, and only whitespace after it),
-    so a ``~~~`` line inside a backtick fence, a shorter run, or a marker with
-    trailing text never closes the wrong block.
+    That generation ignored indentation entirely and did not restrict a backtick
+    info string, so a parser-2 replay must use this rule rather than the current
+    CommonMark one: otherwise a four-space-indented fence that parser 2 skipped is
+    read into the replay and an unchanged criterion looks rewritten.
     """
     stripped = line.strip()
     if not stripped or stripped[0] not in '`~':
@@ -99,6 +98,34 @@ def _fence_marker(line: str) -> tuple[str, int, str] | None:
     if length < 3:
         return None
     return character, length, stripped[length:]
+
+
+def _fence_marker(line: str) -> tuple[str, int, str] | None:
+    """Return ``(character, length, trailing)`` for a CommonMark fence line.
+
+    A fence is a run of at least three backticks or tildes, indented at most three
+    spaces (a four-space or tab-indented run is an indented code block, not a fence).
+    A BACKTICK fence's info string may not contain a backtick, exactly as CommonMark
+    specifies — such a line is ordinary text, not a fence. The caller decides whether
+    a line OPENS a fence (any allowed trailing info string) or CLOSES one (same
+    character, at least the opener's length, and only whitespace after it), so a
+    ``~~~`` line inside a backtick fence, a shorter run, or a marker with trailing
+    text never closes the wrong block.
+    """
+    leading = line[: len(line) - len(line.lstrip(' \t'))]
+    if '\t' in leading or len(leading) > 3:
+        return None
+    stripped = line.strip()
+    if not stripped or stripped[0] not in '`~':
+        return None
+    character = stripped[0]
+    length = len(stripped) - len(stripped.lstrip(character))
+    if length < 3:
+        return None
+    trailing = stripped[length:]
+    if character == '`' and '`' in trailing:
+        return None
+    return character, length, trailing
 
 
 #: One bullet, at any indent; the indentation decides top-level vs sub-bullet.
@@ -135,9 +162,17 @@ PARSER_EXTENDED = 'parser_extended'
 #: an author's continuation-line append to a criterion the current parser froze is
 #: hidden as advisory.
 PARSER_KEY = 'parser'
-CURRENT_PARSER = 2
+#: The parser generation that froze the criteria. Bumped when the parser OUTPUT
+#: changes for an unchanged outline, so a snapshot frozen by the older output is
+#: classified as a migration (`parser_extended`, advisory) instead of author drift.
+#: 3: a fenced block under a criterion is kept in the criterion instead of skipped.
+CURRENT_PARSER = 3
 #: The functional verdict that retires a deliverable: its criteria are not open.
 SUPERSEDED = 'superseded'
+CRITERION_UNPARSED = 'criterion_unparsed'
+#: The named state an unterminated fenced block leaves in ``unparsed``. It is a
+#: coalesced marker (not the raw line) so a gate reads a state rather than text.
+UNTERMINATED_FENCE = 'unterminated fenced block'
 #: A spec deliverable's own Done-when that no outline criterion covers.
 SPEC_MISSING = 'spec_criterion_missing'
 #: The request's own Done-when that no outline criterion covers.
@@ -166,9 +201,10 @@ OVERRIDE_HEADS_KEY = 'functional_review_override_heads'
 #: (which records the identities that finding removed). An identity entry is
 #: ``{identity, assertions_removed}`` — the D1 test identity plus the number of
 #: removed assertions; a row that carries no identity gets a path-level entry
-#: instead (``{path, kind, assertions_removed}`` or ``{path, kind: test_filtered,
-#: markers}``). A generic ``metadata --set`` must refuse it, so it joins the
-#: protected set below.
+#: instead, naming the row KIND it covers (``{path, kind, acceptance_kind,
+#: assertions_removed}``) and, for a filter row, its marker set plus the identity of
+#: each marked test (``{path, kind: test_filtered, markers, marked_tests}``). A
+#: generic ``metadata --set`` must refuse it, so it joins the protected set below.
 ACCEPTED_TEST_REMOVALS_KEY = 'accepted_test_removals'
 #: The status-record metadata keys whose only writers commit through their own
 #: guarded read-modify-write. ``_status_core.write_status`` must carry them
@@ -342,8 +378,9 @@ def accepted_test_removals(plan_id: str) -> list[dict[str, Any]]:
     acceptance route — so it is deliberately not read.
 
     Each entry names a test identity (``{identity, assertions_removed}``) or, for a
-    row that carries none, an explicit path-level key (``{path, kind,
-    assertions_removed}``, or ``{path, kind: test_filtered, markers}``).
+    row that carries none, an explicit path-level key that also names the row KIND
+    (``{path, kind, acceptance_kind, assertions_removed}``, or ``{path, kind:
+    test_filtered, markers, marked_tests}``).
     ``assertions_removed`` is ``None`` for a declaration that names no count, which
     accepts the identity for a REMOVAL only — never for a drop of a surviving test.
     Deduplicated by the entry's own key.
@@ -358,17 +395,32 @@ def accepted_test_removals(plan_id: str) -> list[dict[str, Any]]:
         normalized = _normalized_removal_entry(entry)
         if normalized is None:
             continue
-        key = (
-            normalized.get('identity'),
-            normalized.get('path'),
-            normalized.get('kind'),
-            normalized.get('assertions_removed'),
-        )
+        key = _removal_key(normalized)
         if key in seen:
             continue
         seen.add(key)
         entries.append(normalized)
     return entries
+
+
+def _removal_key(entry: dict[str, Any]) -> tuple[Any, ...]:
+    """The accepted-set key: everything the entry NAMES, not just its identity.
+
+    A filter acceptance names its marker set and the identity of each marked test; a
+    path-level acceptance names the row KIND it covers (mixed residual / file total /
+    set total) beside its count. Two entries that differ in ANY of those are different
+    acceptances, so the key must carry them — a key that omits them makes a second
+    close collide with the first.
+    """
+    return (
+        entry.get('identity'),
+        entry.get('path'),
+        entry.get('kind'),
+        entry.get('acceptance_kind'),
+        tuple(sorted(entry.get('markers') or [])),
+        tuple(sorted(entry.get('marked_tests') or [])),
+        entry.get('assertions_removed'),
+    )
 
 
 def _normalized_removal_entry(entry: dict[str, Any]) -> dict[str, Any] | None:
@@ -390,9 +442,15 @@ def _normalized_removal_entry(entry: dict[str, Any]) -> dict[str, Any] | None:
     kind = entry.get('kind')
     if isinstance(kind, str) and kind:
         normalized['kind'] = kind
+    acceptance_kind = entry.get('acceptance_kind')
+    if isinstance(acceptance_kind, str) and acceptance_kind:
+        normalized['acceptance_kind'] = acceptance_kind
     markers = entry.get('markers')
     if isinstance(markers, list):
         normalized['markers'] = [marker for marker in markers if isinstance(marker, str)]
+    marked_tests = entry.get('marked_tests')
+    if isinstance(marked_tests, list):
+        normalized['marked_tests'] = [identity for identity in marked_tests if isinstance(identity, str)]
     return normalized
 
 
@@ -402,39 +460,36 @@ def record_accepted_removals(plan_id: str, entries: list[dict[str, Any]]) -> boo
     The one writer shape both owning verbs call: ``snapshot-criteria`` seeds it
     from the outline's declarations, and ``loop-back close --accept`` appends the
     identities a ``weakened_test`` finding removed. The merge is a union keyed by
-    ``(identity, path, kind, assertions_removed)``, so re-seeding a re-freeze
-    neither duplicates an entry nor drops one an operator accepted.
+    :func:`_removal_key`, so re-seeding a re-freeze neither duplicates an entry nor
+    drops one an operator accepted, while a second close that names a DIFFERENT
+    marker set or row kind is a new entry.
+
+    Success means every requested entry is in the set afterwards — appended now or
+    already present. An entry that normalizes to nothing was neither appended nor
+    present, so it makes the call fail rather than reporting a silent success.
     """
     wanted: list[dict[str, Any]] = []
+    unnamed = 0
     for entry in entries:
         if not isinstance(entry, dict):
+            unnamed += 1
             continue
         normalized = _normalized_removal_entry(entry)
-        if normalized is not None:
-            wanted.append(normalized)
+        if normalized is None:
+            unnamed += 1
+            continue
+        wanted.append(normalized)
+    if unnamed:
+        return False
     if not wanted:
         return True
 
     def _apply(metadata: dict[str, Any]) -> None:
         current = metadata.get(ACCEPTED_TEST_REMOVALS_KEY)
         values = list(current) if isinstance(current, list) else []
-        existing = {
-            (
-                value.get('identity'),
-                value.get('path'),
-                value.get('kind'),
-                value.get('assertions_removed'),
-            )
-            for value in values
-            if isinstance(value, dict)
-        }
+        existing = {_removal_key(value) for value in values if isinstance(value, dict)}
         for entry in wanted:
-            key = (
-                entry.get('identity'),
-                entry.get('path'),
-                entry.get('kind'),
-                entry.get('assertions_removed'),
-            )
+            key = _removal_key(entry)
             if key not in existing:
                 values.append(entry)
                 existing.add(key)
@@ -854,7 +909,7 @@ def snapshot_path(plan_id: str) -> Path:
     return base_path('plans', plan_id, SNAPSHOT_FILE)
 
 
-def parse_success_criteria(body: str) -> tuple[list[str], list[str]]:
+def parse_success_criteria(body: str, *, keep_fences: bool = True) -> tuple[list[str], list[str]]:
     """Parse a deliverable body's ``**Success Criteria:**`` block.
 
     Returns ``(criteria, unparsed)``. Every top-level bullet is one criterion —
@@ -868,8 +923,14 @@ def parse_success_criteria(body: str) -> tuple[list[str], list[str]]:
     the parser could not read must be visible, or the review grades part of a
     deliverable without saying so. An indented bold field under a criterion is a
     continuation of that criterion, not the end of the block; only a column-0
-    bold-field heading ends it. A fenced code block is skipped, so a ``- `` line
-    inside it is not read as a criterion.
+    bold-field heading ends it. A fenced code block is KEPT in the criterion it sits
+    under, so a ``- `` line inside it is not read as a criterion and an edit to the
+    example is an edit to the criterion; an unterminated fence is reported in
+    ``unparsed`` as a named state.
+
+    ``keep_fences=False`` replays the PREVIOUS generation (fences skipped), so a
+    snapshot frozen by it can be told from an author's edit when a parser upgrade
+    changes the output for an unchanged outline.
     """
     marker = _SUCCESS_CRITERIA_MARKER_RE.search(body)
     if marker is None:
@@ -881,12 +942,22 @@ def parse_success_criteria(body: str) -> tuple[list[str], list[str]]:
     in_fence: tuple[str, int] | None = None
     for line in body[marker.end() :].splitlines():
         stripped = line.strip()
-        fence = _fence_marker(line)
+        fence = _fence_marker(line) if keep_fences else _legacy_fence_marker(line)
         if in_fence is not None:
+            if keep_fences:
+                if current is not None:
+                    current.append(stripped)
+                else:
+                    unparsed.append(stripped)
             if fence is not None and fence[0] == in_fence[0] and fence[1] >= in_fence[1] and not fence[2].strip():
                 in_fence = None
             continue
         if fence is not None:
+            if keep_fences:
+                if current is not None:
+                    current.append(stripped)
+                else:
+                    unparsed.append(stripped)
             in_fence = (fence[0], fence[1])
             continue
         if not stripped:
@@ -912,7 +983,7 @@ def parse_success_criteria(body: str) -> tuple[list[str], list[str]]:
     if in_fence is not None:
         # An unterminated fence would otherwise swallow every later criterion
         # silently. Name it so the reader sees what the parser could not read.
-        unparsed.append('unterminated fenced block')
+        unparsed.append(UNTERMINATED_FENCE)
     return [normalize_criterion(' '.join(parts)) for parts in criteria if parts], unparsed
 
 
@@ -940,6 +1011,10 @@ def outline_deliverables(plan_id: str) -> list[dict[str, Any]] | None:
         criteria, unparsed = parse_success_criteria(body)
         deliverable['success_criteria'] = criteria
         deliverable['unparsed_criteria'] = unparsed
+        # The PREVIOUS generation's reading of the same body: a snapshot frozen by
+        # it can be told from an author's edit when this generation's output differs
+        # for an unchanged outline.
+        deliverable['generation_2_criteria'] = parse_success_criteria(body, keep_fences=False)[0]
         deliverable['retired_criteria'] = _retired_criteria(body)
     return deliverables
 
@@ -1324,17 +1399,22 @@ def criteria_drift(plan_id: str, current: list[dict[str, Any]] | None = None) ->
       outline (a dropped clause), or the whole deliverable is gone.
     * ``rewritten`` — the frozen position is occupied by different text (the
       clause was narrowed or reworded in place).
-    * ``parser_extended`` — a frozen criterion that is a prefix of the criterion the
-      current parser reads in full (a wrapped bullet a retired parser truncated).
-      It is admitted only for a snapshot that predates the current parser; the
-      snapshot carries ``parser: 2`` when the current one froze it, and then the
-      same prefix-extension is ``rewritten``.
+    * ``parser_extended`` — a frozen criterion whose text is exactly what an EARLIER
+      parser generation would have produced from the same outline body (a wrapped
+      bullet the v1 parser truncated, or a fence-skipped reading a parser-2 snapshot
+      froze). It is admitted only for a snapshot whose marker names that earlier
+      generation; a snapshot the current generation froze reports the same difference
+      as ``rewritten``. An author's append is not a parser output, so it is never
+      admitted.
     * ``spec_criterion_missing`` — a spec deliverable's own frozen Done-when that
       NO current outline criterion covers. The failure it prevents: four
       spec deliverables merged into one outline deliverable, three generic
       criteria graded, and the dropped clause's Done-when never graded at all.
       Because each spec clause is frozen as its own row, a merge cannot remove it
       from the record, and the row below is what makes its absence a finding.
+    * ``criterion_unparsed`` — a named line the success-criteria parser could not
+      place (today: an unterminated fenced block). It is reported rather than left
+      in the freeze payload for nobody to consume.
 
     A criterion an operator decision authorizes the change of is not reported.
     An absent snapshot reports nothing — there is nothing to compare against.
@@ -1360,31 +1440,36 @@ def criteria_drift(plan_id: str, current: list[dict[str, Any]] | None = None) ->
                 continue
             if criterion in live:
                 continue
-            # Migration: a frozen criterion that is a PREFIX of a criterion the
-            # current parser reads in full is a migration instead of an outline
-            # change — but ONLY when BOTH (a) the retired parser would still have
-            # produced exactly that frozen text, and (b) the snapshot predates the
-            # current parser (it carries no ``parser`` marker). Without (b), an
-            # author's continuation-line or sub-bullet append to a criterion the
-            # current parser froze would hide a real change in an advisory state.
+            # Migration: the frozen criterion equals what the PREVIOUS parser
+            # generation would have produced from this same outline body, while the
+            # current generation reads something else. That is a parser upgrade, not
+            # an author's change — and it is admitted for the generation that actually
+            # froze the snapshot, so a parser-2 append to a single-line criterion is
+            # still `rewritten` (the gen-2 replay of the CURRENT body carries the
+            # append, so the frozen text is not a gen-2 output).
+            gen2 = [normalize_criterion(text) for text in (live_row or {}).get('generation_2_criteria') or []]
             retired = [normalize_criterion(text) for text in (live_row or {}).get('retired_criteria') or []]
-            extended = next(
-                (
-                    candidate
-                    for candidate in live
-                    if candidate.startswith(criterion) and len(candidate) > len(criterion)
-                ),
-                None,
-            )
             marker = snapshot.get(PARSER_KEY)
-            frozen_by_older_parser = not isinstance(marker, int) or marker < CURRENT_PARSER
-            if extended is not None and criterion in retired and frozen_by_older_parser:
+            migrated = False
+            if marker == 2:
+                migrated = criterion in gen2
+            elif not isinstance(marker, int) or marker < 2:
+                extended_v1 = next(
+                    (
+                        candidate
+                        for candidate in live
+                        if candidate.startswith(criterion) and len(candidate) > len(criterion)
+                    ),
+                    None,
+                )
+                migrated = extended_v1 is not None and criterion in retired
+            if migrated:
                 drift.append(
                     {
                         'deliverable': number,
                         'kind': PARSER_EXTENDED,
                         'criterion': criterion,
-                        'current': extended,
+                        'current': live[index] if index < len(live) else '',
                     }
                 )
                 continue
@@ -1399,7 +1484,25 @@ def criteria_drift(plan_id: str, current: list[dict[str, Any]] | None = None) ->
             )
     drift.extend(_spec_clause_drift(snapshot, by_number))
     drift.extend(_request_clause_drift(snapshot, by_number))
+    drift.extend(_unparsed_clause_drift(by_number))
     return drift
+
+
+def _unparsed_clause_drift(by_number: dict[Any, dict[str, Any]]) -> list[dict[str, Any]]:
+    """One row per unterminated fenced block the parser could not close.
+
+    The named ``unterminated fenced block`` state is a criterion the parser could not
+    read, so the gate reports it rather than leaving it in the freeze payload for
+    nobody to consume. Ordinary free text the parser does not place stays visible in
+    that payload's ``unparsed`` list; only the unterminated fence is a gate state.
+    """
+    rows: list[dict[str, Any]] = []
+    for number, row in by_number.items():
+        for line in row.get('unparsed_criteria') or []:
+            text = normalize_criterion(line)
+            if text == UNTERMINATED_FENCE:
+                rows.append({'deliverable': number, 'kind': CRITERION_UNPARSED, 'criterion': text, 'current': ''})
+    return rows
 
 
 def _covered_by_outline(clause: str, outline: list[str]) -> bool:

@@ -468,17 +468,33 @@ def _removed_identities_for_accept(
                 total = row.get('removed_assertions')
                 known = sum(int(entry.get('assertions_removed') or 0) for entry in removed)
                 if isinstance(total, int) and total > known:
-                    entries.append({'path': path, 'kind': 'assertion_removed', 'assertions_removed': total - known})
+                    entries.append(
+                        {
+                            'path': path,
+                            'kind': 'assertion_removed',
+                            'assertions_removed': total - known,
+                            'acceptance_kind': 'mixed_residual',
+                        }
+                    )
                 continue
-            # An identity-less row accepts by its explicit path-level key.
+            # An identity-less row accepts by its explicit path-level key, which names
+            # the ROW KIND it covers so it cannot accept a different kind by count.
             if str(row.get('kind') or '') == 'test_filtered':
-                entries.append({'path': path, 'kind': 'test_filtered', 'markers': list(row.get('markers') or [])})
+                filter_entry: dict[str, Any] = {
+                    'path': path,
+                    'kind': 'test_filtered',
+                    'markers': list(row.get('markers') or []),
+                }
+                if row.get('marked_tests'):
+                    filter_entry['marked_tests'] = list(row.get('marked_tests') or [])
+                entries.append(filter_entry)
             else:
                 entries.append(
                     {
                         'path': path,
                         'kind': 'assertion_removed',
                         'assertions_removed': row.get('removed_assertions'),
+                        'acceptance_kind': row.get('acceptance_kind') or 'file_total',
                     }
                 )
             recorded = True
@@ -607,6 +623,25 @@ def cmd_loop_back_close(args: argparse.Namespace) -> dict | None:
             f'--head {head!r} is not a full commit SHA. Resolve it with git rev-parse HEAD; an abbreviation is refused.',
         )
 
+    # A close records the review as done at ``head``; a later head is a tree the
+    # review never examined, so a removal made there would ship unseen while the
+    # record claims the step validated THIS head. Compare the closing head with the
+    # head the step's last record was validated at and refuse a mismatch: the
+    # operator must re-run the review at the closing head first. When the prior
+    # record carries no head (a Branch C loop-back whose rev-parse failed), there is
+    # no validated head to compare against and the close re-derives at ``head``.
+    validated_head = _validated_head(status, step)
+    if validated_head is not None and validated_head.strip().lower() != head.strip().lower():
+        return _close_error(
+            plan_id,
+            'close_head_not_validated',
+            step,
+            f'--head {head} differs from the head this step was validated at ({validated_head}). '
+            'Re-run the review at the closing head, then close on its findings.',
+            validated_head=validated_head,
+            closing_head=head,
+        )
+
     # A waiver answers for a completion that already happened, so each waived
     # step must already hold a done record. The step being closed is recorded
     # done at --head by this very call, so it has no re-fire to waive.
@@ -685,10 +720,10 @@ def cmd_loop_back_close(args: argparse.Namespace) -> dict | None:
     # the D1 identity plus the removed count — not the closing head — so the same
     # removal is not asked about again at a later head. They are read from the head
     # the finding was VALIDATED at (the step's previous record), never from a later
-    # head: a removal made after the review is not accepted unseen. The close itself
-    # still records done at the closing head, and the named finding is resolved, so
+    # head: a close whose head differs from the validated head was already refused
+    # above, so a removal made at a later head is never accepted unseen. The close
+    # itself records done at the closing head, and the named finding is resolved, so
     # the operator who closed on it is not left with an unacceptable row.
-    validated_head = _validated_head(status, step)
     accepted_removal_entries, accepted_removals_warning = _removed_identities_for_accept(
         plan_id, set(accept), list(pending['findings']), head_ref=validated_head or head
     )

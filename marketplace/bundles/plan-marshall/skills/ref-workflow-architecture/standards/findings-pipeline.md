@@ -75,7 +75,7 @@ FIND LOOP      all providers: fetch_findings → ledger, untrusted free-text
    ▼
 INGEST PASS    one batched validate_struct over every raw_input.{field}
    │           → promote clamped values to the clean TOP-LEVEL fields;
-   │           [truncated] marker on cap overflow; a rejection resolves the finding.
+   │           head+tail kept, middle elided on cap overflow; a rejection resolves the finding.
    ▼
 ONE TRIAGE     one domain-grouped pass over the whole ledger (ext-triage-{domain});
    │           reads TOP-LEVEL fields only, never raw_input.* (plugin-doctor
@@ -145,7 +145,7 @@ Every producer reports `count_fetched` vs `count_stored` mismatches as a `qgate`
 
 `manage-findings` (`marketplace/bundles/plan-marshall/skills/manage-findings/`) is the unified plan-scoped store. The CLI surface (`add` / `list` / `get` / `resolve` / `promote` / `ingest` / `qgate {add,list,resolve,clear}` / `assessment {add,list,get,clear}`) is the only access path; direct file I/O on the JSONL files is never permitted.
 
-**Quarantine + ingestion.** Untrusted external free-text (a PR-comment body, a Sonar message) is filed under a quarantined `raw_input.{field}` sub-object, capped per field at `plan.finding_raw_input_max_bytes` (default 64 KiB, `[truncated]` marker on overflow). The `ingest` verb runs one batched `validate_struct` pass over every pending finding's `raw_input.{field}` values and promotes only the validated, clamped output to the clean top-level fields — the containment boundary that keeps triage's read surface clean (`raw_input.*` = audit-only quarantine; top-level = clean-by-construction). See [`manage-findings/standards/jsonl-format.md`](../../manage-findings/standards/jsonl-format.md) § "`raw_input` quarantine namespace" and [`untrusted-ingestion/SKILL.md`](../../untrusted-ingestion/SKILL.md) § "Application to the findings ledger".
+**Quarantine + ingestion.** Untrusted external free-text (a PR-comment body, a Sonar message) is filed under a quarantined `raw_input.{field}` sub-object, capped per field at `plan.finding_raw_input_max_bytes` (default 64 KiB; head and tail kept, middle elided on overflow). The `ingest` verb runs one batched `validate_struct` pass over every pending finding's `raw_input.{field}` values and promotes only the validated, clamped output to the clean top-level fields — the containment boundary that keeps triage's read surface clean (`raw_input.*` = audit-only quarantine; top-level = clean-by-construction). See [`manage-findings/standards/jsonl-format.md`](../../manage-findings/standards/jsonl-format.md) § "`raw_input` quarantine namespace" and [`untrusted-ingestion/SKILL.md`](../../untrusted-ingestion/SKILL.md) § "Application to the findings ledger".
 
 Storage layout (under `.plan/local/plans/{plan_id}/artifacts/findings/`):
 

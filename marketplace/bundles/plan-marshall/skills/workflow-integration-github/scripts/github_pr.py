@@ -126,6 +126,7 @@ from _github_pr import (
     refusal_condition,
     refusal_layers,
     refusal_size_cap,
+    review_coverage_is_finished,
     review_coverage_verdict,
 )
 from ci_base import extract_routing_args, register_subcommands, set_default_cwd
@@ -422,27 +423,31 @@ def _is_whole_comment_acknowledgment(body: str) -> bool:
 
 
 def _strip_footer_markers(body: str, bot_kind: str | None) -> str:
-    """Remove ``bot_kind``'s declared FOOTER lines from ``body`` before the signal test.
+    """Remove ``bot_kind``'s declared FOOTER block from ``body`` before the signal test.
 
     A footer marker is a branding / feedback-prompt line a bot appends to a SUCCESSFUL
-    review, never a section that replaces it. The unit removed is the LINE carrying the
-    marker, because a footer is a line: its own sentence continues past the literal a
-    registry can pin (an emoji prompt, a link, a sentence tail), and stripping only the
-    pinned fragment would leave those words behind as if they were review signal.
+    review, never a section that replaces it. The footer is a BLOCK, not a line: the
+    marker line carries the start of the prose and several further lines follow it (a
+    sponsorship sentence, the feedback prompt), so stripping only the marker LINE left
+    the rest behind as if it were review signal. Everything from the first marker line
+    to the end of the body is removed — a footer is terminal — which handles a footer
+    spread over one line or several and leaves a body that is nothing but footer empty.
 
     That is what keeps a review body carrying real findings AND the footer from being
     dropped wholesale, while a body that is nothing but footer still reduces to nothing
     and is dropped as noise. A bot declaring no footer markers gets its body back
-    unchanged, so every other bot's filtering is exactly as it was. The accepted
-    residual is a body packing signal and a footer marker onto ONE line: that line is
-    removed, which is the cost of not guessing where the footer's prose ends.
+    unchanged, so every other bot's filtering is exactly as it was.
     """
     if not bot_kind:
         return body
     markers = bot_registry.footer_patterns(bot_kind)
     if not markers:
         return body
-    return '\n'.join(line for line in body.splitlines() if not any(marker in line for marker in markers))
+    lines = body.splitlines()
+    for index, line in enumerate(lines):
+        if any(marker in line for marker in markers):
+            return '\n'.join(lines[:index])
+    return body
 
 
 def _is_obvious_noise(body: str, bot_kind: str | None = None) -> bool:
@@ -2090,7 +2095,17 @@ def cmd_fetch_findings(args):
         # one of the bot's declared publish shapes. Without this exclusion a bot
         # that posted nothing but "review limit reached" would be credited as a
         # proven participant and satisfy the quorum on zero review coverage.
-        if _is_refusal_notice(str(_comment.get('body') or ''), _bot_kind):
+        #
+        # A READABLE coverage marker outranks the skip: CodeRabbit keeps its
+        # "Review limit reached" block in the summary comment AFTER a review
+        # finishes (observed on PR 1912), so a marker-bearing summary is a finished
+        # review whose own text also carries a later limit notice. Skipping the whole
+        # comment as a refusal throws the marker away and hands the bot's finished
+        # review to the same summarizer that never sees it. The marker names the
+        # commit it covered, so it can only credit that head; a marker naming another
+        # head is decided stale by the named-commit arm below.
+        _body = str(_comment.get('body') or '')
+        if _is_refusal_notice(_body, _bot_kind) and not review_coverage_is_finished(_body):
             continue
         # Admissibility — the declared publish SHAPE, plus the declared content marker
         # when the bot gates that shape on one. Evaluated BEFORE the currency test, so a
@@ -2108,6 +2123,11 @@ def cmd_fetch_findings(args):
         # decision reads fields. The ledger arms never apply to inline comments: a
         # reply is not a review artifact at all, and an unplaced comment has no commit
         # to anchor a review of — which is exactly what produced the #515 false green.
+        #
+        # The rule is BOT-AGNOSTIC by design: it governs every bot that declares
+        # ``inline`` evidence, ``cuioss-review-bot`` included. Removing that bot is a
+        # separate, parked change; tightening the rule here does not alter which bots
+        # publish inline evidence.
         if _kind == 'inline':
             if _comment.get('thread_reply') or _comment.get('reply_to_id'):
                 # Never evidence. The record still names the bot as a publisher this

@@ -83,7 +83,7 @@ is per-repo `.sourcery.yaml` → `github.ignore_labels` (skip PRs carrying a lab
 Dashboard settings (org scope): Review Guide, PR Summary, Mermaid Diagrams, and Tips and Commands
 are **disabled**; AI Review Comments **kept**. Sourcery posts reviews as `COMMENTED`, not
 `APPROVED`, so it does not gate merges. The remaining "Sourcery is free…/👍👎" footer is OSS-tier
-branding with no toggle; it is declared in `footer_patterns`, whose lines are removed from the body
+branding with no toggle; it is declared in `footer_patterns`, whose terminal block is removed from the body
 before the signal test, so the footer never causes a drop by itself.
 
 Parity gaps vs. the central CodeRabbit config:
