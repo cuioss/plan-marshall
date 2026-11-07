@@ -1,3 +1,155 @@
 # Plan Marshall standing rules (OpenCode bridge bridge-version: 1)
 
-Standing rules bridged from CLAUDE.md at project setup. This file is a bridge, not a fork: the baseline stays authoritative, and re-setup flags drift when this marker no longer matches the source.
+source: CLAUDE.md
+source-sha256: 541838ed55f9c1c8bf1e7a5aeae0a06d03f3566068bcff2d2a24353de9741ff2
+
+<!-- Generated from CLAUDE.md; edit the baseline, not this file. -->
+
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with this repository.
+
+## Repository Overview
+
+This is a **Claude Code Marketplace** repository providing development standards, automation tools, and AI-assisted workflows for CUI (Common User Interface) Open Source projects. It contains 10 production bundles with 159 registered components (155 skills, 2 agents, 2 commands) that integrate with Claude Code's plugin system. For the bundle-by-bundle catalogue and directory layout, read the filesystem under `marketplace/bundles/` or `doc/developer/`.
+
+## Branch Naming
+
+Working branches MUST use one of exactly three canonical prefixes (the set is closed):
+
+| Prefix | Applies to |
+|--------|------------|
+| `feature/` | New capabilities. Plan-created branches are auto-generated as `feature/{plan_id}`. |
+| `fix/` | Bug fixes. |
+| `chore/` | Maintenance, refactoring, and documentation-only changes. |
+
+The set is the convention, not a CI requirement: `.github/workflows/python-verify.yml` restricts its **push-triggered** runs to `main` and `dependabot/**` (the cuioss-organization default `ci.push-builds: default-branch-only`), and a working branch is built by its pull request. The `pull_request:` trigger filters on the **base** branch (`main`), so a PR from any head branch is verified and produces the required `verify / conclusion` check. The `docs/` prefix is retired — use `chore/` for documentation-only changes.
+
+`python-verify.yml` opts in to a footprint gate (`skip-on-docs-only: true`): a docs-only change (no buildable source) skips the heavy pyprojectx build on `pull_request` and `merge_group` runs alike while the required `verify / conclusion` check still reports green, so the merge queue admits it without stalling. Test-input paths (`.claude/**`, `marketplace/**/*.md`, `test/**/*.md`) are passed via `extra-buildable` to force a verify build even when only docs/config files change. `.plan/marshal.json` is deliberately not listed: no test's verdict depends on this repository's own config, so a config-only change takes the footprint skip. See `.github/workflows/python-verify.yml` for the non-building path set and the exact skip mechanics.
+
+## Commit Trailer
+
+Every commit authored by an assistant in this repository ends with exactly this trailer, and nothing else by way of attribution:
+
+```text
+Co-Authored-By: plan-marshall <noreply@cuioss.de>
+```
+
+The identity names the system that produced the commit, never the assistant or vendor behind it, and it does not vary by target. No `Generated with …` footer, and no marketing claims. The `format-commit` script deliberately does not append the trailer — the caller adds it at `git commit` time so it is never duplicated.
+
+The value above is the **default**, not a hardcode. A project overrides either half through `plan-marshall:manage-run-config`:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config commit-trailer get
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config commit-trailer set --name NAME --email EMAIL
+```
+
+The override lives in the git-ignored `.plan/local/run-configuration.json`, so it is per-checkout: a fresh clone and every cloud session resolve to the default, which is why this file — and every other doc — states the default rather than an override. `marshall-steward` → Configuration surfaces the same knob.
+
+PR bodies carry no attribution footer at all.
+
+## Script Execution Convention
+
+All marketplace scripts run through the generated executor — never by direct path:
+
+```bash
+python3 .plan/execute-script.py {bundle}:{skill}:{script} [subcommand] {args...}
+```
+
+Example: `python3 .plan/execute-script.py plan-marshall:manage-files:manage-files add --plan-id my-plan --file task.md`
+
+Regenerate the executor after bundle changes with `/marshall-steward`. See `pm-plugin-development:plugin-script-architecture` for script implementation standards.
+
+## Build Commands
+
+Never hard-code build commands (`./pw`, `mvn`, `npm`, `gradle`) — use the resolved executor commands:
+
+- Compile: `python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "compile"`
+- Quality gate: `python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "quality-gate"`
+- Tests: `python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "module-tests"`
+- Full verify: `python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "verify"`
+- Coverage: `python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "coverage"`
+
+Append a module name (e.g. `"verify plan-marshall"`) to scope to a single bundle. Always call build commands with a Bash timeout of at least 10 minutes (600000ms); when the architecture-resolved envelope carries `bash_timeout_seconds`/`execution_tier`, pass `timeout: bash_timeout_seconds * 1000` for `execution_tier=per_task`, or hand off to the orchestrator for `execution_tier=orchestrator` (see `plan-marshall:persona-plan-marshall-agent` § "Bash: Timeout from architecture-resolved canonical command"). After each build call, read the result TOON `status`/`errors[]` — the wrapper exits 0 even on failure. See `doc/developer/build.adoc` for build system details.
+
+## Workflow Discipline (Hard Rules)
+
+These rules apply to ALL work in this repository — ad-hoc tasks, plan execution, and agent work alike. They exist because Claude regularly violates them despite softer guidance.
+
+**One bounded exception:** a plan executed from `doc/plans/` runs in the standalone plan lane, which supersedes several of these rules because the machinery they name is unavailable there. See [Standalone Plan Lane](#standalone-plan-lane-docplans) below for the exact carve-out. Outside that lane, every rule here binds without exception.
+
+- **`.plan/` access: scripts only** — ALL `.plan/` file access MUST go through `python3 .plan/execute-script.py` manage-* scripts. Never Read/Write/Edit `.plan/` files directly unless a loaded skill's workflow explicitly documents it.
+- **Bash: one command per call** — Each Bash call must contain exactly ONE command. Never combine with `&&`, `;`, `&`, or newlines.
+- **Bash: no shell constructs** — No `for`/`while` loops, no `$()` substitution, no subshells, no heredocs with `#` lines. Use dedicated tools or multiple Bash calls instead.
+- **No shell file operations** — Use Read/Write/Edit/Glob/Grep, never `cat`, `head`, `find`, `ls`, `grep`, or git's `grep` subcommand via Bash. When the question is about file CONTENT ("which file contains X?"), the remedy is `architecture search --content --pattern P` — see `marketplace/bundles/plan-marshall/skills/manage-architecture/standards/client-api.md` § search.
+- **Workflow steps: no improvisation** — When following a skill or workflow, execute ONLY the documented commands. Never add discovery steps, invent arguments, or skip steps.
+- **CI operations: use abstraction layer** — All CI/Git provider operations (PRs, issues, CI status, reviews) MUST go through `plan-marshall:tools-integration-ci:ci` scripts. Never use `gh` or `glab` directly.
+- **Build commands: resolve via architecture** — Never hard-code `./pw`, `mvn`, `npm`, or `gradle`. Always resolve via `plan-marshall:manage-architecture:architecture resolve` first, then run the returned `executable`.
+- **Quality-gate auto-fixes in place — never `git restore` a dirty file to undo it** — `quality-gate` rewrites tracked files under `marketplace/bundles/`, `marketplace/targets/`, `test/`, and `.claude/` via `ruff check --fix` + `ruff format`, mirroring Maven's `verify -Ppre-commit`. Commit in-flight edits before running it. To discard its churn, never `git restore` / `git checkout --` / `git stash` a file that was already dirty: those discard *unstaged* changes, not just the churn. Restore such files only from a snapshot the run took itself.
+- **Triage findings via manage-findings + ext-triage** — Triage decisions on findings (Sonar / PR review / build / lint / test) flow through `manage-findings` + `ext-triage-{domain}`; ambiguous cases escalate via `AskUserQuestion`.
+- **Structured queries first** — Before using Glob/Grep for codebase navigation (file discovery, module identification, path resolution, content search), consult `architecture files --module X`, `architecture which-module --path P`, `architecture find --pattern P` (path glob), or `architecture search --content --pattern P` (file content).
+- **`search --content` is inventory-scoped** — the content sweep covers the crawled inventory, so always-ignored directories (`.git`, `node_modules`, `target`, caches), anything a `.gitignore` rule excludes (including `.plan/`), and dotfile trees outside the allowlist (`.claude/**`, `.github/**`) are **not** searched. A zero result is a trustworthy *"not in any inventoried file"* — it is **not** *"not in the tree"*. When the target may live outside the inventory, fall back to `Glob`/`Grep`/`Read` scoped to that path; when those tools are unavailable in the current envelope, surface the coverage gap rather than reporting a clean negative. And a `count: 0` is only trustworthy when the sweep's coverage is clean — see `marketplace/bundles/plan-marshall/skills/manage-architecture/standards/client-api.md` § search → "Complete-coverage rule" for the canonical field list.
+- **Temp files under `.plan/temp/`** — Use `.plan/temp/` for ALL temporary and generated files (covered by the `Edit(.plan/**)` permission).
+- **GitHub access** — Use the `gh` tool (via the CI abstraction), not MCP.
+
+## Standalone Plan Lane (`doc/plans/`)
+
+Plans under `doc/plans/` execute **outside the plan-marshall command lifecycle** — no `/plan-marshall`, no `/plan-orchestrator`, no `.plan/execute-script.py`, and none of the git-ignored `.plan/local/` state. The lane exists because `.plan/local/` is git-ignored: its state (plan directories, orchestrator ledgers, findings, locks, and the generated executor) lives only on the machine that created it, so a cloud session at claude.ai/code clones the repository and has none of it. Everything a `doc/plans/` plan needs is in git — including the git-tracked `.plan/marshal.json`, which the lane may read.
+
+**The complete working contract is the `cloud-plan-lane` skill** (`.claude/skills/cloud-plan-lane/SKILL.md`), loaded as the first action of every run:
+
+```text
+Skill: cloud-plan-lane
+```
+
+It owns the plan directory lifecycle, the conditional Python build gate, the pre-PR verification sub-agent, the branch/PR/review-comment cycle, the merge gate, the persisted run report, and the closing self-check — including the `doc/plans/{epic}/{plan-name}/` tree layout a run creates. **The tree itself is not present in the repository**: every epic that ran in this lane has been ingested into the orchestrator ledger, so a lane run creates its own directory from the contract rather than joining an existing tree.
+
+Within this lane only, these hard rules are superseded — the tooling they mandate depends on the generated executor, which does not exist in a fresh clone:
+
+| Hard rule | Replaced by |
+|-----------|-------------|
+| Build commands: resolve via architecture | `./pw verify` called directly, gated on a git-derived Python-change check |
+| CI operations: use abstraction layer | The GitHub MCP server (the cloud path) or `gh` directly |
+| GitHub access: `gh`, not MCP | The GitHub MCP server is the expected path in a cloud session |
+| `.plan/` access: scripts only | Narrowed — the generated executor is absent from a clone, so no `manage-*` script is callable. The lane MAY `Read` git-tracked `.plan/` configuration directly (`.plan/marshal.json`, e.g. the `automatic-review` step's `required_bots` / `optional_bots`); the git-ignored `.plan/local/` tree is absent and out of reach. Read-only — the lane writes nothing under `.plan/` |
+| Temp files under `.plan/temp/` | The system temp dir (`$TMPDIR`) — never the repository, never `.plan/` |
+| Structured queries first | Not applicable — `architecture` requires the executor; Glob/Grep/Read are used instead |
+| Triage findings via manage-findings + ext-triage | Findings recorded per instance in the run report |
+| Bash: one command per call / no shell constructs | Ordinary shell use, including loops, `&&`/`;`, and heredocs — **only where neither enforcement surface is present**. The rule is the documented basis for the PreToolUse hook's **R1** family and for the **OpenCode guard** plugin, and since PLAN-LB-79 D3 R1–R5 bind a **root session of this repository** as well as a plan context. The OpenCode guard ships in `.opencode/plugin/guard.js`, so it is present in any clone and DOES bind a lane run under that harness: honour the rule there. The Claude hook is installed machine-locally into `.claude/settings.local.json`, which a fresh clone does not carry — that is the lane's reason for the relaxations, and a Claude cloud lane run without that install has neither the hook nor the rule, so honouring it there would cost many extra tool calls for nothing |
+
+Two further obligations stated elsewhere in this document do not apply in the lane. **Harness Sync** is inert there: `/sync-harnesses` is a machine-local build step that reads the git-ignored `target/` tree and writes the harness install locations under the home directory (`~/.claude/` for Claude Code), neither of which a fresh clone has or the lane may touch. A lane plan that edits `marketplace/bundles/` therefore **neither performs a sync nor records one as owed** — the merged bundle source is authoritative, and whether a local developer refreshes their own harness installs is a local-developer concern, not a debt the cloud run tracks. And **No shell file operations** binds with one clarification: `git mv` and `mkdir -p` are permitted for the plan-directory step, since that rule's target is reading and searching file content, which still goes through Read/Glob/Grep.
+
+One narrow documentation-standards exemption applies: a lane **run report** (`doc/plans/{epic}/{plan-name}/report-NN.md`) carries a date and an ordinal, because it is a dated record of one execution rather than documentation of the current state. The "No timestamps" and "Current state only" standards govern documentation; they do not govern records. No other file in `doc/plans/` takes this exemption — the plan itself and every README follow the standards unchanged.
+
+**Branch naming in a cloud session.** A Claude Code cloud session pre-assigns a branch named `claude/{slug}-{hash}` and binds the session to it. A cloud session therefore MUST keep that branch. The reason is resumability, not convenience: a cloud VM is reclaimed on inactivity and its replacement re-clones from the remote, so a renamed branch is one the harness can no longer find — an observed run lost its work exactly this way, with the branch present on no remote. The closed prefix set governs branches the run itself creates — every local run, and a cloud run where no branch was pre-assigned. Keeping the assigned name costs nothing, because CI verifies the PR regardless of head-branch name: the branch filter in `python-verify.yml` governs push-triggered runs only, while `pull_request:` matches on the base branch (see [Branch Naming](#branch-naming)). The run records in its report which branch form it used.
+
+Because the VM's filesystem does not survive a reclaim, the git remote is the lane's only durable storage: the branch is pushed on creation and after every commit, not once at PR time.
+
+Every other rule — the rest of the documentation standards, and **No shell file operations**, whose remedy (the Read/Glob/Grep tools) is fully available in a cloud session — binds in this lane exactly as elsewhere. This carve-out is scoped to `doc/plans/` execution and to nothing else; ordinary work in this repository, including work done in a cloud session that is not executing a `doc/plans/` plan, follows the hard rules unchanged.
+
+## Documentation Standards
+
+- **No version history** — Never add changelogs, "RECENT CHANGES", or dated update sections.
+- **No timestamps** — No dates or version numbers in document content.
+- **No duplication** — Cross-reference instead of duplicating information.
+- **Current state only** — Document present requirements, not transitional information.
+- **AsciiDoc formatting** — Blank line before lists; use `xref:` cross-references.
+
+## Harness Sync
+
+After editing files in `marketplace/bundles/`, changes don't take effect until the harness installs are synced. Run `/sync-harnesses` (project-local: `.claude/skills/sync-harnesses/` for Claude Code, with the same command at `.opencode/commands/sync-harnesses.md` and `.agents/skills/sync-harnesses/`), which syncs Claude, OpenCode and Antigravity through one engine, `marketplace/targets/sync.py`; `--target claude`, `--target opencode` or `--target antigravity` narrows the run to one harness. The Claude leg reads from `target/claude/` and mirrors bundles to `~/.claude/plugins/cache/plan-marshall/`. At finalize, `project:finalize-step-sync-plugin-cache` syncs all three harnesses and regenerates the on-main executor. This surface is meta-project-only — consumer projects of plan-marshall do not get it. For the deeper detail (registered marketplace path, one-time developer-machine migration, manual recovery when a commit landed without phase-6-finalize), see `doc/developer/marketplace-build.adoc` and `doc/developer/manual-sync-recovery.adoc`.
+
+## Multi-Assistant Support
+
+Source of truth is `marketplace/bundles/*` (Claude Code native format). The multi-target generator (`./pw generate --target {name} --output {dir}`) exports bundles to other assistant formats while keeping Claude Code primary; **only Claude Code is tested as a runtime.** Always go through the `./pw` wrapper — `uv` lives in the project-local `.pyprojectx/` tree and is not on `PATH`, so a bare `uv run …` fails outside it. Valid `{name}` values are every target registered in `TARGET_REGISTRY` (`marketplace/targets/__init__.py`), plus `all` for every registered target sequentially — the registry is the source of truth, and `./pw generate --help` prints the live set, so no enumeration of it is restated here. See `doc/developer/marketplace-build.adoc` for the adapter system, OpenCode usage, adding new targets, and how the format relates to the SKILL.md open standard at [agentskills.io](https://agentskills.io).
+
+## Integration Points
+
+- **Git/GitHub**: `gh` tool (via the CI abstraction) for issue/PR management.
+- **Build Systems**: Pyprojectx wrapper (`./pw`) for Python testing/linting — invoked only through the resolved executor.
+- **IDE**: IntelliJ MCP for diagnostics (file must be active in editor).
+
+## Tool Usage
+
+- Use proper tools (Edit, Read, Write) instead of shell commands (echo, cat)
+- Never use Bash for file operations (find, grep, cat, ls) — use Glob, Read, Grep tools instead
