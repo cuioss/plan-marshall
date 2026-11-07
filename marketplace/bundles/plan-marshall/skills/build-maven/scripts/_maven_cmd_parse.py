@@ -398,6 +398,21 @@ the selector is wrong. Kept as a token rather than prose so the run path, the
 emitted result and a report can agree on one name.
 """
 
+TEST_LOG_UNREADABLE = 'test_log_unreadable'
+"""Reason token for a test run whose log could not be read.
+
+A run whose truth lives in its log is not green when the log is unreadable: no
+evidence is a different answer from no failure.
+"""
+
+TEST_RUN_EXECUTED_NOTHING = 'test_run_executed_nothing'
+"""Reason token for a successful test-phase run that collected or ran no test.
+
+Distinct from a selector miss (the selector is not what failed) and from a test
+failure (nothing ran to fail): the run's own purpose — executing tests — was not
+met, so its green exit code credits no gate.
+"""
+
 # Surefire's goal failure when a selector matched nothing:
 #   No tests matching pattern "Awaits#runs" were executed!
 #   (Set -Dsurefire.failIfNoSpecifiedTests=false to ignore this error.)
@@ -460,3 +475,75 @@ def selector_miss_reason(log_text: str, command: str | None = None) -> str | Non
     if summary is not None and summary.total == 0:
         return TEST_SELECTOR_MATCHED_NOTHING
     return None
+
+
+def selector_miss_pattern(log_text: str) -> str | None:
+    """Return the selector the test runner named in its own miss message.
+
+    A miss the command line does not show — a selector set through
+    ``.mvn/maven.config``, ``MAVEN_OPTS`` or a profile, or a Failsafe
+    ``-Dit.test`` — still reaches the log: Surefire and Failsafe both print
+    ``No tests matching pattern "..." were executed``. Naming that pattern is
+    what keeps the reason actionable when the command carries no selector.
+
+    Args:
+        log_text: The captured build log, already read as text.
+
+    Returns:
+        The pattern as the runner printed it, or ``None`` when the log carries
+        no such message (or carries one naming no pattern).
+    """
+    match = _SELECTOR_MISS_PATTERN.search(log_text)
+    if match is None:
+        return None
+    return match.group(1).strip() or None
+
+
+def is_selector_miss_message(message: str) -> bool:
+    """Whether a parsed issue's message is the runner's own selector-miss line.
+
+    The line is the evidence OF the miss, not a failure beside it, so a caller
+    deciding whether a real failure accompanies a miss must not count it.
+
+    Args:
+        message: One ``Issue.message`` as :func:`parse_log` produced it.
+
+    Returns:
+        True when the message carries the runner's ``No tests matching pattern``
+        text.
+    """
+    return bool(_SELECTOR_MISS_PATTERN.search(message))
+
+
+def collected_test_count(log_text: str) -> int | None:
+    """Return the collected test count, or ``None`` when no summary parsed.
+
+    Args:
+        log_text: The captured build log, already read as text.
+
+    Returns:
+        The summed ``Tests run:`` count across every recognised summary block —
+        which includes skipped tests, because a summary line reports what the
+        runner COLLECTED — or ``None`` when the log carries no summary at all.
+        ``None`` is a distinct answer from ``0``: the first is no evidence, the
+        second is evidence of an empty population.
+    """
+    summary = _extract_test_summary(log_text)
+    return None if summary is None else summary.total
+
+
+def executed_test_count(log_text: str) -> int | None:
+    """Return the executed (passed + failed) test count of a MEASURED summary.
+
+    Args:
+        log_text: The captured build log, already read as text.
+
+    Returns:
+        The number of tests that actually ran, or ``None`` when no summary
+        parsed or the parser could not tell summary lines from other count
+        lines — an unmeasured count is not a measurement.
+    """
+    summary = _extract_test_summary(log_text)
+    if summary is None or summary.population != POPULATION_MEASURED:
+        return None
+    return summary.executed

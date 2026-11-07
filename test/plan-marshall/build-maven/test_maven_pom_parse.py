@@ -179,6 +179,7 @@ def test_parse_pom_xml_malformed_exact_shape():
         'packaging': 'jar',
         'artifact_id': None,
         'group_id': None,
+        'modules': [],
         'profile_ids': [],
         'description': None,
         'parent': None,
@@ -192,11 +193,12 @@ def test_parse_pom_xml_malformed_exact_shape():
 
 
 def test_parse_pom_xml_exact_shape_namespaced():
-    """The full parse result for a namespaced POM, including the dependencies key."""
+    """The full parse result for a namespaced POM, including the modules key."""
     assert _parse_pom_xml(_write_pom(_NS_POM)) == {
         'packaging': 'war',
         'artifact_id': 'my-app',
         'group_id': 'com.example',
+        'modules': [],
         'profile_ids': ['coverage', 'integration-tests'],
         'description': 'My example application',
         'parent': None,
@@ -210,11 +212,53 @@ def test_parse_pom_xml_exact_shape_parent_fallback():
         'packaging': 'jar',
         'artifact_id': 'child-mod',
         'group_id': 'com.parent',
+        'modules': [],
         'profile_ids': [],
         'description': None,
         'parent': 'com.parent:parent-pom',
         'dependencies': [],
     }
+
+
+#: Reactor shape: top-level modules, a profile that needs an explicit ``-P``,
+#: and a default-active profile.
+_MODULES_POM = """<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.example</groupId>
+  <artifactId>reactor-parent</artifactId>
+  <version>1.0.0</version>
+  <packaging>pom</packaging>
+  <modules>
+    <module>core</module>
+    <module>tools/cli</module>
+  </modules>
+  <profiles>
+    <profile>
+      <id>opt-in</id>
+      <modules>
+        <module>experimental</module>
+      </modules>
+    </profile>
+    <profile>
+      <id>always</id>
+      <activation>
+        <activeByDefault>true</activeByDefault>
+      </activation>
+      <modules>
+        <module>shared</module>
+      </modules>
+    </profile>
+  </profiles>
+</project>
+"""
+
+
+def test_parse_pom_xml_reads_the_modules_a_default_build_includes():
+    """Top-level modules plus a default-active profile's, never an opt-in one's."""
+    result = _parse_pom_xml(_write_pom(_MODULES_POM))
+
+    assert result['modules'] == ['core', 'tools/cli', 'shared']
 
 
 # =============================================================================
