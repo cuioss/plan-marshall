@@ -25,6 +25,7 @@ PLAN_IDS = (
     'ingest-clamp',
     'ingest-cut-tail',
     'ingest-cut-tail-over-quarantine',
+    'ingest-multibyte-cut',
     'ingest-cut-then-short',
     'ingest-empty',
     'ingest-idem',
@@ -190,6 +191,22 @@ def test_ingest_keeps_the_tail_of_a_body_over_the_quarantine_cap(plan_context):
     assert request in record['body'], 'the quarantine cut was head-only and dropped the conclusion'
     assert record['truncated'] is True
     assert record['original_length'] == len(body), 'original_length must name the body the reviewer wrote'
+
+
+def test_ingest_reports_the_true_character_length_of_a_multibyte_body(plan_context):
+    """A multibyte body's `original_length` is its CHARACTER count, not its byte count."""
+    pid = 'ingest-multibyte-cut'
+    request = 'CHANGE REQUEST: multibyte tail.'
+    body = ('ä' * 70000) + request
+    add_finding(plan_id=pid, finding_type='bug', title='t', detail='ph', raw_input={'body': body})
+
+    result = ingest_findings(pid)
+    assert result.get('promoted') == 1, result
+
+    record = query_findings(pid)['findings'][0]
+    assert request in record['body']
+    assert record['original_length'] == len(body)
+    assert len(body.encode('utf-8')) > 65536
 
 
 def test_ingest_promotes_a_body_under_the_cap_byte_identically_with_no_flag(plan_context):

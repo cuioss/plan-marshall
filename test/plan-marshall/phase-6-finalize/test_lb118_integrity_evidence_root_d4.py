@@ -291,6 +291,45 @@ def test_a_no_worktree_plan_on_another_plans_branch_does_not_pass(plan_context, 
     assert 'main_checkout_other_branch' in payload['message'], payload
 
 
+def test_a_no_worktree_plan_on_its_recorded_branch_is_graded(plan_context, tmp_path, monkeypatch) -> None:
+    """The positive control: the recorded branch checked out and clean is the plan's tree."""
+    repo = _repo(tmp_path)
+    _commit(repo, {'README.md': 'readme\n'})
+    _git(repo, 'checkout', '--quiet', '-b', 'feature-this-plan')
+    _commit(repo, {'src/this_plan.py': 'x\n'}, 'this plan’s work')
+    plan_dir = _plan(plan_context)
+    (plan_dir / 'references.json').write_text(
+        json.dumps({'base_branch': 'main', 'branch': 'feature-this-plan'}), encoding='utf-8'
+    )
+    monkeypatch.setattr(_integrity, 'resolve_live_worktree', lambda _plan_id: None)
+    monkeypatch.setattr(_integrity, 'main_checkout_root', lambda: repo)
+
+    payload = _integrity.compute_test_integrity(PLAN_ID)
+
+    assert payload['status'] == 'success', payload
+
+
+def test_a_detached_head_with_a_recorded_branch_is_refused(plan_context, tmp_path, monkeypatch) -> None:
+    """A detached HEAD cannot be the plan's recorded branch, so the grade is refused."""
+    repo = _repo(tmp_path)
+    _commit(repo, {'README.md': 'readme\n'})
+    _git(repo, 'checkout', '--quiet', '-b', 'feature-this-plan')
+    _commit(repo, {'src/this_plan.py': 'x\n'}, 'this plan’s work')
+    _git(repo, 'checkout', '--quiet', '--detach')
+    plan_dir = _plan(plan_context)
+    (plan_dir / 'references.json').write_text(
+        json.dumps({'base_branch': 'main', 'branch': 'feature-this-plan'}), encoding='utf-8'
+    )
+    monkeypatch.setattr(_integrity, 'resolve_live_worktree', lambda _plan_id: None)
+    monkeypatch.setattr(_integrity, 'main_checkout_root', lambda: repo)
+
+    payload = _integrity.compute_test_integrity(PLAN_ID)
+
+    assert payload['status'] == 'error', payload
+    assert payload['error'] == 'evidence_root_unresolved', payload
+    assert 'main_checkout_other_branch' in payload['message'], payload
+
+
 def test_an_is_ancestor_failure_is_not_run(plan_context, tmp_path, monkeypatch) -> None:
     """⛔ ``--is-ancestor`` exit 128 is a failed read, not "not an ancestor". Red at 75b5780d0."""
     repo = _repo(tmp_path)
