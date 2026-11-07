@@ -53,6 +53,51 @@ derive, for rows still live.
   - PLAN-LB-31 in-house-reviewer — PLAN-LB-21, PLAN-LB-20 D4 and D5.
   - PLAN-LB-14 launch-gate-scope — unchanged.
 
+- **PLAN-LB-108, PLAN-LB-119 and PLAN-LB-120** (shipped #1922, #1925 and #1923, 2026-11-06 and 2026-11-07, runbook lane,
+  `deepseek-v4.1-flash/high`) — see `landings/PLAN-LB-108.md`, `landings/PLAN-LB-119.md` and `landings/PLAN-LB-120.md`. Merge commits
+  `9bd6a39d2` (parent `a8840acf1`), `b4430a0a6` (parent `9bd6a39d2`) and `f84eb0e36` (parent `b4430a0a6`), each a squash commit with one
+  parent, read with git before the leaf prompts named them. Three read-only leaves read them in parallel with 14, 10 and 12 claims
+  passed one by one; the orchestrator re-read the points marked in each report. The lanes' review history, CI and merge-queue claims
+  were not re-read. All three messages are `complete: false`, `missing_keys: total_tokens` (the known gap, out of scope). **Reported to
+  the operator and not staged.**
+  - **PLAN-LB-108 (no major):** layer 1: the D5 Done-when ("no doc or comment describes the per-plan or slot-only model as current") is
+    not met though the lane graded it met: the `build_queue.py` module docstring still describes `acquire` as plan-id idempotent
+    (`:46-62`), `doc/concepts/parallelism-and-locking.adoc:25` still says a build takes exactly one limiter path, `_build_result.py:166`
+    still says the hand-back status is always `running` (all three re-read). Layer 3, all minor: no timer, so a queued job whose
+    in-process holder released waits for an unrelated event (`marshalld.py:526-529,672`, re-read); an older client meets `queued` and
+    reports `indeterminate` with the protocol version unchanged; an acquire failure on a plan-less build is a bare `RuntimeError`; the
+    1800 s directory wait exceeds a 600 s shell ceiling; a stuck waiter or a reused holder pid has no recovery short of `directory
+    clear --force`. The suite-wide no-op of the directory lock hides the wiring from every `cmd_run` test. The surface is about fifteen
+    files wider than the lane says. `build_queue.py` gained parser arguments: **an executor regeneration is owed**, with the harness sync
+    and the daemon reconcile.
+  - **PLAN-LB-119 (one major):** layer 3 (re-read): a filter acceptance is still silent for JVM test files. The identity falls back to
+    the class (`_review_support_integrity.py:968`), the markers are a set per identity, so a second `@Disabled` in an accepted class
+    raises no row and would be accepted if it did (`review_support.py:319-328`). Minor: the placement still falls back to the mutable
+    `commit` (`github_ops.py:732-733`, re-read); a quoted marker or one after an unterminated fence reads as "no marker" while the
+    producer's admission and re-review gates still substring-match; the validated-head refusal now applies to every step's close; the
+    move proof keys on name plus assertion-line text; the section splitter is not fence-aware (fails closed). D7 is 6 of 7 as the lane
+    says, and its two unmet items are test-strength gaps only. `review-rubric.md:42` does not name `criterion_unparsed`.
+  - **PLAN-LB-120 (two major, one major lead):** layer 3 (re-read for the first): `_row_refusal` checks the canonical BEFORE the scope
+    (`_freshness_crosscheck.py:743-755`), so a Maven `test -pl X -am` row is filed as an inability and passes a whole-tree change; the
+    lane's "outside the vocabulary" is the wrong cause, because scope alone refutes the row. A whole-tree `verify --timeout 900` or
+    `verify --format json` row (the documented shape) is now unreadable and gives `stale` with a generic remedy that can loop. The
+    lead: `ROW_TESTS_EXECUTED_ZERO` is also checked after the canonical, so a green zero-test Maven `test` row is never refuted; it
+    answers PLAN-LB-121 D1's open question for this gate. Minor: the fallback refusal does not name `loop-back close --waive-refire`;
+    the discovery probe may run on every merge under the mutex (not re-read); `record-merge` accepts any key and the facts are written
+    only if the agent follows prose. The ten round-2 items the lane left are real, nine of them documentation.
+  - **Queue annotation, PLAN-LB-115 and PLAN-LB-116:** their sequencing behind PLAN-LB-108 is satisfied. Both cite line numbers in
+    `_build_execute_factory.py`, the routing tests and `runbook-lane/SKILL.md` that the PLAN-LB-108 merge moved; PLAN-LB-116 also
+    shares `test_runbook_lane.py` with the PLAN-LB-119 merge. Both are re-grounded in the cleanup pass of this drain.
+  - **Queue annotation, parked PLAN-LB-75 and PLAN-LB-46:** the PLAN-LB-119 merge shifted the lines they cite (`review_support.py`
+    by about 14, `_criteria_snapshot.py` by about 40) and added a `cuioss-review-bot` comment and three participation-site records
+    that PLAN-LB-46 D7 must also remove. Re-ground both before any un-parking. The PLAN-LB-119 L3-1 finding sits on PLAN-LB-75 D1's
+    files and should be reconciled with it in one plan.
+  - **Watch (fix chain):** the sixth to eighth landings in a row (after PLAN-LB-114, 117, 118, 107, 110) with a layer-3 fix owed; only
+    PLAN-LB-108 owes none on the focus rule.
+  - **Watch (answered):** PLAN-LB-120's Maven build-row interaction with PLAN-LB-110 resolves to the first and third findings above.
+  - **Watch (owed, operator-run):** the harness sync after the three merges, the executor regeneration for `build_queue.py`, and the
+    daemon reconcile with the post-merge live check (two builds for one worktree, the second reporting `queued`).
+
 - **PLAN-LB-110** (shipped #1921, 2026-11-06, runbook lane, `deepseek-v4.1-flash/high`) — see `landings/PLAN-LB-110.md`. Merge commit
   `9c8eb94c2`, a squash commit with one parent `1d2b559fd` (read with git before the leaf prompt named it). One three-layer leaf read it
   with the lane's 18 claims passed one by one; its first run died on a weekly rate limit and was resumed from its saved work. The
