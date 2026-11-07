@@ -173,10 +173,10 @@ else, so this scan sees its own constants and nothing borrowed.
 #
 # The table is TOTAL over :data:`_RESULT_STATUSES` — every result status has a
 # row, and :func:`wire_status_from_result` raises rather than passing through if
-# one ever does not. It is not total by accident: ``indeterminate`` previously had
-# no row and fell through the pass-through fallback, so the daemon published the
-# literal string ``indeterminate`` — a value absent from
-# :data:`TERMINAL_STATUSES` — and a waiting client re-polled forever.
+# one ever does not. The totality is load-bearing: a status without a row falls
+# through the pass-through fallback, so the daemon publishes that literal string —
+# a value absent from :data:`TERMINAL_STATUSES` — and a waiting client re-polls
+# forever.
 #
 # ``killed`` is listed EXPLICITLY rather than left to that fallback. The two
 # spellings coincide, so the fallback produced the right answer — but only by
@@ -1070,9 +1070,8 @@ class LogVerdict:
     ``None`` on every result that got as far as running the build. A launch fault
     (``execution_failed`` / ``log_file_failed``) carries the three facts that
     separate it from a red build: the reason, the wrapper it looked for and the
-    project directory it looked in. Without them a routed job reported a bare
-    ``build_failed`` and the six landings that hit this could not tell a missing
-    wrapper from a daemon fault.
+    project directory it looked in. Without them a routed job reports a bare
+    ``build_failed``, and a reader cannot tell a missing wrapper from a daemon fault.
     """
 
     child_fault: ChildFault | None = None
@@ -1303,10 +1302,13 @@ def read_log_verdict(log_file: str) -> LogVerdict | None:
                     # A `status:` line opens a block. The one being read becomes
                     # the verdict candidate, and if a later block states a status
                     # too, that later one replaces it — the result is the last
-                    # complete body in the log.
+                    # complete body in the log. A table collected for the previous
+                    # block is dropped with it: rows belong to the block that
+                    # carried them, exactly as the scalars do.
                     if block:
                         verdict_block = block
                     block = {'status': _toon_scalar(line)}
+                    errors = ()
                     continue
                 key, value = _block_scalar(line)
                 if key is not None and block:

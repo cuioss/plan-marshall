@@ -1637,6 +1637,28 @@ class TestPreToolFaultPassThrough:
         assert result['message'] == str(exc)
         assert 'reason' not in result, 'the child stated no reason, so the routed result carries none'
 
+    def test_an_errors_table_from_another_block_is_not_carried(self, tmp_path):
+        """A table belongs to the block that carried it, like every other key.
+
+        A verdict block that states no ``errors[]`` table reports no rows, rather
+        than inheriting the rows of whatever wrote earlier to the same log.
+        """
+        import _build_server_protocol as proto
+
+        log = tmp_path / 'two-table-blocks.log'
+        log.write_text(
+            'status: error\nerror: build_failed\n'
+            'errors[1]{file,line,message,category}:\n'
+            '  test/earlier.py,1,"earlier failure",test_failure\n'
+            'status: error\nerror: worktree_resolution_failed\nmessage: the record left this tree\n',
+            encoding='utf-8',
+        )
+
+        verdict = proto.read_log_verdict(str(log))
+
+        assert verdict is not None and verdict.child_fault is not None
+        assert verdict.errors == (), "the earlier block's rows are not this verdict's rows"
+
     def test_a_key_from_another_block_cannot_supply_the_verdict(self, tmp_path):
         """Each key is read from the block that holds the verdict.
 
@@ -1716,7 +1738,7 @@ class TestCarriedTreeRefusalDiagnostics:
             parser = _build_cli.add_run_subparser(subparsers, command_args_help='Test')
             parser.set_defaults(func=lambda _args: 0)
 
-        carried_tree = '/routed/tree/lb-115'
+        carried_tree = '/routed/tree/plan-x'
         monkeypatch.setattr(
             sys,
             'argv',

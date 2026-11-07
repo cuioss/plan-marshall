@@ -342,8 +342,8 @@ ERROR_DIRECTORY_LOCK_UNAVAILABLE = 'directory_lock_unavailable'
 """The per-directory build lock could not be consulted, so the build did not start.
 
 Emitted by ``_build_execute_factory._emit_directory_lock_unavailable``. Every
-in-process build takes this lock — plan-less ones included — so a queue that will
-not answer makes the build unrunnable before any tool is chosen. Same class as
+in-process build takes this lock — plan-less ones included — so a lock backend that
+will not answer makes the build unrunnable before any tool is chosen. Same class as
 :data:`ERROR_BUILD_QUEUE_UNAVAILABLE`: a limiter that refused to answer, not a
 build that ran and failed.
 """

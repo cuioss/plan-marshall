@@ -34,7 +34,7 @@ EVERY in-process build, including the plan-less ones the slot path below skips:
 the hazard is the shared directory, not the slot budget.
 
 The one thing it additionally *reports* is the queue's own ``warnings`` — today,
-a surviving per-repo ``build.queue.max_slots`` that no longer takes effect. Each
+a surviving per-repo ``build.queue.max_slots`` that has no effect. Each
 is surfaced once per invocation, deduplicated by ``code`` across the blocked
 re-polls (see :func:`_surface_warnings`), to stderr and to the plan work log. A
 warning never blocks, delays, or aborts the build; reporting is not gating.

@@ -8,7 +8,7 @@ full-scope and module-scoped invocations of the same executable produce
 distinct keys. This isolates adaptive-timeout learning per scope and
 prevents cross-scope run-config key collisions.
 
-Also covers the D6 build-queue integration at the factory ``cmd_run`` wrap
+Also covers the build-queue integration at the factory ``cmd_run`` wrap
 site: ``cmd_run`` runs ``execute_direct`` inside ``build_queue_slot(plan_id)``,
 so the build participates in the cluster queue only when a ``plan_id`` is set.
 The integration tests drive ``cmd_run`` end-to-end through the REAL
@@ -20,7 +20,7 @@ zero queue interaction).
 
 These queue-integration cases leave ``execution_mode`` at its ``auto`` default
 and depend on the autouse ``_neutralize_daemon_routing`` fixture in
-``test/conftest.py`` to hold the D5 ``_route_to_daemon`` seam at its non-routing
+``test/conftest.py`` to hold the ``_route_to_daemon`` seam at its non-routing
 outcome — without it, a host with marshalld registered and ready would route the
 build away before the injected queue double and exec recorder are ever reached.
 The ``TestCmdRunExecutionModeVerdict`` daemon-mode cases below own that seam as
@@ -373,7 +373,7 @@ class TestRegisterStandardSubparsersPlanIdPropagation:
         assert ns.project_dir == '/plan/wt'
 
 
-# D6 build-queue integration: these tests drive the factory's generated
+# build-queue integration: these tests drive the factory's generated
 # ``cmd_run`` end-to-end through the REAL ``build_queue_slot`` context manager.
 # The queue acquire/release seam (``_acquire`` / ``_release_raw``) is mocked on
 # the ``_build_queue_slot`` module, so the slot's admit / wait / release
@@ -806,11 +806,11 @@ class TestResolveWrapperAutoDetect:
 
 
 # =============================================================================
-# D4 — client-side routed-verdict cross-check
+# Client-side routed-verdict cross-check
 # =============================================================================
 # The daemon's child is a build wrapper that exits 0 even on a failed build and
 # reports its real verdict in the emitted build TOON. ``_daemon_result_to_direct``
-# no longer trusts a ``job_status: success`` blindly: it re-reads the job log's own
+# does not trust a ``job_status: success`` blindly: it re-reads the job log's own
 # verdict through the shared ``read_log_verdict`` and FAILS CLOSED when the verdict
 # disagrees, so a lying / lagging daemon can never launder a failure into a green.
 

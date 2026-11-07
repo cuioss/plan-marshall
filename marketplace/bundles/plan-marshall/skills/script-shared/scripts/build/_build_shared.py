@@ -473,8 +473,8 @@ def _reconcile_pending_build_findings(
     its green says nothing about that dimension and clears nothing in it. A run
     whose population could not be determined at all clears nothing whatsoever.
     ``test-failure`` keeps the stronger, pre-existing requirement of a MEASURED
-    non-zero executed-test count, and an unknown count no longer masquerades as a
-    zero that merely happens to refuse.
+    non-zero executed-test count, and an unknown count is never read as a zero that
+    merely happens to refuse.
 
     The population the decision was made on is stamped into every resolution
     detail via :func:`_build_examined.population_label`, so a reader of a resolved
@@ -835,9 +835,8 @@ def cmd_run_common(
     # terminated, so a kill must be routed out before it can be read as one.
     # The result carries the kill's own diagnostic fields (`error: killed` and
     # the shared no-blind-retry `message`), and BOTH are propagated onto the
-    # emitted payload rather than reconstructed — an earlier shape built a fresh
-    # `error_result` here and silently dropped them, so the discriminator the
-    # daemon had already computed never reached any consumer.
+    # emitted payload rather than reconstructed — a reconstruction drops them and
+    # the discriminator the daemon had already computed never reaches a consumer.
     if result['status'] == STATUS_KILLED:
         killed_extra = _non_finish_evidence(log_file, command_str, parser_fn, parser_needs_command, 'Killed')
         # The bound that did NOT fire is still diagnostic: it says how much
@@ -980,7 +979,7 @@ def cmd_run_common(
             # clear — the types whose analysis it actually performed. A run that
             # examined nothing, or whose population is unknown, clears nothing
             # (see _reconcile_pending_build_findings). A plan-less build owns no
-            # finding store and reconciles nothing, exactly as before.
+            # finding store and reconciles nothing.
             if names_real_plan(plan_id):
                 try:
                     _reconcile_pending_build_findings(
@@ -1062,7 +1061,7 @@ def cmd_run_common(
         # lint-issue) is appended to the per-type finding store before any
         # mode-specific warning filtering is applied. Producer-side mismatch
         # (parsed != stored) is surfaced as a Q-Gate finding. A plan-less build
-        # owns no finding store and stores nothing, exactly as before.
+        # owns no finding store and stores nothing.
         if names_real_plan(plan_id):
             count_seen, count_stored, store_failures = _store_build_findings(
                 plan_id=plan_id,

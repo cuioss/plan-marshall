@@ -699,13 +699,13 @@ def _map_daemon_result(waited: dict[str, Any], command_str: str, command_key: st
     no-blind-retry message, so a harness reap on the daemon side is never
     mistaken for a flaky build — and never for a red one.
 
-    The wire carries four terminal rows and the wrapper vocabulary five, and the
+    The wire has four terminal rows and the wrapper's vocabulary has six, and the
     supervisor translates the wrapper's own ``timeout`` and ``killed`` onto the
-    wire's identical rows. What the wire flattens is every OTHER non-green verdict
-    — ``indeterminate``, the live ``running`` hand-back and a status it does not
-    know — onto ``failure``. So a ``failure`` job becomes an ``error`` only when
-    the child's own log verdict says the build ran and failed; any other verdict
-    the log states is re-rendered as itself.
+    wire rows of the same names. What the wire flattens onto ``failure`` is every
+    OTHER non-green verdict: ``indeterminate``, the live ``running`` hand-back, and
+    any status the wire has no row for. So a ``failure`` job becomes an ``error``
+    only when the child's own log verdict says the build ran and failed; any other
+    verdict the log states is re-rendered as itself.
 
     The ``killed`` leg produces a first-class ``killed`` status rather than an
     ``error_result`` whose ``error`` field said ``killed``: ``cmd_run_common``
@@ -782,11 +782,10 @@ def _map_daemon_result(waited: dict[str, Any], command_str: str, command_key: st
         # measured it" from "nothing measured it"; an absent verdict or an
         # absent key leaves it off entirely, which reads as UNKNOWN downstream.
         #
-        # This is a RECURRENCE of a boundary defect, not a new field bug: the
-        # identical substitution was fixed field-scoped for ``duration_seconds``
-        # at this same boundary, and the test count was left behind. The fix
-        # belongs to the boundary — a routed result carries what the routed job
-        # measured, and the outer wrapper re-derives nothing it was handed.
+        # A boundary rule, not a field bug: a routed result carries what the routed
+        # job measured, and the outer wrapper re-derives nothing it was handed. The
+        # same rule is what keeps ``duration_seconds`` the value the routed job
+        # reported rather than the outer wall clock.
         routed_extra: dict[str, Any] = {}
         if verdict is not None and verdict.tests_run is not None:
             routed_extra['routed_tests_run'] = verdict.tests_run
@@ -815,16 +814,16 @@ def _map_daemon_result(waited: dict[str, Any], command_str: str, command_key: st
             result['message'] = str(daemon_message)
         return result  # type: ignore[return-value]
     if job_status == WIRE_STATUS_FAILURE:
-        # The routed-failure leg, and the one the observed defect took: the
-        # daemon's own exit-0-narrowing already downgraded the wrapper's `error`
-        # verdict to `failure`, so the log is read here purely to carry the
-        # per-test rows it recorded. Without them the renderer re-parses this same
-        # TOON as if it were test-runner output and synthesises one opaque row.
+        # The routed-failure leg: the daemon's own exit-0-narrowing already
+        # downgraded the wrapper's `error` verdict to `failure`, so the log is read
+        # here to carry the per-test rows it recorded. Without them the renderer
+        # re-parses this same TOON as if it were test-runner output and synthesises
+        # one opaque row.
         verdict = read_log_verdict(log_file)
         if verdict is not None and verdict.fault is not None:
             # The inner wrapper never launched the build. Reporting that as a
-            # generic ``build_failed`` is exactly what hid a missing wrapper behind
-            # six landings; the fault class and its reason travel instead, with
+            # generic ``build_failed`` hides a missing wrapper behind a build
+            # failure; the fault class and its reason travel instead, with
             # exit -1 so the renderer's launch-fault leg (not its build-failure
             # leg) owns it.
             return error_result(  # type: ignore[return-value]
@@ -1049,9 +1048,12 @@ def _running_hand_back(
 ) -> DirectCommandResult:
     """Build the running hand-back for a job that outlived the bound.
 
-    Carries ``job_id`` plus ``job_status: running`` on both the JSON and TOON
-    result paths (see ``_build_format.EXTRA_FIELDS``) so neither projection
-    drops them. ``log_file`` is whatever the last wait reported, else empty.
+    Carries ``job_id`` plus ``job_status`` on both the JSON and TOON result paths
+    (see ``_build_format.EXTRA_FIELDS``) so neither projection drops them.
+    ``job_status`` is the daemon's own last-reported live status — ``queued`` for a
+    job that had not started when the bound expired, ``running`` once it had — so a
+    job that never began is not described as one that did. ``log_file`` is whatever
+    the last wait reported, else empty.
 
     Args:
         job_id: The daemon-assigned job id to re-attach to.
@@ -1225,9 +1227,9 @@ def _absolutise_project_dir(argv: list[str], project_dir: str) -> list[str]:
 
     Both token forms (``--project-dir X`` and ``--project-dir=X``) are rewritten
     and no other token is touched. An argv with no ``--project-dir`` is returned
-    unchanged: a build that names its plan instead gets the tree through
-    :func:`_carry_resolved_tree`, and a plan-less child's default ``.`` is the
-    submitted tree itself.
+    unchanged: a build that names its plan gets the tree through
+    :func:`_carry_resolved_tree` when its child cannot resolve the plan itself, and
+    a plan-less child's default ``.`` is the submitted tree itself.
 
     Args:
         argv: The routing process's own argv tail (``sys.argv[1:]``).
@@ -1379,7 +1381,7 @@ def _emit_error_envelope(output_format: str, output: dict) -> int:
     Shared print/serialize tail for the build-execute error emitters below —
     the generic TOON/JSON serializer, not the build-result formatter (which
     filters to known build fields and would drop emitter-specific keys like
-    ``max_retries``, ``tool`` or ``plan_id``; the launch-fault trio
+    ``max_retries`` or ``tool``; the launch-fault trio
     ``reason`` / ``wrapper`` / ``project_dir`` IS on the formatter's whitelist,
     because a build result carries it).
     """
@@ -1752,11 +1754,10 @@ def create_execute_handlers(
         # NEVER be routed: the daemon's S2 clean-baseline env cannot honour it.
         daemon_incompatible = env_vars is not None or working_dir is not None
 
-        # D5 routing seam, gated by the explicit ``execution_mode``:
+        # The routing seam, gated by the explicit ``execution_mode``:
         #   auto        — route to marshalld when registered AND the daemon
         #                 answers a verified handshake; otherwise fall back
-        #                 in-process (recording the degradation reason). This is
-        #                 the exact historical behaviour.
+        #                 in-process (recording the degradation reason).
         #   in_process  — never attempt to route; always build in-process (no
         #                 preflight / submit attempt).
         #   daemon      — require the daemon; a genuine unavailability is a hard

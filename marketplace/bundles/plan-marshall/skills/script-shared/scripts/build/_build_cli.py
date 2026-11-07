@@ -215,7 +215,7 @@ def add_run_subparser(
     # the only way ``cmd_run`` can tell an explicitly-supplied ``--timeout N``
     # from an unsupplied flag. An explicit value is a true override of the
     # persisted learned value; when the flag is absent the engine's
-    # ``config.default_timeout`` supplies the fallback, exactly as before.
+    # ``config.default_timeout`` supplies the fallback.
     run_parser.add_argument(
         '--timeout',
         type=positive_timeout_seconds,
@@ -238,11 +238,11 @@ def add_run_subparser(
         default='toon',
         help='Output format (default: toon)',
     )
-    # Explicit build-execute routing mode (D5 build-server client API). Declared
+    # Explicit build-execute routing mode. Declared
     # once here so all four build tools (maven, gradle, npm, pyproject) inherit
     # the flag from this single shared 'run' subparser:
     #   auto        — route to marshalld opportunistically; fall back in-process
-    #                 on any unavailability (the historical default behaviour).
+    #                 on any unavailability (the default).
     #   in_process  — never attempt to route; always build in-process.
     #   daemon      — require the marshalld daemon; fail loud instead of falling
     #                 back when the daemon cannot run the build.
@@ -258,8 +258,8 @@ def add_run_subparser(
     # contract automatically. The same ``--plan-id`` value also drives
     # the producer-side auto-storage of parsed issues into the per-type
     # finding store via manage-findings (always-on when set; when unset,
-    # the historical silent behaviour is preserved — parse + format
-    # only). The flag is therefore declared exactly once.
+    # parse and format only, with nothing stored). The flag is therefore declared
+    # exactly once.
     add_project_dir_arg(run_parser)
     if extra_args_fn:
         extra_args_fn(run_parser)

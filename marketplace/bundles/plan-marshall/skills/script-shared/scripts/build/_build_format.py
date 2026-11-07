@@ -82,15 +82,15 @@ next action.
 facts (see ``_build_result.LAUNCH_FAULT_ERRORS``): the command never ran, so the
 ``error`` class alone cannot say whether a wrapper was missing, which one was
 looked for, or where. They are whitelisted together because the three are only
-diagnostic as a set — the class without the reason is what let six landings mistake
-a missing wrapper for a daemon fault.
+diagnostic as a set — the class without the reason cannot tell a missing wrapper from
+a daemon fault.
 
 ``resolved_project_dir`` / ``plan_id`` are the ROUTED-TREE REFUSAL's two identifying
 facts (see ``resolve_project_dir.emit_carried_tree_outside_job_error``): which tree
 the refused carry named, and which plan it would have been attributed to. They are
-the same kind of diagnostic as the launch-fault trio one layer out, and their
-omission dropped both from every TOON consumer while the JSON path still carried
-them — the emitter printed through ``format_toon``, whose whitelist decides.
+the same kind of diagnostic as the launch-fault trio one layer out: the emitter
+prints through this formatter, whose whitelist decides what a TOON consumer sees,
+while the JSON path passes every key through.
 
 ``timeout_source`` names which path produced ``timeout_used_seconds``
 (``explicit`` / ``learned`` / ``default`` / ``floor`` / ``daemon_default``) and
@@ -196,8 +196,8 @@ def format_toon(result: dict) -> str:
         # block (deliverable 9) on default TOON output. Issue.to_dict() already
         # exposes `detail` to JSON, but the tabular error rows dropped it, so the
         # default TOON path silently lost the failure detail. The column is added
-        # only when at least one row carries a detail (the historical 4-field
-        # shape is preserved otherwise, keeping existing consumers stable).
+        # only when at least one row carries a detail; the four-field shape is
+        # emitted otherwise, keeping existing consumers stable).
         include_detail = any(err.get('detail') for err in errors)
         rows: list[OrderedDict[str, Any]] = []
         for err in errors:
@@ -246,8 +246,8 @@ def format_toon(result: dict) -> str:
     # `duration_seconds`, `by_runner` and `population` are each projected only
     # when the summary carries them (UnitTestSummary.to_dict emits `by_runner`
     # only when the parser attributed counts to runners and `population` only
-    # when it is `unmeasured`), so the historical three-field block stays
-    # bit-for-bit identical for every summary that sets none of them. An empty
+    # when it is `unmeasured`), so a summary that sets none of them renders as the
+    # three-field block, bit-for-bit. An empty
     # `by_runner` is skipped: serialize_toon renders an empty nested dict as a
     # bare header over a blank line, and it attributes nothing anyway.
     # `total` stays unprojected.

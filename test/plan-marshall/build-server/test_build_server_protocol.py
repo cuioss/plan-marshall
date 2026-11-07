@@ -911,8 +911,9 @@ class TestReadLogVerdict:
         assert verdict.timeout_source is None
 
     def test_the_last_bound_wins_over_progress_output(self, tmp_path):
-        # Same last-occurrence rule as status: the final result TOON is emitted
-        # after any progress output written to the same log.
+        # The bound is read from the block that holds the verdict: the top-level
+        # keys ahead of the result's `status:` belong to whatever wrote them and are
+        # not part of this verdict.
         log = tmp_path / 'job.log'
         log.write_text(
             'timeout_used_seconds: 60\ntimeout_source: default\n'
