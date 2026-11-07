@@ -34,7 +34,7 @@ EVERY in-process build, including the plan-less ones the slot path below skips:
 the hazard is the shared directory, not the slot budget.
 
 The one thing it additionally *reports* is the queue's own ``warnings`` — today,
-a surviving per-repo ``build.queue.max_slots`` that no longer takes effect. Each
+a surviving per-repo ``build.queue.max_slots`` that has no effect. Each
 is surfaced once per invocation, deduplicated by ``code`` across the blocked
 re-polls (see :func:`_surface_warnings`), to stderr and to the plan work log. A
 warning never blocks, delays, or aborts the build; reporting is not gating.
@@ -184,6 +184,21 @@ class BuildQueueTimeout(RuntimeError):
         self.plan_id = plan_id
         self.max_retries = max_retries
         super().__init__(f'build queue saturated for plan {plan_id!r} after {max_retries} retries — try again later')
+
+
+class BuildQueueUnavailable(RuntimeError):
+    """Raised when the build queue answers an error instead of an admission.
+
+    The counterpart of :class:`BuildQueueTimeout` for the other failure: the queue
+    was reachable but could not be read, so no slot decision exists. Carries the
+    plan id and the acquire's own error text, so the build site renders a named
+    fault instead of letting a bare exception escape as a crash.
+    """
+
+    def __init__(self, plan_id: str, error: str) -> None:
+        self.plan_id = plan_id
+        self.error = error
+        super().__init__(f'build queue unavailable for plan {plan_id!r}: {error}')
 
 
 def _resolve_max_retries() -> int:
@@ -340,14 +355,16 @@ def _wait_for_admission(plan_id: str, max_retries: int, token: str) -> str:
 
     ``token`` is this invocation's identity, passed on EVERY re-poll WITHOUT
     releasing first: the queue matches the entry by token, so this build keeps
-    its FIFO position in place. A tokenless caller would fall back to the plan id
-    — the pre-token idempotence — but the wrapper always mints one, so two
-    concurrent builds of one plan never share a slot. Releasing-then-re-acquiring
-    (the prior behaviour) pushed the plan to the back of the waiting queue on each
-    poll, defeating FIFO; that release is therefore gone from the loop. Raises
+    its FIFO position in place. A tokenless caller would fall back to the plan id,
+    the queue's own idempotence rule, but the wrapper always mints one, so two
+    concurrent builds of one plan never share a slot. The poll re-acquires in
+    place rather than releasing-then-re-acquiring, which would push the plan to
+    the back of the waiting queue on each poll and defeat FIFO; that release is
+    therefore absent from the loop. Raises
     :class:`BuildQueueTimeout` when still blocked after ``max_retries`` re-polls
     (the final queued id IS released first, as cleanup, so an exhausted plan does
-    not leak a waiting entry).
+    not leak a waiting entry), and :class:`BuildQueueUnavailable` when the queue
+    answers an error instead of an admission.
 
     Each ``acquire`` result's ``warnings`` are surfaced through
     :func:`_surface_warnings`, deduplicated by ``code`` across every re-poll via
@@ -365,7 +382,7 @@ def _wait_for_admission(plan_id: str, max_retries: int, token: str) -> str:
     result = _acquire(plan_id, token)
     if result.get('status') != 'success':
         # acquire is NOT best-effort: a queue we cannot reach is a hard failure.
-        raise RuntimeError(f'build_queue acquire failed for {plan_id!r}: {result.get("error")}')
+        raise BuildQueueUnavailable(plan_id, str(result.get('error')))
 
     # Read the id FIRST, before anything else can raise. The acquire above has
     # already committed an entry to the machine-global queue, so from this point
@@ -405,7 +422,7 @@ def _wait_for_admission(plan_id: str, max_retries: int, token: str) -> str:
             # instead of being shuffled to the back on each retry.
             result = _acquire(plan_id, token)
             if result.get('status') != 'success':
-                raise RuntimeError(f'build_queue acquire failed for {plan_id!r}: {result.get("error")}')
+                raise BuildQueueUnavailable(plan_id, str(result.get('error')))
             _surface_warnings(result, plan_id, seen)
             admission_id = str(result['id'])
             if result.get('admission') == 'admitted':
@@ -445,6 +462,8 @@ def build_queue_slot(plan_id: str | None, *, routed: bool = False) -> Iterator[N
 
     Raises:
         BuildQueueTimeout: when no slot is admitted within ``max_retries``.
+        BuildQueueUnavailable: when the queue answers an error instead of an
+            admission, so no slot decision exists at all.
     """
     if routed or not names_real_plan(plan_id):
         yield
@@ -461,7 +480,7 @@ def build_queue_slot(plan_id: str | None, *, routed: bool = False) -> Iterator[N
 
 
 # ---------------------------------------------------------------------------
-# Per-directory lock (D3)
+# Per-directory lock
 # ---------------------------------------------------------------------------
 
 
@@ -484,6 +503,21 @@ class DirectoryBusy(RuntimeError):
             f'(pid {self.holder_pid}) for {self.holder_seconds}s running {self.holder_command!r}; '
             f'waited {int(waited_seconds)}s'
         )
+
+
+class DirectoryLockUnavailable(RuntimeError):
+    """Raised when the per-directory lock answers an error instead of a decision.
+
+    The counterpart of :class:`DirectoryBusy` for the other failure: the lock was
+    asked and could not answer, so the build has neither a granted lease nor a
+    named holder. Carries the canonicalised directory and the acquire's own error
+    text so the build site can render a named fault.
+    """
+
+    def __init__(self, directory: str, error: str) -> None:
+        self.directory = directory
+        self.error = error
+        super().__init__(f'directory lock unavailable for {directory!r}: {error}')
 
 
 @dataclass(frozen=True)
@@ -563,6 +597,8 @@ def directory_lock(
 
     Raises:
         DirectoryBusy: when the bound runs out with the directory still held.
+        DirectoryLockUnavailable: when the lock answers an error instead of a
+            decision, so the build has neither a lease nor a named holder.
     """
     key = str(Path(directory).resolve())
     identity = plan_id if names_real_plan(plan_id) else NO_PLAN_SENTINEL
@@ -580,7 +616,7 @@ def directory_lock(
         while True:
             result = _directory_acquire(key, identity, command, ticket)
             if result.get('status') != 'success':
-                raise RuntimeError(f'directory lock acquire failed for {key!r}: {result.get("error")}')
+                raise DirectoryLockUnavailable(key, str(result.get('error')))
             if result.get('admission') == 'admitted':
                 break
             waited = time.monotonic() - started

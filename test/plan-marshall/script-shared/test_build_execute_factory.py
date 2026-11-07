@@ -8,7 +8,7 @@ full-scope and module-scoped invocations of the same executable produce
 distinct keys. This isolates adaptive-timeout learning per scope and
 prevents cross-scope run-config key collisions.
 
-Also covers the D6 build-queue integration at the factory ``cmd_run`` wrap
+Also covers the build-queue integration at the factory ``cmd_run`` wrap
 site: ``cmd_run`` runs ``execute_direct`` inside ``build_queue_slot(plan_id)``,
 so the build participates in the cluster queue only when a ``plan_id`` is set.
 The integration tests drive ``cmd_run`` end-to-end through the REAL
@@ -20,7 +20,7 @@ zero queue interaction).
 
 These queue-integration cases leave ``execution_mode`` at its ``auto`` default
 and depend on the autouse ``_neutralize_daemon_routing`` fixture in
-``test/conftest.py`` to hold the D5 ``_route_to_daemon`` seam at its non-routing
+``test/conftest.py`` to hold the ``_route_to_daemon`` seam at its non-routing
 outcome — without it, a host with marshalld registered and ready would route the
 build away before the injected queue double and exec recorder are ever reached.
 The ``TestCmdRunExecutionModeVerdict`` daemon-mode cases below own that seam as
@@ -373,7 +373,7 @@ class TestRegisterStandardSubparsersPlanIdPropagation:
         assert ns.project_dir == '/plan/wt'
 
 
-# D6 build-queue integration: these tests drive the factory's generated
+# build-queue integration: these tests drive the factory's generated
 # ``cmd_run`` end-to-end through the REAL ``build_queue_slot`` context manager.
 # The queue acquire/release seam (``_acquire`` / ``_release_raw``) is mocked on
 # the ``_build_queue_slot`` module, so the slot's admit / wait / release
@@ -559,6 +559,44 @@ class TestFactoryCmdRunQueueBlockedThenAdmitted:
         assert len(exec_recorder.calls) == 1
 
 
+class TestFactoryCmdRunLimiterFaults:
+    """A limiter that cannot answer is a named fault, never a crash or a red build.
+
+    Both acquirers run before any build tool, and the caller needs the limiter's
+    name: a ``build_failed`` here would assert that a build ran and failed when
+    nothing was ever executed.
+    """
+
+    def test_a_failed_slot_acquire_emits_a_named_fault(self, monkeypatch, capsys):
+        double = _QueueDouble([{'status': 'error', 'error': 'queue file unreadable'}])
+        cmd_run, exec_recorder = _install(monkeypatch, double)
+
+        rc = cmd_run(argparse.Namespace(command_args='verify', plan_id='P', format='toon'))
+
+        emitted = capsys.readouterr().out
+        assert rc == 1
+        assert f'error: {factory.ERROR_BUILD_QUEUE_UNAVAILABLE}' in emitted
+        assert 'queue file unreadable' in emitted
+        assert exec_recorder.ran is False, 'no tool ran, so no build envelope may claim one did'
+
+    @pytest.mark.real_directory_lock
+    def test_a_failed_directory_acquire_emits_a_named_fault(self, monkeypatch, capsys):
+        double = _QueueDouble([{'status': 'success', 'admission': 'admitted', 'id': 'P:uuid-1'}])
+        cmd_run, exec_recorder = _install(monkeypatch, double)
+        monkeypatch.setattr(
+            bqs, '_directory_acquire', lambda *_a, **_k: {'status': 'error', 'error': 'lease unreadable'}
+        )
+
+        rc = cmd_run(argparse.Namespace(command_args='verify', plan_id='P', format='toon'))
+
+        emitted = capsys.readouterr().out
+        assert rc == 1
+        assert f'error: {factory.ERROR_DIRECTORY_LOCK_UNAVAILABLE}' in emitted
+        assert 'lease unreadable' in emitted
+        assert exec_recorder.ran is False
+        assert double.acquire_calls == [], 'the slot is taken after the directory, so it is never reached'
+
+
 class TestFactoryCmdRunQueueSaturated:
     """Max-retries-exhausted: the queue stays blocked past max_retries, so
     cmd_run returns the structured ``queue_saturated`` error, releases the
@@ -729,8 +767,7 @@ class TestResolveWrapperAutoDetect:
 
     def test_absent_wrapper_without_system_on_path_still_resolves_system_binary(self, monkeypatch, tmp_path):
         """No wrapper AND system_fallback absent from PATH → resolution STILL
-        returns the system binary string with NO FileNotFoundError. The gate that
-        used to error here has been removed."""
+        returns the system binary string with NO FileNotFoundError."""
         monkeypatch.setattr(build_execute.shutil, 'which', lambda _cmd: None)
         recorder = _ExecRecorder()
         monkeypatch.setattr(factory, 'execute_direct_base', recorder)
@@ -768,11 +805,11 @@ class TestResolveWrapperAutoDetect:
 
 
 # =============================================================================
-# D4 — client-side routed-verdict cross-check
+# Client-side routed-verdict cross-check
 # =============================================================================
 # The daemon's child is a build wrapper that exits 0 even on a failed build and
 # reports its real verdict in the emitted build TOON. ``_daemon_result_to_direct``
-# no longer trusts a ``job_status: success`` blindly: it re-reads the job log's own
+# does not trust a ``job_status: success`` blindly: it re-reads the job log's own
 # verdict through the shared ``read_log_verdict`` and FAILS CLOSED when the verdict
 # disagrees, so a lying / lagging daemon can never launder a failure into a green.
 
@@ -944,12 +981,12 @@ class TestRoutedArgvResolvesTheWorktreeWrapper:
 class TestMissingWrapperIsNamedOnBothLegs:
     """A launch fault reaches the rendered result as itself, with where it looked.
 
-    The rendered result historically carried only ``error: execution_failed``, so a
-    missing wrapper was indistinguishable from a daemon fault. The three facts that
-    separate them — the reason, the wrapper name tried, and the project directory it
-    was looked for in — must survive on the in-process leg and on the routed leg
-    alike; on the routed leg the inner wrapper's own verdict is what the client reads
-    back out of the job log.
+    The rendered result carries only ``error: execution_failed`` unless the three
+    facts that separate one launch fault from another travel with it, so a missing
+    wrapper would be indistinguishable from a daemon fault. Those facts — the reason,
+    the wrapper name tried, and the project directory it was looked for in — must
+    survive on the in-process leg and on the routed leg alike; on the routed leg the
+    inner wrapper's own verdict is what the client reads back out of the job log.
     """
 
     def test_in_process_leg_names_the_wrapper_reason_and_directory(self, monkeypatch, tmp_path, capsys):
@@ -1525,25 +1562,42 @@ class TestPerTaskRoutedBuildOutliving300s:
         assert routed['job_status'] == 'running'
 
 
-class TestResolvedTreeDocContract:
-    """D4: the factory documents the invariant that HOLDS, not the one that did not.
+def _stage_plan_record(tree: Path, plan_id: str) -> Path:
+    """Create the plan record a cwd-relative ``--plan-id`` resolution reads.
 
-    The module used to state that ``--plan-id`` "resolves identically in both
-    processes". That was false for the finalize move-back window, and it is what
-    made the routed re-run look safe while the child re-resolved a plan record that
-    had already left its tree. The guarantee now is the CARRY, and these cases pin
-    both halves: the old claim is gone, and the documented carry is what the seam
-    actually does — so the prose cannot drift away from the behaviour again.
+    The record's presence in a tree is exactly what decides whether a child
+    standing there can resolve the plan itself, so tests about the carry stage it
+    rather than describing it.
+    """
+    plan_dir = tree / '.plan' / 'local' / 'plans' / plan_id
+    plan_dir.mkdir(parents=True, exist_ok=True)
+    record = plan_dir / 'status.json'
+    record.write_text(json.dumps({'plan_id': plan_id, 'metadata': {}}), encoding='utf-8')
+    return record
+
+
+class TestResolvedTreeDocContract:
+    """The factory documents and implements the carried-tree guarantee.
+
+    ``--plan-id`` does NOT resolve identically in the routing process and the
+    daemon child: in the finalize move-back window the plan record has left the
+    child's tree, so the child's own strict resolution would refuse a resolution
+    the routing process already completed. The guarantee is therefore the carry,
+    and these cases pin both halves — that the module makes no identical-resolution
+    claim, and that the documented guarantee is what the seam implements.
     """
 
     @staticmethod
     def _flattened_source() -> str:
         return ' '.join(Path(factory.__file__).read_text(encoding='utf-8').split())
 
-    def test_the_old_identical_resolution_claim_is_gone(self):
-        source = self._flattened_source()
+    def test_the_module_claims_no_identical_resolution(self):
+        """A claim that both processes resolve the same plan identically is false.
 
-        assert 'resolves identically in both processes' not in source
+        The claim makes the routed re-run look safe: it hides the window in which
+        the child re-resolves a record that has already left its tree.
+        """
+        assert 'resolves identically in both processes' not in self._flattened_source()
 
     def test_the_documented_guarantee_is_the_carried_tree(self):
         source = self._flattened_source()
@@ -1551,34 +1605,60 @@ class TestResolvedTreeDocContract:
         assert 'travels beside it as ``--resolved-project-dir``' in source
         assert 'finalize move-back window' in source
 
-    def test_the_carry_flag_has_one_spelling(self):
-        """The routing seam and the CLI consume must not diverge on the flag name.
+    def test_the_routed_argv_parses_with_the_childs_own_parser(self, tmp_path):
+        """The seam emits a carry spelling the child's parser accepts.
 
-        They are declared in two modules; a rename on one side only would make the
-        child reject the routed argv as an unknown flag, which reads as a dispatch
-        failure rather than as the missed edit it is.
+        Comparing the seam's constant against the CLI's would pass on a rename
+        applied to both ends. Parsing the routed argv with the child's own parser
+        fails whenever the seam emits a spelling the child does not accept — the
+        dispatch failure a one-sided rename really causes.
         """
-        from _build_cli import RESOLVED_PROJECT_DIR_FLAG
+        from _build_cli import build_cli_parser
 
-        assert factory._RESOLVED_PROJECT_DIR_FLAG == RESOLVED_PROJECT_DIR_FLAG
+        tree = str(tmp_path / 'worktree')
 
-    def test_the_seam_carries_the_tree_exactly_when_the_argv_names_a_plan(self):
-        """The documented mechanism, asserted on the seam that implements it."""
-        tree = '/resolved/tree'
+        carried = factory._carry_resolved_tree(['run', '--command-args', 'verify', '--plan-id', 'plan-x'], tree)
+        parser = build_cli_parser('t', [lambda subparsers: add_run_subparser(subparsers, command_args_help='t')])
+        parsed = parser.parse_args(carried)
 
-        carried = factory._carry_resolved_tree(['run', '--plan-id', 'p'], tree)
-        assert carried == ['run', '--plan-id', 'p', '--resolved-project-dir', tree]
+        assert parsed.plan_id == 'plan-x', 'the plan id still reaches the child untouched'
+        assert parsed.project_dir == '.', 'the carry is not a --project-dir override'
+        assert parsed.resolved_project_dir == tree
 
-        equals_form = factory._carry_resolved_tree(['run', '--plan-id=p'], tree)
-        assert equals_form[-2:] == ['--resolved-project-dir', tree]
+    def test_the_carry_is_appended_only_when_the_child_cannot_resolve_the_plan(self, tmp_path):
+        """The window is the only case that needs the tree handed over.
 
-        project_dir_form = factory._carry_resolved_tree(['run', '--project-dir', tree], tree)
-        assert project_dir_form == ['run', '--project-dir', tree], 'the --project-dir rewrite already carried it'
+        A child whose own tree still holds the plan record resolves that plan to
+        the same tree unaided, so appending the flag there buys nothing — and costs
+        the whole build when the child's executor predates the flag, because such
+        an executor refuses an undeclared flag and a routed result has no
+        in-process fallback.
+        """
+        planted = tmp_path / 'planted'
+        _stage_plan_record(planted, 'plan-x')
+        bare = tmp_path / 'bare'
+        argv = ['run', '--command-args', 'verify', '--plan-id', 'plan-x']
 
-        plan_less = factory._carry_resolved_tree(['run'], tree)
-        assert plan_less == ['run'], 'a plan-less argv has nothing to re-resolve'
+        assert factory._carry_resolved_tree(argv, str(planted)) == argv, (
+            'a tree that holds the plan record resolves it itself'
+        )
+        assert factory._carry_resolved_tree(argv, str(bare)) == [*argv, '--resolved-project-dir', str(bare)]
+        equals_form = ['run', '--command-args', 'verify', '--plan-id=plan-x']
+        assert factory._carry_resolved_tree(equals_form, str(bare))[-2:] == ['--resolved-project-dir', str(bare)], (
+            'both spellings the child accepts name the same plan'
+        )
 
-        sentinel = factory._carry_resolved_tree(['run', '--plan-id', 'NO_PLAN'], tree)
-        assert sentinel == ['run', '--plan-id', 'NO_PLAN'], (
+    def test_the_seam_ignores_an_argv_with_no_real_plan(self, tmp_path):
+        """Only a real plan id has a resolution a carry could replace."""
+        bare = str(tmp_path / 'bare')
+        project_dir_form = ['run', '--project-dir', bare]
+        plan_less = ['run']
+        sentinel = ['run', '--plan-id', NO_PLAN_SENTINEL]
+
+        assert factory._carry_resolved_tree(project_dir_form, bare) == project_dir_form, (
+            'a --project-dir dispatch already travels as an absolute value'
+        )
+        assert factory._carry_resolved_tree(plan_less, bare) == plan_less, 'a plan-less argv has nothing to re-resolve'
+        assert factory._carry_resolved_tree(sentinel, bare) == sentinel, (
             'the sentinel is not a routing source, so it carries nothing'
         )

@@ -173,10 +173,10 @@ else, so this scan sees its own constants and nothing borrowed.
 #
 # The table is TOTAL over :data:`_RESULT_STATUSES` — every result status has a
 # row, and :func:`wire_status_from_result` raises rather than passing through if
-# one ever does not. It is not total by accident: ``indeterminate`` previously had
-# no row and fell through the pass-through fallback, so the daemon published the
-# literal string ``indeterminate`` — a value absent from
-# :data:`TERMINAL_STATUSES` — and a waiting client re-polled forever.
+# one ever does not. The totality is load-bearing: a status without a row falls
+# through the pass-through fallback, so the daemon publishes that literal string —
+# a value absent from :data:`TERMINAL_STATUSES` — and a waiting client re-polls
+# forever.
 #
 # ``killed`` is listed EXPLICITLY rather than left to that fallback. The two
 # spellings coincide, so the fallback produced the right answer — but only by
@@ -978,17 +978,17 @@ class ChildFault:
     Attributes:
         error: The refusing process's own error identifier, a member of
             :data:`PRE_TOOL_FAULT_ERRORS`.
-        reason: The operator-facing reason it rendered — the ``reason:`` line when
-            the emitter wrote one, else the ``message:`` line (the resolution
-            emitters write ``message``).
-        corrective: The ``message:`` line when it says something ``reason`` does
-            not (the executor's pre-spawn refusal puts the rejection CLASS in
-            ``reason`` and the actionable correction in ``message``), else ``None``.
+        reason: The ``reason:`` line the emitter wrote, or ``None`` when it wrote
+            none. ``None`` is distinct from a reason that differs from the
+            ``message:``: only the first says the process stated no reason at all.
+        message: The ``message:`` line the emitter wrote, or ``None``. It is
+            carried under its own name because that is the name the direct path
+            already publishes, so a consumer reads the same field on both routes.
     """
 
     error: str
     reason: str | None = None
-    corrective: str | None = None
+    message: str | None = None
 
 
 #: The build process's error identifiers that mean "it refused before any tool ran".
@@ -1070,9 +1070,8 @@ class LogVerdict:
     ``None`` on every result that got as far as running the build. A launch fault
     (``execution_failed`` / ``log_file_failed``) carries the three facts that
     separate it from a red build: the reason, the wrapper it looked for and the
-    project directory it looked in. Without them a routed job reported a bare
-    ``build_failed`` and the six landings that hit this could not tell a missing
-    wrapper from a daemon fault.
+    project directory it looked in. Without them a routed job reports a bare
+    ``build_failed``, and a reader cannot tell a missing wrapper from a daemon fault.
     """
 
     child_fault: ChildFault | None = None
@@ -1119,13 +1118,13 @@ def _toon_scalar(line: str) -> str:
     The unquoting is the CANONICAL parser's, not a local restatement of it: a
     quoted value is handed to :func:`toon_parser.parse_toon`, which owns the
     double-quote-plus-``\\"``-escape rule that :func:`toon_parser.serialize_toon`
-    writes. The prior hand-rolled version also stripped SINGLE quotes, a shape no
-    writer in this tree emits, and it never unescaped an internal quote.
+    writes. A single-quoted value is not unquoted at all, because no writer in this
+    tree emits that shape, and an internal quote is unescaped rather than kept.
 
-    Only the scalar unquote is delegated. The surrounding scan stays as it is —
-    deliberately streaming, top-level-only and last-occurrence-wins over a log
-    that also carries non-TOON build chatter — so an unquoted value is returned
-    as the log's own raw text, and every numeric caller keeps parsing it itself.
+    Only the scalar unquote is delegated. The surrounding scan stays top-level-only
+    and streaming over a log that also carries non-TOON build chatter, so an
+    unquoted value is returned as the log's own raw text, and every numeric caller
+    keeps parsing it itself.
     """
     raw = line.split(':', 1)[1].strip()
     if len(raw) < 2 or not (raw.startswith('"') and raw.endswith('"')):
@@ -1136,6 +1135,39 @@ def _toon_scalar(line: str) -> str:
     # string (an embedded JSON array or object) is not a scalar; the raw text is
     # the honest answer rather than a coerced repr of a different type.
     return value if isinstance(value, str) else raw
+
+
+#: The column-0 scalar keys a build body states apart from ``status:``. A body is
+#: read key-by-key inside its own block, so this list is what a key has to match to
+#: become part of the verdict; a key outside it is ignored wherever it appears.
+_BLOCK_SCALAR_KEYS = (
+    'exit_code:',
+    'tests_run:',
+    'timeout_used_seconds:',
+    'timeout_source:',
+    'command_key:',
+    'error:',
+    'reason:',
+    'message:',
+    'wrapper:',
+    'project_dir:',
+)
+
+
+def _block_scalar(line: str) -> tuple[str | None, str]:
+    """Split one column-0 body line into its key and its unquoted scalar value.
+
+    Args:
+        line: A log line already stripped of its trailing newline.
+
+    Returns:
+        ``(key, value)`` for a recognised body key, or ``(None, '')`` for a line
+        the verdict does not read.
+    """
+    for prefix in _BLOCK_SCALAR_KEYS:
+        if line.startswith(prefix):
+            return prefix[:-1], _toon_scalar(line)
+    return None, ''
 
 
 def _parse_errors_table(block_lines: list[str]) -> tuple[dict[str, Any], ...]:
@@ -1188,13 +1220,22 @@ def read_log_verdict(log_file: str) -> LogVerdict | None:
     quadruple is read so an inner fault reaches the consumer as itself rather than
     as a bare build failure; it is attached as :class:`InnerFault` only for the two
     identifiers that mean the command never ran. ``message:`` is read because a
-    PRE-TOOL emitter may render its reason there instead (the resolution emitters
-    write ``message:`` and no ``reason:``), and the reader prefers ``reason:`` with
-    ``message:`` as the fallback — see :class:`ChildFault`. Every other key is
+    PRE-TOOL emitter renders its detail there, and it reaches :class:`ChildFault`
+    under its own name — see that class. Every other key is
     ignored. An applied-bound key that is
-    absent, empty or (for the bound) not a positive integer reads as ``None``. The LAST occurrence of each wins, because the wrapper
-    emits its result TOON after any progress output it already wrote to the same
-    log.
+    absent, empty or (for the bound) not a positive integer reads as ``None``.
+
+    **Each key is taken from the block that holds the verdict, never from the last
+    occurrence anywhere in the log.** A log is a file, not a controlled channel: it
+    can hold a body from an earlier writer — a nested invocation's TOON, a
+    previous attempt's output — interleaved with the result. Reading each key
+    last-wins across the whole file would let such a line supply a field of the
+    verdict, so a ``reason:`` from one writer could be attached to a refusal that
+    stated only ``message:``. A block begins at a column-0 ``status:`` line and
+    runs to the next one; the verdict is the block that holds the LAST such line,
+    and every key — the scalars and the ``errors[]`` table alike — is read inside
+    it. A table written AHEAD of the first ``status:`` belongs to the block that
+    status opens, because that is the only block it can belong to.
 
     ``status:`` is what makes a verdict exist; the other two are enrichment.
     ``tests_run`` is read here rather than re-derived by the client because the
@@ -1239,6 +1280,16 @@ def read_log_verdict(log_file: str) -> LogVerdict | None:
     # Non-None only while an `errors[N]{...}:` header has been seen and its
     # indented rows are still being collected.
     errors_block: list[str] | None = None
+    # The scalar keys of the verdict block being read, and of the last completed
+    # block that carried a `status:`. A key is read from the latter only, so a
+    # line from a block that is not the verdict can never supply one of its fields.
+    block: dict[str, str] = {}
+    verdict_block: dict[str, str] | None = None
+    # Whether the table being collected belongs to a block that was ALREADY open
+    # when its header appeared. A table ahead of the first `status:` belongs to the
+    # block that status opens and survives it; a table collected inside an open
+    # block belongs to that block and is dropped when the next one begins.
+    table_owned_by_open_block = False
     try:
         with open(log_file, encoding='utf-8', errors='replace') as handle:
             for raw_line in handle:
@@ -1253,61 +1304,75 @@ def read_log_verdict(log_file: str) -> LogVerdict | None:
                     errors_block = None
                 if _ERRORS_TABLE_HEADER.match(line):
                     errors_block = [line]
+                    table_owned_by_open_block = bool(block)
                     continue
                 if line.startswith('status:'):
-                    status = _toon_scalar(line)
-                elif line.startswith('exit_code:'):
-                    try:
-                        exit_code = int(_toon_scalar(line))
-                    except ValueError:
-                        exit_code = None
-                elif line.startswith('tests_run:'):
-                    try:
-                        parsed_count = int(_toon_scalar(line))
-                    except ValueError:
-                        # An unparseable count is UNKNOWN, not zero — the whole
-                        # point of carrying the field is that the two differ.
-                        tests_run = None
-                    else:
-                        # ``int`` accepts ``-1`` happily, so the ValueError guard
-                        # alone lets a negative through as a real non-``None``
-                        # count. A negative executed-test count is meaningless;
-                        # publishing it launders nonsense into a measurement.
-                        # ``None`` is the honest "the log stated no usable count".
-                        # The bound is ``>= 0``, not ``> 0``: zero is a genuine
-                        # "this run executed no tests", a different fact from
-                        # "the log stated no count".
-                        tests_run = parsed_count if parsed_count >= 0 else None
-                elif line.startswith('timeout_used_seconds:'):
-                    try:
-                        parsed_bound = int(_toon_scalar(line))
-                    except ValueError:
-                        timeout_used_seconds = None
-                    else:
-                        # A bound is a positive number of seconds; anything else
-                        # is not one, and UNKNOWN is the honest reading of it.
-                        timeout_used_seconds = parsed_bound if parsed_bound > 0 else None
-                elif line.startswith('timeout_source:'):
-                    timeout_source = _toon_scalar(line) or None
-                elif line.startswith('command_key:'):
-                    command_key = _toon_scalar(line) or None
-                elif line.startswith('error:'):
-                    fault_error = _toon_scalar(line) or None
-                elif line.startswith('reason:'):
-                    fault_reason = _toon_scalar(line) or None
-                elif line.startswith('message:'):
-                    fault_message = _toon_scalar(line) or None
-                elif line.startswith('wrapper:'):
-                    fault_wrapper = _toon_scalar(line) or None
-                elif line.startswith('project_dir:'):
-                    fault_project_dir = _toon_scalar(line) or None
+                    # A `status:` line opens a block. The one being read becomes
+                    # the verdict candidate, and if a later block states a status
+                    # too, that later one replaces it — the result is the last
+                    # complete body in the log. A table that an earlier block owned
+                    # is dropped with that block: rows belong to the block that
+                    # carried them, exactly as the scalars do.
+                    if block:
+                        verdict_block = block
+                    block = {'status': _toon_scalar(line)}
+                    if table_owned_by_open_block:
+                        errors = ()
+                    continue
+                key, value = _block_scalar(line)
+                if key is not None and block:
+                    block[key] = value
             # A table that ran to end-of-file is closed by the file's end.
             if errors_block is not None:
                 errors = _parse_errors_table(errors_block)
     except OSError:
         return None
-    if status is None:
+    if block:
+        verdict_block = block
+    if verdict_block is None:
         return _json_log_verdict(log_file)
+    status = verdict_block.get('status', '')
+
+    raw_exit_code = verdict_block.get('exit_code')
+    if raw_exit_code is not None:
+        try:
+            exit_code = int(raw_exit_code)
+        except ValueError:
+            exit_code = None
+    raw_tests_run = verdict_block.get('tests_run')
+    if raw_tests_run is not None:
+        try:
+            parsed_count = int(raw_tests_run)
+        except ValueError:
+            # An unparseable count is UNKNOWN, not zero — the whole point of
+            # carrying the field is that the two differ.
+            tests_run = None
+        else:
+            # ``int`` accepts ``-1`` happily, so the ValueError guard alone lets a
+            # negative through as a real non-``None`` count. A negative
+            # executed-test count is meaningless; publishing it launders nonsense
+            # into a measurement. ``None`` is the honest "the log stated no usable
+            # count". The bound is ``>= 0``, not ``> 0``: zero is a genuine "this
+            # run executed no tests", a different fact from "the log stated no
+            # count".
+            tests_run = parsed_count if parsed_count >= 0 else None
+    raw_bound = verdict_block.get('timeout_used_seconds')
+    if raw_bound is not None:
+        try:
+            parsed_bound = int(raw_bound)
+        except ValueError:
+            timeout_used_seconds = None
+        else:
+            # A bound is a positive number of seconds; anything else is not one,
+            # and UNKNOWN is the honest reading of it.
+            timeout_used_seconds = parsed_bound if parsed_bound > 0 else None
+    timeout_source = verdict_block.get('timeout_source') or None
+    command_key = verdict_block.get('command_key') or None
+    fault_error = verdict_block.get('error') or None
+    fault_reason = verdict_block.get('reason') or None
+    fault_message = verdict_block.get('message') or None
+    fault_wrapper = verdict_block.get('wrapper') or None
+    fault_project_dir = verdict_block.get('project_dir') or None
     fault = None
     if fault_error in LAUNCH_FAULT_ERRORS:
         fault = InnerFault(
@@ -1318,9 +1383,7 @@ def read_log_verdict(log_file: str) -> LogVerdict | None:
         )
     child_fault = None
     if fault_error in PRE_TOOL_FAULT_ERRORS:
-        reason = fault_reason or fault_message
-        corrective = fault_message if fault_message and fault_message != reason else None
-        child_fault = ChildFault(error=fault_error, reason=reason, corrective=corrective)
+        child_fault = ChildFault(error=fault_error, reason=fault_reason, message=fault_message)
     return LogVerdict(
         status=status,
         exit_code=exit_code,
@@ -1374,18 +1437,19 @@ def _json_log_verdict(log_file: str) -> LogVerdict | None:
 
     ``--format json`` is a supported caller request, and the wrapper honours it: the
     child's result is then a JSON object rather than column-0 TOON keys. The line
-    scanner finds no ``status:`` in such a log, so before this existed the whole
-    routed job fell through to ``build_failed`` with the synthetic row — the same
-    collapse this module fixes for TOON, surviving in the other output format.
+    scanner finds no ``status:`` in such a log, and without this fallback the whole
+    routed job would read as a build failure with the synthetic row — the same
+    collapse the TOON path prevents, in the other output format.
 
     Every field the TOON path reads is read here too, with the same guards: the
     applied-bound triple matters because a JSON ``timeout`` or ``killed`` result
     without it names no bound, and the bound is what tells a reader whose number
     fired.
 
-    Only the failure path pays for it: this runs after the line scan has already
-    found nothing, and it re-reads the log because that case is rare and a partly
-    parsed file is cheaper than holding every log in memory.
+    It runs only when the line scan found no TOON ``status:`` at all, and it
+    re-reads the log to do so: the two writers never share a log's verdict, so a
+    scan that found nothing is the only case this answers, and holding every log in
+    memory to avoid the second read would cost on every job.
 
     Args:
         log_file: Path to the job log.
@@ -1433,9 +1497,7 @@ def _json_log_verdict(log_file: str) -> LogVerdict | None:
         )
     child_fault = None
     if error_name in PRE_TOOL_FAULT_ERRORS:
-        preferred = reason or message
-        corrective = message if message and message != preferred else None
-        child_fault = ChildFault(error=error_name, reason=preferred, corrective=corrective)
+        child_fault = ChildFault(error=error_name, reason=reason, message=message)
     return LogVerdict(
         status=status,
         exit_code=exit_code,
