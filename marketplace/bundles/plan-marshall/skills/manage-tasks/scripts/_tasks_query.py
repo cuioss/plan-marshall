@@ -647,10 +647,6 @@ def evaluate_no_progress(
       - ``classification``: the final termination cause
       - ``classification_reason``: why that cause won
     """
-    predicate_in_progress = max(in_progress_count - owed_count, 0)
-    predicate_holds = (
-        predicate_in_progress > 0 and completed_tasks_delta == 0 and consumed_tokens > B7_NO_PROGRESS_TOKEN_THRESHOLD
-    )
     allowed_steps = manifest_verification_steps if manifest_verification_steps is not None else set()
     unknown_steps = [step for step in pending_verify_steps if step not in allowed_steps]
     handback_valid = verification_handback and bool(pending_verify_steps) and not unknown_steps
