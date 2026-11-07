@@ -651,9 +651,7 @@ class TestThreeLayerCorrections:
             assert len(corpus) <= 1, (
                 f'the row {row} names more than one corpus verdict, so one finding could persist two values'
             )
-            assert corpus or 'none' in cell, (
-                f'the row {row} maps to neither a corpus verdict nor `none`'
-            )
+            assert corpus or 'none' in cell, f'the row {row} maps to neither a corpus verdict nor `none`'
 
     def test_the_two_corroboration_statements_agree(self):
         """One rule states which verdicts a layer persists; the contradiction is gone."""
