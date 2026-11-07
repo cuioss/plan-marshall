@@ -40,18 +40,19 @@ _ATTRIBUTE_REFERENCE_CLASS = 'attribute-reference'
 #: the host root, so it is neither verified nor broken.
 _ABSOLUTE_PATH_CLASS = 'absolute-path'
 
-#: One class name per inline mask that hides a ``link:`` macro from the checker.
-#: A masked example is still counted, so the report says what the checker did
+#: One class name per inline mask that hides a reference from the checker. A
+#: masked example is still counted, so the report says what the checker did
 #: not examine instead of implying it verified a zero.
 _CODE_SPAN_CLASS = 'code-span'
 _INLINE_PASSTHROUGH_CLASS = 'inline-passthrough'
 _PASSTHROUGH_CLASS = 'passthrough'
 _PASS_MACRO_CLASS = 'pass-macro'
 
-#: The issue type for a target the checker could not read (a directory named
-#: like an ``.adoc`` file, a permission error, a non-UTF-8 file) or could not
-#: resolve (a NUL byte in the target). It is not ``broken``: the link was never
-#: examined.
+#: The issue type for anything the checker could not examine: a target it could
+#: not read (a directory named like an ``.adoc`` file, a permission error, a
+#: non-UTF-8 file) or could not resolve (a NUL byte, a symlink loop), a file it
+#: could not read at all, and a delimited block left open. It is not ``broken``:
+#: the link was never examined.
 _UNREADABLE_ISSUE = 'unreadable'
 
 #: AsciiDoc delimited blocks whose contents are literal (a listing or literal
@@ -97,7 +98,7 @@ _MASKS: tuple[tuple[str, re.Pattern[str]], ...] = (
 #: rather than only the `link:` forms.
 _MASKED_REFERENCE_RES: tuple[re.Pattern[str], ...] = (
     _LINK_MACRO_RE,
-    re.compile(r'(?<!\\)\bxref:([^\s\[]+?)\[([^\]]*)\]'),
+    re.compile(r'(?<!\\)\bxref:([^\[]+)\[([^\]]*)\]'),
     re.compile(r'<<([^,>]+)(?:,([^>]+))?>>'),
 )
 
@@ -137,8 +138,8 @@ def _spanning_macro(line: str, start: int, end: int) -> tuple[int, int, str] | N
     A target wrapped in a passthrough (``link:++url++[x]``) or carrying an inline
     passthrough (``link:https://x/?q=+foo+[y]``) has its macro prefix before the
     mask and its label after it. Masking only the target leaves a blank where
-    ``_LINK_MACRO_RE`` requires a non-blank target, so without this probe the macro
-    prefix is erased with the target and the link appears in no count at all.
+    ``_LINK_MACRO_RE`` requires a non-blank target, so without this probe the
+    macro matches nowhere and the link appears in no count at all.
     """
     prefix_match = _SPANNING_MACRO_PREFIX_RE.search(line[:start])
     if prefix_match is None:
@@ -455,11 +456,12 @@ def _unchecked_class(link: Link) -> str | None:
 def summarise_unchecked_link_classes(links: list[Link]) -> list[dict]:
     """One row per class the checker deliberately does not verify.
 
-    An external or absolute ``link:`` target is never opened, an attribute-bearing
-    one is never substituted, a fragment on a non-AsciiDoc target is never read for
-    anchors, and a macro inside an inline example mask is never examined — so each
-    is counted here instead of being reported as verified. A file with no such link
-    yields an empty list — a measured zero, not a missing field.
+    An external or absolute ``link:`` target is never opened, an absolute ``xref:``
+    target is classed the same way, an attribute-bearing one is never substituted, a
+    fragment on a non-AsciiDoc target is never read for anchors, and a reference
+    inside an inline example mask is never examined — so each is counted here
+    instead of being reported as verified. A file with no such link yields an empty
+    list — a measured zero, not a missing field.
     """
     rows: dict[str, dict] = {}
     for link in links:
@@ -767,7 +769,7 @@ def cmd_verify_links(args) -> dict:
             'global',
             'INFO',
             f'[DOCS-LINKS] Found {len(broken)} broken links, {len(violations)} format violations, '
-            f'{len(unreadable)} unreadable targets in {len(files)} files',
+            f'{len(unreadable)} unreadable issues in {len(files)} files',
         )
 
     live_links = [link for link in all_links if link.link_type != 'masked']
@@ -784,7 +786,10 @@ def cmd_verify_links(args) -> dict:
             'total_links': total_links,
             'broken_links': len(broken),
             'format_violations': len(violations),
-            'unreadable_targets': len(unreadable),
+            # Every issue of the unreadable class — a file-level read failure, an
+            # unresolvable path, an unreadable target and an unterminated block —
+            # so the count that explains the failure covers all four populations.
+            'unreadable_issues': len(unreadable),
             'unchecked_link_classes': unchecked,
             'issues': [
                 {

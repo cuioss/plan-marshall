@@ -1235,7 +1235,7 @@ def test_verify_links_an_unreadable_only_run_names_the_count(tmp_path):
 
     assert result['status'] == 'failure'
     assert result['data']['broken_links'] == 0
-    assert result['data']['unreadable_targets'] == 1, (
+    assert result['data']['unreadable_issues'] == 1, (
         'the failure must be explained by an unreadable count, not only by a zero broken count'
     )
 
@@ -1251,7 +1251,7 @@ def test_verify_links_a_non_utf8_target_is_reported_not_raised(tmp_path):
     assert result['status'] == 'failure'
     assert result['data']['files_processed'] == 1
     assert result['data']['broken_links'] == 0, 'a decode failure is not a missing file'
-    assert result['data']['unreadable_targets'] >= 1
+    assert result['data']['unreadable_issues'] >= 1
 
 
 @pytest.mark.skipif(os.geteuid() == 0, reason='a permission bit does not deny root, so the case cannot be produced')

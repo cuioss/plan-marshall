@@ -272,7 +272,7 @@ Read `target/asciidoc-link-verifier/links.md` and extract:
 - Broken file links
 - Broken anchors
 - Format violations
-- Unchecked link classes (`unchecked_link_classes`), with each class's count and first occurrence — record the disposition of each: an external URL is not fetched, an absolute target is not relative to the file, an attribute-bearing target is not substituted, a fragment on a non-AsciiDoc target is not read for anchors, and a masked macro is not verified. Check every `code-span` macro by hand: a backtick span can still allow macro substitution, so it may render a live link.
+- Unchecked link classes (`unchecked_link_classes`), with each class's count and first occurrence — record the disposition of each: an external URL is not fetched, an absolute target is not relative to the file, an attribute-bearing target is not substituted, a fragment on a non-AsciiDoc target is not read for anchors, and a masked reference is not verified. Check every `code-span` reference by hand: a backtick span can still allow macro substitution, so it may render a live link.
 - `unreadable` issues — a target the checker could not read or resolve, reported with its reason rather than swallowed.
 
 **Step 6: Manual Verification (CRITICAL)**

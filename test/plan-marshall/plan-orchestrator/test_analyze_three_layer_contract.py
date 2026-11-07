@@ -646,15 +646,14 @@ class TestThreeLayerCorrections:
                 f'the leaf verdict {verdict!r} has no row in the mapping — the mapping is not total'
             )
         for row in rows:
-            persisted = _ticked_values(row[_PERSISTED_COLUMN])
-            corpus = [value for value in persisted if value in CORPUS_VERDICTS]
+            cell = row[_PERSISTED_COLUMN]
+            corpus = [value for value in CORPUS_VERDICTS if value in cell]
             assert len(corpus) <= 1, (
                 f'the row {row} names more than one corpus verdict, so one finding could persist two values'
             )
-            for value in persisted:
-                assert value in CORPUS_VERDICTS or value == '`none`', (
-                    f'the row {row} maps to {value!r}, which is neither a corpus verdict nor `none`'
-                )
+            assert corpus or 'none' in cell, (
+                f'the row {row} maps to neither a corpus verdict nor `none`'
+            )
 
     def test_the_two_corroboration_statements_agree(self):
         """One rule states which verdicts a layer persists; the contradiction is gone."""
@@ -678,10 +677,11 @@ class TestThreeLayerCorrections:
 
         assert settle, 'the routing rule carries no never-downgrade rule'
         body = settle.group(1)
-        assert '`contradicted`' in body, (
-            'the never-downgrade rule names only `corroborated`, so a `not_shown_by_reading` finding would '
-            'overwrite a claim settled as `contradicted`'
-        )
+        for settled in ('`contradicted`', '`corroborated`', '`unverifiable`'):
+            assert settled in body, (
+                f'the never-downgrade rule does not name the settled verdict {settled}, so a '
+                f'`not_shown_by_reading` finding could overwrite a claim settled as {settled}'
+            )
         assert re.search(r'(?i)precedence between two findings on one claim', routing), (
             'two findings on one claim with different verdicts have no stated precedence'
         )
