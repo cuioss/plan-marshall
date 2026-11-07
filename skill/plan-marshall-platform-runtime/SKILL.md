@@ -1,0 +1,251 @@
+---
+name: plan-marshall-platform-runtime
+description: Platform abstraction layer routing operations to Claude Code, OpenCode, or Antigravity implementations
+mode: script-executor
+compatibility: Adapted from plan-marshall marketplace (Claude Code native)
+metadata:
+  bundle: plan-marshall
+  skill: platform-runtime
+---
+
+# Platform Runtime Skill
+
+Script-based platform abstraction that routes 27 goal-based operations to the correct target implementation. Follows the `tools-integration-ci` pattern: one router script, target-specific provider classes, target resolution through `target_context`.
+
+## Enforcement
+
+**Execution mode**: Invoke scripts via executor notation; parse TOON output for `status` and route accordingly.
+
+**Prohibited actions:**
+- Do not call provider-specific scripts directly; all operations go through `platform_runtime.py`
+- Do not invent script arguments not listed in the operations table
+- Do not hard-code the target platform; routing is resolved by `target_context` (ambient environment signal, then machine-local harness/run configuration, then the `claude` fallback)
+- Do not implement ad-hoc TOON parsing; use the `ref-toon-format` parser module
+
+**Constraints:**
+- All commands use `python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime <operation> [args...]`
+- `session render-title` takes no arguments; all resolution is internal
+- `no-op` responses are not errors; the calling skill must continue
+- See `standards/contract.md` for per-operation TOON schemas
+
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../tools-script-executor/standards/exit-code-convention.md); it is not restated here.
+
+## What This Skill Provides
+
+Twenty-seven operations covering the full platform lifecycle:
+
+| Operation | Purpose |
+|-----------|---------|
+| `project initial-setup` | One-time project setup: create `.plan/`, seed `marshal.json`, install platform hook |
+| `project install-hook` | Install the terminal-title hook bundle; with the orthogonal `--enforcement` opt-in, install ONLY the PreToolUse enforcement hook entry without touching the terminal-title wiring |
+| `layout skill-roots` | Resolve the ordered project-local skill root directories for the active target |
+| `layout bundle-cache-root` | Resolve the deployed-bundle cache root directories for the active target |
+| `harness bash-timeout-ceiling` | Resolve the maximum Bash-tool `timeout` seconds this target's harness honours |
+| `session capture` | APPEND current session id to `status.metadata.session_ids` via `manage-status` |
+| `permission configure` | Write raw permission list to platform settings |
+| `permission analyze` | Read-only audit of permission hygiene, redundancy, and missing-steps |
+| `permission fix` | Apply hygienic fixes: normalize, add, remove, ensure, consolidate, protect-path |
+| `permission ensure-wildcards` | Add marketplace bundle wildcard permissions |
+| `permission ensure-steps` | Add missing skill permissions for `marshal.json` phase steps |
+| `permission web-analyze` | Read-only analysis of WebFetch/webfetch domain permissions |
+| `permission web-apply` | Add or remove web domain permissions |
+| `session render-title` | Emit OSC title sequence from writer artifact |
+| `session push-title-token` | Parse the store selector (`--plan-id` for the plan store, or `--store orchestrator --slug {slug}` for the orchestrator store) plus optional `--icon`, then bind and settle the title state for the next render event to deliver (Claude). This seam **binds and persists — it does not repaint**: the hook-written `terminalSequence` envelope is the sole delivery channel and is event-driven, so delivery is deferred to the next render. Shared by the `manage-status` phase-state-write drive seam, the lock/build state writers, and the `plan-orchestrator` per-verb call, whose `bind_orchestrator` side effect is the load-bearing reason the seam exists. Two "nothing to settle" outcomes, both `status: success` with a `reason` rather than `no-op`: `no_title_state` and `feature_inactive`; the return carries no `pushed` and no `delivery` field |
+| `session bind` | Bind the running session to `--plan-id` (last-driven-wins) so `render-title` / `resolve-plan` resolve it |
+| `session resolve-plan` | Read the running session's bound plan id (the read side of `session bind`) |
+| `session doctor` | Visit every directory under the session-cache root, report plan-bound-by-multiple-sessions conflicts, stale slots, and orphan directories that yield no live slot, and (with `--fix`) GC the stale slots plus prune the orphan directories |
+| `session teardown` | Activation-gated end-of-session retire: drop the session's binding. Releasing the binding is the whole of the teardown — no title reset is written, because a reset can only be delivered on the render channel. Fired only by `SessionStart:clear`, the sole release point; the archive path deliberately does not call it. A project with no terminal-title wiring reports `active: false` / `reason: feature_inactive` and is left untouched. No arguments |
+| `session reload-directive` | Resolve + surface the harness-appropriate post-upgrade reload directive (Claude: `/reload-plugins` plus the monitor caveat). RESOLVES + SURFACES only — a script cannot type a harness slash command |
+| `metrics capture` | Record token consumption for a planning phase |
+| `metrics normalized-tokens` | Resolve normalized transcript token totals for the active target |
+| `chat extract-signal` | Reduce a platform session transcript to its signal-bearing turns; the platform-owned owner of transcript-format knowledge, so a consumer gets conversational signal from a `session_id` without touching a session JSONL. Returns the record with `no_signal`, or `transcript_not_found` when the target exposes no transcript |
+| `subagent dispatch` | Return platform-specific subagent invocation parameters |
+| `wait for` | Hold a bounded wait until a concrete, pollable observable (`--observable` names a kind from a closed set; `build-job` today) reaches a terminal state, and return a normalized `succeeded`/`failed`/`timed_out`/`killed`/`pending` outcome. The observable is never an opaque condition descriptor — a runtime subprocess cannot evaluate one. Bound exhaustion yields `outcome: pending` with `terminal: false`, never an implicit pass |
+| `health-check` | Verify platform integration |
+| `runtime-info` | Collect harness, transcripts, harness source, model, effort, and the bundle/executor version for the `client.toon` pre-flight artifact; best-effort with drop-not-estimate semantics on `claude`, `opencode`, and `antigravity` |
+
+See `standards/contract.md` for per-operation TOON schemas (success, error, no-op paths).
+
+The `health-check --checks display` surface inspects each terminal-title render entry plus a dedicated `PreToolUse:enforcement` `present` / `divergence` / `MISSING` label for the orthogonal enforcement hook, so a partial or absent enforcement install is diagnosable and repairable independently of the terminal-title wiring. A dual-homed one is diagnosable but **not** repairable: `divergence` (the entry is installed in BOTH `.claude/settings.json` and `.claude/settings.local.json`) is report-only, never makes the check unhealthy, and nothing in the runtime repairs, migrates, or de-duplicates it — the report is the whole remedy. See `standards/contract.md` § `health-check` for the value domain.
+
+The `runtime-info` operation serves the `client.toon` pre-flight artifact with best-effort drop-not-estimate semantics on `claude`, `opencode`, and `antigravity`. See `standards/runtime-info.md` for the schema and extension-point contract.
+
+## OpenCode Permissions (OpenCode 2 rule lists)
+
+OpenCode permission operations are real writes against the `permissions` list
+in `opencode.json` (OpenCode 2's ordered `{action, resource, effect}` rules,
+evaluated last-match-wins). A settings file still in the OpenCode 1 `permission`
+map shape keeps being read and written through that map, so an operator's file
+is never converted behind their back.
+
+* The project-level list keeps the shell catch-all (`resource "*"`) FIRST and
+  follows it with never-legitimate deny rows, rare-legitimate ask rows and the
+  final allow rows. Specific rules therefore override the catch-all; a catch-all
+  written last would override everything before it. The executor agent is
+  confined to the `python3 .plan/execute-script.py *` permit plus deny on the
+  hard rules; the orchestrator agent preserves the small-ops carve-out
+  (read-only file ops, `git status/log` seen as information lookups) under ask.
+* `to_opencode_grant` carries `allow`/`ask`/`deny` actions via the
+  `allow(...)` / `ask(...)` / `deny(...)` wrapper grammar; bare forms
+  default to `allow`, and the wrapper verb is peeled first so a deny
+  intent can never degrade to `allow`.
+* `permission fix protect-path` is a real writing deny: it emits deny
+  entries guarding a named directory in both the tilde and the absolute
+  spelling. It is explicitly not in the no-op class.
+* The maintenance operations `consolidate` and `normalize` report a
+  `success` no-op, mirroring the Claude target's contract split.
+
+The `tool.execute.before` guard plugin under `.opencode/plugin/guard.js`
+enforces the six hard-rule bypass classes (shell chaining, shell file
+operations, direct executor edits, hard-coded builds, direct interpreter
+calls, and a raw finalize commit) by throwing to block, with one audit line per
+blocked invocation in `.plan/temp/guard.log`. R1–R4 are UNCONDITIONAL in the
+OpenCode guard; the interpreter rule (R5) BINDS inside a plan context AND in
+every session of the plan-marshall source repository, so a consumer repository's
+ordinary Python work is untouched outside a plan context; R6 is not gated at all.
+R5 admits the
+executor permit (the relative form, or an absolute form resolving to
+`{repository root}/.plan/execute-script.py`) and the shared allow-list of
+documented non-executor invocations in `standards/r5-allowlist.json` — the same
+data file the Claude `claude_pretooluse_hook.py` reads, so the two decision tables
+agree on the interpreter surface. Its `entries` are repository-relative paths
+matched exactly, and its `bundle_entries` are bundle-relative paths matched exactly
+against a resolved deployed bundle root (the Claude plugin cache and the flat
+OpenCode / Antigravity skill roots); never a basename or a suffix. R6 refuses a
+raw `git commit` while the plan — named from the `git -C` target, then the shell
+workdir, then the project root, and resolved main-anchored (its `status.json` field
+`current_phase`) — is in phase `6-finalize`, so every plan commit passes through
+the gate-bearing `git-workflow commit` verb. The full role x surface x path matrix
+lives in `doc/developer/opencode.adoc`.
+
+## Architecture
+
+**Resolved-Target Pattern**: `target_context.resolve_target` resolves the active target; the router dispatches to its class.
+
+```text
+Target cascade                               Scripts
+env signal / local harness config / fallback ─► claude_runtime.py
+                              opencode       ─► opencode_runtime.py
+                              antigravity    ─► antigravity_runtime.py
+```
+
+Router (`platform_runtime.py`) resolves the target through `target_context`, looks up its class in the registry, and dispatches. Registry is extensible — adding a new target adds a class and a registry entry.
+
+## Invocation
+
+**Standard invocation (post-bootstrap):**
+```bash
+python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime <operation> [args...]
+```
+
+**Bootstrap invocation (Steps 1–3, before executor exists):**
+
+During `marshall-steward` Steps 1–3 the executor does not yet exist. Use the glob-path bootstrap directly. After Step 4 (Generate Executor), switch to executor notation for all subsequent calls.
+
+## TOON Contract
+
+Every operation returns:
+
+```toon
+status: success | error | no-op
+operation: <name>
+result: <any>          (success only)
+error: <string>        (error only)
+message: <string>      (error only)
+reason: <string>       (no-op only)
+alternative: <string>  (no-op only)
+```
+
+Full per-operation schemas: `standards/contract.md`
+No-op policy and caller obligations: `standards/no-op-policy.md`
+
+## Error Codes
+
+| Code | Meaning |
+|------|---------|
+| `invalid_scope` | Scope argument not `project` or `global` |
+| `invalid_check` | `permission analyze --checks` contains unknown check name |
+| `marshal_not_found` | `.plan/marshal.json` missing |
+| `prompt_not_found` | `subagent dispatch` prompt file not found |
+| `unknown_target` | `runtime.target` not in registry |
+| `hook_not_configured` | SessionStart hook missing; `$CLAUDE_CODE_SESSION_ID` unset |
+| `invalid_settings` | Settings file malformed (JSON parse error); fail-closed before write — `permission configure/fix/ensure-wildcards/ensure-steps/web-apply` |
+| `invalid_marshal` | `.plan/marshal.json` malformed (parse error); fail-closed instead of zero-step audit — `permission analyze/ensure-steps` |
+| `unsupported_observable` | `wait for --observable` names a kind outside the closed set |
+| `invalid_bound` | `wait for --bound-seconds` is not positive |
+| `unknown_reference` | `wait for --reference` names no instance of the observable kind |
+| `observable_unreachable` | The observable's inspection channel could not be reached; no outcome is implied |
+| `unexpected_observable_status` | The observable reported an out-of-vocabulary status; no outcome is inferred |
+
+## No-Op Behavior
+
+When a target returns `no-op`:
+- `status` is `no-op`, not `error`
+- `reason` explains why the operation is not supported
+- `alternative` suggests what the caller can do instead
+- **The calling skill must continue** — no-op is not a failure
+
+## Compliance
+
+All scripts comply with:
+- **`tools-script-executor`** — executor notation, standardized error format, environment variables (`PLAN_DIR_NAME`, `PM_MARKETPLACE_ROOT`), exit codes (0 success, 1 invalid params, 2 runtime error)
+- **`ref-toon-format`** — TOON generated and parsed via `toon_parser.py` from the `ref-toon-format` skill; no ad-hoc parsing
+
+## Boundary
+
+Platform-runtime operations satisfy: "Would this differ between Claude Code, OpenCode, and Antigravity?"
+
+| In scope | Belongs elsewhere |
+|----------|-------------------|
+| Platform hooks, session IDs | `manage-status` (plan state) |
+| Settings/permissions files | `tools-integration-ci` (CI/PR) |
+| Terminal title rendering | `manage-architecture` (architecture data) |
+| Platform-specific subagent invocation | `manage-metrics` (metrics storage) |
+| Platform health verification | `tools-script-executor` (executor regeneration) |
+| Post-upgrade reload directive (harness-appropriate) | `marshall-steward` (upgrade flow that consumes the directive) |
+
+The `session render-title` and `session push-title-token` operations are the
+resolve + emit layer of the terminal-title three-way split. They resolve
+session → plan, read the title state from `status.json` (live first, archived
+fallback), call the pure `manage-terminal-title` composer, and — on the render
+path — emit per platform (OSC / statusLine / web sessionTitle). `status.json` is
+the single source of persisted title state — there is no `title-body.txt`
+artifact. See `standards/terminal-title-architecture.md` for
+the canonical end-to-end architecture: state (`manage-status`), composer
+(`manage-terminal-title`), resolve+emit (`platform-runtime`), session-plan
+binding, output channels, platform abstraction, and the glyph + icon vocabulary.
+
+## PreToolUse Enforcement Hook
+
+A PreToolUse enforcement hook deterministically blocks six
+mechanically-checkable hard-rule violation families. R1–R5 apply when the call
+originates inside a plan-marshall plan context, when the checkout carries a live
+runbook-lane marker, OR in every session of the plan-marshall source
+repository — failing open everywhere else — and R6 is not context-gated at all
+(only its unresolvable fail-closed branch is limited to that scope).
+It is implemented by three sibling scripts:
+
+- `pretooluse_gate.py` — the shared, pure-function module that is the SINGLE
+  home of the PreToolUse payload-field knowledge and the `Signal1 OR Signal2`
+  fail-open context-gate predicate. Imported by both leaves below; owns no rule
+  matchers.
+- `claude_pretooluse_capture.py` — the observe-only leaf that validates the
+  shared gate's field names against real payloads before enforcement is armed.
+- `claude_pretooluse_hook.py` — the enforcement leaf that imports the shared
+  gate and adds only the six rule families plus the `permissionDecision: deny`
+  envelope.
+
+The enforcement hook is installed on demand via the orthogonal
+`project install-hook --enforcement` path (independent of the terminal-title
+bundle), surfaces a dedicated `PreToolUse:enforcement`
+`present` / `divergence` / `MISSING` label on
+the `health-check --checks display` diagnostic, and is registered through the
+marshall-steward Configuration → Enforcement Hook menu (**Claude only**:
+[`../marshall-steward-claude-wizards/references/menu-enforcement-hook.md`](../marshall-steward-claude-wizards/references/menu-enforcement-hook.md)).
+The context gate, the six rule families with their redirect reasons, the
+fail-open / best-effort-no-raise contract, and the capture-validates-the-gate
+dependency chain are documented in
+[`standards/pretooluse-enforcement.md`](standards/pretooluse-enforcement.md) —
+the canonical reference; the rule list is not restated here.
