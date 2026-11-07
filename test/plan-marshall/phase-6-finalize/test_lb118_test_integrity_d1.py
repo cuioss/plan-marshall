@@ -339,6 +339,21 @@ def test_a_function_moved_with_its_assertions_still_yields_no_row(plan_context, 
     assert _rows(payload) == [], payload
 
 
+def test_an_unchanged_moved_file_with_repeated_identities_yields_no_row(plan_context, tmp_path, monkeypatch) -> None:
+    """A whole-file move is not a loss, even when the file repeats a test identity."""
+    repo = _repo(tmp_path)
+    _commit(repo, {'README.md': 'readme\n'})
+    _commit(repo, {'test/dup_test.py': 'def test_x():\n    assert 1 == 1\n\ndef test_x():\n    assert 2 == 2\n'})
+    _git(repo, 'checkout', '--quiet', '-b', 'feature')
+    _git(repo, 'mv', 'test/dup_test.py', 'test/dup_moved_test.py')
+    _git(repo, 'commit', '--quiet', '-m', 'move the whole file')
+
+    payload = _run(repo, plan_context, monkeypatch)
+
+    assert payload['status'] == 'success', payload
+    assert _rows(payload) == [], payload
+
+
 def test_a_repeated_identity_in_a_deleted_file_is_not_fully_credited_to_one_move(
     plan_context, tmp_path, monkeypatch
 ) -> None:
@@ -402,6 +417,37 @@ def test_a_weakened_move_counts_the_excess_lines_not_the_whole_body(plan_context
     assert payload['status'] == 'success', payload
     rows = [row for row in _rows(payload) if row['path'] == 'test/source_test.py']
     assert rows, payload
+    assert rows[0]['removed_assertions'] == 2, rows
+
+
+def test_a_partial_move_survives_by_its_excess_lines_only(plan_context, tmp_path, monkeypatch) -> None:
+    """A weakened move with a NON-empty excess survives by those excess assertions only."""
+    repo = _repo(tmp_path)
+    _commit(repo, {'README.md': 'readme\n'})
+    _commit(
+        repo,
+        {
+            'test/source_test.py': 'def test_a():\n    assert 1 == 1\n    assert 2 == 2\n    assert 3 == 3\n',
+            'test/other_test.py': 'def test_a():\n    assert 2 == 2\n',
+        },
+    )
+    _git(repo, 'checkout', '--quiet', '-b', 'feature')
+    _git(repo, 'rm', 'test/source_test.py')
+    _commit(
+        repo,
+        {
+            'test/other_test.py': 'def test_a():\n    assert 2 == 2\n# changed\n',
+            'test/moved_test.py': 'def test_a():\n    assert 1 == 1\n    assert 2 == 2\n',
+        },
+        'move the weakened test',
+    )
+
+    payload = _run(repo, plan_context, monkeypatch)
+
+    assert payload['status'] == 'success', payload
+    rows = [row for row in _rows(payload) if row['path'] == 'test/source_test.py']
+    assert rows, payload
+    # excess = {assert 1 == 1}; assert 2 is carried by other_test, assert 3 is lost.
     assert rows[0]['removed_assertions'] == 2, rows
 
 

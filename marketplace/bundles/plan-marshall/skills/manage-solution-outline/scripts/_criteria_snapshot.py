@@ -82,6 +82,24 @@ _SUCCESS_BLOCK_END_RE = re.compile(r'^\s*\*\*[A-Za-z][^*\n]*:\*\*')
 _SUCCESS_BLOCK_END_COLUMN_RE = re.compile(r'^\*\*[A-Za-z][^*\n]*:\*\*')
 
 
+def _legacy_fence_marker(line: str) -> tuple[str, int, str] | None:
+    """Return the PREVIOUS parser generation's fence marker for ``line``, or ``None``.
+
+    That generation ignored indentation entirely and did not restrict a backtick
+    info string, so a parser-2 replay must use this rule rather than the current
+    CommonMark one: otherwise a four-space-indented fence that parser 2 skipped is
+    read into the replay and an unchanged criterion looks rewritten.
+    """
+    stripped = line.strip()
+    if not stripped or stripped[0] not in '`~':
+        return None
+    character = stripped[0]
+    length = len(stripped) - len(stripped.lstrip(character))
+    if length < 3:
+        return None
+    return character, length, stripped[length:]
+
+
 def _fence_marker(line: str) -> tuple[str, int, str] | None:
     """Return ``(character, length, trailing)`` for a CommonMark fence line.
 
@@ -924,7 +942,7 @@ def parse_success_criteria(body: str, *, keep_fences: bool = True) -> tuple[list
     in_fence: tuple[str, int] | None = None
     for line in body[marker.end() :].splitlines():
         stripped = line.strip()
-        fence = _fence_marker(line)
+        fence = _fence_marker(line) if keep_fences else _legacy_fence_marker(line)
         if in_fence is not None:
             if keep_fences:
                 if current is not None:

@@ -705,6 +705,12 @@ def _grade_test_integrity(
         before_file = _count(pre)
         post = after.get(path)
         if post is None:
+            # A whole-file move is not a loss: when the deleted body reappears
+            # verbatim in an after-file, every assertion travelled with it — the
+            # file-level proof is what keeps a repeated identity (which the
+            # per-identity pass deliberately omits) from reading as removed.
+            if _content_survives(pre, after):
+                continue
             # A deleted test identity is a MOVE only to the extent its assertion
             # lines reappear elsewhere; a bare name there proves nothing.
             missing: dict[str, int] = {}
