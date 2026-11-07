@@ -1430,7 +1430,7 @@ def _json_log_verdict(log_file: str) -> LogVerdict | None:
     child's result is then a JSON object rather than column-0 TOON keys. The line
     scanner finds no ``status:`` in such a log, and without this fallback the whole
     routed job would read as a build failure with the synthetic row — the same
-    collapse the TOON path removes, surviving in the other output format.
+    collapse the TOON path prevents, in the other output format.
 
     Every field the TOON path reads is read here too, with the same guards: the
     applied-bound triple matters because a JSON ``timeout`` or ``killed`` result

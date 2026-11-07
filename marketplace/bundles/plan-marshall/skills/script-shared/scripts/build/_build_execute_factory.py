@@ -702,19 +702,19 @@ def _map_daemon_result(waited: dict[str, Any], command_str: str, command_key: st
     The wire has four terminal rows and the wrapper's vocabulary has six, and the
     supervisor translates the wrapper's own ``timeout`` and ``killed`` onto the
     wire rows of the same names. The ``failure`` row is what the wire uses for the
-    remaining non-green verdicts — ``indeterminate`` and the live ``running``
-    hand-back — so a ``failure`` job becomes an ``error`` only when the child's own
-    log verdict says the build ran and failed; any other verdict the log states is
-    re-rendered as itself. A terminal ``job_status`` outside the wire vocabulary
-    passes through verbatim and is handled by this function's own final branch, not
-    by ``failure``.
+    remaining non-green verdicts — ``error`` when the build ran and failed,
+    ``indeterminate`` and the live ``running`` hand-back — so a ``failure`` job
+    becomes an ``error`` only when the child's own log verdict says the build ran
+    and failed; any other verdict the log states is re-rendered as itself. A
+    terminal ``job_status`` outside the wire vocabulary passes through verbatim and
+    is handled by this function's own final branch, not by ``failure``.
 
-    The ``killed`` leg produces a first-class ``killed`` status rather than an
-    ``error_result`` whose ``error`` field said ``killed``: ``cmd_run_common``
-    reconstructs its own payload from the status alone, so a marker carried that
-    way never reaches a consumer and the daemon's correctly-classified kill arrives
-    at every gate as a build failure. Mapping to a first-class status is what
-    carries the daemon's verdict through the renderer intact.
+    The rendered first-class ``killed`` status is what survives the renderer: an
+    ``error_result`` whose ``error`` field merely names the kill is rebuilt from that
+    field alone by ``cmd_run_common``, so the marker never reaches a consumer and the
+    daemon's correctly-classified kill arrives at every gate as a build failure.
+    Mapping to a first-class status is what carries the daemon's verdict through the
+    renderer intact.
 
     On a ``success`` job status the client independently CROSS-CHECKS the routed
     verdict: it re-reads the job log's own build TOON through the shared
@@ -1116,14 +1116,11 @@ _PROJECT_DIR_FLAG = '--project-dir'
 path-shaped flags are checked, and none of them can arrive here relative:
 
 * ``--plan-id`` is mutually exclusive with ``--project-dir`` and names a PLAN, not
-  a path: in a ROUTED dispatch the child is not meant to resolve it at all. The
-  tree the routing process resolved travels beside it as
-  ``--resolved-project-dir`` (see :func:`_carry_resolved_tree`), and that value is
-  already absolute. It has to travel, because re-resolving the plan id from the
-  child's own working directory is equivalent to the routing process's resolution
-  only while that directory still holds the plan record — it does not in the
-  finalize move-back window, when ``integrate_into_main`` has moved the record
-  back to main and the worktree directory still exists.
+  a path. In a ROUTED dispatch the child resolves it against the tree it starts in,
+  exactly as any other invocation does; when that tree holds the plan record the two
+  resolutions agree, and when it does not — the finalize move-back window — the tree
+  the routing process resolved travels beside it as ``--resolved-project-dir`` (see
+  :func:`_carry_resolved_tree`), already absolute.
 * ``--working-dir`` and ``--env`` make a build daemon-incompatible, so such a
   build never reaches this seam at all — under ``auto`` it falls back in-process
   before routing, and under ``daemon`` it fails loud (see ``cmd_run``).
@@ -1143,13 +1140,14 @@ def _carry_resolved_tree(argv: list[str], project_dir: str) -> list[str]:
     and it names the still-existing worktree) and the child refuses (its tree no
     longer holds the record). The carry is what removes the second resolution.
 
-    The carry is therefore appended ONLY when the child's own tree cannot answer
-    the resolution the routing process already completed: the plan record is
-    absent from ``project_dir``. That is the window, and only the window. Outside
-    it the child re-resolves the same record to the same tree, so appending the
-    flag buys nothing — and costs the build outright when the child's executor was
-    generated before the flag existed, because such an executor refuses an
-    undeclared flag and there is no in-process fallback after a routed result.
+    The carry is therefore appended only when the plan record is absent from
+    ``project_dir`` — the tree the child will start in. In the move-back window that
+    is exactly the case the carry exists for. Elsewhere the child re-resolves the
+    same record to the same tree, so appending the flag buys nothing — and costs the
+    build outright when the child's executor was generated before the flag existed,
+    because such an executor refuses an undeclared flag and there is no in-process
+    fallback after a routed result. A tree that carries no ``.plan/local`` of its own
+    is read the same way, and gets the carry.
 
     Only an argv that names a REAL plan is considered at all: a ``--project-dir``
     dispatch already travels as an absolute value, and the ``NO_PLAN`` sentinel is

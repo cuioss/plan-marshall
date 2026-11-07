@@ -162,9 +162,9 @@ def isolated_queue(tmp_path, monkeypatch) -> dict:
     The adaptive reap threshold is a top-level ``upper_limit_seconds`` field of the
     isolated queue file itself, so seeding it at the floor below pins the reaper's
     threshold in the shape ``build_queue`` actually reads. The two run-config helper
-    names this fixture once stubbed onto ``bq`` are absent from that module, and
+    names this fixture lists are absent from that module, and
     ``monkeypatch.setattr`` defaults to ``raising=True`` — a stub for one of them
-    would error every slot test using this fixture rather than merely over-stub.
+    would error every slot test using this fixture instead of merely over-stubbing.
     """
     home = tmp_path / 'home'
     home.mkdir()
