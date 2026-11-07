@@ -1508,6 +1508,19 @@ def _route_task_verification_commands(plan_id: str, body: dict[str, Any]) -> tup
         changed = stale_rung or restamped
         # One rung command is recorded per task in one pass; see the stamp site.
         recorded_this_pass = False
+        # The decision pass prefers the command the previous compose recorded
+        # (see the recorded-command re-measure above). When that command still
+        # qualifies, the routing pass must keep it: recording a DIFFERENT (even
+        # qualifying) command here would diverge from the decision on the next
+        # compose, because the decision would then re-measure this one instead.
+        if rung is not None and isinstance(recorded_command, str):
+            recorded_toon = _resolve_command_tier(recorded_command, plan_id)
+            if (
+                isinstance(recorded_toon, dict)
+                and recorded_toon.get('execution_tier') == 'orchestrator'
+                and recorded_toon.get('exceeds_bash_ceiling') is True
+            ):
+                recorded_this_pass = True
         for raw in commands:
             if not isinstance(raw, str):
                 kept_commands.append(raw)

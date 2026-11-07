@@ -49,8 +49,9 @@ def _patch_resolve(monkeypatch, tmp_path: Path, toon: dict) -> list[str]:
     return captured
 
 
-def _run_routing(plan_id: str = 'rung-fixture') -> dict:
-    body: dict = {}
+def _run_routing(plan_id: str = 'rung-fixture', body: dict | None = None) -> dict:
+    if body is None:
+        body = {}
     _mutated, pending = _mem._route_task_verification_commands(plan_id, body)
     _mem._persist_task_rewrites(pending)
     return body
@@ -383,6 +384,10 @@ class TestTheRecordedCommandIsTheOneTheDecisionRestedOn:
         'python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build '
         'run --command-args "module-tests plan-marshall"'
     )
+    _COMMAND_NEW = (
+        'python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build '
+        'run --command-args "module-tests marketplace/build-server"'
+    )
 
     _UNMEASURED = {'execution_tier': 'orchestrator', 'exceeds_bash_ceiling': False}
     _QUALIFYING = {'execution_tier': 'orchestrator', 'exceeds_bash_ceiling': True, 'bash_timeout_seconds': 800}
@@ -403,6 +408,7 @@ class TestTheRecordedCommandIsTheOneTheDecisionRestedOn:
         by_command = {
             self._COMMAND_UNMEASURED: self._UNMEASURED,
             self._COMMAND_QUALIFYING: self._QUALIFYING,
+            self._COMMAND_NEW: self._QUALIFYING,
         }
 
         def _resolve(command: str, _plan_id: str) -> dict:
@@ -429,17 +435,39 @@ class TestTheRecordedCommandIsTheOneTheDecisionRestedOn:
         """The second compose re-measures the recorded (qualifying) command and agrees."""
         path = self._write_one_task(tmp_path / 'tasks', [self._COMMAND_UNMEASURED, self._COMMAND_QUALIFYING])
         self._patch_by_command(monkeypatch, tmp_path)
-        _run_routing()
+        body: dict = {}
+        _run_routing(body=body)
+        first = json.loads(json.dumps(body))
 
-        body = _run_routing()
+        _run_routing(body=body)
 
         task = _read(path)
         assert task['verification']['owed_rung'] == 'chain_tail', 'the deferral must survive a re-compose'
         assert task['verification']['owed_rung_command'] == self._COMMAND_QUALIFYING
-        summary = body['phase_5']['owed_rung_deferral']
-        assert len(summary) == 1
-        assert summary[0]['chain_tail_task'] == 1
-        assert summary[0]['deferred_task_count'] == 0
+        # The criterion is that the two COMPOSED manifests are identical, not
+        # merely that a few selected fields survived.
+        assert body == first, 'the second compose must produce the same manifest'
+
+    def test_a_new_qualifying_command_does_not_displace_the_recorded_one(self, monkeypatch, tmp_path):
+        """The decision prefers the recorded command; the routing pass must too.
+
+        A task edited between composes can gain a new qualifying command. If the
+        routing pass recorded it, the next decision would re-measure the new one
+        instead of the command the original decision rested on.
+        """
+        path = self._write_one_task(tmp_path / 'tasks', [self._COMMAND_UNMEASURED, self._COMMAND_QUALIFYING])
+        self._patch_by_command(monkeypatch, tmp_path)
+        _run_routing()
+        assert _read(path)['verification']['owed_rung_command'] == self._COMMAND_QUALIFYING
+
+        edited = _read(path)
+        edited['verification']['commands'] = [self._COMMAND_NEW]
+        path.write_text(json.dumps(edited, indent=2) + '\n', encoding='utf-8')
+        _run_routing()
+
+        assert _read(path)['verification']['owed_rung_command'] == self._COMMAND_QUALIFYING, (
+            'the recorded command the decision re-measured must not be replaced by a newly added one'
+        )
 
     def test_a_single_qualifying_command_is_unchanged(self, monkeypatch, tmp_path):
         """Control: one qualifying command records itself, as before."""

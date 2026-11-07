@@ -599,11 +599,11 @@ def evaluate_no_progress(
 
     Two exemptions bound the predicate, and neither is a blanket one:
 
-    1. **A hand-back exempts only the owed task(s) it names.** A return carrying
+    1. **A hand-back exempts only the task the return is about.** A return carrying
        the ``verification_handback`` discriminator beside a NON-EMPTY
        ``pending_verify_steps[]`` is classified ``verification_handback`` when
-       the predicate does not hold — but a non-owed task that stalled in the
-       SAME dispatch still decides it. The hand-back is the prescribed outcome
+       the predicate does not hold — but a FURTHER non-owed task that stalled in
+       the SAME dispatch still decides it. The hand-back is the prescribed outcome
        FOR THE TASK IT HANDS BACK, not a licence to stall the rest of the
        queue. Its step ids are checked against the manifest's composed
        ``phase_5.verification_steps`` (``manifest_verification_steps``): an id
@@ -621,12 +621,13 @@ def evaluate_no_progress(
        closed with the hold). When the return carries a valid hand-back and no
        owed task is in flight, the return's own marker stands in for that hold
        and credits exactly ONE in-progress task. No credit is taken while an
-       owed task is present: the owed subtraction already excludes the
-       handed-back task, and every remaining non-owed in-progress task is a
-       genuine stall beside the hand-back.
+       owed task is present: no task id reaches the predicate, so an owed task
+       plus any other non-owed in-progress task is indistinguishable from the
+       genuine-stall shape the rule must keep catching. The scoping is a
+       conservative count, not a claim that the owed task is the handed-back one.
 
     The predicate decides BEFORE the hand-back does, in the order the workflow
-    states: the hand-back's exemption is scoped to the task it names, so the
+    states: the hand-back's exemption is scoped to the task it is about, so the
     predicate must be consulted first.
 
     The 50,000-token threshold and the ``error`` routing of a genuine stall
@@ -655,9 +656,12 @@ def evaluate_no_progress(
     # step is still in flight), so the owed subtraction does not exclude it. When
     # the return carries a valid hand-back and no owed hold is in flight, the
     # return's own marker stands in for that hold and credits exactly one
-    # in-progress task. The credit is never taken while an owed task is present:
-    # there the owed subtraction already excludes the handed-back task, and every
-    # remaining non-owed in-progress task is a genuine stall beside the hand-back.
+    # in-progress task. The credit is deliberately NOT taken while an owed task is
+    # present: no task id reaches the predicate, so an owed task plus ANY other
+    # non-owed in-progress task is indistinguishable from the genuine-stall shape
+    # the rule must keep catching ("a stall on a not-owed task beside a hand-back
+    # is still error"). The scoping is therefore a conservative count, not a
+    # claim that the owed task is the handed-back one.
     handback_credit = 1 if handback_valid and owed_count == 0 and in_progress_count > 0 else 0
     predicate_in_progress = max(in_progress_count - owed_count - handback_credit, 0)
     predicate_holds = (
