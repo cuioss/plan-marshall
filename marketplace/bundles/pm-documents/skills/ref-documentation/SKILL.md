@@ -425,6 +425,7 @@ All reference material is in the `references/` directory:
 | `documentation-core.md` | Core documentation principles | Always |
 | `tone-and-style.md` | Tone and style requirements | Content review workflow |
 | `organization-standards.md` | Document organization | Structure reviews |
+| `repository-documentation-guidebook.md` | Whole-repository layer taxonomy (SSOT), visual diagram selection, historical-overhead pruning, and multi-wave changes protocol | Repository-wide audits, restructurings, and release-readiness reviews |
 
 ## Workflow Documents
 
