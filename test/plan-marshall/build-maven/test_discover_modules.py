@@ -759,21 +759,85 @@ def test_discover_reactor_aggregator_carries_the_whole_reactor_test_canonicals()
 
 
 def test_discover_reactor_root_ignores_a_tested_pom_it_does_not_build():
-    """Only the modules the root builds count — a standalone tested POM does not.
+    """Only the modules the root builds count — and only they get a root command.
 
     A filesystem walk finds every ``pom.xml``; the root's reactor is the module
-    list IT declares. A standalone ``examples/`` module with tests is not built
-    by ``mvn test`` at the root, so granting the root ``test`` there would be the
-    false green the canonical exists to avoid.
+    list IT declares. A standalone ``examples/`` module with tests is not built by
+    ``mvn test`` at the root, so granting the root ``test`` there would be the
+    false green the canonical exists to avoid. Granting ``examples`` its own
+    ``test -pl examples -am`` is the mirror defect: ``-pl`` selects a project the
+    root's reactor must already contain, and Maven refuses it for a project
+    outside. A command that cannot run is worse than none, so the module keeps its
+    discovery entry and carries no canonical.
     """
     root = _make_module_tree({'.': _AGGREGATOR_POM, 'examples': _JAR_POM})
     _add_test_source(root, 'examples')
 
-    modules = {module['name']: module for module in discover_maven_modules(str(root))}
+    modules = {module['paths']['module']: module for module in discover_maven_modules(str(root))}
 
-    assert 'module-tests' not in modules['parent-agg']['commands']
-    assert 'test-compile' not in modules['parent-agg']['commands']
-    assert modules['leaf-app']['commands']['module-tests'] == _executable('test -pl examples -am')
+    assert 'module-tests' not in modules['.']['commands']
+    assert 'test-compile' not in modules['.']['commands']
+    assert modules['examples']['commands'] == {}, 'a module outside the reactor gets no root-runnable canonical'
+
+
+def test_discover_reactor_member_keeps_its_root_runnable_canonicals():
+    """CONTROL: a module the root DOES build keeps its ``-pl`` form.
+
+    Same tree, with ``core`` declared by the root. ``core`` is in the reactor, so
+    ``-pl core -am`` names a project Maven finds — while the standalone
+    ``examples`` module beside it still gets nothing.
+    """
+    root = _make_module_tree(
+        {'.': _AGGREGATOR_LISTING_CORE_POM, 'core': _CORE_JAR_POM, 'examples': _JAR_POM}
+    )
+    _add_test_source(root, 'core')
+    _add_test_source(root, 'examples')
+
+    modules = {module['paths']['module']: module for module in discover_maven_modules(str(root))}
+
+    assert modules['core']['commands']['module-tests'] == _executable('test -pl core -am')
+    assert modules['examples']['commands'] == {}
+
+
+def test_discover_a_root_that_builds_no_reactor_grants_no_child_a_pl_command():
+    """A jar root has no reactor, so ``-pl sub`` there is a command Maven refuses.
+
+    The root keeps its own whole-tree canonicals; the child gets none. This pins
+    the non-aggregator arm of the reactor rule: the answer is "no command", not a
+    command Maven would reject.
+    """
+    root = _make_module_tree({'.': _JAR_POM, 'sub': _CORE_JAR_POM})
+    _add_test_source(root, 'sub')
+
+    modules = {module['paths']['module']: module for module in discover_maven_modules(str(root))}
+
+    assert modules['.']['commands']['module-tests'] == _executable('test')
+    assert modules['sub']['commands'] == {}
+
+
+def test_discover_malformed_pom_names_the_stop_and_grants_no_canonical():
+    """An unreadable descriptor is a NAMED stop, not a silent jar.
+
+    Every field a command would be built from — packaging, profiles, declared
+    modules — came from the default, so no canonical can be substantiated. The
+    discovery result carries the reason instead of looking like a plain jar.
+    """
+    root = _make_module_tree({'.': '<project><artifactId>broken'})
+
+    module = discover_maven_modules(str(root))[0]
+
+    assert module['metadata']['pom_error'] == 'pom_unreadable'
+    assert module['commands'] == {}
+
+
+def test_control_a_wellformed_pom_carries_no_pom_error():
+    """CONTROL: a readable POM carries no error key at all."""
+    root = _make_module_tree({'.': _JAR_POM})
+
+    module = discover_maven_modules(str(root))[0]
+
+    assert 'pom_error' not in module['metadata']
+    assert module['commands']
 
 
 def test_discover_dependency_on_self_coordinate_is_not_a_reactor_test_artifact():
@@ -875,6 +939,16 @@ _JAR_POM = """<?xml version="1.0" encoding="UTF-8"?>
   <modelVersion>4.0.0</modelVersion>
   <groupId>com.example</groupId>
   <artifactId>leaf-app</artifactId>
+  <version>1.0.0</version>
+  <packaging>jar</packaging>
+</project>
+"""
+
+_CORE_JAR_POM = """<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.example</groupId>
+  <artifactId>core-app</artifactId>
   <version>1.0.0</version>
   <packaging>jar</packaging>
 </project>

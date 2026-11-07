@@ -164,16 +164,17 @@ def test_parse_pom_xml_no_profiles_yields_empty_list():
 
 
 def test_parse_pom_xml_malformed_returns_defaults():
-    """A malformed POM degrades to packaging='jar' with empty/None fields."""
+    """A malformed POM degrades to packaging='jar' AND names the stop."""
     pom = _write_pom('<project><artifactId>broken')  # unclosed tags
     result = _parse_pom_xml(pom)
     assert result['packaging'] == 'jar'
     assert result['artifact_id'] is None
     assert result['profile_ids'] == []
+    assert result['error'] == 'pom_unreadable'
 
 
 def test_parse_pom_xml_malformed_exact_shape():
-    """The malformed-POM default carries every key, dependencies as an empty list."""
+    """The malformed-POM default carries every key plus the named ``error``."""
     result = _parse_pom_xml(_write_pom('<project><artifactId>broken'))
     assert result == {
         'packaging': 'jar',
@@ -184,6 +185,7 @@ def test_parse_pom_xml_malformed_exact_shape():
         'description': None,
         'parent': None,
         'dependencies': [],
+        'error': 'pom_unreadable',
     }
 
 
@@ -203,6 +205,7 @@ def test_parse_pom_xml_exact_shape_namespaced():
         'description': 'My example application',
         'parent': None,
         'dependencies': [],
+        'error': None,
     }
 
 
@@ -217,6 +220,7 @@ def test_parse_pom_xml_exact_shape_parent_fallback():
         'description': None,
         'parent': 'com.parent:parent-pom',
         'dependencies': [],
+        'error': None,
     }
 
 

@@ -5,6 +5,7 @@
 Tests the Maven execution config and factory-generated functions.
 """
 
+import os
 from pathlib import Path
 
 from conftest import load_script_module
@@ -886,3 +887,126 @@ def test_execute_direct_is_wired_to_the_zero_test_guard(tmp_path, monkeypatch):
     assert result['status'] == 'indeterminate'
     assert TEST_RUN_EXECUTED_NOTHING in result['message']
     assert result['wrapper'] == './mvnw'
+
+
+# =============================================================================
+# "Collected nothing" vs "the summary was not visible"
+# =============================================================================
+
+
+def _quiet_guard_result(tmp_path: Path, fixture_name: str) -> dict:
+    """A green test-phase result whose log reproduces a fixture, copied so its age is ours."""
+    log_text = (_LOG_TEST_DATA / fixture_name).read_text(encoding='utf-8')
+    log_file = tmp_path / fixture_name
+    log_file.write_text(log_text, encoding='utf-8')
+    return {
+        'status': 'success',
+        'exit_code': 0,
+        'duration_seconds': 4,
+        'log_file': str(log_file),
+        'command': 'mvnw test',
+    }
+
+
+def _write_surefire_report(root: Path, tests: int, *, module: str = '') -> Path:
+    """Write one Surefire per-class XML report, as a real run leaves behind."""
+    report_dir = root / module / 'target' / 'surefire-reports'
+    report_dir.mkdir(parents=True, exist_ok=True)
+    report = report_dir / 'TEST-com.example.SampleTest.xml'
+    report.write_text(
+        f'<testsuite name="com.example.SampleTest" tests="{tests}" failures="0" errors="0" skipped="0"/>\n',
+        encoding='utf-8',
+    )
+    return report
+
+
+def test_a_quiet_run_whose_report_shows_executed_tests_keeps_its_green(tmp_path):
+    """A hidden summary is not an empty population (Maven 3.9.16, Surefire 3.5.2).
+
+    ``-q`` supplied through ``.mvn/maven.config`` or ``MAVEN_OPTS`` — and
+    Surefire's ``printSummary=false`` — hide the summary LINE, not the per-class
+    report the plugin writes. Reading that report is what tells this run apart
+    from one that collected nothing.
+    """
+    result = _quiet_guard_result(tmp_path, 'maven-quiet-green-no-summary.log')
+    _write_surefire_report(tmp_path, 7)
+
+    guarded = apply_zero_test_guard(result, 'test', project_dir=str(tmp_path))
+
+    assert guarded['status'] == 'success'
+
+
+def test_a_report_from_a_reactor_module_is_read_too(tmp_path):
+    """The report lives in the MODULE that ran the tests, not necessarily the root."""
+    result = _quiet_guard_result(tmp_path, 'maven-quiet-green-no-summary.log')
+    _write_surefire_report(tmp_path, 3, module='core-api')
+
+    guarded = apply_zero_test_guard(result, 'test', project_dir=str(tmp_path))
+
+    assert guarded['status'] == 'success'
+
+
+def test_control_a_report_older_than_the_run_does_not_credit_it(tmp_path):
+    """CONTROL: a previous run's report cannot stand in for this one.
+
+    Crediting a stale ``TEST-*.xml`` would turn "executed nothing" into a green —
+    the exact false credit this guard exists to remove — so a report written
+    before this run's log is ignored.
+    """
+    report = _write_surefire_report(tmp_path, 7)
+    os.utime(report, (1, 1))
+    result = _quiet_guard_result(tmp_path, 'maven-quiet-green-no-summary.log')
+
+    guarded = apply_zero_test_guard(result, 'test', project_dir=str(tmp_path))
+
+    assert guarded['status'] == 'indeterminate'
+    assert TEST_RUN_EXECUTED_NOTHING in guarded['message']
+
+
+def test_a_report_with_no_executed_test_does_not_credit_the_run(tmp_path):
+    """CONTROL: a report that collected zero names no executed test."""
+    result = _quiet_guard_result(tmp_path, 'maven-quiet-green-no-summary.log')
+    _write_surefire_report(tmp_path, 0)
+
+    guarded = apply_zero_test_guard(result, 'test', project_dir=str(tmp_path))
+
+    assert guarded['status'] == 'indeterminate'
+
+
+def test_a_module_with_no_test_class_keeps_its_green(tmp_path):
+    """Surefire matched no test class, so the green is truthful (Maven 3.9.16, Surefire 3.5.2).
+
+    A module whose ``src/test/java`` holds only helpers prints this and writes no
+    report: the plugin RAN and said there was nothing to run. Only a run that
+    measured ``Tests run: 0`` is evidence of an empty selected population, and
+    that branch is checked first.
+    """
+    result = _quiet_guard_result(tmp_path, 'maven-no-test-class.log')
+
+    guarded = apply_zero_test_guard(result, 'test', project_dir=str(tmp_path))
+
+    assert guarded['status'] == 'success'
+
+
+def test_control_a_measured_zero_beside_the_no_tests_marker_stays_indeterminate():
+    """CONTROL: a MEASURED zero outranks the marker — it is evidence, the marker is not.
+
+    ``maven-zero-tests-executed.log`` carries both ``No tests to run.`` and a
+    ``Tests run: 0`` summary. The measured zero is the stronger fact and keeps the
+    run indeterminate.
+    """
+    result = _run_result('maven-zero-tests-executed.log', status='success', exit_code=0, command='mvnw test')
+
+    guarded = apply_zero_test_guard(result, 'test')
+
+    assert guarded['status'] == 'indeterminate'
+
+
+def test_without_a_project_dir_a_summary_less_run_stays_indeterminate(tmp_path):
+    """A caller that names no directory gets no report credit — the fail-closed default."""
+    result = _quiet_guard_result(tmp_path, 'maven-quiet-green-no-summary.log')
+    _write_surefire_report(tmp_path, 7)
+
+    guarded = apply_zero_test_guard(result, 'test')
+
+    assert guarded['status'] == 'indeterminate'

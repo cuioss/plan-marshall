@@ -55,6 +55,12 @@ from marketplace_paths import NO_PLAN_SENTINEL
 #: dispatches through. One definition, so a command and a post-pass cannot drift.
 _SKILL = 'plan-marshall:build-maven:maven'
 
+#: ``pom_error`` value for a POM this cheap parse could not read. A NAMED stop
+#: rather than a silent default: a defaulted POM hides every field the module was
+#: built from, and a module whose own descriptor is unreadable must not look like
+#: a plain jar with no tests.
+POM_UNREADABLE = 'pom_unreadable'
+
 # =============================================================================
 # Profile Pipeline Utilities (Maven-specific — only Maven uses build profiles)
 # =============================================================================
@@ -238,8 +244,9 @@ def discover_maven_modules(project_root: str) -> list:
     against that set, so a module whose own POM depends on a sibling's test
     artifact is recognised before its command map is built; the third gives a
     root ``pom`` aggregator the whole-reactor test canonicals, which requires
-    the test population of the modules the root itself builds — known only once
-    every declared module is built.
+    the test population of the modules the root itself builds — and then empties
+    the command map of every discovered module that reactor does not build, since
+    the ``-pl`` form it would carry cannot run there.
 
     Args:
         project_root: Absolute path to project root.
@@ -279,10 +286,38 @@ def discover_maven_modules(project_root: str) -> list:
         for pom_path, pom_data in parsed_poms
     }
     reactor_has_tests = _root_reactor_has_tests(declared, known_modules)
+    reactor_paths = _root_reactor_module_paths(declared, known_modules)
     for module in modules:
         _add_reactor_test_canonicals(module, reactor_has_tests)
+    _drop_commands_outside_the_root_reactor(modules, reactor_paths)
 
     return modules
+
+
+def _drop_commands_outside_the_root_reactor(modules: list[dict], reactor_paths: set[str]) -> None:
+    """Empty the command map of every module the root's reactor does not build.
+
+    ``-pl {path}`` selects a project the ROOT's reactor already contains. A POM
+    the filesystem walk found but the root does not list is not in it, and Maven
+    refuses ``-pl`` for such a project — so a canonical built from
+    ``-pl {path} -am`` is a command that cannot run. The module keeps its
+    discovery entry (it is still a module of this repository) but gets no
+    root-runnable canonical.
+
+    The own-directory form would need ``-f``, whose value names a POM FILE rather
+    than a module scope; the freshness reader could not attribute it to this
+    module, so emitting it would trade one false block for another. That form is
+    deliberately not emitted here.
+
+    Args:
+        modules: Every discovered module dict, mutated in place.
+        reactor_paths: The module directories the root POM's reactor builds.
+    """
+    for module in modules:
+        path = (module.get('paths') or {}).get('module') or '.'
+        if path == '.' or path in reactor_paths:
+            continue
+        module['commands'] = {}
 
 
 def _normalise_module_path(aggregator_dir: str, entry: str) -> str | None:
@@ -491,6 +526,7 @@ def _build_module(
     reactor_test_artifacts = _reactor_test_artifacts(pom_data, reactor_coordinates)
 
     # Commands
+    pom_error = pom_data.get('error')
     commands = _build_commands(
         module_name=artifact_id,
         packaging=packaging,
@@ -500,6 +536,12 @@ def _build_module(
         relative_path=relative_path,
         consumes_reactor_test_artifact=bool(reactor_test_artifacts),
     )
+    if pom_error:
+        # An unreadable POM cannot substantiate ANY canonical: the packaging,
+        # profiles and declared modules all came from the default, so a command
+        # built here would describe a POM nobody read. The reason travels on the
+        # module instead, and the gate record names it.
+        commands = {}
 
     # Build metadata - omit profiles and reactor_test_artifacts if empty
     metadata = {
@@ -509,6 +551,8 @@ def _build_module(
         'description': description,
         'parent': parent,
     }
+    if pom_error:
+        metadata['pom_error'] = pom_error
     if profiles:
         metadata['profiles'] = profiles
     if reactor_test_artifacts:
@@ -631,7 +675,8 @@ def _parse_pom_xml(pom_path: Path) -> dict:
               scope}`` dict per ``/project/dependencies/dependency`` of the
               module's own POM (see :func:`_parse_own_dependencies`).
         On a malformed/unreadable POM, returns the packaging default with all
-        other fields ``None``/empty so discovery degrades gracefully.
+        other fields ``None``/empty and ``error`` set to :data:`POM_UNREADABLE`,
+        so discovery can name the stop instead of silently presenting a jar.
     """
     try:
         root = ET.parse(pom_path).getroot()
@@ -645,6 +690,7 @@ def _parse_pom_xml(pom_path: Path) -> dict:
             'description': None,
             'parent': None,
             'dependencies': [],
+            'error': POM_UNREADABLE,
         }
 
     packaging = _child_text(root, 'packaging') or 'jar'
@@ -684,6 +730,7 @@ def _parse_pom_xml(pom_path: Path) -> dict:
         'description': description,
         'parent': parent,
         'dependencies': _parse_own_dependencies(root, group_id, parent_group_id),
+        'error': None,
     }
 
 
