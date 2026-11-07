@@ -42,20 +42,26 @@ from _maven_cmd_parse import (
 # every engine declares its own floor rather than inheriting ``MIN_TIMEOUT``.
 MAVEN_OUTER_FLOOR_SECONDS = 300
 
-#: Issue categories that describe no build failure — the advisory patterns
-#: :data:`_build_jvm_patterns.JVM_BASE_PATTERNS` declares as ``javadoc_warning``,
-#: ``deprecation_warning``, ``unchecked_warning`` and ``openrewrite_info`` (the
-#: last as extended for Maven by ``_maven_cmd_parse.MAVEN_PATTERNS``). Every
-#: other category — ``compilation_error``, ``test_failure``, ``dependency_error``
-#: and ``other``, the default ``categorize_issue`` returns for a diagnostic no
-#: pattern matches — names a real failure.
+#: Issue categories that name a build failure whatever severity they carry — the
+#: two "did not work" categories plus a dependency that could not be resolved.
+#: Every other category is advisory (the ``javadoc_warning`` /
+#: ``deprecation_warning`` / ``unchecked_warning`` / ``openrewrite_info``
+#: patterns) or the default ``other``.
 #:
-#: A category alone is not enough: a failing javadoc or deprecation plugin prints
-#: its diagnostics at ``[ERROR]`` and a pattern keyed on the word "javadoc" files
-#: them under ``javadoc_warning``. Such a line IS the build failure, so the
-#: back-off also reads the severity — an ``[ERROR]``-level issue is real whatever
-#: its category, which only widens the back-off (fail-closed).
-_INFORMATIONAL_ISSUE_CATEGORIES = frozenset(
+#: A category alone is not enough, in both directions. A failing javadoc or
+#: deprecation plugin prints its diagnostics at ``[ERROR]`` and a pattern keyed on
+#: the word "javadoc" files them under ``javadoc_warning`` — that line IS the build
+#: failure. And an unrelated ``[WARNING]`` Maven prints beside a selector miss
+#: (a corrupted-stdout notice, say) files under ``other`` without being a failure
+#: at all. The back-off therefore reads severity too: an ``[ERROR]``-level issue is
+#: real whatever its category, and a ``[WARNING]``-level ``other`` line is not.
+_FAILURE_ISSUE_CATEGORIES = frozenset({'compilation_error', 'test_failure', 'dependency_error'})
+
+#: The advisory categories the parser vocabulary declares. Read here only so the
+#: test suite can pin that the failure set plus this set covers every category
+#: ``_maven_cmd_parse.MAVEN_PATTERNS`` emits — an unlisted new category then fails
+#: a test instead of silently turning an advisory into a back-off (or the reverse).
+_ADVISORY_ISSUE_CATEGORIES = frozenset(
     {'javadoc_warning', 'deprecation_warning', 'unchecked_warning', 'openrewrite_info'}
 )
 
@@ -246,27 +252,27 @@ def apply_selector_miss_guard(result: dict) -> dict:
         return result
     command = str(result.get('command') or '')
     selector = dtest_selector(command)
+    # A failed build is suspect whatever the command says (the runner's own goal
+    # failure names the selector). A successful one is suspect only when a
+    # selector was in play: Surefire/Failsafe print their "No tests matching
+    # pattern ... were executed" line on the FAILURE path only, so an exit-0 miss
+    # surfaces as a zero-collected summary instead — which is the zero-test
+    # guard's ground, not this one's.
+    if status == STATUS_SUCCESS and selector is None:
+        return result
     try:
         log_text = read_log_text(result['log_file'])
     except (KeyError, OSError):
         # No readable log means no evidence. For an exit-0 selector run that is
         # the whole question — a green would claim the selector ran tests — so
         # the run is named unreadable instead of being trusted.
-        if status == STATUS_SUCCESS and selector is not None:
+        if status == STATUS_SUCCESS:
             return _indeterminate(
                 result,
                 f'{TEST_LOG_UNREADABLE}: the -Dtest run exited 0 but its log could not be read, so '
                 'nothing establishes that a test ran — not a green.',
             )
         # A failed build is already not green; its own failure stands.
-        return result
-    log_pattern = selector_miss_pattern(log_text)
-    # A failed build is suspect whatever the command says (Surefire's own goal
-    # failure). A successful one is suspect when a selector was in play — on the
-    # command line OR in the log, because a selector set through
-    # `.mvn/maven.config`, `MAVEN_OPTS` or a profile never reaches the command
-    # line while the runner still names it when it matches nothing.
-    if status == STATUS_SUCCESS and selector is None and log_pattern is None:
         return result
     # The zero-collected shape is an EXIT-0 shape. On a failed build only
     # Surefire's explicit "No tests matching pattern" counts, because a reactor
@@ -287,15 +293,16 @@ def apply_selector_miss_guard(result: dict) -> dict:
             return result
         if any(
             not is_selector_miss_message(issue.message)
-            and (issue.severity == SEVERITY_ERROR or issue.category not in _INFORMATIONAL_ISSUE_CATEGORIES)
+            and (issue.severity == SEVERITY_ERROR or issue.category in _FAILURE_ISSUE_CATEGORIES)
             for issue in issues
         ):
             return result
 
     # Name the selector the log carries when the command line does not show it:
     # a selector set through `.mvn/maven.config`, `MAVEN_OPTS` or a profile, or
-    # a Failsafe `-Dit.test` miss, is still printed by the runner.
-    pattern = selector or log_pattern
+    # a Failsafe `-Dit.test` miss, is still printed by the runner on its failure
+    # path.
+    pattern = selector or selector_miss_pattern(log_text)
     named = f"'{pattern}'" if pattern else 'the -Dtest selector'
     executed = executed_test_count(log_text)
     if executed:

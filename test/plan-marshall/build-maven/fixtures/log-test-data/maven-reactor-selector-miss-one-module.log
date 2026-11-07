@@ -31,16 +31,27 @@
 [INFO]
 [INFO] --- surefire:3.5.2:test (default-test) @ b ---
 [INFO] Using auto detected provider org.apache.maven.surefire.junitplatform.JUnitPlatformProvider
-[INFO] No tests matching pattern "Awaits#runs" were executed!
 [INFO] ------------------------------------------------------------------------
 [INFO] Reactor Summary for probe-parent 1.0-SNAPSHOT:
 [INFO]
 [INFO] probe-parent ....................................... SUCCESS [  0.074 s]
 [INFO] a .................................................. SUCCESS [  1.201 s]
-[INFO] b .................................................. SUCCESS [  0.318 s]
+[INFO] b .................................................. FAILURE [  0.318 s]
 [INFO] ------------------------------------------------------------------------
-[INFO] BUILD SUCCESS
+[INFO] BUILD FAILURE
 [INFO] ------------------------------------------------------------------------
 [INFO] Total time:  1.611 s
 [INFO] Finished at: 2026-11-06T09:42:05+01:00
 [INFO] ------------------------------------------------------------------------
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-surefire-plugin:3.5.2:test (default-test) on project b: No tests matching pattern "Awaits#runs" were executed! (Set -Dsurefire.failIfNoSpecifiedTests=false to ignore this error.)
+[ERROR]
+[ERROR] -> [Help 1]
+[ERROR]
+[ERROR] To see the full stack trace of the errors, re-run Maven with the -e switch.
+[ERROR] Re-run Maven using the -X switch to enable full debug logging.
+[ERROR]
+[ERROR] For more information about the errors and possible solutions, please read the following articles:
+[ERROR] [Help 1] http://cwiki.apache.org/confluence/display/MAVEN/MojoFailureException
+[ERROR]
+[ERROR] After correcting the problems, you can resume the build with the command
+[ERROR]   mvn <args> -rf :b

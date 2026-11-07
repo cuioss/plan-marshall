@@ -310,7 +310,7 @@ def _normalise_module_path(aggregator_dir: str, entry: str) -> str | None:
     elif text == 'pom.xml':
         return None
     joined = posixpath.normpath(posixpath.join(aggregator_dir, text))
-    if joined == '..' or joined.startswith('../'):
+    if posixpath.isabs(joined) or joined == '..' or joined.startswith('../'):
         return None
     return '.' if joined in ('', '.') else joined
 
@@ -694,10 +694,14 @@ def _parse_module_entries(root: ET.Element) -> list[str]:
     block is included only when that profile declares
     ``activation/activeByDefault`` true — the one activation a cheap POM parse can
     evaluate. A profile activated by a property, a JDK or OS condition, a file's
-    presence, or an explicit ``-P`` is not followed. The omission under-grants
-    (the root keeps no test canonical for those modules), and the run path's
-    zero-test check reports such a run as ``test_run_executed_nothing`` instead of
-    green, so an under-grant is never a false green.
+    presence, or an explicit ``-P`` is not followed. Maven also switches an
+    ``activeByDefault`` profile OFF when another profile in the same POM is
+    activated, which this parse cannot see, so such a profile may be counted for a
+    build that would not include it; the run path's zero-test check backstops the
+    resulting grant. The omission under-grants (the root keeps no test canonical
+    for those modules) and the same check reports such a run as
+    ``test_run_executed_nothing`` instead of green, so an under-grant is never a
+    false green.
 
     Args:
         root: The POM's root ``<project>`` element.

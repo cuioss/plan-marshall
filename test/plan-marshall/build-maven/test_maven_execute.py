@@ -10,6 +10,12 @@ from pathlib import Path
 from conftest import load_script_module
 
 _maven_execute_mod = load_script_module('plan-marshall', 'build-maven', '_maven_execute.py', '_maven_execute')
+_maven_cmd_parse_mod = load_script_module(
+    'plan-marshall', 'build-maven', '_maven_cmd_parse.py', '_maven_cmd_parse_for_execute'
+)
+_maven_discover_mod = load_script_module(
+    'plan-marshall', 'build-maven', '_maven_cmd_discover.py', '_maven_cmd_discover_for_execute'
+)
 
 import _build_execute_factory as _factory  # noqa: E402
 
@@ -392,7 +398,7 @@ def test_fae_reactor_keeps_a_real_failure_beside_a_selector_miss():
 
 
 def test_selector_miss_without_a_command_selector_names_the_pattern_from_the_log():
-    """The reason names the pattern Surefire printed when the command shows none."""
+    """The reason names the pattern the runner printed when the command shows none."""
     result = _run_result(
         'maven-maven-config-selector-miss.log', status='error', exit_code=1, command=_NO_COMMAND_SELECTOR
     )
@@ -403,9 +409,33 @@ def test_selector_miss_without_a_command_selector_names_the_pattern_from_the_log
     assert "'Awaits#runs'" in guarded['message'], guarded['message']
 
 
+def test_control_a_green_run_without_a_selector_does_not_read_the_log(tmp_path):
+    """CONTROL: no selector in play means no miss to look for, on a green run.
+
+    Surefire/Failsafe print their miss line only on the failure path, so an exit-0
+    miss reaches the cut as a zero-collected summary — the zero-test guard's
+    question. Reading the log of every green build would buy nothing.
+    """
+    result = {
+        'status': 'success',
+        'exit_code': 0,
+        'duration_seconds': 3,
+        'log_file': str(tmp_path / 'never-read.log'),
+        'command': _NO_COMMAND_SELECTOR,
+    }
+
+    assert apply_selector_miss_guard(result) is result
+
+
 def test_reactor_selector_miss_beside_an_executed_module_says_what_the_run_did():
-    """A partial reactor miss does not claim the run executed nothing."""
-    result = _run_result('maven-reactor-selector-miss-one-module.log', status='success', exit_code=0)
+    """A partial reactor miss does not claim the run executed nothing.
+
+    Surefire prints its "No tests matching pattern" line only on the failure
+    path, so the partial shape is a FAILING reactor: module a ran its tests and
+    module b's scan was empty. The reason must carry that, not "executed
+    nothing".
+    """
+    result = _run_result('maven-reactor-selector-miss-one-module.log', status='error', exit_code=1)
 
     guarded = apply_selector_miss_guard(result)
 
@@ -417,22 +447,50 @@ def test_reactor_selector_miss_beside_an_executed_module_says_what_the_run_did()
     assert '3 test(s)' in guarded['message'], guarded['message']
 
 
-def test_exit_zero_config_selector_miss_is_detected_without_a_command_selector():
-    """A selector the command does not carry is still detected from the log.
+def test_an_unrelated_warning_beside_a_miss_does_not_block_the_named_reason(tmp_path):
+    """A `[WARNING]` that is no failure must not stop the miss being named.
 
-    `.mvn/maven.config`, `MAVEN_OPTS` and profiles put `-Dtest` out of the
-    command line's reach; the runner still names the pattern, and a run whose
-    selector excluded a module is not a green whatever put the selector there.
+    Maven prints assorted `[WARNING]` lines (a corrupted-stdout notice, say) that
+    match no category and file as `other`. They are not failures, so a miss beside
+    them is still the named reason; only an `[ERROR]`-level line or a failure
+    category keeps the build-failure result.
     """
-    result = _run_result(
-        'maven-reactor-selector-miss-one-module.log', status='success', exit_code=0, command=_NO_COMMAND_SELECTOR
+    log_file = tmp_path / 'miss-and-warning.log'
+    log_file.write_text(
+        '[WARNING] Corrupted STDOUT by directly writing to native stream in forked JVM 1.\n'
+        '[ERROR] Failed to execute goal org.apache.maven.plugins:maven-surefire-plugin:3.5.2:test '
+        '(default-test) on project b: No tests matching pattern "Awaits#runs" were executed!\n'
+        '[INFO] BUILD FAILURE\n',
+        encoding='utf-8',
     )
+    result = {
+        'status': 'error',
+        'exit_code': 1,
+        'duration_seconds': 4,
+        'log_file': str(log_file),
+        'command': _SELECTOR_COMMAND,
+    }
 
     guarded = apply_selector_miss_guard(result)
 
     assert guarded['status'] == 'indeterminate'
-    assert "'Awaits#runs'" in guarded['message']
-    assert '3 test(s)' in guarded['message']
+    assert TEST_SELECTOR_MATCHED_NOTHING in guarded['message']
+
+
+def test_exit_zero_config_selector_miss_is_detected_without_a_command_selector():
+    """An exit-0 miss with no command selector is caught by the zero-test guard.
+
+    Surefire prints its pattern line only on the failure path, so an exit-0 miss
+    (`.mvn/maven.config` + `failIfNoSpecifiedTests=false`) leaves a zero-collected
+    summary and no message. The zero-test guard is what refuses it — without
+    naming a pattern, which the log does not carry.
+    """
+    result = _run_result('maven-zero-tests-executed.log', status='success', exit_code=0, command=_NO_COMMAND_SELECTOR)
+
+    assert apply_selector_miss_guard(result) is result
+    guarded = apply_zero_test_guard(result, 'test')
+    assert guarded['status'] == 'indeterminate'
+    assert guarded['message'].startswith(TEST_RUN_EXECUTED_NOTHING)
 
 
 def test_control_a_selector_miss_that_ran_nothing_still_says_so():
@@ -668,6 +726,51 @@ def test_control_a_module_named_like_a_phase_behind_pl_is_not_the_goal():
     result = _run_result('maven-test-no-summary.log', status='success', exit_code=0, command='mvnw verify')
 
     assert apply_zero_test_guard(result, '-pl test verify') is result
+
+
+# =============================================================================
+# Drift guards: the two vocabularies this module reads must stay in step
+# =============================================================================
+
+
+def test_the_failure_and_advisory_category_sets_cover_the_parser_vocabulary():
+    """Every category the parser can emit is classified here, and only once.
+
+    A category added to `MAVEN_PATTERNS` later would otherwise fall outside both
+    sets and be treated as advisory by the back-off — silently turning a real
+    failure into a relabel.
+    """
+    failure = _maven_execute_mod._FAILURE_ISSUE_CATEGORIES
+    advisory = _maven_execute_mod._ADVISORY_ISSUE_CATEGORIES
+    declared = set(_maven_cmd_parse_mod.MAVEN_PATTERNS)
+
+    assert not failure & advisory
+    assert declared <= failure | advisory
+    assert 'other' not in failure | advisory, "'other' is the uncategorised default, classified by severity"
+
+
+def test_every_built_module_tests_canonical_leads_with_a_recognised_test_goal():
+    """The zero-test guard's goal set must cover what discovery emits.
+
+    Both module-tests shapes — the plain `test` ladder and the `package` ladder of
+    a reactor-test-artifact consumer — are read back out of the builder's own
+    output, so a new shape there fails here instead of slipping past the guard.
+    """
+    test_phase_goal = _maven_execute_mod._test_phase_goal
+    shared = {
+        'module_name': 'probe',
+        'has_sources': True,
+        'has_tests': True,
+        'profiles': [],
+        'relative_path': 'probe',
+    }
+    plain = _maven_discover_mod._build_commands(packaging='jar', **shared)
+    ladder = _maven_discover_mod._build_commands(packaging='jar', consumes_reactor_test_artifact=True, **shared)
+
+    for commands in (plain, ladder):
+        executable = commands['module-tests']
+        args = executable.split('--command-args "', 1)[1].rstrip('"')
+        assert test_phase_goal(args) is not None, args
 
 
 def test_leading_goal_is_read_past_a_value_taking_option():
