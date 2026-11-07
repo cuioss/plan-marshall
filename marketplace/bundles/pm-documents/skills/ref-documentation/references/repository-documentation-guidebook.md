@@ -14,6 +14,10 @@ It complements and references — without restating — the foundational standar
 * **[ref-svg-diagrams](../../ref-svg-diagrams/SKILL.md)** — SVG diagram types, theme handling, `image::` embedding, and mandatory visual verification
 * **[manage-adr](../../../../plan-marshall/skills/manage-adr/SKILL.md)** — Canonical ADR metadata block, six-section template structure, and lifecycle rules
 
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../../../../plan-marshall/skills/tools-script-executor/standards/exit-code-convention.md); it is not restated here.
+
 ---
 
 ## 1. Repository-Wide Layer Taxonomy and Single-Source-of-Truth (SSOT) Boundaries
