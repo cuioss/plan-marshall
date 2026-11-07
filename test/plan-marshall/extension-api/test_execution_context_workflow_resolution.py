@@ -106,6 +106,36 @@ def test_standard_states_the_resolution_order_once() -> None:
     assert 'resolution is never performed against' not in standard
 
 
+def test_the_worktree_paragraph_pins_the_declared_exception() -> None:
+    """`WORKTREE` stays repo-relative; the other-repository field is declared by its workflow.
+
+    The paragraph is the one place a dispatched leaf learns that a workflow may
+    read or `git -C` outside `WORKTREE` through a declared field — and that the
+    exception is read-only. It also names the standard's own heading, so the pin
+    catches the dangling `§ Worktree-Resolution Root` spelling as well.
+    """
+    agent = AGENT.read_text(encoding='utf-8')
+    standard = STANDARD.read_text(encoding='utf-8')
+    paragraph = standard.split('`WORKTREE` governs where the dispatched workflow', 1)[1].split('\n\n', 1)[0]
+
+    assert '§ Worktree-Resolution Root' not in agent, 'the agent names a heading that does not exist'
+    assert '§ Workflow-Resolution Root' in agent, 'the agent does not point at the standard heading it relies on'
+    assert '`WORKTREE` stays repo-relative' in paragraph, 'the paragraph does not keep `WORKTREE` repo-relative'
+    assert 'never widened to carry it' in paragraph, 'the paragraph does not forbid widening `WORKTREE`'
+    assert 'declared under § "Input Contract"' not in paragraph, (
+        'the paragraph says the Input Contract declares the other-repository field; that section declares no such field'
+    )
+    assert "workflow's own input table" in paragraph, (
+        "the paragraph must name the workflow's own input table as the field's declaration site"
+    )
+    assert 'acts outside' in paragraph and 'by design' in paragraph, (
+        'the paragraph does not state that a read through the declared field acts outside `WORKTREE` by design'
+    )
+    assert 'Edit / Write / Read / `git -C`' in paragraph or 'Edit / Write' in paragraph, (
+        'the paragraph does not name the tool calls `WORKTREE` governs'
+    )
+
+
 # =============================================================================
 # Generated variants carry the same Step 4
 # =============================================================================

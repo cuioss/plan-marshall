@@ -21,9 +21,11 @@ dropping it — the "deleted heading / dangling anchor" class the documentation
 domain uniquely detects.
 
 The reference-extraction and anchor-resolution vocabulary is the documentation
-domain's own, carried over from the ``ref-asciidoc`` link-verification engine
-(``ref-asciidoc/scripts/_cmd_verify_links.py``); this module reuses the same
-regexes so the two surfaces agree on what a reference is and when it resolves.
+domain's own. This module mirrors the ``ref-asciidoc`` link-verification engine
+(``ref-asciidoc/scripts/_cmd_verify_links.py``) rather than importing it — it
+carries its own regexes, because it must also read Markdown and the extra
+anchor forms the checker does not — so the two surfaces are kept in step by
+review, not by shared code.
 """
 
 import re
