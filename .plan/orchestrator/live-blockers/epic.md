@@ -53,6 +53,25 @@ derive, for rows still live.
   - PLAN-LB-31 in-house-reviewer — PLAN-LB-21, PLAN-LB-20 D4 and D5.
   - PLAN-LB-14 launch-gate-scope — unchanged.
 
+- **PLAN-LB-123** (shipped #1933, 2026-11-07, runbook lane, `deepseek-v4.1-flash/high`) — see `landings/PLAN-LB-123.md`. Merge commit
+  `323bc766c`, a squash commit with one parent `5cd8ccd92` (read with git before the leaf prompt named it). One three-layer leaf read
+  it with the lane's 8 claims passed one by one; the orchestrator re-read the credit predicate, the B7 text, the manifest routing change
+  against the parent and the doc residues. The lane's review history, CI and merge-queue claims were not re-read. The message is
+  `complete: false`, `missing_keys: total_tokens`. No verb or flag was added, so no executor regeneration is owed. **No major, so
+  nothing is staged.** 5 of 5 deliverables reported. This is the fix plan for the PLAN-LB-117 findings.
+  - **Layer 3, minor (re-read):** the hand-back credit counts tasks and does not know which task the return is about
+    (`_tasks_query.py:667`), so one non-owed stalled task beside an unrelated valid hand-back reads as the hand-back cause; and the
+    credit has no memory across dispatches, so a repeated `running` hand-back on one task is credited each time and B7 no longer stops
+    that loop. Neither shape was shown reachable. Carried as the Watch below, staged only on the operator's word.
+  - **Layer 3, minor:** the before-snapshot step is stated only in the B7 bullet, while the post-build re-entry says "without the
+    peek" (`execution.md:239,272`), so it can be skipped and the next evaluation is refused and recorded `error`.
+  - **Layer 2:** D4(d) is met only by the commit message (the test docstring still claims a discrimination it cannot make, `test_unmeasured_rung_owed_hold.py:14-18`);
+    the D4(e) premise was false (the hand counts were already named frozensets) and the lane refuted it correctly; `SKILL.md:779`
+    does not state the keep-recorded precedence; `phase-5-execute/SKILL.md:1104` and `execution.md:268` overstate or omit the credit
+    rule; `_cmd_client_build.py:55-59` still says "the ONE place". These doc residues ride on the next plan that touches those files:
+    PLAN-LB-126 touches `execution.md` and `phase-6-finalize/SKILL.md`, so it carries the `execution.md` residues (L2-3, L3-3).
+  - **Surface:** the lane's "no surface drift" is false as worded: four touched files are not on the Expected Surface (each explained
+    by a deliverable); three listed files were not touched.
 - **PLAN-LB-122** (shipped #1931, 2026-11-07, runbook lane, `deepseek-v4.1-flash/high`) — see `landings/PLAN-LB-122.md`. Merge commit
   `bb4c39221`, a squash commit with one parent `8f61ab6cd` (the docs-only merge of PR 1930, read with git before the leaf prompt named
   it). One three-layer leaf read it with the lane's 10 claims passed one by one; the orchestrator re-read the major and the Step 4
@@ -2722,6 +2741,15 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
 > ↪ Relocated to `settled.md` § "Non-Claude-Code Failures: retired and out-of-scope entries" — two entries retired by PLAN-LB-48 and the earlier hot-fix, the superseded original, and the token-measurement entry (retired by PLAN-LB-49, measurement out of scope).
 
 ## Watches
+
+- **The B7 hand-back credit is a count, not a task match (PLAN-LB-123 landing, 2026-11-07; recorded, not staged).** One in-progress
+  task is credited to a valid hand-back when no owed task is in flight (`_tasks_query.py:667`). Two shapes follow, neither shown
+  reachable: (1) one non-owed stalled task beside an unrelated valid hand-back reads as `verification_handback`, not `error`; (2) a
+  build that keeps outliving the wrapper bound repeats dispatch, `running` hand-back, re-attach and re-dispatch on one not-owed task,
+  and B7 does not stop it because the credit has no memory and a re-attach closes only owed tasks (the lane's own residue C6). Both
+  fail toward one more dispatch, not toward a false pass of a gate. Retire it when a run shows the shape (then stage a fix plan:
+  carry the handed-back task id to the predicate) or when the leaf contract carries it. The reach questions to settle first are in
+  `landings/PLAN-LB-123.md` § Residue and Watches.
 
 > ↪ Relocated to `settled.md` § "The lane's Sonar question in PLAN-LB-100: stale configuration, fixed by PR 1884" — fixed by PR 1884 on 2026-10-29.
 - **A concurrent edit in the shared main checkout blocked a lane's last cleanup step (PLAN-LB-100, 2026-10-29; recorded, not
