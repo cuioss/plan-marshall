@@ -1,0 +1,285 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
+"""Tests for the ``review-gate`` verb — the review half of the merge gate.
+
+The lane decided its review half from prose: section 7 named an unresolved
+thread and an outside-diff finding, and nothing read a reviewer's Follow-ups or
+Nitpick sections, so a pull request could merge with those findings open while
+the landing said "all handled". The verb is the decision a script makes instead,
+from the surfaces the CI abstraction returns on the head:
+
+* an unresolved thread (``path:line``) refuses the merge;
+* a body finding with no disposition refuses it;
+* a resolved thread whose last reviewer comment says the concern remains refuses
+  it — resolution is not silence;
+* an unreadable or truncated read refuses it, because an unread read is not an
+  empty one;
+* a pull request with none of these is allowed.
+
+Each refusing case is also asserted against a stub that checks only unresolved
+threads, which is the pre-fix policy: the stub must answer "allowed" where the
+verb answers "refused", or the fixture proves nothing about what changed.
+"""
+
+from __future__ import annotations
+
+from unittest.mock import patch
+
+import pytest
+
+from conftest import get_scripts_dir, load_script_module, parse_ns, run_script
+
+lane = load_script_module('plan-marshall', 'runbook-lane', 'runbook_lane.py', 'runbook_lane_review_gate_mod')
+
+cmd_review_gate = lane.cmd_review_gate
+
+_SCRIPT = get_scripts_dir('plan-marshall', 'runbook-lane') / 'runbook_lane.py'
+
+_NITPICK_BODY = (
+    '**Actionable comments posted: 0**\n\n'
+    '<details>\n<summary>🧹 Nitpick comments (2)</summary><blockquote>\n'
+    '<details>\n<summary>src/a.py (2)</summary>\nrename the helper\n</details>\n'
+    '</blockquote></details>\n\n'
+    '<details>\n<summary>Follow-ups (1)</summary>\n'
+    'the same guard exists in src/b.py\n'
+    '</details>\n'
+)
+
+_OUTSIDE_DIFF_BODY = (
+    '**Actionable comments posted: 0**\n\n'
+    '<details>\n<summary>⛔ Outside diff range comments (1)</summary><blockquote>\n'
+    'the same guard exists in src/b.py\n'
+    '</blockquote></details>\n'
+)
+
+
+def _inline(
+    *,
+    thread_id: str = 'T1',
+    resolved: bool = False,
+    body: str = 'the guard coerces UNKNOWN',
+    author: str = 'coderabbitai',
+    path: str = 'src/mod.py',
+    line: int = 42,
+) -> dict:
+    return {
+        'kind': 'inline',
+        'id': f'{thread_id}-c',
+        'thread_id': thread_id,
+        'author': author,
+        'body': body,
+        'path': path,
+        'line': line,
+        'resolved': resolved,
+        'created_at': '2026-11-07T10:00:00Z',
+        'updated_at': '2026-11-07T10:00:00Z',
+        'commit_id': 'a' * 40,
+        'reply_to_id': '',
+        'thread_reply': False,
+    }
+
+
+def _review_body(body: str, author: str = 'coderabbitai') -> dict:
+    return {
+        'kind': 'review_body',
+        'id': 'review-1',
+        'thread_id': '',
+        'author': author,
+        'body': body,
+        'path': '',
+        'line': 0,
+        'resolved': False,
+        'created_at': '2026-11-07T10:00:00Z',
+        'updated_at': '2026-11-07T10:00:00Z',
+        'commit_id': 'a' * 40,
+        'reply_to_id': '',
+        'thread_reply': False,
+    }
+
+
+def _read(*comments: dict, complete: bool = True, status: str = 'success') -> dict:
+    if status != 'success':
+        return {'status': 'error', 'operation': 'pr_comments', 'error': 'GraphQL query failed: boom'}
+    unresolved = sum(1 for comment in comments if comment['kind'] == 'inline' and not comment['resolved'])
+    return {
+        'status': 'success',
+        'operation': 'pr_comments',
+        'provider': 'github',
+        'pr_number': 7,
+        'total': len(comments),
+        'unresolved': unresolved,
+        'complete': complete,
+        'connections': [],
+        'comments': list(comments),
+    }
+
+
+def _args(*dispositions: str):
+    argv = ['review-gate', '--pr-number', '7']
+    for disposition in dispositions:
+        argv += ['--disposition', disposition]
+    return parse_ns('plan-marshall', 'runbook-lane', 'runbook_lane.py', *argv)
+
+
+def _verdict(read: dict, *dispositions: str) -> dict:
+    with patch.object(lane, '_read_review_surfaces', return_value=read):
+        return cmd_review_gate(_args(*dispositions))
+
+
+def _only_unresolved_threads_stub(read: dict) -> bool:
+    """The pre-fix policy in miniature: a merge is refused only by an open thread.
+
+    This is the verdict the lane reached from prose before the verb existed. It
+    counts the unresolved threads it can see and asks nothing else — which is why
+    it also allows an unreadable or truncated surface, and a body whose findings
+    never became threads. A fixture that this stub allows and the verb refuses is
+    exactly the finding the verb closes; one where both agree proves nothing about
+    the change.
+    """
+    return not any(comment['kind'] == 'inline' and not comment['resolved'] for comment in read.get('comments') or [])
+
+
+def test_an_open_thread_refuses_the_merge_and_names_its_location() -> None:
+    verdict = _verdict(_read(_inline(resolved=False)))
+
+    assert verdict['merge_allowed'] is False
+    assert verdict['reason'] == 'unresolved_review_threads'
+    assert verdict['unresolved_review_threads'] == 1
+    assert verdict['unresolved_threads'][0]['location'] == 'src/mod.py:42'
+
+
+def test_a_body_finding_with_no_disposition_refuses_the_merge() -> None:
+    verdict = _verdict(_read(_review_body(_OUTSIDE_DIFF_BODY)))
+
+    assert verdict['merge_allowed'] is False
+    assert verdict['reason'] == 'body_findings_undisposed'
+    assert verdict['undisposed'] == [{'reviewer': 'coderabbit', 'section': 'outside-diff', 'id': 'outside-diff-1'}]
+    assert verdict['review_body_findings_total'] == 1
+    assert verdict['review_body_findings_handled'] == 0
+
+
+def test_a_disposed_body_finding_admits_the_merge() -> None:
+    verdict = _verdict(_read(_review_body(_OUTSIDE_DIFF_BODY)), 'coderabbit outside-diff outside-diff-1 — abc1234')
+
+    assert verdict['merge_allowed'] is True, verdict
+    assert verdict['reason'] == 'all_handled'
+    assert verdict['review_body_findings_handled'] == 1
+
+
+def test_a_body_of_only_nitpicks_and_follow_ups_refuses_the_merge() -> None:
+    """No thread and no outside-diff section — the shape the pre-fix gate let through."""
+    read = _read(_review_body(_NITPICK_BODY))
+    assert 'outside diff' not in _NITPICK_BODY, 'the fixture must carry no outside-diff section'
+    assert not any(comment['kind'] == 'inline' for comment in read['comments'])
+
+    verdict = _verdict(read)
+
+    assert verdict['merge_allowed'] is False
+    assert verdict['reason'] == 'body_findings_undisposed'
+    assert verdict['review_body_findings_total'] == 3
+    assert {(row['section'], row['id']) for row in verdict['undisposed']} == {
+        ('nitpick', 'nitpick-1'),
+        ('nitpick', 'nitpick-2'),
+        ('followup', 'followup-1'),
+    }
+
+
+def test_a_resolved_thread_whose_last_reviewer_comment_restates_the_defect_refuses_the_merge() -> None:
+    read = _read(
+        _inline(thread_id='T1', resolved=True, body='the guard coerces UNKNOWN', author='coderabbitai'),
+        _inline(thread_id='T1', resolved=True, body='fixed in abc1234', author='octocat'),
+        _inline(
+            thread_id='T1', resolved=True, body='This still applies: the guard is unchanged.', author='coderabbitai'
+        ),
+    )
+
+    verdict = _verdict(read)
+
+    assert verdict['merge_allowed'] is False
+    assert verdict['reason'] == 'thread_concern_remains'
+    assert verdict['threads'][0]['location'] == 'src/mod.py:42'
+
+
+def test_a_resolved_thread_closed_with_an_acknowledgement_admits_the_merge() -> None:
+    read = _read(
+        _inline(thread_id='T1', resolved=True, body='the guard coerces UNKNOWN', author='coderabbitai'),
+        _inline(thread_id='T1', resolved=True, body='Addressed in commit abc1234.', author='coderabbitai'),
+        _inline(thread_id='T1', resolved=True, body='fixed in abc1234', author='octocat'),
+    )
+
+    verdict = _verdict(read)
+
+    assert verdict['merge_allowed'] is True, verdict
+    assert verdict['unresolved_review_threads'] == 0
+
+
+def test_a_failed_read_refuses_the_merge() -> None:
+    verdict = _verdict(_read(status='error'))
+
+    assert verdict['merge_allowed'] is False
+    assert verdict['reason'] == 'undecidable_read'
+
+
+def test_a_truncated_read_refuses_the_merge() -> None:
+    """A clipped population is never published as a complete one."""
+    verdict = _verdict(_read(_inline(), complete=False))
+
+    assert verdict['merge_allowed'] is False
+    assert verdict['reason'] == 'undecidable_read'
+    assert 'truncated' in verdict['detail']
+
+
+def test_an_unreadable_review_body_section_refuses_the_merge() -> None:
+    """An unknown counted section is undecidable, never "no findings"."""
+    body = '<details>\n<summary>🔍 Lint comments (2)</summary>\nuse the helper\n</details>\n'
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['merge_allowed'] is False
+    assert verdict['reason'] == 'undecidable_read'
+    assert 'unreadable review-body section' in verdict['detail']
+
+
+def test_a_disposition_that_does_not_name_its_evidence_is_refused() -> None:
+    verdict = _verdict(_read(_review_body(_OUTSIDE_DIFF_BODY)), 'coderabbit outside-diff outside-diff-1 —')
+
+    assert verdict['merge_allowed'] is False
+    assert verdict['reason'] == 'disposition_unparsable'
+
+
+def test_a_clean_pull_request_admits_the_merge() -> None:
+    verdict = _verdict(_read(_review_body('**Actionable comments posted: 0**\n\nLGTM\n')))
+
+    assert verdict['merge_allowed'] is True, verdict
+    assert verdict['reason'] == 'all_handled'
+    assert verdict['review_body_findings_total'] == 0
+    assert verdict['review_body_findings_handled'] == 0
+
+
+@pytest.mark.parametrize(
+    'read',
+    [
+        _read(_review_body(_OUTSIDE_DIFF_BODY)),
+        _read(_review_body(_NITPICK_BODY)),
+        _read(
+            _inline(thread_id='T1', resolved=True, body='still applies', author='coderabbitai'),
+        ),
+        _read(status='error'),
+    ],
+    ids=['body-finding', 'nitpicks-and-follow-ups', 'concern-remains', 'undecidable'],
+)
+def test_each_refusing_case_is_red_against_the_unresolved_threads_only_stub(read) -> None:
+    """The pre-fix policy allows every one of these; the verb refuses them."""
+    stub_allows = _only_unresolved_threads_stub(read)
+
+    verdict = _verdict(read)
+
+    assert stub_allows is True, 'the fixture is not discriminating: the pre-fix policy also refuses it'
+    assert verdict['merge_allowed'] is False
+
+
+def test_the_verb_is_reachable_through_its_cli_surface() -> None:
+    result = run_script(_SCRIPT, 'review-gate', '--pr-number', '0')
+
+    assert result.success, result.stderr
+    assert result.toon()['error'] == 'invalid_pr_number'

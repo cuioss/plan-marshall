@@ -149,6 +149,28 @@ A confirmed count carries the measured figure and the rules it left open (`--rul
 above zero, and `none` at a measured `0`); `undecidable` and `unconfigured` both carry `unknown`, and
 a project without Sonar carries `n/a` at both.
 
+### review-gate
+
+```bash
+python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane review-gate \
+  --pr-number {N} [--project-dir DIR] [--disposition "{reviewer} {section} {id} — {sha|reason}" ...]
+```
+
+Decides the merge gate's review condition (section 7) from the surfaces read on the head. It reads
+through the CI abstraction (never `gh`): the unresolved review threads with their `path:line`, and
+the body of every reviewer's review, whose `inline`, `duplicate`, `outside-diff`, `nitpick` and
+`followup` sections are parsed into individually identified findings. Each `--disposition` is one
+progress-file line, repeated once per finding.
+
+It answers `merge_allowed: false` with a named `reason` while any of these holds: an unresolved
+thread exists (`unresolved_review_threads`); a body finding carries no disposition naming a commit or
+a stated reason (`body_findings_undisposed`); a resolved thread's last reviewer comment says the
+concern remains (`thread_concern_remains`); a disposition line names no evidence
+(`disposition_unparsable`); the read is undecidable, truncated, or carries a review-body section the
+parser cannot read (`undecidable_read`). An undecidable read is a stop, never a pass. Otherwise it
+answers `merge_allowed: true` with `all_handled`, and reports `unresolved_review_threads`,
+`review_body_findings_total` and `review_body_findings_handled` for the landing.
+
 ## 0. Input
 
 The invocation names a spec:
@@ -279,6 +301,7 @@ re-read: lane text loaded at {timestamp} ({session start|compaction|restart|idle
 D{n} hypothesis: {claim} — confirmed|refuted, {file:line}
 D{n} test: {test name} — order {test-first|mutation-after|none}; failing run {commit} {output identifier}; passed at {sha}
 D{n} done: commit {sha}
+finding: {reviewer} {section} {id} — {sha|reason}
 sonar: {configured (project key)}|{not_configured}; read at {sha}: {count} confirmed|{undecidable, retried}|{not_configured}; dismissals: {issue-key: reason, … or none}
 gate: {quality-gate|module-tests|verify} at {sha} — {result}
 self-review round {k}: {findings and disposition}; open: {list or none}
@@ -677,6 +700,12 @@ whether to continue at the limit. Record every finding and its disposition.
    - fix it, commit and push; or
    - answer it with `ci pr thread-reply` (the reason it does not apply), then close it with
      `ci pr resolve-thread`.
+
+   **A thread is resolved only after a reply that names a commit or a stated reason** — never to
+   silence it: `ci pr thread-reply` first, `ci pr resolve-thread` second, in that order. Every
+   finding — whether it arrived as a thread or only inside a review body — gets one disposition line
+   in the progress file, `finding: {reviewer} {section} {id} — {sha|reason}`, and the merge gate's
+   `review-gate` call (section 7) is handed those lines as its `--disposition` values.
 6. **After every push, re-trigger** a reviewer whose last review predates the head. Re-read the open
    Sonar issues after every push too, on the same condition as step 4.
 7. **Reviewer quota policy** ("review limit reached" or similar), for ANY required reviewer that
@@ -728,6 +757,12 @@ Merge only when all of these hold:
   remaining issue carries a recorded dismissal with its reason, or `resolve` reported
   `not_configured`. An `undecidable` read is a blocker and is retried, and an `unconfigured` read is
   a blocker too; the lane never treats either as `0`.
+- The review surfaces of the current head admit the merge: `review-gate` reports `merge_allowed:
+  true` on a read taken after the last push — no unresolved review thread, every review-body finding
+  carrying a disposition that names a commit or a stated reason, and no resolved thread whose last
+  reviewer comment says the concern remains. Its `--disposition` values are this run's progress-file
+  `finding:` lines. An undecidable or truncated read is a blocker and is retried. The standing review
+  authorization never overrides a `review-gate` `false`.
 
 The reviewer quota policy (§ 6 step 7) applies only while no qualifying review exists. The standing
 authorization never applies to a reviewer that is not quota-limited, and never to a PR without a

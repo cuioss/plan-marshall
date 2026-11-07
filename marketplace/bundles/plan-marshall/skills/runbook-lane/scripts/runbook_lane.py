@@ -16,8 +16,9 @@ Verb surface::
     runbook_lane build-routing --worktree PATH
     runbook_lane build-classify --paths P1,P2 [--project-dir DIR]
     runbook_lane sonar-gate --state STATE [--count-status STATUS] [--open-count N]
-                             [--open-keys K1,K2] [--dismissed-keys K1,K2]
+                             [--open-keys K1,K2] [--operator-selected-keys K1,K2]
     runbook_lane sonar-facts --state STATE [--count-status STATUS] [--open-count N] [--rules R1,R2]
+    runbook_lane review-gate --pr-number N [--project-dir DIR] [--disposition TEXT ...]
 
 ``--spec`` must name a staged spec, i.e. a file below
 ``.plan/orchestrator/{slug}/plans/``. Anything else is refused: the lane exists
@@ -2093,6 +2094,416 @@ def cmd_sonar_facts(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
+# =============================================================================
+# review-gate — the review half of the merge gate
+# =============================================================================
+
+#: The review-body sections the gate reads out of a reviewer's review body.
+#:
+#: Each row is ``(label prefix, canonical section)``, and the label is matched as
+#: a case-insensitive PREFIX of the ``<summary>`` title the reviewer's own markup
+#: puts above the block. The trailing decoration a reviewer adds — a leading
+#: emoji, a ``(N)`` count — is stripped before the match, so one label covers
+#: every rendering of that heading.
+#:
+#: ``inline`` is listed beside the three body-only sections on purpose: the
+#: reviewer states its inline findings in the body as a count line even though
+#: they also arrive as threads, and a finding it declares belongs in the
+#: disposition ledger whichever surface carries it.
+_REVIEW_BODY_SECTIONS = (
+    ('actionable comments', 'inline'),
+    ('inline comments', 'inline'),
+    ('duplicate comments', 'duplicate'),
+    ('outside diff range comments', 'outside-diff'),
+    ('outside-diff comments', 'outside-diff'),
+    ('nitpick comments', 'nitpick'),
+    ('nitpicks', 'nitpick'),
+    ('follow-ups', 'followup'),
+    ('followups', 'followup'),
+)
+
+#: The keywords that mark a ``<summary>`` title as one of the reviewer's FINDING
+#: sections. Used only by the fail-closed arm: a counted title carrying one of
+#: these but matching no declared label is a section this parser cannot read, and
+#: an unreadable section is an undecidable read rather than an empty one.
+_SECTION_KEYWORDS = ('comment', 'follow-up', 'followup', 'nitpick', 'outside')
+
+#: The markers that make a resolved thread's last reviewer comment an answer that
+#: the concern REMAINS. A reviewer that closes a thread with an acknowledgement
+#: ("Addressed in commit …", "verified", "fixed") matches none of these, so the
+#: thread counts as handled; one that restates the defect matches, so a thread
+#: resolved to silence it is refused.
+_CONCERN_REMAINS_MARKERS = (
+    'still applies',
+    'still present',
+    'still an issue',
+    'still unresolved',
+    'still not addressed',
+    'not addressed',
+    'remains unresolved',
+    'concern remains',
+)
+
+_SUMMARY_RE = re.compile(r'<summary>(?P<title>.*?)</summary>', re.IGNORECASE | re.DOTALL)
+_TRAILING_COUNT_RE = re.compile(r'\((?P<count>\d+)\)\s*$')
+
+#: The CI notation this verb reads through. The lane never calls ``gh``: the
+#: review surfaces come from the CI abstraction, whose provider module owns the
+#: ``gh`` invocation.
+_CI_NOTATION = 'plan-marshall:tools-integration-ci:ci'
+
+#: The reviewer-neutral evidence field of one disposition line, and the progress
+#: template's own separator.
+_DISPOSITION_SEPARATOR = '—'
+_DISPOSITION_RE = re.compile(
+    r'^(?P<reviewer>\S+)\s+(?P<section>\S+)\s+(?P<id>\S+)\s*' + _DISPOSITION_SEPARATOR + r'\s*(?P<evidence>\S.*)$'
+)
+
+
+def _normalise_section_title(title: str) -> str:
+    """Return a ``<summary>`` title reduced to lowercase words.
+
+    A reviewer decorates its headings with emoji, bold markers and punctuation.
+    Everything that is not a letter, a digit, a hyphen, a space or a parenthesised
+    group is dropped, so ``🧹 Nitpick comments (2)`` and ``**Nitpick comments
+    (2)**`` reduce to the same ``nitpick comments (2)`` the label table is written
+    against. The parentheses survive on purpose: the ``(N)`` count is read off the
+    normalised title, and stripping the group would erase it.
+    """
+    return ' '.join(re.sub(r'[^a-z0-9\- ()]+', ' ', title.lower()).split())
+
+
+def _section_for_title(title: str) -> tuple[str | None, int | None]:
+    """Return ``(canonical section, declared count)`` for one ``<summary>`` title.
+
+    ``(None, None)`` when the title is not a finding section at all (a
+    walkthrough, a "Review details" block, the AI-prompt block). The count is the
+    ``(N)`` the reviewer declares, or ``None`` when it declares none — the caller
+    then counts the nested per-file blocks.
+    """
+    normalised = _normalise_section_title(title)
+    for label, section in sorted(_REVIEW_BODY_SECTIONS, key=lambda row: -len(row[0])):
+        if normalised.startswith(label):
+            declared = _TRAILING_COUNT_RE.search(normalised)
+            return section, (int(declared.group('count')) if declared else None)
+    return None, None
+
+
+def _count_section_findings(span: str, declared: int | None) -> int:
+    """Return the number of findings the reviewer declares inside one section.
+
+    The declared ``(N)`` wins: it is the reviewer's own statement about the block.
+    Without one, the nested per-file ``<summary>file (n)</summary>`` blocks are
+    summed — the rendering a section uses when it lists each file's findings
+    separately. A block carrying neither, but carrying prose of its own, states
+    one finding; an empty block states none.
+    """
+    if declared is not None:
+        return declared
+    nested = 0
+    for match in _SUMMARY_RE.finditer(span):
+        counted = _TRAILING_COUNT_RE.search(_normalise_section_title(match.group('title')))
+        if counted is not None:
+            nested += int(counted.group('count'))
+    if nested:
+        return nested
+    return 1 if re.sub(r'<[^>]+>', ' ', span).strip() else 0
+
+
+def _body_findings(reviewer: str, body: str, bot_kind: str) -> tuple[list[dict[str, str]], str | None]:
+    """Parse one review body into its findings, or name the section it cannot read.
+
+    Every recognised section contributes ``{section}-{n}`` findings under
+    ``reviewer``. An inline count the reviewer states only as its status line
+    (the registry's ``review_body_summary_patterns`` literal) is read as the
+    ``inline`` section when no inline section block is present — one declara-
+    tion, one reading.
+
+    A ``<summary>`` title that COUNTS a finding block but matches no declared
+    label is the undecidable answer: the parser cannot tell what it contains, and
+    reporting it as no findings would be the "cannot read means pass" failure
+    this gate exists to close.
+    """
+    matches = list(_SUMMARY_RE.finditer(body))
+    starts = [(index, match) for index, match in enumerate(matches)]
+    findings: list[dict[str, str]] = []
+    seen_inline = False
+    span_end_of: dict[int, int] = {}
+    for position, (index, match) in enumerate(starts):
+        if _section_for_title(match.group('title'))[0] is None:
+            continue
+        span_end_of[index] = next(
+            (
+                later.start()
+                for later_index, later in starts[position + 1 :]
+                if _section_for_title(later.group('title'))[0] is not None
+            ),
+            len(body),
+        )
+    for index, match in starts:
+        section, declared = _section_for_title(match.group('title'))
+        if section is None:
+            normalised = _normalise_section_title(match.group('title'))
+            if _TRAILING_COUNT_RE.search(normalised) and any(keyword in normalised for keyword in _SECTION_KEYWORDS):
+                return [], f'unreadable review-body section: {match.group("title").strip()!r}'
+            continue
+        if section == 'inline':
+            seen_inline = True
+        count = _count_section_findings(body[match.end() : span_end_of[index]], declared)
+        findings.extend({'reviewer': reviewer, 'section': section, 'id': f'{section}-{n}'} for n in range(1, count + 1))
+
+    if not seen_inline:
+        findings.extend(_inline_status_findings(reviewer, body, bot_kind))
+    return findings, None
+
+
+def _inline_status_findings(reviewer: str, body: str, bot_kind: str) -> list[dict[str, str]]:
+    """Read the reviewer's inline count off its declared status line, if any.
+
+    The literal comes from the registry (``review_body_summary_patterns``), never
+    from this module: the bot standard remains the one place the phrase lives.
+    """
+    if not bot_kind:
+        return []
+    import bot_registry
+
+    for pattern in bot_registry.review_body_summary_patterns(bot_kind):
+        index = body.find(pattern)
+        if index < 0:
+            continue
+        tail = body[index + len(pattern) :].split('\n', 1)[0]
+        declared = re.search(r'\d+', tail)
+        if declared is None:
+            continue
+        return [
+            {'reviewer': reviewer, 'section': 'inline', 'id': f'inline-{n}'}
+            for n in range(1, int(declared.group()) + 1)
+        ]
+    return []
+
+
+def _reviewer_of(comment: dict[str, Any]) -> str:
+    """Return the reviewer identity a comment is attributed to (``''`` for a human).
+
+    A registered bot resolves to its ``bot_kind``, so the disposition ledger names
+    the reviewer the same way the reviewer's own standard does. Anything the
+    registry does not know is a human, and a human's review body is not this
+    gate's finding source.
+    """
+    import bot_registry
+
+    return bot_registry.bot_kind_for_login(comment.get('author'))
+
+
+def _threads(comments: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    """Group the inline comments by thread id, in the order the provider returned them."""
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for comment in comments:
+        if comment.get('kind') != 'inline':
+            continue
+        thread_id = str(comment.get('thread_id') or '')
+        if not thread_id:
+            continue
+        grouped.setdefault(thread_id, []).append(comment)
+    return grouped
+
+
+def _thread_concern_remains(thread: list[dict[str, Any]]) -> bool:
+    """Whether a RESOLVED thread's last reviewer comment says the concern remains.
+
+    A thread the lane answered and closed ends with the lane's reply, so nothing
+    is tested. When the last word is a reviewer's, it counts as "the concern
+    remains" only when it carries one of the declared markers: an acknowledgement
+    ("Addressed in commit …") leaves the thread handled, which is why the test is
+    over the marker vocabulary rather than over who spoke last.
+    """
+    last = thread[-1]
+    if not _reviewer_of(last):
+        return False
+    body = str(last.get('body') or '').lower()
+    return any(marker in body for marker in _CONCERN_REMAINS_MARKERS)
+
+
+def _review_thread_rows(threads: dict[str, list[dict[str, Any]]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Split the threads into ``(unresolved, concern-remains)`` rows carrying ``path:line``."""
+    unresolved: list[dict[str, Any]] = []
+    remains: list[dict[str, Any]] = []
+    for thread_id, thread in threads.items():
+        opening = thread[0]
+        row = {
+            'thread_id': thread_id,
+            'path': str(opening.get('path') or ''),
+            'line': opening.get('line') or 0,
+            'location': f'{opening.get("path") or "?"}:{opening.get("line") or 0}',
+        }
+        if not all(bool(comment.get('resolved')) for comment in thread):
+            unresolved.append(row)
+        elif _thread_concern_remains(thread):
+            remains.append(row)
+    return unresolved, remains
+
+
+def _parse_dispositions(values: list[str]) -> tuple[list[dict[str, str]], list[str]]:
+    """Parse the ``--disposition`` values into rows, naming any that do not parse.
+
+    One row per progress line, in the progress template's own wording:
+    ``finding: {reviewer} {section} {id} — {sha|reason}``. The evidence token is
+    what makes the disposition a disposition — an empty one answers nothing about
+    the finding — so a line without it is refused by name rather than counted.
+    """
+    rows: list[dict[str, str]] = []
+    refused: list[str] = []
+    for value in values:
+        match = _DISPOSITION_RE.match(value.strip())
+        if match is None:
+            refused.append(value)
+            continue
+        rows.append({key: match.group(key) for key in ('reviewer', 'section', 'id', 'evidence')})
+    return rows, refused
+
+
+def _read_review_surfaces(pr_number: int, project_dir: Path) -> dict[str, Any]:
+    """Read a pull request's review surfaces through the CI abstraction.
+
+    The ONE seam this verb's provider read goes through, so the wiring can be
+    asserted without a live provider. The call is the executor's ``ci pr comments``
+    invocation: the lane never spells ``gh``, and the provider module owns both the
+    GraphQL query and its pagination.
+    """
+    import subprocess
+    import sys
+
+    from file_ops import get_executor_path
+    from toon_parser import parse_toon
+
+    argv = [
+        sys.executable,
+        str(get_executor_path()),
+        _CI_NOTATION,
+        'pr',
+        'comments',
+        '--pr-number',
+        str(pr_number),
+    ]
+    try:
+        completed = subprocess.run(
+            argv,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=300,
+            cwd=str(project_dir),
+        )
+    except (RuntimeError, OSError, subprocess.SubprocessError) as exc:
+        return {'status': 'error', 'error': f'the CI read could not run: {exc}'}
+    if completed.returncode != 0:
+        return {
+            'status': 'error',
+            'error': f'the CI read exited {completed.returncode}: {completed.stderr.strip() or "no stderr"}',
+        }
+    if not (completed.stdout or '').strip():
+        return {'status': 'error', 'error': 'the CI read produced no output'}
+    try:
+        return parse_toon(completed.stdout)
+    except Exception as exc:
+        return {'status': 'error', 'error': f'the CI read output was not parseable as TOON: {exc}'}
+
+
+def _review_gate_verdict(
+    pr_number: int,
+    read: dict[str, Any],
+    dispositions: list[dict[str, str]],
+    refused: list[str],
+) -> dict[str, Any]:
+    """Decide whether the review surfaces admit the merge (section 7's condition).
+
+    The verdict is a pure function of the read and of the run's recorded
+    dispositions, so the merge condition is a decision a script makes:
+
+    - an unreadable or truncated read is ``undecidable_read`` — a stop, never a
+      pass, because "no findings" is unknowable from a surface nobody read whole;
+    - an unresolved thread is ``unresolved_review_threads``;
+    - a body finding with no disposition naming a commit or a stated reason is
+      ``body_findings_undisposed``;
+    - a resolved thread whose last reviewer comment states that the concern
+      remains is ``thread_concern_remains`` — resolution is not silence;
+    - otherwise ``all_handled``.
+    """
+    base: dict[str, Any] = {'status': 'success', 'operation': 'review-gate', 'pr_number': pr_number}
+    if refused:
+        return {
+            **base,
+            'merge_allowed': False,
+            'reason': 'disposition_unparsable',
+            'refused': refused,
+        }
+    if read.get('status') != 'success':
+        return {
+            **base,
+            'merge_allowed': False,
+            'reason': 'undecidable_read',
+            'detail': str(read.get('error') or 'the review surface read failed'),
+        }
+    if read.get('complete') is not True:
+        return {
+            **base,
+            'merge_allowed': False,
+            'reason': 'undecidable_read',
+            'detail': 'the review surface read was truncated: not every connection was drained',
+        }
+
+    comments = [comment for comment in (read.get('comments') or []) if isinstance(comment, dict)]
+    threads = _threads(comments)
+    unresolved, remains = _review_thread_rows(threads)
+
+    findings: list[dict[str, str]] = []
+    for comment in comments:
+        if comment.get('kind') != 'review_body':
+            continue
+        reviewer = _reviewer_of(comment)
+        if not reviewer:
+            continue
+        body_findings, undecidable = _body_findings(reviewer, str(comment.get('body') or ''), reviewer)
+        if undecidable is not None:
+            return {**base, 'merge_allowed': False, 'reason': 'undecidable_read', 'detail': undecidable}
+        findings.extend(body_findings)
+
+    disposed = {(row['reviewer'], row['section'], row['id']) for row in dispositions}
+    undisposed = [
+        finding for finding in findings if (finding['reviewer'], finding['section'], finding['id']) not in disposed
+    ]
+
+    verdict: dict[str, Any] = {
+        **base,
+        'unresolved_review_threads': len(unresolved),
+        'review_body_findings_total': len(findings),
+        'review_body_findings_handled': len(findings) - len(undisposed),
+        'unresolved_threads': unresolved,
+    }
+    if unresolved:
+        return {**verdict, 'merge_allowed': False, 'reason': 'unresolved_review_threads'}
+    if undisposed:
+        return {**verdict, 'merge_allowed': False, 'reason': 'body_findings_undisposed', 'undisposed': undisposed}
+    if remains:
+        return {**verdict, 'merge_allowed': False, 'reason': 'thread_concern_remains', 'threads': remains}
+    return {**verdict, 'merge_allowed': True, 'reason': 'all_handled'}
+
+
+def cmd_review_gate(args: argparse.Namespace) -> dict[str, Any]:
+    """Report whether the pull request's review surfaces admit the merge."""
+    pr_number = getattr(args, 'pr_number', None)
+    if not isinstance(pr_number, int) or pr_number <= 0:
+        return {
+            'status': 'error',
+            'error': 'invalid_pr_number',
+            'message': f'--pr-number must be a positive integer; got {pr_number!r}',
+        }
+    project_dir = Path(getattr(args, 'project_dir', None) or '.')
+    dispositions, refused = _parse_dispositions(list(getattr(args, 'disposition', None) or []))
+    read = _read_review_surfaces(pr_number, project_dir)
+    return _review_gate_verdict(pr_number, read, dispositions, refused)
+
+
 def cmd_resolve(args: argparse.Namespace) -> dict[str, Any]:
     """Resolve every project-specific value the runbook lane needs."""
     project_dir = Path(getattr(args, 'project_dir', '.') or '.').resolve()
@@ -2358,6 +2769,20 @@ def main() -> int:
         help='Comma-separated rules of the issues left open at the merge head',
     )
 
+    review_parser = subparsers.add_parser(
+        'review-gate',
+        help='Decide whether the pull request review surfaces admit the merge',
+        allow_abbrev=False,
+    )
+    review_parser.add_argument('--pr-number', dest='pr_number', type=int, required=True, help='Pull request number')
+    review_parser.add_argument('--project-dir', default='.', help='Project root (default: current directory)')
+    review_parser.add_argument(
+        '--disposition',
+        action='append',
+        default=None,
+        help=('One progress-file disposition line, repeatable: "{reviewer} {section} {id} — {sha|reason}"'),
+    )
+
     args = parser.parse_args()
     if args.command == 'resolve':
         data = cmd_resolve(args)
@@ -2392,6 +2817,13 @@ def main() -> int:
         return 0
     if args.command == 'sonar-facts':
         data = cmd_sonar_facts(args)
+        if data.get('status') == 'error':
+            output_toon_error(data['error'], data.get('message', data['error']))
+            return 0
+        output_toon(data)
+        return 0
+    if args.command == 'review-gate':
+        data = cmd_review_gate(args)
         if data.get('status') == 'error':
             output_toon_error(data['error'], data.get('message', data['error']))
             return 0
