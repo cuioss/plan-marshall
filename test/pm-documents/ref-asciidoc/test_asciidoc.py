@@ -6,6 +6,7 @@ Tier 2 (direct import) tests with subprocess CLI plumbing tests retained.
 """
 
 import json
+import os
 import tempfile
 import warnings
 from argparse import Namespace
@@ -955,9 +956,13 @@ def test_verify_links_masked_examples_are_named_by_their_mask_class(tmp_path):
 
 
 def test_verify_links_percent_encoded_anchor_resolves(tmp_path):
-    """An anchor is percent-decoded before the lookup, exactly as the path already is."""
+    """An anchor is percent-decoded before the lookup, exactly as the path already is.
+
+    The anchor is an explicit ID Asciidoctor registers (``my-anchor``), not a
+    spaced one it would rewrite, so the decode is what the assertion turns on.
+    """
     adoc = tmp_path / 'page.adoc'
-    adoc.write_text('= Page\n\n[[my anchor]]\n\nSee link:#my%20anchor[Anchor].\n', encoding='utf-8')
+    adoc.write_text('= Page\n\n[[my-anchor]]\n\nSee link:#my%2Danchor[Anchor].\n', encoding='utf-8')
 
     result = cmd_verify_links(_ns(_VERIFY_LINKS_NS, file=str(adoc), directory=None, recursive=False, report=None))
 
@@ -1089,3 +1094,207 @@ def test_verify_links_unreadable_adoc_target_completes_the_run(tmp_path):
     assert not [issue for issue in result['data']['issues'] if issue['file'].endswith('good.adoc')], (
         'the readable file still yields its own clean result'
     )
+
+
+# =============================================================================
+# D2 — a mask never hides a reference without counting it
+# =============================================================================
+
+
+def _masked_reference_classes() -> dict[str, int]:
+    """The unchecked-class counts of the masked-reference fixture, by class."""
+    data = _link_macro_result('masked-reference-forms.adoc')['data']
+    return {row['class']: row['count'] for row in data['unchecked_link_classes']}
+
+
+def test_verify_links_counts_every_reference_form_a_mask_hides():
+    """Each masked form is named under its mask class, and none becomes a false broken link.
+
+    The fixture carries a passthrough-wrapped target, a target with an inline
+    passthrough, a passthrough xref, a pass-macro cross-reference, a code-span
+    xref and a double-backtick example. Before the mask counted them, the two
+    spanning macros were in no count at all and the xref forms were dropped.
+    """
+    data = _link_macro_result('masked-reference-forms.adoc')['data']
+
+    assert data['total_links'] == 0, 'every form in the fixture is masked, so none is a live link'
+    assert data['broken_links'] == 0, 'a documented example must never become a false broken link'
+    assert _masked_reference_classes() == {
+        'passthrough': 2,
+        'inline-passthrough': 1,
+        'pass-macro': 1,
+        'code-span': 2,
+    }, f'every masked reference must be named under its own class: {_masked_reference_classes()}'
+
+
+def test_verify_links_names_a_macro_whose_target_a_passthrough_wraps():
+    """`link:++url++[x]` is counted under `passthrough`, not erased with its target."""
+    rows = _link_macro_result('masked-reference-forms.adoc')['data']['unchecked_link_classes']
+    row = next(row for row in rows if row['class'] == 'passthrough')
+
+    assert row['count'] == 2, 'the passthrough-wrapped target and the passthrough xref are both counted'
+    assert row['first']['link'] == 'link:++https://example.org/a_b++[Wrapped]', (
+        'the first passthrough occurrence must quote the whole macro, prefix and label included'
+    )
+
+
+# =============================================================================
+# D4 — the checker's remaining edges
+# =============================================================================
+
+
+def test_verify_links_absolute_xref_target_is_named_and_not_broken(tmp_path):
+    """An absolute xref target is not joined onto the file's directory and never opened."""
+    adoc = tmp_path / 'page.adoc'
+    adoc.write_text('= Page\n\nSee xref:/etc/hostname[Host].\n', encoding='utf-8')
+
+    result = cmd_verify_links(_ns(_VERIFY_LINKS_NS, file=str(adoc), directory=None, recursive=False, report=None))
+
+    assert result['data']['broken_links'] == 0, (
+        'a target outside the file directory is not relative, so it is not broken'
+    )
+    classes = {row['class']: row['count'] for row in result['data']['unchecked_link_classes']}
+    assert classes == {'absolute-path': 1}, f'the absolute xref must be named under its class: {classes}'
+
+
+def test_verify_links_xref_target_is_percent_decoded(tmp_path):
+    """An xref target is decoded exactly as its anchor is."""
+    (tmp_path / 'my doc.adoc').write_text('= Doc\n\nbody\n', encoding='utf-8')
+    adoc = tmp_path / 'page.adoc'
+    adoc.write_text('= Page\n\nSee xref:my%20doc.adoc[Doc].\n', encoding='utf-8')
+
+    result = cmd_verify_links(_ns(_VERIFY_LINKS_NS, file=str(adoc), directory=None, recursive=False, report=None))
+
+    assert result['data']['total_links'] == 1, 'the xref must be extracted, or zero-broken is vacuous'
+    assert result['data']['broken_links'] == 0, 'the encoded path names the file it resolves to'
+
+
+def test_verify_links_xref_anchor_is_percent_decoded(tmp_path):
+    """An xref anchor is decoded before the lookup."""
+    (tmp_path / 'target.adoc').write_text('= Target\n\n[[my-anchor]]\n', encoding='utf-8')
+    adoc = tmp_path / 'page.adoc'
+    adoc.write_text('= Page\n\nSee xref:target.adoc#my%2Danchor[Anchor].\n', encoding='utf-8')
+
+    result = cmd_verify_links(_ns(_VERIFY_LINKS_NS, file=str(adoc), directory=None, recursive=False, report=None))
+
+    assert result['data']['broken_links'] == 0, 'the decoded anchor names one the target defines'
+
+
+def test_verify_links_cross_file_fragment_is_percent_decoded(tmp_path):
+    """A `link:` macro's fragment is decoded before the cross-file anchor lookup."""
+    (tmp_path / 'target.adoc').write_text('= Target\n\n[[my-anchor]]\n', encoding='utf-8')
+    adoc = tmp_path / 'page.adoc'
+    adoc.write_text('= Page\n\nSee link:target.adoc#my%2Danchor[Anchor].\n', encoding='utf-8')
+
+    result = cmd_verify_links(_ns(_VERIFY_LINKS_NS, file=str(adoc), directory=None, recursive=False, report=None))
+
+    assert result['data']['broken_links'] == 0, 'the decoded fragment names an anchor the target defines'
+
+
+def test_verify_links_self_referencing_symlink_does_not_abort_the_run(tmp_path):
+    """A symlink loop is reported on its link, never raised out of a multi-file run."""
+    (tmp_path / 'real.adoc').write_text('= Real\n\nbody\n', encoding='utf-8')
+    loop = tmp_path / 'loop.adoc'
+    loop.symlink_to(loop.name)
+    (tmp_path / 'page.adoc').write_text(
+        '= Page\n\nSee link:loop.adoc[Loop] and link:real.adoc[Real].\n', encoding='utf-8'
+    )
+
+    result = cmd_verify_links(_ns(_VERIFY_LINKS_NS, file=None, directory=str(tmp_path), recursive=False, report=None))
+
+    assert result['data']['files_processed'] == 3, 'the run completes over every discovered file'
+    assert result['data']['total_links'] == 2, 'the self-referencing link and the real link are both extracted'
+    assert any('loop.adoc' in issue['description'] for issue in result['data']['issues']), (
+        'the loop must be named on its own link rather than aborting the run'
+    )
+
+
+def test_verify_links_double_backtick_span_pairs_as_one_span(tmp_path):
+    """A double-backtick example is masked whole; it does not stay live as two empty spans."""
+    adoc = tmp_path / 'page.adoc'
+    adoc.write_text('= Page\n\nAn example: ``link:missing.adoc[x]``.\n', encoding='utf-8')
+
+    result = cmd_verify_links(_ns(_VERIFY_LINKS_NS, file=str(adoc), directory=None, recursive=False, report=None))
+
+    assert result['data']['total_links'] == 0, 'the double-backtick example is not a live link'
+    assert result['data']['broken_links'] == 0, 'a documented example must not become a false broken link'
+    assert _ns_classes(result) == {'code-span': 1}, 'the example is counted once under its mask class'
+
+
+def _ns_classes(result: dict) -> dict[str, int]:
+    return {row['class']: row['count'] for row in result['data']['unchecked_link_classes']}
+
+
+def test_verify_links_an_unreadable_only_run_names_the_count(tmp_path):
+    """`broken_links: 0` beside `status: failure` also names the unreadable targets behind it."""
+    (tmp_path / 'broken.adoc').mkdir()
+    adoc = tmp_path / 'page.adoc'
+    adoc.write_text('= Page\n\nSee link:broken.adoc#section[Broken].\n', encoding='utf-8')
+
+    result = cmd_verify_links(_ns(_VERIFY_LINKS_NS, file=str(adoc), directory=None, recursive=False, report=None))
+
+    assert result['status'] == 'failure'
+    assert result['data']['broken_links'] == 0
+    assert result['data']['unreadable_targets'] == 1, (
+        'the failure must be explained by an unreadable count, not only by a zero broken count'
+    )
+
+
+def test_verify_links_a_non_utf8_target_is_reported_not_raised(tmp_path):
+    """A target that cannot be decoded is an issue on its link, and the run completes."""
+    (tmp_path / 'target.adoc').write_bytes(b'= Target\n\n\xff\xfe\x00\n')
+    adoc = tmp_path / 'page.adoc'
+    adoc.write_text('= Page\n\nSee link:target.adoc#section[Target].\n', encoding='utf-8')
+
+    result = cmd_verify_links(_ns(_VERIFY_LINKS_NS, file=str(adoc), directory=None, recursive=False, report=None))
+
+    assert result['status'] == 'failure'
+    assert result['data']['files_processed'] == 1
+    assert result['data']['broken_links'] == 0, 'a decode failure is not a missing file'
+    assert result['data']['unreadable_targets'] >= 1
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason='a permission bit does not deny root, so the case cannot be produced')
+def test_verify_links_a_permission_denied_target_is_reported_not_raised(tmp_path):
+    """A target that cannot be opened for a permission reason is an issue, and the run completes."""
+    target = tmp_path / 'target.adoc'
+    target.write_text('= Target\n\n[[section]]\n', encoding='utf-8')
+    target.chmod(0o000)
+    adoc = tmp_path / 'page.adoc'
+    adoc.write_text('= Page\n\nSee link:target.adoc#section[Target].\n', encoding='utf-8')
+
+    try:
+        result = cmd_verify_links(_ns(_VERIFY_LINKS_NS, file=str(adoc), directory=None, recursive=False, report=None))
+    finally:
+        target.chmod(0o644)
+
+    assert result['status'] == 'failure'
+    assert result['data']['broken_links'] == 0, 'an unreadable target is not a missing one'
+
+
+def test_verify_links_an_unterminated_block_is_named(tmp_path):
+    """A delimited block left open at EOF is reported, never silently skipped."""
+    adoc = tmp_path / 'page.adoc'
+    adoc.write_text(
+        '= Page\n\n----\nlink:hidden.adoc[Hidden]\n\nlink:also-hidden.adoc[Hidden]\n',
+        encoding='utf-8',
+    )
+
+    result = cmd_verify_links(_ns(_VERIFY_LINKS_NS, file=str(adoc), directory=None, recursive=False, report=None))
+
+    assert result['status'] == 'failure', 'an unterminated block leaves the rest of the file unchecked'
+    assert result['data']['broken_links'] == 0, 'the links inside the open block were not examined'
+    unterminated = [issue for issue in result['data']['issues'] if 'never closed' in issue['description']]
+    assert unterminated, 'the open block must be named with the line that opened it'
+    assert unterminated[0]['line'] == 3
+
+
+def test_verify_links_a_mismatched_length_close_leaves_the_block_open_and_named(tmp_path):
+    """A `----` inside a `-----` block is content, so the block stays open to EOF and is named."""
+    adoc = tmp_path / 'page.adoc'
+    adoc.write_text('= Page\n\n-----\n----\nlink:hidden.adoc[Hidden]\n', encoding='utf-8')
+
+    result = cmd_verify_links(_ns(_VERIFY_LINKS_NS, file=str(adoc), directory=None, recursive=False, report=None))
+
+    assert result['data']['total_links'] == 0, 'a mismatched-length delimiter is content, not a close'
+    assert any('never closed' in issue['description'] for issue in result['data']['issues'])

@@ -59,8 +59,11 @@ _UNREADABLE_ISSUE = 'unreadable'
 #: never rendered, so they are not checked.
 _BLOCK_DELIMITER_RE = re.compile(r'-{4,}|\.{4,}|/{4,}|\+{4,}')
 
-#: An inline monospace code span (`` `link:target[label]` ``).
-_CODE_SPAN_RE = re.compile(r'`[^`\n]*`')
+#: An inline monospace code span (`` `link:target[label]` ``). The opener's run
+#: length is captured and the closer must carry the same run, so a double-backtick
+#: span pairs as ONE span rather than as two empty ones — a double-backtick syntax
+#: example would otherwise stay live and be reported broken.
+_CODE_SPAN_RE = re.compile(r'(`+)[^`\n]*?\1(?!`)')
 
 #: A macro passthrough (``pass:[link:target[label]]``). Its content is emitted
 #: verbatim, so it is an example, not a live macro. One nesting level of square
@@ -77,9 +80,10 @@ _PASSTHROUGH_RE = re.compile(r'(?<![\w+])\+\+[^+\n]*?\+\+(?![\w+])')
 #: verbatim, so it is an example, not a live macro.
 _INLINE_PASSTHROUGH_RE = re.compile(r'(?<![\w+])\+[^+\s][^+\n]*?\+(?![\w+])')
 
-#: The inline masks, outermost first. A link inside a code span is counted under
-#: ``code-span`` even when the span also matches a later pattern, because the
-#: first mask that covers it blanks the text the later ones would scan.
+#: The inline masks, in precedence order: the FIRST mask that covers a reference
+#: claims it and blanks the text every later pattern would scan. The order is a
+#: precedence choice, not a nesting order — a code span is scanned before a
+#: passthrough even where the two overlap.
 _MASKS: tuple[tuple[str, re.Pattern[str]], ...] = (
     (_CODE_SPAN_CLASS, _CODE_SPAN_RE),
     (_PASS_MACRO_CLASS, _PASS_MACRO_RE),
@@ -87,23 +91,92 @@ _MASKS: tuple[tuple[str, re.Pattern[str]], ...] = (
     (_INLINE_PASSTHROUGH_CLASS, _INLINE_PASSTHROUGH_RE),
 )
 
+#: Every reference form a mask can hide. A masked example is counted once per
+#: reference it carries — a `link:` macro, an `xref:` macro or a `<<anchor>>`
+#: cross-reference alike — so an unchecked-class row names what the mask skipped
+#: rather than only the `link:` forms.
+_MASKED_REFERENCE_RES: tuple[re.Pattern[str], ...] = (
+    _LINK_MACRO_RE,
+    re.compile(r'(?<!\\)\bxref:([^\s\[]+?)\[([^\]]*)\]'),
+    re.compile(r'<<([^,>]+)(?:,([^>]+))?>>'),
+)
+
+#: The prefix of a `link:`/`xref:` macro whose target lies (partly) inside a mask:
+#: everything from the macro keyword up to the mask, with no whitespace or label
+#: opener in between.
+_SPANNING_MACRO_PREFIX_RE = re.compile(r'(?<!\\)\b(?:link|xref):[^\s\[]*$')
+
+
+def _overlaps(covered: list[tuple[int, int]], span: tuple[int, int]) -> bool:
+    """Whether ``span`` overlaps a reference already counted under another mask."""
+    return any(span[0] < end and start < span[1] for start, end in covered)
+
+
+def _references_in(text: str) -> list[tuple[int, int, str]]:
+    """Every reference form in ``text`` as ``(start, end, source)``, overlaps dropped.
+
+    The three patterns are matched independently, so one form nested in another
+    (a `<<anchor>>` inside a `link:` label) yields one entry, not two: the widest
+    match at the earliest offset wins.
+    """
+    found = sorted(
+        (match.span() + (match.group(0),) for pattern in _MASKED_REFERENCE_RES for match in pattern.finditer(text)),
+        key=lambda row: (row[0], -(row[1] - row[0])),
+    )
+    kept: list[tuple[int, int, str]] = []
+    for start, end, source in found:
+        if any(start < other_end and other_start < end for other_start, other_end, _source in kept):
+            continue
+        kept.append((start, end, source))
+    return kept
+
+
+def _spanning_macro(line: str, start: int, end: int) -> tuple[int, int, str] | None:
+    """The `link:`/`xref:` macro whose target spans the mask at ``[start, end)``.
+
+    A target wrapped in a passthrough (``link:++url++[x]``) or carrying an inline
+    passthrough (``link:https://x/?q=+foo+[y]``) has its macro prefix before the
+    mask and its label after it. Masking only the target leaves a blank where
+    ``_LINK_MACRO_RE`` requires a non-blank target, so without this probe the macro
+    prefix is erased with the target and the link appears in no count at all.
+    """
+    prefix_match = _SPANNING_MACRO_PREFIX_RE.search(line[:start])
+    if prefix_match is None:
+        return None
+    label = re.match(r'\[[^\]]*\]', line[end:])
+    if label is None:
+        return None
+    macro_start = prefix_match.start()
+    macro_end = end + label.end()
+    return macro_start, macro_end, line[macro_start:macro_end]
+
 
 def _mask_inline_constructs(line: str) -> tuple[str, list[tuple[str, str]]]:
-    """Blank the inline example constructs on a line, naming each masked link.
+    """Blank the inline example constructs on a line, naming each masked reference.
 
     Returns the masked line — same length, so offsets still address the original
-    — and every ``link:`` macro the masking hid, as ``(class, source text)``
-    pairs. Masking is what keeps a documented syntax example from being reported
-    as a live, broken link; counting the hidden macros is what keeps the
-    unchecked-class report honest about what was skipped.
+    — and every reference the masking hid, as ``(class, source text)`` pairs.
+    Masking is what keeps a documented syntax example from being reported as a
+    live, broken link; counting the hidden references under the mask's own class
+    is what keeps the unchecked-class report honest about what was skipped.
     """
     masked = line
     hidden: list[tuple[str, str]] = []
+    covered: list[tuple[int, int]] = []
 
     def _masker(link_class: str) -> Callable[[re.Match[str]], str]:
         def _blank(match: re.Match[str]) -> str:
-            hidden.extend((link_class, found.group(0)) for found in _LINK_MACRO_RE.finditer(match.group(0)))
-            return ' ' * len(match.group(0))
+            start, end = match.span()
+            for ref_start, ref_end, source in _references_in(line[start:end]):
+                span = (start + ref_start, start + ref_end)
+                if not _overlaps(covered, span):
+                    hidden.append((link_class, source))
+                    covered.append(span)
+            spanning = _spanning_macro(line, start, end)
+            if spanning is not None and not _overlaps(covered, spanning[:2]):
+                hidden.append((link_class, spanning[2]))
+                covered.append(spanning[:2])
+            return ' ' * (end - start)
 
         return _blank
 
@@ -212,11 +285,14 @@ def extract_anchors_from_file(filepath: str) -> set[str]:
     return anchors
 
 
-def _extract_from_file(filepath: str) -> tuple[list[Link], list[Link]]:
-    """Extract the live links and the masked examples from an AsciiDoc file.
+def _extract_from_file(filepath: str) -> tuple[list[Link], list[Link], int | None]:
+    """Extract the live links, the masked examples and an unterminated block's line.
 
     Masked examples are returned separately, so a caller that counts links does
-    not count them as live while the unchecked-class summary still sees them.
+    not count them as live while the unchecked-class summary still sees them. The
+    third value is the line number of a delimited block that is still open at the
+    end of the file, so the rest of the file is named as unchecked rather than
+    silently skipped.
     """
     links = []
     masked_links = []
@@ -224,10 +300,16 @@ def _extract_from_file(filepath: str) -> tuple[list[Link], list[Link]]:
         lines = f.readlines()
 
     open_delimiter = None
+    open_line: int | None = None
     for line_num, line in enumerate(lines, 1):
         delimiter = _block_delimiter(line)
         if delimiter is not None:
+            was_open = open_delimiter is not None
             open_delimiter = _advance_block_state(delimiter, open_delimiter)
+            if open_delimiter is not None and not was_open:
+                open_line = line_num
+            elif open_delimiter is None:
+                open_line = None
             continue
         if open_delimiter is not None:
             continue
@@ -273,7 +355,9 @@ def _extract_from_file(filepath: str) -> tuple[list[Link], list[Link]]:
                     line_num=line_num,
                     link_text=original_line[match.start() : match.end()],
                     link_type='xref',
-                    target=target,
+                    # Percent-decoded exactly as the anchor is, so an encoded path
+                    # (`my%20doc.adoc`) resolves to the file it names.
+                    target=unquote(target),
                     anchor=anchor,
                     label=match.group(2).strip(),
                 )
@@ -302,7 +386,7 @@ def _extract_from_file(filepath: str) -> tuple[list[Link], list[Link]]:
                 )
             )
 
-    return links, masked_links
+    return links, masked_links, open_line
 
 
 def extract_links_from_file(filepath: str) -> list[Link]:
@@ -344,9 +428,13 @@ def _split_relative_target(target: str) -> tuple[str, str]:
 
 
 def _unchecked_class(link: Link) -> str | None:
-    """The unchecked class a ``link:`` macro belongs to, or ``None`` when verified."""
+    """The unchecked class a link belongs to, or ``None`` when the checker opened it."""
     if link.link_type == 'masked':
         return link.unchecked_class
+    if link.link_type == 'xref':
+        # An xref target a leading `/` or `\` puts outside the file's directory is
+        # not joined onto it and not opened, exactly as an absolute `link:` target.
+        return _ABSOLUTE_PATH_CLASS if link.target.startswith(('/', '\\')) else None
     if link.link_type != 'link':
         return None
     link_class = _link_macro_class(link.target)
@@ -398,10 +486,15 @@ def _safe_anchors(filepath: str) -> tuple[set[str] | None, str | None]:
 
 
 def _resolve_target(filepath: str, target_file: str) -> tuple[str | None, str | None]:
-    """The resolved target path, or ``None`` and the reason it could not be resolved."""
+    """The resolved target path, or ``None`` and the reason it could not be resolved.
+
+    ``RuntimeError`` is caught beside the path errors because ``Path.resolve``
+    raises it for a self-referencing symlink loop: one such link must be reported
+    on its own link, never abort a multi-file run.
+    """
     try:
         return str((Path(filepath).parent / target_file).resolve()), None
-    except (OSError, ValueError) as exc:
+    except (OSError, ValueError, RuntimeError) as exc:
         return None, f'{type(exc).__name__}: {exc}'
 
 
@@ -455,9 +548,23 @@ def verify_links(files: list[str]) -> tuple[list[Link], list[Issue]]:
         anchors, _reason = anchor_cache[filepath]
         if anchors is None:
             continue
-        links, masked_links = _extract_from_file(filepath)
+        links, masked_links, unterminated_line = _extract_from_file(filepath)
         all_links.extend(links)
         all_links.extend(masked_links)
+        if unterminated_line is not None:
+            issues.append(
+                Issue(
+                    file=filepath,
+                    line_num=unterminated_line,
+                    link_text='',
+                    issue_type=_UNREADABLE_ISSUE,
+                    description=(
+                        f'Delimited block opened at line {unterminated_line} is never closed: '
+                        'the rest of the file was not checked'
+                    ),
+                    link_backed=False,
+                )
+            )
 
         for link in links:
             if link.link_type == 'cross-ref' and link.anchor not in anchors:
@@ -471,6 +578,10 @@ def verify_links(files: list[str]) -> tuple[list[Link], list[Issue]]:
                     )
                 )
             elif link.link_type == 'xref':
+                if link.target.startswith(('/', '\\')):
+                    # Absolute: named under the absolute-path unchecked class,
+                    # never joined onto the file's directory and never opened.
+                    continue
                 target_path, reason = _resolve_target(filepath, link.target) if link.target else (filepath, None)
                 exists = False
                 if target_path is not None:
@@ -644,14 +755,19 @@ def cmd_verify_links(args) -> dict:
     all_links, issues = verify_links(files)
     broken = [i for i in issues if i.issue_type == 'broken']
     violations = [i for i in issues if i.issue_type == 'format_violation']
+    unreadable = [i for i in issues if i.issue_type == _UNREADABLE_ISSUE]
     unchecked = summarise_unchecked_link_classes(all_links)
 
     if issues:
+        # Every count that makes the status a failure is named, so an
+        # unreadable-only run never logs `0 broken, 0 violations` beside a
+        # `failure` and let a consumer gate on the zeros.
         log_entry(
             'script',
             'global',
             'INFO',
-            f'[DOCS-LINKS] Found {len(broken)} broken links, {len(violations)} format violations in {len(files)} files',
+            f'[DOCS-LINKS] Found {len(broken)} broken links, {len(violations)} format violations, '
+            f'{len(unreadable)} unreadable targets in {len(files)} files',
         )
 
     live_links = [link for link in all_links if link.link_type != 'masked']
@@ -668,6 +784,7 @@ def cmd_verify_links(args) -> dict:
             'total_links': total_links,
             'broken_links': len(broken),
             'format_violations': len(violations),
+            'unreadable_targets': len(unreadable),
             'unchecked_link_classes': unchecked,
             'issues': [
                 {
