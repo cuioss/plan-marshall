@@ -153,18 +153,17 @@ def _clear_reentrancy(monkeypatch):
 def isolated_queue(tmp_path, monkeypatch) -> dict:
     """Isolate the machine-global build-queue file and its main-anchored side effects.
 
-    The queue file resolves under an isolated ``PLAN_MARSHALL_HOME``, and only two
-    things are still pinned or stubbed: the ``project_root`` stamp (so holder
-    liveness resolves under the fixture's own checkout) and the [LOCK] event log
-    (so no emission reaches the developer's main-anchored log). A real acquire
-    therefore touches ONLY the isolated queue file.
+    The queue file resolves under an isolated ``PLAN_MARSHALL_HOME``, and two
+    further things are pinned: the ``project_root`` stamp (so holder liveness
+    resolves under the fixture's own checkout) and the [LOCK] event log (so no
+    emission reaches the developer's main-anchored log). A real acquire therefore
+    touches ONLY the isolated queue file.
 
     The adaptive reap threshold is a top-level ``upper_limit_seconds`` field of the
     isolated queue file itself, so seeding it at the floor below pins the reaper's
-    threshold in the shape ``build_queue`` actually reads. The two run-config helper
-    names this fixture lists are absent from that module, and
-    ``monkeypatch.setattr`` defaults to ``raising=True`` — a stub for one of them
-    would error every slot test using this fixture instead of merely over-stubbing.
+    threshold in the shape ``build_queue`` reads. The fixture stubs no helper on the
+    module under test: a name that module does not define would raise, because
+    ``monkeypatch.setattr`` defaults to ``raising=True``.
     """
     home = tmp_path / 'home'
     home.mkdir()
@@ -401,12 +400,13 @@ def test_route_wait_reissues_on_running(use_fake_client):
 def test_route_wait_treats_queued_as_non_terminal(use_fake_client):
     """A ``queued`` wait payload keeps the loop waiting — it is not a verdict.
 
-    At HEAD the routed client recognised only ``running`` as non-terminal, so a
-    ``queued`` job_status fell through to ``_daemon_result_to_direct`` and landed
-    on its "terminal job_status this client does not recognise" leg: an
-    ``indeterminate`` result for a build that had not even started. The two
-    scripted waits are the whole claim: the first is ``queued`` (must NOT stop
-    the loop) and the second is terminal (must be the result).
+    The routed client treats ``queued`` and ``running`` alike as non-terminal: a
+    payload outside that live set is the only thing that reaches
+    ``_daemon_result_to_direct``. A ``queued`` status read as terminal lands on that
+    function's "terminal job_status this client does not recognise" leg and reports
+    ``indeterminate`` for a build that had not even started. The two scripted waits
+    are the whole claim: the first is ``queued`` (must NOT stop the loop) and the
+    second is terminal (must be the result).
     """
     client = use_fake_client(
         preflight={'status': 'success', 'preflight': 'ready'},
@@ -1709,10 +1709,10 @@ class TestPreToolFaultPassThrough:
         """Every pre-tool emitter's identifier is a member of the classifier set.
 
         A fault identifier spelled differently at the producer and in the reader's set
-        would silently fall back to ``build_failed`` — the defect this deliverable
-        removes — so the agreement is asserted rather than assumed, one producer at a
-        time. The executor's refusal literal lives in the generator template, so that
-        producer is tied to the set through the template's own text.
+        would silently fall back to ``build_failed``, so the agreement is asserted
+        rather than assumed, one producer at a time. The executor's refusal literal
+        lives in the generator template, so that producer is tied to the set through
+        the template's own text.
         """
         import resolve_project_dir as routing
         from _build_result import (
