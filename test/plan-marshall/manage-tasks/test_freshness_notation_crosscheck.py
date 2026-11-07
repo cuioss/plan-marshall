@@ -715,6 +715,112 @@ def test_a_whole_tree_vocabulary_silent_row_stays_undetermined(monkeypatch) -> N
 
 
 # =============================================================================
+# The recorded command payload — the row's own field beats the joined argv
+# =============================================================================
+
+
+@pytest.mark.parametrize(
+    ('command_args', 'expected'),
+    [
+        ('verify', ('verify', ())),
+        ('verify plan-marshall', ('verify', ('plan-marshall',))),
+        ('test -pl core-api -am', ('test', ('core-api',))),
+        ('module-tests -k foo', None),
+        ('verify --timeout 900', None),
+        ('', None),
+    ],
+)
+def test_parse_row_scope_prefers_the_recorded_command_payload(command_args, expected) -> None:
+    """The field is the payload the joined ``args`` cannot recover.
+
+    ``--command-args`` receives one argv element, so the executor can record the
+    executor/payload boundary the unquoted join loses. A flag INSIDE that value
+    is still unreadable: the reader must not guess whether it narrows the run.
+    An empty value is unreadable too, never whole-tree.
+    """
+    row = _build_entry(args='run --command-args verify --timeout 900', command_args=command_args)
+
+    parsed = crosscheck.parse_row_scope(row)
+
+    if expected is None:
+        assert parsed is None
+    else:
+        assert (parsed.canonical, parsed.scope_tokens) == expected
+
+
+def test_a_row_recording_the_command_payload_certifies_a_whole_tree_change(monkeypatch) -> None:
+    """The executor's own trailing flag no longer blocks a measured whole-tree run.
+
+    The row below is exactly the documented call shape ``run --command-args
+    verify --timeout 900``. The joined ``args`` cannot say whether ``--timeout``
+    sat inside the payload's quoting or after it; the recorded field can, and it
+    says the payload is a bare ``verify``.
+    """
+    _stub_expected(monkeypatch, {_PYPROJECT})
+    row = _build_entry(
+        args='run --command-args verify --timeout 900',
+        command_args='verify',
+        outcome=_outcome_for(19007),
+    )
+
+    outcome = crosscheck.cross_check_candidates([row], '/nonexistent-project-dir', _required())
+
+    assert outcome['scope_verdict'] == crosscheck.COVERED, outcome
+    assert outcome['contributing'] == [0]
+
+
+def test_a_payload_flag_inside_the_recorded_value_stays_unreadable(monkeypatch) -> None:
+    """CONTROL: the field does not bless a narrowing filter.
+
+    ``-k foo`` is the payload's own flag. Recording the payload does not make it
+    readable, because the reader still cannot say how much of the suite ran.
+    """
+    _stub_expected(monkeypatch, {_PYPROJECT})
+    row = _build_entry(args='run --command-args module-tests -k foo', command_args='module-tests -k foo')
+
+    outcome = crosscheck.cross_check_candidates([row], '/nonexistent-project-dir', _required())
+
+    assert outcome['scope_verdict'] == crosscheck.UNDETERMINED, outcome
+    assert outcome['joint_reason'] == crosscheck.REASON_SCOPE_UNREADABLE_WHOLE_TREE
+
+
+def test_a_recorded_payload_with_no_flag_stays_whole_tree(monkeypatch) -> None:
+    """CONTROL: a flagless payload covers whole-tree exactly as before."""
+    _stub_expected(monkeypatch, {_PYPROJECT})
+    row = _build_entry(args='run --command-args verify', command_args='verify', outcome=_outcome_for(19007))
+
+    outcome = crosscheck.cross_check_candidates([row], '/nonexistent-project-dir', _required())
+
+    assert outcome['scope_verdict'] == crosscheck.COVERED, outcome
+    assert outcome['contributing'] == [0]
+
+
+def test_a_legacy_unreadable_row_names_the_flag_placement_remedy(plan_context, monkeypatch, tmp_path) -> None:
+    """An old row's refusal names the ONE remedy that makes it readable.
+
+    A row written before the field existed keeps today's unreadable reading, and
+    the generic "re-run a build" advice loops: the re-run writes the same shape.
+    The message therefore names the two changes that work — record the payload as
+    its own field (a regenerated executor does), or move the executor's own flag
+    before ``--command-args`` / drop it.
+    """
+    _stub_expected(monkeypatch, {_PYPROJECT})
+    _stub_required(monkeypatch, _required())
+    result = _run(
+        plan_context,
+        monkeypatch,
+        tmp_path,
+        [_build_entry(args='run --command-args verify --timeout 900', outcome=_outcome_for(19007))],
+        'scope-legacy-flag',
+    )
+
+    assert result['status'] == 'stale', result
+    assert result['reason'] == crosscheck.REASON_SCOPE_UNREADABLE_WHOLE_TREE
+    assert 'before --command-args' in result['message']
+    assert 'Re-run a build whose canonical and scope cover this change.' not in result['message']
+
+
+# =============================================================================
 # Every scope inability passes, and says which one it was
 # =============================================================================
 
