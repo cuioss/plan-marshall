@@ -124,6 +124,20 @@ def test_a_single_module_answers_that_module(capsys, reactor):
         assert answer['divergence_possible'] is False
 
 
+def test_the_response_carries_the_narrow_unit_fields_the_task_gate_parses(capsys, reactor):
+    """The per-task gate parses the narrow-unit fields, so their KEYS must be present.
+
+    Maven narrows to MODULES, not to a test directory or file, so the answer is
+    an empty list and a null module — but an absent key is not the same answer as
+    an empty list to a consumer reading them out of the response.
+    """
+    answer = _run(capsys, reactor, changed_paths='alpha/src/main/java/com/example/Thing.java')
+
+    assert answer['narrow_units'] == []
+    assert answer['narrow_units_unresolved'] == []
+    assert answer['narrow_unit_module'] is None
+
+
 def test_a_path_outside_every_module_is_reported_unresolved(capsys, reactor):
     """A path no module directory contains is reported, and routes the whole tree."""
     answer = _run(capsys, reactor, changed_paths='alpha/src/main/java/com/example/Thing.java,docs/notes.md')

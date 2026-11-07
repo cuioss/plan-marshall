@@ -422,7 +422,7 @@ Only the module-scoped form resolves here. The observation was recorded against 
 
 ### Whole-tree module-tests divergence gate
 
-The guards above run mypy + ruff over production sources and mypy over `test/` — neither runs **any pytest**. A scoped-green / whole-tree-red regression (the PLAN-08 class: a change that passes a scoped run but fails when the whole tree is tested) therefore slips them and surfaces first at remote CI. This section closes that gap by running a real `module-tests` (pytest) gate, escalating to a whole-tree run only when the footprint provably risks divergence.
+The guards above run mypy + ruff over production sources and mypy over `test/` — neither runs the project's tests. A scoped-green / whole-tree-red regression (the PLAN-08 class: a change that passes a scoped run but fails when the whole tree is tested) therefore slips them and surfaces first at remote CI. This section closes that gap by running a real `module-tests` gate, escalating to a whole-tree run only when the footprint provably risks divergence.
 
 0. **Resolve the canonical once, and derive the seam notation and the whole-tree invocation from it.** Every invocation in this arm comes from a resolver rather than from a pinned wrapper:
 
@@ -436,7 +436,7 @@ The guards above run mypy + ruff over production sources and mypy over `test/` �
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
      work --plan-id {plan_id} --level WARNING \
-     --message "[WARNING] (plan-marshall:pre-push-quality-gate) The resolved build skill exposes no resolve-test-scope verb, so the divergence question cannot be answered and NO pytest ran — the scoped-green / whole-tree-red divergence class (PLAN-08) is UN-GATED at finalize for this push. Proceeding on honest degradation."
+     --message "[WARNING] (plan-marshall:pre-push-quality-gate) The resolved build skill exposes no resolve-test-scope verb, so the divergence question cannot be answered and this step ran no module tests — the scoped-green / whole-tree-red divergence class (PLAN-08) is UN-GATED at finalize for this push. Proceeding on honest degradation."
    ```
 
    Branch on the resolve's error shapes exactly as the whole-tree `quality-gate` probe prescribes: only the `Command not found` + `available[]`-omits-`module-tests` shape proves absence. That case is **structurally like** the missing-verb case above — no branch-3 routing, because branch 3's WARNING interpolates `{scoped_modules}` and its predicate reads `whole_tree_available`, neither of which exists where this resolve returned no executable and branch 1's seam call therefore never ran. But it does NOT reuse that case's message either: its cause is different (no `module-tests` canonical resolved at all, so there is no resolved build skill to lack a verb), and asserting a cause a path does not have is the same defect one layer down. Emit its own WARNING naming its own cause:
@@ -444,7 +444,7 @@ The guards above run mypy + ruff over production sources and mypy over `test/` �
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
      work --plan-id {plan_id} --level WARNING \
-     --message "[WARNING] (plan-marshall:pre-push-quality-gate) No module-tests canonical resolves in this project, so no pytest could be run and the divergence question cannot be answered — the scoped-green / whole-tree-red divergence class (PLAN-08) is UN-GATED at finalize for this push. Proceeding on honest degradation."
+     --message "[WARNING] (plan-marshall:pre-push-quality-gate) No module-tests canonical resolves in this project, so this step ran no module tests and the divergence question cannot be answered — the scoped-green / whole-tree-red divergence class (PLAN-08) is UN-GATED at finalize for this push. Proceeding on honest degradation."
    ```
 
    Then proceed to **Mark Step Complete (Success)** using the same **module-tests DEGRADED** detail variant — the causes differ, the recorded verdict does not, and § "Mark Step Complete" states why one variant serves both. Any other error shape did not answer, so STOP the step.

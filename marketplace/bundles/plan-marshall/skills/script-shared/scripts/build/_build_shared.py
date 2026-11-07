@@ -373,10 +373,11 @@ def _store_build_findings(
             detail_lines.append('')
             detail_lines.append('--- stack trace ---')
             detail_lines.append(issue.stack_trace)
-        # The representative per-signature failure block (deliverable 9) carries
-        # the *why* of a failure — round-trip it into the finding store so a
-        # triage reader gets the traceback/assertion body without a raw-log
-        # re-read. Present only for parsers that populate it (pyproject today).
+        # The representative detail block carries the *why* of an issue —
+        # round-trip it into the finding store so a triage reader gets it without
+        # a raw-log re-read. Populated by the parsers that capture one: the
+        # pyproject one (a per-signature traceback/assertion body) and the Maven
+        # one (a compiler error's ``symbol:`` / ``location:`` continuation lines).
         if issue.detail:
             detail_lines.append('')
             detail_lines.append('--- failure detail ---')
@@ -748,7 +749,21 @@ def cmd_run_common(
     Returns:
         Exit code (0 for success, 1 for failure).
     """
-    formatter = format_json if output_format == 'json' else format_toon
+    base_formatter = format_json if output_format == 'json' else format_toon
+
+    # ``queued_seconds`` is produced by the routing seam (how long the build
+    # waited behind another build of its directory), and every branch below
+    # REBUILDS the emitted payload from the fields it names. Wrapping the
+    # formatter is what carries that one field through every branch — hand-back,
+    # success, failure, timeout, killed, indeterminate — instead of adding it to
+    # each payload construction, where a new branch would silently drop it and the
+    # operator would lose the only signal that the build was serialised rather
+    # than slow.
+    def formatter(output: dict[str, Any]) -> str:
+        queued = result.get('queued_seconds')
+        if isinstance(queued, int) and not isinstance(queued, bool) and queued >= 0:
+            output = {**output, 'queued_seconds': queued}
+        return base_formatter(output)
 
     log_file = result['log_file']
     command_str = result['command']
@@ -869,7 +884,10 @@ def cmd_run_common(
             'log_file': log_file,
             'command': command_str,
             'job_id': result.get('job_id', ''),
-            'job_status': STATUS_RUNNING,
+            # The observed daemon status when the producer carried one — `queued`
+            # for a job that had not started when the bound expired — else the
+            # historical `running`.
+            'job_status': result.get('job_status') or STATUS_RUNNING,
         }
         print(formatter(running_output))
         return 0  # Status modeled in output, not exit code

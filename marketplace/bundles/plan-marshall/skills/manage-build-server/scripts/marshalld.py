@@ -39,12 +39,15 @@ from __future__ import annotations
 import argparse
 import asyncio
 import contextlib
+import json
 import os
 import sys
 import time
 from pathlib import Path
 from typing import Any
 
+from _build_directory_state import held_directories
+from _build_directory_state import pid_alive as _shared_pid_alive
 from _build_server_protocol import (
     STATUS_KILLED,
     STATUS_NOT_FOUND,
@@ -61,7 +64,7 @@ from _build_server_protocol import (
     write_frame,
 )
 from _build_server_registry import canonicalize_root, read_registry
-from _machine_config import SOURCE_MACHINE_CONFIG, CapResolution, resolve_max_slots
+from _machine_config import SOURCE_MACHINE_CONFIG, CapResolution, report_safe, resolve_max_slots
 from _marshalld_audit import InteractionAudit
 from _marshalld_journal import Journal
 from _marshalld_scheduler import Scheduler
@@ -172,17 +175,15 @@ def write_pid(pidfile: Path, pid: int) -> None:
 
 
 def pid_alive(pid: int) -> bool:
-    """Return whether a process with ``pid`` is alive (probe via signal 0)."""
-    if pid <= 0:
-        return False
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        # The process exists but is owned by another user — treat as alive.
-        return True
-    return True
+    """Return whether a process with ``pid`` is alive.
+
+    Delegates to the shared probe (:func:`_build_directory_state.pid_alive`) so the
+    daemon and the build wrapper's lock cannot disagree: one rule decides, and it
+    treats an unreaped ZOMBIE as dead — ``signal 0`` succeeds for a exited-but-
+    unreaped child, and counting that as alive would let a dead daemon's pidfile
+    defend its socket and a dead build child pin its directory.
+    """
+    return _shared_pid_alive(pid)
 
 
 def stale_socket_takeover(sock_path: Path, pidfile: Path) -> None:
@@ -489,19 +490,43 @@ class Daemon:
             return status_payload(STATUS_REFUSED, reason=outcome.reason)
 
         assert outcome.record is not None  # accepted implies a matched record
-        result = self._scheduler.submit(spec, outcome.record.get('canonical_root', ''))
+        directory = canonicalize_root(spec.project_path)
+        result = self._scheduler.submit(spec, outcome.record.get('canonical_root', ''), directory)
         if not result.attached:
             self._journal.record_spec(result.job_id, spec.to_dict())
+        # Read the same-directory job BEFORE admitting: after `_admit_ready` this
+        # submit's own job may be the one running, and a job is never "queued
+        # behind itself". An ATTACHED submit is the running job, so it reads empty
+        # for the same reason.
+        running = self._scheduler.running_in_directory(directory)
+        queued_behind = '' if running == result.job_id else running
         self._apply_current_cap()
         self._admit_ready()
-        return {'status': STATUS_QUEUED, 'job_id': result.job_id, 'attached': result.attached}
+        return {
+            'status': STATUS_QUEUED,
+            'job_id': result.job_id,
+            'attached': result.attached,
+            # The id of the job running in the SAME directory, empty when there
+            # is none. A caller that is about to wait on a busy directory learns
+            # here what it is waiting for, instead of inferring it from a
+            # `queued` wait a poll later.
+            'queued_behind': queued_behind,
+        }
 
     async def _wait(self, request: dict[str, Any]) -> dict[str, Any]:
         job_id = request.get('job_id', '')
         bound = int(request.get('bound', _DEFAULT_WAIT_BOUND))
         deadline = time.monotonic() + bound
 
+        # Re-evaluate admission on entry and on every poll — never only once. The
+        # daemon has no timer, so a directory released by an IN-PROCESS holder
+        # mid-wait would otherwise leave this job queued until the bound expired,
+        # reporting `queued` for a directory that had been free for minutes. The
+        # call before the loop keeps a zero-bound wait honest.
+        self._admit_ready()
+
         while time.monotonic() < deadline:
+            self._admit_ready()
             entry = self._journal.get(job_id)
             if entry is None:
                 return status_payload(STATUS_NOT_FOUND, job_id=job_id)
@@ -511,14 +536,30 @@ class Daemon:
                 return result if isinstance(result, dict) else status_payload(status, job_id=job_id)
             await asyncio.sleep(self._poll_interval)
 
-        # Bound expired without a terminal result — return a LIVE running-status
-        # TOON (never a timeout-shaped body).
-        return self._running_status(job_id)
+        # Bound expired without a terminal result — return a LIVE status TOON
+        # (never a timeout-shaped body), saying whether the job is still queued
+        # or already running.
+        return self._live_status(job_id)
 
-    def _running_status(self, job_id: str) -> dict[str, Any]:
+    def _live_status(self, job_id: str) -> dict[str, Any]:
+        """Return the live status of a job that has not reached a terminal one.
+
+        A job the scheduler has not admitted yet is reported as ``queued`` with
+        what it is waiting for and how long it has waited, instead of as
+        ``running`` with ``elapsed 0`` — the shape that made a queued job
+        indistinguishable from a just-started one.
+        """
         entry = self._journal.get(job_id)
         if entry is None:
             return status_payload(STATUS_NOT_FOUND, job_id=job_id)
+        if str(entry.get('status', '')) == STATUS_QUEUED:
+            directory = self._scheduler.directory_of(job_id)
+            return status_payload(
+                STATUS_QUEUED,
+                job_id=job_id,
+                waiting_on=self._waiting_on(directory),
+                queued_seconds=self._scheduler.queued_seconds(job_id),
+            )
         progress = self._progress.get(job_id)
         elapsed = int(progress.elapsed()) if progress else 0
         idle = int(progress.idle_seconds()) if progress else 0
@@ -529,7 +570,51 @@ class Daemon:
             elapsed=elapsed,
             last_progress=idle,
             eta=eta,
+            queued_seconds=self._scheduler.queued_seconds(job_id),
         )
+
+    def _waiting_on(self, directory: str) -> str:
+        """Name what a job queued for ``directory`` is waiting on.
+
+        The running job's id when this daemon holds the directory, otherwise the
+        identity of an in-process holder (``{plan_id} (pid {pid})``), otherwise
+        the empty string when nothing is holding it any more.
+        """
+        running = self._scheduler.running_in_directory(directory)
+        if running:
+            return running
+        holder = self._held_directories().get(directory)
+        if isinstance(holder, dict):
+            # The holder fields come from the machine-global queue file, written by
+            # another checkout's build — foreign text. `report_safe` strips the
+            # control characters that would otherwise break the identity out of its
+            # single TOON line and be reparsed as a sibling key of the wait payload
+            # (an injected `status: success` turning a queued job's payload into a
+            # green one).
+            return str(report_safe(f'{holder.get("plan_id") or "NO_PLAN"} (pid {holder.get("pid")})'))
+        return ''
+
+    def _held_directories(self) -> dict[str, dict[str, Any]]:
+        """Read the live in-process per-directory holders from the machine-global queue.
+
+        The field names and the pid-liveness rule are NOT restated here: they come
+        from :func:`_build_directory_state.held_directories`, the same reader the
+        build wrapper's lock uses. Two copies of that rule is one copy too many — a
+        change to either would silently desynchronise admission (which must not
+        spend a slot on a directory that is held) from the lock itself.
+
+        Best-effort by contract: the daemon must never fail a request because a
+        lock record could not be read. An unreadable store therefore reads as
+        "no directory is held in process" — never as a claim that a holder exists.
+        """
+        try:
+            path = home_root() / 'build-queue.json'
+            payload = json.loads(path.read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            return {}
+        if not isinstance(payload, dict):
+            return {}
+        return held_directories(payload)
 
     # -- admission / execution --------------------------------------------
 
@@ -581,8 +666,11 @@ class Daemon:
         return self._cap
 
     def _admit_ready(self) -> None:
-        while self._scheduler.available_slots() > 0:
-            entry = self._scheduler.admit_next()
+        # Nothing queued means nothing to admit: skip the machine-global queue
+        # read that the busy-directory check performs, so an idle daemon's wait
+        # poll touches no disk at all.
+        while self._scheduler.available_slots() > 0 and self._scheduler.queued_count > 0:
+            entry = self._scheduler.admit_next(busy_directories=set(self._held_directories()))
             if entry is None:
                 return
             if self._is_terminalized(entry.job_id):
@@ -645,6 +733,9 @@ class Daemon:
             )
         except Exception as exc:  # any failure becomes a terminal result
             payload = status_payload('failure', error=str(exc))
+        # How long this job waited for its directory/slot, carried on the
+        # terminal result so the routed client can report the wait it paid.
+        payload.setdefault('queued_seconds', self._scheduler.queued_seconds(job_id))
         self._journal.record_result(job_id, payload)
         self._audit_job_fate(job_id, str(payload.get('status', '')), spec_dict)
         self._journal.record_duration(_command_key(spec_dict), float(payload.get('duration_seconds', 0) or 0))

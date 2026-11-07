@@ -243,7 +243,7 @@ def test_output_keeps_the_single_annotation_fix_and_holds_its_reply_the_same_way
 
 
 # ---------------------------------------------------------------------------
-# PLAN-LB-107 D5 — the DOC side of the producer vocabulary
+# The DOC side of the producer vocabulary
 # ---------------------------------------------------------------------------
 #
 # The code-side sweep above proves every producer ``ci_verify`` can RETURN is one

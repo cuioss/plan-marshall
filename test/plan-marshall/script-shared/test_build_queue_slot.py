@@ -57,6 +57,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -74,10 +77,12 @@ class _QueueDouble:
     def __init__(self, acquire_responses: list[dict]):
         self._acquire_responses = list(acquire_responses)
         self.acquire_calls: list[str] = []
+        self.acquire_tokens: list[str | None] = []
         self.release_calls: list[tuple[str, str]] = []
 
-    def acquire(self, plan_id: str) -> dict:
+    def acquire(self, plan_id: str, token: str | None = None) -> dict:
         self.acquire_calls.append(plan_id)
+        self.acquire_tokens.append(token)
         if not self._acquire_responses:
             return {'status': 'error', 'error': 'no scripted acquire response'}
         return self._acquire_responses.pop(0) if len(self._acquire_responses) > 1 else self._acquire_responses[0]
@@ -222,8 +227,13 @@ def test_blocked_poll_loop_never_releases_to_preserve_fifo(monkeypatch):
     # the loop — the plan never gave up its queue position. The only release is
     # the final cleanup of the admitted id in the finally.
     assert double.released_ids == ['P:uuid-A']
-    # Four acquire calls total (initial + three retries) all for the same plan.
+    # Four acquire calls total (initial + three retries) all for the same plan,
+    # and all carrying ONE per-invocation token: the token is what identifies this
+    # invocation across the re-polls now that identity is per invocation, not per
+    # plan.
     assert double.acquire_calls == ['P', 'P', 'P', 'P']
+    assert len(set(double.acquire_tokens)) == 1
+    assert double.acquire_tokens[0] is not None
 
 
 def test_sleep_called_once_per_retry(monkeypatch):
@@ -793,3 +803,197 @@ def test_factory_cmd_run_emits_timeout_on_saturation(monkeypatch, capsys):
 
     assert rc == 1
     assert factory.ERROR_QUEUE_SATURATED in capsys.readouterr().out
+
+
+# =============================================================================
+# D3: every in-process build holds a per-directory lock
+# =============================================================================
+# The hazard is the shared ``target/``, not the slot budget: two builds of one
+# directory must never overlap, and a plan-less build (``NO_PLAN``, which every
+# ``--project-dir`` lane build is) takes the lock even though it takes no slot.
+# These tests drive the REAL lock against an isolated machine-global store; a
+# stubbed acquire would pass at HEAD, where no such lock exists at all.
+
+
+def _directory_key(directory: Path) -> str:
+    return str(directory.resolve())
+
+
+@pytest.fixture
+def isolated_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Isolate the machine-global queue file and shrink the re-poll interval."""
+    home = tmp_path / 'home'
+    home.mkdir()
+    monkeypatch.setenv('PLAN_MARSHALL_HOME', str(home))
+    monkeypatch.setattr(bqs, '_DIRECTORY_POLL_SECONDS', 0.01)
+    return home
+
+
+def _stage_directory_holder(home: Path, directory: Path, **fields) -> None:
+    """Stage one in-process holder record in the machine-global queue file."""
+    record = {
+        'plan_id': 'other-plan',
+        'command': 'module-tests',
+        'pid': os.getpid(),
+        'acquired_at': time.time(),
+        **fields,
+    }
+    (home / 'build-queue.json').write_text(
+        json.dumps({'directory_locks': {_directory_key(directory): record}}), encoding='utf-8'
+    )
+
+
+@pytest.mark.real_directory_lock
+def test_two_plan_less_builds_of_one_directory_do_not_overlap(tmp_path, isolated_home):
+    """Two concurrent NO_PLAN builds of one directory serialise, and the second
+    reports the wait it paid."""
+    directory = tmp_path / 'W1'
+    directory.mkdir()
+    events: list[tuple] = []
+
+    def _build(tag: str) -> None:
+        with bqs.directory_lock(str(directory), plan_id=NO_PLAN_SENTINEL, command=tag, timeout_seconds=10) as lease:
+            events.append(('start', tag, lease.waited_seconds))
+            time.sleep(0.1)
+            events.append(('end', tag))
+
+    threads = [threading.Thread(target=_build, args=(tag,)) for tag in ('a', 'b')]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=10)
+        assert not thread.is_alive(), 'a build waited forever — the lock is not re-polled'
+
+    kinds = [event[0] for event in events]
+    assert kinds == ['start', 'end', 'start', 'end'], f'builds overlapped: {events}'
+    assert events[0][1] == events[1][1], 'one build started and ended before the other began'
+    assert events[2][2] > 0, 'the second build never reported its wait'
+
+
+@pytest.mark.real_directory_lock
+def test_a_dead_pid_holder_is_reclaimed(tmp_path, isolated_home):
+    """A holder whose process is gone cannot block a directory forever."""
+    directory = tmp_path / 'W1'
+    directory.mkdir()
+    _stage_directory_holder(isolated_home, directory, pid=999_999)
+
+    with bqs.directory_lock(str(directory), plan_id=NO_PLAN_SENTINEL, command='x', timeout_seconds=1) as lease:
+        assert lease.waited_seconds >= 0
+        # While the lease is held, the record names THIS process — the dead
+        # holder was reclaimed and replaced, not kept beside it.
+        state = json.loads((isolated_home / 'build-queue.json').read_text(encoding='utf-8'))
+        assert state['directory_locks'][_directory_key(directory)]['pid'] == os.getpid()
+
+
+@pytest.mark.real_directory_lock
+def test_an_exhausted_bound_raises_directory_busy_naming_the_holder(tmp_path, isolated_home):
+    """A bound that runs out refuses the build BY NAME and never spawns it."""
+    directory = tmp_path / 'W1'
+    directory.mkdir()
+    _stage_directory_holder(isolated_home, directory, acquired_at=time.time() - 30)
+
+    ran = False
+    with pytest.raises(bqs.DirectoryBusy) as excinfo:
+        with bqs.directory_lock(str(directory), plan_id=NO_PLAN_SENTINEL, command='x', timeout_seconds=0.05):
+            ran = True
+
+    assert ran is False, 'the build must never run while its directory is held'
+    busy = excinfo.value
+    assert busy.holder_plan_id == 'other-plan'
+    assert busy.holder_command == 'module-tests'
+    assert busy.holder_pid == os.getpid()
+    assert busy.holder_seconds >= 30
+    # The refused build left NO waiting entry behind: a leaked waiter keeps its
+    # FIFO place with a live pid, so the very next build would queue behind a
+    # ghost of the one that gave up.
+    state = json.loads((isolated_home / 'build-queue.json').read_text(encoding='utf-8'))
+    assert state.get('directory_waiters', []) == []
+    assert _directory_key(directory) in state['directory_locks'], "the other build's lease is untouched"
+
+
+@pytest.mark.real_directory_lock
+def test_an_interrupt_during_the_wait_drops_the_waiter(tmp_path, isolated_home, monkeypatch):
+    """A reap mid-wait must not leave a waiter pinning the directory.
+
+    A leaked waiter holds a FIFO place with a live pid, and the FIFO rule admits
+    nobody ahead of it — so the leak would block every later build of that
+    directory. The release therefore sits in a ``BaseException`` scope.
+    """
+    directory = tmp_path / 'W1'
+    directory.mkdir()
+    _stage_directory_holder(isolated_home, directory)
+
+    def _interrupt(_seconds):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(bqs.time, 'sleep', _interrupt)
+
+    with pytest.raises(KeyboardInterrupt):
+        with bqs.directory_lock(str(directory), plan_id=NO_PLAN_SENTINEL, command='x', timeout_seconds=10):
+            raise AssertionError('the body must not run')  # pragma: no cover
+
+    state = json.loads((isolated_home / 'build-queue.json').read_text(encoding='utf-8'))
+    assert state.get('directory_waiters', []) == [], 'the waiter was released on the interrupt path'
+    assert _directory_key(directory) in state['directory_locks'], "the other build's lease is untouched"
+
+
+@pytest.mark.real_directory_lock
+def test_a_directory_holder_waiting_on_a_slot_does_not_deadlock(tmp_path, isolated_home, monkeypatch):
+    """Directory-then-slot never deadlocks — and the spec's cross-order shape IS
+    reachable across processes, so this states what is actually true.
+
+    Within ONE process the order is fixed (directory before slot), so that shape
+    cannot be built there. Across the daemon/child pair it can: the daemon's
+    scheduler spends a machine slot at admission, the child then takes the
+    directory, and an in-process build holding the directory while it waits for a
+    slot is the mirror image. That cycle is BROKEN, not absent — the in-process
+    build's slot retry budget runs out and it releases the directory first, so the
+    pair stalls within that budget rather than deadlocking.
+
+    This test constructs the reachable worst case that fits in one process: a
+    directory holder blocks on someone else's slot and proceeds the moment that
+    slot is released, with no cycle.
+    """
+    base = tmp_path / 'main' / '.plan' / 'local'
+    for plan_id in ('slot-holder', 'directory-waiter'):
+        (base / 'plans' / plan_id).mkdir(parents=True)
+    monkeypatch.setenv('PLAN_BASE_DIR', str(base))
+    config_dir = isolated_home / 'marshalld'
+    config_dir.mkdir(parents=True, exist_ok=True)
+    (config_dir / 'machine-config.json').write_text(
+        json.dumps({'version': 1, 'build': {'queue': {'max_slots': 1}}}), encoding='utf-8'
+    )
+    queue_module = bqs._load_build_queue()
+    monkeypatch.setattr(queue_module, 'main_checkout_root', lambda: tmp_path / 'main')
+    monkeypatch.setattr(queue_module, 'log_lock_event', lambda *a, **k: None)
+    monkeypatch.setattr(bqs, '_WAIT_SECONDS', 0.02)
+    # A generous retry budget: the point of this test is that the waiter PROCEEDS
+    # once the slot frees, not that it survives a short budget. With the default 10
+    # polls the 0.2 s hold could outlast the budget under a loaded runner, turning
+    # a scheduling delay into a spurious saturation failure.
+    monkeypatch.setattr(bqs, '_resolve_max_retries', lambda: 200)
+
+    directory = tmp_path / 'W1'
+    directory.mkdir()
+    done: list[str] = []
+
+    def _hold_slot() -> None:
+        with build_queue_slot('slot-holder'):
+            time.sleep(0.2)
+        done.append('slot-holder')
+
+    def _take_directory_then_slot() -> None:
+        with bqs.directory_lock(str(directory), plan_id='directory-waiter', command='x', timeout_seconds=10):
+            with build_queue_slot('directory-waiter'):
+                done.append('directory-waiter')
+
+    holder = threading.Thread(target=_hold_slot)
+    holder.start()
+    time.sleep(0.05)
+    waiter = threading.Thread(target=_take_directory_then_slot)
+    waiter.start()
+    waiter.join(timeout=15)
+    holder.join(timeout=15)
+
+    assert not waiter.is_alive(), 'deadlock: the directory holder never got its slot'
+    assert set(done) == {'slot-holder', 'directory-waiter'}

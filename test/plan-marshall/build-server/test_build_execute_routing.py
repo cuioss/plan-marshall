@@ -34,6 +34,7 @@ import json
 import sys
 from contextlib import contextmanager
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import _build_execute_factory as factory
@@ -398,6 +399,61 @@ def test_route_wait_reissues_on_running(use_fake_client):
     assert len(client.wait_calls) == 2  # re-issued once on the running return
 
 
+def test_route_wait_treats_queued_as_non_terminal(use_fake_client):
+    """A ``queued`` wait payload keeps the loop waiting — it is not a verdict.
+
+    At HEAD the routed client recognised only ``running`` as non-terminal, so a
+    ``queued`` job_status fell through to ``_daemon_result_to_direct`` and landed
+    on its "terminal job_status this client does not recognise" leg: an
+    ``indeterminate`` result for a build that had not even started. The two
+    scripted waits are the whole claim: the first is ``queued`` (must NOT stop
+    the loop) and the second is terminal (must be the result).
+    """
+    client = use_fake_client(
+        preflight={'status': 'success', 'preflight': 'ready'},
+        submit={'status': 'success', 'job_id': 'JOB-Q'},
+        waits=[
+            {'status': 'success', 'job_status': 'queued', 'waiting_on': 'JOB-A', 'queued_seconds': 3},
+            {'status': 'success', 'job_status': 'success', 'duration_seconds': 1, 'log_file': 'l', 'queued_seconds': 9},
+        ],
+    )
+
+    result, reason = factory._route_to_daemon(_config(), '/tree', 'plan-x')
+
+    assert reason == ''
+    assert result is not None
+    assert len(client.wait_calls) == 2, 'a queued return must be followed by another wait'
+    assert result['status'] == 'success'
+    assert result.get('error') != 'indeterminate'
+    # The wait the build paid travels on the terminal result.
+    assert result['queued_seconds'] == 9
+
+
+def test_route_hand_back_carries_queued_seconds_when_the_bound_expires(use_fake_client, monkeypatch):
+    """A job still ``queued`` at the bound returns a hand-back, never
+    ``indeterminate`` — and the hand-back says how long it has waited.
+
+    The bound is shortened so the test exercises the real expiry path (one wait,
+    then the hand-back) instead of sleeping the production 300 s.
+    """
+    monkeypatch.setattr(factory, '_DAEMON_WAIT_BOUND_SECONDS', 0.05)
+    client = use_fake_client(
+        preflight={'status': 'success', 'preflight': 'ready'},
+        submit={'status': 'success', 'job_id': 'JOB-S'},
+        waits=[{'status': 'success', 'job_status': 'queued', 'waiting_on': 'JOB-B', 'queued_seconds': 12}],
+    )
+
+    result, reason = factory._route_to_daemon(_config(), '/tree', 'plan-x')
+
+    assert reason == ''
+    assert result is not None
+    assert client.wait_calls, 'the loop really waited before the bound expired'
+    assert result['status'] == 'running', 'a still-queued job is a live hand-back, not a verdict'
+    assert result['job_id'] == 'JOB-S'
+    assert result['job_status'] == 'queued', 'the hand-back reports what the daemon last said, not "running"'
+    assert result['queued_seconds'] == 12
+
+
 def test_route_refused_falls_back(use_fake_client):
     client = use_fake_client(
         preflight={'status': 'success', 'preflight': 'ready'},
@@ -626,6 +682,165 @@ def test_cmd_run_falls_back_under_a_slot_when_not_routed(monkeypatch):
     assert rc == 0
     assert entered['slot'] is True  # not routed ⇒ in-process under a fallback slot
     assert entered['plan_id'] == 'plan-x'
+
+
+def test_cmd_run_takes_the_directory_lock_before_the_slot(monkeypatch):
+    """The lock order is directory first, then slot — one order, everywhere.
+
+    Within a build process that order is what keeps the two limiters from
+    interleaving: a build holding a slot never waits on a directory, because it had
+    to take the directory first. (The daemon/child pair leaves one bounded window —
+    the daemon spends a slot at admission and the child takes the directory a moment
+    later — which is bounded by whichever budget expires first, not removed by this
+    order.)
+    """
+    order: list[str] = []
+    monkeypatch.setattr(factory, '_route_to_daemon', lambda *a, **k: (None, 'disabled'))
+    monkeypatch.setattr(
+        factory,
+        'execute_direct_base',
+        lambda **kw: {'status': 'success', 'exit_code': 0, 'duration_seconds': 1, 'log_file': 'l', 'command': 'c'},
+    )
+
+    @contextmanager
+    def _directory_lock(directory, **_kwargs):
+        order.append('directory')
+        yield SimpleNamespace(waited_seconds=0.0)
+
+    @contextmanager
+    def _slot(plan_id, *, routed=False):
+        order.append('slot')
+        yield
+
+    monkeypatch.setattr(factory, 'directory_lock', _directory_lock)
+    monkeypatch.setattr(factory, 'build_queue_slot', _slot)
+    monkeypatch.setattr(factory, 'cmd_run_common', lambda **kw: 0)
+
+    _, cmd_run = factory.create_execute_handlers(_config(), parse_log_fn=lambda *a: None)
+    rc = cmd_run(_run_args())
+
+    assert rc == 0
+    assert order == ['directory', 'slot']
+
+
+def test_cmd_run_reports_directory_busy_and_never_spawns_the_build(monkeypatch, capsys):
+    """A directory that stays busy yields the named ``directory_busy`` error.
+
+    The build never runs: the refusal happens before ``execute_direct`` is
+    reached, which is the difference between waiting/refusing and running
+    concurrently.
+    """
+    spawned: list[bool] = []
+    monkeypatch.setattr(factory, '_route_to_daemon', lambda *a, **k: (None, 'disabled'))
+
+    @contextmanager
+    def _busy(directory, **_kwargs):
+        raise factory.DirectoryBusy(
+            directory=directory,
+            holder={'plan_id': 'other-plan', 'command': 'module-tests', 'pid': 4242, 'acquired_at': 0.0},
+            waited_seconds=600.0,
+        )
+        yield  # pragma: no cover
+
+    monkeypatch.setattr(factory, 'directory_lock', _busy)
+    monkeypatch.setattr(factory, 'execute_direct_base', lambda **kw: spawned.append(True))
+
+    _, cmd_run = factory.create_execute_handlers(_config(), parse_log_fn=lambda *a: None)
+    rc = cmd_run(_run_args())
+
+    assert rc == 1
+    assert spawned == [], 'the build must not run while its directory is held'
+    out = capsys.readouterr().out
+    assert factory.ERROR_DIRECTORY_BUSY in out
+    assert 'other-plan' in out
+    assert '4242' in out
+
+
+def test_cmd_run_emits_queued_seconds_on_the_rendered_result(monkeypatch, capsys):
+    """The wait must survive the EMIT boundary, not only the intermediate result.
+
+    ``cmd_run_common`` rebuilds the payload per branch, so a field carried only on
+    the routing seam's dict is dropped before the operator ever sees it. This
+    asserts the rendered TOON, which is what the agent-facing contract means by
+    "the result carries queued_seconds".
+    """
+    canned = {
+        'status': 'success',
+        'exit_code': 0,
+        'duration_seconds': 1,
+        'log_file': 'l',
+        'command': 'c',
+        'queued_seconds': 7,
+    }
+    monkeypatch.setattr(factory, '_route_to_daemon', lambda *a, **k: (canned, ''))
+
+    _, cmd_run = factory.create_execute_handlers(_config(), parse_log_fn=lambda *a: None)
+    rc = cmd_run(_run_args())
+
+    assert rc == 0
+    assert 'queued_seconds: 7' in capsys.readouterr().out
+
+
+def test_cmd_run_reports_the_directory_wait_it_paid(monkeypatch, capsys):
+    """An in-process build serialised behind another reports its wait.
+
+    The lease is the only place that number exists on this path, so a wrapper that
+    discards it would leave the second build looking merely slow.
+    """
+    monkeypatch.setattr(factory, '_route_to_daemon', lambda *a, **k: (None, 'disabled'))
+    monkeypatch.setattr(
+        factory,
+        'execute_direct_base',
+        lambda **kw: {'status': 'success', 'exit_code': 0, 'duration_seconds': 1, 'log_file': 'l', 'command': 'c'},
+    )
+
+    @contextmanager
+    def _lease(directory, **_kwargs):
+        yield SimpleNamespace(waited_seconds=12.4)
+
+    @contextmanager
+    def _slot(plan_id, *, routed=False):
+        yield
+
+    monkeypatch.setattr(factory, 'directory_lock', _lease)
+    monkeypatch.setattr(factory, 'build_queue_slot', _slot)
+
+    _, cmd_run = factory.create_execute_handlers(_config(), parse_log_fn=lambda *a: None)
+    rc = cmd_run(_run_args())
+
+    assert rc == 0
+    assert 'queued_seconds: 12' in capsys.readouterr().out
+
+
+def test_cmd_run_omits_queued_seconds_when_there_was_no_wait(monkeypatch, capsys):
+    """A sub-second acquisition is not a wait, and says nothing.
+
+    The lease is a float, so ``> 0`` would be true for the microseconds a free
+    directory takes — and ``int()`` would then print ``queued_seconds: 0`` on every
+    in-process build, erasing the very distinction the field exists to make.
+    """
+    monkeypatch.setattr(factory, '_route_to_daemon', lambda *a, **k: (None, 'disabled'))
+    monkeypatch.setattr(
+        factory,
+        'execute_direct_base',
+        lambda **kw: {'status': 'success', 'exit_code': 0, 'duration_seconds': 1, 'log_file': 'l', 'command': 'c'},
+    )
+
+    @contextmanager
+    def _lease(directory, **_kwargs):
+        yield SimpleNamespace(waited_seconds=0.4)
+
+    @contextmanager
+    def _slot(plan_id, *, routed=False):
+        yield
+
+    monkeypatch.setattr(factory, 'directory_lock', _lease)
+    monkeypatch.setattr(factory, 'build_queue_slot', _slot)
+
+    _, cmd_run = factory.create_execute_handlers(_config(), parse_log_fn=lambda *a: None)
+    assert cmd_run(_run_args()) == 0
+
+    assert 'queued_seconds' not in capsys.readouterr().out
 
 
 def test_routed_build_for_a_plan_submits_and_records_that_plan(use_fake_client, monkeypatch, tmp_path):
@@ -1240,3 +1455,105 @@ class TestPreToolFaultPassThrough:
         )
         assert template.is_file(), f'the executor template moved; this drift guard must follow it: {template}'
         assert f'error: {ERROR_INVALID_INVOCATION}' in template.read_text(encoding='utf-8')
+
+
+class TestIndeterminateReasonCarry:
+    """A child's ``indeterminate`` verdict keeps the REASON it stated.
+
+    The daemon's wire vocabulary collapses ``indeterminate`` onto ``failure``, so
+    ``failure`` is the shape a routed ``indeterminate`` really arrives in. The
+    client used to rebuild that as a generic ``build_failed``, discarding the
+    producer's named reason and taking the build-failure path — the fabrication
+    the producer's own status existed to prevent.
+    """
+
+    def test_an_indeterminate_child_verdict_keeps_its_own_reason(self, tmp_path):
+        """The child's ``message:`` line IS the reason the caller must receive."""
+        log = tmp_path / 'indeterminate.log'
+        reason = "test_selector_matched_nothing: 'Awaits#runs' matched no test, so the run executed nothing"
+        log.write_text(f'status: indeterminate\nexit_code: 0\nmessage: "{reason}"\n', encoding='utf-8')
+
+        result = factory._daemon_result_to_direct(
+            {'job_status': 'failure', 'exit_code': 0, 'duration_seconds': 4, 'log_file': str(log)},
+            'cmd',
+        )
+
+        assert result['status'] == 'indeterminate'
+        assert result['message'] == reason
+
+    def test_a_verdict_that_states_no_reason_still_gets_the_generic_sentence(self, tmp_path):
+        """Matched control: the carry must not invent a reason the log never stated."""
+        log = tmp_path / 'no-reason.log'
+        log.write_text('status: quiesced\nexit_code: 0\n', encoding='utf-8')
+
+        result = factory._daemon_result_to_direct(
+            {'job_status': 'failure', 'exit_code': 0, 'duration_seconds': 4, 'log_file': str(log)},
+            'cmd',
+        )
+
+        assert result['status'] == 'indeterminate'
+        assert 'quiesced' in result['message']
+        assert 'outside the build-result vocabulary' in result['message']
+
+    def test_a_real_failure_stays_a_build_failure(self, tmp_path):
+        """Matched control: only a non-``error`` verdict is re-rendered as itself."""
+        log = tmp_path / 'failed.log'
+        log.write_text(
+            'status: error\nexit_code: 1\nerror: build_failed\n'
+            'errors[1]{file,line,message,category}:\n'
+            '  test/a.py,3,"assert 0",test_failure\n',
+            encoding='utf-8',
+        )
+
+        result = factory._daemon_result_to_direct(
+            {'job_status': 'failure', 'exit_code': 1, 'duration_seconds': 4, 'log_file': str(log)},
+            'cmd',
+        )
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'build_failed'
+
+    def test_a_non_finish_verdict_arriving_as_failure_is_rendered_as_itself(self, tmp_path):
+        """A ``timeout``/``killed`` log verdict survives the same collapse.
+
+        The wire has no row for either non-finish, so they too arrive as
+        ``failure``. Folding them into a red build is the misattribution the
+        re-render exists to remove, for these statuses as much as for
+        ``indeterminate``.
+        """
+        log = tmp_path / 'timeout.log'
+        log.write_text(
+            'status: timeout\nexit_code: -1\ntimeout_used_seconds: 300\ntimeout_source: explicit\n',
+            encoding='utf-8',
+        )
+
+        result = factory._daemon_result_to_direct(
+            {'job_status': 'failure', 'exit_code': -1, 'duration_seconds': 300, 'log_file': str(log)},
+            'cmd',
+        )
+
+        assert result['status'] == 'timeout'
+        assert result['timeout_used_seconds'] == 300
+
+    def test_a_multiline_log_message_is_collapsed_before_rendering(self, tmp_path):
+        """A log message that carries real newlines must not break the envelope.
+
+        The JSON log path decodes ``\\n`` escapes into real newlines, and the
+        result formatter does not re-escape them inside an ordinary string
+        value, so the carried message is collapsed to one line.
+        """
+        import json
+
+        log = tmp_path / 'multiline.log'
+        log.write_text(
+            json.dumps({'status': 'indeterminate', 'exit_code': 0, 'message': 'first line\nsecond line'}),
+            encoding='utf-8',
+        )
+
+        result = factory._daemon_result_to_direct(
+            {'job_status': 'failure', 'exit_code': 0, 'duration_seconds': 4, 'log_file': str(log)},
+            'cmd',
+        )
+
+        assert result['status'] == 'indeterminate'
+        assert result['message'] == 'first line second line'

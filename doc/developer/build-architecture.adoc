@@ -40,9 +40,11 @@ The build server is three skills plus a shared protocol library, over a machine-
  ~/.plan-marshall/  marshalld/{socket, daemon.pid, daemon.log, registry.json,
                               machine-config.json, registry-audit.log,
                               journal/, job-logs/}
-                    build-queue.json  (the single machine-global slot substrate,
-                                       + the top-level upper_limit_seconds reap
-                                       threshold its own entries are reaped by)
+                    build-queue.json  (the single machine-global build substrate:
+                                       the slot entries + the top-level
+                                       upper_limit_seconds reap threshold, AND
+                                       the per-directory lock's directory_locks /
+                                       directory_waiters)
 ....
 
 The shared protocol library `_build_server_protocol` is imported by both sides: it owns the length-prefixed JSON frame codec (a 4-byte big-endian length prefix + a UTF-8 JSON body, so nested/multi-line error payloads round-trip losslessly), the `JobSpec` struct, and the status-schema helpers that map to and from the shared `_build_result` shape. Neither the client nor the daemon re-declares the wire contract.
@@ -52,7 +54,7 @@ The shared protocol library `_build_server_protocol` is imported by both sides: 
 The daemon's four cores are separable pure units wired behind the socket:
 
 * **Verifier** (`_marshalld_verifier`) — S1/S2 positional verification of every submit against the project's registration; a pure function given a resolver injection.
-* **Scheduler** (`_marshalld_scheduler`) — an in-memory bounded-slot admitter with per-project round-robin fairness and idempotent-submit fingerprint attach; no I/O.
+* **Scheduler** (`_marshalld_scheduler`) — an in-memory bounded-slot admitter with per-project round-robin fairness, ONE JOB PER PROJECT DIRECTORY (two builds of one worktree write the same `target/`), a directory-aware skip that keeps a blocked job from holding up another directory's, and idempotent-submit fingerprint attach; no I/O.
 * **Supervisor** (`_marshalld_supervisor`) — one `asyncio` subprocess per admitted job with a clean server-side baseline env, stream capture to a per-job log, liveness tracking, and terminal classification.
 * **Journal** (`_marshalld_journal`) — the durable on-disk record of specs, results, and per-command ETA history, with a bounded retention window, GC, and restart replay.
 
@@ -158,7 +160,8 @@ A job moves through the journal's status field. `queued` and `running` are non-t
                                                         │ not_found│
                                                         └──────────┘
 
-  (bound-expiry wait ⇒ a live `running` snapshot: elapsed / eta / last_progress — not a state change)
+  (bound-expiry wait ⇒ a live snapshot: `running` with elapsed / eta /
+   last_progress, or `queued` with waiting_on / queued_seconds — not a state change)
 ....
 
 == Verify-not-resolve (S1/S2)
