@@ -11,7 +11,7 @@ second is the load-bearing one: a false "dangling reference" is the misleading
 signal this whole substrate exists to avoid.
 """
 
-from conftest import load_script_module
+from conftest import PROJECT_ROOT, load_script_module
 
 _doc_refs = load_script_module('pm-documents', 'plan-marshall-plugin', 'doc_references.py', 'doc_references')
 build_doc_component_refs = _doc_refs.build_doc_component_refs
@@ -83,6 +83,30 @@ def test_double_backtick_code_references_are_skipped():
 def test_a_live_reference_beside_a_double_backtick_example_survives():
     refs = extract_references('Example ``xref:example.adoc[]`` then live xref:real.adoc[Real].')
     assert [target for target, _anchor in refs] == ['real.adoc']
+
+
+def test_the_shared_link_verify_fixture_masks_its_double_backtick_example():
+    """Both implementations read the same AsciiDoc fixture.
+
+    The verifier's ``link-verify/masked-reference-forms.adoc`` carries a
+    double-backtick example; the verifier masks it and must not report it broken,
+    and this extractor must not report it as a reference either.
+    """
+    fixture = (
+        PROJECT_ROOT
+        / 'test'
+        / 'pm-documents'
+        / 'ref-asciidoc'
+        / 'fixtures'
+        / 'link-verify'
+        / 'masked-reference-forms.adoc'
+    )
+    example = next(line for line in fixture.read_text(encoding='utf-8').splitlines() if '``' in line)
+
+    assert '``link:missing-double.adoc[x]``' in example, (
+        'the shared fixture no longer carries the double-backtick example'
+    )
+    assert extract_references(example) == [], 'the shared input must yield no live reference from this implementation'
 
 
 # --------------------------------------------------------------------------- #
