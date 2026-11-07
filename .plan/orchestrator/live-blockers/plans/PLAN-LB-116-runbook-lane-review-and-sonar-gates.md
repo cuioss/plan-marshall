@@ -120,34 +120,48 @@ into concurrent plans would collide; run any split in sequence.
 
 - OBSERVED: review handling is prose — `marketplace/bundles/plan-marshall/skills/runbook-lane/SKILL.md` § 6 step 5 (L664-671) and
   § 7 (L726-739); the only gate script for a review-adjacent condition is `sonar-gate` (L120-136).
+  - verdict: corroborated | checked_at: f84eb0e36bc5787ffca65c8d392d46ffb83a9126 | by: live-blockers/cleanup | rescoped: n/a | evidence: runbook-lane/SKILL.md section 6 step 5 L672-679, section 7 L698-762; sonar-gate L120-136; verb list runbook_lane.py L12-20
 - OBSERVED: the gate names only outside-diff findings — § 7 (L726-729).
+  - verdict: corroborated | checked_at: f84eb0e36bc5787ffca65c8d392d46ffb83a9126 | by: live-blockers/cleanup | rescoped: n/a | evidence: runbook-lane/SKILL.md L736-739
 - OBSERVED: a lane may resolve a thread after a reply and nothing checks the reply — § 6 step 5 (L670-671).
+  - verdict: corroborated | checked_at: f84eb0e36bc5787ffca65c8d392d46ffb83a9126 | by: live-blockers/cleanup | rescoped: n/a | evidence: runbook-lane/SKILL.md L678-679
 - OBSERVED: the facts block carries no thread or review-body facts and the Sonar facts are optional — § 8 (L788-819).
+  - verdict: corroborated | checked_at: f84eb0e36bc5787ffca65c8d392d46ffb83a9126 | by: live-blockers/cleanup | rescoped: n/a | evidence: facts block L798-816, Sonar facts L821-829 of runbook-lane/SKILL.md
 - OBSERVED: `sonar-gate` admits a count whose every key carries a recorded dismissal — L131-136, § 6 step 4 (L647-656), § 7
   (L716-720).
+  - verdict: corroborated | checked_at: f84eb0e36bc5787ffca65c8d392d46ffb83a9126 | by: live-blockers/cleanup | rescoped: n/a | evidence: sonar-gate L132-136; section 6 step 4 L655-664; section 7 L726-730
 - OBSERVED: the lane text holds no step that reads a mailbox, and `runbook_lane.py` does not mention one (a content search of the
   source inventory finds the word only in `_cmd_lifecycle.py`, `_orchestrator_inbox.py` and `orchestrator.py`).
+  - verdict: corroborated | checked_at: f84eb0e36bc5787ffca65c8d392d46ffb83a9126 | by: live-blockers/cleanup | rescoped: n/a | evidence: no mailbox step added by the LB-108 hunk; runbook_lane.py unchanged since 5fd240a5e (partial: content search not re-run)
 - REPORTED (finder, not re-read): seven landings of epic `ui-improvements` merged with CodeRabbit findings or Sonar issues open while
   their landing messages said "all handled" (PLAN-89 PR 305 and 314, PLAN-92 PR 309, PLAN-94 PR 321, PLAN-96 PR 320, PLAN-93 PR 319,
   PLAN-99 PR 325).
+  - verdict: unverifiable | checked_at: f84eb0e36bc5787ffca65c8d392d46ffb83a9126 | by: live-blockers/cleanup | rescoped: n/a | evidence: REPORTED landings of another repository; not readable here
 - REPORTED (finder): operator policy of that project, 2026-11-05 — zero open new-code Sonar issues at the merge head, fixed in the
   merging PR, no dismissal without the operator's word.
+  - verdict: unverifiable | checked_at: f84eb0e36bc5787ffca65c8d392d46ffb83a9126 | by: live-blockers/cleanup | rescoped: n/a | evidence: REPORTED operator policy of another project; not readable here
 - HYPOTHESIS: the CI layer already exposes the unresolved threads (with path and line) and each review's body, so the verb composes on
   it — confirm/refute at `tools-integration-ci` (`ci pr comments`, `ci pr reviews`) and
   `workflow-integration-github/scripts/_github_pr.py` (verify-at-outline). If a read is missing, adding it to the provider belongs to
   D1 and the GitLab parity is stated.
+  - verdict: corroborated | checked_at: f84eb0e36bc5787ffca65c8d392d46ffb83a9126 | by: live-blockers/cleanup | rescoped: n/a | evidence: GitHub: github_ops.py L484-492, L471-478, L741, L846; ci router and GitLab parity not checked
 - HYPOTHESIS: a review body's sections (Follow-ups, Nitpick comments, Outside-diff) are parseable from the body text the CI layer
   returns, for the required reviewers' current format — confirm/refute against the format documented in
   `automatic-review/standards/{bot}.md` (verify-at-outline). A format the parser cannot read is an undecidable read, not a pass.
+  - verdict: unverifiable | checked_at: f84eb0e36bc5787ffca65c8d392d46ffb83a9126 | by: live-blockers/cleanup | rescoped: n/a | evidence: live body format is a runtime fact; the bot format document was not read down to its sections
 - HYPOTHESIS: the orchestrator's landing check (`inbox landing-check`) holds the required-field set in
   `plan-orchestrator/scripts/_orchestrator_inbox.py` and versions it by the `schema=landing-facts/1` line — confirm/refute
   (verify-at-outline). It decides how D2 treats an older message.
+  - verdict: unverifiable | checked_at: f84eb0e36bc5787ffca65c8d392d46ffb83a9126 | by: live-blockers/cleanup | rescoped: n/a | evidence: _orchestrator_inbox.py field set not reached; file untouched by the three merges
 - HYPOTHESIS: the orchestrator's inbox surface already has a verb that reads one plan's delivered mailbox, which D4's resolve field
   names — confirm/refute at `orchestrator.py inbox --help` (verify-at-outline).
+  - verdict: corroborated | checked_at: f84eb0e36bc5787ffca65c8d392d46ffb83a9126 | by: live-blockers/cleanup | rescoped: n/a | evidence: _orchestrator_inbox.py L35-48 cmd_inbox_read, L251 mailbox_state; CLI verb name not run
 - Verify-first clause (D1): reproduce each failure shape from the finder's list as a fixture before writing the verb. A shape that
   cannot be reproduced from review data is reported, and its Done-when is narrowed in the PR.
+  - verdict: corroborated | checked_at: f84eb0e36bc5787ffca65c8d392d46ffb83a9126 | by: live-blockers/cleanup | rescoped: n/a | evidence: no review gate, unresolved-thread condition or Follow-ups parser exists after LB-119; clause applies as written
 - Verify-first clause (D2): read how the landing check treats an unknown key and a missing key today, before choosing the
   compatibility path.
+  - verdict: corroborated | checked_at: f84eb0e36bc5787ffca65c8d392d46ffb83a9126 | by: live-blockers/cleanup | rescoped: n/a | evidence: landing check field set untouched by the three merges; clause applies as written
 
 ## Expected Surface
 
@@ -166,10 +180,13 @@ into concurrent plans would collide; run any split in sequence.
 ## Dependencies and Sequencing
 
 - **Depends on:** none.
-- **Overlaps with PLAN-LB-106 (running) and PLAN-LB-108 (staged)** on `runbook-lane/SKILL.md` and `test_runbook_lane.py`, per the
-  staging record of the corpus (LB-106 and LB-108 share those two files). **Run this plan after both**, in sequence, and re-read this
-  spec's section references at its outline, because those plans edit the same lane text. The disjointness gate decides the pairing
-  at emit; it was not run in this draft.
+- **PLAN-LB-106, PLAN-LB-108 and PLAN-LB-119 are merged** (`5fd240a5e`, `9bd6a39d2`, `f84eb0e36`), so the sequencing this plan asked
+  for is satisfied. Re-read the section references at the outline: PLAN-LB-108 rewrote § 4 of `runbook-lane/SKILL.md` and moved §§ 6
+  to 8 by about eight lines (§ 7 now starts near line 698, the facts block of § 8 near line 798), and PLAN-LB-119 changed
+  `test_runbook_lane.py` (it imports `_github_pr` and checks the coverage fields against the parser). D1's review-body parser can
+  reuse the fence-aware coverage-marker parser PLAN-LB-119 put in `_github_pr.py` (`REVIEW_COVERAGE_FIELDS`, the start-of-line marker
+  read); PLAN-LB-119 adds no review gate, no unresolved-thread condition and no Follow-ups or Nitpick parser, so no deliverable is
+  pre-empted.
 - PLAN-LB-105 (review-gate grading truth) is about the finalize review gate, not the lane; re-read its surface at emit.
 - **Adjacent to** (left untouched): the `automatic-review` bot standards, the quota policy text, the finalize review gate.
 - **Owed outside this plan, operator-run:** regenerate the executor in every project that runs the lane (a new verb), and a harness

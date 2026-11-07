@@ -2,10 +2,10 @@
   "id": "PLAN-LB-120",
   "slug": "merge-and-push-gate-truth-fixes",
   "workstream": "WS-01",
-  "status": "running",
+  "status": "shipped",
   "lane": "runbook",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "plan_marshall_plan_id": "lb-120-merge-and-push-gate-truth-fixes",
+  "pr": "1923",
+  "landing": "landings/PLAN-LB-120.md",
   "seq": 120
 }
