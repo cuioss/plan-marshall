@@ -1010,3 +1010,98 @@ def test_without_a_project_dir_a_summary_less_run_stays_indeterminate(tmp_path):
     guarded = apply_zero_test_guard(result, 'test')
 
     assert guarded['status'] == 'indeterminate'
+
+
+# =============================================================================
+# The guard's false negatives
+# =============================================================================
+
+
+def test_a_skip_phrase_inside_test_output_does_not_silence_the_guard(tmp_path):
+    """Only Maven's OWN line is the skip marker, not the same words inside output.
+
+    A test that prints "Tests are skipped." used to satisfy a substring match over
+    the whole log and turn a run that summarised nothing into a green.
+    """
+    result = _quiet_guard_result(tmp_path, 'maven-quiet-green-no-summary.log')
+    log = Path(result['log_file'])
+    log.write_text(
+        '[INFO] --- surefire:3.5.2:test (default-test) @ a ---\n'
+        '[INFO] com.example.OutputTest: Tests are skipped. (this is test stdout)\n'
+        '[INFO] BUILD SUCCESS\n',
+        encoding='utf-8',
+    )
+
+    guarded = apply_zero_test_guard(result, 'test')
+
+    assert guarded['status'] == 'indeterminate'
+
+
+def test_a_fully_qualified_plugin_goal_is_a_test_phase_goal():
+    """``g:a:v:test`` is a goal Maven accepts, so the guard must read it.
+
+    The version segment broke the old two-part pattern, leaving the run unguarded.
+    """
+    goal = 'org.apache.maven.plugins:maven-surefire-plugin:3.5.2:test'
+
+    assert _maven_execute_mod._test_phase_goal(goal) == goal
+
+
+def test_a_fully_qualified_test_goal_run_is_guarded():
+    """A summary-less run of a fully-qualified goal is not a green."""
+    result = _run_result(
+        'maven-test-no-summary.log',
+        status='success',
+        exit_code=0,
+        command='mvnw org.apache.maven.plugins:maven-surefire-plugin:3.5.2:test',
+    )
+
+    guarded = apply_zero_test_guard(result, 'org.apache.maven.plugins:maven-surefire-plugin:3.5.2:test')
+
+    assert guarded['status'] == 'indeterminate'
+
+
+def test_a_failsafe_integration_selector_is_read():
+    """``-Dit.test`` is the Failsafe selector, and the same wrong-selection shape."""
+    assert _maven_cmd_parse_mod.dtest_selector('mvnw verify -Dit.test=Awaits#runs') == 'Awaits#runs'
+    assert _maven_cmd_parse_mod.dtest_selector('mvnw test -Dtest=Awaits#runs') == 'Awaits#runs'
+
+
+def test_a_named_failsafe_miss_on_a_green_verify_is_not_a_green(tmp_path):
+    """A ``verify`` run whose Failsafe selector matched nothing is not green.
+
+    The miss is on the runner's failure path, so the log NAMES it even when the
+    build exits 0. Reading only ``-Dtest`` left the whole integration-test
+    selector unguarded.
+    """
+    log_file = tmp_path / 'failsafe-miss.log'
+    log_file.write_text(
+        '[INFO] --- failsafe:3.5.2:integration-test (default) @ a ---\n'
+        '[ERROR] Failed to execute goal org.apache.maven.plugins:maven-failsafe-plugin:3.5.2:integration-test '
+        '(default) on project a: No tests matching pattern "Awaits#runs" were executed! '
+        '(Set -Dfailsafe.failIfNoSpecifiedTests=false to ignore this error.)\n'
+        '[INFO] BUILD SUCCESS\n',
+        encoding='utf-8',
+    )
+    result = {
+        'status': 'success',
+        'exit_code': 0,
+        'duration_seconds': 3,
+        'log_file': str(log_file),
+        'command': 'mvnw verify -Dit.test=Awaits#runs',
+    }
+
+    guarded = apply_selector_miss_guard(result)
+
+    assert guarded['status'] == 'indeterminate'
+    assert TEST_SELECTOR_MATCHED_NOTHING in guarded['message']
+
+
+def test_the_build_skill_records_the_daemon_and_selector_limits():
+    """The two limits are stated once, where a reader of a non-firing guard looks."""
+    from conftest import MARKETPLACE_ROOT
+
+    text = (MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'build-maven' / 'SKILL.md').read_text(encoding='utf-8')
+
+    assert 'A daemon not reconciled to the current code does not run these guards.' in text
+    assert '`-Dit.test`' in text

@@ -745,6 +745,7 @@ def test_parse_row_scope_prefers_the_recorded_command_payload(command_args, expe
     if expected is None:
         assert parsed is None
     else:
+        assert parsed is not None
         assert (parsed.canonical, parsed.scope_tokens) == expected
 
 
@@ -821,7 +822,8 @@ def test_a_legacy_unreadable_row_names_the_flag_placement_remedy(plan_context, m
 
 
 # =============================================================================
-# Every scope inability passes, and says which one it was
+# An unreadable scope's inability passes for a narrow change, and refuses a
+# whole-tree one
 # =============================================================================
 
 
@@ -835,8 +837,8 @@ def test_an_unreadable_row_blocks_a_whole_tree_change_and_names_the_inability(
     radius nobody measured). It is an absence of knowledge, and an absence must
     not stand in for evidence exactly where the claim is widest: a whole-tree
     change is refused with the inability named, while a change that needs less
-    still passes on the same row (``test_an_unreadable_row_still_passes_a_change
-    _that_does_not_need_whole_tree``).
+    still passes on the same row
+    (``test_an_unreadable_row_still_passes_a_change_that_does_not_need_whole_tree``).
     """
     _stub_expected(monkeypatch, {_PYPROJECT})
     _stub_required(monkeypatch, _required())
@@ -1129,7 +1131,7 @@ def test_a_resolved_maven_module_row_is_read_as_a_narrow_scope() -> None:
 #
 # The executor's own flags sit in the same unquoted ``args`` token stream as the
 # payload's, so a row carrying one after the canonical command cannot be read for
-# scope. Treating that as a pass let a narrow row — ``verify plan-marshall
+# scope. Reading that as a pass would let a narrow row — ``verify plan-marshall
 # --format json`` — certify a whole-tree change. The decision: an unreadable row
 # BLOCKS a change that needs whole-tree coverage and still passes a change that
 # does not, because only the former claims more than the row can show.

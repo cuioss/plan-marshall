@@ -171,12 +171,13 @@ suffixes matter.
 Reading the scope off the row — what is available, and what is not
 ==================================================================
 
-**The row already carries more than the gate used to read — checked, not
+**The row already carries more than the gate reads — checked, not
 assumed.** ``_ledger_core.build_record`` records ``notation``, ``args`` (the
 executor argv, stamped on every build-class dispatch as
-``' '.join(script_args)``), ``command`` (the line the wrapper reported running)
-and ``outcome`` (the wrapper's whole stdout TOON). The gate historically read
-none of them; it now reads ``notation`` for attribution and ``args`` for
+``' '.join(script_args)``), ``command_args`` (the single ``--command-args``
+element), ``command`` (the line the wrapper reported running) and ``outcome``
+(the wrapper's whole stdout TOON). The gate reads ``notation`` for attribution,
+``command_args`` when present for the payload boundary, and ``args`` for
 coverage.
 
 ``args`` is the coverage source rather than ``command`` because it is OUR argv
@@ -354,6 +355,17 @@ ROW_CANONICAL_TOO_WEAK = 'canonical_performs_too_few_analyses'
 ROW_SCOPE_TOO_NARROW = 'scope_narrower_than_change'
 ROW_TESTS_EXECUTED_ZERO = 'tests_executed_zero'
 ROW_ARGS_UNREADABLE = 'args_carry_no_command_args'
+
+#: The remedy sentence a refusal carries when a row predates the
+#: ``command_args`` field, so the joined ``args`` cannot place a flag that follows
+#: the payload. Prose, not a token: it goes into the gate's ``message``, where a
+#: reader needs the fix rather than a name for the defect.
+LEGACY_ROW_SCOPE_REMEDY = (
+    'This row predates the command_args field, so a flag recorded after '
+    '--command-args cannot be placed inside or outside the payload: put the '
+    "executor's own flag before --command-args (or drop it), and re-run so the row "
+    'records the payload as its own field. '
+)
 
 #: The executor flag that introduces the canonical command and its scope in a
 #: ``kind=build`` row's ``args``. Copied verbatim from the shared ``run``
@@ -593,6 +605,37 @@ def freshness_inputs_for_composition(
     }
 
 
+def _row_payload_tokens(entry: dict[str, Any]) -> list[str] | None:
+    """Return the ``--command-args`` payload tokens ``entry`` records, or ``None``.
+
+    Prefers the executor's ``command_args`` field: that value is the ONE argv
+    element the flag received, so it needs no marker search and can never absorb
+    a flag that sat after it. Falls back to the marker search in the joined
+    ``args`` for a row written before that field existed.
+
+    Args:
+        entry: A ``kind=build`` ledger row.
+
+    Returns:
+        The payload tokens in order, or ``None`` when the row carries no payload.
+        An empty list is a recorded-but-empty payload, which the caller rejects
+        rather than reading as whole-tree.
+    """
+    recorded = entry.get('command_args')
+    if isinstance(recorded, str):
+        return recorded.split()
+    args = entry.get('args')
+    if not isinstance(args, str):
+        return None
+    tokens = args.split()
+    for position, token in enumerate(tokens):
+        if token == _COMMAND_ARGS_FLAG:
+            return tokens[position + 1 :]
+        if token.startswith(f'{_COMMAND_ARGS_FLAG}='):
+            return [token.split('=', 1)[1], *tokens[position + 1 :]]
+    return None
+
+
 def parse_row_scope(entry: dict[str, Any]) -> RowScope | None:
     """Read the canonical and scope a ``kind=build`` row records, or ``None``.
 
@@ -630,25 +673,22 @@ def parse_row_scope(entry: dict[str, Any]) -> RowScope | None:
     docstring for why a build-tool-specific command line cannot be read for scope
     without risking a wrong *whole-tree* answer.
 
+    The payload is read from the row's ``command_args`` field when the executor
+    recorded one: that value is the single argv element ``--command-args``
+    received, so the payload boundary is explicit and an executor flag beside it
+    (``--timeout 900``) cannot be mistaken for part of the command. A row written
+    before that field existed is read from the joined ``args`` exactly as before,
+    which is why the joined form keeps its unreadable answer wherever a flag
+    follows the payload.
+
     Args:
         entry: A ``kind=build`` ledger row.
 
     Returns:
         The recorded :class:`RowScope`, or ``None`` when it cannot be read.
     """
-    args = entry.get('args')
-    if not isinstance(args, str):
-        return None
-    tokens = args.split()
-    rest: list[str] = []
-    for position, token in enumerate(tokens):
-        if token == _COMMAND_ARGS_FLAG:
-            rest = tokens[position + 1 :]
-            break
-        if token.startswith(f'{_COMMAND_ARGS_FLAG}='):
-            rest = [token.split('=', 1)[1], *tokens[position + 1 :]]
-            break
-    else:
+    rest = _row_payload_tokens(entry)
+    if rest is None:
         return None
     payload: list[str] = []
     scope: list[str] = []
@@ -696,6 +736,29 @@ def parse_row_scope(entry: dict[str, Any]) -> RowScope | None:
         # widest possible one.
         return None
     return RowScope(canonical=payload[0], scope_tokens=tuple(payload[1:] + scope))
+
+
+def row_scope_remedy_hint(entry: dict[str, Any]) -> str | None:
+    """Name the row-specific remedy when ``entry`` is unreadable for want of the field.
+
+    A row that carries a ``--command-args`` payload in its joined ``args`` but no
+    ``command_args`` field cannot say whether a later flag belonged to the payload
+    or to the executor. Telling its reader to "re-run a build" loops — the re-run
+    writes the same shape — so the refusal names the changes that work.
+
+    Args:
+        entry: A ``kind=build`` ledger row.
+
+    Returns:
+        :data:`LEGACY_ROW_SCOPE_REMEDY` for that shape, otherwise ``None``.
+    """
+    if isinstance(entry.get('command_args'), str):
+        return None
+    if parse_row_scope(entry) is not None:
+        return None
+    if _row_payload_tokens(entry) is None:
+        return None
+    return LEGACY_ROW_SCOPE_REMEDY
 
 
 def _measured_zero_tests(entry: dict[str, Any]) -> bool:

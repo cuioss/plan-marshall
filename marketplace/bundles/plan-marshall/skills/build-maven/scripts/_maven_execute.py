@@ -116,11 +116,13 @@ _LIFECYCLE_PHASES = frozenset(
 #: an explicit ``=false`` is NOT read as a skip.
 _SKIP_FLAG_PATTERN = re.compile(r'-D(?:skipTests|maven\.test\.skip)(?:=(?P<value>true|false))?(?=\s|$)', re.IGNORECASE)
 
-#: A plugin-goal coordinate (``surefire:test``), the other shape a goal takes.
-#: Deliberately narrow — no slashes and no empty prefix — so an option's value
-#: that happens to contain a colon (``-pl :core``, ``-f C:/repo/pom.xml``) is not
-#: mistaken for a goal.
-_PLUGIN_GOAL_PATTERN = re.compile(r'[A-Za-z0-9_.\-]+:[A-Za-z0-9_.\-]+')
+#: A plugin-goal coordinate (``surefire:test``, ``org.apache.maven.plugins:maven-surefire-plugin:test``,
+#: ``g:a:v:test``). At least one colon and at least two segments; deliberately
+#: narrow — no slashes and no empty first segment — so an option's value that
+#: happens to contain a colon (``-pl :core``, ``-f C:/repo/pom.xml``) is not
+#: mistaken for a goal. The version segment is what a fully-qualified goal adds,
+#: and dropping it left such a goal unguarded.
+_PLUGIN_GOAL_PATTERN = re.compile(r'[A-Za-z0-9_.\-]+(?::[A-Za-z0-9_.\-]+)+')
 
 #: Options that take a SEPARATE value token. Their value is consumed so a value
 #: that is spelled like a phase or a coordinate (``-pl integration-test``,
@@ -163,6 +165,12 @@ _VALUE_TAKING_OPTIONS = frozenset(
 #: skip rather than reported as an empty population.
 _TEST_SKIP_MARKER = 'Tests are skipped.'
 
+#: Maven's own statement that a test-phase invocation skipped its tests, anchored
+#: to a LOG LINE. Anchoring matters: a test's own output can contain the same
+#: words, and treating that as the run's skip would silence the zero-test guard
+#: for a run that genuinely executed nothing.
+_SKIP_MARKER_PATTERN = re.compile(r'(?m)^(?:\[[A-Z]+\]\s*)?Tests are skipped\.\s*$')
+
 #: Surefire's own statement that it matched no test class. A module whose
 #: ``src/test/java`` holds only helpers produces exactly this and a green exit:
 #: there is genuinely nothing to run, so the green is truthful. Checked AFTER the
@@ -177,7 +185,6 @@ _REPORT_SUMMARY_DIRS = ('surefire-reports', 'failsafe-reports')
 #: Directories a report scan never descends into: none of them is a module build
 #: output, and walking them would make the guard pay for the whole checkout.
 _REPORT_SCAN_PRUNED = frozenset({'.git', '.plan', 'node_modules', '.venv', '__pycache__'})
-
 
 
 def _asks_to_skip_tests(args: str) -> bool:
@@ -552,7 +559,7 @@ def apply_zero_test_guard(result: dict, args: str, *, project_dir: str | None = 
         # not absent: the reports this run wrote name executed test classes.
         return result
     elif goal.split(':')[-1] == 'test':
-        if _TEST_SKIP_MARKER in log_text:
+        if _SKIP_MARKER_PATTERN.search(log_text):
             return result
         if _NO_TESTS_TO_RUN_MARKER in log_text:
             # Surefire RAN and matched no test class: the module has nothing to

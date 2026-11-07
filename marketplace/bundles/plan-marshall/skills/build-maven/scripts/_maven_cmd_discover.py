@@ -340,10 +340,15 @@ def _normalise_module_path(aggregator_dir: str, entry: str) -> str | None:
     text = entry.strip().replace('\\', '/').rstrip('/')
     if not text:
         return None
-    if text.endswith('/pom.xml'):
-        text = text[: -len('/pom.xml')]
-    elif text == 'pom.xml':
-        return None
+    segments = text.split('/')
+    if segments and segments[-1].endswith('.xml'):
+        # Maven resolves a module entry against the aggregator's directory; an
+        # entry naming a POM FILE (``child/pom.xml``, and Maven 4's
+        # ``child/pom-alt.xml``) selects the directory holding it.
+        segments = segments[:-1]
+        if not segments:
+            return None
+        text = '/'.join(segments)
     joined = posixpath.normpath(posixpath.join(aggregator_dir, text))
     if posixpath.isabs(joined) or joined == '..' or joined.startswith('../'):
         return None
@@ -765,7 +770,10 @@ def _parse_module_entries(root: ET.Element) -> list[str]:
         if container is None:
             return
         for module_el in container:
-            if _strip_ns(module_el.tag) != 'module':
+            # Maven 4.1 names the child ``subproject`` where Maven 3 names it
+            # ``module``; both live under their container and mean the same
+            # directory entry.
+            if _strip_ns(module_el.tag) not in ('module', 'subproject'):
                 continue
             entry = (module_el.text or '').strip()
             if entry and entry not in seen:
@@ -773,6 +781,12 @@ def _parse_module_entries(root: ET.Element) -> list[str]:
                 entries.append(entry)
 
     _collect(_find_child(root, 'modules'))
+    # Maven 4.1 spells the aggregator's module list ``<subprojects>``. Reading
+    # both means a Maven 4 reactor is not under-granted the whole-reactor test
+    # canonicals. An entry using a property (``${module.dir}/pom.xml``) cannot be
+    # resolved without Maven, so it stays an under-grant: the root then carries
+    # no test canonical and the gate records DEGRADED rather than a false green.
+    _collect(_find_child(root, 'subprojects'))
 
     profiles_el = _find_child(root, 'profiles')
     if profiles_el is not None:
@@ -785,6 +799,7 @@ def _parse_module_entries(root: ET.Element) -> list[str]:
             if (_child_text(activation_el, 'activeByDefault') or '').lower() != 'true':
                 continue
             _collect(_find_child(profile_el, 'modules'))
+            _collect(_find_child(profile_el, 'subprojects'))
 
     return entries
 

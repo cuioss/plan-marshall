@@ -63,13 +63,15 @@ def test_build_record_emits_command_duration_and_outcome_beside_args() -> None:
     assert record['args'] != record['command']
 
 
-def test_build_record_defaults_the_three_wrapper_fields_to_none() -> None:
+def test_build_record_defaults_the_optional_fields_to_none() -> None:
     """A payload-less writer still produces a COMPLETE row.
 
     A killed or crashed build has no parseable wrapper payload, and the CLI
     ``append`` verb (the second writer) has none by construction. Both must
-    still land a row: the three fields are keyword-only with a ``None`` default
-    rather than required, so no caller is forced to invent a value.
+    still land a row: the optional fields are keyword-only with a ``None``
+    default rather than required, so no caller is forced to invent a value.
+    ``command_args`` is ``None`` for a dispatch that carried no
+    ``--command-args`` value.
     """
     import _ledger_core
 
@@ -84,6 +86,7 @@ def test_build_record_defaults_the_three_wrapper_fields_to_none() -> None:
     )
 
     assert record['command'] is None
+    assert record['command_args'] is None
     assert record['duration_seconds'] is None
     assert record['outcome'] is None
     assert record['args'] == 'run --command-args "verify plan-marshall"'
