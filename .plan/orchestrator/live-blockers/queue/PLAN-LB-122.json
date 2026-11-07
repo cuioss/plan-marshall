@@ -1,0 +1,11 @@
+{
+  "id": "PLAN-LB-122",
+  "slug": "landing-analysis-and-link-checker-gaps",
+  "workstream": "WS-03",
+  "status": "shipped",
+  "lane": "runbook",
+  "plan_marshall_plan_id": "lb-122-landing-analysis-and-link-checker-gaps",
+  "pr": "1931",
+  "landing": "landings/PLAN-LB-122.md",
+  "seq": 122
+}

@@ -1,0 +1,11 @@
+{
+  "id": "PLAN-LB-123",
+  "slug": "execute-handback-and-manifest-gaps",
+  "workstream": "WS-01",
+  "status": "running",
+  "lane": "runbook",
+  "plan_marshall_plan_id": "",
+  "pr": "",
+  "landing": "",
+  "seq": 123
+}
