@@ -602,9 +602,11 @@ def evaluate_no_progress(
     1. **A hand-back exempts only the task the return is about.** A return carrying
        the ``verification_handback`` discriminator beside a NON-EMPTY
        ``pending_verify_steps[]`` is classified ``verification_handback`` when
-       the predicate does not hold — but a FURTHER non-owed task that stalled in
-       the SAME dispatch still decides it. The hand-back is the prescribed outcome
-       FOR THE TASK IT HANDS BACK, not a licence to stall the rest of the
+       the predicate does not hold — but a FURTHER non-owed in-progress task
+       still decides it. (The predicate sees queue COUNTS, not dispatch
+       membership, so "further" is a conservative reading, not a claim that the
+       second task started in the same dispatch.) The hand-back is the prescribed
+       outcome FOR THE TASK IT HANDS BACK, not a licence to stall the rest of the
        queue. Its step ids are checked against the manifest's composed
        ``phase_5.verification_steps`` (``manifest_verification_steps``): an id
        outside that list names no obligation the plan composed, so it does not
