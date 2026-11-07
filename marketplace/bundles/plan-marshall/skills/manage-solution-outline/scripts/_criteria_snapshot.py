@@ -61,6 +61,7 @@ from _plan_parsing import (
     split_deliverable_blocks,
 )
 from file_ops import atomic_write_bytes, atomic_write_file, base_path, cwd_checkout_root
+from markdown_fence import fence_marker as _fence_marker
 
 #: Plan-relative path of the frozen snapshot artifact.
 SNAPSHOT_FILE = 'work/criteria-snapshot.json'
@@ -98,34 +99,6 @@ def _legacy_fence_marker(line: str) -> tuple[str, int, str] | None:
     if length < 3:
         return None
     return character, length, stripped[length:]
-
-
-def _fence_marker(line: str) -> tuple[str, int, str] | None:
-    """Return ``(character, length, trailing)`` for a CommonMark fence line.
-
-    A fence is a run of at least three backticks or tildes, indented at most three
-    spaces (a four-space or tab-indented run is an indented code block, not a fence).
-    A BACKTICK fence's info string may not contain a backtick, exactly as CommonMark
-    specifies — such a line is ordinary text, not a fence. The caller decides whether
-    a line OPENS a fence (any allowed trailing info string) or CLOSES one (same
-    character, at least the opener's length, and only whitespace after it), so a
-    ``~~~`` line inside a backtick fence, a shorter run, or a marker with trailing
-    text never closes the wrong block.
-    """
-    leading = line[: len(line) - len(line.lstrip(' \t'))]
-    if '\t' in leading or len(leading) > 3:
-        return None
-    stripped = line.strip()
-    if not stripped or stripped[0] not in '`~':
-        return None
-    character = stripped[0]
-    length = len(stripped) - len(stripped.lstrip(character))
-    if length < 3:
-        return None
-    trailing = stripped[length:]
-    if character == '`' and '`' in trailing:
-        return None
-    return character, length, trailing
 
 
 #: One bullet, at any indent; the indentation decides top-level vs sub-bullet.
@@ -202,8 +175,9 @@ OVERRIDE_HEADS_KEY = 'functional_review_override_heads'
 #: ``{identity, assertions_removed}`` — the D1 test identity plus the number of
 #: removed assertions; a row that carries no identity gets a path-level entry
 #: instead, naming the row KIND it covers (``{path, kind, acceptance_kind,
-#: assertions_removed}``) and, for a filter row, its marker set plus the identity of
-#: each marked test (``{path, kind: test_filtered, markers, marked_tests}``). A
+#: assertions_removed}``) and, for a filter row, the PAIRED ``(test, marker)`` it
+#: covers (``{path, kind: test_filtered, pairs}``). The legacy display fields
+#: ``markers`` / ``marked_tests`` may ride along, but they are not the pairing. A
 #: generic ``metadata --set`` must refuse it, so it joins the protected set below.
 ACCEPTED_TEST_REMOVALS_KEY = 'accepted_test_removals'
 #: The status-record metadata keys whose only writers commit through their own
@@ -403,20 +377,36 @@ def accepted_test_removals(plan_id: str) -> list[dict[str, Any]]:
     return entries
 
 
+def _pair_key(entry: dict[str, Any]) -> tuple[tuple[str, str], ...]:
+    """The ``(test, marker)`` pairs an entry carries, sorted, as a hashable key."""
+    pairs = entry.get('pairs')
+    if not isinstance(pairs, list):
+        return ()
+    return tuple(
+        sorted(
+            (pair['test'], pair['marker'])
+            for pair in pairs
+            if isinstance(pair, dict) and isinstance(pair.get('test'), str) and isinstance(pair.get('marker'), str)
+        )
+    )
+
+
 def _removal_key(entry: dict[str, Any]) -> tuple[Any, ...]:
     """The accepted-set key: everything the entry NAMES, not just its identity.
 
-    A filter acceptance names its marker set and the identity of each marked test; a
-    path-level acceptance names the row KIND it covers (mixed residual / file total /
-    set total) beside its count. Two entries that differ in ANY of those are different
+    A filter acceptance names the PAIRED ``(test, marker)`` it covers; a path-level
+    acceptance names the row KIND it covers (mixed residual / file total / set
+    total) beside its count. Two entries that differ in ANY of those are different
     acceptances, so the key must carry them — a key that omits them makes a second
-    close collide with the first.
+    close collide with the first. ``markers`` / ``marked_tests`` stay in the key as
+    the display form an older entry may carry; they are not the pairing.
     """
     return (
         entry.get('identity'),
         entry.get('path'),
         entry.get('kind'),
         entry.get('acceptance_kind'),
+        _pair_key(entry),
         tuple(sorted(entry.get('markers') or [])),
         tuple(sorted(entry.get('marked_tests') or [])),
         entry.get('assertions_removed'),
@@ -451,6 +441,15 @@ def _normalized_removal_entry(entry: dict[str, Any]) -> dict[str, Any] | None:
     marked_tests = entry.get('marked_tests')
     if isinstance(marked_tests, list):
         normalized['marked_tests'] = [identity for identity in marked_tests if isinstance(identity, str)]
+    pairs = entry.get('pairs')
+    if isinstance(pairs, list):
+        normalized_pairs = [
+            {'test': pair['test'], 'marker': pair['marker']}
+            for pair in pairs
+            if isinstance(pair, dict) and isinstance(pair.get('test'), str) and isinstance(pair.get('marker'), str)
+        ]
+        if normalized_pairs:
+            normalized['pairs'] = normalized_pairs
     return normalized
 
 
@@ -1768,6 +1767,64 @@ def _commit_authorization(
 
 #: The plan-relative path of the functional review's verdict file.
 FUNCTIONAL_VERDICT_FILE = 'work/functional-review-verdict.json'
+#: The composed phase-6 manifest the dispatcher writes; the drop decision reads it.
+EXECUTION_FILE = 'execution.toon'
+#: The finalize step id whose absence means the review was dropped.
+FUNCTIONAL_REVIEW_STEP = 'functional-review'
+
+
+def _phase_6_manifest_steps(plan_id: str) -> set[str] | None:
+    """The composed phase-6 step ids, or ``None`` when the manifest is unreadable."""
+    path = base_path('plans', plan_id, EXECUTION_FILE)
+    try:
+        if not path.is_file():
+            return None
+        from toon_parser import parse_toon
+
+        data = parse_toon(path.read_text(encoding='utf-8'))
+    except Exception:
+        return None
+    if not isinstance(data, dict):
+        return None
+    phase_6 = data.get('phase_6')
+    if not isinstance(phase_6, dict):
+        return None
+    steps = phase_6.get('steps')
+    if not isinstance(steps, list):
+        return None
+    return {str(step) for step in steps if isinstance(step, str) and step}
+
+
+def functional_review_drop_reason(plan_id: str) -> str | None:
+    """Why the manifest dropped the functional review, or ``None`` when it did not.
+
+    The ONE reader both the finalize triage source and the finalize completion gate
+    use. It reads the composed phase-6 manifest (``execution.toon``): a manifest
+    that schedules the review, or cannot be read, drops nothing. A manifest that
+    does not schedule it is a drop, and the reason is the recorded one, the settled
+    surgical scope, or the generic not-scheduled sentence.
+
+    This module may not import ``manage-status`` (the layering rule in the module
+    docstring), so the decision lives here and ``manage-status`` delegates to it
+    rather than keeping a second copy.
+    """
+    steps = _phase_6_manifest_steps(plan_id)
+    if steps is None:
+        return None
+    scheduled = any(step == FUNCTIONAL_REVIEW_STEP or step.endswith(f':{FUNCTIONAL_REVIEW_STEP}') for step in steps)
+    if scheduled:
+        return None
+    metadata: dict[str, Any] = {}
+    document = _status_doc(plan_id)
+    if isinstance(document, dict) and isinstance(document.get('metadata'), dict):
+        metadata = document['metadata']
+    recorded = metadata.get('functional_review_drop_reason')
+    if isinstance(recorded, str) and recorded.strip():
+        return recorded.strip()
+    scope = metadata.get('scope_estimate')
+    if isinstance(scope, str) and scope.strip().lower() in ('surgical', 'single_module', 'micro', 'single-module'):
+        return 'surgical scope' if scope.strip().lower() == 'surgical' else f'{scope.strip()} scope'
+    return 'not scheduled in the phase-6 manifest'
 
 
 def open_criteria(plan_id: str, verdict_file: Path | None = None) -> dict[str, Any]:
@@ -1791,15 +1848,19 @@ def open_criteria(plan_id: str, verdict_file: Path | None = None) -> dict[str, A
       text. Position alone is never a match: a paraphrased row without its id
       leaves the criterion ungraded and open.
 
-    Anything else is open, which is the fail-closed direction. Four deliberate
+    Anything else is open, which is the fail-closed direction. Five deliberate
     states additionally close criteria rather than reading them as open work:
 
     * an operator decision authorizes the exact change (``authorized_changes``);
     * the deliverable's verdict is ``superseded``;
     * the operator closed the review past its round cap (:func:`_review_closed_reason`);
+    * the manifest dropped the functional review (:func:`functional_review_drop_reason`)
+      — the completion gate exempts exactly this case, and ``source: review_dropped``
+      says so to the triage source;
     * ``state`` reports a snapshot the status record froze but which is now deleted
       or edited — the snapshot's own absence is the open criterion, and every check
-      refuses rather than falling back to the legacy path.
+      refuses rather than falling back to the legacy path. This state is reported
+      open REGARDLESS of a dropped review, because the freeze is independent of it.
     """
     state = snapshot_state(plan_id)
     if state in ('deleted', 'tampered'):
@@ -1819,6 +1880,14 @@ def open_criteria(plan_id: str, verdict_file: Path | None = None) -> dict[str, A
     snapshot = read_snapshot(plan_id)
     if snapshot is None:
         return {'source': 'none', 'open_count': 0, 'open': []}
+    # A dropped functional review has no verdict to grade the criteria, so its
+    # frozen rows are not outstanding work. The SAME reader decides it for the
+    # completion gate, and a deleted/tampered snapshot was already refused above —
+    # turning this absence into "not applicable" would let deleting the snapshot
+    # disable the check the freeze exists for.
+    drop_reason = functional_review_drop_reason(plan_id)
+    if drop_reason is not None:
+        return {'source': 'review_dropped', 'drop_reason': drop_reason, 'open_count': 0, 'open': []}
     # The operator's round-cap override closes the review FOR THE COMPLETION GATE:
     # its criteria are not outstanding work. Head-specificity (rubric § 8) governs
     # the REVIEW LOOP, which re-fires a delta round on a later head; the gate's job

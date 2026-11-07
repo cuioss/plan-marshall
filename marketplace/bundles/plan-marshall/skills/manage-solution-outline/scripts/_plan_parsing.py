@@ -61,6 +61,12 @@ _SLUG_NON_ALNUM_PATTERN = re.compile(r'[^a-z0-9_-]+')
 #: counts through ``extract_deliverables`` → ``split_deliverable_blocks``; the metrics
 #: ``deliverable_count`` denominator and the retrospective consistency check count through
 #: ``extract_deliverable_headings``. Do NOT inline a copy of this regex — add the caller here.
+#:
+#: LIMIT — this pattern is not fence-aware. A ``### N.`` line inside a fenced block is
+#: read as a deliverable heading, so a fenced criterion can yield a phantom
+#: deliverable. The splitter fails CLOSED: the cut leaves the fence unterminated and
+#: ``snapshot-criteria`` reports it as ``criterion_unparsed`` when a snapshot exists,
+#: so a real criteria block can never be silently dropped by the phantom.
 DELIVERABLE_HEADING_PATTERN = re.compile(r'^###\s+(\d+)\.\s+(.+)$', re.MULTILINE)
 
 #: The ``error`` code ``manage-solution-outline`` emits when the solution outline

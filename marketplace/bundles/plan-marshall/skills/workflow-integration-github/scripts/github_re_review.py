@@ -431,6 +431,44 @@ def _verifies_head_sha(matched_signal: str, record: dict | None, head_sha: str) 
     return False
 
 
+#: The substring that marks a registry answer-marker entry as the coverage marker.
+_COVERAGE_MARKER_HINT = 'final_review_risk_coverage'
+
+
+def _answer_marker_present(body: str, answer_markers: tuple[str, ...]) -> bool:
+    """Whether ``body`` carries one of a bot's answer markers, read through the parser.
+
+    A plain literal is matched as a substring. A COVERAGE marker is decided by the
+    production parser (:func:`review_coverage_marker_present`), never by substring:
+    a quoted marker, one inside a closed fence, or one after an unterminated fence
+    must not be admitted as an answer merely because the literal occurs in the body.
+    The parser is the one reader of that marker's shape.
+    """
+    for marker in answer_markers:
+        if _COVERAGE_MARKER_HINT in marker:
+            if review_coverage_marker_present(body):
+                return True
+        elif marker in body:
+            return True
+    return False
+
+
+def _admits_answer(body: str, answer_markers: tuple[str, ...]) -> bool:
+    """Whether ``body`` may be admitted as the bot's answer.
+
+    Two gates, both routed through the production parser for a coverage marker: the
+    body must carry one of the bot's declared answer markers, and a coverage marker
+    it carries must describe a READABLE, FINISHED review. A marker after an
+    unterminated fence is present-but-unreadable, so it is not admitted; a marker
+    inside a closed fence is a quote, so it is not admitted either.
+    """
+    if answer_markers and not _answer_marker_present(body, answer_markers):
+        return False
+    if review_coverage_marker_present(body) and not review_coverage_is_finished(body):
+        return False
+    return True
+
+
 def _body_names_head(body: str, head_sha: str) -> bool:
     """Whether ``body`` names ``head_sha`` as the commit its review covered.
 
@@ -1717,13 +1755,7 @@ class _ReReviewStrategy:
             # already declined it and it is no acknowledgment, so there is nothing
             # to report about it. Running the gate after the refusal stack keeps a
             # marker-less refusal recorded rather than silently skipped.
-            if answer_markers and not any(marker in body for marker in answer_markers):
-                continue
-            # A coverage marker that is not a finished, readable review is not an
-            # answer — the summary still in progress, or one whose payload cannot be
-            # parsed. Skipped WITHOUT a record, exactly as the marker-less case above,
-            # so the poll continues instead of reporting a decline the bot never made.
-            if review_coverage_marker_present(body) and not review_coverage_is_finished(body):
+            if not _admits_answer(body, answer_markers):
                 continue
             if written_after_trigger:
                 eligible.append(comment)

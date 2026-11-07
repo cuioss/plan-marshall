@@ -128,6 +128,28 @@ _EXPIRED_WINDOW = {
 _LIVE_WINDOW_READER = github_re_review.read_rate_window
 
 
+_COVERAGE_ANSWER_MARKERS = ('<!-- final_review_risk_coverage:',)
+
+
+def test_a_marker_after_an_unterminated_fence_is_not_admitted_as_an_answer():
+    """An in-progress summary whose marker sits after an unclosed fence is not the answer.
+
+    The marker is present-but-unreadable, so admitting it would end the wait as
+    ``head_sha_verified: true`` on a review still running. Both gates route through
+    the production parser rather than a substring test.
+    """
+    body = '```\n<!-- final_review_risk_coverage:{"sourceCommitId":"a","coveredCommitId":"a","kind":"reviewed"} -->'
+
+    assert github_re_review._admits_answer(body, _COVERAGE_ANSWER_MARKERS) is False
+
+
+def test_a_finished_marker_is_admitted_as_an_answer():
+    """Control: a readable, finished coverage marker is the bot's answer."""
+    body = '<!-- final_review_risk_coverage:{"sourceCommitId":"a","coveredCommitId":"a","kind":"reviewed"} -->'
+
+    assert github_re_review._admits_answer(body, _COVERAGE_ANSWER_MARKERS) is True
+
+
 def _window_reader(observation):
     """Build a ``(plan_id, bot_kind, pr_number) -> dict`` reader for ``observation``.
 

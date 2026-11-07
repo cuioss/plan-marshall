@@ -488,3 +488,128 @@ def test_the_set_total_row_goes_to_the_file_whose_loss_no_identity_explains(
     set_total = [row for row in _rows(payload) if row.get('acceptance_kind') == 'set_total']
     assert set_total, payload
     assert set_total[0]['path'] == 'test/q_test.py', payload
+
+
+# --- D1 (JVM): a disabled JVM test is decided per METHOD, not per class --------------------
+
+_JAVA_TEST_PATH = 'src/test/java/com/example/FooTest.java'
+_JAVA_FOO_TEST = (
+    'package com.example;\n\n'
+    'import org.junit.jupiter.api.Disabled;\n\n'
+    'class FooTest {\n'
+    '    void a() {\n'
+    '        assertTrue(true);\n'
+    '    }\n\n'
+    '    void b() {\n'
+    '        assertTrue(true);\n'
+    '    }\n'
+    '}\n'
+)
+
+
+def _java_with_disabled(methods: tuple[str, ...]) -> str:
+    """The ``FooTest`` fixture with ``@Disabled`` above each named method."""
+    text = _JAVA_FOO_TEST
+    for method in methods:
+        text = text.replace(f'    void {method}() {{', f'    @Disabled\n    void {method}() {{')
+    return text
+
+
+def _filter_rows(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    return [row for row in payload.get('findings') or [] if row.get('kind') == 'test_filtered']
+
+
+def test_a_base_disabled_jvm_method_does_not_mask_a_second_one(plan_context, tmp_path, monkeypatch) -> None:
+    """Head A disables ``a()``; head B disables ``b()`` too. Only ``b`` is the new row."""
+    repo = _repo(tmp_path)
+    _commit(repo, {'README.md': 'readme\n'})
+    _commit(repo, {_JAVA_TEST_PATH: _java_with_disabled(('a',))})
+    _git(repo, 'checkout', '--quiet', '-b', 'feature')
+    _commit(repo, {_JAVA_TEST_PATH: _java_with_disabled(('a', 'b'))}, 'disable b as well')
+
+    payload = _run(repo, plan_context, monkeypatch)
+
+    rows = _filter_rows(payload)
+    assert len(rows) == 1, payload
+    assert rows[0]['marked_tests'] == ['FooTest::b'], rows
+    assert rows[0]['pairs'] == [{'test': 'FooTest::b', 'marker': '@Disabled'}], rows
+
+
+def test_only_the_named_jvm_method_is_reported(plan_context, tmp_path, monkeypatch) -> None:
+    """Control: one branch-added ``@Disabled`` names exactly its own method."""
+    repo = _repo(tmp_path)
+    _commit(repo, {'README.md': 'readme\n'})
+    _commit(repo, {_JAVA_TEST_PATH: _JAVA_FOO_TEST})
+    _git(repo, 'checkout', '--quiet', '-b', 'feature')
+    _commit(repo, {_JAVA_TEST_PATH: _java_with_disabled(('a',))}, 'disable a')
+
+    payload = _run(repo, plan_context, monkeypatch)
+
+    rows = _filter_rows(payload)
+    assert len(rows) == 1, payload
+    assert rows[0]['marked_tests'] == ['FooTest::a'], rows
+
+
+def test_both_jvm_methods_added_after_the_base_are_paired_separately(plan_context, tmp_path, monkeypatch) -> None:
+    """Two methods disabled by the branch carry TWO pairs, not one class-level marker set."""
+    repo = _repo(tmp_path)
+    _commit(repo, {'README.md': 'readme\n'})
+    _commit(repo, {_JAVA_TEST_PATH: _JAVA_FOO_TEST})
+    _git(repo, 'checkout', '--quiet', '-b', 'feature')
+    _commit(repo, {_JAVA_TEST_PATH: _java_with_disabled(('a', 'b'))}, 'disable both')
+
+    payload = _run(repo, plan_context, monkeypatch)
+
+    rows = _filter_rows(payload)
+    assert len(rows) == 1, payload
+    assert rows[0]['pairs'] == [
+        {'test': 'FooTest::a', 'marker': '@Disabled'},
+        {'test': 'FooTest::b', 'marker': '@Disabled'},
+    ], rows
+
+
+def test_a_class_level_annotation_belongs_to_the_class_not_its_first_method(
+    plan_context, tmp_path, monkeypatch
+) -> None:
+    """``@Disabled`` above ``class FooTest`` is the class's marker, never ``a()``'s."""
+    repo = _repo(tmp_path)
+    _commit(repo, {'README.md': 'readme\n'})
+    base = _JAVA_FOO_TEST
+    _commit(repo, {_JAVA_TEST_PATH: base})
+    _git(repo, 'checkout', '--quiet', '-b', 'feature')
+    _commit(repo, {_JAVA_TEST_PATH: base.replace('class FooTest {', '@Disabled\nclass FooTest {')}, 'disable the class')
+
+    payload = _run(repo, plan_context, monkeypatch)
+
+    rows = _filter_rows(payload)
+    assert len(rows) == 1, payload
+    assert rows[0]['marked_tests'] == ['FooTest'], rows
+
+
+def test_a_js_identity_is_qualified_by_its_enclosing_describe(plan_context, tmp_path, monkeypatch) -> None:
+    """A deleted ``A::renders`` is not credited by an unrelated new ``B::renders``.
+
+    The move proof keys on the identity name plus the assertion-line text, so an
+    unqualified ``renders`` on both sides credits the loss. The enclosing ``describe``
+    is part of the identity, so the two suites are different tests.
+    """
+    repo = _repo(tmp_path)
+    _commit(repo, {'README.md': 'readme\n'})
+    _commit(
+        repo,
+        {'src/a.test.js': "describe('A', () => {\n  it('renders', () => {\n    expect(1).toBe(1);\n  });\n});\n"},
+    )
+    _git(repo, 'checkout', '--quiet', '-b', 'feature')
+    _git(repo, 'rm', 'src/a.test.js')
+    _commit(
+        repo,
+        {'src/b.test.js': "describe('B', () => {\n  it('renders', () => {\n    expect(1).toBe(1);\n  });\n});\n"},
+        'add an unrelated same-named test',
+    )
+
+    payload = _run(repo, plan_context, monkeypatch)
+
+    rows = _rows(payload)
+    assert any(row['path'] == 'src/a.test.js' for row in rows), payload
+    row = next(row for row in rows if row['path'] == 'src/a.test.js')
+    assert any(entry['identity'] == 'A::renders' for entry in row['removed_tests']), row

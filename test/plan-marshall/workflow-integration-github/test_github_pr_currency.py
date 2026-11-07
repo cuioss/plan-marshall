@@ -2571,3 +2571,31 @@ def test_a_nested_coverage_payload_is_read():
     )
 
     assert _github_pr.review_coverage_verdict(body, 'a') is True
+
+
+def test_a_two_line_coverage_payload_is_read():
+    """The bot's summary wraps the payload over two lines; the parser reads it whole."""
+    body = '<!-- final_review_risk_coverage:\n     {"sourceCommitId":"a","coveredCommitId":"a","kind":"reviewed"} -->'
+
+    assert _github_pr.review_coverage_verdict(body, 'a') is True
+
+
+def test_a_marker_after_an_unterminated_fence_is_a_claim_nobody_can_read():
+    """An unclosed fence makes the marker present-but-unreadable, never "no marker".
+
+    Reading it as no marker would let ``named_commit_currency`` fall to the token arm
+    and credit a review whose summary had not finished — the same manufactured green
+    the quoted-marker test guards.
+    """
+    body = '```\n<!-- final_review_risk_coverage:{"sourceCommitId":"a","coveredCommitId":"a","kind":"reviewed"} -->'
+
+    assert _github_pr.review_coverage_marker_present(body) is True
+    assert _github_pr.review_coverage_is_finished(body) is False
+    assert _github_pr.review_coverage_verdict(body, 'a') is False
+
+
+def test_a_finished_single_line_marker_is_still_credited():
+    """Control: the shipped single-line marker shape keeps crediting the covered head."""
+    body = _coverage_marker('a')
+
+    assert _github_pr.review_coverage_verdict(body, 'a') is True

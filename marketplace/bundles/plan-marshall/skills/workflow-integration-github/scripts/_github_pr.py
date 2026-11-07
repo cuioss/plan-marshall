@@ -70,6 +70,7 @@ from ci_base import (
     read_and_consume_body,
 )
 from command_forms import STEWARD_COMMAND
+from markdown_fence import fence_marker as _fence_marker
 
 # ---------------------------------------------------------------------------
 # Bot-agnostic rate-limit / service-notice detection (any reviewer bot)
@@ -438,8 +439,14 @@ def _balanced_json_object(text: str) -> str | None:
     return None
 
 
-def _coverage_payload_here(line: str) -> tuple[bool, dict | None]:
-    """Return ``(present, fields)`` for a coverage marker at the START of ``line``.
+#: How many lines after the opener a multi-line JSON payload may span before the
+#: marker is read as present-but-unreadable. The bot's own summary wraps its payload
+#: over two lines; the bound only stops a malformed body from scanning the comment.
+_COVERAGE_PAYLOAD_MAX_LINES = 40
+
+
+def _coverage_opener_position(line: str) -> int:
+    """The position of a coverage-marker opener at the START of ``line``, or ``-1``.
 
     A line whose prefix before the opener is anything but spaces — a blockquote
     marker (``>``), inline code (a backtick) — is a QUOTE of the marker, not the
@@ -447,10 +454,36 @@ def _coverage_payload_here(line: str) -> tuple[bool, dict | None]:
     own ``commit_id`` stand when a review body merely quotes a marker.
     """
     position = line.find(_REVIEW_COVERAGE_OPENING)
-    prefix = line[:position] if position >= 0 else ''
-    if position < 0 or prefix.strip() or len(prefix) > 3 or '\t' in prefix:
-        return False, None
-    payload = _balanced_json_object(line[position + len(_REVIEW_COVERAGE_OPENING) :])
+    if position < 0:
+        return -1
+    prefix = line[:position]
+    if prefix.strip() or len(prefix) > 3 or '\t' in prefix:
+        return -1
+    return position
+
+
+def _coverage_payload_at(lines: list[str], index: int) -> tuple[bool, dict | None] | None:
+    """``(present, fields)`` for a marker starting on ``lines[index]``, or ``None``.
+
+    ``None`` is "this line does not open a marker". ``(True, None)`` is a marker
+    whose payload could not be read — a claim nobody can evaluate. The payload may
+    span several lines (the bot's summary shows a two-line marker), so the JSON is
+    looked for across the following lines when the opener's own line does not close
+    it.
+    """
+    line = lines[index]
+    position = _coverage_opener_position(line)
+    if position < 0:
+        return None
+    first = line[position + len(_REVIEW_COVERAGE_OPENING) :]
+    payload = _balanced_json_object(first)
+    if payload is None:
+        joined = first
+        for extra in lines[index + 1 : index + 1 + _COVERAGE_PAYLOAD_MAX_LINES]:
+            joined += '\n' + extra
+            payload = _balanced_json_object(joined)
+            if payload is not None:
+                break
     if payload is None:
         return True, None
     try:
@@ -463,47 +496,43 @@ def _coverage_payload_here(line: str) -> tuple[bool, dict | None]:
 def _coverage_payload(body: str) -> tuple[bool, dict | None]:
     """Return ``(present, fields)`` for a review-coverage marker in ``body``.
 
-    ``present`` says a marker line occurs outside a fenced code block — tested on
+    ``present`` says a marker occurs outside a CLOSED fenced code block — tested on
     the opener at the start of a line, not on the bare identifier, so a review body
     that merely mentions the name, quotes the marker, or shows it in a fenced
-    example is not a claim. ``fields`` is its parsed JSON object, or ``None`` when
-    the payload is absent or unreadable. The pair keeps "no marker" and "marker that
-    cannot be read" distinguishable, which is exactly the distinction a fail-closed
-    consumer needs: the first is no claim, the second is a claim nobody can evaluate —
-    and the second must never fall through to an arm that would credit.
+    example is not a claim. ``fields`` is its parsed JSON object (which may span
+    several lines), or ``None`` when the payload is absent or unreadable. The pair
+    keeps "no marker" and "marker that cannot be read" distinguishable, which is
+    exactly the distinction a fail-closed consumer needs: the first is no claim, the
+    second is a claim nobody can evaluate — and the second must never fall through
+    to an arm that would credit.
+
+    A marker after an UNTERMINATED fence is the second state, not the first: the
+    fence never closes, so the parser cannot know whether the marker is quoted or is
+    the bot's claim. Reporting it as present-but-unreadable keeps the decision
+    fail-closed instead of falling through to the token arm. A marker inside a fence
+    that DOES close is a quote and remains no marker.
     """
     text = body or ''
+    lines = text.splitlines()
     fence: tuple[str, int] | None = None
-    for line in text.splitlines():
+    unclosed_marker_seen = False
+    for index, line in enumerate(lines):
         marker = _fence_marker(line)
         if fence is not None:
             if marker is not None and marker[0] == fence[0] and marker[1] >= fence[1] and not marker[2].strip():
                 fence = None
+            elif _coverage_opener_position(line) >= 0:
+                unclosed_marker_seen = True
             continue
         if marker is not None:
             fence = (marker[0], marker[1])
             continue
-        present, fields = _coverage_payload_here(line)
-        if present:
-            return True, fields
+        found = _coverage_payload_at(lines, index)
+        if found is not None and found[0]:
+            return True, found[1]
+    if fence is not None and unclosed_marker_seen:
+        return True, None
     return False, None
-
-
-def _fence_marker(line: str) -> tuple[str, int, str] | None:
-    """Return ``(character, length, trailing)`` for a CommonMark fence line, or ``None``."""
-    stripped = line.lstrip(' ')
-    if len(line) - len(stripped) > 3 or not stripped:
-        return None
-    character = stripped[0]
-    if character not in '`~':
-        return None
-    run = len(stripped) - len(stripped.lstrip(character))
-    if run < 3:
-        return None
-    trailing = stripped[run:]
-    if character == '`' and '`' in trailing:
-        return None
-    return character, run, trailing
 
 
 def review_coverage_marker_present(body: str) -> bool:

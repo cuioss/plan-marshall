@@ -39,8 +39,8 @@ LOSS_CASES_RULE = (
 )
 ACCEPTED_KEY_RULE = (
     'Both key the accepted set by what the entry NAMES: a test identity plus its removed count, a '
-    "filter's marker set plus the identity of each marked test, or a path-level row kind (mixed "
-    'residual / file total / set total) plus its count.'
+    "filter's paired `{test, marker}` set, or a path-level row kind (mixed residual / file total / "
+    'set total) plus its count.'
 )
 
 
@@ -709,3 +709,145 @@ def test_the_branch_b_escape_sentence_is_pinned() -> None:
 
     assert '--resolution pending' in branch_b
     assert 'pre-marker' in branch_b or 'Pre-marker' in branch_b
+
+
+# =============================================================================
+# D1 — the acceptance pairs each marker with its test
+# =============================================================================
+
+_JS_PAIR_PATH = 'src/pair.test.js'
+
+
+def test_an_accepted_skip_on_a_and_xfail_on_b_does_not_accept_skip_on_b(plan_context, tmp_path, monkeypatch) -> None:
+    """The L3-9 shape: a pairing change is NOT covered by the old marker-only superset."""
+    repo = _repo(tmp_path)
+    _commit(repo, {'README.md': 'readme\n'})
+    before = 'def test_a():\n    assert 1 == 1\n\ndef test_b():\n    assert 2 == 2\n'
+    _commit(repo, {'test/pair_test.py': before})
+    _git(repo, 'checkout', '--quiet', '-b', 'feature')
+    head_a = (
+        'import pytest\n\n'
+        '@pytest.mark.skip\n'
+        'def test_a():\n    assert 1 == 1\n\n'
+        '@pytest.mark.xfail\n'
+        'def test_b():\n    assert 2 == 2\n'
+    )
+    _commit(repo, {'test/pair_test.py': head_a})
+    monkeypatch.chdir(repo)
+    monkeypatch.setattr(_integrity, 'resolve_live_worktree', lambda _plan_id: repo)
+    monkeypatch.setattr(_attr, 'resolve_live_worktree', lambda _plan_id: None)
+    criteria = ['parser accepts input']
+    head_sha, hash_id = _mark_and_file(repo, plan_context, criteria, 'test/pair_test.py')
+    _close(head_sha, hash_id)
+
+    # b changes from xfail to skip: the marker KIND set is unchanged, the pairing is not.
+    head_b = head_a.replace('@pytest.mark.xfail\ndef test_b', '@pytest.mark.skip\ndef test_b')
+    _commit(repo, {'test/pair_test.py': head_b}, 'change b from xfail to skip')
+
+    payload = review_support.run_validate(PLAN_ID, 'functional', _sealed(tmp_path, criteria), None)
+
+    assert _blocking(payload), payload['findings']
+
+
+def test_a_java_method_added_after_an_accepted_one_is_raised(plan_context, tmp_path, monkeypatch) -> None:
+    """A second ``@Disabled`` in an accepted JVM class is a row the acceptance does not cover."""
+    java = (
+        'package com.example;\n\n'
+        'class FooTest {\n'
+        '    void a() {\n        assertTrue(true);\n    }\n\n'
+        '    void b() {\n        assertTrue(true);\n    }\n'
+        '}\n'
+    )
+    path = 'src/test/java/com/example/FooTest.java'
+    repo = _repo(tmp_path)
+    _commit(repo, {'README.md': 'readme\n'})
+    _commit(repo, {path: java})
+    _git(repo, 'checkout', '--quiet', '-b', 'feature')
+    disabled_a = java.replace('    void a() {', '    @Disabled\n    void a() {')
+    _commit(repo, {path: disabled_a})
+    monkeypatch.chdir(repo)
+    monkeypatch.setattr(_integrity, 'resolve_live_worktree', lambda _plan_id: repo)
+    monkeypatch.setattr(_attr, 'resolve_live_worktree', lambda _plan_id: None)
+    criteria = ['parser accepts input']
+    head_sha, hash_id = _mark_and_file(repo, plan_context, criteria, path)
+    _close(head_sha, hash_id)
+
+    disabled_b = disabled_a.replace('    void b() {', '    @Disabled\n    void b() {')
+    _commit(repo, {path: disabled_b}, 'disable b as well')
+
+    payload = review_support.run_validate(PLAN_ID, 'functional', _sealed(tmp_path, criteria), None)
+
+    assert _blocking(payload), payload['findings']
+
+
+def test_a_close_accepting_a_removal_with_no_validated_head_is_refused(plan_context, tmp_path) -> None:
+    """No prior record means no validated head: the accept is refused, not re-derived."""
+    repo = _repo(tmp_path)
+    _commit(repo, {'README.md': 'readme\n'})
+    _commit(repo, {'test/sample_test.py': BEFORE})
+    _git(repo, 'checkout', '--quiet', '-b', 'feature')
+    _commit(repo, {'test/sample_test.py': 'def test_a():\n    assert 1 == 1\n\ndef test_b():\n    assert 3 == 3\n'})
+    _lifecycle.cmd_create(
+        Namespace(
+            plan_id=PLAN_ID,
+            title='Accepted removals',
+            phases='1-init,2-refine,3-outline,4-plan,5-execute,6-finalize',
+            force=False,
+        )
+    )
+    _prepare_close(plan_context, ['parser accepts input'])
+    filed = _findings_core.add_qgate_finding(
+        PLAN_ID,
+        '6-finalize',
+        'qgate',
+        'bug',
+        'weakened_test at test/sample_test.py',
+        'a removed assertion [fix_kind correction]',
+        rule='functional-review',
+    )
+    assert filed['status'] == 'success', filed
+    head = _git(repo, 'rev-parse', 'HEAD')
+
+    closed = _loop_back.cmd_loop_back_close(
+        Namespace(
+            plan_id=PLAN_ID,
+            step=_loop_back.FUNCTIONAL_REVIEW_STEP,
+            head=head,
+            accept=[str(filed['hash_id'])],
+            rationale='the test removal is the deliverable',
+            waive_refire=[],
+        )
+    )
+
+    assert closed is not None and closed['status'] == 'error', closed
+    assert closed['error'] == 'accepted_removal_head_unvalidated', closed
+
+
+def test_a_java_class_with_only_the_accepted_method_disabled_raises_nothing(
+    plan_context, tmp_path, monkeypatch
+) -> None:
+    """Control: the same accepted row at the same head is still covered."""
+    java = (
+        'package com.example;\n\n'
+        'class FooTest {\n'
+        '    void a() {\n        assertTrue(true);\n    }\n\n'
+        '    void b() {\n        assertTrue(true);\n    }\n'
+        '}\n'
+    )
+    path = 'src/test/java/com/example/FooTest.java'
+    repo = _repo(tmp_path)
+    _commit(repo, {'README.md': 'readme\n'})
+    _commit(repo, {path: java})
+    _git(repo, 'checkout', '--quiet', '-b', 'feature')
+    disabled_a = java.replace('    void a() {', '    @Disabled\n    void a() {')
+    _commit(repo, {path: disabled_a})
+    monkeypatch.chdir(repo)
+    monkeypatch.setattr(_integrity, 'resolve_live_worktree', lambda _plan_id: repo)
+    monkeypatch.setattr(_attr, 'resolve_live_worktree', lambda _plan_id: None)
+    criteria = ['parser accepts input']
+    head_sha, hash_id = _mark_and_file(repo, plan_context, criteria, path)
+    _close(head_sha, hash_id)
+
+    payload = review_support.run_validate(PLAN_ID, 'functional', _sealed(tmp_path, criteria), None)
+
+    assert _blocking(payload) == [], payload['findings']

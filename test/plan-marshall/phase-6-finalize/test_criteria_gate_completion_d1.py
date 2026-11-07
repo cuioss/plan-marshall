@@ -23,7 +23,7 @@ from typing import Any
 import _criteria_snapshot as _snap
 import review_support
 
-from conftest import load_script_module
+from conftest import get_skill_dir, load_script_module
 
 PLAN_ID = 'lb70-criteria-gate-d1'
 _lifecycle = load_script_module('plan-marshall', 'manage-status', '_cmd_lifecycle.py', '_lb70_d1_lifecycle')
@@ -120,6 +120,67 @@ def test_plan_whose_review_is_scheduled_still_refuses_an_open_criterion(plan_con
     )
 
     assert result is not None and result['error'] == 'open_done_when_criteria', result
+
+
+def test_open_criteria_reports_review_dropped_for_a_dropped_review(plan_context, tmp_path) -> None:
+    """The triage source reads the SAME drop exemption the completion gate applies."""
+    plan_dir = _plan(plan_context, ['parser accepts input'], freeze_from=['parser accepts input'])
+    _manifest(plan_dir, ['pre-push-quality-gate', 'sonar-roundtrip'])
+    _status(plan_dir, {'use_worktree': False, 'scope_estimate': 'surgical'})
+
+    payload = _snap.open_criteria(PLAN_ID)
+
+    assert payload['source'] == 'review_dropped', payload
+    assert payload['open_count'] == 0, payload
+    assert payload['open'] == [], payload
+
+
+def test_open_criteria_still_reports_a_tampered_snapshot_with_a_dropped_review(plan_context, tmp_path) -> None:
+    """A deleted or edited snapshot is open regardless of the dropped review."""
+    plan_dir = _plan(plan_context, ['parser accepts input'], freeze_from=['parser accepts input'])
+    _manifest(plan_dir, ['pre-push-quality-gate'])
+    _status(plan_dir, {'use_worktree': False, 'scope_estimate': 'surgical'})
+    # Re-bind the freeze after the metadata rewrite, so the edit below reads as
+    # TAMPERED rather than as a never-frozen snapshot.
+    assert _snap.record_snapshot_digest(PLAN_ID) is True
+    snapshot = _snap.snapshot_path(PLAN_ID)
+    snapshot.write_text(snapshot.read_text(encoding='utf-8') + '\n', encoding='utf-8')
+
+    payload = _snap.open_criteria(PLAN_ID)
+
+    assert payload['source'] == 'frozen_tampered', payload
+    assert payload['open_count'] == 1, payload
+
+
+def test_open_criteria_keeps_a_scheduled_review_open(plan_context, tmp_path) -> None:
+    """Control: a manifest that schedules the review still reports the ungraded criterion."""
+    plan_dir = _plan(plan_context, ['parser accepts input'], freeze_from=['parser accepts input'])
+    _manifest(plan_dir, ['functional-review', 'pre-push-quality-gate'])
+    _status(plan_dir)
+
+    payload = _snap.open_criteria(PLAN_ID)
+
+    assert payload['source'] != 'review_dropped', payload
+    assert payload['open_count'] == 1, payload
+
+
+def test_triage_states_the_drop_exemption_once() -> None:
+    """The corrected triage text names the exemption and does not duplicate the gate sentence."""
+    triage = (get_skill_dir('plan-marshall', 'plan-marshall') / 'workflow' / 'triage.md').read_text(encoding='utf-8')
+
+    assert 'source: review_dropped' in triage
+    assert 'regardless of a dropped review' in triage
+    assert triage.count('the finalize completion gate refuses that exit independently') == 1, (
+        'the completion-gate sentence is duplicated in triage.md'
+    )
+
+
+def test_outline_routes_a_refreeze_decision_to_the_operator() -> None:
+    """A reachable ``refreeze_requires_decision`` is routed to the operator, not read as unreadable."""
+    text = (get_skill_dir('plan-marshall', 'phase-3-outline') / 'SKILL.md').read_text(encoding='utf-8')
+
+    assert 'refreeze_requires_decision' in text
+    assert 'criteria-refreeze-authorize' in text
 
 
 # --- D1 (b): open_criteria honours authorized changes, superseded and closures --------------
