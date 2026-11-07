@@ -239,6 +239,13 @@ def apply_selector_miss_guard(result: dict) -> dict:
     of a run that ran no test. Indeterminate stores no finding, synthesises no
     ``errors[]`` row, and still blocks every gate that requires ``success``.
 
+    Scope limit, stated rather than guessed: the runner prints its miss message on
+    its FAILURE path, so a miss suppressed with
+    ``-Dsurefire.failIfNoSpecifiedTests=false`` is visible only when it leaves the
+    run's collected count at zero. Inside a reactor where another module collected
+    tests, such a miss is invisible and the run stays green; that limit is
+    documented in ``build-maven/SKILL.md`` § "Test selectors".
+
     Args:
         result: A finished execution result (``execute_direct``'s dict).
 

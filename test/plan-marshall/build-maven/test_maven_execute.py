@@ -835,6 +835,35 @@ def test_unmeasured_summary_does_not_claim_the_run_executed_nothing(tmp_path):
     assert 'does not measure' in guarded['message'], guarded['message']
 
 
+def test_control_a_suppressed_partial_reactor_miss_is_the_documented_limit(tmp_path):
+    """CONTROL (recorded limit): an undetectable suppressed miss stays green.
+
+    With `-Dsurefire.failIfNoSpecifiedTests=false`, a module whose scan is empty
+    prints nothing and another module's summary keeps the aggregate positive, so
+    the log carries no signal that a selector was applied at all. The run is green
+    by design here; `build-maven/SKILL.md` § "Test selectors" states the limit.
+    """
+    log_file = tmp_path / 'suppressed-partial-miss.log'
+    log_file.write_text(
+        '[INFO] --- surefire:3.5.2:test (default-test) @ a ---\n'
+        '[INFO] Results:\n'
+        '[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0\n'
+        '[INFO] --- surefire:3.5.2:test (default-test) @ b ---\n'
+        '[INFO] BUILD SUCCESS\n',
+        encoding='utf-8',
+    )
+    result = {
+        'status': 'success',
+        'exit_code': 0,
+        'duration_seconds': 3,
+        'log_file': str(log_file),
+        'command': 'mvnw test',
+    }
+
+    assert apply_selector_miss_guard(result) is result
+    assert apply_zero_test_guard(result, 'test') is result
+
+
 def test_execute_direct_is_wired_to_the_zero_test_guard(tmp_path, monkeypatch):
     """The zero-test guard is REACHED by the executor, not merely available beside it."""
     monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))

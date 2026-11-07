@@ -81,7 +81,9 @@ The existing Maven parse pipeline, the `openrewrite_info` categorization, and th
 
 The selector grammar, stated once here for the whole corpus: **Classes are separated by commas, and a method goes after `#`** — `-Dtest=AwaitsTest,CoreTest#runs`. A `+` between classes joins them into one pattern, and one pattern matches nothing, so `-Dtest=Awaits+Core` selects no test at all. `Class#a+b` is Surefire's method list: it runs methods `a` and `b` of `Class`, and it is valid syntax — the `+` separator means "method" only after the `#`.
 
-A selector that matches nothing is a wrong command, not a test result. `run` reports it as `test_selector_matched_nothing` — an `indeterminate` result naming the selector — whether Surefire fails the build with `No tests matching pattern … were executed` or `-Dsurefire.failIfNoSpecifiedTests=false` turns the same miss into an exit-0 summary of zero executed tests.
+A selector that matches nothing is a wrong command, not a test result. `run` reports it as `test_selector_matched_nothing` — an `indeterminate` result naming the selector — whether the runner fails the build with `No tests matching pattern … were executed` or `-Dsurefire.failIfNoSpecifiedTests=false` turns the same miss into an exit-0 summary of zero executed tests.
+
+**Recorded limit — a suppressed miss inside a reactor is not detectable.** With `-Dsurefire.failIfNoSpecifiedTests=false`, a module whose scan is empty returns through the runner's own no-tests path: it prints no `No tests matching pattern` line, and when another module collected tests the aggregate count is non-zero. Such a run reports `success`, and no signal in the log distinguishes it from one whose selector matched everywhere. Detection therefore needs the default setting (a failing build, where the runner names the pattern) or a single-module run (where the aggregate is zero and the zero-test check reports `test_run_executed_nothing`). Stating the limit is deliberate: the alternative would be to guess a miss from a run that says nothing about one.
 
 ## Module Discovery
 
