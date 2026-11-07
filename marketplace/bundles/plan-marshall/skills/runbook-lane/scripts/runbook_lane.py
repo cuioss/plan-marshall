@@ -80,9 +80,13 @@ _SONAR_CONFIG_KEY = 'workflow-integration-sonar'
 _SONAR_STATES = ('configured', 'not_configured')
 _SONAR_COUNT_STATUSES = ('confirmed', 'undecidable', 'unconfigured')
 
-#: The landing's optional Sonar facts, on the per-step typed-fact channel the
-#: lifecycle's ``sonar-roundtrip`` step already uses, so one measurement rides one
-#: channel.
+#: The landing's required Sonar count key. One spelling for one measurement: the
+#: schema, the gate's read and this renderer all name the same field, so a
+#: landing cannot carry the figure under a second name the check does not require.
+_SONAR_OPEN_ISSUES_FACT = 'sonar_open_new_issues'
+
+#: The landing's OPTIONAL Sonar rules fact, on the per-step typed-fact channel the
+#: lifecycle's ``sonar-roundtrip`` step already uses.
 _SONAR_FACT_STEP = 'sonar-roundtrip'
 
 #: The provider's own CE-readiness default, used when the active target imposes no
@@ -2005,19 +2009,18 @@ def cmd_sonar_gate(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def cmd_sonar_facts(args: argparse.Namespace) -> dict[str, Any]:
-    """Render the landing's optional Sonar facts from the read taken at the merge head.
+    """Render the landing's Sonar facts from the read taken at the merge head.
 
-    Two facts on the per-step typed-fact channel the lifecycle's
-    ``sonar-roundtrip`` step already uses — one measurement, one channel:
-    ``step.sonar-roundtrip.open_issue_count`` and
-    ``step.sonar-roundtrip.open_issue_rules``.
+    The COUNT is the landing's required ``sonar_open_new_issues`` key — one
+    spelling for one measurement, so the gate, the facts and the schema cannot
+    drift apart — and the RULES it left open ride the OPTIONAL per-step channel
+    (``step.sonar-roundtrip.open_issue_rules``) beside it.
 
     The two sentinels are the point of the verb. A confirmed read carries the
     MEASURED count. An ``undecidable`` read carries ``unknown`` — a failed read
     asserts that nothing was observed and never collapses into ``0``, which is a
     claim the run did not earn. A project without Sonar carries ``n/a``, the
-    answered absence. Both facts are OPTIONAL in the landing, so the required key
-    set is untouched and no earlier landing becomes incomplete.
+    answered absence, which is a legal value for the required count.
     """
     state = getattr(args, 'state', None)
     if state not in _SONAR_STATES:
@@ -2088,7 +2091,7 @@ def cmd_sonar_facts(args: argparse.Namespace) -> dict[str, Any]:
         'open_issue_count': count,
         'open_issue_rules': rules,
         'fact_lines': [
-            f'step.{_SONAR_FACT_STEP}.open_issue_count={count}',
+            f'{_SONAR_OPEN_ISSUES_FACT}={count}',
             f'step.{_SONAR_FACT_STEP}.open_issue_rules={rules}',
         ],
     }

@@ -98,13 +98,19 @@ retries, harness kills, unusually expensive phases, verification loop iterations
 CI outcome, merge path (queue/direct), rebase conflicts or re-verify signals — surface
 collisions observed here feed the next pairing decision.}
 
-- Review: {bots, actionable findings, dispositions}
+- Review: {bots, actionable findings, dispositions}. Read the landing's three review numbers back
+  against the provider: `unresolved_review_threads` (the head's open review threads),
+  `review_body_findings_total` (what the reviewers' bodies declared) and
+  `review_body_findings_handled` (how many carry a disposition naming a commit or a stated reason).
+  A number the re-read contradicts is recorded here as a **false claim**, not as a rounding
+  difference.
 - CI/merge: {outcome, path, conflicts}
-- Sonar: {the landing's `step.sonar-roundtrip.open_issue_count` and `open_issue_rules` against what
-  this analysis can see of the merge head — the measured figure, or `unknown` for a failed read
-  (never `0`), or `n/a` for a project without Sonar. Compare the measured figure with the lane's own
-  claim: a landing that reports a clean run beside a non-zero count, or a `0` the read never
-  measured, is an anomaly.}
+- Sonar: the landing's required `sonar_open_new_issues` against what this analysis can see of the
+  merge head — the measured figure, or `unknown` for a failed read (never `0`), or `n/a` for a
+  project without Sonar. Compare the measured figure with the lane's own claim: a landing that
+  reports a clean run beside a non-zero count, or a `0` the read never measured, is an anomaly.
+  Where the landing also carries the optional `step.sonar-roundtrip.open_issue_rules`, name the
+  rules it left open.
 
 ## Reconciliation Actions
 

@@ -2872,7 +2872,10 @@ _TEMPLATE_FACT_VALUES: dict[str, str] = {
     'plugin_version': '0.1.1919',
     'executor_version': '0.1.1919',
     'steps': 'setup:done,implement:done,build-gate:done,self-review:clear,pr:done,reviews:done,merge:done',
-    'step.sonar-roundtrip.open_issue_count': '0',
+    'unresolved_review_threads': '0',
+    'review_body_findings_total': '4',
+    'review_body_findings_handled': '4',
+    'sonar_open_new_issues': 'n/a',
     'step.sonar-roundtrip.open_issue_rules': 'none',
 }
 

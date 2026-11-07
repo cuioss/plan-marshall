@@ -143,11 +143,12 @@ python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane sonar-fa
   [--open-count N] [--rules "R1,R2"]
 ```
 
-Renders the landing's optional Sonar facts (section 8) from the read taken at the merge head:
-`step.sonar-roundtrip.open_issue_count` and `step.sonar-roundtrip.open_issue_rules` in `fact_lines`.
-A confirmed count carries the measured figure and the rules it left open (`--rules` is required
-above zero, and `none` at a measured `0`); `undecidable` and `unconfigured` both carry `unknown`, and
-a project without Sonar carries `n/a` at both.
+Renders the landing's Sonar facts (section 8) from the read taken at the merge head:
+`sonar_open_new_issues` — the landing's REQUIRED count key, one spelling for one measurement — and
+`step.sonar-roundtrip.open_issue_rules` in `fact_lines`. A confirmed count carries the measured figure
+and the rules it left open (`--rules` is required above zero, and `none` at a measured `0`);
+`undecidable` and `unconfigured` both carry `unknown`, and a project without Sonar carries `n/a` at
+both — the answered absence, which is a legal value for the required count.
 
 ### review-gate
 
@@ -846,22 +847,30 @@ effort={the effort level measured with the model}
 plugin_version={the plan-marshall bundle version}
 executor_version={the executor version when resolve returned one; drop this line when it did not (optional)}
 steps=setup:done,implement:done,build-gate:done,self-review:{clear|budget-exhausted},pr:done,reviews:done,merge:done
-step.sonar-roundtrip.open_issue_count={measured count|unknown|n/a}
+unresolved_review_threads={review-gate fact|unknown}
+review_body_findings_total={review-gate fact|unknown}
+review_body_findings_handled={review-gate fact|unknown}
+sonar_open_new_issues={measured count|n/a|unknown}
 step.sonar-roundtrip.open_issue_rules={rules left open|none|unknown|n/a}
 ```
 
 - **Values:** for a required key, write `unknown` for anything you could not read, never `n/a` and
   never a guess. `deliverables_done` counts only fully met deliverables. The optional per-step facts
   below carry their own two sentinels, where `n/a` is a legal answered absence.
-- **Sonar (optional):** when `sonar` is `configured`, render the two facts with
+- **The review numbers (required):** `unresolved_review_threads`, `review_body_findings_total` and
+  `review_body_findings_handled` are the `review-gate` call's own `unresolved_review_threads`,
+  `review_body_findings_total` and `review_body_findings_handled` facts, from the read taken on the
+  merge head — never a number recalled from the review cycle, and never `n/a`. A landing that omits
+  them is rejected by `inbox landing-check`, so a "all handled" claim has its numbers behind it.
+- **Sonar (the count is required):** `sonar_open_new_issues` is a required field. When `sonar` is
+  `configured`, render it with
   `python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane sonar-facts --state configured --count-status {confirmed|undecidable|unconfigured} [--open-count {n}] [--rules "{r1,r2}"]`
-  and write its `fact_lines` verbatim. When it is `not_configured`, render them with
-  `--state not_configured` and write `n/a` at both. They are the lane's own measurement of the
-  merge head — the open new-code issue count and the rules of the issues left open there — and they
-  are **optional**: the required key set above is unchanged, so their absence never makes a landing
-  incomplete. A confirmed count writes the measured figure, with the rules it left open (`none`
-  when that count is `0`). An `undecidable` or `unconfigured` read writes `unknown` at both: both
-  are failed reads, never `0`, and never a claim the run did not earn.
+  and write its `fact_lines` verbatim; when it is `not_configured`, render with
+  `--state not_configured` and write `n/a` at the count (a project with no Sonar has no such number —
+  one of the four keys at which `n/a` is a legal answer). A confirmed count writes the measured
+  figure, with the rules it left open on the optional `step.sonar-roundtrip.open_issue_rules` line
+  (`none` when that count is `0`). An `undecidable` or `unconfigured` read writes `unknown` at both:
+  both are failed reads, never `0`, and never a claim the run did not earn.
 - **Runtime stamp:** `harness`, `model`, `effort`, `plugin_version` and the optional `executor_version` are
   the resolve result's fields of those names, resolved from the platform-runtime `runtime-info` seam.
   Read the stamp from a `resolve` **re-run at landing time**, not from the setup-time result, so a model

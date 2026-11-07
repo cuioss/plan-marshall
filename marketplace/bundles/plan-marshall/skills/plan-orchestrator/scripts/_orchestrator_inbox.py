@@ -1372,6 +1372,20 @@ LANDING_FACTS_SCHEMA = 'landing-facts/1'
 #: comparison, which is the whole reason they are recorded. Every landing emitted
 #: before they were required is INCOMPLETE — accepted deliberately, with no
 #: grandfather rule.
+#:
+#: The four review-and-Sonar numbers are the MEASUREMENTS behind a landing's
+#: "all handled" claim: ``unresolved_review_threads``,
+#: ``review_body_findings_total``, ``review_body_findings_handled`` and
+#: ``sonar_open_new_issues``. They are written from the merge gate's own reads
+#: (``review-gate`` and ``sonar-gate``), never from memory, so a landing that
+#: asserted a clean merge with nothing checkable behind it is now INCOMPLETE.
+#: ``sonar_open_new_issues`` is the one field that may legitimately be ``n/a`` —
+#: a project that does not analyse with Sonar has no such number — so it stays
+#: outside :data:`LANDING_SENTINEL_REJECTING_KEYS`; a FAILED read is ``unknown``
+#: there as at every key. A lane text that predates these keys writes none of
+#: them and is rejected under the SAME schema version, naming the four keys in
+#: ``missing_keys``: a schema bump would collapse the diagnosis to ``['schema']``
+#: and tell the operator nothing about what to add.
 LANDING_REQUIRED_KEYS: tuple[str, ...] = (
     'schema',
     'plan_id',
@@ -1386,6 +1400,10 @@ LANDING_REQUIRED_KEYS: tuple[str, ...] = (
     'effort',
     'plugin_version',
     'steps',
+    'unresolved_review_threads',
+    'review_body_findings_total',
+    'review_body_findings_handled',
+    'sonar_open_new_issues',
 )
 
 #: The ANSWERED-degraded class: a value a producer is SANCTIONED to write
@@ -1451,6 +1469,9 @@ LANDING_SENTINEL_REJECTING_KEYS: frozenset[str] = frozenset(
         'effort',
         'plugin_version',
         'steps',
+        'unresolved_review_threads',
+        'review_body_findings_total',
+        'review_body_findings_handled',
     }
 )
 

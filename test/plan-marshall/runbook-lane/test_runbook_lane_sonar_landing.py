@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for the landing's optional Sonar fact — the measured figure, not the gate's word.
+"""Tests for the landing's Sonar fact — the measured figure, not the gate's word.
 
 A lane run that reported "quality gate passed" while the pull request's own open
 issues stayed open could not be checked, because its landing carried no figure.
-The landing now carries the open-issue count measured at the merge head on the
-optional per-step channel, with two sentinels that are not the same claim:
-``unknown`` for a read that failed (never ``0``), and ``n/a`` for a project that
-does not analyse with Sonar.
+The landing now carries the open-finding count measured at the merge head as the
+REQUIRED ``sonar_open_new_issues`` key, with the rules it left open on the
+OPTIONAL per-step channel beside it, and with two sentinels that are not the same
+claim: ``unknown`` for a read that failed (never ``0``) — which leaves the
+landing INCOMPLETE, because the number is required — and ``n/a`` for a project
+that does not analyse with Sonar, the answered absence.
 
-The required key set is pinned here as an exact tuple: the fact is OPTIONAL, so
-adding it must leave every earlier landing complete.
+The required key set is pinned here as an exact tuple, so a key added to or
+removed from the schema turns this red.
 """
 
 from __future__ import annotations
@@ -31,7 +33,7 @@ LANDING_REQUIRED_KEYS = _inbox.LANDING_REQUIRED_KEYS
 
 _SCRIPT = get_scripts_dir('plan-marshall', 'runbook-lane') / 'runbook_lane.py'
 
-_COUNT_FACT = 'step.sonar-roundtrip.open_issue_count'
+_COUNT_FACT = 'sonar_open_new_issues'
 _RULES_FACT = 'step.sonar-roundtrip.open_issue_rules'
 
 
@@ -45,7 +47,12 @@ def _facts_args(state: str = 'configured', count_status: str | None = 'confirmed
 
 
 def _landing(fact_lines: list[str]) -> str:
-    """A landing in the shape section 8 prescribes, carrying the given extra fact lines."""
+    """A landing in the shape section 8 prescribes, carrying the given extra fact lines.
+
+    The four review-and-Sonar numbers are REQUIRED, so the base block carries an
+    all-zero/``n/a`` sample and the Sonar lines a caller passes override it — one
+    block, no duplicate key for the parser to choose between.
+    """
     required = [
         'schema=landing-facts/1',
         'plan_id=rb-fixture',
@@ -61,8 +68,14 @@ def _landing(fact_lines: list[str]) -> str:
         'effort=high',
         'plugin_version=0.1',
         'steps=setup:done,implement:done,build-gate:done,self-review:clear,pr:done,reviews:done,merge:done',
+        'unresolved_review_threads=0',
+        'review_body_findings_total=0',
+        'review_body_findings_handled=0',
+        'sonar_open_new_issues=n/a',
     ]
-    body = '\n'.join(required + fact_lines)
+    merged = dict(line.split('=', 1) for line in required)
+    merged.update(dict(line.split('=', 1) for line in fact_lines))
+    body = '\n'.join(f'{key}={value}' for key, value in merged.items())
     return f'```landing-facts\n{body}\n```\n\n## Residue\n\nnone\n'
 
 
@@ -159,14 +172,25 @@ def test_a_landing_carrying_the_confirmed_fact_is_complete() -> None:
     assert check_landing_completeness(_landing(list(facts['fact_lines']))) == (True, [])
 
 
-def test_a_landing_carrying_the_unknown_fact_is_complete() -> None:
-    """The fact is optional, so an unknown Sonar figure never makes a landing incomplete."""
+def test_a_landing_whose_sonar_read_failed_is_incomplete() -> None:
+    """`sonar_open_new_issues` is REQUIRED: `unknown` is a failed read, never `0`."""
     facts = cmd_sonar_facts(_facts_args(count_status='undecidable'))
+
+    complete, missing = check_landing_completeness(_landing(list(facts['fact_lines'])))
+
+    assert facts['fact_lines'][0] == f'{_COUNT_FACT}=unknown'
+    assert complete is False
+    assert missing == [_COUNT_FACT]
+
+
+def test_a_project_without_sonar_still_drains_complete() -> None:
+    """`n/a` at the required count is the answered absence, not a gap."""
+    facts = cmd_sonar_facts(_facts_args(state='not_configured', count_status=None))
 
     assert check_landing_completeness(_landing(list(facts['fact_lines']))) == (True, [])
 
 
-def test_the_required_landing_key_set_is_unchanged() -> None:
+def test_the_required_landing_key_set_names_the_review_and_sonar_numbers() -> None:
     assert LANDING_REQUIRED_KEYS == (
         'schema',
         'plan_id',
@@ -181,8 +205,11 @@ def test_the_required_landing_key_set_is_unchanged() -> None:
         'effort',
         'plugin_version',
         'steps',
+        'unresolved_review_threads',
+        'review_body_findings_total',
+        'review_body_findings_handled',
+        'sonar_open_new_issues',
     )
-    assert not any('sonar' in key for key in LANDING_REQUIRED_KEYS)
 
 
 @pytest.mark.parametrize(
