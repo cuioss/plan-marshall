@@ -18,8 +18,9 @@ workstream: WS-04
 >
 > Ruling check. This is a merge-gate integrity defect (a lane merges with findings open and reports "all handled"), so it is graded
 > blocking under the epic's focus rule. It contains no token or measurement work. D3 touches Sonar behaviour of the shared lane for
-> projects that have Sonar; it enables nothing in this repository, where Sonar stays off. D3 is separable and is dropped if the
-> operator rules the Sonar ruling covers it.
+> projects that have Sonar; it enables nothing in this repository, where Sonar stays off. The operator ruled on 2026-11-07 that the Sonar ruling stops at
+> this repository: where Sonar is configured for a project and for the plan, the lane must not miss any Sonar finding, so D3 and the
+> Sonar field of D2 stay and D3 also closes the read side (security hotspots, a paging total).
 
 ## Objective
 
@@ -73,10 +74,24 @@ evidence claim without an artifact is reported as not evidenced.
    - The question tool never offers "merge on the recorded evidence" while the open count is above 0 or `review-gate` is `false`.
      An undecidable read stays a stop.
    - The progress-file Sonar line drops the lane-recorded dismissals and records the operator's selection instead.
+   - **Operator ruling, 2026-11-07: where Sonar is configured, for the project and for the plan, the lane must not miss any Sonar
+     finding.** The ruling is scoped to a configured project; where `resolve` reports `not_configured` nothing is read, collected or
+     required, exactly as before. For a configured project the read must be complete, so D3 also closes the read side:
+     - The configured read covers the findings Sonar reports as new-code work on the pull request: the open new-code issues (as
+       `read_open_issues` reads them today) AND the security hotspots still to review. The issue search does not return hotspots
+       (`sonar_rest.py:282-286`), and `read_open_issues` (`sonar.py:581-639`) reads the issue search only, so an unreviewed hotspot is
+       missed today. A hotspot to review counts toward the open count the gate decides on, and its key is enumerated like an issue's.
+     - A count the read cannot show to be complete is `undecidable`, never a number: a response whose `paging.total` exceeds the page it
+       carries, or carries none, is a stop. The read already returns the total beside the page; the lane step must test it.
+     - Settle first, at outline, whether the project's new-code quality-gate status (`/api/qualitygates/project_status`, read by
+       `sonar_rest.py:173-186`) can fail for a reason that is neither an issue nor a hotspot, and record whether such a failure is a
+       finding for this rule; a failing quality gate is at least reported in the landing.
 
    *Done when:* `sonar-gate` refuses a lane dismissal (a fixture that supplies the old flag fails with a named error), still admits a
    confirmed 0, still stops on `undecidable` and `unconfigured`, and admits a key only when it is supplied as an operator selection.
-   The existing Sonar tests are updated, not deleted.
+   The existing Sonar tests are updated, not deleted. A configured-project fixture with one unreviewed security hotspot and zero issues
+   does NOT answer a confirmed 0 (red at HEAD, where the read returns 0); a fixture whose response total exceeds its page is
+   `undecidable`; a `not_configured` fixture still reads nothing and requires nothing.
 
 4. **The lane reads its mailbox at setup, before self-review and before enqueue.**
    - `resolve` publishes the command that reads the lane's delivered mailbox, as it already publishes `inbox_write_command`.
@@ -161,6 +176,15 @@ into concurrent plans would collide; run any split in sequence.
   - verdict: corroborated | checked_at: f84eb0e36bc5787ffca65c8d392d46ffb83a9126 | by: live-blockers/cleanup | rescoped: n/a | evidence: no review gate, unresolved-thread condition or Follow-ups parser exists after LB-119; clause applies as written
 - Verify-first clause (D2): read how the landing check treats an unknown key and a missing key today, before choosing the
   compatibility path.
+- OBSERVED: the lane's configured read is `read_open_issues`, which queries `/api/issues/search` with `inNewCodePeriod=true`,
+  `resolved=false` and `ps=500` and returns `paging.total` beside the page — `workflow-integration-sonar/scripts/sonar.py:581-639`; the
+  step that calls it is `runbook-lane/SKILL.md` section 6 step 4. The hotspot read is a separate verb of the REST client —
+  `sonar_rest.py:282-333` — and its own docstring says hotspots are not returned by the issue search.
+- HYPOTHESIS: no lane step reads security hotspots, so a configured project with an unreviewed new-code hotspot and no open issue
+  passes `sonar-gate` as a confirmed 0 — confirm/refute at `runbook-lane/SKILL.md` section 6 step 4 and section 7 and at
+  `sonar.py` `read_open_issues` (verify-at-outline). It decides whether D3's read-side bullet is a code change or only text.
+- Verify-first clause (D3): before editing, write the hotspot fixture and run it at HEAD; it must be red. If the read already counts
+  hotspots, D3's read-side bullet is closed and only the paging test remains.
   - verdict: corroborated | checked_at: f84eb0e36bc5787ffca65c8d392d46ffb83a9126 | by: live-blockers/cleanup | rescoped: n/a | evidence: landing check field set untouched by the three merges; clause applies as written
 
 ## Expected Surface
@@ -170,6 +194,9 @@ into concurrent plans would collide; run any split in sequence.
 - OBSERVED: `test/plan-marshall/runbook-lane/test_runbook_lane.py` — resolve and new verb fixtures (D1, D4)
 - OBSERVED: `test/plan-marshall/runbook-lane/test_runbook_lane_sonar.py` — the gate tests that change (D3)
 - OBSERVED: `test/plan-marshall/runbook-lane/test_runbook_lane_sonar_landing.py` — the facts tests that change (D2)
+- OBSERVED: `marketplace/bundles/plan-marshall/skills/workflow-integration-sonar/scripts/sonar.py` — `read_open_issues` covers the hotspots to review and tests its paging total (D3)
+- HYPOTHESIS: `marketplace/bundles/plan-marshall/skills/workflow-integration-sonar/scripts/sonar_rest.py` — only if the hotspot read is reused from the REST client (D3; verify-at-outline)
+- HYPOTHESIS: `test/plan-marshall/workflow-integration-sonar/` — the read fixtures (D3; verify-at-outline)
 - HYPOTHESIS: `marketplace/bundles/plan-marshall/skills/plan-orchestrator/scripts/_orchestrator_inbox.py` — the required-field set and the landing check (D2; verify-at-outline)
 - HYPOTHESIS: `marketplace/bundles/plan-marshall/skills/plan-orchestrator/workflow/analyze.md` — the re-read step (D2; verify-at-outline)
 - HYPOTHESIS: `marketplace/bundles/plan-marshall/skills/plan-orchestrator/templates/landing-analysis.md` — the facts list (D2; verify-at-outline)
