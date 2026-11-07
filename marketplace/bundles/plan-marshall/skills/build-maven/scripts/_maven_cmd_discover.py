@@ -621,9 +621,9 @@ def _parse_pom_xml(pom_path: Path) -> dict:
               activated by ``activeByDefault``, the one activation this cheap
               parse can read. A ``modules`` block inside a profile that needs an
               explicit ``-P``, or that is activated by a property or a JDK
-              condition, is NOT included: the root then keeps no reactor test
-              canonical, which under-grants and is backstopped by the run path's
-              zero-test check.
+              condition, is NOT included, so the root keeps no reactor test
+              canonical for those modules and the gate records DEGRADED rather
+              than running them.
             - ``profile_ids``: declared ``/project/profiles/profile/id`` values.
             - ``description``: ``<description>`` text (or ``None``).
             - ``parent``: ``groupId:artifactId`` of ``<parent>`` (or ``None``).
@@ -693,15 +693,17 @@ def _parse_module_entries(root: ET.Element) -> list[str]:
     ``/project/modules/module`` is always the reactor. A profile's ``modules``
     block is included only when that profile declares
     ``activation/activeByDefault`` true — the one activation a cheap POM parse can
-    evaluate. A profile activated by a property, a JDK or OS condition, a file's
-    presence, or an explicit ``-P`` is not followed. Maven also switches an
-    ``activeByDefault`` profile OFF when another profile in the same POM is
-    activated, which this parse cannot see, so such a profile may be counted for a
-    build that would not include it; the run path's zero-test check backstops the
-    resulting grant. The omission under-grants (the root keeps no test canonical
-    for those modules) and the same check reports such a run as
-    ``test_run_executed_nothing`` instead of green, so an under-grant is never a
-    false green.
+    evaluate. Two directions follow, and they differ:
+
+    - A profile activated by a property, a JDK or OS condition, a file's presence,
+      or an explicit ``-P`` is not followed, so the root keeps no test canonical
+      for those modules. That UNDER-grants: the gate records DEGRADED instead of
+      running them, and no false green is produced.
+    - Maven switches an ``activeByDefault`` profile OFF when another profile in the
+      same POM is activated, which this parse cannot see, so such a profile may be
+      counted for a build that does not include it. That may OVER-grant a
+      canonical, and the run path's zero-test check is what reports the resulting
+      empty run as ``test_run_executed_nothing`` instead of green.
 
     Args:
         root: The POM's root ``<project>`` element.
