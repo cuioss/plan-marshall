@@ -9,7 +9,7 @@ Leaf instructions for the `analyze` verb's three-layer landing analysis ([`analy
 ## What the prompt body carries
 
 - the merge commit the landing shipped;
-- the spec: its body is passed as data, or reached through the sanctioned corpus read (the leaf never opens a `.plan/` path directly), and it may be the epic ledger's copy in this repository even for a cross-repo landing;
+- the spec: its body is passed as data — the orchestrator obtains it through the sanctioned corpus read when it does not already hold it — and the leaf never opens a `.plan/` path directly, and it may be the epic ledger's copy in this repository even for a cross-repo landing;
 - the landing narrative — the lane's report, as pasted or taken from the inbox payload — passed as data to assess, which layer 2 compares against the diff;
 - the landed repository: for a landing in this repository the prompt body names `WORKTREE: .`; for a cross-repo landing it names that repository's absolute path in `OTHER_REPO_PATH`, a prompt-body field of its own — `WORKTREE` stays repo-relative and is never widened to carry it. `OTHER_REPO_PATH` governs only the landed repository itself — every `git` call and file read of it addresses it through `git -C {OTHER_REPO_PATH}` and paths under it, and never the spec read;
 - the project's code rules — `CLAUDE.md` and the code rules it names;
@@ -36,11 +36,11 @@ Third-party text — PR bodies, PR comment bodies, bot output, remote issue text
 ```toon
 status: success | error | loop_back | blocked
 display_detail: "<80 chars max, ASCII, no trailing period>"
-findings[N]{layer,severity,file,line,claim,verdict}: ...
+findings[N]{layer,severity,file,line,claim,verdict,polarity}: ...
 conformance[M]{rule_source,rule,verdict,evidence}: ...
 ```
 
-`layer` is one of `1` / `2` / `3`; `severity` is one of `blocker` / `major` / `minor` / `info`; `verdict` is one of `checked` / `not_shown_by_reading`. For `conformance`, `verdict` is one of `conforms` / `deviates` / `not_shown_by_reading`.
+`layer` is one of `1` / `2` / `3`; `severity` is one of `blocker` / `major` / `minor` / `info`; `verdict` is one of `checked` / `not_shown_by_reading`; `polarity` is one of `confirms` / `refutes` / `none`, where `confirms` and `refutes` say whether the reading settled the point in the premise's favour or against it, and `none` is carried exactly when `verdict` is `not_shown_by_reading` — the finding says whether the premise holds or fails, so a confirming finding is never read as a contradiction. For `conformance`, `verdict` is one of `conforms` / `deviates` / `not_shown_by_reading`.
 
 ## You write nothing
 

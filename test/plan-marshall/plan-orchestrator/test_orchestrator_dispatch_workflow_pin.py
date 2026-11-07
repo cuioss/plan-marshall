@@ -330,7 +330,7 @@ class TestThreeLayerAnalysisDispatchIsPinned:
                 f'the three-layer dispatch bullet does not name the {layer!r} layer — the leaf can be '
                 'dispatched with no layer instruction while Step 4 still defines them'
             )
-        assert 'findings[N]{layer,severity,file,line,claim,verdict}' in bullet, (
+        assert 'findings[N]{layer,severity,file,line,claim,verdict,polarity}' in bullet, (
             'the three-layer dispatch bullet does not declare the three-layer return shape'
         )
 
