@@ -1187,9 +1187,11 @@ def _child_resolves_plan_itself(plan_id: str, tree: str) -> bool:
     a comparison rather than an existence check: omitting the carry there would let
     the child build that other tree while the caller attributes the result to this
     one. A tree without its own ``.plan/local``, and a record that cannot be read or
-    carries no recognised discriminator, are all read as "does not resolve to this
-    tree" — the fail-safe direction, because the carry is what makes the child
-    build where the routing process decided.
+    parsed, are read as "does not resolve to this tree" — the fail-safe direction,
+    because the carry is what makes the child build where the routing process
+    decided. A readable record whose metadata states no worktree, or states one that
+    is not ``materialized``, reads as ``disabled`` / ``pending``: the child resolves
+    to its own checkout root, which is this tree, so the carry is omitted.
 
     Args:
         plan_id: The real plan id the routed argv names.
@@ -1210,7 +1212,12 @@ def _child_resolves_plan_itself(plan_id: str, tree: str) -> bool:
         return True
     if not worktree_path:
         return False
-    return os.path.abspath(str(worktree_path)) == os.path.abspath(tree)
+    # ``realpath`` on both sides: the persisted path is not guaranteed to be
+    # canonical, and the routing process's own tree already went through
+    # ``resolve()``. Comparing raw spellings would treat two symlinked names of one
+    # directory as different trees, append the carry, and hand a surface-predating
+    # executor the flag it refuses — the failure this predicate exists to avoid.
+    return os.path.realpath(str(worktree_path)) == os.path.realpath(tree)
 
 
 def _flag_value(argv: list[str], flag: str) -> str | None:

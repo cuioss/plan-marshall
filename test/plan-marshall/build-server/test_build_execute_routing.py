@@ -432,9 +432,13 @@ def test_route_hand_back_carries_queued_seconds_when_the_bound_expires(use_fake_
     """A job still ``queued`` at the bound returns a hand-back, never
     ``indeterminate`` — and the hand-back says how long it has waited.
 
-    The bound is shortened so the test exercises the real expiry path (one wait,
-    then the hand-back) instead of sleeping the production 300 s.
+    The clock is scripted rather than shortened to a tiny bound: the expiry has to
+    fall after the first wait, and a real 50 ms bound made that a race with how long
+    the wait itself took. The ticks are route entry, the loop's remaining-time read,
+    and the post-wait read that trips the bound.
     """
+    ticks = iter([1000.0, 1000.0, 1000.06])
+    monkeypatch.setattr(factory.time, 'monotonic', lambda: next(ticks, 1000.06))
     monkeypatch.setattr(factory, '_DAEMON_WAIT_BOUND_SECONDS', 0.05)
     client = use_fake_client(
         preflight={'status': 'success', 'preflight': 'ready'},
