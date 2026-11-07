@@ -1,0 +1,102 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
+"""
+fix.py - Plugin component fix tools.
+
+Consolidated from:
+- extract-fixable-issues.py → extract subcommand
+- categorize-fixes.py → categorize subcommand
+- apply-fix.py → apply subcommand
+- verify-fix.py → verify subcommand
+
+Manages extraction, categorization, application, and verification of fixes.
+
+Output: JSON to stdout.
+
+Usage:
+    fix.py extract --input <diagnosis.json>
+    fix.py categorize --input <extracted.json>
+    fix.py apply --fix <fix.json> --bundle-dir <path>
+    fix.py verify --fix-type <type> --file <path>
+"""
+
+import argparse
+
+from _cmd_apply import FIX_HANDLERS, apply_signature_docstring_fix, cmd_apply
+from _cmd_categorize import cmd_categorize
+from _cmd_extract import cmd_extract
+from _cmd_verify import cmd_verify
+from file_ops import output_toon, safe_main
+
+# Public re-export of the simplification fix surface. The five SIMPLICITY_*
+# rules are detected in _analyze_simplicity.py; only SIMPLICITY_SIGNATURE_DOCSTRING
+# carries a mechanical auto-apply handler (delete the restating docstring) —
+# the other four are confirm-before-apply (fixable=False) human-review findings.
+# FIX_HANDLERS holds the type→handler map consumed by apply_single_fix.
+__all__ = ['FIX_HANDLERS', 'apply_signature_docstring_fix', 'main']
+
+
+@safe_main
+def main() -> int:
+    """Main entry point."""
+    parser = argparse.ArgumentParser(
+        description='Plugin component fix tools',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        allow_abbrev=False,
+        epilog="""
+Examples:
+  # Extract fixable issues from diagnosis
+  %(prog)s extract --input diagnosis.json
+
+  # Categorize fixes as safe/risky
+  %(prog)s categorize --input extracted.json
+
+  # Apply a fix
+  %(prog)s apply --fix fix.json --bundle-dir /path/to/bundle
+
+  # Verify a fix was applied
+  %(prog)s verify --fix-type missing-frontmatter --file agent.md
+""",
+    )
+
+    subparsers = parser.add_subparsers(dest='command', required=True, help='Operation to perform')
+
+    # extract subcommand
+    p_extract = subparsers.add_parser('extract', help='Extract fixable issues', allow_abbrev=False)
+    p_extract.add_argument(
+        '--input', '-i', default='-', help="Path to diagnosis JSON file, or '-' for stdin (default: stdin)"
+    )
+    p_extract.set_defaults(func=cmd_extract)
+
+    # categorize subcommand
+    p_categorize = subparsers.add_parser('categorize', help='Categorize fixes as safe/risky', allow_abbrev=False)
+    p_categorize.add_argument(
+        '--input', '-i', default='-', help="Path to extracted issues JSON, or '-' for stdin (default: stdin)"
+    )
+    p_categorize.set_defaults(func=cmd_categorize)
+
+    # apply subcommand
+    p_apply = subparsers.add_parser('apply', help='Apply a single fix', allow_abbrev=False)
+    p_apply.add_argument('--fix', '-f', required=True, help="Path to fix JSON file, or '-' for stdin")
+    p_apply.add_argument('--bundle-dir', '-b', required=True, help='Path to bundle directory')
+    p_apply.set_defaults(func=cmd_apply)
+
+    # verify subcommand
+    p_verify = subparsers.add_parser('verify', help='Verify a fix was applied', allow_abbrev=False)
+    p_verify.add_argument('--fix-type', '-t', required=True, help='Type of fix to verify')
+    p_verify.add_argument('--file', '-f', required=True, help='Path to the component file that was fixed')
+    p_verify.set_defaults(func=cmd_verify)
+
+    args = parser.parse_args()
+
+    if not args.command:
+        parser.print_help()
+        return 1
+
+    result = args.func(args)
+    output_toon(result)
+    return 0
+
+
+if __name__ == '__main__':
+    main()
