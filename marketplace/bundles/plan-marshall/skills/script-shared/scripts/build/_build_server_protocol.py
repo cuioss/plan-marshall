@@ -1233,7 +1233,9 @@ def read_log_verdict(log_file: str) -> LogVerdict | None:
     verdict, so a ``reason:`` from one writer could be attached to a refusal that
     stated only ``message:``. A block begins at a column-0 ``status:`` line and
     runs to the next one; the verdict is the block that holds the LAST such line,
-    and every key is read inside it.
+    and every key — the scalars and the ``errors[]`` table alike — is read inside
+    it. A table written AHEAD of the first ``status:`` belongs to the block that
+    status opens, because that is the only block it can belong to.
 
     ``status:`` is what makes a verdict exist; the other two are enrichment.
     ``tests_run`` is read here rather than re-derived by the client because the
@@ -1283,6 +1285,11 @@ def read_log_verdict(log_file: str) -> LogVerdict | None:
     # line from a block that is not the verdict can never supply one of its fields.
     block: dict[str, str] = {}
     verdict_block: dict[str, str] | None = None
+    # Whether the table being collected belongs to a block that was ALREADY open
+    # when its header appeared. A table ahead of the first `status:` belongs to the
+    # block that status opens and survives it; a table collected inside an open
+    # block belongs to that block and is dropped when the next one begins.
+    table_owned_by_open_block = False
     try:
         with open(log_file, encoding='utf-8', errors='replace') as handle:
             for raw_line in handle:
@@ -1297,18 +1304,20 @@ def read_log_verdict(log_file: str) -> LogVerdict | None:
                     errors_block = None
                 if _ERRORS_TABLE_HEADER.match(line):
                     errors_block = [line]
+                    table_owned_by_open_block = bool(block)
                     continue
                 if line.startswith('status:'):
                     # A `status:` line opens a block. The one being read becomes
                     # the verdict candidate, and if a later block states a status
                     # too, that later one replaces it — the result is the last
-                    # complete body in the log. A table collected for the previous
-                    # block is dropped with it: rows belong to the block that
+                    # complete body in the log. A table that an earlier block owned
+                    # is dropped with that block: rows belong to the block that
                     # carried them, exactly as the scalars do.
                     if block:
                         verdict_block = block
                     block = {'status': _toon_scalar(line)}
-                    errors = ()
+                    if table_owned_by_open_block:
+                        errors = ()
                     continue
                 key, value = _block_scalar(line)
                 if key is not None and block:
