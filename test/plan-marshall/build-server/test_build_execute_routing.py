@@ -159,13 +159,12 @@ def isolated_queue(tmp_path, monkeypatch) -> dict:
     (so no emission reaches the developer's main-anchored log). A real acquire
     therefore touches ONLY the isolated queue file.
 
-    The adaptive reap threshold needs no stub at all any more: it is a top-level
-    ``upper_limit_seconds`` field of the isolated queue file itself, so seeding it
-    at the floor below pins the reaper's threshold in the shape ``build_queue``
-    actually reads. The two run-config helpers this fixture used to monkeypatch
-    onto ``bq`` no longer exist on the module, and ``monkeypatch.setattr``
-    defaults to ``raising=True`` — so leaving them would have errored every slot
-    test using this fixture rather than merely over-stubbing.
+    The adaptive reap threshold is a top-level ``upper_limit_seconds`` field of the
+    isolated queue file itself, so seeding it at the floor below pins the reaper's
+    threshold in the shape ``build_queue`` actually reads. The two run-config helper
+    names this fixture once stubbed onto ``bq`` are absent from that module, and
+    ``monkeypatch.setattr`` defaults to ``raising=True`` — a stub for one of them
+    would error every slot test using this fixture rather than merely over-stub.
     """
     home = tmp_path / 'home'
     home.mkdir()
@@ -513,11 +512,10 @@ def test_daemon_result_timeout_maps_to_timeout():
 def test_daemon_result_killed_maps_to_killed_not_error():
     """A daemon-classified kill keeps its OWN status through the client mapping.
 
-    Mapping it to ``error`` — as this leg historically did, marking the kill
-    only in a secondary ``error`` field — lost the distinction at the renderer:
-    ``cmd_run_common`` rebuilds its payload from ``status`` alone, so the
-    daemon's correctly-classified kill reached every consuming gate as a build
-    failure, complete with a synthesised ``errors[]`` row.
+    Mapping it to ``error``, marking the kill only in a secondary ``error`` field,
+    loses the distinction at the renderer: ``cmd_run_common`` rebuilds its payload
+    from ``status`` alone, so the daemon's correctly-classified kill reaches every
+    consuming gate as a build failure, complete with a synthesised ``errors[]`` row.
     """
     result = factory._daemon_result_to_direct(
         {'job_status': 'killed', 'exit_code': -9, 'duration_seconds': 1, 'log_file': 'd.log'}, 'cmd'
@@ -1680,6 +1678,32 @@ class TestPreToolFaultPassThrough:
         assert verdict is not None and verdict.child_fault is not None
         assert verdict.child_fault.message == 'the record left this tree'
         assert verdict.child_fault.reason is None, 'that reason belongs to the earlier block'
+
+    def test_a_body_that_states_both_fields_keeps_them_apart(self, tmp_path):
+        """A child that states a reason AND a message keeps the two distinct.
+
+        The executor's ``unknown_flag`` refusal puts the rejection class in
+        ``reason`` and the actionable correction in ``message``; a reader that
+        collapses either into the other loses one of them.
+        """
+        import _build_server_protocol as proto
+
+        correction = '`--resolved-project-dir` is not declared for `pyproject_build run`'
+        log = _job_log(
+            tmp_path,
+            {
+                'status': 'error',
+                'error': 'invalid_invocation',
+                'reason': 'unknown_flag',
+                'message': correction,
+            },
+        )
+
+        verdict = proto.read_log_verdict(log)
+
+        assert verdict is not None and verdict.child_fault is not None
+        assert verdict.child_fault.reason == 'unknown_flag'
+        assert verdict.child_fault.message == correction
 
     def test_the_emitted_identifiers_are_the_ones_the_lane_classifies(self):
         """Every pre-tool emitter's identifier is a member of the classifier set.

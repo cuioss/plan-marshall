@@ -553,10 +553,9 @@ def _cap_errors_with_truncation(errors: list[Issue], cap: int = _ERRORS_EMIT_CAP
     ``len(errors) - len(shown)`` so ``len(shown) + truncated`` always reconstructs
     the true total — count-vs-shown can never silently disagree.
 
-    Because this cap lives in the SHARED helper, the reconciliation benefits
-    Maven/Gradle/npm as well as pyproject: their parsers still emit terse
-    per-failure messages until the follow-on, but the cap and the ``truncated``
-    marker are now correct for every build tool.
+    Because this cap lives in the SHARED helper, the reconciliation applies to
+    Maven/Gradle/npm as well as pyproject: the cap and the ``truncated`` marker are
+    correct for every build tool, whatever its parser's per-failure message style.
     """
     total = len(errors)
     deduped: list[Issue] = []

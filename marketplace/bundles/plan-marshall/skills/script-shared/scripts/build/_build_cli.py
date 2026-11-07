@@ -76,11 +76,13 @@ def add_project_dir_arg(parser) -> None:
 
     A ROUTED dispatch additionally carries ``--resolved-project-dir`` (see
     :func:`add_resolved_project_dir_arg`): the tree its routing process already
-    resolved. When that flag is present — and only inside a marshalld job child,
-    which is its sole legitimate producer — ``build_main`` uses it and performs NO
-    ``--plan-id`` resolution, because the child's own tree is the one the plan
-    directory may have already left. It replaces neither flag and stays mutually
-    exclusive with ``--project-dir``.
+    resolved. It travels only when the child's own tree cannot resolve the plan —
+    the child re-resolves the same record to the same tree otherwise. When that
+    flag is present — and only inside a marshalld job child, which is its sole
+    legitimate producer — ``build_main`` uses it and performs NO ``--plan-id``
+    resolution, because the child's own tree is the one the plan directory may have
+    already left. It replaces neither flag and stays mutually exclusive with
+    ``--project-dir``.
 
     The ``--project-dir`` default stays ``'.'`` so the existing
     ``execute_direct(project_dir=args.project_dir, ...)`` call sites

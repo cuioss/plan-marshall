@@ -701,11 +701,13 @@ def _map_daemon_result(waited: dict[str, Any], command_str: str, command_key: st
 
     The wire has four terminal rows and the wrapper's vocabulary has six, and the
     supervisor translates the wrapper's own ``timeout`` and ``killed`` onto the
-    wire rows of the same names. What the wire flattens onto ``failure`` is every
-    OTHER non-green verdict: ``indeterminate``, the live ``running`` hand-back, and
-    any status the wire has no row for. So a ``failure`` job becomes an ``error``
-    only when the child's own log verdict says the build ran and failed; any other
-    verdict the log states is re-rendered as itself.
+    wire rows of the same names. The ``failure`` row is what the wire uses for the
+    remaining non-green verdicts — ``indeterminate`` and the live ``running``
+    hand-back — so a ``failure`` job becomes an ``error`` only when the child's own
+    log verdict says the build ran and failed; any other verdict the log states is
+    re-rendered as itself. A terminal ``job_status`` outside the wire vocabulary
+    passes through verbatim and is handled by this function's own final branch, not
+    by ``failure``.
 
     The ``killed`` leg produces a first-class ``killed`` status rather than an
     ``error_result`` whose ``error`` field said ``killed``: ``cmd_run_common``
@@ -836,12 +838,12 @@ def _map_daemon_result(waited: dict[str, Any], command_str: str, command_key: st
             )
         if verdict is not None and verdict.child_fault is not None:
             return _child_fault_result(verdict.child_fault, exit_code, duration, log_file, command_str)
-        # The wire vocabulary collapses EVERY non-success verdict onto
-        # ``failure``, so a child that reported ``indeterminate`` arrives here
-        # too. Re-render the child's own verdict rather than collapsing it into a
-        # red build: only ``error`` means the build ran and failed. This is what
-        # carries a producer's named reason (and its ``message``) across the
-        # routed hop instead of substituting a generic failure for it.
+        # The wire reports ``indeterminate`` and the live hand-back as
+        # ``failure``, so a child that reported either arrives here too. Re-render
+        # the child's own verdict rather than collapsing it into a red build: only
+        # ``error`` means the build ran and failed. This is what carries a
+        # producer's named reason (and its ``message``) across the routed hop
+        # instead of substituting a generic failure for it.
         if verdict is not None and verdict.status not in (RESULT_STATUS_SUCCESS, RESULT_STATUS_ERROR):
             return _result_for_log_verdict(
                 verdict,
@@ -1174,10 +1176,17 @@ def _carry_resolved_tree(argv: list[str], project_dir: str) -> list[str]:
 def _child_resolves_plan_itself(plan_id: str, tree: str) -> bool:
     """Whether a child starting in ``tree`` can resolve ``plan_id`` without the carry.
 
-    The child's ``--plan-id`` resolution is cwd-relative (ADR-002): it reads the
-    plan record from ``{tree}/.plan/local/plans/{plan_id}/status.json``. The record
-    being there is what makes the child's resolution the one the routing process
-    already performed, so the carry may be left off.
+    The child's ``--plan-id`` resolution is cwd-relative (ADR-002): it walks up from
+    its working directory to the nearest ``.plan/local`` and reads the plan record
+    under it. The routing process has already resolved that same record, so the
+    record being present under ``tree`` is what makes the child's resolution the one
+    the routing process performed, and the carry may be left off.
+
+    A tree WITHOUT its own ``.plan/local`` is read as unable to resolve the plan and
+    therefore gets the carry. That is the fail-safe direction: the carry is what
+    removes the child's second resolution, and the only cost of carrying it where it
+    was not needed is the flag a surface-predating executor refuses — never a build
+    stranded in the window.
 
     Args:
         plan_id: The real plan id the routed argv names.

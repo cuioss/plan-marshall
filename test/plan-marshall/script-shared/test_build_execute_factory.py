@@ -767,8 +767,7 @@ class TestResolveWrapperAutoDetect:
 
     def test_absent_wrapper_without_system_on_path_still_resolves_system_binary(self, monkeypatch, tmp_path):
         """No wrapper AND system_fallback absent from PATH → resolution STILL
-        returns the system binary string with NO FileNotFoundError. The gate that
-        used to error here has been removed."""
+        returns the system binary string with NO FileNotFoundError."""
         monkeypatch.setattr(build_execute.shutil, 'which', lambda _cmd: None)
         recorder = _ExecRecorder()
         monkeypatch.setattr(factory, 'execute_direct_base', recorder)
@@ -982,12 +981,12 @@ class TestRoutedArgvResolvesTheWorktreeWrapper:
 class TestMissingWrapperIsNamedOnBothLegs:
     """A launch fault reaches the rendered result as itself, with where it looked.
 
-    The rendered result historically carried only ``error: execution_failed``, so a
-    missing wrapper was indistinguishable from a daemon fault. The three facts that
-    separate them — the reason, the wrapper name tried, and the project directory it
-    was looked for in — must survive on the in-process leg and on the routed leg
-    alike; on the routed leg the inner wrapper's own verdict is what the client reads
-    back out of the job log.
+    The rendered result carries only ``error: execution_failed`` unless the three
+    facts that separate one launch fault from another travel with it, so a missing
+    wrapper would be indistinguishable from a daemon fault. Those facts — the reason,
+    the wrapper name tried, and the project directory it was looked for in — must
+    survive on the in-process leg and on the routed leg alike; on the routed leg the
+    inner wrapper's own verdict is what the client reads back out of the job log.
     """
 
     def test_in_process_leg_names_the_wrapper_reason_and_directory(self, monkeypatch, tmp_path, capsys):

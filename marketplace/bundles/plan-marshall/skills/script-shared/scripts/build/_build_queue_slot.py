@@ -462,6 +462,8 @@ def build_queue_slot(plan_id: str | None, *, routed: bool = False) -> Iterator[N
 
     Raises:
         BuildQueueTimeout: when no slot is admitted within ``max_retries``.
+        BuildQueueUnavailable: when the queue answers an error instead of an
+            admission, so no slot decision exists at all.
     """
     if routed or not names_real_plan(plan_id):
         yield

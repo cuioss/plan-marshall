@@ -101,8 +101,7 @@ class DirectCommandResult(TypedDict, total=False):
             no log file could be created), with ``wrapper`` and ``project_dir``
             beside it where the producer knows them. A wrapper-not-found fault
             carries all three, because the class alone cannot say whether a wrapper
-            was missing, which one was looked for, or where — the distinction six
-            landings could not make from ``execution_failed``. A log-file fault
+            was missing, which one was looked for, or where. A log-file fault
             carries the reason only.
         routed_tests_run: Present ONLY on a daemon-routed green result, carrying
             the executed-test count the INNER build wrapper measured and

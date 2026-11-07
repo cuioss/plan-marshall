@@ -910,7 +910,7 @@ class TestReadLogVerdict:
         assert verdict.timeout_used_seconds is None
         assert verdict.timeout_source is None
 
-    def test_the_last_bound_wins_over_progress_output(self, tmp_path):
+    def test_the_bound_is_read_from_the_block_that_holds_the_verdict(self, tmp_path):
         # The bound is read from the block that holds the verdict: the top-level
         # keys ahead of the result's `status:` belong to whatever wrote them and are
         # not part of this verdict.
