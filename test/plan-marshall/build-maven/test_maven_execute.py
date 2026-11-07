@@ -10,6 +10,12 @@ from pathlib import Path
 from conftest import load_script_module
 
 _maven_execute_mod = load_script_module('plan-marshall', 'build-maven', '_maven_execute.py', '_maven_execute')
+_maven_cmd_parse_mod = load_script_module(
+    'plan-marshall', 'build-maven', '_maven_cmd_parse.py', '_maven_cmd_parse_for_execute'
+)
+_maven_discover_mod = load_script_module(
+    'plan-marshall', 'build-maven', '_maven_cmd_discover.py', '_maven_cmd_discover_for_execute'
+)
 
 import _build_execute_factory as _factory  # noqa: E402
 
@@ -211,23 +217,30 @@ def test_execute_direct_resolves_present_wrapper(tmp_path, monkeypatch):
 # report ``success``.
 
 apply_selector_miss_guard = _maven_execute_mod.apply_selector_miss_guard
+apply_zero_test_guard = _maven_execute_mod.apply_zero_test_guard
 TEST_SELECTOR_MATCHED_NOTHING = _maven_execute_mod.TEST_SELECTOR_MATCHED_NOTHING
+TEST_LOG_UNREADABLE = _maven_execute_mod.TEST_LOG_UNREADABLE
+TEST_RUN_EXECUTED_NOTHING = _maven_execute_mod.TEST_RUN_EXECUTED_NOTHING
 
 _LOG_TEST_DATA = Path(__file__).parent / 'fixtures' / 'log-test-data'
 
 _SELECTOR_COMMAND = 'mvnw test -Dtest=Awaits#runs'
 
+#: The same run when the selector comes from `.mvn/maven.config`, `MAVEN_OPTS`
+#: or a profile: Surefire still names the pattern, the command line does not.
+_NO_COMMAND_SELECTOR = 'mvnw test -f ./pom.xml'
+
 _COMPILER_ERROR = '/home/dev/probe/c/src/main/java/probe/c/Broken.java:[5,9] cannot find symbol'
 
 
-def _run_result(log_name: str, *, status: str, exit_code: int) -> dict:
+def _run_result(log_name: str, *, status: str, exit_code: int, command: str = _SELECTOR_COMMAND) -> dict:
     """A build result shaped like the executor's, pointing at one log fixture."""
     return {
         'status': status,
         'exit_code': exit_code,
         'duration_seconds': 3,
         'log_file': str(_LOG_TEST_DATA / log_name),
-        'command': _SELECTOR_COMMAND,
+        'command': command,
     }
 
 
@@ -363,3 +376,513 @@ def test_execute_direct_is_wired_to_the_guard(tmp_path, monkeypatch):
     assert result['command_key'] == 'maven:test'
     assert result['project_dir'] == str(tmp_path)
     assert result['timeout_used_seconds'] == 300, 'fields the guard does not replace are carried'
+
+
+def test_fae_reactor_keeps_a_real_failure_beside_a_selector_miss():
+    """A `-fae` reactor's compile failure is not dropped for another module's miss.
+
+    The compile error `';' expected` matches no category pattern, so it is filed
+    as `other` — a real failure all the same. Relabelling the whole run as a
+    selector miss would hide it and the finding it produces.
+    """
+    result = _run_result('maven-fae-compile-failure-and-selector-miss.log', status='error', exit_code=1)
+
+    guarded = apply_selector_miss_guard(result)
+
+    assert guarded is result, 'the real failure keeps the build-failure path'
+    assert guarded['status'] == 'error'
+    issues, _, _ = _maven_execute_mod.parse_log(result['log_file'])
+    assert any("';' expected" in issue.message for issue in issues), (
+        'the compile error must survive as an issue, or the run keeps no row to report'
+    )
+
+
+def test_selector_miss_without_a_command_selector_names_the_pattern_from_the_log():
+    """The reason names the pattern the runner printed when the command shows none."""
+    result = _run_result(
+        'maven-maven-config-selector-miss.log', status='error', exit_code=1, command=_NO_COMMAND_SELECTOR
+    )
+
+    guarded = apply_selector_miss_guard(result)
+
+    assert guarded['status'] == 'indeterminate'
+    assert "'Awaits#runs'" in guarded['message'], guarded['message']
+
+
+def test_control_a_green_run_without_a_selector_does_not_read_the_log(tmp_path):
+    """CONTROL: no selector in play means no miss to look for, on a green run.
+
+    Surefire/Failsafe print their miss line only on the failure path, so an exit-0
+    miss reaches the cut as a zero-collected summary — the zero-test guard's
+    question. Reading the log of every green build would buy nothing.
+    """
+    result = {
+        'status': 'success',
+        'exit_code': 0,
+        'duration_seconds': 3,
+        'log_file': str(tmp_path / 'never-read.log'),
+        'command': _NO_COMMAND_SELECTOR,
+    }
+
+    assert apply_selector_miss_guard(result) is result
+
+
+def test_reactor_selector_miss_beside_an_executed_module_says_what_the_run_did():
+    """A partial reactor miss does not claim the run executed nothing.
+
+    Surefire prints its "No tests matching pattern" line only on the failure
+    path, so the partial shape is a FAILING reactor: module a ran its tests and
+    module b's scan was empty. The reason must carry that, not "executed
+    nothing".
+    """
+    result = _run_result('maven-reactor-selector-miss-one-module.log', status='error', exit_code=1)
+
+    guarded = apply_selector_miss_guard(result)
+
+    assert guarded['status'] == 'indeterminate'
+    assert "'Awaits#runs'" in guarded['message']
+    assert 'executed nothing' not in guarded['message'], (
+        'module a ran three tests, so claiming the run executed nothing is untrue of it'
+    )
+    assert '3 test(s)' in guarded['message'], guarded['message']
+
+
+def test_an_unrelated_warning_beside_a_miss_does_not_block_the_named_reason(tmp_path):
+    """A `[WARNING]` that is no failure must not stop the miss being named.
+
+    Maven prints assorted `[WARNING]` lines (a corrupted-stdout notice, say) that
+    match no category and file as `other`. They are not failures, so a miss beside
+    them is still the named reason; only an `[ERROR]`-level line or a failure
+    category keeps the build-failure result.
+    """
+    log_file = tmp_path / 'miss-and-warning.log'
+    log_file.write_text(
+        '[WARNING] Corrupted STDOUT by directly writing to native stream in forked JVM 1.\n'
+        '[ERROR] Failed to execute goal org.apache.maven.plugins:maven-surefire-plugin:3.5.2:test '
+        '(default-test) on project b: No tests matching pattern "Awaits#runs" were executed!\n'
+        '[INFO] BUILD FAILURE\n',
+        encoding='utf-8',
+    )
+    result = {
+        'status': 'error',
+        'exit_code': 1,
+        'duration_seconds': 4,
+        'log_file': str(log_file),
+        'command': _SELECTOR_COMMAND,
+    }
+
+    guarded = apply_selector_miss_guard(result)
+
+    assert guarded['status'] == 'indeterminate'
+    assert TEST_SELECTOR_MATCHED_NOTHING in guarded['message']
+
+
+def test_exit_zero_config_selector_miss_is_detected_without_a_command_selector():
+    """An exit-0 miss with no command selector is caught by the zero-test guard.
+
+    Surefire prints its pattern line only on the failure path, so an exit-0 miss
+    (`.mvn/maven.config` + `failIfNoSpecifiedTests=false`) leaves a zero-collected
+    summary and no message. The zero-test guard is what refuses it — without
+    naming a pattern, which the log does not carry.
+    """
+    result = _run_result('maven-zero-tests-executed.log', status='success', exit_code=0, command=_NO_COMMAND_SELECTOR)
+
+    assert apply_selector_miss_guard(result) is result
+    guarded = apply_zero_test_guard(result, 'test')
+    assert guarded['status'] == 'indeterminate'
+    assert guarded['message'].startswith(TEST_RUN_EXECUTED_NOTHING)
+
+
+def test_control_a_selector_miss_that_ran_nothing_still_says_so():
+    """CONTROL: the lone exit-0 miss keeps its 'executed nothing' wording."""
+    guarded = apply_selector_miss_guard(_run_result('maven-dtest-zero-executed.log', status='success', exit_code=0))
+
+    assert guarded['status'] == 'indeterminate'
+    assert 'executed nothing' in guarded['message']
+
+
+def test_unreadable_log_on_a_zero_exit_dtest_run_is_indeterminate(tmp_path):
+    """No readable log is no evidence, so a `-Dtest` run cannot be green."""
+    result = {
+        'status': 'success',
+        'exit_code': 0,
+        'duration_seconds': 2,
+        'log_file': str(tmp_path / 'missing.log'),
+        'command': _SELECTOR_COMMAND,
+    }
+
+    guarded = apply_selector_miss_guard(result)
+
+    assert guarded['status'] == 'indeterminate'
+    assert guarded['message'].startswith(TEST_LOG_UNREADABLE)
+
+
+def test_control_unreadable_log_on_a_failed_build_keeps_its_failure(tmp_path):
+    """CONTROL: a failed build stays failed when its log cannot be read."""
+    result = {
+        'status': 'error',
+        'exit_code': 1,
+        'duration_seconds': 2,
+        'log_file': str(tmp_path / 'missing.log'),
+        'command': _SELECTOR_COMMAND,
+    }
+
+    assert apply_selector_miss_guard(result) is result
+
+
+# =============================================================================
+# A test-phase run that executed no test is never green
+# =============================================================================
+
+
+def test_zero_test_run_is_not_success():
+    """A `test` run whose summary collected nothing is the named reason."""
+    result = _run_result('maven-zero-tests-executed.log', status='success', exit_code=0, command='mvnw test')
+
+    guarded = apply_zero_test_guard(result, 'test')
+
+    assert guarded['status'] == 'indeterminate'
+    assert guarded['message'].startswith(TEST_RUN_EXECUTED_NOTHING)
+
+
+def test_test_run_with_no_summary_at_all_is_not_success():
+    """A `test` run that produced no test summary collected and ran nothing.
+
+    This is the shape a bare `pom` aggregator produces: `mvn test` there runs no
+    Surefire execution at all and exits 0, which no gate may credit as a green
+    test run.
+    """
+    result = _run_result('maven-test-no-summary.log', status='success', exit_code=0, command='mvnw test')
+
+    guarded = apply_zero_test_guard(result, 'test')
+
+    assert guarded['status'] == 'indeterminate'
+    assert guarded['message'].startswith(TEST_RUN_EXECUTED_NOTHING)
+
+
+def test_control_test_run_with_an_executed_test_stays_success():
+    """CONTROL: a `test` run that executed tests keeps its success."""
+    result = _run_result('maven-success-real.log', status='success', exit_code=0, command='mvnw test')
+
+    assert apply_zero_test_guard(result, 'test') is result
+
+
+def test_control_a_verify_run_without_a_test_summary_stays_success():
+    """CONTROL: only a leading test-phase goal is a test run.
+
+    A `verify` run also executes tests, but its purpose is the gate; a project
+    that has no test to run there is legitimately green.
+    """
+    result = _run_result('maven-test-no-summary.log', status='success', exit_code=0, command='mvnw verify')
+
+    assert apply_zero_test_guard(result, 'verify -Ppre-commit') is result
+
+
+def test_control_a_package_run_without_a_test_summary_stays_success():
+    """CONTROL: `package` without a summary is a build run that reported no tests.
+
+    Only a `package` run whose log NAMES a zero population is evidence; the
+    package phase is also the plain package canonical, not only the test ladder
+    of a reactor-test-artifact consumer.
+    """
+    result = _run_result('maven-test-no-summary.log', status='success', exit_code=0, command='mvnw package')
+
+    assert apply_zero_test_guard(result, 'package -pl consumer -am') is result
+
+
+def test_control_a_skip_tests_run_reports_zero_tests_by_design():
+    """CONTROL: `-DskipTests` asks for no test, so an empty population is expected."""
+    result = _run_result(
+        'maven-zero-tests-executed.log', status='success', exit_code=0, command='mvnw test -DskipTests'
+    )
+
+    assert apply_zero_test_guard(result, 'test -DskipTests') is result
+
+
+def test_control_explicit_skip_false_does_not_disable_the_guard():
+    """CONTROL: `-DskipTests=false` asks for the tests, not for a skip."""
+    result = _run_result(
+        'maven-zero-tests-executed.log', status='success', exit_code=0, command='mvnw test -DskipTests=false'
+    )
+
+    guarded = apply_zero_test_guard(result, 'test -DskipTests=false')
+
+    assert guarded['status'] == 'indeterminate'
+    assert guarded['message'].startswith(TEST_RUN_EXECUTED_NOTHING)
+
+
+def test_the_package_ladder_run_with_a_zero_summary_is_not_success():
+    """The reactor-test-artifact `package` ladder is a test run too."""
+    result = _run_result(
+        'maven-zero-tests-executed.log', status='success', exit_code=0, command='mvnw package -pl consumer -am'
+    )
+
+    guarded = apply_zero_test_guard(result, 'package -pl consumer -am')
+
+    assert guarded['status'] == 'indeterminate'
+    assert guarded['message'].startswith(TEST_RUN_EXECUTED_NOTHING)
+
+
+def test_control_a_skip_stated_by_the_log_is_not_an_empty_population(tmp_path):
+    """CONTROL: a run that SAYS it skipped is a requested skip, not a false green.
+
+    `-DskipTests` set in `.mvn/maven.config` or `MAVEN_OPTS` is invisible on the
+    command line this guard is handed, so the log's own skip marker is what keeps
+    such a run from being reported as an empty population — provided the log says
+    nothing else about the population.
+    """
+    log_file = tmp_path / 'skipped.log'
+    log_file.write_text(
+        '[INFO] --- surefire:3.5.2:test (default-test) @ awaits ---\n[INFO] Tests are skipped.\n[INFO] BUILD SUCCESS\n',
+        encoding='utf-8',
+    )
+
+    result = {
+        'status': 'success',
+        'exit_code': 0,
+        'duration_seconds': 1,
+        'log_file': str(log_file),
+        'command': 'mvnw test',
+    }
+
+    assert apply_zero_test_guard(result, 'test') is result
+
+
+def test_a_skipping_module_does_not_excuse_another_modules_zero_summary(tmp_path):
+    """A summary naming zero is evidence, whatever another module's skip line says.
+
+    The marker is consulted only when the log carries no test summary at all, so
+    a reactor whose module a skipped and whose module b collected nothing cannot
+    report a green on module a's marker.
+    """
+    log_file = tmp_path / 'skip-and-zero.log'
+    log_file.write_text(
+        '[INFO] --- surefire:3.5.2:test (default-test) @ a ---\n'
+        '[INFO] Tests are skipped.\n'
+        '[INFO] --- surefire:3.5.2:test (default-test) @ b ---\n'
+        '[INFO] Results:\n'
+        '[INFO] Tests run: 0, Failures: 0, Errors: 0, Skipped: 0\n'
+        '[INFO] BUILD SUCCESS\n',
+        encoding='utf-8',
+    )
+    result = {
+        'status': 'success',
+        'exit_code': 0,
+        'duration_seconds': 1,
+        'log_file': str(log_file),
+        'command': 'mvnw test',
+    }
+
+    guarded = apply_zero_test_guard(result, 'test')
+
+    assert guarded['status'] == 'indeterminate'
+    assert guarded['message'].startswith(TEST_RUN_EXECUTED_NOTHING)
+
+
+def test_an_unlisted_option_value_does_not_hide_the_goal():
+    """A goal is recognised by Maven's vocabulary, not by an option list.
+
+    `-gt` takes a separate value and is not one of the options the canonicals
+    emit; the goal after it must still be seen, or an exit-0 run that executed
+    nothing would keep its green.
+    """
+    result = _run_result(
+        'maven-test-no-summary.log', status='success', exit_code=0, command='mvnw -gt /opt/toolchains.xml test'
+    )
+
+    guarded = apply_zero_test_guard(result, '-gt /opt/toolchains.xml test')
+
+    assert guarded['status'] == 'indeterminate'
+    assert guarded['message'].startswith(TEST_RUN_EXECUTED_NOTHING)
+
+
+def test_a_plugin_goal_form_is_a_test_run_too():
+    """`surefire:test` runs the tests, so its zero population is not a green."""
+    result = _run_result('maven-zero-tests-executed.log', status='success', exit_code=0, command='mvnw surefire:test')
+
+    guarded = apply_zero_test_guard(result, 'surefire:test')
+
+    assert guarded['status'] == 'indeterminate'
+    assert guarded['message'].startswith(TEST_RUN_EXECUTED_NOTHING)
+
+
+def test_an_option_value_shaped_like_a_goal_is_not_taken_for_one():
+    """`-pl` values that look like a goal must not hide the real one.
+
+    `:core` and `integration-test` are both plausible `-pl` values and both are
+    spelled like a goal; reading either as the goal would switch the guard off
+    for `mvn -pl :core test`.
+    """
+    result = _run_result('maven-test-no-summary.log', status='success', exit_code=0, command='mvnw test')
+
+    for args in ('-pl :core test', '-pl integration-test test', '-f C:/repo/pom.xml test'):
+        guarded = apply_zero_test_guard(result, args)
+        assert guarded['status'] == 'indeterminate', args
+        assert guarded['message'].startswith(TEST_RUN_EXECUTED_NOTHING), args
+
+
+def test_control_a_module_named_like_a_phase_behind_pl_is_not_the_goal():
+    """CONTROL: `mvn -pl test verify` is a VERIFY run, not a test run."""
+    result = _run_result('maven-test-no-summary.log', status='success', exit_code=0, command='mvnw verify')
+
+    assert apply_zero_test_guard(result, '-pl test verify') is result
+
+
+# =============================================================================
+# Drift guards: the two vocabularies this module reads must stay in step
+# =============================================================================
+
+
+def test_the_failure_and_advisory_category_sets_cover_the_parser_vocabulary():
+    """Every category the parser can emit is classified here, and only once.
+
+    A category added to `MAVEN_PATTERNS` later would otherwise fall outside both
+    sets and be treated as advisory by the back-off — silently turning a real
+    failure into a relabel.
+    """
+    failure = _maven_execute_mod._FAILURE_ISSUE_CATEGORIES
+    advisory = _maven_execute_mod._ADVISORY_ISSUE_CATEGORIES
+    declared = set(_maven_cmd_parse_mod.MAVEN_PATTERNS)
+
+    assert not failure & advisory
+    assert declared <= failure | advisory
+    assert 'other' not in failure | advisory, "'other' is the uncategorised default, classified by severity"
+
+
+def test_every_built_module_tests_canonical_leads_with_a_recognised_test_goal():
+    """The zero-test guard's goal set must cover what discovery emits.
+
+    Both module-tests shapes — the plain `test` ladder and the `package` ladder of
+    a reactor-test-artifact consumer — are read back out of the builder's own
+    output, so a new shape there fails here instead of slipping past the guard.
+    """
+    test_phase_goal = _maven_execute_mod._test_phase_goal
+    shared = {
+        'module_name': 'probe',
+        'has_sources': True,
+        'has_tests': True,
+        'profiles': [],
+        'relative_path': 'probe',
+    }
+    plain = _maven_discover_mod._build_commands(packaging='jar', **shared)
+    ladder = _maven_discover_mod._build_commands(packaging='jar', consumes_reactor_test_artifact=True, **shared)
+
+    for commands in (plain, ladder):
+        executable = commands['module-tests']
+        args = executable.split('--command-args "', 1)[1].rstrip('"')
+        assert test_phase_goal(args) is not None, args
+
+
+def test_leading_goal_is_read_past_a_value_taking_option():
+    """`mvn -pl core test` is a test run: the option's value is not the goal."""
+    result = _run_result('maven-test-no-summary.log', status='success', exit_code=0, command='mvnw -pl core test')
+
+    guarded = apply_zero_test_guard(result, '-pl core test')
+
+    assert guarded['status'] == 'indeterminate'
+    assert guarded['message'].startswith(TEST_RUN_EXECUTED_NOTHING)
+
+
+def test_an_error_level_advisory_beside_a_miss_keeps_the_failure(tmp_path):
+    """An `[ERROR]`-level javadoc failure is a real failure, not an advisory.
+
+    The `javadoc` pattern files such a line under `javadoc_warning`, and a
+    category-only back-off would drop it when another module reports a miss.
+    Severity decides: an `[ERROR]` line is the build failure whatever its
+    category.
+    """
+    log_file = tmp_path / 'miss-and-javadoc.log'
+    log_file.write_text(
+        '[ERROR] Failed to execute goal org.apache.maven.plugins:maven-surefire-plugin:3.5.2:test '
+        '(default-test) on project b: No tests matching pattern "Awaits#runs" were executed!\n'
+        '[ERROR] Failed to execute goal org.apache.maven.plugins:maven-javadoc-plugin:3.11.2:jar '
+        '(attach-javadocs) on project a: Javadoc generation failed.\n'
+        '[INFO] BUILD FAILURE\n',
+        encoding='utf-8',
+    )
+    result = {
+        'status': 'error',
+        'exit_code': 1,
+        'duration_seconds': 4,
+        'log_file': str(log_file),
+        'command': _SELECTOR_COMMAND,
+    }
+
+    assert apply_selector_miss_guard(result) is result
+
+
+def test_unmeasured_summary_does_not_claim_the_run_executed_nothing(tmp_path):
+    """An unmeasured summary cannot answer how much ran, so nothing is claimed."""
+    log_file = tmp_path / 'miss-and-unmeasured.log'
+    log_file.write_text(
+        '[INFO] No tests matching pattern "Awaits#runs" were executed!\n'
+        '[ERROR] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0\n'
+        '[INFO] BUILD SUCCESS\n',
+        encoding='utf-8',
+    )
+    result = {
+        'status': 'success',
+        'exit_code': 0,
+        'duration_seconds': 4,
+        'log_file': str(log_file),
+        'command': _SELECTOR_COMMAND,
+    }
+
+    guarded = apply_selector_miss_guard(result)
+
+    assert guarded['status'] == 'indeterminate'
+    assert 'executed nothing' not in guarded['message'], guarded['message']
+    assert 'does not measure' in guarded['message'], guarded['message']
+
+
+def test_control_a_suppressed_partial_reactor_miss_is_the_documented_limit(tmp_path):
+    """CONTROL (recorded limit): an undetectable suppressed miss stays green.
+
+    With `-Dsurefire.failIfNoSpecifiedTests=false`, a module whose scan is empty
+    prints nothing and another module's summary keeps the aggregate positive, so
+    the log carries no signal that a selector was applied at all. The run is green
+    by design here; `build-maven/SKILL.md` § "Test selectors" states the limit.
+    """
+    log_file = tmp_path / 'suppressed-partial-miss.log'
+    log_file.write_text(
+        '[INFO] --- surefire:3.5.2:test (default-test) @ a ---\n'
+        '[INFO] Results:\n'
+        '[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0\n'
+        '[INFO] --- surefire:3.5.2:test (default-test) @ b ---\n'
+        '[INFO] BUILD SUCCESS\n',
+        encoding='utf-8',
+    )
+    result = {
+        'status': 'success',
+        'exit_code': 0,
+        'duration_seconds': 3,
+        'log_file': str(log_file),
+        'command': 'mvnw test',
+    }
+
+    assert apply_selector_miss_guard(result) is result
+    assert apply_zero_test_guard(result, 'test') is result
+
+
+def test_execute_direct_is_wired_to_the_zero_test_guard(tmp_path, monkeypatch):
+    """The zero-test guard is REACHED by the executor, not merely available beside it."""
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    (tmp_path / 'mvnw').write_text('#!/bin/sh\n')
+
+    def _recorder(**kwargs):
+        return {
+            'status': 'success',
+            'exit_code': 0,
+            'duration_seconds': 1,
+            'log_file': str(_LOG_TEST_DATA / 'maven-test-no-summary.log'),
+            'command': './mvnw -l /tmp/maven.log test',
+            'wrapper': './mvnw',
+        }
+
+    monkeypatch.setattr(_factory, 'execute_direct_base', _recorder)
+
+    result = execute_direct(args='test', command_key='maven:test', project_dir=str(tmp_path), plan_id=_PLAN_ID)
+
+    assert result['status'] == 'indeterminate'
+    assert TEST_RUN_EXECUTED_NOTHING in result['message']
+    assert result['wrapper'] == './mvnw'
