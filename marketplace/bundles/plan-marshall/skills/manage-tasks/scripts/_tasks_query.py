@@ -459,6 +459,33 @@ def cmd_loop_exit_guard(args) -> dict:
                 }
             )
             return result
+        # A negative figure is not a measurement the predicate can read: a done
+        # task reopened makes `--completed-tasks-delta` negative, and a negative
+        # token figure is impossible. Reading either as progress (a negative delta
+        # is not `0`) would suppress a genuine stall — the fail-open direction the
+        # predicate forbids. Refuse instead, as an undecidable dispatch.
+        negative = [
+            flag
+            for flag, value in (
+                ('--consumed-tokens', consumed_tokens),
+                ('--completed-tasks-delta', completed_tasks_delta),
+            )
+            if value < 0
+        ]
+        if negative:
+            result.update(
+                {
+                    'status': 'error',
+                    'queue_status': queue_status,
+                    'error': NO_PROGRESS_NOT_DECIDABLE,
+                    'message': (
+                        f'B7 no-progress mode cannot read a negative measurement; negative: {", ".join(negative)}. '
+                        'A negative figure is not progress, and it is not a measured zero, so the dispatch is not '
+                        'decidable by the predicate.'
+                    ),
+                }
+            )
+            return result
         result.update(
             evaluate_no_progress(
                 provisional_cause=getattr(args, 'provisional_cause', None) or B7_PROVISIONAL_CAUSE,
@@ -572,12 +599,14 @@ def evaluate_no_progress(
 
     Two exemptions bound the predicate, and neither is a blanket one:
 
-    1. **A hand-back exempts only the owed task(s) it names.** A return carrying
+    1. **A hand-back exempts only the task the return is about.** A return carrying
        the ``verification_handback`` discriminator beside a NON-EMPTY
        ``pending_verify_steps[]`` is classified ``verification_handback`` when
-       the predicate does not hold — but a non-owed task that stalled in the
-       SAME dispatch still decides it. The hand-back is the prescribed outcome
-       FOR THE TASK IT HANDS BACK, not a licence to stall the rest of the
+       the predicate does not hold — but a FURTHER non-owed in-progress task
+       still decides it. (The predicate sees queue COUNTS, not dispatch
+       membership, so "further" is a conservative reading, not a claim that the
+       second task started in the same dispatch.) The hand-back is the prescribed
+       outcome FOR THE TASK IT HANDS BACK, not a licence to stall the rest of the
        queue. Its step ids are checked against the manifest's composed
        ``phase_5.verification_steps`` (``manifest_verification_steps``): an id
        outside that list names no obligation the plan composed, so it does not
@@ -588,16 +617,27 @@ def evaluate_no_progress(
        it is subtracted from the predicate's ``in_progress_count``. It still
        blocks the clean exit (that verdict lives in ``cmd_loop_exit_guard``
        and is unchanged); it just cannot manufacture a no-progress verdict.
+    3. **A valid hand-back credits its own task when no owed hold does.** A
+       ``running`` hand-back leaves its task ``in_progress`` without
+       ``verification_owed`` (a step is still in flight, so the task cannot be
+       closed with the hold). When the return carries a valid hand-back and no
+       owed task is in flight, the return's own marker stands in for that hold
+       and credits exactly ONE in-progress task. No credit is taken while an
+       owed task is present: no task id reaches the predicate, so an owed task
+       plus any other non-owed in-progress task is indistinguishable from the
+       genuine-stall shape the rule must keep catching. The scoping is a
+       conservative count, not a claim that the owed task is the handed-back one.
 
     The predicate decides BEFORE the hand-back does, in the order the workflow
-    states: the hand-back's exemption is scoped to the task it names, so the
+    states: the hand-back's exemption is scoped to the task it is about, so the
     predicate must be consulted first.
 
     The 50,000-token threshold and the ``error`` routing of a genuine stall
     are unchanged.
 
     Returns:
-      - ``predicate_in_progress_count``: in-progress tasks MINUS owed ones
+      - ``predicate_in_progress_count``: in-progress tasks MINUS owed ones,
+            MINUS the hand-back's own task when no owed hold is present
       - ``predicate_completed_tasks_delta`` / ``predicate_consumed_tokens``:
             the two forwarded values, echoed for the decision log
       - ``predicate_holds``: the three-way conjunction
@@ -610,21 +650,33 @@ def evaluate_no_progress(
       - ``classification``: the final termination cause
       - ``classification_reason``: why that cause won
     """
-    predicate_in_progress = max(in_progress_count - owed_count, 0)
-    predicate_holds = (
-        predicate_in_progress > 0 and completed_tasks_delta == 0 and consumed_tokens > B7_NO_PROGRESS_TOKEN_THRESHOLD
-    )
     allowed_steps = manifest_verification_steps if manifest_verification_steps is not None else set()
     unknown_steps = [step for step in pending_verify_steps if step not in allowed_steps]
     handback_valid = verification_handback and bool(pending_verify_steps) and not unknown_steps
+    # The hand-back's own task. A `running` hand-back leaves its task
+    # `in_progress` WITHOUT `verification_owed` (the task cannot be closed while a
+    # step is still in flight), so the owed subtraction does not exclude it. When
+    # the return carries a valid hand-back and no owed hold is in flight, the
+    # return's own marker stands in for that hold and credits exactly one
+    # in-progress task. The credit is deliberately NOT taken while an owed task is
+    # present: no task id reaches the predicate, so an owed task plus ANY other
+    # non-owed in-progress task is indistinguishable from the genuine-stall shape
+    # the rule must keep catching ("a stall on a not-owed task beside a hand-back
+    # is still error"). The scoping is therefore a conservative count, not a
+    # claim that the owed task is the handed-back one.
+    handback_credit = 1 if handback_valid and owed_count == 0 and in_progress_count > 0 else 0
+    predicate_in_progress = max(in_progress_count - owed_count - handback_credit, 0)
+    predicate_holds = (
+        predicate_in_progress > 0 and completed_tasks_delta == 0 and consumed_tokens > B7_NO_PROGRESS_TOKEN_THRESHOLD
+    )
 
     if provisional_cause != B7_PROVISIONAL_CAUSE:
         classification, reason = provisional_cause, 'not_a_provisional_checkpoint'
     elif predicate_holds:
         classification = NO_PROGRESS_CAUSE
-        reason = (
-            'no_progress_predicate_holds_beside_handback' if verification_handback else 'no_progress_predicate_holds'
-        )
+        # The reason names a hand-back only when one was actually valid; the bare
+        # discriminator over an empty or unknown step list is not a hand-back.
+        reason = 'no_progress_predicate_holds_beside_handback' if handback_valid else 'no_progress_predicate_holds'
     elif handback_valid:
         classification, reason = VERIFICATION_HANDBACK_CAUSE, 'declared_orchestrator_build_handback'
     else:

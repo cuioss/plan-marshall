@@ -315,7 +315,7 @@ This is safe **for throwables of trusted provenance** — those whose stack trac
 
 This is the CUI-specific instance of the generic log-injection principle, which is owned by `plan-marshall:persona-security-expert`'s [`secure-logging.md`](../../../../plan-marshall/skills/persona-security-expert/standards/secure-logging.md) — apply the generic rule from there; it is not restated here. The boundary with rule 2 (Exception Parameter First): exception-first governs HOW to log a throwable when logging it is intended and still applies whenever the throwable's message chain is trusted or already sanitized; this rule governs WHETHER to pass the raw throwable when its message carries untrusted content.
 
-Value neutralisation itself — which characters to neutralise, the `Character.isISOControl` check for the control range, and the explicit U+2028/U+2029 test the set also needs — is owned by `plan-marshall:persona-security-expert`'s [`secure-logging.md`](../../../../plan-marshall/skills/persona-security-expert/standards/secure-logging.md). This section covers only the throwable and cause-chain channel.
+Value neutralisation itself — which characters to neutralise and the checks that cover the set — is owned by `plan-marshall:persona-security-expert`'s [`secure-logging.md`](../../../../plan-marshall/skills/persona-security-expert/standards/secure-logging.md); apply that rule from its owner. This section covers only the throwable and cause-chain channel.
 
 ---
 

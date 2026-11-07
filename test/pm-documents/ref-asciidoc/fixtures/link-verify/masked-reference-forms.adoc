@@ -1,0 +1,13 @@
+= Masked Reference Forms
+
+A target wrapped in a passthrough: link:++https://example.org/a_b++[Wrapped].
+
+A target carrying an inline passthrough: link:https://x/?q=+foo+[Query].
+
+A passthrough xref: ++xref:missing.adoc[x]++.
+
+A pass-macro cross-reference: pass:[<<a>>].
+
+A code-span xref: `xref:a.adoc[b]`.
+
+A double-backtick syntax example: ``link:missing-double.adoc[x]``.

@@ -727,7 +727,13 @@ def test_discover_external_classifier_consumer_keeps_test_ladder():
 
 
 def test_discover_reactor_aggregator_records_no_reactor_test_artifacts():
-    """The fixture's pom aggregator declares no reactor test artifact of its own."""
+    """The fixture's pom aggregator declares no reactor test artifact of its own.
+
+    This test covers that one claim only. The aggregator's own ``module-tests``
+    canonical is a separate claim, pinned by
+    ``test_discover_reactor_aggregator_carries_the_whole_reactor_test_canonicals``:
+    the fixture root lists a tested module, so it carries the whole-reactor run.
+    """
     parent = _discover_reactor_fixture()['reactor-test-artifact-parent']
 
     assert 'reactor_test_artifacts' not in parent['metadata']
@@ -740,15 +746,34 @@ def test_discover_reactor_aggregator_carries_the_whole_reactor_test_canonicals()
     root module, so a reactor whose tests live in its modules needs the
     whole-reactor ``test`` / ``test-compile`` on the root — otherwise the gate
     finds no canonical and records DEGRADED although every test runs under
-    ``verify``.
+    ``verify``. This is the control for the narrowing below: the root lists
+    ``core`` and ``core`` has a test source.
     """
-    root = _make_module_tree({'.': _AGGREGATOR_POM, 'core': _JAR_POM})
+    root = _make_module_tree({'.': _AGGREGATOR_LISTING_CORE_POM, 'core': _JAR_POM})
     _add_test_source(root, 'core')
 
     modules = {module['name']: module for module in discover_maven_modules(str(root))}
 
     assert modules['parent-agg']['commands']['module-tests'] == _executable('test')
     assert modules['parent-agg']['commands']['test-compile'] == _executable('test-compile')
+
+
+def test_discover_reactor_root_ignores_a_tested_pom_it_does_not_build():
+    """Only the modules the root builds count — a standalone tested POM does not.
+
+    A filesystem walk finds every ``pom.xml``; the root's reactor is the module
+    list IT declares. A standalone ``examples/`` module with tests is not built
+    by ``mvn test`` at the root, so granting the root ``test`` there would be the
+    false green the canonical exists to avoid.
+    """
+    root = _make_module_tree({'.': _AGGREGATOR_POM, 'examples': _JAR_POM})
+    _add_test_source(root, 'examples')
+
+    modules = {module['name']: module for module in discover_maven_modules(str(root))}
+
+    assert 'module-tests' not in modules['parent-agg']['commands']
+    assert 'test-compile' not in modules['parent-agg']['commands']
+    assert modules['leaf-app']['commands']['module-tests'] == _executable('test -pl examples -am')
 
 
 def test_discover_dependency_on_self_coordinate_is_not_a_reactor_test_artifact():
@@ -865,13 +890,81 @@ _AGGREGATOR_POM = """<?xml version="1.0" encoding="UTF-8"?>
 </project>
 """
 
-_NESTED_AGGREGATOR_POM = """<?xml version="1.0" encoding="UTF-8"?>
+_AGGREGATOR_LISTING_CORE_POM = """<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.example</groupId>
+  <artifactId>parent-agg</artifactId>
+  <version>1.0.0</version>
+  <packaging>pom</packaging>
+  <modules>
+    <module>core</module>
+  </modules>
+</project>
+"""
+
+_AGGREGATOR_LISTING_NESTED_POM = """<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.example</groupId>
+  <artifactId>parent-agg</artifactId>
+  <version>1.0.0</version>
+  <packaging>pom</packaging>
+  <modules>
+    <module>nested</module>
+  </modules>
+</project>
+"""
+
+_NESTED_AGGREGATOR_LISTING_CORE_POM = """<?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0">
   <modelVersion>4.0.0</modelVersion>
   <groupId>com.example</groupId>
   <artifactId>nested-agg</artifactId>
   <version>1.0.0</version>
   <packaging>pom</packaging>
+  <modules>
+    <module>core</module>
+  </modules>
+</project>
+"""
+
+_PROFILE_ONLY_MODULES_POM = """<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.example</groupId>
+  <artifactId>parent-agg</artifactId>
+  <version>1.0.0</version>
+  <packaging>pom</packaging>
+  <profiles>
+    <profile>
+      <id>extra-modules</id>
+      <modules>
+        <module>core</module>
+      </modules>
+    </profile>
+  </profiles>
+</project>
+"""
+
+_DEFAULT_ACTIVE_PROFILE_MODULES_POM = """<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.example</groupId>
+  <artifactId>parent-agg</artifactId>
+  <version>1.0.0</version>
+  <packaging>pom</packaging>
+  <profiles>
+    <profile>
+      <id>extra-modules</id>
+      <activation>
+        <activeByDefault>true</activeByDefault>
+      </activation>
+      <modules>
+        <module>core</module>
+      </modules>
+    </profile>
+  </profiles>
 </project>
 """
 
@@ -916,14 +1009,39 @@ def test_discover_pom_aggregator_exposes_compile():
 
 
 def test_discover_reactor_root_stays_false_canonical_free_without_test_modules():
-    """A root aggregator beside a test-less module gets neither test canonical."""
-    root = _make_module_tree({'.': _AGGREGATOR_POM, 'core': _JAR_POM})
+    """A root aggregator whose listed modules carry no tests gets neither canonical."""
+    root = _make_module_tree({'.': _AGGREGATOR_LISTING_CORE_POM, 'core': _JAR_POM})
 
     modules = {module['name']: module for module in discover_maven_modules(str(root))}
 
     assert 'module-tests' not in modules['parent-agg']['commands']
     assert 'test-compile' not in modules['parent-agg']['commands']
     assert 'module-tests' not in modules['leaf-app']['commands']
+
+
+def test_discover_root_reactor_follows_modules_through_a_nested_aggregator():
+    """A root that lists a nested aggregator reaches the tested module under it.
+
+    Maven resolves each ``<module>`` against the declaring aggregator's own
+    directory, so the root's reactor is transitive: ``nested`` then ``nested``'s
+    ``core``. The root carries the whole-reactor run, the nested aggregator —
+    which is not the default scope — keeps neither key.
+    """
+    root = _make_module_tree(
+        {
+            '.': _AGGREGATOR_LISTING_NESTED_POM,
+            'nested': _NESTED_AGGREGATOR_LISTING_CORE_POM,
+            'nested/core': _JAR_POM,
+        }
+    )
+    _add_test_source(root, 'nested/core')
+
+    modules = {module['name']: module for module in discover_maven_modules(str(root))}
+
+    assert modules['parent-agg']['commands']['module-tests'] == _executable('test')
+    assert modules['parent-agg']['commands']['test-compile'] == _executable('test-compile')
+    assert 'module-tests' not in modules['nested-agg']['commands']
+    assert 'test-compile' not in modules['nested-agg']['commands']
 
 
 def test_discover_single_module_jar_root_keeps_its_own_test_canonicals():
@@ -938,21 +1056,22 @@ def test_discover_single_module_jar_root_keeps_its_own_test_canonicals():
     assert module['commands']['test-compile'] == _executable('test-compile')
 
 
-def test_discover_nested_pom_aggregator_keeps_no_whole_reactor_ladder():
-    """A NESTED ``pom`` aggregator is not the default scope, so it gets neither key.
+def test_discover_root_reactor_follows_a_modules_block_only_when_the_profile_is_default_active():
+    """A profile's ``<modules>`` counts only when a default ``mvn test`` activates it.
 
-    Only the module at the project root answers the architecture's default
-    scope; giving a nested aggregator the whole-reactor canonicals would make a
-    module-scoped resolve run the entire reactor by accident.
+    A profile that needs an explicit ``-P`` is not part of a default build, so
+    its modules grant the root nothing; ``activeByDefault`` is, so it does.
     """
-    root = _make_module_tree({'.': _AGGREGATOR_POM, 'nested': _NESTED_AGGREGATOR_POM, 'core': _JAR_POM})
-    _add_test_source(root, 'core')
+    not_active = _make_module_tree({'.': _PROFILE_ONLY_MODULES_POM, 'core': _JAR_POM})
+    _add_test_source(not_active, 'core')
+    default_active = _make_module_tree({'.': _DEFAULT_ACTIVE_PROFILE_MODULES_POM, 'core': _JAR_POM})
+    _add_test_source(default_active, 'core')
 
-    modules = {module['name']: module for module in discover_maven_modules(str(root))}
+    not_active_modules = {module['name']: module for module in discover_maven_modules(str(not_active))}
+    default_active_modules = {module['name']: module for module in discover_maven_modules(str(default_active))}
 
-    assert modules['parent-agg']['commands']['module-tests'] == _executable('test')
-    assert 'module-tests' not in modules['nested-agg']['commands']
-    assert 'test-compile' not in modules['nested-agg']['commands']
+    assert 'module-tests' not in not_active_modules['parent-agg']['commands']
+    assert default_active_modules['parent-agg']['commands']['module-tests'] == _executable('test')
 
 
 def test_discover_dependencies_empty_on_cheap_path():

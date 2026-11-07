@@ -1508,12 +1508,37 @@ def _route_task_verification_commands(plan_id: str, body: dict[str, Any]) -> tup
         changed = stale_rung or restamped
         # One rung command is recorded per task in one pass; see the stamp site.
         recorded_this_pass = False
+        # The decision pass prefers the command the previous compose recorded
+        # (see the recorded-command re-measure above). When that command still
+        # qualifies, the routing pass must keep it: recording a DIFFERENT (even
+        # qualifying) command here would diverge from the decision on the next
+        # compose, because the decision would then re-measure this one instead.
+        if rung is not None and isinstance(recorded_command, str):
+            recorded_step, recorded_toon = _module_tests_step_for(recorded_command, plan_id)
+            if (
+                recorded_step == _MODULE_TESTS_STEP
+                and isinstance(recorded_toon, dict)
+                and recorded_toon.get('execution_tier') == 'orchestrator'
+                and recorded_toon.get('exceeds_bash_ceiling') is True
+            ):
+                recorded_this_pass = True
         for raw in commands:
             if not isinstance(raw, str):
                 kept_commands.append(raw)
                 continue
             resolve_toon = _resolve_command_tier(raw, plan_id)
             tier = resolve_toon.get('execution_tier') if isinstance(resolve_toon, dict) else None
+            # The DECISION this pass records rests on a command whose tier is
+            # orchestrator AND whose duration was MEASURED above the ceiling. A
+            # command that is merely orchestrator-tier (an unmeasured one fails
+            # closed to that tier) did not decide anything, so recording it would
+            # hand a later compose a command it re-measures as non-qualifying —
+            # the deferral would vanish on the second compose.
+            qualifies = (
+                tier == 'orchestrator'
+                and isinstance(resolve_toon, dict)
+                and resolve_toon.get('exceeds_bash_ceiling') is True
+            )
             if tier == 'orchestrator':
                 parsed = _parse_verification_command(raw)
                 if parsed is None:
@@ -1535,18 +1560,21 @@ def _route_task_verification_commands(plan_id: str, body: dict[str, Any]) -> tup
                     # a later compose re-measures, since the command itself is
                     # gone by then.
                     #
-                    # The FIRST module-tests command seen in this pass wins. A task
-                    # can carry two modules' rungs (a deliverable spanning two
-                    # modules), and a later command must not overwrite the one the
-                    # decision was taken on — the field is one command and the task
-                    # is one tail.
+                    # The FIRST QUALIFYING module-tests command seen in this pass
+                    # wins. A task can carry two modules' rungs (a deliverable
+                    # spanning two modules); a later qualifying command must not
+                    # overwrite the one the decision was taken on, and a merely
+                    # orchestrator-tier (unmeasured) command ahead of it did not
+                    # decide anything and must not be recorded at all — the field
+                    # is one command, the task is one tail, and a re-compose
+                    # re-measures exactly this command.
                     verification['owed_rung'] = OWED_RUNG_CHAIN_TAIL
-                    if not recorded_this_pass:
+                    if qualifies and not recorded_this_pass:
                         verification['owed_rung_command'] = raw
                         recorded_this_pass = True
                 elif rung == OWED_RUNG_DEFERRED and verb == 'module-tests':
                     verification['owed_rung'] = OWED_RUNG_DEFERRED
-                    if not recorded_this_pass:
+                    if qualifies and not recorded_this_pass:
                         verification['owed_rung_command'] = raw
                         recorded_this_pass = True
                 if step_id is None:
