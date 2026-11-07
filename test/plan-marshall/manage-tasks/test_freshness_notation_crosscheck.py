@@ -446,7 +446,7 @@ def test_the_observed_three_row_ledger_no_longer_certifies_a_whole_tree_change(
     assert result['reason'] == crosscheck.REASON_SCOPE_NARROW
     assert result['scope_cross_check'] == crosscheck.NARROW
     # The refusal names WHAT the row ran, not merely that something was narrow.
-    assert result['row_scopes'] == ['module-tests plan-marshall/manage-findings: ' + crosscheck.ROW_CANONICAL_TOO_WEAK]
+    assert result['row_scopes'] == ['module-tests plan-marshall/manage-findings: ' + crosscheck.ROW_SCOPE_TOO_NARROW]
 
 
 def test_a_whole_tree_verify_row_still_certifies_the_same_change(plan_context, monkeypatch, tmp_path) -> None:
@@ -1095,21 +1095,22 @@ def test_an_unreadable_row_still_passes_a_change_that_does_not_need_whole_tree(m
 
 
 @pytest.mark.parametrize(
-    ('command_args', 'scope_verdict', 'refused'),
+    ('command_args', 'canonical'),
     [
-        ('verify -pl core-api -am', crosscheck.NARROW, True),
-        ('package -pl core-api -am', crosscheck.UNDETERMINED, False),
-        ('test -pl core-api -am', crosscheck.UNDETERMINED, False),
+        ('verify -pl core-api -am', 'verify'),
+        ('package -pl core-api -am', 'package'),
+        ('test -pl core-api -am', 'test'),
     ],
     ids=['verify-narrow', 'package-canonical-unknown', 'test-canonical-unknown'],
 )
-def test_each_resolved_maven_row_shape_gets_its_own_verdict(monkeypatch, command_args, scope_verdict, refused):
-    """The shapes ``_maven_cmd_discover`` really emits, judged on a whole-tree change.
+def test_each_resolved_maven_row_shape_is_refused_by_its_recorded_scope(monkeypatch, command_args, canonical):
+    """Every module row ``_maven_cmd_discover`` emits is scoped, and refutes.
 
-    ``verify`` is in the vocabulary, so its module scope refutes the change.
-    ``package`` and ``test`` are outside it by design (the vocabulary maps what an
-    analysis examines, and neither maps), so they stay an inability that passes
-    with its reason recorded — the documented partiality of the vocabulary, not a
+    ``verify`` is in the analysis vocabulary while ``package`` and ``test`` are
+    outside it by design (the vocabulary maps what an analysis examines, and
+    neither maps). All three record exactly one module for a whole-tree change, so
+    the scope refutes them before the canonical is consulted — the documented
+    partiality of the vocabulary cannot turn a measured one-module build into a
     coverage credit.
     """
     _stub_expected(monkeypatch, {_PYPROJECT})
@@ -1123,8 +1124,9 @@ def test_each_resolved_maven_row_shape_gets_its_own_verdict(monkeypatch, command
         _required(analyses={vocabulary.test}, whole_tree=True),
     )
 
-    assert outcome['scope_verdict'] == scope_verdict, outcome
-    assert (outcome['contributing'] == []) is refused, outcome
+    assert outcome['scope_verdict'] == crosscheck.NARROW, outcome
+    assert outcome['contributing'] == [], outcome
+    assert outcome['row_scopes'] == [f'{canonical} core-api: ' + crosscheck.ROW_SCOPE_TOO_NARROW]
 
 
 def test_the_control_row_with_no_extra_flag_is_still_whole_tree_and_adequate(monkeypatch):

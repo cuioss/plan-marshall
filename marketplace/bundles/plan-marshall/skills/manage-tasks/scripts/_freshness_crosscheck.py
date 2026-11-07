@@ -728,9 +728,12 @@ def _row_refusal(
 ) -> str | None:
     """Return why ``entry`` does not cover ``required``, or ``None`` when it does.
 
-    Evaluated in order of how much the row said: a row nobody could parse, then a
-    canonical outside the vocabulary, then the substantive refusals. The first
-    two are inabilities.
+    Evaluated from the most decisive fact to the least: a row nobody could parse,
+    then a READABLE scope that provably built less than the change needs, then a
+    canonical outside the vocabulary, then the analyses. Scope comes before the
+    canonical because the vocabulary is PARTIAL by design — an unmapped canonical
+    is an inability that passes, and it must not mask a row that positively
+    recorded a narrower blast radius.
 
     Args:
         entry: A ``kind=build`` ledger row.
@@ -743,16 +746,13 @@ def _row_refusal(
     scope = parse_row_scope(entry)
     if scope is None:
         return ROW_ARGS_UNREADABLE
+    if not _scope_adequate(scope, required):
+        return ROW_SCOPE_TOO_NARROW
     performed = vocabulary.by_canonical.get(scope.canonical)
     if performed is None:
         return ROW_CANONICAL_UNKNOWN
     if not required.analyses <= performed:
         return ROW_CANONICAL_TOO_WEAK
-    if scope.scope_tokens:
-        if required.whole_tree:
-            return ROW_SCOPE_TOO_NARROW
-        if not required.modules <= set(scope.scope_tokens):
-            return ROW_SCOPE_TOO_NARROW
     if vocabulary.test in required.analyses and _measured_zero_tests(entry):
         return ROW_TESTS_EXECUTED_ZERO
     return None
