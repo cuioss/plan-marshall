@@ -1705,6 +1705,29 @@ class TestPreToolFaultPassThrough:
         assert verdict.child_fault.reason == 'unknown_flag'
         assert verdict.child_fault.message == correction
 
+    def test_a_table_ahead_of_the_first_status_is_dropped_at_the_next_one(self, tmp_path):
+        """A pre-status table belongs to the block that first status opens, once.
+
+        That block owns it, so a later block that states no table of its own must
+        report no rows rather than inheriting it.
+        """
+        import _build_server_protocol as proto
+
+        log = tmp_path / 'pre-status-table.log'
+        log.write_text(
+            'errors[1]{file,line,message,category}:\n'
+            '  test/earlier.py,1,"earlier failure",test_failure\n'
+            'status: running\n'
+            'status: error\nexit_code: 1\nerror: build_failed\n',
+            encoding='utf-8',
+        )
+
+        verdict = proto.read_log_verdict(str(log))
+
+        assert verdict is not None
+        assert verdict.status == 'error'
+        assert verdict.errors == (), "the first block's table is not this block's"
+
     def test_the_emitted_identifiers_are_the_ones_the_lane_classifies(self):
         """Every pre-tool emitter's identifier is a member of the classifier set.
 

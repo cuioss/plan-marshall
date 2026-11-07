@@ -1285,7 +1285,7 @@ def read_log_verdict(log_file: str) -> LogVerdict | None:
     # line from a block that is not the verdict can never supply one of its fields.
     block: dict[str, str] = {}
     verdict_block: dict[str, str] | None = None
-    # Whether the table being collected belongs to a block that was ALREADY open
+    # Whether the table currently held belongs to a block that was ALREADY open
     # when its header appeared. A table ahead of the first `status:` belongs to the
     # block that status opens and survives it; a table collected inside an open
     # block belongs to that block and is dropped when the next one begins.
@@ -1318,6 +1318,9 @@ def read_log_verdict(log_file: str) -> LogVerdict | None:
                     block = {'status': _toon_scalar(line)}
                     if table_owned_by_open_block:
                         errors = ()
+                    # Whatever table is held now belongs to the block just opened,
+                    # so the NEXT `status:` line has to drop it.
+                    table_owned_by_open_block = True
                     continue
                 key, value = _block_scalar(line)
                 if key is not None and block:
