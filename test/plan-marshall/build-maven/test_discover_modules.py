@@ -916,16 +916,6 @@ _AGGREGATOR_LISTING_NESTED_POM = """<?xml version="1.0" encoding="UTF-8"?>
 </project>
 """
 
-_NESTED_AGGREGATOR_POM = """<?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0">
-  <modelVersion>4.0.0</modelVersion>
-  <groupId>com.example</groupId>
-  <artifactId>nested-agg</artifactId>
-  <version>1.0.0</version>
-  <packaging>pom</packaging>
-</project>
-"""
-
 _NESTED_AGGREGATOR_LISTING_CORE_POM = """<?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0">
   <modelVersion>4.0.0</modelVersion>

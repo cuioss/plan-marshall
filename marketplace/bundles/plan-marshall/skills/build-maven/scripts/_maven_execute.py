@@ -64,11 +64,7 @@ _INFORMATIONAL_ISSUE_CATEGORIES = frozenset(
 #: artifact is ``package`` (see ``_maven_cmd_discover._build_commands``).
 _TEST_PHASE_GOALS = ('test', 'package')
 
-#: Maven's lifecycle phases. A token in this set is a GOAL; every other
-#: non-option token is an option's value (``-pl core``), which a cheap parse
-#: cannot tell apart — so the goal is recognised by Maven's own vocabulary
-#: rather than by maintaining an option list on which an unlisted option would
-#: silently hide a test run.
+#: Maven's lifecycle phases. A token in this set is a GOAL.
 _LIFECYCLE_PHASES = frozenset(
     {
         'validate',
@@ -106,8 +102,50 @@ _LIFECYCLE_PHASES = frozenset(
 
 #: The flag forms that make a test-phase invocation skip its tests, so an empty
 #: test population is what the command asked for rather than a surprise. The
-#: value is captured so an explicit ``=false`` is NOT read as a skip.
-_SKIP_FLAG_PATTERN = re.compile(r'-D(?:skipTests|maven\.test\.skip)(?:=(?P<value>true|false))?(?=\s|$)')
+#: value is captured (case-insensitively — Maven parses its booleans that way) so
+#: an explicit ``=false`` is NOT read as a skip.
+_SKIP_FLAG_PATTERN = re.compile(r'-D(?:skipTests|maven\.test\.skip)(?:=(?P<value>true|false))?(?=\s|$)', re.IGNORECASE)
+
+#: A plugin-goal coordinate (``surefire:test``), the other shape a goal takes.
+#: Deliberately narrow — no slashes and no empty prefix — so an option's value
+#: that happens to contain a colon (``-pl :core``, ``-f C:/repo/pom.xml``) is not
+#: mistaken for a goal.
+_PLUGIN_GOAL_PATTERN = re.compile(r'[A-Za-z0-9_.\-]+:[A-Za-z0-9_.\-]+')
+
+#: Options that take a SEPARATE value token. Their value is consumed so a value
+#: that is spelled like a phase or a coordinate (``-pl integration-test``,
+#: ``-pl :core``) is not read as the goal. The goal recogniser below is Maven's
+#: own vocabulary; this set only decides which token to step over, and an
+#: unlisted value-taking option costs at most a wrong classification when its
+#: value is literally a phase name.
+_VALUE_TAKING_OPTIONS = frozenset(
+    {
+        '-pl',
+        '--projects',
+        '-f',
+        '--file',
+        '-l',
+        '--log-file',
+        '-P',
+        '--activate-profiles',
+        '-s',
+        '--settings',
+        '-gs',
+        '--global-settings',
+        '-t',
+        '--toolchains',
+        '-gt',
+        '--global-toolchains',
+        '-rf',
+        '--resume-from',
+        '-T',
+        '--threads',
+        '-b',
+        '--builder',
+        '-c',
+        '--color',
+    }
+)
 
 #: What Surefire/Failsafe print when the build asked them to skip, so a
 #: ``-DskipTests`` set through ``.mvn/maven.config`` or ``MAVEN_OPTS`` — invisible
@@ -124,7 +162,8 @@ def _asks_to_skip_tests(args: str) -> bool:
     zero-test guard off for the invocations most likely to need it.
     """
     for match in _SKIP_FLAG_PATTERN.finditer(args):
-        if match.group('value') != 'false':
+        value = match.group('value')
+        if value is None or value.lower() != 'false':
             return True
     return False
 
@@ -286,16 +325,26 @@ def apply_selector_miss_guard(result: dict) -> dict:
 def _leading_goal(args: str) -> str | None:
     """Return the first Maven goal of an invocation, or None when it names none.
 
-    A goal is a lifecycle phase or a plugin-goal coordinate (``surefire:test``).
-    Every other token is an option or an option's value, and recognising goals by
-    Maven's own vocabulary is what keeps ``-pl core test`` and ``-gt /path test``
-    from reading their values as the goal.
+    A goal is a lifecycle phase or a plugin-goal coordinate (``surefire:test``),
+    and both are recognised by Maven's own vocabulary. Tokens are walked left to
+    right: an option's separately supplied value is stepped over, and every other
+    non-option token is only a candidate — it becomes the goal when it has a
+    goal's shape. That is what keeps ``-pl core test``, ``-pl :core test`` and
+    ``-gt /path test`` from reading an option's value as the goal.
     """
-    for token in args.split():
-        if token.startswith('-'):
+    tokens = args.split()
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
+        if token in _VALUE_TAKING_OPTIONS:
+            index += 2
             continue
-        if token in _LIFECYCLE_PHASES or ':' in token:
+        if token.startswith('-'):
+            index += 1
+            continue
+        if token in _LIFECYCLE_PHASES or _PLUGIN_GOAL_PATTERN.fullmatch(token):
             return token
+        index += 1
     return None
 
 

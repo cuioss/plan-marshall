@@ -648,6 +648,28 @@ def test_a_plugin_goal_form_is_a_test_run_too():
     assert guarded['message'].startswith(TEST_RUN_EXECUTED_NOTHING)
 
 
+def test_an_option_value_shaped_like_a_goal_is_not_taken_for_one():
+    """`-pl` values that look like a goal must not hide the real one.
+
+    `:core` and `integration-test` are both plausible `-pl` values and both are
+    spelled like a goal; reading either as the goal would switch the guard off
+    for `mvn -pl :core test`.
+    """
+    result = _run_result('maven-test-no-summary.log', status='success', exit_code=0, command='mvnw test')
+
+    for args in ('-pl :core test', '-pl integration-test test', '-f C:/repo/pom.xml test'):
+        guarded = apply_zero_test_guard(result, args)
+        assert guarded['status'] == 'indeterminate', args
+        assert guarded['message'].startswith(TEST_RUN_EXECUTED_NOTHING), args
+
+
+def test_control_a_module_named_like_a_phase_behind_pl_is_not_the_goal():
+    """CONTROL: `mvn -pl test verify` is a VERIFY run, not a test run."""
+    result = _run_result('maven-test-no-summary.log', status='success', exit_code=0, command='mvnw verify')
+
+    assert apply_zero_test_guard(result, '-pl test verify') is result
+
+
 def test_leading_goal_is_read_past_a_value_taking_option():
     """`mvn -pl core test` is a test run: the option's value is not the goal."""
     result = _run_result('maven-test-no-summary.log', status='success', exit_code=0, command='mvnw -pl core test')
