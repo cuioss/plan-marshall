@@ -226,6 +226,50 @@ def test_unmeasured_unit_of_an_unmeasured_module_takes_the_stated_default(isolat
     assert narrow_result['execution_tier'] == 'per_task'
 
 
+def test_a_default_stamp_above_a_low_ceiling_claims_no_measured_exceedance():
+    """The stated default is a declared floor, not a measurement of the unit.
+
+    A harness whose ceiling sits below the tool's outer floor (OpenCode's 120s is
+    below pyproject's 330s floor + 30s buffer) would otherwise see the DEFAULT
+    stamp report ``exceeds_bash_ceiling: true``. That flag answers "was a MEASURED
+    bound seen over the ceiling?", and a floor nobody has observed says nothing
+    about this command's duration — the deferral decision reads the flag as a
+    measurement, so a default must never set it.
+
+    Driven through the production ``_compute_narrow_unit_tier_fields`` with its
+    two lookups and the stated default supplied, so the assertion is about the
+    arithmetic rather than about which ``sys.modules`` copy a test happened to
+    import.
+    """
+    build = load_script_module(
+        'plan-marshall', 'manage-architecture', '_cmd_client_build.py', 'narrow_ceiling_build', register=False
+    )
+    default_stamp = 360
+    monkeypatch_target = build.__dict__
+    original_ceiling = monkeypatch_target['HARNESS_BASH_CEILING_SECONDS']
+    original_lookup = build._lookup_bash_timeout
+    original_default = build._narrow_default_stamp
+    try:
+        monkeypatch_target['HARNESS_BASH_CEILING_SECONDS'] = default_stamp - 1
+        build._lookup_bash_timeout = lambda *args, **kwargs: (300, False)  # unmeasured narrow + parent
+        build._narrow_default_stamp = lambda tool: default_stamp
+        fields = build._compute_narrow_unit_tier_fields(
+            'python', 'module-tests plan-marshall/x', 'module-tests plan-marshall', '/tmp'
+        )
+    finally:
+        monkeypatch_target['HARNESS_BASH_CEILING_SECONDS'] = original_ceiling
+        build._lookup_bash_timeout = original_lookup
+        build._narrow_default_stamp = original_default
+
+    assert fields is not None
+    assert fields['bound_source'] == 'narrow_default'
+    assert fields['bash_timeout_seconds'] == default_stamp
+    assert fields['exceeds_bash_ceiling'] is False, 'a declared floor is not a measurement'
+    # The tier still follows the ceiling: a floor above it fails closed.
+    assert fields['execution_tier'] == 'orchestrator'
+    assert fields['hint'] == build._HINT_UNMEASURED
+
+
 def test_a_measured_unit_keeps_its_own_measurement(isolated_run_config):
     """A measured narrow key is derived as before, whatever the module says.
 
