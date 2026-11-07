@@ -747,7 +747,14 @@ def cmd_run_common(
             default, never a silent full-entitlement one.
 
     Returns:
-        Exit code (0 for success, 1 for failure).
+        The process exit code. The build's status is modelled in the emitted
+        payload, so ``0`` is the answer for ``success``, for the ``killed`` /
+        ``timeout`` / ``indeterminate`` / ``running`` non-finishes, and for a build
+        that ran and failed. The two exceptions are the faults that produced no
+        build verdict at all: ``1`` for a LAUNCH fault, and the CHILD's own
+        positive code for a PRE-TOOL refusal — so the direct and routed routes
+        answer the same number (exit ``2`` for ``worktree_resolution_failed``),
+        falling back to ``1`` when the child stated a non-positive one.
     """
     base_formatter = format_json if output_format == 'json' else format_toon
 
@@ -885,8 +892,8 @@ def cmd_run_common(
             'command': command_str,
             'job_id': result.get('job_id', ''),
             # The observed daemon status when the producer carried one — `queued`
-            # for a job that had not started when the bound expired — else the
-            # historical `running`.
+            # for a job that had not started when the bound expired — else
+            # `running`.
             'job_status': result.get('job_status') or STATUS_RUNNING,
         }
         print(formatter(running_output))

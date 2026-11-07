@@ -163,7 +163,7 @@ class DirectCommandResult(TypedDict, total=False):
     routed_tests_run: int  # Daemon-routed green build: the INNER wrapper's count
     routed_errors: list  # Daemon-routed failing build: the INNER wrapper's errors[]
     job_id: str  # Daemon-routed running hand-back: the daemon job to re-attach to
-    job_status: str  # Daemon-routed running hand-back: always 'running' on this shape
+    job_status: str  # Daemon-routed running hand-back: the daemon's own live status ('running' or 'queued')
     queued_seconds: int  # How long the build waited for its directory/slot (routed or in-process)
     # Written BACK by the renderer (cmd_run_common) once it has measured the
     # executed-test count, so the routing seam's ledger row can name the
@@ -284,20 +284,17 @@ ERROR_INVALID_INVOCATION = 'invalid_invocation'
 """The executor refused the dispatch before spawning the script (exit 2).
 
 Its ``reason`` carries the rejection class (``unknown_flag``,
-``missing_required_flag``, an unregistered verb). A routed child whose executor
-declares a surface that still MATCHES the dispatched script reports that refusal as
-itself instead of as a red build.
+``missing_required_flag``, an unregistered verb). A routed child reports that
+refusal as itself instead of as a red build.
 
-The qualification is load-bearing, and it has a SECOND direction. This branch adds
-a flag to the build CLI, which lives in a module imported by every build script
-while the script files themselves are unchanged — so an executor generated before
-this change still matches its recorded script digest, applies the surface, and
-refuses ``--resolved-project-dir`` as ``unknown_flag``. That refusal IS structured
-(it is this identifier), so it reports as itself rather than as a red build, but
-the build still does not run: regenerating the executor in a project is the owed
-step before its routed plan builds can use the carry. The other direction — no
-matching surface at all, so validation is skipped and an older script's argparse
-rejects the flag on stderr with no TOON body — remains the unclassified residual.
+A surface that predates a flag the build CLI declares refuses that flag as
+``unknown_flag`` even though the script file it describes is unchanged — the flag
+lives in a module every build script imports. That refusal is structured (this
+identifier), so it reaches the caller under its own name; the build does not run,
+and regenerating that project's executor is what makes the flag dispatchable. A
+surface old enough that validation is skipped entirely rejects the flag in the
+script's own argparse instead, with no TOON body on stdout — an unclassified
+residual that is not this identifier.
 """
 
 LAUNCH_FAULT_ERRORS = frozenset({ERROR_EXECUTION_FAILED, ERROR_LOG_FILE_FAILED})
@@ -331,6 +328,26 @@ daemon), acquires a slot like any other in-process build, and reports exhaustion
 through this emitter. No tool ran, so it is a pre-tool fault and not a red build.
 """
 
+ERROR_BUILD_QUEUE_UNAVAILABLE = 'build_queue_unavailable'
+"""The machine-global build queue could not be consulted, so no slot was taken.
+
+Emitted by ``_build_execute_factory._emit_build_queue_unavailable`` when the queue
+itself answers ``status: error`` instead of an admission. The acquire is not
+best-effort — a queue that cannot be read is a hard failure — but it is also not a
+build: no tool ran, so the caller receives this name with the reason the acquire
+reported, and never a ``build_failed`` beside a synthetic error row.
+"""
+
+ERROR_DIRECTORY_LOCK_UNAVAILABLE = 'directory_lock_unavailable'
+"""The per-directory build lock could not be consulted, so the build did not start.
+
+Emitted by ``_build_execute_factory._emit_directory_lock_unavailable``. Every
+in-process build takes this lock — plan-less ones included — so a queue that will
+not answer makes the build unrunnable before any tool is chosen. Same class as
+:data:`ERROR_BUILD_QUEUE_UNAVAILABLE`: a limiter that refused to answer, not a
+build that ran and failed.
+"""
+
 PRE_TOOL_FAULT_ERRORS = frozenset(
     {
         ERROR_WORKTREE_RESOLUTION_FAILED,
@@ -338,6 +355,8 @@ PRE_TOOL_FAULT_ERRORS = frozenset(
         ERROR_INVALID_INVOCATION,
         ERROR_CARRIED_TREE_OUTSIDE_JOB,
         ERROR_QUEUE_SATURATED,
+        ERROR_BUILD_QUEUE_UNAVAILABLE,
+        ERROR_DIRECTORY_LOCK_UNAVAILABLE,
     }
 )
 """The error classes a build process emits from its OWN pre-tool emitters.

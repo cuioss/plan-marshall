@@ -57,13 +57,17 @@ from _build_execute import (  # noqa: E402
 from _build_execute import detect_wrapper as _detect_wrapper  # noqa: E402
 from _build_queue_slot import (  # noqa: E402
     BuildQueueTimeout,
+    BuildQueueUnavailable,
     DirectoryBusy,
     DirectoryLease,
+    DirectoryLockUnavailable,
     build_queue_slot,
     directory_lock,
 )
 from _build_result import (  # noqa: E402
     ERROR_BUILD_FAILED,
+    ERROR_BUILD_QUEUE_UNAVAILABLE,
+    ERROR_DIRECTORY_LOCK_UNAVAILABLE,
     ERROR_QUEUE_SATURATED,
     DirectCommandResult,
     error_result,
@@ -95,7 +99,7 @@ from _build_server_protocol import STATUS_TIMEOUT as WIRE_STATUS_TIMEOUT  # noqa
 # `_build_server_protocol._RESULT_STATUS_TO_WIRE`.
 from _build_shared import cmd_run_common  # noqa: E402
 from marketplace_bundles import resolve_sibling_skill_path  # noqa: E402
-from marketplace_paths import NO_PLAN_SENTINEL, home_root, names_real_plan  # noqa: E402
+from marketplace_paths import NO_PLAN_SENTINEL, PLAN_DIR_NAME, home_root, names_real_plan  # noqa: E402
 from plan_logging import log_entry  # noqa: E402
 from toon_parser import serialize_toon  # noqa: E402
 
@@ -112,7 +116,7 @@ ERROR_DAEMON_REQUIRED = 'daemon_required'
 ERROR_DIRECTORY_BUSY = 'directory_busy'
 
 # ---------------------------------------------------------------------------
-# marshalld build-execute routing seam (D5)
+# marshalld build-execute routing seam
 # ---------------------------------------------------------------------------
 # A build is routed to the marshalld daemon when the project is registered AND
 # the daemon answers a verified handshake ("ready"); otherwise it runs in-process
@@ -693,18 +697,22 @@ def _map_daemon_result(waited: dict[str, Any], command_str: str, command_key: st
     mapping is status-preserving in BOTH non-finish directions: ``timeout`` maps
     to a timeout result and ``killed`` maps to a ``killed`` result carrying the
     no-blind-retry message, so a harness reap on the daemon side is never
-    mistaken for a flaky build — and never for a red one. A ``failure`` job
-    becomes an ``error`` ONLY when the child's own log verdict says the build ran
-    and failed: a verdict the wire cannot carry (``timeout``, ``killed``,
-    ``indeterminate``) is re-rendered as itself, because the four-valued wire
-    status has no row for it.
+    mistaken for a flaky build — and never for a red one.
 
-    The ``killed`` leg previously produced an ``error_result`` whose ``error``
-    field said ``killed``; ``cmd_run_common`` reconstructed its own payload from
-    the status alone, so that marker never reached a consumer and the daemon's
-    correctly-classified kill arrived at every gate as a build failure. Mapping
-    to a first-class ``killed`` status is what carries the daemon's verdict
-    through the renderer intact.
+    The wire carries four terminal rows and the wrapper vocabulary five, and the
+    supervisor translates the wrapper's own ``timeout`` and ``killed`` onto the
+    wire's identical rows. What the wire flattens is every OTHER non-green verdict
+    — ``indeterminate``, the live ``running`` hand-back and a status it does not
+    know — onto ``failure``. So a ``failure`` job becomes an ``error`` only when
+    the child's own log verdict says the build ran and failed; any other verdict
+    the log states is re-rendered as itself.
+
+    The ``killed`` leg produces a first-class ``killed`` status rather than an
+    ``error_result`` whose ``error`` field said ``killed``: ``cmd_run_common``
+    reconstructs its own payload from the status alone, so a marker carried that
+    way never reaches a consumer and the daemon's correctly-classified kill arrives
+    at every gate as a build failure. Mapping to a first-class status is what
+    carries the daemon's verdict through the renderer intact.
 
     On a ``success`` job status the client independently CROSS-CHECKS the routed
     verdict: it re-reads the job log's own build TOON through the shared
@@ -743,6 +751,17 @@ def _map_daemon_result(waited: dict[str, Any], command_str: str, command_key: st
         command_str: The command the daemon ran.
         command_key: The run-configuration key of the build, attached to a
             ``timeout`` or ``killed`` result when supplied.
+
+    Returns:
+        The routed child's verdict, under ONE rule: the result is the child's own
+        verdict wherever the child stated one. A ``success`` stays ``success``; a
+        ``timeout`` or ``killed`` stays a non-finish carrying the bound that fired;
+        a PRE-TOOL fault is reported under its own name with its own exit code; a
+        LAUNCH fault keeps its own class and reason with exit ``-1``; a child that
+        ran and failed is ``error`` / ``build_failed`` with the rows it parsed; and
+        an undetermined or unrecognised verdict is ``indeterminate`` carrying the
+        producer's own message. ``build_failed`` is produced only for a build that
+        actually ran and failed.
     """
     job_status = str(waited.get('job_status', ''))
     log_file = str(waited.get('log_file', '') or '')
@@ -859,11 +878,18 @@ def _child_fault_result(
 
     A build process that refuses before any build tool runs — the plan tree will
     not resolve, the two routing flags were both supplied, the executor rejected
-    the dispatch — is not a red build. The name, the reason and the exit code are
-    the whole result: there is no test row to collect and no bound to report, so
-    the synthetic ``build_failure`` row is exactly the fabrication the renderer must
-    not publish over it. The exit code is the CHILD's, so the routed path answers
-    what a direct build already answers (``worktree_resolution_failed`` with 2).
+    the dispatch, no build slot was admitted — is not a red build. The name, the
+    reason, the message and the exit code are the whole result: there is no test
+    row to collect and no bound to report, so the synthetic ``build_failure`` row
+    is exactly the fabrication the renderer must not publish over it. The exit code
+    is the CHILD's, so the routed path answers what a direct build already answers
+    (``worktree_resolution_failed`` with 2).
+
+    Each field is carried under the name the child emitted it under, and only when
+    the child emitted it: a body that states ``message`` and no ``reason`` reaches
+    the caller with ``message`` set and ``reason`` absent, exactly as it does on the
+    direct path. Substituting one for the other would make the same fault arrive
+    under different field names on the two routes.
 
     Args:
         fault: The :class:`ChildFault` read back from the job log.
@@ -876,12 +902,10 @@ def _child_fault_result(
         The error result under the child's own name.
     """
     extra: dict[str, Any] = {}
-    reason = getattr(fault, 'reason', None)
-    if reason:
-        extra['reason'] = reason
-    corrective = getattr(fault, 'corrective', None)
-    if corrective:
-        extra['message'] = corrective
+    for name in ('reason', 'message'):
+        value = getattr(fault, name, None)
+        if value:
+            extra[name] = value
     return error_result(  # type: ignore[return-value]
         fault.error,
         exit_code or 2,
@@ -1046,9 +1070,9 @@ def _running_hand_back(
         log_file = str(waited.get('log_file', '') or '')
         queued_seconds = _coerce_queued_seconds(waited)
         # The top-level status stays `running` (it is the hand-back shape a caller
-        # re-attaches from), but `job_status` reports what the daemon last said —
-        # `queued` when the job had not started. Reporting `running` for a job that
-        # never began overstates progress, which is the very confusion D2 removes.
+        # re-attaches from), while `job_status` reports what the daemon last said —
+        # `queued` when the job had not started, `running` once it had. Reporting
+        # `running` for a job that never began would overstate progress.
         candidate = str(waited.get('job_status', '') or '')
         if candidate in WIRE_LIVE_STATUSES:
             observed_status = candidate
@@ -1076,9 +1100,9 @@ _PLAN_ID_FLAG = '--plan-id'
 """The plan-attribution flag a routed argv can carry (never a path the daemon re-resolves).
 
 It names the plan for the ledger row and the build slot; the tree travels separately
-as ``--resolved-project-dir`` so the child never has to re-resolve it. What the child
-DOES re-resolve when it arrives without the carry is this value against its own tree
-— which is the pre-carry behaviour, and the reason the carry exists.
+as ``--resolved-project-dir`` so the child never has to re-resolve it. When the
+carry is absent — a tree that still holds the plan record, and so resolves it
+itself — the child re-resolves this value against its own tree.
 """
 
 _PROJECT_DIR_FLAG = '--project-dir'
@@ -1105,7 +1129,7 @@ path-shaped flags are checked, and none of them can arrive here relative:
 
 
 def _carry_resolved_tree(argv: list[str], project_dir: str) -> list[str]:
-    """Append the resolved tree to a routed child's argv when the argv names a plan.
+    """Append the resolved tree to a routed child's argv when the child needs it.
 
     ``--plan-id`` is resolved by the ROUTING process against ITS tree and then
     re-resolved by the daemon child against the child's tree. Those are the same
@@ -1115,22 +1139,52 @@ def _carry_resolved_tree(argv: list[str], project_dir: str) -> list[str]:
     and it names the still-existing worktree) and the child refuses (its tree no
     longer holds the record). The carry is what removes the second resolution.
 
-    Only an argv that names a REAL plan gets the carry: a ``--project-dir`` dispatch
-    already travels as an absolute value, and the ``NO_PLAN`` sentinel is not a
-    routing source (its resolution is the submitted tree itself), so neither has a
-    resolution to replace. Every existing token is left exactly as it was.
+    The carry is therefore appended ONLY when the child's own tree cannot answer
+    the resolution the routing process already completed: the plan record is
+    absent from ``project_dir``. That is the window, and only the window. Outside
+    it the child re-resolves the same record to the same tree, so appending the
+    flag buys nothing — and costs the build outright when the child's executor was
+    generated before the flag existed, because such an executor refuses an
+    undeclared flag and there is no in-process fallback after a routed result.
+
+    Only an argv that names a REAL plan is considered at all: a ``--project-dir``
+    dispatch already travels as an absolute value, and the ``NO_PLAN`` sentinel is
+    not a routing source (its resolution is the submitted tree itself), so neither
+    has a resolution to replace. Every existing token is left exactly as it was.
 
     Args:
         argv: The routed argv tail, already absolutised for ``--project-dir``.
         project_dir: The ABSOLUTE tree the routing process resolved.
 
     Returns:
-        The argv, with the carry appended when the argv names a plan.
+        The argv, with the carry appended when the argv names a plan whose record
+        is absent from the tree the child will start in.
     """
     carried_plan_id = _flag_value(argv, _PLAN_ID_FLAG)
     if not names_real_plan(carried_plan_id):
         return list(argv)
+    assert carried_plan_id is not None  # for mypy; names_real_plan implies non-None
+    if _child_resolves_plan_itself(carried_plan_id, project_dir):
+        return list(argv)
     return [*argv, _RESOLVED_PROJECT_DIR_FLAG, project_dir]
+
+
+def _child_resolves_plan_itself(plan_id: str, tree: str) -> bool:
+    """Whether a child starting in ``tree`` can resolve ``plan_id`` without the carry.
+
+    The child's ``--plan-id`` resolution is cwd-relative (ADR-002): it reads the
+    plan record from ``{tree}/.plan/local/plans/{plan_id}/status.json``. The record
+    being there is what makes the child's resolution the one the routing process
+    already performed, so the carry may be left off.
+
+    Args:
+        plan_id: The real plan id the routed argv names.
+        tree: The absolute tree the child will start in.
+
+    Returns:
+        ``True`` when the plan record is present in that tree.
+    """
+    return (Path(tree) / PLAN_DIR_NAME / 'local' / 'plans' / plan_id / 'status.json').is_file()
 
 
 def _flag_value(argv: list[str], flag: str) -> str | None:
@@ -1258,13 +1312,14 @@ def _route_to_daemon(
     # would be resolved again against it and name a directory that does not exist.
     #
     # A tail carrying `--plan-id` additionally gets `--resolved-project-dir`, the
-    # tree resolved HERE. The child is re-run from that tree, and after the
-    # finalize move-back that tree no longer holds the plan directory (it moved
-    # back to main), so the child's own `--plan-id` resolution — the strict
-    # `get-worktree-path` gate — would refuse a resolution this process already
-    # completed. `--plan-id` stays in the argv rather than being replaced: the
-    # child's `kind=build` ledger row and its build-slot accounting both key off
-    # it, and `--plan-id` / `--project-dir` remain mutually exclusive.
+    # tree resolved HERE — but only when the child's own tree cannot resolve that
+    # plan itself, which is the finalize move-back case: that tree no longer holds
+    # the plan directory (it moved back to main), so the child's own `--plan-id`
+    # resolution — the strict `get-worktree-path` gate — would refuse a resolution
+    # this process already completed. `--plan-id` stays in the argv rather than
+    # being replaced: the child's `kind=build` ledger row and its build-slot
+    # accounting both key off it, and `--plan-id` / `--project-dir` remain mutually
+    # exclusive.
     child_argv = _carry_resolved_tree(_absolutise_project_dir(sys.argv[1:], exec_root), exec_root)
     command = [
         'python3',
@@ -1373,6 +1428,47 @@ def _emit_directory_busy(tool_name: str, command_args: str, output_format: str, 
         'holder_command': exc.holder_command,
         'holder_pid': exc.holder_pid,
         'holder_held_seconds': exc.holder_seconds,
+    }
+    return _emit_error_envelope(output_format, output)
+
+
+def _emit_directory_lock_unavailable(
+    tool_name: str, command_args: str, output_format: str, exc: DirectoryLockUnavailable
+) -> int:
+    """Render a structured fault when the per-directory lock cannot be consulted.
+
+    The build did not run and did not wait: the lock was asked and could not
+    answer. That is a limiter failure, not a build verdict, so it is reported
+    under its own name with the directory the acquire named — the operator's next
+    step is the build queue, not a test result.
+    """
+    output = {
+        'status': 'error',
+        'error': ERROR_DIRECTORY_LOCK_UNAVAILABLE,
+        'message': str(exc),
+        'tool': tool_name,
+        'command': command_args,
+        'project_dir': exc.directory,
+    }
+    return _emit_error_envelope(output_format, output)
+
+
+def _emit_build_queue_unavailable(
+    tool_name: str, command_args: str, output_format: str, exc: BuildQueueUnavailable
+) -> int:
+    """Render a structured fault when the build queue cannot be consulted.
+
+    The counterpart of :func:`_emit_queue_timeout` for an unreachable queue: no
+    slot decision exists at all, so the build never started. Names the plan the
+    acquire was for, so a caller can tell which attribution failed.
+    """
+    output = {
+        'status': 'error',
+        'error': ERROR_BUILD_QUEUE_UNAVAILABLE,
+        'message': str(exc),
+        'tool': tool_name,
+        'command': command_args,
+        'plan_id': exc.plan_id,
     }
     return _emit_error_envelope(output_format, output)
 
@@ -1777,7 +1873,7 @@ def create_execute_handlers(
         #      lock is not conditional on a real plan id. The daemon child re-runs
         #      this same leg and therefore holds it too.
         #   2. the machine-global build-queue slot, taken only when `plan_id`
-        #      names a REAL plan (`NO_PLAN` passthrough, as before).
+        #      names a REAL plan (`NO_PLAN` is a passthrough).
         #
         # Directory FIRST, slot SECOND, always: no build PROCESS waits on a
         # directory while holding a slot. The daemon/child pair has one bounded
@@ -1811,8 +1907,14 @@ def create_execute_handlers(
                     )
         except DirectoryBusy as exc:
             return _emit_directory_busy(config.tool_name, command_args, getattr(args, 'format', 'toon'), exc)
+        except DirectoryLockUnavailable as exc:
+            return _emit_directory_lock_unavailable(
+                config.tool_name, command_args, getattr(args, 'format', 'toon'), exc
+            )
         except BuildQueueTimeout as exc:
             return _emit_queue_timeout(config.tool_name, command_args, getattr(args, 'format', 'toon'), exc)
+        except BuildQueueUnavailable as exc:
+            return _emit_build_queue_unavailable(config.tool_name, command_args, getattr(args, 'format', 'toon'), exc)
 
         # A build that waited for its directory SAYS SO. The lease is a float, so
         # a sub-second acquisition is not a wait: truncating first keeps

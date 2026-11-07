@@ -43,6 +43,8 @@ EXTRA_FIELDS = [
     'message',
     'reason',
     'project_dir',
+    'resolved_project_dir',
+    'plan_id',
     'timeout_used_seconds',
     'timeout_source',
     'command_key',
@@ -82,6 +84,13 @@ facts (see ``_build_result.LAUNCH_FAULT_ERRORS``): the command never ran, so the
 looked for, or where. They are whitelisted together because the three are only
 diagnostic as a set — the class without the reason is what let six landings mistake
 a missing wrapper for a daemon fault.
+
+``resolved_project_dir`` / ``plan_id`` are the ROUTED-TREE REFUSAL's two identifying
+facts (see ``resolve_project_dir.emit_carried_tree_outside_job_error``): which tree
+the refused carry named, and which plan it would have been attributed to. They are
+the same kind of diagnostic as the launch-fault trio one layer out, and their
+omission dropped both from every TOON consumer while the JSON path still carried
+them — the emitter printed through ``format_toon``, whose whitelist decides.
 
 ``timeout_source`` names which path produced ``timeout_used_seconds``
 (``explicit`` / ``learned`` / ``default`` / ``floor`` / ``daemon_default``) and

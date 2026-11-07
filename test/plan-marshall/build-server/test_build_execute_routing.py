@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for the D5 build-execute routing seam and the shared machine-global slot.
+"""Tests for the build-execute routing seam and the shared machine-global slot.
 
 Two production surfaces are exercised:
 
@@ -1020,16 +1020,17 @@ def test_cmd_run_records_requested_and_resolved_mode(monkeypatch, capsys):
 
 
 # =============================================================================
-# PLAN-LB-112 — a routed build in the finalize move-back window
+# A routed build whose plan record is not in the child's tree
 # =============================================================================
 #
-# The window: ``integrate_into_main`` has moved the plan directory back to the
-# main checkout, and the worktree directory still exists. A build routed with
-# ``--plan-id`` in that window resolves fine in the ROUTING process (its cwd is
-# main, which holds the plan record, and the record names the still-existing
+# The move-back window: ``integrate_into_main`` has moved the plan directory back
+# to the main checkout, and the worktree directory still exists. A build routed
+# with ``--plan-id`` in that window resolves fine in the ROUTING process (its cwd
+# is main, which holds the plan record, and the record names the still-existing
 # worktree) — and then the daemon child re-runs the same argv from the worktree,
 # where the plan directory is absent. The child refuses with its own
-# ``worktree_resolution_failed`` body and exit 2.
+# ``worktree_resolution_failed`` body and exit 2 unless the routing process hands
+# it the tree it already resolved.
 #
 # The fixture below stages exactly that layout. The one thing it models rather
 # than executes is the process hop inside ``file_ops._run_get_worktree_path``:
@@ -1042,6 +1043,10 @@ _MOVED_BACK_PLAN = 'plan-moved-back'
 
 _MOVED_BACK_REASON = 'status.json not found for the moved-back plan'
 """The reason the child states; asserted at the routed layer, not only at the reader."""
+
+#: The routed child's tree carry, spelled here because an executor's recorded
+#: surface is what refuses it: the flag name is the whole fixture's premise.
+_CARRY_FLAG = '--resolved-project-dir'
 
 
 def _stage_moved_back_plan(plan_root: Path, worktree: Path) -> Path:
@@ -1064,6 +1069,61 @@ def _stage_moved_back_plan(plan_root: Path, worktree: Path) -> Path:
     return plan_dir
 
 
+def _strict_gate_reader():
+    """``get-worktree-path``'s STRICT gate, read from the CURRENT checkout."""
+    import file_ops
+
+    def _strict_gate(plan_id: str):
+        record = Path.cwd() / '.plan' / 'local' / 'plans' / plan_id / 'status.json'
+        if not record.is_file():
+            raise file_ops.WorktreeResolutionError(
+                'manage-status get-worktree-path returned non-success: '
+                f"error='file_not_found' message='status.json not found for {plan_id!r}'"
+            )
+        metadata = json.loads(record.read_text(encoding='utf-8')).get('metadata') or {}
+        return file_ops.derive_worktree_state(metadata)
+
+    return _strict_gate
+
+
+def _stale_executor_refusal(argv: list[str]) -> dict | None:
+    """The body a surface-predating executor emits for ``argv``, or ``None``.
+
+    The executor validates an invocation against the surface it recorded when it was
+    generated, and refuses an undeclared flag before spawning the script with a
+    ``status: error`` / ``error: invalid_invocation`` body whose ``reason`` is
+    ``unknown_flag``. A surface generated before the carry flag existed therefore
+    refuses it — the shape this helper reproduces from the argv the routing seam
+    would submit. A build whose argv carries no carry runs.
+
+    Args:
+        argv: The routed argv tail the daemon child would be re-run with.
+
+    Returns:
+        The refusal body, or ``None`` when the executor would spawn the script.
+    """
+    if _CARRY_FLAG not in argv:
+        return None
+    return {
+        'status': 'error',
+        'error': 'invalid_invocation',
+        'notation': 'plan-marshall:build-pyproject:pyproject_build',
+        'reason': 'unknown_flag',
+        'rejected': _CARRY_FLAG,
+        'accepted': '--command-args, --timeout, --mode, --format, --plan-id, --project-dir',
+        'message': f'`{_CARRY_FLAG}` is not declared for `pyproject_build run`',
+    }
+
+
+def _job_log(tmp_path: Path, body: dict, name: str = 'job.log') -> str:
+    """Write a child body as a job log, with the canonical TOON serializer."""
+    from toon_parser import serialize_toon
+
+    log = tmp_path / name
+    log.write_text(serialize_toon(body), encoding='utf-8')
+    return str(log)
+
+
 @pytest.fixture
 def moved_back_window(monkeypatch, tmp_path) -> dict:
     """The daemon child's view of the window: cwd in the worktree, plan record on main."""
@@ -1074,20 +1134,25 @@ def moved_back_window(monkeypatch, tmp_path) -> dict:
     worktree.mkdir(parents=True)
     _stage_moved_back_plan(main, worktree)
     monkeypatch.chdir(worktree)
-
-    def _strict_gate(plan_id: str):
-        """``get-worktree-path``'s STRICT gate, read from the CURRENT checkout."""
-        record = Path.cwd() / '.plan' / 'local' / 'plans' / plan_id / 'status.json'
-        if not record.is_file():
-            raise file_ops.WorktreeResolutionError(
-                'manage-status get-worktree-path returned non-success: '
-                f"error='file_not_found' message='status.json not found for {plan_id!r}'"
-            )
-        metadata = json.loads(record.read_text(encoding='utf-8')).get('metadata') or {}
-        return file_ops.derive_worktree_state(metadata)
-
-    monkeypatch.setattr(file_ops, '_query_worktree_path', _strict_gate)
+    monkeypatch.setattr(file_ops, '_query_worktree_path', _strict_gate_reader())
     return {'main': main, 'worktree': worktree}
+
+
+@pytest.fixture
+def plan_bound_tree(monkeypatch, tmp_path) -> dict:
+    """The steady state: one tree holds the plan record and runs every process.
+
+    The routing process and the daemon child share it, so the child re-resolves the
+    same record to the same path and needs no tree handed over.
+    """
+    import file_ops
+
+    tree = tmp_path / 'worktree'
+    tree.mkdir(parents=True)
+    _stage_moved_back_plan(tree, tree)
+    monkeypatch.chdir(tree)
+    monkeypatch.setattr(file_ops, '_query_worktree_path', _strict_gate_reader())
+    return {'tree': tree}
 
 
 def _child_fault_job_log(tmp_path, plan_id: str = _MOVED_BACK_PLAN) -> str:
@@ -1103,13 +1168,14 @@ def _child_fault_job_log(tmp_path, plan_id: str = _MOVED_BACK_PLAN) -> str:
 
 
 class TestMovedBackPlanRoutedBuild:
-    """D1 (reproduce), D2 (carry the resolved tree), D3 (report the fault as itself)."""
+    """A routed build in the move-back window: the child is handed the tree it cannot resolve."""
 
     def test_the_child_cannot_resolve_the_plan_from_its_own_tree(self, moved_back_window):
-        """D1 cause: the child re-resolves ``--plan-id`` from a tree without the plan.
+        """The child re-resolves ``--plan-id`` from a tree without the plan.
 
-        The strict gate is NOT weakened here — this remains the child's answer, and
-        D2 fixes the ROUTED re-run by carrying the tree, never by relaxing the gate.
+        The strict gate is NOT weakened here — this remains the child's answer. The
+        routed re-run is fixed by handing the child the tree, never by relaxing the
+        gate.
         """
         import resolve_project_dir as routing
 
@@ -1117,7 +1183,7 @@ class TestMovedBackPlanRoutedBuild:
             routing.resolve_project_dir(_MOVED_BACK_PLAN, '.', default='.')
 
     def test_the_routing_process_resolves_the_still_existing_worktree(self, moved_back_window, monkeypatch):
-        """D1 contrast: from MAIN the same flag resolves — the asymmetry is the defect."""
+        """From MAIN the same flag resolves — the asymmetry is what strands the child."""
         monkeypatch.chdir(moved_back_window['main'])
         import resolve_project_dir as routing
 
@@ -1151,8 +1217,8 @@ class TestMovedBackPlanRoutedBuild:
         assert rc == 2
         assert 'error: worktree_resolution_failed' in emitted
 
-    def test_the_routed_result_reaches_the_caller_as_the_child_reported_it(self, moved_back_window, tmp_path, capsys):
-        """D1 + D3: the child's routing fault arrives under its own name and code."""
+    def test_the_routed_result_reaches_the_caller_as_the_child_reported_it(self, tmp_path, capsys):
+        """The child's routing fault arrives under its own name and code."""
         from _build_shared import cmd_run_common
 
         log_file = _child_fault_job_log(tmp_path)
@@ -1183,7 +1249,7 @@ class TestMovedBackPlanRoutedBuild:
     def test_the_routed_child_carries_the_tree_the_routing_process_resolved(
         self, moved_back_window, use_fake_client, monkeypatch
     ):
-        """D2: the re-run command carries the resolved tree, and keeps the plan id.
+        """The re-run command carries the resolved tree, and keeps the plan id.
 
         The plan id has to survive for BOTH attributions the child makes: the
         executor's ``kind=build`` ledger row (which reads ``--plan-id`` off the
@@ -1217,9 +1283,133 @@ class TestMovedBackPlanRoutedBuild:
 
         assert extract_plan_id(submitted) == _MOVED_BACK_PLAN, 'the child ledger row keeps the plan id'
 
+    def test_the_childs_entry_point_runs_the_build_in_the_carried_tree(self, moved_back_window, monkeypatch):
+        """The child's own entry point runs the build there, and its result is the build's.
+
+        The window's failure is the child's re-resolution, so the proof that the
+        carry closes it is the child's entry point succeeding: the handler runs
+        against the carried tree, and the value the entry point returns is the
+        handler's own.
+        """
+        import _build_cli
+
+        monkeypatch.setenv(MARSHALLD_JOB_ENV, '1')
+        worktree = str(moved_back_window['worktree'].resolve())
+        seen: list[str] = []
+
+        def capture_run(args):
+            seen.append(args.project_dir)
+            return 7
+
+        def register(subparsers):
+            parser = _build_cli.add_run_subparser(subparsers, command_args_help='Test')
+            parser.set_defaults(func=capture_run)
+
+        monkeypatch.setattr(
+            sys,
+            'argv',
+            [
+                'pyproject_build.py',
+                'run',
+                '--command-args',
+                'verify core',
+                '--plan-id',
+                _MOVED_BACK_PLAN,
+                _CARRY_FLAG,
+                worktree,
+            ],
+        )
+
+        rc = _build_cli.build_main('Python build', [register])
+
+        assert rc == 7, 'the entry point returns the build own result'
+        assert seen == [worktree], 'the build ran against the tree the routing process resolved'
+
+
+class TestStaleExecutorCarry:
+    """A routed plan build is handed the tree only when its child cannot resolve it.
+
+    An executor whose recorded surface predates the carry flag refuses that flag
+    outright, and a routed result has no in-process fallback — so appending it where
+    the child does not need it turns a healthy routed build into a refusal. The
+    child's own tree holding the plan record is what decides.
+    """
+
+    def test_outside_the_window_a_stale_executor_runs_the_build(self, plan_bound_tree, use_fake_client, monkeypatch):
+        """The tree resolves the plan itself, so no carry is appended and the build runs."""
+        tree = str(plan_bound_tree['tree'].resolve())
+        monkeypatch.setattr(
+            sys,
+            'argv',
+            ['pyproject_build.py', 'run', '--command-args', 'verify core', '--plan-id', _MOVED_BACK_PLAN],
+        )
+        client = use_fake_client(
+            preflight={'status': 'success', 'preflight': 'ready'},
+            submit={'status': 'success', 'job_id': 'JOB-8'},
+            waits=[{'status': 'success', 'job_status': 'success', 'duration_seconds': 2, 'log_file': 'x.log'}],
+        )
+
+        result, reason = factory._route_to_daemon(_config(tool_name='python'), tree, _MOVED_BACK_PLAN)
+
+        submitted = json.loads(client.submit_calls[0].command)
+        assert _stale_executor_refusal(submitted[4:]) is None, (
+            'a surface-predating executor refuses the carry, so a tree that resolves the plan itself must not be handed it'
+        )
+        assert reason == ''
+        assert result is not None and result['status'] == 'success', 'the result is the build own result'
+
+    def test_inside_the_window_the_carry_is_still_appended(self, moved_back_window, use_fake_client, monkeypatch):
+        """A tree without the record cannot resolve the plan, so the carry travels."""
+        worktree = str(moved_back_window['worktree'].resolve())
+        monkeypatch.setattr(
+            sys,
+            'argv',
+            ['pyproject_build.py', 'run', '--command-args', 'verify core', '--plan-id', _MOVED_BACK_PLAN],
+        )
+        client = use_fake_client(
+            preflight={'status': 'success', 'preflight': 'ready'},
+            submit={'status': 'success', 'job_id': 'JOB-9'},
+            waits=[{'status': 'success', 'job_status': 'success', 'duration_seconds': 1, 'log_file': 'x.log'}],
+        )
+
+        factory._route_to_daemon(_config(tool_name='python'), worktree, _MOVED_BACK_PLAN)
+
+        submitted = json.loads(client.submit_calls[0].command)
+        assert submitted[4 + 4 : 4 + 6] == [_CARRY_FLAG, worktree], (
+            'the window child is stranded without the tree the routing process resolved'
+        )
+
+    def test_inside_the_window_the_refusal_reaches_the_caller_as_itself(self, tmp_path, capsys):
+        """The same stale executor's refusal is reported as itself, not as a red build.
+
+        A routed result has no in-process fallback, so a child that refuses the
+        dispatch must reach the caller under the name and code the child used.
+        """
+        from _build_shared import cmd_run_common
+
+        body = _stale_executor_refusal(
+            ['run', '--command-args', 'verify core', '--plan-id', _MOVED_BACK_PLAN, _CARRY_FLAG, '/tree']
+        )
+        assert body is not None
+        log_file = _job_log(tmp_path, body)
+
+        result = factory._daemon_result_to_direct(
+            {'job_status': 'failure', 'exit_code': 2, 'duration_seconds': 1, 'log_file': log_file},
+            f'python3 .plan/execute-script.py ... run --plan-id {_MOVED_BACK_PLAN}',
+        )
+
+        assert result['error'] == 'invalid_invocation'
+        assert result['reason'] == 'unknown_flag'
+        assert result['exit_code'] == 2
+
+        cmd_run_common(result, lambda _log: ([], None, 'FAILURE'), 'python')
+        emitted = capsys.readouterr().out
+        assert 'invalid_invocation' in emitted
+        assert 'no structured errors were parsed' not in emitted, 'a refusal is not a build failure'
+
 
 class TestPreToolFaultPassThrough:
-    """D3: a pre-tool refusal travels as itself, and a real failure still does not."""
+    """A pre-tool refusal travels as itself, and a real failure still does not."""
 
     def test_a_build_that_ran_and_failed_keeps_build_failed_and_its_rows(self, tmp_path, capsys):
         """Matched control: the pass-through must not swallow a genuine failure.
@@ -1261,7 +1451,8 @@ class TestPreToolFaultPassThrough:
         assert verdict.fault is None, 'a routing refusal is not a launch fault'
         assert verdict.child_fault is not None
         assert verdict.child_fault.error == 'mutually_exclusive_args'
-        assert verdict.child_fault.reason == 'pick one', 'the resolution emitters write reason in message'
+        assert verdict.child_fault.message == 'pick one', 'the resolution emitters state their detail in message'
+        assert verdict.child_fault.reason is None, 'a body that states no reason keeps none'
 
         failed = tmp_path / 'failed.log'
         failed.write_text('status: error\nerror: build_failed\n', encoding='utf-8')
@@ -1302,7 +1493,8 @@ class TestPreToolFaultPassThrough:
         assert verdict.status == 'error'
         assert verdict.child_fault is not None
         assert verdict.child_fault.error == 'queue_saturated'
-        assert verdict.child_fault.reason == 'no slot was admitted; retry later'
+        assert verdict.child_fault.message == 'no slot was admitted; retry later'
+        assert verdict.child_fault.reason is None
 
     def test_a_json_timeout_keeps_its_applied_bound(self, tmp_path):
         """A JSON non-finish must name the bound the inner wrapper applied.
@@ -1402,29 +1594,70 @@ class TestPreToolFaultPassThrough:
 
         assert proto.read_log_verdict(str(log)) is None
 
-    def test_a_slot_refusal_is_a_pre_tool_fault_and_keeps_its_corrective(self, tmp_path):
+    def test_a_slot_refusal_is_a_pre_tool_fault_and_keeps_its_message(self, tmp_path, capsys):
         """A child that never got a build slot is a refusal, not a red build.
 
-        The daemon child acquires a slot like any in-process build, so it can reach
-        the queue-saturated emitter. The executor's own refusal shape carries the
-        rejection CLASS in ``reason`` and the actionable correction in ``message``;
-        both must survive the routed hop, or the caller is told a build failed and
-        gets no way to fix it.
+        The log is the producer's own emitted body, not a hand-written shape, so a
+        field the emitter stops writing fails here instead of being papered over by
+        the fixture. The producer states ``message`` and no ``reason``, and the
+        reader must keep those names rather than substituting one for the other.
         """
         import _build_server_protocol as proto
 
+        exc = slot_mod.BuildQueueTimeout('plan-x', 3)
+        assert factory._emit_queue_timeout('python', 'verify core', 'toon', exc) == 1
         log = tmp_path / 'queue.log'
+        log.write_text(capsys.readouterr().out, encoding='utf-8')
+
+        verdict = proto.read_log_verdict(str(log))
+
+        assert verdict is not None and verdict.child_fault is not None
+        assert verdict.child_fault.error == 'queue_saturated'
+        assert verdict.child_fault.message == str(exc)
+        assert verdict.child_fault.reason is None, 'the producer states no reason, so none may be invented'
+
+    def test_a_slot_refusal_keeps_the_producers_field_names_across_the_hop(self, tmp_path, capsys):
+        """The routed result carries the child's ``message`` as ``message``.
+
+        A body with only a ``message`` that arrives as ``reason`` leaves a consumer
+        reading ``message`` empty on the routed route while the direct route fills
+        it — the same fault, two shapes.
+        """
+        exc = slot_mod.BuildQueueTimeout('plan-x', 3)
+        assert factory._emit_queue_timeout('python', 'verify core', 'toon', exc) == 1
+        log = tmp_path / 'queue.log'
+        log.write_text(capsys.readouterr().out, encoding='utf-8')
+
+        result = factory._daemon_result_to_direct(
+            {'job_status': 'failure', 'exit_code': 1, 'duration_seconds': 3, 'log_file': str(log)},
+            'cmd',
+        )
+
+        assert result['error'] == 'queue_saturated'
+        assert result['message'] == str(exc)
+        assert 'reason' not in result, 'the child stated no reason, so the routed result carries none'
+
+    def test_a_key_from_another_block_cannot_supply_the_verdict(self, tmp_path):
+        """Each key is read from the block that holds the verdict.
+
+        A log is a file, so it can hold an earlier body beside the result. Reading
+        ``reason`` last-wins across the whole file would attach that writer's reason
+        to a refusal whose own block stated only ``message``.
+        """
+        import _build_server_protocol as proto
+
+        log = tmp_path / 'two-blocks.log'
         log.write_text(
-            'status: error\nerror: queue_saturated\nreason: max_retries\nmessage: rerun when a slot frees\n',
+            'status: error\nreason: earlier-writer\n'
+            'status: error\nerror: worktree_resolution_failed\nmessage: the record left this tree\n',
             encoding='utf-8',
         )
 
         verdict = proto.read_log_verdict(str(log))
 
         assert verdict is not None and verdict.child_fault is not None
-        assert verdict.child_fault.error == 'queue_saturated'
-        assert verdict.child_fault.reason == 'max_retries'
-        assert verdict.child_fault.corrective == 'rerun when a slot frees'
+        assert verdict.child_fault.message == 'the record left this tree'
+        assert verdict.child_fault.reason is None, 'that reason belongs to the earlier block'
 
     def test_the_emitted_identifiers_are_the_ones_the_lane_classifies(self):
         """Every pre-tool emitter's identifier is a member of the classifier set.
@@ -1436,7 +1669,13 @@ class TestPreToolFaultPassThrough:
         producer is tied to the set through the template's own text.
         """
         import resolve_project_dir as routing
-        from _build_result import ERROR_INVALID_INVOCATION, ERROR_QUEUE_SATURATED, PRE_TOOL_FAULT_ERRORS
+        from _build_result import (
+            ERROR_BUILD_QUEUE_UNAVAILABLE,
+            ERROR_DIRECTORY_LOCK_UNAVAILABLE,
+            ERROR_INVALID_INVOCATION,
+            ERROR_QUEUE_SATURATED,
+            PRE_TOOL_FAULT_ERRORS,
+        )
 
         assert routing.emit_worktree_error('p', routing.WorktreeResolutionError('x'))['error'] in (
             PRE_TOOL_FAULT_ERRORS
@@ -1445,9 +1684,11 @@ class TestPreToolFaultPassThrough:
         assert routing.emit_carried_tree_outside_job_error('/tree', 'p')['error'] in PRE_TOOL_FAULT_ERRORS
         assert ERROR_INVALID_INVOCATION in PRE_TOOL_FAULT_ERRORS
         assert ERROR_QUEUE_SATURATED in PRE_TOOL_FAULT_ERRORS
-        # The factory RE-USES that constant rather than spelling the identifier again,
-        # so the queue refusal a daemon child can emit is classified by construction.
+        # The factory RE-USES those constants rather than spelling the identifiers
+        # again, so the limiter faults it emits are classified by construction.
         assert factory.ERROR_QUEUE_SATURATED is ERROR_QUEUE_SATURATED
+        assert factory.ERROR_BUILD_QUEUE_UNAVAILABLE is ERROR_BUILD_QUEUE_UNAVAILABLE
+        assert factory.ERROR_DIRECTORY_LOCK_UNAVAILABLE is ERROR_DIRECTORY_LOCK_UNAVAILABLE
 
         template = (
             Path(__file__).parents[3]
@@ -1457,14 +1698,49 @@ class TestPreToolFaultPassThrough:
         assert f'error: {ERROR_INVALID_INVOCATION}' in template.read_text(encoding='utf-8')
 
 
+class TestCarriedTreeRefusalDiagnostics:
+    """The carried-tree refusal's own facts reach a TOON consumer.
+
+    The formatter's extra-field list is a WHITELIST and the refusal is printed
+    through it, so a field missing from that list is dropped from TOON output while
+    the JSON path still carries it. Both fields are the diagnosis: which tree the
+    carry pointed at, and which plan it would have been attributed to.
+    """
+
+    def test_the_refusal_names_the_tree_and_the_plan_it_would_attribute(self, monkeypatch, capsys):
+        import _build_cli
+
+        monkeypatch.delenv(MARSHALLD_JOB_ENV, raising=False)
+
+        def register(subparsers):
+            parser = _build_cli.add_run_subparser(subparsers, command_args_help='Test')
+            parser.set_defaults(func=lambda _args: 0)
+
+        carried_tree = '/routed/tree/lb-115'
+        monkeypatch.setattr(
+            sys,
+            'argv',
+            ['pyproject_build.py', 'run', '--command-args', 'verify', '--plan-id', 'plan-x', _CARRY_FLAG, carried_tree],
+        )
+
+        rc = _build_cli.build_main('Python build', [register])
+
+        emitted = capsys.readouterr().out
+        assert rc == 2
+        assert 'error: carried_tree_outside_daemon_job' in emitted
+        assert 'resolved_project_dir' in emitted, 'the refused tree is half the diagnosis'
+        assert carried_tree in emitted
+        assert 'plan_id' in emitted, 'the plan it would have been attributed to is the other half'
+        assert 'plan-x' in emitted
+
+
 class TestIndeterminateReasonCarry:
     """A child's ``indeterminate`` verdict keeps the REASON it stated.
 
-    The daemon's wire vocabulary collapses ``indeterminate`` onto ``failure``, so
-    ``failure`` is the shape a routed ``indeterminate`` really arrives in. The
-    client used to rebuild that as a generic ``build_failed``, discarding the
-    producer's named reason and taking the build-failure path — the fabrication
-    the producer's own status existed to prevent.
+    The wire maps ``indeterminate`` onto ``failure``, so ``failure`` is the shape a
+    routed ``indeterminate`` arrives in. Rebuilding it as a generic ``build_failed``
+    would discard the producer's named reason and take the build-failure path —
+    fabricating the failure the producer's own status exists to deny.
     """
 
     def test_an_indeterminate_child_verdict_keeps_its_own_reason(self, tmp_path):
@@ -1513,13 +1789,12 @@ class TestIndeterminateReasonCarry:
         assert result['status'] == 'error'
         assert result['error'] == 'build_failed'
 
-    def test_a_non_finish_verdict_arriving_as_failure_is_rendered_as_itself(self, tmp_path):
-        """A ``timeout``/``killed`` log verdict survives the same collapse.
+    def test_a_timeout_child_reaches_the_caller_as_a_timeout(self, tmp_path):
+        """A routed ``timeout`` keeps its own status and the bound that fired.
 
-        The wire has no row for either non-finish, so they too arrive as
-        ``failure``. Folding them into a red build is the misattribution the
-        re-render exists to remove, for these statuses as much as for
-        ``indeterminate``.
+        The supervisor translates the wrapper's own ``timeout`` verdict onto the wire
+        row of the same name, so the caller sees a non-finish with its applied bound
+        rather than a red build.
         """
         log = tmp_path / 'timeout.log'
         log.write_text(
@@ -1528,12 +1803,59 @@ class TestIndeterminateReasonCarry:
         )
 
         result = factory._daemon_result_to_direct(
-            {'job_status': 'failure', 'exit_code': -1, 'duration_seconds': 300, 'log_file': str(log)},
+            {
+                'job_status': 'timeout',
+                'exit_code': -1,
+                'duration_seconds': 300,
+                'log_file': str(log),
+                'timeout_used_seconds': 300,
+                'timeout_source': 'explicit',
+            },
             'cmd',
         )
 
         assert result['status'] == 'timeout'
         assert result['timeout_used_seconds'] == 300
+
+    def test_a_killed_child_reaches_the_caller_as_a_kill(self, tmp_path):
+        """A routed ``killed`` keeps its own status, its exit code and its instruction."""
+        log = tmp_path / 'killed.log'
+        log.write_text('status: killed\nexit_code: -9\n', encoding='utf-8')
+
+        result = factory._daemon_result_to_direct(
+            {'job_status': 'killed', 'exit_code': -9, 'duration_seconds': 12, 'log_file': str(log)},
+            'cmd',
+        )
+
+        assert result['status'] == 'killed'
+        assert result['exit_code'] == -9
+        assert 'do not blind-retry' in result['message']
+
+    def test_the_selector_reason_survives_both_wire_legs(self, tmp_path):
+        """The child's own reason reaches the caller whichever wire row it arrived on.
+
+        The wire flattens an ``indeterminate`` child verdict onto ``failure``, while
+        the success cross-check reads the same verdict off a ``success`` row. Both
+        legs answer with the producer's own message, so a selector miss is not lost
+        to which row the daemon chose.
+        """
+        reason = "test_selector_matched_nothing: 'Awaits#runs' matched no test, so the run executed nothing"
+        log = tmp_path / 'selector.log'
+        log.write_text(f'status: indeterminate\nexit_code: 0\nmessage: "{reason}"\n', encoding='utf-8')
+
+        from_failure = factory._daemon_result_to_direct(
+            {'job_status': 'failure', 'exit_code': 0, 'duration_seconds': 4, 'log_file': str(log)},
+            'cmd',
+        )
+        from_success = factory._daemon_result_to_direct(
+            {'job_status': 'success', 'exit_code': 0, 'duration_seconds': 4, 'log_file': str(log)},
+            'cmd',
+        )
+
+        assert from_failure['status'] == 'indeterminate'
+        assert from_failure['message'] == reason
+        assert from_success['status'] == 'indeterminate'
+        assert from_success['message'] == reason
 
     def test_a_multiline_log_message_is_collapsed_before_rendering(self, tmp_path):
         """A log message that carries real newlines must not break the envelope.
