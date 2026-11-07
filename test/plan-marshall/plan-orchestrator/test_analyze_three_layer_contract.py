@@ -674,10 +674,12 @@ class TestThreeLayerCorrections:
         settle = re.search(r'(?is)never downgrade a settled verdict', routing)
 
         assert settle, 'the routing rule carries no never-downgrade rule'
-        # The rest of the routing block, not a fixed character window: a rule that
-        # merely grew would otherwise push its own verdict names out of the slice.
-        body = routing[settle.start() :]
-        for settled in ('`contradicted`', '`corroborated`', '`unverifiable`'):
+        # Bounded by the next rule, not by a character count: the precedence
+        # sentence that follows names the same verdicts and would otherwise let a
+        # gutted never-downgrade rule pass on the strength of its neighbour.
+        precedence_at = routing.find('**Precedence between two findings')
+        body = routing[settle.start() : precedence_at if precedence_at != -1 else len(routing)]
+        for settled in CORPUS_VERDICTS:
             assert settled in body, (
                 f'the never-downgrade rule does not name the settled verdict {settled}, so a '
                 f'`not_shown_by_reading` finding could overwrite a claim settled as {settled}'
