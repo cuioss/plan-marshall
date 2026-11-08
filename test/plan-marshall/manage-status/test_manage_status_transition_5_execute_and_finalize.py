@@ -471,6 +471,29 @@ def test_5_execute_end_markers_missing_carries_count_shape(plan_context, monkeyp
     assert refusal['branch_commit_count'] == 1
     assert refusal['recorded_count'] == 0
     assert 'a' * 40 in refusal['message'], refusal['message']
+    assert '\n' not in refusal['message'], refusal['message']
+
+
+def test_5_execute_end_markers_rewrite_arm_keeps_the_message_on_one_line(plan_context, monkeypatch):
+    """The rewrite arm carries the same single-line contract as the append arms.
+
+    Every refusal arm embeds the per-SHA invocations, so every arm must keep the
+    text on one line: the payload crosses a TOON boundary, where a newline would
+    truncate the message and corrupt the envelope.
+    """
+    plan_id = 'end-marker-5exec-rewrite-shape'
+    status = _execute_status_with_worktree(plan_context, plan_id)
+    monkeypatch.setattr(_lifecycle, '_branch_commit_shas', lambda _p, _b: ['a' * 40, 'b' * 40])
+    monkeypatch.setattr(_lifecycle, '_recorded_change_shas', lambda: {'c' * 40})
+    monkeypatch.setattr(_lifecycle, '_rewrite_evidence', lambda *_args: (True, False))
+
+    refusal = _lifecycle._phase_end_marker_refusal(plan_id, status)
+
+    assert refusal is not None
+    assert refusal['signature'] == 'history_rewritten'
+    assert '\n' not in refusal['message'], refusal['message']
+    assert 'a' * 40 in refusal['message'], refusal['message']
+    assert 'b' * 40 in refusal['message'], refusal['message']
 
 
 @pytest.fixture

@@ -447,7 +447,7 @@ def test_the_architecture_refresh_commit_leaves_a_row(tmp_path: Path) -> None:
     """
     _init_repo(tmp_path)
     _write_plan(tmp_path, 'plan-a', phase='6-finalize', steps=[])
-    _stage(tmp_path, '.plan/local/plans/PLAN-A/notes.txt', 'plan state\n')
+    _stage(tmp_path, '.plan/project-architecture/derived.json', '{"modules": []}\n')
 
     result, code = _run_commit(tmp_path, _worktree(tmp_path, 'plan-a'))
 
@@ -455,7 +455,7 @@ def test_the_architecture_refresh_commit_leaves_a_row(tmp_path: Path) -> None:
     assert result['reason'] == 'plan_only'
     assert result['ledger_recorded'] is True
     rows = _ledger_rows(tmp_path)
-    assert [row['changed_paths'] for row in rows] == [['.plan/local/plans/PLAN-A/notes.txt']]
+    assert [row['changed_paths'] for row in rows] == [['.plan/project-architecture/derived.json']]
 
 
 def test_a_main_checkout_commit_reads_its_phase_through_the_named_plan(tmp_path: Path, monkeypatch) -> None:

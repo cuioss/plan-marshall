@@ -564,9 +564,9 @@ def check(
         result['error'] = 'foreign_landing_indeterminate'
         result.setdefault(
             'message',
-            f'{len(unresolved)} foreign repository/ies could not be evaluated (root unresolvable or '
-            'landing state unreadable/unknown); refusing to archive on absent evidence. Resolve every '
-            'item in unresolved[] before archiving.',
+            f'{len(unresolved)} foreign repository/ies could not be evaluated (root unresolvable, branch '
+            'unreadable or disagreeing, or landing state unreadable/unknown); refusing to archive on absent '
+            'evidence. Resolve every item in unresolved[] before archiving.',
         )
     return result
 

@@ -460,6 +460,7 @@ def test_an_unreadable_branch_is_a_named_unresolved_row():
     )
 
     assert result['status'] == 'error'
+    assert result['error'] == 'foreign_landing_indeterminate'
     assert [str(item['reason']).split(':')[0] for item in result['unresolved']] == ['branch_unreadable']
     assert result['unresolved'][0]['path'] == '/foreign/repo'
     assert 'repos' in result and result['repos'] == []

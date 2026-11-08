@@ -892,7 +892,7 @@ def _phase_end_marker_refusal(plan_id: str, status: dict[str, Any]) -> dict[str,
         message = (
             f'Worktree branch holds {len(branch_shas)} commit(s) since diverging from {base_branch} '
             'and the change-ledger holds zero kind=change rows: no commit made on this branch was '
-            'recorded. Record every unrecorded commit below — one invocation per SHA '
+            'recorded. Record every unrecorded commit with the invocation after its SHA '
             f'({_REPLACE_PLACEHOLDERS}): {append_block}'
         )
         remedy: dict[str, Any] = {}
