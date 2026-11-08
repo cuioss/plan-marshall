@@ -1558,6 +1558,60 @@ def test_build_class_dispatch_records_non_zero_exit_code(tmp_path, monkeypatch):
     assert entries[0]['status'] == 'error', 'empty stdout + non-zero exit derives status=error'
 
 
+def test_build_class_dispatch_records_the_command_payload(tmp_path, monkeypatch):
+    """The ``--command-args`` VALUE is recorded as its own field, from ONE argv element.
+
+    The executor receives the payload as a single element, so it can record the
+    boundary the unquoted ``args`` join loses. The freshness reader uses that
+    field to tell the build's own payload from the executor's flags
+    (``--format`` here), which otherwise make a whole-tree row unreadable.
+    """
+    module = _load_template_module()
+    import _ledger_core
+
+    ledger_path = tmp_path / 'change-ledger.jsonl'
+    _redirect_ledger(module, monkeypatch, ledger_path, worktree_sha='feedfacecafe0003')
+
+    module._append_build_ledger_record(
+        notation='plan-marshall:build-pyproject:pyproject_build',
+        plan_id='plan-x',
+        script_args=['run', '--command-args', 'verify plan-marshall', '--format', 'json'],
+        exit_code=0,
+        stdout='',
+        log_file=str(tmp_path / 'build.log'),
+    )
+
+    entries = _ledger_core.read_entries(path=ledger_path)
+    assert len(entries) == 1
+    assert entries[0]['command_args'] == 'verify plan-marshall'
+    assert entries[0]['args'] == 'run --command-args verify plan-marshall --format json'
+
+
+def test_build_class_dispatch_without_command_args_records_no_payload(tmp_path, monkeypatch):
+    """CONTROL: a dispatch with no ``--command-args`` records no payload value.
+
+    No reader may read an absent payload as whole-tree, so the field stays
+    ``None`` rather than being defaulted.
+    """
+    module = _load_template_module()
+    import _ledger_core
+
+    ledger_path = tmp_path / 'change-ledger.jsonl'
+    _redirect_ledger(module, monkeypatch, ledger_path, worktree_sha='feedfacecafe0004')
+
+    module._append_build_ledger_record(
+        notation='plan-marshall:build-maven:maven',
+        plan_id='plan-x',
+        script_args=['discover'],
+        exit_code=0,
+        stdout='',
+        log_file=str(tmp_path / 'build.log'),
+    )
+
+    entries = _ledger_core.read_entries(path=ledger_path)
+    assert entries[0]['command_args'] is None
+
+
 def test_build_class_notation_gate_scopes_the_ledger_boundary():
     """The ``_is_build_class_notation`` gate admits every build-* skill dispatched
     with the build-executing subcommand, and nothing else — the predicate is

@@ -418,25 +418,30 @@ met, so its green exit code credits no gate.
 #   (Set -Dsurefire.failIfNoSpecifiedTests=false to ignore this error.)
 _SELECTOR_MISS_PATTERN = re.compile(r'No tests matching pattern "?([^"!\n]*)"? were executed')
 
-# The selector a Maven command carries, e.g. ``-Dtest=Awaits#runs`` or
-# ``-Dtest="Awaits#runs"``.
-_DTEST_SELECTOR_PATTERN = re.compile(r'-Dtest="?([^"\s]+)"?')
+# The selector a Maven command carries, e.g. ``-Dtest=Awaits#runs``,
+# ``-Dtest="Awaits#runs"`` or Failsafe's ``-Dit.test=Awaits#runs``. The
+# integration-test selector is read too: an exit-0 Failsafe miss under a
+# ``verify`` run is the same wrong selection as a Surefire one, and reading only
+# ``-Dtest`` left it unguarded.
+_DTEST_SELECTOR_PATTERN = re.compile(r'-Dit\.test="?([^"\s]+)"?|-Dtest="?([^"\s]+)"?')
 
 
 def dtest_selector(command: str | None) -> str | None:
-    """Return the ``-Dtest`` selector a Maven command carries, or None.
+    """Return the test selector a Maven command carries, or None.
 
     Args:
         command: The full Maven command string, when the run path knows it.
 
     Returns:
-        The selector as written after ``-Dtest=``, or None when the command
-        carries none.
+        The selector as written after ``-Dtest=`` or ``-Dit.test=``, or None when
+        the command carries neither.
     """
     if not command:
         return None
     match = _DTEST_SELECTOR_PATTERN.search(command)
-    return match.group(1) if match else None
+    if match is None:
+        return None
+    return match.group(1) or match.group(2)
 
 
 def selector_miss_reason(log_text: str, command: str | None = None) -> str | None:

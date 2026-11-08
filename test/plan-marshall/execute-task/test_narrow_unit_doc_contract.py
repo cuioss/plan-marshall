@@ -269,3 +269,48 @@ def test_step_5b_derives_the_scope_verb_from_the_resolved_build_skill() -> None:
     passage = _passage(document, start, end)
     for marker in SCOPE_VERB_DERIVATION_MARKERS:
         assert marker in passage, marker
+
+
+# =============================================================================
+# The `indeterminate` route — neither red nor green, and named
+# =============================================================================
+
+#: The two reasons a test-phase wrapper names when it reached ``indeterminate``.
+INDETERMINATE_REASONS = ('test_run_executed_nothing', 'test_log_unreadable')
+
+#: The remedy both gates prescribe: a re-run whose OUTPUT is readable.
+READABLE_RERUN = 're-run'
+
+_PRE_PUSH_GATE = _SKILLS / 'phase-6-finalize' / 'standards' / 'pre-push-quality-gate.md'
+
+
+def test_the_per_task_gate_names_the_indeterminate_route() -> None:
+    """The per-task gate says what an ``indeterminate`` unit is, and what to do.
+
+    It is neither a pass nor a failure, so a leaf that read only "red" and "green"
+    had no instruction at all and could mark the task done on it.
+    """
+    text = (_SKILLS / 'execute-task' / 'SKILL.md').read_text(encoding='utf-8')
+    marker = 'An `indeterminate` unit is neither red nor green'
+    assert marker in text
+
+    passage = text[text.index(marker) :]
+    for reason in INDETERMINATE_REASONS:
+        assert reason in passage, reason
+    assert READABLE_RERUN in passage
+
+
+def test_branches_4_and_6_of_the_pre_push_gate_name_the_same_route() -> None:
+    """Both pre-push branches that run a module test say why ``indeterminate`` differs.
+
+    Lumping it with ``timeout`` and ``killed`` states the right stop but the wrong
+    fact: the run FINISHED and its log was read, so the wrapper's own named
+    reason — not a generic "did not finish" — is what the record owes its reader.
+    """
+    text = _PRE_PUSH_GATE.read_text(encoding='utf-8')
+    marker = 'An `indeterminate` is distinguishable from'
+    assert text.count(marker) == 2, 'branches 4 and 6 both state the route'
+
+    for reason in INDETERMINATE_REASONS:
+        assert text.count(reason) >= 2, reason
+    assert READABLE_RERUN in text

@@ -2,17 +2,12 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Pre-merge findings gate that owns the merge dispatch for ``default:branch-cleanup``.
 
-The pre-merge blocking-findings gate used to be an instruction: run
-``phase_handshake findings-check``, parse its ``status``, and only then issue the
-merge verb. Neither merge verb required that call, so a skipped or misread check
-still merged — and the later archive refusal then stranded a plan whose change
-was already on the base branch.
-
-This script turns the instruction into a mechanism. It is the ONLY merge-shaped
-dispatch ``branch-cleanup`` issues: it evaluates the blocking-findings invariant
-for phase ``6-finalize`` and issues the routed merge verb only when that
-evaluation proved the store clean. The merge is therefore unreachable without
-the check having run and passed.
+This gate evaluates the blocking-findings invariant itself before it issues the merge
+verb, and it is the only merge-shaped dispatch ``branch-cleanup`` issues: it evaluates
+the invariant for phase ``6-finalize`` and issues the routed merge verb only when that
+evaluation proved the store clean. A step body that skipped or misread an instruction
+therefore cannot reach the merge through this step, and the later archive refusal
+cannot strand a plan whose change is already on the base branch.
 
 * **One verdict vocabulary.** The verdict comes from
   ``_handshake_commands.cmd_findings_check`` called in-process — the very handler
@@ -533,7 +528,11 @@ def _head_binding_refusal(
     phase_steps = steps.get(HEAD_BINDING_PHASE) if isinstance(steps, dict) else None
     if not isinstance(phase_steps, dict):
         return None, evidence
-    derive = head_dependence_reader or _head_dependence_probe()
+    # Built LAZILY: the population scan walks every bundle and skill root, and a
+    # merge whose records all sit at the candidate needs no declaration at all.
+    # Paying the scan up front made every ordinary merge pay for a check that
+    # never ran.
+    derive = head_dependence_reader
     classify = classifier or (
         lambda step, directory, recorded: _classify_verdict_currency(step, directory, recorded, head)
     )
@@ -550,6 +549,8 @@ def _head_binding_refusal(
             # Cleared against the candidate: it was consulted and needs no
             # declaration, waiver or classifier.
             continue
+        if derive is None:
+            derive = _head_dependence_probe()
         declared, derivation_reason = derive(step_id)
         if derivation_reason is not None:
             fallbacks.append({'step': step_id, 'reason': derivation_reason})
@@ -587,8 +588,9 @@ def _head_binding_refusal(
             'The merge candidate is not the HEAD the head-dependent gates validated '
             f'({", ".join(item["step"] for item in offending)}). Re-run those steps on '
             'the current tree. An operator re-fire waiver is honoured only at the head it '
-            'names. A merge authorization does NOT cover this gap: it authorizes a review '
-            'or CI gap, never a tree the gates never examined.'
+            'names: record it with `loop-back close --waive-refire` at the candidate head, '
+            'then re-run this merge. A merge authorization does NOT cover this gap: it '
+            'authorizes a review or CI gap, never a tree the gates never examined.'
         ),
     }
     if unconsulted:
@@ -1394,14 +1396,74 @@ def _mark_step_done(argv: list[str]) -> dict[str, Any]:
     )
 
 
-def _fact_map(facts: list[str]) -> dict[str, str]:
-    """Parse ``KEY=VALUE`` fact tokens into a map, refusing a malformed one."""
+#: The finalize step whose record ``record-merge`` writes, and therefore whose
+#: ``records_facts`` declaration its ``--fact`` keys must satisfy.
+_MERGE_RECORD_STEP = f'default:{MERGE_STEP_ID}'
+
+_RECORDS_FACTS_KEY = 'records_facts'
+
+
+def _declared_fact_keys(step: str = _MERGE_RECORD_STEP) -> tuple[set[str] | None, str | None]:
+    """Return the fact keys ``step`` declares in its ``records_facts`` frontmatter.
+
+    Reads the SAME population and frontmatter reader the head-dependence
+    derivation uses, so there is no second parser to drift from the dispatcher's.
+
+    Args:
+        step: The step key whose declaration is wanted.
+
+    Returns:
+        ``(keys, None)`` on a successful read, or ``(None, reason)`` when the
+        declaration could not be read.
+    """
+    try:
+        import extension_discovery
+        from _step_key_canonical import canonicalize_step_key
+    except Exception as exc:  # an unimportable reader is a failed read, never a crash
+        return None, f'the finalize-step population is not importable ({exc})'
+    try:
+        records, population_reason = _finalize_step_population()
+    except Exception as exc:  # the population read itself can raise through its own imports
+        return None, f'the finalize-step population could not be discovered ({exc})'
+    if records is None:
+        return None, population_reason or 'the finalize-step population could not be discovered'
+    wanted = canonicalize_step_key(step)
+    for record in records:
+        if canonicalize_step_key(str(record.get('name', ''))) != wanted:
+            continue
+        doc_path = Path(str(record.get('path', '')))
+        try:
+            fields, unreadable = extension_discovery.read_frontmatter_fields_checked(doc_path, (_RECORDS_FACTS_KEY,))
+        except Exception as exc:  # an unreadable declaration is a failed read, not a crash
+            return None, f'{doc_path} could not be inspected ({exc})'
+        if unreadable is not None:
+            return None, unreadable
+        declared = fields.get(_RECORDS_FACTS_KEY) or []
+        if not isinstance(declared, (list, tuple)):
+            return None, f'{doc_path} declares records_facts as {type(declared).__name__}, not a list'
+        return {str(key) for key in declared}, None
+    return None, f'{step} is not in the finalize-step population'
+
+
+def _fact_map(facts: list[str], *, declared_keys: set[str] | None = None) -> dict[str, str]:
+    """Parse ``KEY=VALUE`` fact tokens into a map, refusing a malformed or undeclared one.
+
+    ``declared_keys`` is the step's own ``records_facts`` declaration. A key
+    outside it is refused rather than written: the record would carry a fact no
+    reader of that step knows, which is indistinguishable from a typo.
+    """
     parsed: dict[str, str] = {}
     for fact in facts:
         key, separator, value = str(fact).partition('=')
         if not separator or not key.strip():
             raise ValueError(f'--fact expects KEY=VALUE, got {fact!r}')
-        parsed[key.strip()] = value.strip()
+        name = key.strip()
+        if declared_keys is not None and name not in declared_keys:
+            raise ValueError(
+                f'--fact {name}=... is not a key {_MERGE_RECORD_STEP} declares in records_facts '
+                f'({", ".join(sorted(declared_keys))})'
+            )
+        parsed[name] = value.strip()
     return parsed
 
 
@@ -1441,8 +1503,14 @@ def record_merge(
             'message': message,
         }
 
+    declared_keys, declaration_reason = _declared_fact_keys()
+    if declared_keys is None:
+        return _refuse(
+            'facts_declaration_unreadable',
+            f'the fact declaration could not be read, so no fact can be checked against it: {declaration_reason}',
+        )
     try:
-        recorded = _fact_map(facts)
+        recorded = _fact_map(facts, declared_keys=declared_keys)
     except ValueError as exc:
         return _refuse('facts_malformed', str(exc))
 
@@ -1486,8 +1554,8 @@ def record_merge(
             'path cannot have performed',
         )
     if action is None and merge_mechanism == 'pr_safe_merge':
-        # The mirror case, and the one that used to render a FALSE clause: a direct merge
-        # always reached the rebase (the default path and the ``queue_wait: forbidden``
+        # The mirror case, and the one that would render a FALSE clause: a direct merge
+        # always reaches the rebase (the default path and the ``queue_wait: forbidden``
         # reroute alike), so an absent action would claim "rebase deferred to queue" on a
         # path that never enqueued. Refuse rather than narrate a rebase that did not
         # happen.
@@ -1500,6 +1568,14 @@ def record_merge(
         return _refuse(
             'upstream_count_required_with_action',
             'a recorded rebase action must carry the upstream_commit_count read from the same payload',
+        )
+    if action is None and 'upstream_commit_count' in recorded:
+        # The mirror of the rule above: a count names a rebase, and a record with no
+        # action performed none — the merge-queue route in particular never rebases.
+        return _refuse(
+            'upstream_count_without_action',
+            'upstream_commit_count names a rebase this record did not perform; record it only '
+            'alongside the action fact',
         )
 
     try:

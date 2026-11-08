@@ -1030,8 +1030,8 @@ def read_frontmatter_fields_checked(doc_path: Path, keys: tuple[str, ...]) -> tu
     same key semantics, but the caller learns whether an empty answer means "the
     document declares none of these keys" or "the document could not be read at
     all". That difference is load-bearing wherever an absent declaration is itself
-    a decision — a head-dependence fact read as "no such declaration" and one read
-    as "undeclared" are opposite answers.
+    a decision — a head-dependence fact read as "the document declares none" and
+    one read as "the document could not be read" are opposite answers.
 
     Args:
         doc_path: Path to the doc whose ``---``-fenced frontmatter is read.

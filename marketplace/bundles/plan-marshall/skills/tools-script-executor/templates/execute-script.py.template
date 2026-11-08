@@ -1026,6 +1026,35 @@ def _derive_build_status(exit_code: int, payload: dict | None) -> str:
     return 'unknown'
 
 
+def _command_args_value(script_args: list[str]) -> str | None:
+    """Return the value ``--command-args`` received in ``script_args``, or ``None``.
+
+    ``script_args`` is the executor's argv as a ``list[str]``, so the payload
+    argparse received from ``--command-args "verify plan-marshall"`` is ONE
+    element. Recording that element lets a reader see the payload boundary the
+    unquoted ``args`` join loses. Both argparse spellings are accepted; a
+    value-less flag records nothing, so no reader can read an absent payload as
+    whole-tree.
+
+    Args:
+        script_args: Arguments forwarded to the dispatched script.
+
+    Returns:
+        The payload string, or ``None`` when the argv carries no
+        ``--command-args`` value.
+    """
+    for position, token in enumerate(script_args):
+        if token == '--command-args':
+            following = script_args[position + 1] if position + 1 < len(script_args) else None
+            if following is None or following.startswith('-'):
+                return None
+            return following
+        if token.startswith('--command-args='):
+            inline = token.split('=', 1)[1]
+            return inline or None
+    return None
+
+
 def _append_build_ledger_record(
     notation: str,
     plan_id: str,
@@ -1054,7 +1083,10 @@ def _append_build_ledger_record(
     ``args`` and ``command`` are recorded as two DISTINCT layers: ``args`` is
     the executor argv this function was handed, ``command`` is what the wrapper
     resolved that argv into and actually ran. See
-    :func:`_ledger_core.build_record` for the contract.
+    :func:`_ledger_core.build_record` for the contract. ``command_args`` is
+    derived here from the argv LIST (see :func:`_command_args_value`), so the
+    ``--command-args`` payload is recorded as the one element argparse received
+    rather than recovered from the unquoted join.
 
     Fire-and-forget: the whole body — INCLUDING the parse and the status
     derivation — is wrapped in a broad ``try/except`` that returns silently. An
@@ -1085,6 +1117,7 @@ def _append_build_ledger_record(
             notation=notation,
             plan_id=plan_id,
             args=' '.join(script_args) if script_args else None,
+            command_args=_command_args_value(script_args),
             command=_payload_str(payload, 'command'),
             duration_seconds=_payload_number(payload, 'duration_seconds'),
             outcome=payload,
