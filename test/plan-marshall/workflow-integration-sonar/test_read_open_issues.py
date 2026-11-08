@@ -39,6 +39,10 @@ sonar_mod = load_script_module('plan-marshall', 'workflow-integration-sonar', 's
 #: their patches landing on a different module object than the one they call.
 cmd_read_open_issues = sonar_mod.cmd_read_open_issues
 
+#: The REAL hotspot fetch, captured before the autouse stub below replaces the
+#: module attribute. The two cases that exercise its own request re-bind it.
+_REAL_FETCH_HOTSPOTS = sonar_mod._fetch_hotspots
+
 _SUPPRESSABLE_RULE = 'java:S1135'
 
 
@@ -307,6 +311,68 @@ class TestHotspotsStillToReview:
         assert result['count_status'] == 'undecidable'
         assert result['open_issue_count'] is None
         assert 'HTTP 500' in result['count_status_reason']
+
+
+class TestTheHotspotFetchItself:
+    """The hotspot leg's own request: PR-scoped, restricted to what is still to review.
+
+    These two cases exercise the REAL fetch, so they re-bind the module attribute
+    over the autouse stub above and patch the provider client underneath it.
+    """
+
+    def test_it_asks_for_the_pr_scoped_hotspots_still_to_review(self):
+        client = _RecordingHotspotClient(
+            {
+                'hotspots': [
+                    {'key': 'HOT-1', 'status': 'TO_REVIEW', 'component': 'com.example:proj:src/A.java', 'line': 3},
+                ],
+                'paging': {'total': 1},
+            }
+        )
+
+        with (
+            patch.object(sonar_mod, '_fetch_hotspots', _REAL_FETCH_HOTSPOTS),
+            patch('_providers_core.get_authenticated_client', return_value=client),
+        ):
+            result = sonar_mod._fetch_hotspots('com.example:proj', '42')
+
+        assert client.calls == [
+            (
+                '/api/hotspots/search',
+                {'projectKey': 'com.example:proj', 'ps': '500', 'status': 'TO_REVIEW', 'pullRequest': '42'},
+            )
+        ]
+        assert result['total'] == 1
+        assert result['observed'] == 1
+        assert [hotspot['key'] for hotspot in result['hotspots']] == ['HOT-1']
+        assert result['hotspots'][0]['file'] == 'src/A.java'
+
+    def test_a_response_without_paging_reports_no_total(self):
+        client = _RecordingHotspotClient({'hotspots': []})
+
+        with (
+            patch.object(sonar_mod, '_fetch_hotspots', _REAL_FETCH_HOTSPOTS),
+            patch('_providers_core.get_authenticated_client', return_value=client),
+        ):
+            result = sonar_mod._fetch_hotspots('com.example:proj', None)
+
+        assert result['total'] is None
+        assert 'pullRequest' not in client.calls[0][1], 'a plan-less read of no PR must not name one'
+
+
+class _RecordingHotspotClient:
+    """Records one GET and answers a fixed payload, tolerating ``close``."""
+
+    def __init__(self, payload: dict) -> None:
+        self._payload = payload
+        self.calls: list[tuple[str, dict]] = []
+
+    def get(self, path: str, params: dict | None = None) -> dict:
+        self.calls.append((path, dict(params or {})))
+        return self._payload
+
+    def close(self) -> None:
+        pass
 
 
 class TestUndecidableRead:
