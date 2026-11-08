@@ -52,7 +52,7 @@ from review_gate_delta import (
     assess_delta,
 )
 
-_ROSTER = ['coderabbit', 'cuioss-review-bot', 'sourcery']
+_ROSTER = ['coderabbit', 'sourcery']
 
 #: The tree the gates certified and the tree review reviewed — equal in the
 #: measurable case, and the whole subject of the post-gate-mutation exclusion.

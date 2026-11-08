@@ -869,8 +869,16 @@ DEAD_REMOVED_STEP_ORIGIN = 'dead_step'
 # ``migrate-bot-lists`` seed, ``_cmd_sync_defaults`` for the post-merge
 # back-fill). A second copy as a literal is a defect: if one copy changes,
 # the two writers seed different rosters with no sync between them.
-STANDARD_REQUIRED_BOTS = 'cuioss-review-bot,coderabbit'
+STANDARD_REQUIRED_BOTS = 'coderabbit'
 STANDARD_OPTIONAL_BOTS = 'sourcery'
+
+# Bot kinds withdrawn from the shipped registry. A consumer configuration may still
+# name one in its roster (a ``marshal.json`` written while the bot existed), and an
+# unknown kind classifies ``unregistered_kind`` — unproven and BLOCKING, so a leftover
+# name would hold that consumer's merge forever. The roster writers strip every name in
+# this tuple instead, which is why it is the ONE place a retired kind is spelled:
+# recognition needs no tombstone, only the migration does.
+RETIRED_BOT_KINDS = ('cuioss-review-bot',)
 
 # The three-valued reviewer-roster provenance vocabulary (single source for both
 # writers — the ``migrate-bot-lists`` migration and the ``sync-defaults``

@@ -1,13 +1,18 @@
 # In-house reviewer efficacy — measurement result
 
-Measure-first investigation: does the in-house reviewer (`cuioss-review-bot`,
-a required reviewer on every merge) find anything under its assembled charter,
+Measure-first investigation: does the in-house PR-Agent reviewer — required on
+every merge when this was measured — find anything under its assembled charter,
 and should it stay required? This document is the **durable reasoning** the
 repeat measurement supports. The dated tables behind it — per-side corpus
 counts, the fixed-diff experiment rows, the appendix — live with the plan's PR
 description and inbox message, not here, following the precedent of
 `uncompressed-output-measurement.md`: snapshot absolutes belong to the window
 they were read in, while what this project acts on must hold across windows.
+
+> **This record is historical.** The reviewer it measures has since been withdrawn from the shipped
+> registry on operator instruction; the shipped roster is CodeRabbit required and Sourcery optional.
+> The measurement and its reasoning are kept as the evidence behind that ruling, and the decision
+> recorded at the end of this document describes the state it was taken in, not the current roster.
 
 ## Question
 
@@ -23,7 +28,7 @@ Two instruments, each answering the part the other cannot:
 - **Repeat corpus pass (PLAN-LB-21 D1).** Every pull request opened after the
   previous pass's successor stamp, in every repository the last pass covered
   plus every repository enrolled since, split per repository at the instant
-  its `cuioss-review-bot` block with `enabled: true` reached the default
+  its in-house-reviewer block with `enabled: true` reached the default
   branch: before (central charter) versus after (assembled charter).
   `skip-bot-review`-labelled and Dependabot pull requests are excluded and
   counted, as before. Each side reports reviews posted; canned versus
@@ -122,14 +127,27 @@ reviews.
 
 ## Decision (operator)
 
-Operator answer, recorded in the plan decision log: **keep
-`cuioss-review-bot` required as is** — the first of the five options the
-measurement was put to the operator with (keep required as is; make optional;
-keep required only above a stated yield bar; make `/improve` the default;
-stop running it). No roster change follows: `required_bots` stays
-`cuioss-review-bot,coderabbit` and `optional_bots` stays `sourcery` for
-`plan-marshall:automatic-review`, so `.plan/marshal.json` and the roster
-contract tests are untouched by this decision.
+Operator answer, recorded in the plan decision log at the time of the measurement: **keep the
+in-house reviewer required as is** — the first of the five options that measurement was put to the
+operator with (keep required as is; make optional; keep required only above a stated yield bar; make
+`/improve` the default; stop running it). No roster change followed from it then.
+
+**Superseded.** On operator instruction the reviewer was later withdrawn from the shipped registry,
+and the roster that decision left untouched — `required_bots` naming it beside `coderabbit` — was
+migrated to `required_bots: coderabbit`, `optional_bots: sourcery`. The reasoning below is kept as
+the record of the measurement that preceded the withdrawal.
+
+The standing decision this touches — CodeRabbit stays required until the
+in-house reviewer reaches similar quality, reopened only when measured so by
+the existing comparison protocol — stands unchanged: this measurement does
+not meet the reopen condition. Paired recall against CodeRabbit stays in the
+low single digits per side on the two repositories with a quality claim, and
+the fixed-diff experiment converted none of its eight canned reviews into a
+found one.
+
+Consumer repositories: the answer implied a roster change in no consumer repository, so none was
+listed for editing — the enrolled repositories and the thirteen deferred ones kept the rosters they
+had. The withdrawal's own migration is the one roster edit that followed.
 
 The standing decision this touches — CodeRabbit stays required until the
 in-house reviewer reaches similar quality, reopened only when measured so by

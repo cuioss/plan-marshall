@@ -22,9 +22,6 @@ marketplace/targets/
 ├── component_targets.py          # `targets:` frontmatter scope filter
 ├── fs_safety.py                  # Containment + symlink checks for emits and the install sync
 ├── skill_identity.py             # Flat-target SKILL.md bundle/skill identity metadata
-├── cuioss_review_bot/            # Reviewer per-domain instruction packs
-│   ├── __init__.py               # Registers CuiossReviewBotTarget
-│   └── target.py                 # CuiossReviewBotTarget(TargetBase) + derivation rules
 ├── claude/                       # Verbatim mirror + plugin.json + marketplace.json
 │   ├── __init__.py               # Registers ClaudeTarget
 │   ├── target.py                 # ClaudeTarget(TargetBase) + removed-bundle prune
@@ -97,11 +94,7 @@ validation-only modes may return an empty list).
 
 Configuration is data-driven. Per-target rules live as JSON files inside
 the target's own `config_dir/` so a mapping change is a JSON edit, not a
-code edit. The `cuioss-review-bot` target is the one exception and states its reason
-in its module docstring: a new `marketplace/targets/**/*.json` path is
-claimed by no build extension and by no owner-less classifier rule, so it
-would resolve to the `unknown` role bucket. Its derivation rules are
-module-level constants instead.
+code edit.
 
 `emits_bundle_tree` declares whether the target's output directory is a
 published bundle tree. The CLI applies two generic post-emit steps to every
@@ -136,17 +129,11 @@ and the shape rules that module owns on top of the YAML load.
 # OpenCode emit
 ./pw generate-opencode
 
-# Reviewer packs → target/cuioss-review-bot/packs/, one Markdown artifact per
-# derived review domain plus spine.md. The run takes no selection argument: it
-# emits the whole derived set, and a consumer selects from the published one.
-# --bundles below does not narrow this target — it is ignored here.
-./pw generate --target cuioss-review-bot --output target/cuioss-review-bot
-
 # Every target at once (claude → target/claude/, opencode → target/opencode/,
-# cuioss-review-bot → target/cuioss-review-bot/packs/)
+# antigravity → target/antigravity/)
 ./pw generate --target all --output target
 
-# Scope to specific bundles (bundle-tree targets only — cuioss-review-bot ignores it)
+# Scope to specific bundles
 ./pw generate --target opencode --output target/opencode \
     --bundles plan-marshall,pm-dev-java
 ```
@@ -408,71 +395,6 @@ artifacts, not committed sources. The `project:finalize-step-deploy-target` fina
 step emits all three during the finalize phase; the
 `/sync-harnesses` command consumes those directories when syncing the
 harness installs.
-
-`target/cuioss-review-bot/packs/` is the same kind of output: a build artifact,
-not a committed source. The repository tracks no generated reviewer
-configuration — the artifact set is published to `cuioss/cuioss-review-bot` by
-`.github/workflows/cuioss-review-bot-packs-publish.yml` on merge to `main`, and
-a consumer repository names a selection from that published set rather than
-carrying a copy of it.
-
-## cuioss-review-bot target — per-domain instruction packs
-
-The `cuioss-review-bot` target emits a reviewer artifact set instead of an
-assistant bundle tree: one Markdown artifact per derived review domain under
-`{output}/packs/`, plus `spine.md` carrying the cross-cutting review charter.
-The artifacts are published to the organisation-wide
-`cuioss/cuioss-review-bot` settings repository, which is also where every other
-reviewer key — model, token budgets, output suppression — lives.
-
-Three properties are load-bearing:
-
-* **The domain set is derived, never hand-transcribed.** The target scans
-  `marketplace/bundles/` for the per-domain standards skills —
-  `*-security`, `arch-gate-*` and `ext-triage-*` — so a bundle added to the
-  marketplace appears in the derived domain set with no code edit. A domain
-  artifact carries that domain's own rules, harvested from the domain
-  security skill's `## Enforcement` block.
-* **The artifact set is orthogonal, and a repository composes by
-  selecting.** Composition is not an act of this target: a domain artifact
-  carries the domain part alone, and the cross-cutting charter appears
-  exactly once, in `spine.md`. A repository that is several languages at
-  once — this marketplace is both Python and marketplace-tooling — names
-  several published artifacts instead of carrying one file that folds them
-  together, so a charter change is published once rather than regenerated
-  into every consumer.
-* **A run emits the whole set, and the set stays equal to the derivation.**
-  One artifact per derived domain plus the spine, and the generated header
-  names the argument-free command that reproduces it. `--bundles` is accepted
-  and ignored, which is what keeps `--target all --bundles X` working for the
-  targets that do scope; and a generated artifact the current run did not
-  write is pruned, so a domain that stops deriving does not survive in the
-  output. The spine is emitted unconditionally on every run. Whether a consumer
-  then applies it is not something this target enforces — no consumer of these
-  artifacts exists yet — so each domain artifact's header asks for it and says
-  what a lone domain artifact lacks without it.
-
-The emission is bounded and guarded. The substantiation bar and the
-anti-fabrication clause are carried verbatim into the **spine artifact** and
-appear in no domain artifact; withholding language — the measured cause of
-five consecutive empty reviews — is dropped from any harvested rule that
-carries it.
-
-**The category ceiling is a two-part budget, not a grouping.** The ten is an
-observed organisation rule quoted in the `cuioss/cuioss-review-bot` documentation, not an
-internal number this target may raise. The spine reserves one slot: it
-carries at most nine category bullets, and each domain artifact contributes
-exactly one. A single-domain assembly therefore lands exactly at the
-ceiling; grouping the domain bullets of a multi-domain assembly back into
-one is the consumer's obligation at assembly time, and no assembled pack
-exists in this repository to prove it against. Rules are not categories and
-are deliberately not governed by that ceiling — each domain artifact carries
-its own per-domain rule cap.
-
-`test/marketplace/targets/cuioss_review_bot/` enforces those invariants over the
-emitted artifact set: one guard pins the emitted stems to the derived domain
-set plus the spine, and a second pins each charter clause and each spine
-category to `spine.md` and to nowhere else.
 
 ## Claude target — emitted artifacts
 

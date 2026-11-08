@@ -320,7 +320,6 @@ whose unconditional evidence shape carries no marker straight to `absent`. The f
 |-----|-------------|-----|
 | CodeRabbit | `issue_comment` gated on an alternation: `<!-- recent_review_start -->` OR `<!-- final_review_risk_coverage:` | Its walkthrough / summary `issue_comment` is posted before any review completes; a finished review carries one of the two markers — the retired wrapper, or the current coverage marker. Ungated, the walkthrough alone credited a review that had not happened. See [`coderabbit.md`](coderabbit.md). |
 | Sourcery | none | It declares no `issue_comment` shape at all — `review_body` is its only publish shape, and no pre-review artifact of its shares that shape — so there is nothing to gate. |
-| PR-Agent (`cuioss-review-bot`) | none — **deliberately left undeclared** | Its Guide `issue_comment` is its only UNCONDITIONAL evidence shape. Gating it is a change to the one shape that keeps this bot from resolving `absent`, and it was not taken here. The accepted reach of that decision: its other `issue_comment` publishes — a `/help` reference, an `/ask` answer — still credit on the shape alone. |
 
 ### Why a check-run state is not evidence
 

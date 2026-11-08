@@ -652,7 +652,7 @@ class TestUnrecognisedRefusalPredicate:
             _GENUINE_REVIEW_MENTIONING_A_LIMIT,
             _SOURCERY_SIZE_LIMIT_REFUSAL,
         ):
-            for bot_kind in ('coderabbit', 'sourcery', 'cuioss-review-bot', None):
+            for bot_kind in ('coderabbit', 'sourcery', None):
                 assert not _github_pr._is_unrecognised_refusal(body, bot_kind), (bot_kind, body[:40])
 
     def test_fires_on_a_short_anchorless_body_from_a_registered_bot(self, monkeypatch):
@@ -662,8 +662,8 @@ class TestUnrecognisedRefusalPredicate:
         monkeypatch.setattr(_github_pr, 'UNRECOGNISED_REFUSAL_MAX_CHARS', 200)
 
         # Neither earlier arm sees it — that is what makes it "unrecognised".
-        assert not _github_pr._is_refusal_notice(_REWORDED_REFUSAL, 'cuioss-review-bot')
-        assert _github_pr._is_unrecognised_refusal(_REWORDED_REFUSAL, 'cuioss-review-bot')
+        assert not _github_pr._is_refusal_notice(_REWORDED_REFUSAL, 'sourcery')
+        assert _github_pr._is_unrecognised_refusal(_REWORDED_REFUSAL, 'sourcery')
 
     def test_declines_a_body_carrying_a_code_anchor_however_short(self, monkeypatch):
         """Matched negative control for the positive case above: an anchor vetoes the arm.
@@ -677,7 +677,7 @@ class TestUnrecognisedRefusalPredicate:
         monkeypatch.setattr(_github_pr, 'UNRECOGNISED_REFUSAL_MAX_CHARS', 200)
 
         assert len(_SHORT_REVIEW_WITH_ANCHOR) < 200
-        assert not _github_pr._is_unrecognised_refusal(_SHORT_REVIEW_WITH_ANCHOR, 'cuioss-review-bot')
+        assert not _github_pr._is_unrecognised_refusal(_SHORT_REVIEW_WITH_ANCHOR, 'sourcery')
 
     def test_declines_a_human_authored_body(self, monkeypatch):
         """An unresolvable / unregistered author is never an unrecognised refusal.
@@ -689,7 +689,7 @@ class TestUnrecognisedRefusalPredicate:
 
         monkeypatch.setattr(_github_pr, 'UNRECOGNISED_REFUSAL_MAX_CHARS', 200)
 
-        assert _github_pr._is_unrecognised_refusal(_REWORDED_REFUSAL, 'cuioss-review-bot')
+        assert _github_pr._is_unrecognised_refusal(_REWORDED_REFUSAL, 'sourcery')
         assert not _github_pr._is_unrecognised_refusal(_REWORDED_REFUSAL, None)
         assert not _github_pr._is_unrecognised_refusal(_REWORDED_REFUSAL, 'not-a-registered-bot')
 
@@ -733,7 +733,7 @@ class TestUnrecognisedRefusalPredicate:
 
         monkeypatch.setattr(_github_pr, 'UNRECOGNISED_REFUSAL_MAX_CHARS', 200)
 
-        assert not _github_pr._is_unrecognised_refusal('', 'cuioss-review-bot')
+        assert not _github_pr._is_unrecognised_refusal('', 'sourcery')
 
     def test_declines_a_body_at_or_over_the_threshold(self, monkeypatch):
         """The bound is exclusive, and a long anchor-less body is a genuine review."""
@@ -742,11 +742,11 @@ class TestUnrecognisedRefusalPredicate:
         monkeypatch.setattr(_github_pr, 'UNRECOGNISED_REFUSAL_MAX_CHARS', len(_REWORDED_REFUSAL))
 
         # At exactly the threshold the arm does NOT fire...
-        assert not _github_pr._is_unrecognised_refusal(_REWORDED_REFUSAL, 'cuioss-review-bot')
+        assert not _github_pr._is_unrecognised_refusal(_REWORDED_REFUSAL, 'sourcery')
         # ...and one character of headroom is what makes it fire — the matched
         # control proving the boundary is the only thing being tested here.
         monkeypatch.setattr(_github_pr, 'UNRECOGNISED_REFUSAL_MAX_CHARS', len(_REWORDED_REFUSAL) + 1)
-        assert _github_pr._is_unrecognised_refusal(_REWORDED_REFUSAL, 'cuioss-review-bot')
+        assert _github_pr._is_unrecognised_refusal(_REWORDED_REFUSAL, 'sourcery')
 
     @pytest.mark.parametrize(
         'body',
@@ -768,7 +768,7 @@ class TestUnrecognisedRefusalPredicate:
         """
         import _github_pr
 
-        for bot_kind in ('coderabbit', 'sourcery', 'cuioss-review-bot', None):
+        for bot_kind in ('coderabbit', 'sourcery', None):
             monkeypatch.setattr(_github_pr, 'UNRECOGNISED_REFUSAL_MAX_CHARS', None)
             inert = _github_pr._is_refusal_notice(body, bot_kind)
             monkeypatch.setattr(_github_pr, 'UNRECOGNISED_REFUSAL_MAX_CHARS', 500)

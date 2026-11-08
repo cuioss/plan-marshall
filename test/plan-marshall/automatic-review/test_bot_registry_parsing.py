@@ -6,8 +6,8 @@ The registry parses each ``automatic-review/standards/{bot_kind}.md`` fenced-YAM
 data block ONCE and exposes stable accessors so the finding store, the re-review
 strategy registry, the producer pre-filter, and the rate-limit detector DERIVE
 what they need instead of hard-coding the shipped bot set across several code
-files. Three bots ship today
-(``coderabbit``, ``cuioss-review-bot``, ``sourcery``), and that count is asserted from
+files. Two bots ship today
+(``coderabbit``, ``sourcery``), and that count is asserted from
 :data:`_SHIPPED_BOTS` rather than restated per test.
 
 Coverage:
@@ -39,7 +39,7 @@ import bot_registry
 import pytest
 
 # The bots shipped as standards docs in this skill.
-_SHIPPED_BOTS = ['coderabbit', 'cuioss-review-bot', 'sourcery']
+_SHIPPED_BOTS = ['coderabbit', 'sourcery']
 
 
 # =============================================================================
@@ -187,7 +187,6 @@ def test_review_body_summary_patterns_default_empty_and_fail_closed():
     every review_body counted.
     """
     assert bot_registry.review_body_summary_patterns('sourcery') == []
-    assert bot_registry.review_body_summary_patterns('cuioss-review-bot') == []
     assert bot_registry.review_body_summary_patterns('no-such-bot') == []
 
 

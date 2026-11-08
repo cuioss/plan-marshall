@@ -130,7 +130,7 @@ assert _UNREGISTERED_TOKEN not in _REGISTERED_BOTS, (
 # retires a publish shape breaks these tests loudly instead of silently.
 CODERABBIT_EVIDENCE = {'coderabbit': 'inline'}
 SOURCERY_EVIDENCE = {'sourcery': 'review_body'}
-PR_AGENT_EVIDENCE = {'cuioss-review-bot': 'issue_comment'}
+RETIRED_BOT_EVIDENCE = {'retired-bot': 'issue_comment'}
 
 #: The publish-shape vocabulary DERIVED from the live registry: the union of every
 #: registered bot's declared ``participation_evidence``, sorted so the pairing order
@@ -700,13 +700,13 @@ class TestTriggerBot:
             '--plan-id',
             plan_id,
             '--required-bots',
-            'cuioss-review-bot',
+            'retired-bot',
             '--stale-participation-bots',
-            'cuioss-review-bot:issue_comment',
+            'retired-bot:issue_comment',
         )
 
-        assert parsed['trigger_bots'] == ['cuioss-review-bot']
-        assert parsed['required_stale_bots'] == ['cuioss-review-bot']
+        assert parsed['trigger_bots'] == ['retired-bot']
+        assert parsed['required_stale_bots'] == ['retired-bot']
         assert not parsed.get('stored_finding_bots')
 
     def test_the_same_bot_without_the_stale_observation_is_not_listed(self, plan_context):
@@ -714,7 +714,7 @@ class TestTriggerBot:
         plan_id = 'rc-trigger-no-finding-control'
         plan_context.plan_dir_for(plan_id)
 
-        parsed = _trigger_bot('--plan-id', plan_id, '--required-bots', 'cuioss-review-bot')
+        parsed = _trigger_bot('--plan-id', plan_id, '--required-bots', 'retired-bot')
 
         assert not parsed.get('trigger_bots')
         assert not parsed.get('required_stale_bots')
@@ -763,23 +763,23 @@ class TestTriggerBot:
             '--plan-id',
             plan_id,
             '--required-bots',
-            'cuioss-review-bot',
+            'retired-bot',
             '--optional-bots',
             'coderabbit',
             '--stale-participation-bots',
-            'cuioss-review-bot:issue_comment',
+            'retired-bot:issue_comment',
             '--reviewed-commit-sha',
             'a' * 40,
             '--head-sha',
             'b' * 40,
         )
 
-        assert parsed['trigger_bots'] == ['cuioss-review-bot', 'coderabbit']
+        assert parsed['trigger_bots'] == ['retired-bot', 'coderabbit']
         assert parsed['stored_finding_bots'] == ['coderabbit']
         assert parsed['stored_findings_stale'] is True
         # The stored-finding bot is listed, but it is not a required bot whose
         # participation is stale.
-        assert parsed['required_stale_bots'] == ['cuioss-review-bot']
+        assert parsed['required_stale_bots'] == ['retired-bot']
 
     def test_a_stored_finding_bot_is_not_joined_when_head_is_the_reviewed_commit(self, plan_context):
         """The paired control: equal commits join nothing, and the population is still reported."""

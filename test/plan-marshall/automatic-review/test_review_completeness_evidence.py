@@ -125,7 +125,7 @@ assert _UNREGISTERED_TOKEN not in _REGISTERED_BOTS, (
 # retires a publish shape breaks these tests loudly instead of silently.
 CODERABBIT_EVIDENCE = {'coderabbit': 'inline'}
 SOURCERY_EVIDENCE = {'sourcery': 'review_body'}
-PR_AGENT_EVIDENCE = {'cuioss-review-bot': 'issue_comment'}
+RETIRED_BOT_EVIDENCE = {'retired-bot': 'issue_comment'}
 
 #: The publish-shape vocabulary DERIVED from the live registry: the union of every
 #: registered bot's declared ``participation_evidence``, sorted so the pairing order
@@ -267,7 +267,8 @@ class TestEvidenceTyping:
         # admitted POSITIVELY rather than covered only by the absence of a failure.
         assert rc.parse_participation('coderabbit:issue_comment') == {'coderabbit': 'issue_comment'}
         assert rc.parse_participation('sourcery:review_body') == SOURCERY_EVIDENCE
-        assert rc.parse_participation('cuioss-review-bot:issue_comment') == PR_AGENT_EVIDENCE
+        # An unregistered kind declares no shape at all, so nothing is admitted for it.
+        assert rc.parse_participation('retired-bot:issue_comment') == {}
 
     def test_a_shape_the_bot_does_not_publish_is_not_evidence(self, plan_context):
         """Evidence is per-bot: another bot's publish shape proves nothing here.
@@ -325,16 +326,13 @@ class TestEvidenceTyping:
         """
         assert rc.parse_participation('coderabbit:inline,sourcery:inline') == CODERABBIT_EVIDENCE
 
-    def test_a_shape_two_bots_both_declare_is_admitted_for_both(self, plan_context):
-        """Admissibility is per-bot membership, not per-bot exclusivity.
+    def test_an_undeclared_kind_is_dropped_from_a_mixed_list(self, plan_context):
+        """Admissibility is per-bot membership, so one bad pair does not spoil the list.
 
-        CodeRabbit and PR-Agent both declare ``inline``, so a mixed list admits it
-        for each of them — a shape is not owned by the first bot to declare it.
+        CodeRabbit's declared ``inline`` is admitted while an unregistered kind's pair
+        is dropped, because no record declares any shape for it.
         """
-        assert rc.parse_participation('coderabbit:inline,cuioss-review-bot:inline') == {
-            'coderabbit': 'inline',
-            'cuioss-review-bot': 'inline',
-        }
+        assert rc.parse_participation('coderabbit:inline,retired-bot:inline') == {'coderabbit': 'inline'}
 
     def test_bot_with_empty_participation_evidence_is_never_proven(self, plan_context, monkeypatch):
         """FAIL-CLOSED: a bot declaring NO evidence shape can never be a participant.
@@ -359,100 +357,101 @@ class TestEvidenceTyping:
         assert result['unproven_bots'] == ['coderabbit']
 
 
-class TestPRAgentParticipation:
-    """PR-Agent is proven by a declared publish shape plus movement — never by check state."""
+class TestPersistentCommentParticipation:
+    """A bot whose whole review artifact is one persistent comment is proven by it.
 
-    def test_guide_comment_is_its_evidence(self, plan_context):
-        """Its single persistent `issue_comment` IS its review artifact."""
-        plan_id = 'rc-cuioss-review-bot-guide'
+    The subject is the SHAPE rather than any one bot: a reviewer that publishes one
+    ``issue_comment`` and edits it in place. ``retired-bot`` stands in for it because
+    no live registry record may be credited on a publish shape its own record does not
+    declare — which the negative control below pins.
+    """
+
+    def test_the_persistent_comment_is_its_evidence(self, plan_context):
+        """Its single persistent ``issue_comment`` IS its review artifact."""
+        plan_id = 'rc-retired-bot-guide'
         plan_context.plan_dir_for(plan_id)
 
-        result = rc.check_completeness(plan_id, ['cuioss-review-bot'], participated_bots=PR_AGENT_EVIDENCE)
+        result = rc.check_completeness(plan_id, ['retired-bot'], participated_bots=RETIRED_BOT_EVIDENCE)
 
         assert result['participation_complete'] is True
-        assert _state_of(result, 'cuioss-review-bot') == rc.STATE_PARTICIPATED_BUT_EMPTY
+        assert _state_of(result, 'retired-bot') == rc.STATE_PARTICIPATED_BUT_EMPTY
 
-    def test_inline_comment_is_also_its_evidence(self, plan_context):
-        """`/improve` publishes inline suggestions, so an inline pair proves it too.
+    def test_an_inline_pair_is_evidence_where_the_record_declares_it(self, plan_context):
+        """A declared inline shape credits on its own.
 
-        The registry declares ``inline`` alongside ``issue_comment``, so an
-        observation of the label-gated shape is admissible on its own.
+        CodeRabbit declares ``inline`` beside its gated ``issue_comment``, so an
+        observation of it is admissible without the comment shape.
         """
-        plan_id = 'rc-cuioss-review-bot-inline'
+        plan_id = 'rc-coderabbit-inline-only'
         plan_context.plan_dir_for(plan_id)
-        _seed(plan_id, 'cuioss-review-bot', resolution='fixed')
+        _seed(plan_id, 'coderabbit', resolution='fixed')
 
         result = rc.check_completeness(
-            plan_id, ['cuioss-review-bot'], participated_bots=rc.parse_participation('cuioss-review-bot:inline')
+            plan_id, ['coderabbit'], participated_bots=rc.parse_participation('coderabbit:inline')
         )
 
         assert result['participation_complete'] is True
-        assert _state_of(result, 'cuioss-review-bot') != rc.STATE_ABSENT
+        assert _state_of(result, 'coderabbit') != rc.STATE_ABSENT
 
     def test_absent_inline_shape_does_not_make_it_unproven(self, plan_context):
-        """An absent inline count is NOT evidence of non-participation.
+        """An absent inline shape is NOT evidence of non-participation.
 
-        ``/improve`` is label-gated per pull request, so on most repositories the
-        inline shape is simply never published. The Guide comment alone therefore
-        still proves participation — reading the missing inline shape as a failure
-        would score the bot unproven on every repository that did not opt in.
+        A bot need not publish every shape it declares on every pull request, so the
+        comment shape alone still proves participation — reading the missing one as a
+        failure would score the bot unproven wherever it was not exercised.
         """
-        plan_id = 'rc-cuioss-review-bot-guide-only'
+        plan_id = 'rc-coderabbit-comment-only'
         plan_context.plan_dir_for(plan_id)
 
         result = rc.check_completeness(
-            plan_id, ['cuioss-review-bot'], participated_bots=rc.parse_participation('cuioss-review-bot:issue_comment')
+            plan_id, ['coderabbit'], participated_bots=rc.parse_participation('coderabbit:issue_comment')
         )
 
         assert result['participation_complete'] is True
-        assert _state_of(result, 'cuioss-review-bot') != rc.STATE_ABSENT
+        assert _state_of(result, 'coderabbit') != rc.STATE_ABSENT
 
     def test_a_shape_it_does_not_declare_is_still_not_its_evidence(self, plan_context):
-        """The widening is an enumeration, not a blanket admission.
+        """The admission is an enumeration, not a blanket grant.
 
-        ``review_body`` is a real publish shape for other bots and is NOT declared
-        by PR-Agent, so it proves nothing here — without this control the widened
-        record would be indistinguishable from "any shape counts".
+        ``review_body`` is a real publish shape for other bots and is declared by no
+        record for this kind, so it proves nothing here — without this control the
+        widened case would be indistinguishable from "any shape counts".
         """
-        plan_id = 'rc-cuioss-review-bot-review-body'
+        plan_id = 'rc-retired-bot-review-body'
         plan_context.plan_dir_for(plan_id)
 
-        assert rc.parse_participation('cuioss-review-bot:review_body') == {}
+        assert rc.parse_participation('retired-bot:review_body') == {}
 
         result = rc.check_completeness(
-            plan_id, ['cuioss-review-bot'], participated_bots=rc.parse_participation('cuioss-review-bot:review_body')
+            plan_id, ['retired-bot'], participated_bots=rc.parse_participation('retired-bot:review_body')
         )
 
         assert result['participation_complete'] is False
-        assert _state_of(result, 'cuioss-review-bot') == rc.STATE_ABSENT
+        assert _state_of(result, 'retired-bot') == rc.STATE_UNREGISTERED_KIND
 
     def test_check_state_is_not_its_evidence(self, plan_context):
-        """It posts NO check-run, so no check signal can stand in for participation.
+        """A completed check-run says a job ran, never that a review was published.
 
         The predicate takes no check-state input at all for participation — a
         completion signal only ever feeds the orthogonal ``in_progress`` timing
         state, which is an UNPROVEN state, not a proven one.
         """
-        plan_id = 'rc-cuioss-review-bot-check'
+        plan_id = 'rc-retired-bot-check'
         plan_context.plan_dir_for(plan_id)
 
-        result = rc.check_completeness(plan_id, ['cuioss-review-bot'], in_progress_bots=['cuioss-review-bot'])
+        result = rc.check_completeness(plan_id, ['retired-bot'], in_progress_bots=['retired-bot'])
 
         assert result['participation_complete'] is False
-        assert _state_of(result, 'cuioss-review-bot') == rc.STATE_IN_PROGRESS
-        assert result['unproven_bots'] == ['cuioss-review-bot']
+        assert _state_of(result, 'retired-bot') == rc.STATE_IN_PROGRESS
+        assert result['unproven_bots'] == ['retired-bot']
 
     def test_registry_declares_update_movement_requirement(self, plan_context):
         """The in-place-edit qualifier is registry data, not a code branch.
 
-        PR-Agent re-reviews by editing the SAME Guide comment, and CodeRabbit
-        likewise edits its summary comment in place, so BOTH records set
+        CodeRabbit edits its summary comment in place, so its record sets
         ``participation_requires_update``; ``sourcery`` appends a new comment per
-        review and does not. Two of the three registered bots therefore declare the
-        flag, which is the point: the producer reads the flag, so a second bot
-        adopting in-place editing is a registry edit with no bot-name literal to
-        change anywhere.
+        review and does not. The producer reads the flag, so a bot adopting in-place
+        editing is a registry edit with no bot-name literal to change anywhere.
         """
-        assert rc.bot_registry.participation_requires_update('cuioss-review-bot') is True
         assert rc.bot_registry.participation_requires_update('coderabbit') is True
         assert rc.bot_registry.participation_requires_update('sourcery') is False

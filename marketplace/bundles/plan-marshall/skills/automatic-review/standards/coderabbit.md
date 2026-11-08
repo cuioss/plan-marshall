@@ -524,8 +524,8 @@ overlays:
   or already mitigated. Default to **REPLY-AND-RESOLVE (defer)** with a rationale, not FIX, when out
   of scope.
 - **Severity-weight**, don't be alarmed by the 🔒 tag alone (it pairs with 🟡 Minor often).
-- **Dedup across reviewers** — CodeRabbit runs alongside `sourcery-ai` and `cuioss-review-bot`;
-  collapse the same finding reported by multiple bots into one disposition.
+- **Dedup across reviewers** — CodeRabbit runs alongside `sourcery-ai`;
+  collapse the same finding reported by both bots into one disposition.
 - **Nitpicks are actioned** (maintainer policy) — FIX when the change is cheap and matches a
   configured standard; otherwise REPLY-AND-RESOLVE. Do not silently drop them.
 

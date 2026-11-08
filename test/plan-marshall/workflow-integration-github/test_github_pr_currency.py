@@ -32,7 +32,6 @@ from _github_pr_fixtures import (
     VacuousPopulationError,
     guard_non_empty,
 )
-from _pr_agent_guide_bodies import GUIDE_WITH_FINDING, OBSERVED_CLEAN_GUIDE
 
 from conftest import get_script_path, get_skill_dir, load_script_module, run_script
 
@@ -124,7 +123,7 @@ _COMMENTS = [
     },
     {
         'id': 'c3',
-        'author': 'cuioss-review-bot',
+        'author': 'sourcery-ai',
         'thread_id': 'PRRT_3',
         'kind': 'inline',
         'body': 'This loop can be simplified into a comprehension.',
@@ -214,7 +213,7 @@ def _run_fetch_classified(pr_number, plan_id, *, required_bots=None, optional_bo
     """Invoke ``cmd_fetch_findings`` with explicit participation-classification lists.
 
     ``required_bots`` / ``optional_bots`` are the raw comma-joined flag values
-    (``'coderabbit'``, ``'coderabbit,cuioss-review-bot'``, or ``''`` for an answered-empty
+    (``'coderabbit'``, ``'coderabbit,sourcery'``, or ``''`` for an answered-empty
     list). Their union is the CLASSIFIED set; neither list admits or drops a
     comment. The sibling ``_run_fetch`` omits both attributes entirely, which the
     handler's ``getattr(args, ..., None)`` reads as the never-supplied case. Both
@@ -375,8 +374,6 @@ _CLASSIFICATION_FLAGS = derive_bot_flags(
     'fetch_findings',
 )
 assert _CLASSIFICATION_FLAGS, 'derive_bot_flags found no classification flags on fetch_findings'
-_PR_AGENT_REQUIRED_MARKERS = bot_registry.contentless_review_markers('cuioss-review-bot')
-assert _PR_AGENT_REQUIRED_MARKERS, 'bot_registry declares no contentless review markers for cuioss-review-bot'
 _BOT_KIND_TO_LOGIN = {kind: login for login, kind in bot_registry.login_to_bot_kind().items()}
 
 

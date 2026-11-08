@@ -2125,8 +2125,7 @@ def cmd_fetch_findings(args):
         # to anchor a review of — which is exactly what produced the #515 false green.
         #
         # The rule is BOT-AGNOSTIC by design: it governs every bot that declares
-        # ``inline`` evidence, ``cuioss-review-bot`` included. Removing that bot is a
-        # separate, parked change; tightening the rule here does not alter which bots
+        # ``inline`` evidence. Tightening the rule here does not alter which bots
         # publish inline evidence.
         if _kind == 'inline':
             if _comment.get('thread_reply') or _comment.get('reply_to_id'):
@@ -2338,9 +2337,8 @@ def cmd_fetch_findings(args):
 
         author = comment.get('author') or 'unknown'
 
-        # Derive bot_kind from the comment author login (coderabbitai ->
-        # coderabbit, cuioss-review-bot -> cuioss-review-bot, whose login and kind
-        # are deliberately the SAME name); a human author resolves to
+        # Derive bot_kind from the comment author login (``coderabbitai`` ->
+        # ``coderabbit``, ``sourcery-ai`` -> ``sourcery``); a human author resolves to
         # None. Computed BEFORE the noise pre-filter (so per-bot ignore patterns
         # apply) AND before the dedup check (so the cross-iteration guard can key
         # on (bot_kind, comment_id)).
@@ -3790,7 +3788,7 @@ Examples:
                         'default': '',
                         'help': (
                             'Comma-joined bot_kinds whose participation is REQUIRED (e.g. '
-                            '"coderabbit,cuioss-review-bot"). A required bot\'s silence is a failure and gates the '
+                            '"coderabbit"). A required bot\'s silence is a failure and gates the '
                             'review-completeness quorum. This list classifies, it does NOT admit: a comment '
                             'from a bot outside both lists is still ingested and its bot is reported in '
                             'unclassified_bots. May be supplied bare (no value), which reads as the empty '

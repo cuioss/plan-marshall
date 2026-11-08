@@ -6,8 +6,8 @@ The registry parses each ``automatic-review/standards/{bot_kind}.md`` fenced-YAM
 data block ONCE and exposes stable accessors so the finding store, the re-review
 strategy registry, the producer pre-filter, and the rate-limit detector DERIVE
 what they need instead of hard-coding the shipped bot set across several code
-files. Three bots ship today
-(``coderabbit``, ``cuioss-review-bot``, ``sourcery``), and that count is asserted from
+files. Two bots ship today
+(``coderabbit``, ``sourcery``), and that count is asserted from
 :data:`_SHIPPED_BOTS` rather than restated per test.
 
 Coverage:
@@ -39,7 +39,7 @@ import bot_registry
 import pytest
 
 # The bots shipped as standards docs in this skill.
-_SHIPPED_BOTS = ['coderabbit', 'cuioss-review-bot', 'sourcery']
+_SHIPPED_BOTS = ['coderabbit', 'sourcery']
 
 
 # =============================================================================
@@ -89,12 +89,6 @@ def test_severity_map_per_bot():
     sourcery = bot_registry.severity_map('sourcery')
     assert sourcery['security'] == 'critical'
 
-    # PR-Agent's map is an ASSIGNMENT map keyed on the review-table row a finding
-    # came from — the observed review emits no severity vocabulary to parse. All
-    # three keys are asserted so a dropped row is caught, not just the first.
-    pr_agent = bot_registry.severity_map('cuioss-review-bot')
-    assert pr_agent == {'security_concern': 'high', 'focus_area': 'medium', 'missing_tests': 'low'}
-
 
 def test_rate_limit_class_per_bot():
     """Each bot's rate-limit class is read from its data block, per OBSERVED evidence.
@@ -102,11 +96,10 @@ def test_rate_limit_class_per_bot():
     The class is what a caller branches on before deciding to wait out a refusal:
     an ``awaitable_window`` reopens on its own, a ``hard_quota`` does not reopen on
     a useful timescale, and ``unknown`` records that no refusal has ever been seen
-    for that bot. The three shipped bots deliberately span all three values.
+    for that bot.
     """
     assert bot_registry.rate_limit_class('coderabbit') == 'awaitable_window'
     assert bot_registry.rate_limit_class('sourcery') == 'hard_quota'
-    assert bot_registry.rate_limit_class('cuioss-review-bot') == 'unknown'
 
 
 def test_rate_limit_class_fails_closed_for_absent_field(tmp_path):
@@ -162,8 +155,6 @@ def test_refusal_size_patterns_mark_the_diff_size_cause():
     for quota_marker in ('Review limit reached', 'Review rate limited'):
         assert quota_marker in bot_registry.refusal_patterns('coderabbit')
         assert quota_marker not in coderabbit_size
-
-    assert bot_registry.refusal_size_patterns('cuioss-review-bot') == []
 
 
 def test_coderabbit_declares_the_summary_rule_as_a_conditional_drop():
@@ -264,7 +255,6 @@ def test_acknowledgment_patterns_per_bot():
     classified an acknowledgment.
     """
     assert bot_registry.acknowledgment_patterns('coderabbit') == ['Review triggered', 'Review finished']
-    assert bot_registry.acknowledgment_patterns('cuioss-review-bot') == []
     assert bot_registry.acknowledgment_patterns('sourcery') == []
 
 
@@ -347,7 +337,6 @@ def test_escalated_trigger_comment_per_bot():
     is the command alone — it is posted verbatim.
     """
     assert bot_registry.escalated_trigger_comment('coderabbit') == '@coderabbitai full review'
-    assert bot_registry.escalated_trigger_comment('cuioss-review-bot') == ''
     assert bot_registry.escalated_trigger_comment('sourcery') == ''
 
 
@@ -361,12 +350,11 @@ def test_the_escalated_command_differs_from_the_ordinary_trigger_for_every_decla
 
 
 def test_no_unreviewed_commit_patterns_per_bot():
-    """CodeRabbit's two "nothing new to review" literals parse; the other two read empty."""
+    """CodeRabbit's two "nothing new to review" literals parse; Sourcery's read empty."""
     assert bot_registry.no_unreviewed_commit_patterns('coderabbit') == [
         'Already reviewed the last commit',
         'No new commits to review',
     ]
-    assert bot_registry.no_unreviewed_commit_patterns('cuioss-review-bot') == []
     assert bot_registry.no_unreviewed_commit_patterns('sourcery') == []
 
 
@@ -443,8 +431,7 @@ def test_rate_limit_eta_patterns_per_bot():
     ETA out. Sourcery declares one too: its diff-character budget notice states a
     reset days away — a concrete ETA, even though ``hard_quota`` makes it an
     unawaitable one, so extracting it is reporting rather than an invitation to
-    wait. PR-Agent declares none because no refusal has been observed at all, and
-    an empty list is the signal to report an absent ETA rather than invent one.
+    wait.
     """
     coderabbit = bot_registry.rate_limit_eta_patterns('coderabbit')
     assert coderabbit
@@ -463,8 +450,6 @@ def test_rate_limit_eta_patterns_per_bot():
     )
     assert any(re.search(pattern, observed) for pattern in sourcery)
     assert next(m.group(1) for p in sourcery if (m := re.search(p, observed))) == '3 days and 17 hours'
-
-    assert bot_registry.rate_limit_eta_patterns('cuioss-review-bot') == []
 
 
 @pytest.mark.parametrize(

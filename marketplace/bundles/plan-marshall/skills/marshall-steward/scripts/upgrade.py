@@ -318,13 +318,22 @@ _PROVENANCE_KEY = 'bot_lists_provenance'
 # (unit-test import topology); the fallback preserves the last-known literals
 # for that topology only. The private aliases preserve this module's
 # established names for existing readers.
+#
+# ``RETIRED_BOT_KINDS`` — the bot kinds withdrawn from the shipped registry — lives on
+# the same canonical host, so the tombstone is spelled in exactly one place. The
+# fallback declares it EMPTY rather than repeating the name: this module then degrades
+# to "no retirement" instead of gaining a second copy of the literal, and the shipped
+# runtime always resolves the canonical host.
+RETIRED_BOT_KINDS: tuple[str, ...]
 try:
-    from _config_defaults import STANDARD_OPTIONAL_BOTS, STANDARD_REQUIRED_BOTS
+    from _config_defaults import RETIRED_BOT_KINDS, STANDARD_OPTIONAL_BOTS, STANDARD_REQUIRED_BOTS
 except ImportError:
-    STANDARD_REQUIRED_BOTS = 'cuioss-review-bot,coderabbit'
+    STANDARD_REQUIRED_BOTS = 'coderabbit'
     STANDARD_OPTIONAL_BOTS = 'sourcery'
+    RETIRED_BOT_KINDS = ()
 _STANDARD_REQUIRED_BOTS = STANDARD_REQUIRED_BOTS
 _STANDARD_OPTIONAL_BOTS = STANDARD_OPTIONAL_BOTS
+_RETIRED_BOT_KINDS = RETIRED_BOT_KINDS
 
 
 def _has_operator_answer(params: dict) -> bool:
@@ -358,22 +367,42 @@ def _named_discarded_bots(legacy: object) -> list[str]:
     return [name.strip() for name in str(legacy).split(',') if name.strip()]
 
 
+def _strip_retired_bots(value: object) -> tuple[str, list[str]]:
+    """Return ``value`` with every RETIRED bot kind removed, plus the names removed.
+
+    A roster is a comma-separated string in the step params, and a retired kind left in
+    it resolves ``unregistered_kind`` — unproven and blocking — so the consumer's merge
+    would never complete. Removing the name here is the migration's whole remedy: the
+    roster keeps its remaining members and no reference to the bot survives.
+    """
+    text = value if isinstance(value, str) else ('' if value is None else str(value))
+    names = [name.strip() for name in text.split(',') if name.strip()]
+    removed = [name for name in names if name in _RETIRED_BOT_KINDS]
+    kept = [name for name in names if name not in _RETIRED_BOT_KINDS]
+    return ','.join(kept), removed
+
+
 def migrate_bot_lists(params: dict) -> dict:
     """Auto-map a retired ``enabled_bots`` value onto the two-list model.
 
     Pure function over ONE step's param object. It mutates ``params`` in place
     and returns a report describing which of the four input states applied.
 
+    A retired bot kind is stripped from both roster lists in EVERY state, before the
+    state is decided — a configuration written while the bot existed names it whether
+    or not the legacy ``enabled_bots`` key is still there, and leaving it would block
+    that consumer's merge on a reviewer no registry answers to any more. The removed
+    names are reported as ``removed_retired``.
+
     The four states are exhaustive:
 
     1. **legacy present, no operator answer** — seed the standard roster
-       (``required_bots: cuioss-review-bot,coderabbit``,
-       ``optional_bots: sourcery``), remove ``enabled_bots``, and record
-       provenance ``migrated``. Seeding the standard roster (not the legacy
-       value verbatim) is what leaves a legacy-only config valid without hand
-       repair: the discarded bots are named individually in ``discarded_legacy``
-       so no name disappears silently, and any unknown name is reported by
-       ``validate_bot_lists`` rather than copied.
+       (``required_bots: coderabbit``, ``optional_bots: sourcery``), remove
+       ``enabled_bots``, and record provenance ``migrated``. Seeding the standard
+       roster (not the legacy value verbatim) is what leaves a legacy-only config
+       valid without hand repair: the discarded bots are named individually in
+       ``discarded_legacy`` so no name disappears silently, and any unknown name is
+       reported by ``validate_bot_lists`` rather than copied.
     2. **legacy present, operator answered** — the operator has already
        answered, so THEIR ANSWER WINS: the new keys are left untouched and
        only the stale legacy key is removed. Both values are reported so the
@@ -394,9 +423,19 @@ def migrate_bot_lists(params: dict) -> dict:
     Returns:
         A report dict: ``state`` (one of ``migrated`` / ``operator_answer_kept`` /
         ``noop``), plus ``required_bots`` / ``optional_bots`` (the resulting
-        values) and, when a legacy value was discarded, ``discarded_legacy``
+        values), ``removed_retired`` (the retired bot names stripped from either
+        roster list) and, when a legacy value was discarded, ``discarded_legacy``
         (the list of dropped bot names — never the raw ``enabled_bots`` string).
     """
+    removed_retired: list[str] = []
+    for roster_key in (_REQUIRED_BOTS_KEY, _OPTIONAL_BOTS_KEY):
+        if roster_key not in params:
+            continue
+        cleaned, removed = _strip_retired_bots(params.get(roster_key))
+        if removed:
+            params[roster_key] = cleaned
+            removed_retired.extend(removed)
+
     legacy = params.get(_LEGACY_BOT_LIST_KEY)
     has_legacy = legacy is not None
     has_new = _has_operator_answer(params)
@@ -408,6 +447,7 @@ def migrate_bot_lists(params: dict) -> dict:
             'state': 'noop',
             'required_bots': params.get(_REQUIRED_BOTS_KEY, ''),
             'optional_bots': params.get(_OPTIONAL_BOTS_KEY, ''),
+            'removed_retired': removed_retired,
         }
 
     if has_new:
@@ -419,6 +459,7 @@ def migrate_bot_lists(params: dict) -> dict:
             'required_bots': params.get(_REQUIRED_BOTS_KEY, ''),
             'optional_bots': params.get(_OPTIONAL_BOTS_KEY, ''),
             'discarded_legacy': _named_discarded_bots(legacy),
+            'removed_retired': removed_retired,
         }
 
     # State (1) — seed the standard roster; name each dropped bot explicitly.
@@ -431,6 +472,7 @@ def migrate_bot_lists(params: dict) -> dict:
         'required_bots': _STANDARD_REQUIRED_BOTS,
         'optional_bots': _STANDARD_OPTIONAL_BOTS,
         'discarded_legacy': _named_discarded_bots(legacy),
+        'removed_retired': removed_retired,
     }
 
 

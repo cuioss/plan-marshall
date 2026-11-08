@@ -29,9 +29,10 @@ from _github_pr_fixtures import (
     UNGATED_EVIDENCE,
     UNGATED_EVIDENCE_COUNT,
     VacuousPopulationError,
+    coderabbit_summary_plain_walkthrough,
+    coderabbit_summary_with_concern,
     guard_non_empty,
 )
-from _pr_agent_guide_bodies import GUIDE_WITH_FINDING, OBSERVED_CLEAN_GUIDE
 
 from conftest import get_script_path, get_skill_dir, load_script_module, run_script
 
@@ -123,7 +124,7 @@ _COMMENTS = [
     },
     {
         'id': 'c3',
-        'author': 'cuioss-review-bot',
+        'author': 'sourcery-ai',
         'thread_id': 'PRRT_3',
         'kind': 'inline',
         'body': 'This loop can be simplified into a comprehension.',
@@ -213,7 +214,7 @@ def _run_fetch_classified(pr_number, plan_id, *, required_bots=None, optional_bo
     """Invoke ``cmd_fetch_findings`` with explicit participation-classification lists.
 
     ``required_bots`` / ``optional_bots`` are the raw comma-joined flag values
-    (``'coderabbit'``, ``'coderabbit,cuioss-review-bot'``, or ``''`` for an answered-empty
+    (``'coderabbit'``, ``'coderabbit,sourcery'``, or ``''`` for an answered-empty
     list). Their union is the CLASSIFIED set; neither list admits or drops a
     comment. The sibling ``_run_fetch`` omits both attributes entirely, which the
     handler's ``getattr(args, ..., None)`` reads as the never-supplied case. Both
@@ -334,14 +335,12 @@ _CLASSIFICATION_FLAGS = derive_bot_flags(
     'fetch_findings',
 )
 assert _CLASSIFICATION_FLAGS, 'derive_bot_flags found no classification flags on fetch_findings'
-_PR_AGENT_REQUIRED_MARKERS = bot_registry.contentless_review_markers('cuioss-review-bot')
-assert _PR_AGENT_REQUIRED_MARKERS, 'bot_registry declares no contentless review markers for cuioss-review-bot'
 _BOT_KIND_TO_LOGIN = {kind: login for login, kind in bot_registry.login_to_bot_kind().items()}
+_CODERABBIT_CLEAN_SUMMARY = coderabbit_summary_plain_walkthrough()
+_CODERABBIT_SUMMARY_WITH_CONCERN = coderabbit_summary_with_concern()
 _HEAD_A = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
 _HEAD_B = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
 _HEAD_C = 'cccccccccccccccccccccccccccccccccccccccc'
-_GUIDE_CLEAN_BODY = 'Nothing further to report on this pass; the change reads consistently.'
-_GUIDE_FINDING_BODY = 'The retry helper drops the final attempt when max_attempts is 1.'
 _LEGACY_LEDGER_FILENAME = 'pr-noise-dropped-comments.jsonl'
 _CONTRACT_DOC = get_skill_dir('plan-marshall', 'automatic-review') / 'standards' / 'bot-participation-contract.md'
 _CONTRACT_TEXT = _CONTRACT_DOC.read_text(encoding='utf-8')
@@ -356,14 +355,14 @@ _ISO_COMMIT_AT = '2026-08-25T12:00:00Z'
 def test_classification_union_spans_both_lists(plan_context, monkeypatch):
     """A bot classified via EITHER list is not reported unclassified.
 
-    ``--required-bots "coderabbit,cuioss-review-bot"`` plus ``--optional-bots "sourcery"``
-    classifies all three participating bots, proving the producer takes the union
-    of the two comma-split sets rather than reading only one list.
+    ``--required-bots "coderabbit"`` plus ``--optional-bots "sourcery"`` classifies
+    both participating bots, proving the producer takes the union of the two
+    comma-split sets rather than reading only one list.
     """
     plan_id = 'gh-pr-classification-union'
     _patch_provider(monkeypatch, _COMMENTS)
 
-    result = _run_fetch_classified(103, plan_id, required_bots='coderabbit,cuioss-review-bot', optional_bots='sourcery')
+    result = _run_fetch_classified(103, plan_id, required_bots='coderabbit', optional_bots='sourcery')
     assert result['status'] == 'success'
     assert result['count_stored'] == len(_COMMENTS)
     assert result['unclassified_bots'] == []
@@ -371,7 +370,7 @@ def test_classification_union_spans_both_lists(plan_context, monkeypatch):
 
     stored = query_findings(plan_id, finding_type='pr-comment')['findings']
     bot_kinds = {f.get('bot_kind') for f in stored}
-    assert {'coderabbit', 'cuioss-review-bot', 'sourcery'} <= bot_kinds
+    assert {'coderabbit', 'sourcery'} <= bot_kinds
 
 
 def test_fetch_findings_reports_drift_when_only_the_structural_arm_matched(plan_context, monkeypatch):
@@ -529,60 +528,43 @@ def test_fetch_findings_reports_no_drift_outside_a_declared_publish_shape(plan_c
     assert result['refusal_pattern_drift'] == []
 
 
-def test_clean_guide_fixture_carries_every_declared_required_marker():
-    """The fixture stays in step with the registry it is meant to exercise.
-
-    Without this guard a marker added to ``cuioss-review-bot.md`` would leave the
-    conjunction cases below asserting ``False`` for the trivial reason that the
-    fixture never carried the new marker — the whole layer-3 suite would keep
-    passing while covering nothing.
-    """
-    assert _PR_AGENT_REQUIRED_MARKERS
-    for marker in _PR_AGENT_REQUIRED_MARKERS:
-        assert marker in OBSERVED_CLEAN_GUIDE
-
-
 @pytest.mark.parametrize('bot_kind', ['sourcery', 'not-a-registered-bot', None])
 def test_empty_required_markers_short_circuit_to_false(bot_kind):
     """A bot declaring no clean shape can never have a comment dropped by layer 3.
 
     This is the fail-closed default and the state every bot that has not opted in is in
     — including an unregistered kind and the human path (``bot_kind`` is ``None``). It is
-    asserted against a body that carries PR-Agent's every required marker, so the
+    asserted against a body that carries CodeRabbit's every required marker, so the
     ``False`` can only come from the empty-required short-circuit and not from a failed
     marker match.
     """
     assert bot_registry.contentless_review_markers(bot_kind or '') == []
-    assert github_pr._is_contentless_boilerplate(OBSERVED_CLEAN_GUIDE, bot_kind) is False
+    assert github_pr._is_contentless_boilerplate(_CODERABBIT_CLEAN_SUMMARY, bot_kind) is False
 
 
-def test_clean_guide_is_contentless_boilerplate():
+def test_clean_summary_is_contentless_boilerplate():
     """Every required marker present and no disqualifying marker — the drop case."""
-    assert github_pr._is_contentless_boilerplate(OBSERVED_CLEAN_GUIDE, 'cuioss-review-bot') is True
+    assert github_pr._is_contentless_boilerplate(_CODERABBIT_CLEAN_SUMMARY, 'coderabbit') is True
 
 
 def test_any_actionable_marker_vetoes_the_drop():
-    """A ``<details>`` finding disqualifies the drop even with every clean marker present.
+    """A concern section disqualifies the drop even with every clean marker present.
 
-    The veto is what keeps the predicate fail-OPEN: a Guide that asserts a clean
-    security row while also carrying a focus-area finding is a review WITH
+    The veto is what keeps the predicate fail-OPEN: a summary that carries the
+    walkthrough boilerplate while also carrying a nitpick section is a review WITH
     content, and dropping it would destroy real review signal.
     """
-    for marker in _PR_AGENT_REQUIRED_MARKERS:
-        assert marker in GUIDE_WITH_FINDING
-    assert '<details>' in GUIDE_WITH_FINDING
-
-    assert github_pr._is_contentless_boilerplate(GUIDE_WITH_FINDING, 'cuioss-review-bot') is False
+    assert github_pr._is_contentless_boilerplate(_CODERABBIT_SUMMARY_WITH_CONCERN, 'coderabbit') is False
 
 
-def test_obvious_noise_drops_the_clean_guide_via_layer_three():
-    """``_is_obvious_noise`` returns True for the clean Guide and False for the finding-bearing one.
+def test_obvious_noise_drops_the_clean_summary_via_layer_three():
+    """``_is_obvious_noise`` returns True for the clean summary and False for the concern one.
 
     Layer 3 is reached through the public pre-filter, not only through the helper
     — the wiring is what makes the fix take effect in ``cmd_fetch_findings``.
     """
-    assert github_pr._is_obvious_noise(OBSERVED_CLEAN_GUIDE, 'cuioss-review-bot') is True
-    assert github_pr._is_obvious_noise(GUIDE_WITH_FINDING, 'cuioss-review-bot') is False
+    assert github_pr._is_obvious_noise(_CODERABBIT_CLEAN_SUMMARY, 'coderabbit') is True
+    assert github_pr._is_obvious_noise(_CODERABBIT_SUMMARY_WITH_CONCERN, 'coderabbit') is False
 
 
 def test_layer_three_is_consulted_only_after_layers_one_and_two_miss(monkeypatch):
@@ -603,16 +585,16 @@ def test_layer_three_is_consulted_only_after_layers_one_and_two_miss(monkeypatch
     monkeypatch.setattr(github_pr, '_is_contentless_boilerplate', _spy)
 
     # Layer 1 — a shared, bot-agnostic acknowledgment regex.
-    assert github_pr._is_obvious_noise('LGTM, nothing further from me.', 'cuioss-review-bot') is True
+    assert github_pr._is_obvious_noise('LGTM, nothing further from me.', 'coderabbit') is True
     assert calls == []
 
-    # Layer 2 — PR-Agent's own literal ignore marker.
-    assert github_pr._is_obvious_noise('## PR Agent Walkthrough\n\nAvailable commands.', 'cuioss-review-bot') is True
+    # Layer 2 — CodeRabbit's own literal ignore marker.
+    assert github_pr._is_obvious_noise('✏️ Learnings added\n\nAdded a preference.', 'coderabbit') is True
     assert calls == []
 
     # Neither matches — only now is layer 3 consulted.
-    assert github_pr._is_obvious_noise(OBSERVED_CLEAN_GUIDE, 'cuioss-review-bot') is True
-    assert calls == ['cuioss-review-bot']
+    assert github_pr._is_obvious_noise(_CODERABBIT_CLEAN_SUMMARY, 'coderabbit') is True
+    assert calls == ['coderabbit']
 
 
 def test_fetch_findings_size_cause_is_sticky(plan_context, monkeypatch):

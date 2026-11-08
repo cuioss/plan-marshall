@@ -319,10 +319,10 @@ class TestSummaryConcernIsFiled:
         control = bodies['summary-plain-walkthrough']
 
         assert concern != control
-        assert concern.replace(
-            '\n\n' + CODERABBIT_SUMMARY_CONCERN_SECTION, ''
-        ) == control, 'the concern body is not the control body plus one section'
-        for case_id, body, provenance in coderabbit_summary_bodies():
+        assert concern.replace('\n\n' + CODERABBIT_SUMMARY_CONCERN_SECTION, '') == control, (
+            'the concern body is not the control body plus one section'
+        )
+        for case_id, _body, provenance in coderabbit_summary_bodies():
             assert provenance in {'observed', 'constructed', 'reconstructed'}, (case_id, provenance)
 
     def test_a_summary_that_carries_only_a_concern_files_one_finding(self, plan_context):
@@ -356,9 +356,7 @@ class TestSummaryConcernIsFiled:
         """Both shapes in one fetch: the concern is filed, the boilerplate is dropped."""
         plan_id = 'gh-summary-concern-and-control'
         plan_context.plan_dir_for(plan_id)
-        comments = [
-            _bot_comment(f'IC-summary-{case_id}', body) for case_id, body, _p in coderabbit_summary_bodies()
-        ]
+        comments = [_bot_comment(f'IC-summary-{case_id}', body) for case_id, body, _p in coderabbit_summary_bodies()]
 
         result = _fetch_without_provider_reads(comments, _StoreArgs(714, plan_id))
 

@@ -52,7 +52,7 @@ from review_gate_delta import (
     assess_delta,
 )
 
-_ROSTER = ['coderabbit', 'cuioss-review-bot', 'sourcery']
+_ROSTER = ['coderabbit', 'sourcery']
 
 #: The tree the gates certified and the tree review reviewed — equal in the
 #: measurable case, and the whole subject of the post-gate-mutation exclusion.
@@ -103,7 +103,7 @@ def test_the_verdict_publishes_its_population_and_provenance():
     """Every figure carries the population it was computed over — never a bare number."""
     result = _full_coverage()
 
-    assert result['reviewer_coverage'] == '3/3'
+    assert result['reviewer_coverage'] == '2/2'
     assert result['enabled_bots'] == sorted(_ROSTER)
     assert result['reviewed_bots'] == sorted(_ROSTER)
     assert result['provenance']
@@ -153,9 +153,9 @@ def test_collapsing_coverage_withholds_the_share_it_never_improves_it():
     # The reviewer that filed the gate-addressable escape refuses. Its findings
     # never arrive, so the surviving escapes are ALL structural.
     collapsed = assess_delta(
-        findings=[_finding('f2', bot_kind='cuioss-review-bot'), _finding('f3', bot_kind='cuioss-review-bot')],
+        findings=[_finding('f2', bot_kind='sourcery'), _finding('f3', bot_kind='sourcery')],
         enabled_bots=_ROSTER,
-        reviewed_bots=['cuioss-review-bot'],
+        reviewed_bots=['sourcery'],
         gates_green=True,
         gate_head_sha=_SHA,
         reviewed_head_sha=_SHA,
@@ -165,7 +165,7 @@ def test_collapsing_coverage_withholds_the_share_it_never_improves_it():
     # A naive metric would report 100% structural — "the gates are perfect".
     assert collapsed['structural_share'] is None
     assert collapsed['share_withheld'] == 'partial_reviewer_coverage'
-    assert collapsed['reviewer_coverage'] == '1/3'
+    assert collapsed['reviewer_coverage'] == '1/2'
 
 
 def test_partial_coverage_still_reports_the_escapes_it_saw():
@@ -175,9 +175,9 @@ def test_partial_coverage_still_reports_the_escapes_it_saw():
     ratio — the thing a shrinking denominator corrupts — is withheld.
     """
     result = assess_delta(
-        findings=[_finding('f2', bot_kind='cuioss-review-bot')],
+        findings=[_finding('f2', bot_kind='sourcery')],
         enabled_bots=_ROSTER,
-        reviewed_bots=['cuioss-review-bot'],
+        reviewed_bots=['sourcery'],
         gates_green=True,
         gate_head_sha=_SHA,
         reviewed_head_sha=_SHA,
@@ -206,7 +206,7 @@ def test_a_reviewed_bot_outside_the_roster_does_not_earn_coverage():
     )
 
     assert result['verdict'] == VERDICT_EXCLUDED
-    assert result['reviewer_coverage'] == '0/3'
+    assert result['reviewer_coverage'] == '0/2'
 
 
 def test_an_empty_roster_is_excluded_rather_than_vacuously_complete():

@@ -113,7 +113,7 @@ def test_record_round_trips_granted_over_and_reason(plan_context):
     """
     plan_id = 'merge-auth-roundtrip'
     _make_plan(plan_id)
-    gap = '3 unhandled, unproven_bots=cuioss-review-bot,sourcery'
+    gap = '3 unhandled, unproven_bots=retired-bot,sourcery'
     reason = 'operator: docs-only delta, bots are rate-limited until tomorrow'
 
     cmd_merge_authorization_grant(_grant_args(plan_id, 'barrier-ask-override', HEAD_A, granted_over=gap, reason=reason))

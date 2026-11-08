@@ -30,9 +30,10 @@ from _github_pr_fixtures import (
     UNGATED_EVIDENCE,
     UNGATED_EVIDENCE_COUNT,
     VacuousPopulationError,
+    coderabbit_summary_plain_walkthrough,
+    coderabbit_summary_with_concern,
     guard_non_empty,
 )
-from _pr_agent_guide_bodies import GUIDE_WITH_FINDING, OBSERVED_CLEAN_GUIDE
 
 from conftest import get_script_path, load_script_module, run_script
 
@@ -127,7 +128,7 @@ _COMMENTS = [
     },
     {
         'id': 'c3',
-        'author': 'cuioss-review-bot',
+        'author': 'sourcery-ai',
         'thread_id': 'PRRT_3',
         'kind': 'inline',
         'body': 'This loop can be simplified into a comprehension.',
@@ -344,9 +345,9 @@ def _parsed_fetch_args(monkeypatch, argv):
     return captured['args']
 
 
-_PR_AGENT_REQUIRED_MARKERS = bot_registry.contentless_review_markers('cuioss-review-bot')
-assert _PR_AGENT_REQUIRED_MARKERS, 'bot_registry declares no contentless review markers for cuioss-review-bot'
 _BOT_KIND_TO_LOGIN = {kind: login for login, kind in bot_registry.login_to_bot_kind().items()}
+_CODERABBIT_CLEAN_SUMMARY = coderabbit_summary_plain_walkthrough()
+_CODERABBIT_SUMMARY_WITH_CONCERN = coderabbit_summary_with_concern()
 
 
 def _publish_comment(bot_kind, comment_id, *, created_at, updated_at=None, body=None):
@@ -521,10 +522,10 @@ class TestBareClassificationFlags:
         """
         args = _parsed_fetch_args(
             monkeypatch,
-            ['fetch_findings', '--pr-number', '1', '--plan-id', 'p', flag, 'coderabbit,cuioss-review-bot'],
+            ['fetch_findings', '--pr-number', '1', '--plan-id', 'p', flag, 'coderabbit,sourcery'],
         )
 
-        assert getattr(args, dest) == 'coderabbit,cuioss-review-bot'
+        assert getattr(args, dest) == 'coderabbit,sourcery'
 
     @pytest.mark.parametrize(('flag', 'dest'), _CLASSIFICATION_FLAGS)
     def test_omitted_flag_now_parses_to_empty_string_not_none(self, monkeypatch, flag, dest):
@@ -574,12 +575,12 @@ class TestBareClassificationFlags:
         assert 'status: success' in emitted
         assert f'count_stored: {len(_COMMENTS)}' in emitted
         # Every participating bot is named as unclassified — warned about, not dropped.
-        for bot_kind in ('coderabbit', 'cuioss-review-bot', 'sourcery'):
+        for bot_kind in ('coderabbit', 'sourcery'):
             assert bot_kind in emitted
 
         stored = query_findings(plan_id, finding_type='pr-comment')['findings']
         assert len(stored) == len(_COMMENTS)
-        assert {f.get('bot_kind') for f in stored} >= {'coderabbit', 'cuioss-review-bot', 'sourcery'}
+        assert {f.get('bot_kind') for f in stored} >= {'coderabbit', 'sourcery'}
 
 
 def test_registry_markers_are_stripped_before_matching(monkeypatch):
@@ -592,28 +593,29 @@ def test_registry_markers_are_stripped_before_matching(monkeypatch):
     Without the strip the required marker would never be found and the layer
     would silently stop firing.
     """
+    markers = bot_registry.contentless_review_markers('coderabbit')
     monkeypatch.setattr(
         github_pr.bot_registry,
         'contentless_review_markers',
-        lambda bot_kind: [f'  {marker}  ' for marker in _PR_AGENT_REQUIRED_MARKERS],
+        lambda bot_kind: [f'  {marker}  ' for marker in markers],
     )
     monkeypatch.setattr(
         github_pr.bot_registry,
         'actionable_content_markers',
-        lambda bot_kind: ['  <details>  '],
+        lambda bot_kind: ['  Nitpick comments  '],
     )
     # The heading alternation is normalised on the same path — a padded heading
-    # must still satisfy it, or every clean Guide would stop being dropped.
+    # must still satisfy it, or every clean summary would stop being dropped.
     monkeypatch.setattr(
         github_pr.bot_registry,
         'contentless_review_headings',
-        lambda bot_kind: ['  ## PR Reviewer Guide  ', '  ## PR Code Review Guide  '],
+        lambda bot_kind: ['  ## Walkthrough  ', '  Currently processing new changes  '],
     )
 
-    assert github_pr._is_contentless_boilerplate(OBSERVED_CLEAN_GUIDE, 'cuioss-review-bot') is True
+    assert github_pr._is_contentless_boilerplate(_CODERABBIT_CLEAN_SUMMARY, 'coderabbit') is True
     # The disqualifying marker is stripped on the same path — a padded veto entry
     # must still veto, not silently stop matching.
-    assert github_pr._is_contentless_boilerplate(GUIDE_WITH_FINDING, 'cuioss-review-bot') is False
+    assert github_pr._is_contentless_boilerplate(_CODERABBIT_SUMMARY_WITH_CONCERN, 'coderabbit') is False
 
 
 @pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)

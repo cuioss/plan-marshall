@@ -1323,8 +1323,8 @@ reviewer population, then record a verdict per reviewer, from the bodies.**
 **The population is derived from configuration, never hand-maintained here.** This repository registers
 its automated reviewers in a machine-readable registry — one data block per reviewer at
 `marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md`, each declaring an
-`author_login` (parsed generically by that skill's `scripts/bot_registry.py`; the same set is named in
-prose by `.github/workflows/cuioss-review-bot.yml`). Read the `author_login` of every such registry doc — that
+`author_login` (parsed generically by that skill's `scripts/bot_registry.py`). Read the `author_login`
+of every such registry doc — that
 set **is** the expected reviewer population for this PR. Do **not** transcribe a reviewer list into
 this contract or into the report: a hand-maintained list is the defect this step exists to prevent,
 and it goes stale the instant a reviewer is added to or removed from the registry.
@@ -1816,9 +1816,8 @@ hold:**
    `Reopens?` value (§ Step 7), since that is what tells the operator whether the gap was ever closable.
    An optional-set or roster shortfall is stated alongside it; it is the required-set ratio that says
    whether the coverage the project asked for was obtained. For example: "Review coverage: 1 of 1
-   required reviewers reviewed, 0 of 2 optional reviewers reviewed, 1 of 3 overall —
-   `cuioss-review-bot` (required) reviewed; `coderabbitai` (optional) rate-limited on a countdown, six
-   attempts spent without obtaining it; `sourcery-ai` (optional) rate-limited on a size ceiling, does
+   required reviewers reviewed, 0 of 1 optional reviewers reviewed, 1 of 2 overall —
+   `coderabbitai` (required) reviewed; `sourcery-ai` (optional) rate-limited on a size ceiling, does
    not reopen." **A run that merges short of its required set must _say_ which ratio it is short on,
    and by how much.**
 
@@ -2282,8 +2281,8 @@ fail-open none of the four had caught.
 
 ## Reviewer participation
 The expected reviewer population **derived from configuration** — the `author_login` of each
-`marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md` registry doc,
-cross-named by `.github/workflows/cuioss-review-bot.yml` — never a list transcribed here. One row per
+`marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md` registry doc —
+never a list transcribed here. One row per
 reviewer, each verdict derived from the stored comment bodies (§ Step 7), never from a check state or
 a summary:
 

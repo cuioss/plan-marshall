@@ -46,14 +46,12 @@ two completion signals, checked in that order of strength:
    comment BODY.
 
    ⛔ **The retired claim — that this signal never names the commit it reviewed —
-   was a premise, not an observation, and it is false for a bot whose only declared
-   publish shape is a comment.** ``cuioss-review-bot`` declares ``participation_evidence:
-   issue_comment`` and an empty ``completion_check_name`` — it submits no review
-   object at all — and it names the commit it reviewed INSIDE that comment, as a
+   was a premise, not an observation, and it is false for a bot whose declared
+   publish shape is a comment that names the commit INSIDE it**, as a
    ``…/commit/{sha}`` permalink: the exact URL-embedded form
    :func:`_references_head_sha` already recognises on the review path. Hard-coding
-   ``false`` here meant the matcher never inspected the body, so every correct
-   re-review that bot performed was published as ``matched: true`` /
+   ``false`` here meant the matcher never inspected the body, so a correct
+   re-review published in that shape reported ``matched: true`` /
    ``head_sha_verified: false`` — which both consumers route as an
    incremental-review DECLINE. That member is blocking and its only remedy is a
    recorded merge authorization over the decline — a REQUIRED bot is mandatory and
@@ -1785,7 +1783,7 @@ _STRATEGIES: dict[str, _ReReviewStrategy] = {
 
 # Map a GitHub review-author login to its canonical ``bot_kind`` key, DERIVED
 # from the registry (each bot's ``author_login`` in its standards doc). The login
-# is the bot's account name (e.g. ``coderabbitai``, ``cuioss-review-bot``); the
+# is the bot's account name (e.g. ``coderabbitai``, ``sourcery-ai``); the
 # ``bot_kind`` is the registry key those accounts resolve to. This is the single
 # source of truth for the login -> bot_kind correspondence — producers
 # (``github_pr.py`` comments-stage) import ``bot_kind_for_author`` rather than

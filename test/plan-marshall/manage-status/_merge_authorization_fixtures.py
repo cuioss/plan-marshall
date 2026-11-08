@@ -90,7 +90,7 @@ def _grant_args(
     kind: str,
     head: str,
     gap_class: str = BARRIER_GAP,
-    granted_over: str = '2 unhandled, unproven_bots=cuioss-review-bot',
+    granted_over: str = '2 unhandled, unproven_bots=retired-bot',
     reason: str = 'operator accepted the gap',
     operator_answer: str | None = None,
     override_label: str | None = None,

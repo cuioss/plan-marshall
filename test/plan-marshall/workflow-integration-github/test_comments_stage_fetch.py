@@ -227,19 +227,18 @@ class TestPerBotIgnoreFilter:
         # Dropped for the owning bot.
         assert _is_obvious_noise(body, 'coderabbit')
         # NOT dropped for a different bot or a human — the marker is bot-scoped.
-        assert not _is_obvious_noise(body, 'cuioss-review-bot')
+        assert not _is_obvious_noise(body, 'sourcery')
         assert not _is_obvious_noise(body, None)
 
-    def test_pr_agent_walkthrough_marker_drops_only_pr_agent(self):
-        """PR-Agent's ``## PR Agent Walkthrough`` marker drops a cuioss-review-bot comment only.
+    def test_a_bundle_tree_target_has_no_walkthrough_marker_left(self):
+        """No per-bot walkthrough marker survives a withdrawal of its declaring bot.
 
-        The two bots' near-identical wording (CodeRabbit's summary carries ``## Walkthrough``
-        as a contentless *heading*, PR-Agent's ``## PR Agent Walkthrough`` is an
-        ``ignore_patterns`` marker) makes this the sharpest available test of bot-scoping: a
-        substring-based or unscoped filter would cross-drop.
+        The heading a withdrawn reviewer posted is ordinary content now: nothing
+        declares it, so a body carrying it is filed rather than silently dropped on
+        a rule no registry record states.
         """
         body = '## PR Agent Walkthrough\n\nAvailable commands: /review, /ask, /help.'
-        assert _is_obvious_noise(body, 'cuioss-review-bot')
+        assert not _is_obvious_noise(body, 'sunset-review-bot')
         assert not _is_obvious_noise(body, 'coderabbit')
         assert not _is_obvious_noise(body, None)
 
@@ -310,18 +309,18 @@ class TestPerBotIgnoreFilter:
         assert 'comment_id: W2' in q['findings'][0]['detail']
 
     def test_fetch_findings_does_not_apply_one_bots_marker_to_another(self, plan_context):
-        """A cuioss-review-bot comment carrying CodeRabbit's ``✏️ Learnings added`` text is NOT dropped.
+        """A sourcery comment carrying CodeRabbit's ``✏️ Learnings added`` text is NOT dropped.
 
         Proves the per-bot layer is scoped to the authoring bot: the learnings marker
-        belongs to coderabbit's registry entry, so a cuioss-review-bot-authored comment
+        belongs to coderabbit's registry entry, so a sourcery-authored comment
         with the same line survives and becomes a finding.
         """
         comments = [
             {
                 'id': 'G1',
                 'kind': 'issue_comment',
-                'author': 'cuioss-review-bot',
-                'body': '✏️ Learnings added\n\nPR-Agent would not normally emit this, but it must not be cross-dropped.',
+                'author': 'sourcery-ai',
+                'body': '✏️ Learnings added\n\nSourcery would not normally emit this, but it must not be cross-dropped.',
                 'path': '',
                 'line': 0,
                 'thread_id': '',
@@ -472,7 +471,7 @@ class TestRefusalNoticeProducerFilter:
         assert not set(matched_by_size_ceiling) & set(matched_by_weekly_quota)
 
     @pytest.mark.parametrize(
-        'bot_kind', [None, 'coderabbit', 'sourcery', 'cuioss-review-bot'], ids=['human', 'cr', 'sr', 'pra']
+        'bot_kind', [None, 'coderabbit', 'sourcery', 'sunset-review-bot'], ids=['human', 'cr', 'sr', 'retired']
     )
     def test_a_refusal_is_never_classified_as_noise(self, bot_kind):
         """``_is_obvious_noise`` must not recognize ANY refusal, for ANY bot.

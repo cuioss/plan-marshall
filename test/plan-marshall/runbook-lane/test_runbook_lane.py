@@ -60,13 +60,12 @@ from conftest import (
 _SKILL_NAME = 'runbook-lane'
 _SKILL_DIR = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / _SKILL_NAME
 
-#: The eight repository-specific literals the shipped skill must not contain.
+#: The repository-specific literals the shipped skill must not contain.
 _FORBIDDEN_LITERALS = (
     'live-blockers',
     'PLAN-LB',
     'build-pyproject',
     'pyproject_build',
-    'cuioss-review-bot',
     'coderabbit',
     'sourcery',
     'noreply@cuioss.de',
@@ -1224,13 +1223,6 @@ def test_resolve_reports_a_quota_limited_reviewer(tmp_path: Path) -> None:
     data = _run_resolve(spec, tmp_path)
     row = next(row for row in data['required_bots'] if row['bot'] == 'coderabbit')
     assert row['quota_limited'] is True
-
-
-def test_resolve_reports_a_reviewer_that_is_not_quota_limited(tmp_path: Path) -> None:
-    spec = _seed_fixture(tmp_path, executable=_PYPROJECT_EXEC, required_bots='cuioss-review-bot')
-    data = _run_resolve(spec, tmp_path)
-    row = next(row for row in data['required_bots'] if row['bot'] == 'cuioss-review-bot')
-    assert row['quota_limited'] is False
 
 
 def test_bot_standard_without_a_declaration_resolves_not_quota_limited(tmp_path: Path) -> None:

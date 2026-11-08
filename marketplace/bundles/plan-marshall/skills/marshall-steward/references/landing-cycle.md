@@ -213,9 +213,8 @@ registry docs (`standards/{bot_kind}.md`); no registry edits are needed:
 |-----|---------------------|----------------------------------|
 | CodeRabbit | `true` | Honored via central `cuioss/coderabbit` config — a PR labelled `skip-bot-review` is skipped. |
 | Sourcery | `false` | No central label skip. Honored per-repo only by adding `github.ignore_labels: [skip-bot-review]` to the repo's `.sourcery.yaml`. |
-| PR-Agent | `true` | Honored — but enforced by the reusable `reusable-cuioss-review-bot.yml` workflow's job-level `if:` guard, not by bot config. An explicit `/review` comment overrides the label on purpose. |
 
-So the `skip-bot-review` label suppresses CodeRabbit and PR-Agent; Sourcery only
+So the `skip-bot-review` label suppresses CodeRabbit; Sourcery only
 when the repo's `.sourcery.yaml` opts in.
 
 After the switch-and-pull settles, the landing cycle is complete — return control

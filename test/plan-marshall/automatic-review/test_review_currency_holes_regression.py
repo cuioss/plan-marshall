@@ -66,10 +66,10 @@ class TestReviewCurrencyHolesRegression:
         verified = gci.issue_comment_verifies_head(body, head)
         assert verified is True
 
-        participated = rc.parse_participation('cuioss-review-bot:issue_comment') if verified else {}
+        participated = rc.parse_participation('coderabbit:issue_comment') if verified else {}
         result = rc.check_completeness(
             plan_id,
-            ['cuioss-review-bot'],
+            ['coderabbit'],
             participated_bots=participated,
         )
         assert result['participation_complete'] is True
@@ -80,8 +80,8 @@ class TestReviewCurrencyHolesRegression:
         assert unverified is False
         unproven = rc.check_completeness(
             stale_plan_id,
-            ['cuioss-review-bot'],
-            participated_bots={} if not unverified else rc.parse_participation('cuioss-review-bot:issue_comment'),
+            ['coderabbit'],
+            participated_bots={} if not unverified else rc.parse_participation('coderabbit:issue_comment'),
         )
         assert unproven['participation_complete'] is False
 
