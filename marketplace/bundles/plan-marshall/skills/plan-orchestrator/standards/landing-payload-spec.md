@@ -270,9 +270,10 @@ Two sentinels are legal for the required count, and they are different claims:
 no rule is left open. A confirmed count above zero always carries the rules it left open, because the
 read enumerates them.
 
-The RULES key is OPTIONAL, so a landing without it — an earlier landing, or a run that recorded no
-rules — is still COMPLETE. A consumer that finds it absent reads "no rule list was recorded", never
-"the pull request had no open findings"; a recorded `0` is the clean answer, and only a recorded one.
+The RULES key is OPTIONAL, so a landing without it — one that recorded no rules, or a producer that
+writes only the required count — is still COMPLETE. A consumer that finds it absent reads "no rule
+list was recorded", never "the pull request had no open findings"; a recorded `0` is the clean answer,
+and only a recorded one.
 
 ## The narrative residue section
 

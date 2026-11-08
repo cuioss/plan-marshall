@@ -23,6 +23,7 @@ verb answers "refused", or the fixture proves nothing about what changed.
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -121,7 +122,7 @@ def _args(*dispositions: str):
     return parse_ns('plan-marshall', 'runbook-lane', 'runbook_lane.py', *argv)
 
 
-def _verdict(read: dict, *dispositions: str) -> dict:
+def _verdict(read: dict, *dispositions: str) -> Any:
     with patch.object(lane, '_read_review_surfaces', return_value=read):
         return cmd_review_gate(_args(*dispositions))
 

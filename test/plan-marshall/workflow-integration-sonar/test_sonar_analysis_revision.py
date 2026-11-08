@@ -38,6 +38,10 @@ _HEAD = 'a' * 40
 _STALE = 'b' * 40
 _PROJECT = 'cuioss_plan-marshall'
 _PR_LIST = '/api/project_pull_requests/list'
+#: The plan-less read's second leg. These cases are about the REVISION gate, so a
+#: response map that names no hotspot page still answers an empty one: the read
+#: must be able to complete without the caller restating a fact it is not testing.
+_HOTSPOTS = '/api/hotspots/search'
 
 
 class _FakeClient:
@@ -49,6 +53,8 @@ class _FakeClient:
 
     def get(self, path, params=None):
         self.calls.append((path, dict(params or {})))
+        if path == _HOTSPOTS and path not in self._responses:
+            return {'hotspots': [], 'paging': {'total': 0}}
         value = self._responses[path]
         if isinstance(value, Exception):
             raise value
@@ -394,7 +400,8 @@ class TestBranchReadOutOfScope:
 
         assert result['count_status'] == 'confirmed'
         assert result['open_issue_count'] == 0
-        assert client.calls == []
+        consulted = [path for path, _ in client.calls]
+        assert _PR_LIST not in consulted, 'a plan-less read consults no revision endpoint'
 
 
 class TestHeadResolution:
