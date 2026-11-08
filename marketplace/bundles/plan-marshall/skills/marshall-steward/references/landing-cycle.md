@@ -204,7 +204,7 @@ the verb shape.
 
 ## Step 6: Bot skip-label honoring matrix
 
-The `skip-bot-review` label fully suppresses **CodeRabbit** and **PR-Agent** today. Surface
+The `skip-bot-review` label fully suppresses **CodeRabbit** today. Surface
 this matrix to the operator so they understand what the label does — the values
 come from the per-bot `honors_skip_label` fields in the `automatic-review`
 registry docs (`standards/{bot_kind}.md`); no registry edits are needed:

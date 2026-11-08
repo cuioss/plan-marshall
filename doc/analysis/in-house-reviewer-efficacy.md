@@ -147,20 +147,6 @@ found one.
 
 Consumer repositories: the answer implied a roster change in no consumer repository, so none was
 listed for editing — the enrolled repositories and the thirteen deferred ones kept the rosters they
-had. The withdrawal's own migration is the one roster edit that followed.
-
-The standing decision this touches — CodeRabbit stays required until the
-in-house reviewer reaches similar quality, reopened only when measured so by
-the existing comparison protocol — stands unchanged: this measurement does
-not meet the reopen condition. Paired recall against CodeRabbit stays in the
-low single digits per side on the two repositories with a quality claim, and
-the fixed-diff experiment converted none of its eight canned reviews into a
-found one.
-
-Consumer repositories: the answer implies a roster change in no consumer
-repository, so none is listed for editing — the enrolled repositories and the
-thirteen deferred ones keep their current rosters. The rollout plan requires
-the decision and released schema before enrolment; this repository has no
-consumer-enrolment guard that enforces that condition. The
-dated line goes to the plan PR description; the inbox message tells PLAN-LB-20
-in one line whether to proceed with enrolment.
+had, and the rollout plan's decision-and-schema precondition before enrolment still reads as it did.
+The withdrawal's own migration is the one roster edit that followed. The dated line goes to the plan
+PR description; the inbox message told PLAN-LB-20 in one line whether to proceed with enrolment.

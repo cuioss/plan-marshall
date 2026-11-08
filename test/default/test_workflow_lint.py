@@ -263,8 +263,7 @@ def _write_scopes(scopes: dict[str, str]) -> set[str]:
 #: at execute time from a walk of .github/workflows/: six workflows, each of which
 #: declares a top-level block that is entirely read (python-verify.yml carries
 #: `pull-requests: read` beside `contents: read`, still a read scope).
-#: No workflow holds a top-level write scope,
-#: so the allowlist is empty.
+#: No workflow holds a top-level write scope, so the allowlist is empty.
 _TOP_LEVEL_WRITE_ALLOWLIST: dict[tuple[str, str], str] = {}
 
 #: JOB-LEVEL write scopes. Kept in a SEPARATE allowlist from the top-level one on

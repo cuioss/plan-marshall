@@ -1797,3 +1797,25 @@ def test_match_bot_comment_skips_an_in_progress_summary_without_a_record(body):
     assert matched is None
     assert refusals == []
     assert acknowledgments == []
+
+
+def test_a_bot_without_a_declared_issue_comment_marker_still_matches_an_unmarked_comment(monkeypatch):
+    """⛔ NEGATIVE CONTROL: the marker gate reaches only a bot that declares a marker.
+
+    The same unmarked body CodeRabbit may not answer with ends the wait for a bot that
+    declares no ``issue_comment`` marker at all — Sourcery publishes no ``issue_comment``
+    shape, so its marker list is empty and nothing gates the shape. Without this control
+    the cases above would pass just as happily against a matcher that rejected every
+    unmarked comment of every bot, which is a permanent timeout for each bot whose
+    answer carries no marker.
+    """
+    body = 'Overall comments: consider extracting the retry helper at `src/retry.py:12`.'
+    comment = _comment(_LOGIN_FOR_BOT_KIND['sourcery'], created_at='2026-01-01T00:05:00Z', body=body)
+
+    assert bot_registry.participation_evidence_marker('sourcery', 'issue_comment') == ''
+
+    result = _await_with_comments(monkeypatch, [comment], bot_kind='sourcery')
+
+    assert result['matched'] is True
+    assert result['matched_signal'] == 'issue_comment'
+    assert result['matched_comment']['body'] == body

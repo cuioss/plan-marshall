@@ -461,12 +461,12 @@ CODERABBIT_SUMMARY_TIPS_BLOCK = (
 def coderabbit_summary_with_concern() -> str:
     """Return a summary body whose ONLY content beyond the boilerplate is a concern.
 
-    OBSERVED wording, assembled shape: every part — the summary marker, the
+    CONSTRUCTED body, OBSERVED wording: every part — the summary marker, the
     ``## Walkthrough`` heading, the nitpick section and the tips block — was read off
-    ``cuioss/plan-marshall#1939``, but that PM posted its nitpick section in a
-    ``review_body`` and its marker in the summary comment. One comment carrying both is
-    the shape this fixture reconstructs, which is what makes it the concern case rather
-    than a control.
+    live CodeRabbit comments on ``cuioss/plan-marshall#1939``, but that PM posted its
+    nitpick section in a ``review_body`` and its marker in the summary comment. One
+    comment carrying both is the shape this fixture assembles, which is what makes it
+    the concern case rather than a control.
     """
     return (
         f'{CODERABBIT_SUMMARY_MARKER}\n'
@@ -480,9 +480,9 @@ def coderabbit_summary_with_concern() -> str:
 def coderabbit_summary_plain_walkthrough() -> str:
     """Return the matched control: the same summary with the concern section removed.
 
-    OBSERVED wording and OBSERVED shape — this is the ``review-in-progress`` body's
-    structure with the real summary's tips block attached. It differs from
-    :func:`coderabbit_summary_with_concern` in exactly one fact: it carries no
+    CONSTRUCTED body, OBSERVED wording: the walkthrough and tips text is the same live
+    wording, in the structure the ``review-in-progress`` fixture establishes. It differs
+    from :func:`coderabbit_summary_with_concern` in exactly one fact: it carries no
     concern section.
     """
     return (
@@ -498,8 +498,9 @@ def coderabbit_summary_bodies() -> tuple[tuple[str, str, str], ...]:
 
     The pair is published together so a case that passes for the concern body and a case
     that passes for the control are read off the SAME wording: the two differ only in the
-    concern section, which is the fact under test. Provenance is the module's vocabulary
-    (:data:`ACKNOWLEDGMENT_OBSERVED` / :data:`IN_PROGRESS_RECONSTRUCTED`).
+    concern section, which is the fact under test. The provenance label names the WORDING
+    (the module's vocabulary), so both read :data:`ACKNOWLEDGMENT_OBSERVED`; their SHAPE
+    was assembled, which each builder's own docstring states.
     """
     return guard_non_empty(
         (

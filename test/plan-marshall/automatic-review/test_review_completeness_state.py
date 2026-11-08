@@ -128,7 +128,7 @@ SOURCERY_EVIDENCE = {'sourcery': 'review_body'}
 #: A bot kind no registry record answers to — the shape a withdrawn reviewer leaves in
 #: a roster. Its participation is never proven, so every state it lands on is a
 #: configuration fact rather than an observation.
-RETIRED_BOT_EVIDENCE = {'retired-bot': 'issue_comment'}
+
 
 #: The publish-shape vocabulary DERIVED from the live registry: the union of every
 #: registered bot's declared ``participation_evidence``, sorted so the pairing order

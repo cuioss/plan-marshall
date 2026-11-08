@@ -125,7 +125,7 @@ assert _UNREGISTERED_TOKEN not in _REGISTERED_BOTS, (
 # retires a publish shape breaks these tests loudly instead of silently.
 CODERABBIT_EVIDENCE = {'coderabbit': 'inline'}
 SOURCERY_EVIDENCE = {'sourcery': 'review_body'}
-RETIRED_BOT_EVIDENCE = {'retired-bot': 'issue_comment'}
+
 
 #: The publish-shape vocabulary DERIVED from the live registry: the union of every
 #: registered bot's declared ``participation_evidence``, sorted so the pairing order

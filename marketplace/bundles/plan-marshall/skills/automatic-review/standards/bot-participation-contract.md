@@ -263,15 +263,15 @@ comment carries it (§ "A shape may be gated on a content marker" below).
 
 | Publish shape | Counts as evidence because | Declared by |
 |---------------|---------------------------|-------------|
-| `inline` | A per-line comment can only be produced by reading the diff at that line — **and** the provider must PLACE it at the merge candidate. A reply posted into an existing thread is never evidence, whatever it says. | CodeRabbit, PR-Agent |
+| `inline` | A per-line comment can only be produced by reading the diff at that line — **and** the provider must PLACE it at the merge candidate. A reply posted into an existing thread is never evidence, whatever it says. | CodeRabbit |
 | `review_body` | The bot's review summary is emitted by a completed review pass over the diff. | CodeRabbit, Sourcery |
-| `issue_comment` | A PR-level comment a bot declares as a publish shape is a review artifact it emitted against the diff — it counts on its own terms, not because the bot has no other shape. | CodeRabbit, PR-Agent |
+| `issue_comment` | A PR-level comment a bot declares as a publish shape is a review artifact it emitted against the diff — it counts on its own terms, not because the bot has no other shape. | CodeRabbit |
 
 A shape's evidentiary weight is a property of the shape, never of how many shapes the declaring bot
-has. A bot may declare several: PR-Agent publishes `issue_comment` unconditionally and `inline` when
-`/improve` is enabled for the repository, and each shape counts on the reasoning in its own row. It
-follows that the ABSENCE of one declared shape is not evidence of non-participation — only the
-presence of a declared shape is evidence, and only of participation.
+has. A bot may declare several: CodeRabbit publishes `review_body`, `inline` and `issue_comment`, and
+each shape counts on the reasoning in its own row. It follows that the ABSENCE of one declared shape
+is not evidence of non-participation — only the presence of a declared shape is evidence, and only of
+participation.
 
 **An `inline` record must be PLACED, and a thread reply is never evidence.** The provider reports the
 commit an inline comment is attached to (`commit`, falling back to the review's commit) and whether
@@ -326,8 +326,8 @@ whose unconditional evidence shape carries no marker straight to `absent`. The f
 A check-run reports that a *job ran*, not that a *review was published*. The two come apart in both
 directions, so reading check state as participation is wrong regardless of which way it errs:
 
-- **False negative.** PR-Agent posts **no check-run at all** and submits **no review object**.
-  Scoring it on check state would mark it absent on every run no matter how well it reviewed.
+- **False negative.** A bot that reviews without a check-run — and without submitting a review object
+  at all — would be marked absent on every run no matter how well it reviewed.
 - **False positive.** A check-run can conclude successfully having posted nothing, or having posted
   only a refusal. A green check is not a published review.
 
@@ -566,8 +566,8 @@ hand.
 ### Evidence for a bot that edits one comment in place
 
 A bot that re-reviews by **editing a persistent comment in place** rather than posting a new one
-declares `participation_requires_update: true`. A bot may keep more than one such comment (PR-Agent
-keeps one per review pass); each is tested on its own, under its own `comment_id`. For such a bot the comment's continued existence
+declares `participation_requires_update: true`. A bot may keep more than one such comment — one per
+review pass; each is tested on its own, under its own `comment_id`. For such a bot the comment's continued existence
 proves only that it reviewed **once, at some commit** — after a loop-back or force-push the unchanged
 comment would silently credit it with reviewing code it never saw. Applying the currency rule, its
 evidence requires the comment to prove a review of the **merge candidate**. A comment that names a
@@ -809,9 +809,10 @@ has been written down. Two consequences follow, and both are properties of the m
 gaps in any one bot's record:
 
 - **A bot whose `refusal_patterns[]` is empty rests entirely on the arms that do not read its
-  registry record.** Nothing about that is hypothetical: PR-Agent declares an empty list today, and it
-  is one of the bots this repository's merge barrier treats as *required* — so a reviewer whose
-  silence actually blocks a merge has no registry counterexample on file.
+  registry record.** Nothing about that is hypothetical: a bot may be registered before any refusal
+  wording has been observed for it, and it can still be one of the bots the merge barrier treats as
+  *required* — a reviewer whose silence actually blocks a merge with no registry counterexample on
+  file.
 - **A refusal REWORDED past every enumerated shape is recognised as an
   `unrecognised_refusal`** — not filed as review feedback, and not credited as participation. It
   resolves to the `refused_unknown` member, because an arm that could not read the notice supports no
@@ -1123,7 +1124,7 @@ rule below, and `review_completeness.classify_bot()` assigns `participated_but_e
 bot present in `proven_participants` — a bot absent from `participated_bots[]` falls through to an
 unproven state that blocks the quorum. The reading that follows turns on a CONDITION, not on a named
 roster: it applies to a bot that declares `participation_requires_update` **and** opts into the
-contentless drop by declaring `contentless_review_markers` — PR-Agent is one such bot, and any
+contentless drop by declaring `contentless_review_markers` — CodeRabbit is one such bot, and any
 registry doc can add another. For such a bot an unchanged clean comment is credited while the merge
 candidate is the commit it was reviewed against, and denied once HEAD advances past that commit, so
 once a loop-back or force-push moves HEAD a dropped clean Guide resolves

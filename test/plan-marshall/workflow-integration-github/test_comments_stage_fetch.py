@@ -230,12 +230,12 @@ class TestPerBotIgnoreFilter:
         assert not _is_obvious_noise(body, 'sourcery')
         assert not _is_obvious_noise(body, None)
 
-    def test_a_bundle_tree_target_has_no_walkthrough_marker_left(self):
+    def test_a_withdrawn_bot_heading_is_not_a_drop(self):
         """No per-bot walkthrough marker survives a withdrawal of its declaring bot.
 
         The heading a withdrawn reviewer posted is ordinary content now: nothing
-        declares it, so a body carrying it is filed rather than silently dropped on
-        a rule no registry record states.
+        declares it, so a body carrying it is filed rather than silently dropped on a
+        rule no registry record states.
         """
         body = '## PR Agent Walkthrough\n\nAvailable commands: /review, /ask, /help.'
         assert not _is_obvious_noise(body, 'sunset-review-bot')

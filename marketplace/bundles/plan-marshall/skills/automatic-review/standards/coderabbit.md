@@ -20,23 +20,12 @@ read `bot_kind`, `author_login`, `trigger_comment`, `escalated_trigger_comment`,
 `contentless_review_headings`, `actionable_content_markers`, `rate_limit_class`, `rate_limit_eta_patterns`, and `severity_map` from
 it; the prose sections that follow carry the rationale.
 
-CodeRabbit DOES declare the content-aware trio, and the summary rule is the reason. Its
-summary comment carries the walkthrough, the merge-risk paragraph and the tips block whether or not
-it also carries a concern, so no single unconditional marker can say "this summary found nothing"
-without also dropping the summaries that found something. The rule is therefore the registry's
-three-list conjunction and involution, not a longer `ignore_patterns`:
-
-- `contentless_review_markers` holds the summary marker — every summary carries it, so it is the
-  conjunction's anchor;
-- `contentless_review_headings` holds the two states the one persistent summary comment is published
-  in, `## Walkthrough` and the in-progress `Currently processing new changes` notice, and ANY ONE of
-  them satisfies the heading arm;
-- `actionable_content_markers` holds the concern sections — a nitpick, an outside-diff or a
-  follow-up section means the summary carries a finding, and any ONE of them vetoes the drop.
-
-A summary that carries only boilerplate is noise; a summary that carries a concern is filed. That is
-the fail-closed direction the whole pre-filter is built on: a body that strays from a declared clean
-shape is filed, never dropped.
+CodeRabbit DOES declare the content-aware trio, and the summary rule is the reason: its summary
+comment carries the walkthrough, the merge-risk paragraph and the tips block whether or not it also
+carries a concern, so no single unconditional marker can say "this summary found nothing" without
+also dropping the summaries that found something. The rule — the summary marker as the conjunction's
+anchor, the two published headings as the alternation, the concern sections as the veto — is stated
+once, in § "Producer stage" below.
 
 CodeRabbit DOES declare `review_body_summary_patterns`, and it is the only registered bot that does.
 Its `review_body` comes in two shapes — the consolidated review, and the
@@ -77,7 +66,7 @@ participation_requires_update: true    # the summary comment is EDITED in place 
 ignore_patterns:
   - "No actionable comments were generated"                                   # no-op review
   - "✏️ Learnings added"                                                      # learnings-only reply
-contentless_review_markers:                                                   # boilerplate a summary carries when it holds no concern
+contentless_review_markers:                                                   # the CONJUNCTION anchor: boilerplate every summary carries
   - "<!-- This is an auto-generated comment: summarize by coderabbit.ai -->"  # the summary comment's own marker — every review summary opens with it
 contentless_review_headings:                                                  # ANY ONE of these must also be present: the two states one summary comment is published in
   - "## Walkthrough"                                                          # the finished summary's walkthrough heading
@@ -164,6 +153,13 @@ the two headings it is published under must be present, and any concern section 
 Because that layer is keyed on the body, a summary that strays from the declared clean shape is
 filed — fail-closed toward filing, with the plain walkthrough, both in-progress states and the
 clean-review verdict as the matched controls that must keep filing nothing.
+
+**The tips block and the marketing lines are not drops either.** They ride the summary comment, so an
+unconditional drop on either would swallow a concern the same body carries — the defect above, one
+marker over. A comment that is nothing BUT that block already fails the conditional drop's own test
+(no walkthrough heading, no in-progress notice), so it is filed as well, which is the fail-closed
+direction: an operator sees an unusual CodeRabbit body once and triages it, rather than a concern
+disappearing unread.
 
 CodeRabbit declines on **two distinct surfaces**, and each is registered as its own literal in
 `refusal_patterns`:

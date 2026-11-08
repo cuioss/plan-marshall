@@ -22,10 +22,9 @@ from pathlib import Path
 from conftest import get_skill_dir
 
 #: Withholding language never belongs in a harvestable review rule. These phrases
-#: instruct a reviewer to suppress a finding it could otherwise substantiate; the
-#: list is the quality bar § 10 of ``review-rubric.md`` states, kept here because a
-#: rule that carries one reads as a suppression instruction to the in-run reviewer
-#: exactly as it did to the retired pack generator that first measured them.
+#: instruct a reviewer to suppress a finding it could otherwise substantiate. The rule
+#: is § 10 of ``review-rubric.md`` ("No withholding language"); the four wordings below
+#: are the phrasings that once did, enumerated so the check is concrete.
 _WITHHOLDING_MARKERS: tuple[str, ...] = (
     'do not duplicate',
     'avoid duplicating',

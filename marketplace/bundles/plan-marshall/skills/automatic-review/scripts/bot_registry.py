@@ -734,9 +734,10 @@ class BotRegistry:
         """Return the review-comment headings a contentless body may carry (``[]`` if absent).
 
         The ALTERNATION companion to :meth:`contentless_review_markers`. A bot that
-        publishes the same clean shape under more than one persistent review comment
-        — PR-Agent's security ``## PR Reviewer Guide`` and its code-review
-        ``## PR Code Review Guide`` — cannot list both headings in the conjunction,
+        publishes the same clean shape in more than one state of its persistent review
+        comment — CodeRabbit's finished ``## Walkthrough`` and the
+        ``Currently processing new changes`` notice the same comment carries while a
+        review runs — cannot list both headings in the conjunction,
         because no single body carries both. Each entry here is one such heading,
         and the producer's test requires ANY ONE of them to be present, on top of
         every :meth:`contentless_review_markers` entry.
@@ -917,7 +918,7 @@ class BotRegistry:
         """Return whether ``bot_kind``'s evidence additionally requires update movement.
 
         True for a bot that re-reviews by EDITING its single persistent comment in
-        place rather than posting a new one (PR-Agent's Guide comment). For such a bot
+        place rather than posting a new one (CodeRabbit's summary comment). For such a bot
         the mere continued existence of the comment proves only that it reviewed ONCE,
         at some earlier HEAD, so its credit has to clear the producer's CURRENCY TEST.
 

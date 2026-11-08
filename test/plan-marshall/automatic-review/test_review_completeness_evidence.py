@@ -125,7 +125,7 @@ assert _UNREGISTERED_TOKEN not in _REGISTERED_BOTS, (
 # retires a publish shape breaks these tests loudly instead of silently.
 CODERABBIT_EVIDENCE = {'coderabbit': 'inline'}
 SOURCERY_EVIDENCE = {'sourcery': 'review_body'}
-RETIRED_BOT_EVIDENCE = {'retired-bot': 'issue_comment'}
+
 
 #: The publish-shape vocabulary DERIVED from the live registry: the union of every
 #: registered bot's declared ``participation_evidence``, sorted so the pairing order
@@ -360,21 +360,27 @@ class TestEvidenceTyping:
 class TestPersistentCommentParticipation:
     """A bot whose whole review artifact is one persistent comment is proven by it.
 
-    The subject is the SHAPE rather than any one bot: a reviewer that publishes one
-    ``issue_comment`` and edits it in place. ``retired-bot`` stands in for it because
-    no live registry record may be credited on a publish shape its own record does not
-    declare — which the negative control below pins.
+    CodeRabbit's review summary is exactly that shape, and its record gates the shape on
+    a finished-review marker — which ``parse_participation`` does not evaluate, so these
+    cases exercise ADMISSION (the shape is declared) rather than the marker gate. The
+    negative control below pins that a shape no record declares credits nothing.
     """
 
     def test_the_persistent_comment_is_its_evidence(self, plan_context):
-        """Its single persistent ``issue_comment`` IS its review artifact."""
-        plan_id = 'rc-retired-bot-guide'
+        """Its single persistent ``issue_comment`` IS its review artifact.
+
+        CodeRabbit's whole review summary is that one comment, so a fetch that observed
+        only it resolves ``participated_but_empty`` — credited, and carrying no finding.
+        """
+        plan_id = 'rc-coderabbit-summary-only'
         plan_context.plan_dir_for(plan_id)
 
-        result = rc.check_completeness(plan_id, ['retired-bot'], participated_bots=RETIRED_BOT_EVIDENCE)
+        result = rc.check_completeness(
+            plan_id, ['coderabbit'], participated_bots=rc.parse_participation('coderabbit:issue_comment')
+        )
 
         assert result['participation_complete'] is True
-        assert _state_of(result, 'retired-bot') == rc.STATE_PARTICIPATED_BUT_EMPTY
+        assert _state_of(result, 'coderabbit') == rc.STATE_PARTICIPATED_BUT_EMPTY
 
     def test_an_inline_pair_is_evidence_where_the_record_declares_it(self, plan_context):
         """A declared inline shape credits on its own.

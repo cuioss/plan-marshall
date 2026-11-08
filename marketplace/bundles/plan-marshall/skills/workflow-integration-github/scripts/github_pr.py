@@ -332,8 +332,9 @@ def _is_contentless_boilerplate(body: str, bot_kind: str | None) -> bool:
     if not all(marker in body for marker in required):
         return False
     # The heading ALTERNATION: a bot publishing one clean shape under several
-    # persistent review comments (PR-Agent's security and code-review Guides) names
-    # each heading here, and the body must carry ANY ONE of them. An empty list
+    # persistent review states of the SAME comment (CodeRabbit's finished walkthrough
+    # and its in-progress notice) names each heading here, and the body must carry ANY
+    # ONE of them. An empty list
     # adds no condition, so the conjunction above stays the whole test for every
     # bot that has not declared the field.
     headings = [h.strip() for h in bot_registry.contentless_review_headings(kind) if h.strip()]
@@ -1045,7 +1046,7 @@ def _stored_pr_comment_hashes(findings: list[dict]) -> dict[tuple[str, str], str
 # plan has credited, the ``(bot_kind, comment_id)`` key with the merge-candidate SHA
 # AND the comment's ``updated_at`` at the fetch that last credited it. It is the SOLE
 # source the currency test reads, so a comment stored as a finding and a comment
-# dropped as noise (PR-Agent's contentless Guide) are treated identically — the
+# dropped as noise (a clean summary with no concern) are treated identically — the
 # ledger records the credit regardless of whether the comment produced a finding.
 #
 # Recording BOTH the SHA and the ``updated_at`` is load-bearing. Anchoring on the SHA
