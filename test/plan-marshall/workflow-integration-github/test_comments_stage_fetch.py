@@ -873,7 +873,7 @@ def _graphql_page(nodes):
 def _two_review_graphql_payload():
     """The two-review fixture in the PROVIDER shape ``fetch_pr_comments_data`` parses."""
 
-    def _inline(cid, body, path, line, commit):
+    def _inline(cid, body, commit):
         return {
             'id': cid,
             'body': body,
@@ -892,12 +892,10 @@ def _two_review_graphql_payload():
             'line': 4,
             'comments': _graphql_page(
                 [
-                    _inline('open-1', 'This slice drops the final element; use len(items).', 'src/a.py', 4, _HEAD_ONE),
+                    _inline('open-1', 'This slice drops the final element; use len(items).', _HEAD_ONE),
                     _inline(
                         'open-reply-2',
                         'Still unfixed at the new head: the bound is still dropped.',
-                        'src/a.py',
-                        4,
                         _HEAD_TWO,
                     ),
                 ]
@@ -913,8 +911,6 @@ def _two_review_graphql_payload():
                     _inline(
                         'new-thread-2',
                         'The retry loop can spin forever when the backoff cap is zero.',
-                        'src/b.py',
-                        9,
                         _HEAD_TWO,
                     )
                 ]
@@ -925,9 +921,7 @@ def _two_review_graphql_payload():
             'isResolved': True,
             'path': 'src/c.py',
             'line': 2,
-            'comments': _graphql_page(
-                [_inline('resolved-reply-2', 'Confirmed resolved at the new head.', 'src/c.py', 2, _HEAD_TWO)]
-            ),
+            'comments': _graphql_page([_inline('resolved-reply-2', 'Confirmed resolved at the new head.', _HEAD_TWO)]),
         },
     ]
     reviews = [

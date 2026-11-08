@@ -677,7 +677,7 @@ python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-sol
 On a non-`success` result, branch on `error`:
 
 - `refreeze_requires_decision` — the criteria snapshot was already frozen at outline approval. Re-freezing it needs an operator decision, not a phase rollback alone: ask the operator with `AskUserQuestion`, and only on their approval run `criteria-refreeze-authorize`, then retry `snapshot-criteria` once. Do NOT read this as an unreadable outline or halt on it.
-- Any other error — the outline could not be read and nothing was frozen. Apply the [refused-transition halt rule](../ref-workflow-architecture/standards/phase-lifecycle.md#refused-transition-halt-rule) and return the refusal as this phase's error return rather than advancing without a freeze.
+- Any other error — use the returned `error` and `message` to diagnose the refusal; it is not necessarily an unreadable outline (`snapshot_busy`, for example, means another writer holds the snapshot and an earlier freeze stands). When the freeze did not complete, apply the [refused-transition halt rule](../ref-workflow-architecture/standards/phase-lifecycle.md#refused-transition-halt-rule) and return the refusal as this phase's error return rather than advancing without a freeze.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \

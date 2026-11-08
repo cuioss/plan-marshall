@@ -823,6 +823,69 @@ def test_a_close_accepting_a_removal_with_no_validated_head_is_refused(plan_cont
     assert closed['error'] == 'accepted_removal_head_unvalidated', closed
 
 
+def test_closing_another_step_does_not_launder_a_review_removal(plan_context, tmp_path) -> None:
+    """A non-review step's validated head does not stand in for the review's.
+
+    The removal is read from the FUNCTIONAL REVIEW's record. Closing another step
+    that happens to carry a head must not accept a ``weakened_test`` finding the
+    review filed when the review itself was never validated.
+    """
+    repo = _repo(tmp_path)
+    _commit(repo, {'README.md': 'readme\n'})
+    _commit(repo, {'test/sample_test.py': BEFORE})
+    _git(repo, 'checkout', '--quiet', '-b', 'feature')
+    _commit(repo, {'test/sample_test.py': 'def test_a():\n    assert 1 == 1\n\ndef test_b():\n    assert 3 == 3\n'})
+    _lifecycle.cmd_create(
+        Namespace(
+            plan_id=PLAN_ID,
+            title='Accepted removals',
+            phases='1-init,2-refine,3-outline,4-plan,5-execute,6-finalize',
+            force=False,
+        )
+    )
+    _prepare_close(plan_context, ['parser accepts input'])
+    head = _git(repo, 'rev-parse', 'HEAD')
+    # The FUNCTIONAL REVIEW holds no record at all, so it has no validated head.
+    filed = _findings_core.add_qgate_finding(
+        PLAN_ID,
+        '6-finalize',
+        'qgate',
+        'bug',
+        'weakened_test at test/sample_test.py',
+        'a removed assertion [fix_kind correction]',
+        rule='functional-review',
+    )
+    assert filed['status'] == 'success', filed
+    _loop_back.cmd_mark_step_done(
+        Namespace(
+            plan_id=PLAN_ID,
+            phase='6-finalize',
+            step='pre-push-quality-gate',
+            outcome='loop_back',
+            display_detail='quality gate looped back',
+            head_at_completion=head,
+            loop_back_target='6-finalize',
+            fact=None,
+            force=False,
+            no_completion_log=False,
+        )
+    )
+
+    closed = _loop_back.cmd_loop_back_close(
+        Namespace(
+            plan_id=PLAN_ID,
+            step='pre-push-quality-gate',
+            head=head,
+            accept=[str(filed['hash_id'])],
+            rationale='the test removal is the deliverable',
+            waive_refire=[],
+        )
+    )
+
+    assert closed is not None and closed['status'] == 'error', closed
+    assert closed['error'] == 'accepted_removal_head_unvalidated', closed
+
+
 def test_a_java_class_with_only_the_accepted_method_disabled_raises_nothing(
     plan_context, tmp_path, monkeypatch
 ) -> None:

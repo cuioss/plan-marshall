@@ -270,6 +270,7 @@ import bot_registry
 import github_ops as _github
 from _findings_core import BOT_KINDS
 from _github_pr import (
+    _REVIEW_COVERAGE_MARKER,
     REFUSAL_CAUSE_QUOTA,
     REFUSAL_CAUSE_SIZE,
     REFUSAL_CONDITION_NO_UNREVIEWED_COMMIT,
@@ -434,7 +435,8 @@ def _verifies_head_sha(matched_signal: str, record: dict | None, head_sha: str) 
 
 
 #: The substring that marks a registry answer-marker entry as the coverage marker.
-_COVERAGE_MARKER_HINT = 'final_review_risk_coverage'
+#: Derived from the parser's own constant, so a rename cannot drift it.
+_COVERAGE_MARKER_HINT = _REVIEW_COVERAGE_MARKER
 
 
 def _answer_marker_present(body: str, answer_markers: tuple[str, ...]) -> bool:

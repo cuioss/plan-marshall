@@ -635,6 +635,38 @@ def test_a_kotlin_class_header_is_scope_not_a_method(plan_context, tmp_path, mon
     assert any(entry['identity'] == 'FooTest::a' for entry in row['removed_tests']), row
 
 
+def test_a_moved_pre_image_parses_the_added_file_with_its_own_path() -> None:
+    """The added file's path decides the JVM arm, not the last pre-image key."""
+    java = 'class FooTest {\n    void a() {\n        assertTrue(true);\n    }\n}\n'
+    before = {
+        'src/FooTest.java': java,
+        'test/x_test.py': 'def test_x():\n    assert 1 == 1\n',
+    }
+    added = 'src/moved/FooTest.java'
+    after = {added: 'class FooTest {\n    @Disabled\n    void a() {\n        assertTrue(true);\n    }\n}\n'}
+
+    pre = _integrity._moved_pre_image(after[added], before, after, added)
+
+    assert pre == java
+
+
+def test_a_kotlin_statement_is_not_a_jvm_method_identity() -> None:
+    """Semicolon-free Kotlin statements are not methods, despite the header shape."""
+    text = (
+        'class FooTest() {\n'
+        '    fun a() {\n'
+        '        assertTrue(true)\n'
+        '        return helper(1)\n'
+        '        throw IllegalStateException("x")\n'
+        '    }\n'
+        '}\n'
+    )
+
+    identities = [name for _, name in _integrity._identity_spans(text, 'src/FooTest.kt')]
+
+    assert identities == ['FooTest::a'], identities
+
+
 def test_an_anonymous_class_initializer_is_not_a_method_identity() -> None:
     """``return new Bar() {`` has the JVM header shape but is not a method."""
     text = 'class FooTest {\n    void b() {\n        return new Bar() {\n        };\n    }\n}\n'

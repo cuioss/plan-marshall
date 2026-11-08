@@ -125,6 +125,9 @@ _JVM_METHOD_RE = re.compile(
     r'(?:'
     r'fun\s+(?:<[^>]*>\s*)?([A-Za-z_$][\w$]*)\s*\([^;{}]*\)\s*(?::\s*[^{]+)?(?:\{.*)?\s*$'
     r'|'
+    # A Kotlin/Scots statement has no semicolon to exclude it, so a leading statement
+    # keyword can never be the return type.
+    r'(?!(?:return|throw|else|yield|case|assert|await)\s)'
     r'(?:<[^>]+>\s+)?[\w$.[\]<>?,]+?\s+([A-Za-z_$][\w$]*)\s*\([^;{}]*\)\s*(?:throws\s+[^{]+)?(?:\{.*)?\s*$'
     r')'
 )
@@ -1024,8 +1027,8 @@ def _moved_pre_image(post: str, before: dict[str, str], after: dict[str, str], p
     — is left unpaired, and its markers are not read as filters.
     """
     wanted = _without_markers(post)
-    for path, text in before.items():
-        if path in after:
+    for before_path, text in before.items():
+        if before_path in after:
             continue
         if _without_markers(text) == wanted:
             return text
