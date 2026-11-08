@@ -457,8 +457,8 @@ _COMMENT_BASE_FIELDS = """
 #: ``PullRequestReviewComment`` adds the PLACEMENT fields: the review it belongs to,
 #: the commit it was originally made against, the commit it is attached to, and the
 #: comment it replies to (absent on a thread's opening comment). ``originalCommit``
-#: is the STABLE placement — see :func:`_inline_comment_placement` for why the
-#: mutable ``commit`` is a last resort.
+#: is the STABLE placement — see :func:`_inline_comment_placement`: the mutable
+#: ``commit`` is never read as a placement.
 _THREAD_COMMENT_NODE_FIELDS = (
     _COMMENT_BASE_FIELDS
     + """
@@ -702,16 +702,19 @@ def _original_commit_id(comment: dict) -> str:
 def _inline_comment_placement(comment: dict, position_in_thread: int) -> dict:
     """Return the placement facts an inline review comment's record carries.
 
-    ``commit_id`` is the commit the comment was POSTED at, read from the field that
-    does not move: GitHub exposes the placement three ways, and only two are stable.
-    ``originalCommit`` is the commit the comment was originally made against;
-    ``pullRequestReview.commit`` is the commit the review it belongs to was submitted
-    against. The comment's own ``commit`` is a LAST resort: on a comment whose line
-    stays in the diff the provider reports that field at the NEWEST head, so reading
-    it first placed an old comment at the merge candidate and credited a review of an
-    older head (PLAN-LB-106 L3-1, live on PR 1912). The two stable fields are tried in
-    that order — the comment's own original commit is the most specific placement; the
-    review's commit is the fallback when the comment reports none.
+    ``commit_id`` is the commit the comment was POSTED at, read only from a field
+    that does not move: GitHub exposes the placement three ways, and the comment's
+    own ``commit`` is NOT one of them. ``originalCommit`` is the commit the comment
+    was originally made against; ``pullRequestReview.commit`` is the commit the
+    review it belongs to was submitted against. The comment's own ``commit`` follows
+    the NEWEST head on a comment whose line stays in the diff, so reading it placed
+    an old comment at the merge candidate and credited a review of an older head
+    (PLAN-LB-106 L3-1, live on PR 1912). Both stable fields are tried, in that order
+    — the comment's own original commit is the most specific placement; the review's
+    commit is the fallback when the comment reports none. When NEITHER is present the
+    placement is ``''``: a comment with no stable field is not credited, which is the
+    fail-closed direction. The mutable ``commit`` is deliberately never read as a
+    last resort.
 
     ``thread_reply`` answers whether the comment ANSWERS an existing thread rather
     than opening one. ``replyTo`` is the provider's own field for that. Where the
@@ -729,8 +732,9 @@ def _inline_comment_placement(comment: dict, position_in_thread: int) -> dict:
         review = comment.get('pullRequestReview')
         if isinstance(review, dict):
             commit_id = _review_commit_id(review)
-    if not commit_id:
-        commit_id = _review_commit_id(comment)
+    # No stable field means no placement. The mutable `commit` is never a last
+    # resort: it follows the newest head, so crediting it is the PLAN-LB-106 L3-1
+    # false green.
     return {
         'commit_id': commit_id,
         'reply_to_id': reply_to_id,
@@ -761,13 +765,13 @@ def fetch_pr_comments_data(pr_number: int, unresolved_only: bool = False) -> dic
     commit the provider says the review was submitted against
     (``PullRequestReview.commit``), lower-cased. On an ``inline`` record it is the
     commit the comment was POSTED at — ``originalCommit`` first, then the commit of the
-    review it belongs to, and the comment's own ``commit`` only when neither is
-    reported. Preferring ``commit`` would read a comment whose line stays in the diff
-    as placed at the newest head, which is the field's own mutable value and not where
-    the comment was made (PLAN-LB-106 L3-1). An ``issue_comment`` record carries no
-    commit and reports ``''``; so does a record whose commit the provider did not
-    report (the field is nullable). The fetch reports the value and decides nothing
-    from it.
+    review it belongs to. The comment's own ``commit`` is NEVER read: it follows the
+    newest head on a comment whose line stays in the diff, which is the field's own
+    mutable value and not where the comment was made (PLAN-LB-106 L3-1). When neither
+    stable field is reported the placement is ``''`` (fail closed). An
+    ``issue_comment`` record carries no commit and reports ``''``; so does a record
+    whose commit the provider did not report (the field is nullable). The fetch reports
+    the value and decides nothing from it.
 
     An ``inline`` record additionally carries its PLACEMENT: ``reply_to_id`` is the id
     of the comment it replies to (``''`` on a thread's opening comment), and

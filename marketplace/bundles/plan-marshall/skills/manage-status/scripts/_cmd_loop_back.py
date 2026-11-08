@@ -483,6 +483,13 @@ def _removed_identities_for_accept(
                 filter_entry: dict[str, Any] = {
                     'path': path,
                     'kind': 'test_filtered',
+                    'pairs': [
+                        {'test': str(pair.get('test')), 'marker': str(pair.get('marker'))}
+                        for pair in row.get('pairs') or []
+                        if isinstance(pair, dict)
+                        and isinstance(pair.get('test'), str)
+                        and isinstance(pair.get('marker'), str)
+                    ],
                     'markers': list(row.get('markers') or []),
                 }
                 if row.get('marked_tests'):
@@ -629,7 +636,9 @@ def cmd_loop_back_close(args: argparse.Namespace) -> dict | None:
     # head the step's last record was validated at and refuse a mismatch: the
     # operator must re-run the review at the closing head first. When the prior
     # record carries no head (a Branch C loop-back whose rev-parse failed), there is
-    # no validated head to compare against and the close re-derives at ``head``.
+    # no validated head to compare against; an accepted test removal is refused
+    # below, because reading it from the closing head would use a head no review
+    # validated. A close with no accepted removal still records done at ``head``.
     validated_head = _validated_head(status, step)
     if validated_head is not None and validated_head.strip().lower() != head.strip().lower():
         return _close_error(
@@ -680,6 +689,32 @@ def cmd_loop_back_close(args: argparse.Namespace) -> dict | None:
             not_pending=not_pending,
         )
 
+    # An accepted test removal is keyed by the identity the finding removed, read
+    # from the head the FINDING was validated at — the FUNCTIONAL REVIEW's record,
+    # not the record of whichever step is being closed. Closing another step (say
+    # `pre-push-quality-gate`) that does carry a head must not launder a
+    # `weakened_test` finding the review filed: its removal would be recomputed at a
+    # head the review never validated. With no review record at all — a Branch C
+    # loop-back whose rev-parse never landed — there is no validated head either.
+    # Refuse the accept rather than re-derive it at the closing head; the operator
+    # re-runs the review at that head first. A close that accepts no weakened-test
+    # finding is unaffected.
+    accepted_weakened = [
+        str(finding.get('hash_id') or '')
+        for finding in pending['findings']
+        if finding.get('hash_id') in accept and str(finding.get('title') or '').startswith(_WEAKENED_TITLE_PREFIX)
+    ]
+    review_validated_head = _validated_head(status, FUNCTIONAL_REVIEW_STEP)
+    if accepted_weakened and review_validated_head is None:
+        return _close_error(
+            plan_id,
+            'accepted_removal_head_unvalidated',
+            step,
+            'The functional review carries no validated head, so an accepted test removal would be read '
+            'from a head no review validated; re-run the review at the closing head first.',
+            unvalidated_accept=accepted_weakened,
+        )
+
     marked = cmd_mark_step_done(
         argparse.Namespace(
             plan_id=plan_id,
@@ -719,13 +754,14 @@ def cmd_loop_back_close(args: argparse.Namespace) -> dict | None:
     # ``weakened_test`` finding records the identities the finding removed, keyed by
     # the D1 identity plus the removed count — not the closing head — so the same
     # removal is not asked about again at a later head. They are read from the head
-    # the finding was VALIDATED at (the step's previous record), never from a later
-    # head: a close whose head differs from the validated head was already refused
-    # above, so a removal made at a later head is never accepted unseen. The close
+    # the finding was VALIDATED at (the FUNCTIONAL REVIEW's previous record), never
+    # from a later head: a close whose head differs from the validated head was
+    # already refused above, and an accepted removal with NO review-validated head is
+    # refused above, so a removal made at a later head is never accepted unseen. The close
     # itself records done at the closing head, and the named finding is resolved, so
     # the operator who closed on it is not left with an unacceptable row.
     accepted_removal_entries, accepted_removals_warning = _removed_identities_for_accept(
-        plan_id, set(accept), list(pending['findings']), head_ref=validated_head or head
+        plan_id, set(accept), list(pending['findings']), head_ref=review_validated_head or validated_head or head
     )
     accepted_removals_recorded = True
     accepted_removals_error: str | None = None

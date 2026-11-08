@@ -25,6 +25,7 @@ import re
 from typing import Any, NamedTuple
 
 from constants import STEP_INTENT_READ, VALID_STEP_INTENTS
+from markdown_fence import fence_marker
 
 #: The ``<!-- bucket: X -->`` audit-trail comment recorded on the
 #: ``**Profiles:**`` line. Owned here because ``_extract_profiles`` reads the
@@ -61,7 +62,47 @@ _SLUG_NON_ALNUM_PATTERN = re.compile(r'[^a-z0-9_-]+')
 #: counts through ``extract_deliverables`` → ``split_deliverable_blocks``; the metrics
 #: ``deliverable_count`` denominator and the retrospective consistency check count through
 #: ``extract_deliverable_headings``. Do NOT inline a copy of this regex — add the caller here.
+#:
+#: FENCE-AWARE at the reader: the pattern itself matches anywhere, but both readers
+#: below discard a match that starts inside a fenced block. A fenced ``### N.`` line
+#: repeating a deliverable's own number is therefore not a heading — without that,
+#: ``outline_deliverables``'s number-keyed body map replaced the real body with the
+#: fenced example and the criteria snapshot could freeze empty criteria with no
+#: ``criterion_unparsed`` report. An UNTERMINATED fence still leaves the criteria
+#: parser's ``criterion_unparsed`` state in place. Uses the shared
+#: :func:`markdown_fence.fence_marker` rule.
 DELIVERABLE_HEADING_PATTERN = re.compile(r'^###\s+(\d+)\.\s+(.+)$', re.MULTILINE)
+
+
+def _fenced_ranges(text: str) -> list[tuple[int, int]]:
+    """The character ranges (start, end) of fenced code blocks in ``text``."""
+    ranges: list[tuple[int, int]] = []
+    fence: tuple[str, int] | None = None
+    start = 0
+    offset = 0
+    for line in text.splitlines(keepends=True):
+        marker = fence_marker(line)
+        if fence is None:
+            if marker is not None:
+                fence = (marker[0], marker[1])
+                start = offset
+        elif marker is not None and marker[0] == fence[0] and marker[1] >= fence[1] and not marker[2].strip():
+            ranges.append((start, offset + len(line)))
+            fence = None
+        offset += len(line)
+    if fence is not None:
+        ranges.append((start, len(text)))
+    return ranges
+
+
+def _deliverable_heading_matches(text: str):
+    """Yield the deliverable-heading matches that are NOT inside a fenced block."""
+    fenced = _fenced_ranges(text)
+    for match in DELIVERABLE_HEADING_PATTERN.finditer(text):
+        if any(start <= match.start() < end for start, end in fenced):
+            continue
+        yield match
+
 
 #: The ``error`` code ``manage-solution-outline`` emits when the solution outline
 #: document does not exist.
@@ -216,7 +257,7 @@ def extract_deliverable_headings(content: str) -> list[dict[str, str]]:
     """
     deliverables: list[dict[str, str]] = []
 
-    for match in DELIVERABLE_HEADING_PATTERN.finditer(content):
+    for match in _deliverable_heading_matches(content):
         deliverables.append({'id': match.group(1), 'title': match.group(2).strip()})
 
     return deliverables
@@ -244,7 +285,7 @@ def split_deliverable_blocks(deliverables_section: str) -> list[dict[str, Any]]:
     """
     blocks: list[dict[str, Any]] = []
 
-    matches = list(DELIVERABLE_HEADING_PATTERN.finditer(deliverables_section))
+    matches = list(_deliverable_heading_matches(deliverables_section))
 
     for i, match in enumerate(matches):
         start_pos = match.end()

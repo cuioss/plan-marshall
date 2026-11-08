@@ -546,6 +546,29 @@ def test_the_production_classifier_is_reached_through_the_executor_seam(monkeypa
     ]
 
 
+def test_the_currency_classifier_decides_and_the_entry_point_does_not():
+    """The decision comes from the classifier, not from being inside ``pre_merge_gate merge``.
+
+    A weaker test that only asserted the merge entry point exists would pass with the
+    classifier bypassed. Here the SAME entry point dispatches or refuses purely on the
+    classifier's verdict.
+    """
+    status = _status({'functional-review': HEAD_GATED})
+    preserved = _merge(
+        status,
+        HEAD_MERGED,
+        classifier=lambda _step, _project_dir, _recorded: {'status': 'success', 'verdict': 'preserved'},
+    )
+    invalidated = _merge(
+        status,
+        HEAD_MERGED,
+        classifier=lambda _step, _project_dir, _recorded: {'status': 'success', 'verdict': 'invalidated'},
+    )
+
+    assert preserved['dispatched'] is True
+    assert invalidated['error'] == gate.MERGE_HEAD_NOT_GATED
+
+
 @pytest.mark.parametrize(
     ('step', 'expected'),
     [('functional-review', True), ('finalize-step-sync-baseline', False)],

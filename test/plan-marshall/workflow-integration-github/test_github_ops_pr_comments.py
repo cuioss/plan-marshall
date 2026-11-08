@@ -644,8 +644,8 @@ def test_inline_records_publish_the_placement_the_producer_reads(monkeypatch):
     rebuilds every record from an explicit key list, so a field added at the parse site
     but omitted there never reaches production while a stubbed-provider test still
     passes. This drives the real parser over a two-comment thread: the opening comment
-    reports no placement and falls back to its review's commit; the second is a reply
-    placed at its own commit.
+    reports no ``originalCommit`` and falls back to its review's commit; the second is
+    a reply placed at its own stable ``originalCommit``.
     """
     opening = {
         'id': 'PRRC_opening',
@@ -662,6 +662,7 @@ def test_inline_records_publish_the_placement_the_producer_reads(monkeypatch):
         'createdAt': '2026-03-01T12:00:00Z',
         'updatedAt': '2026-03-01T12:00:00Z',
         'replyTo': {'id': 'PRRC_opening'},
+        'originalCommit': {'oid': 'B' * 40},
         'commit': {'oid': 'B' * 40},
     }
     payload = {
@@ -708,8 +709,9 @@ def test_inline_records_publish_the_placement_the_producer_reads(monkeypatch):
 # the NEWEST head, so a comment posted at an older head reads as a review of the
 # merge candidate. ``originalCommit`` is the commit the comment was originally made
 # against and does not move; the review's ``commit`` is the second stable placement.
-# The mutable comment ``commit`` is a last resort only, because it is exactly the
-# field that produced the false green on PR 1912.
+# The mutable comment ``commit`` is NEVER a placement: it is exactly the field that
+# produced the false green on PR 1912, and a comment with neither stable field is
+# not credited at all (fail closed).
 #
 # Live shape this is built from (PLAN-LB-106 report L3-1): comment
 # ``PRRC_kwDOQ3xasM8AAAABCyVDVA`` reports ``commit_id b09d230fc…`` — the final head —
@@ -796,11 +798,17 @@ def test_placement_falls_back_to_the_review_commit_when_no_original_commit(monke
     assert by_id['PRRC_placement']['commit_id'] == posted
 
 
-def test_placement_uses_the_comment_commit_only_when_neither_stable_field_exists(monkeypatch):
-    """Last resort: a synthetic record with no stable placement still reports its commit."""
+def test_placement_refuses_the_mutable_commit_when_no_stable_field_exists(monkeypatch):
+    """A node with neither ``originalCommit`` nor a review commit is not credited.
+
+    The mutable ``commit`` follows the newest head, so reading it as a last resort
+    places a comment at the merge candidate without any record of where it was
+    posted. Fail closed: the placement is empty and the credit arm has nothing to
+    match.
+    """
     by_id = _fetch_placement(monkeypatch, _placement_payload(commit={'oid': 'c' * 40}))
 
-    assert by_id['PRRC_placement']['commit_id'] == 'c' * 40
+    assert by_id['PRRC_placement']['commit_id'] == ''
 
 
 def test_the_live_pr_1912_comment_shape_is_placed_at_the_reviewed_head(monkeypatch):
