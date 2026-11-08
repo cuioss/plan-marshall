@@ -934,7 +934,7 @@ def _resolve_sonar(marshal: dict[str, Any]) -> dict[str, Any]:
 
     Returns ``{'state': 'configured', 'project_key': ...}`` for a project that
     analyses its pull requests with Sonar, and ``{'state': 'not_configured'}``
-    for one that does not — the state in which the lane skips the open-issue read
+    for one that does not — the state in which the lane skips the open-finding read
     and nothing blocks. Read from ``credentials_config.{provider}``, the
     non-secret block ``manage-providers credentials edit --extra`` writes, so the
     resolve stays offline: no REST call, no credential-file read.
@@ -944,7 +944,7 @@ def _resolve_sonar(marshal: dict[str, Any]) -> dict[str, Any]:
     and a provider block that carries no usable ``project_key`` is
     ``sonar_config_incomplete`` — never a silent ``not_configured``. A corrupt or
     half-written Sonar block must not drain as "this project does not use Sonar",
-    which is the one state in which the open-issue read is skipped.
+    which is the one state in which the open-finding read is skipped.
     """
     credentials = marshal.get('credentials_config')
     if credentials is None:

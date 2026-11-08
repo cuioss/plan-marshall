@@ -242,6 +242,24 @@ def test_a_not_configured_state_refuses_a_read_supplied_beside_it() -> None:
     assert verdict['error'] == 'state_contradicts_read'
 
 
+@pytest.mark.parametrize(
+    'flags',
+    [
+        {'count_status': 'confirmed'},
+        {'open_keys': 'K1'},
+        {'operator_selected_keys': 'K1'},
+    ],
+    ids=['count-status', 'open-keys', 'operator-selected-keys'],
+)
+def test_every_read_flag_beside_not_configured_is_refused(flags) -> None:
+    """Every read flag is one read: dropping one silently would let it drain as allowed."""
+    verdict = cmd_sonar_gate(_gate_args(state='not_configured', **flags))
+
+    assert verdict['status'] == 'error'
+    assert verdict['error'] == 'state_contradicts_read'
+    assert '--operator-selected-keys' in verdict['message']
+
+
 def test_the_gate_rejects_a_state_outside_the_closed_set() -> None:
     verdict = cmd_sonar_gate(_gate_args(state='maybe'))
 
