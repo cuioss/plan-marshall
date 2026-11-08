@@ -443,6 +443,7 @@ def test_deliverables_declaring_different_branches_for_one_repo_disagree():
     )
 
     assert result['status'] == 'error'
+    assert result['error'] == 'foreign_landing_indeterminate'
     assert any(str(item['reason']).startswith('branch_disagreement') for item in result['unresolved']), result[
         'unresolved'
     ]

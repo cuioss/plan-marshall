@@ -41,6 +41,8 @@ Mandatory template for each deliverable in solution_outline.md. **ALL fields are
 
 The `change_type` in the `**Metadata:**` block is the **DELIVERABLE-scoped** field — one per deliverable, describing that deliverable's local kind. It is not the identically-named PLAN-scoped field at `status.metadata.change_type`, which carries the plan's single settled classification and is authoritative wherever the two are compared. See [`manage-execution-manifest/standards/decision-rules.md` § change_type scope reconciliation](../../manage-execution-manifest/standards/decision-rules.md#change_type-scope-reconciliation) for how the composer reconciles the two scopes.
 
+**Foreign deliverables.** A deliverable whose change lands in a DIFFERENT repository — a declared path outside the project root with a write intent — MAY name the branch that change is on, as an optional `- foreign_branch: {branch}` entry in its `**Metadata:**` block. Declare it whenever the foreign checkout will not itself be sitting on that branch, which is the usual state after branch cleanup (such a tree typically sits on `main`). The pre-archive foreign-PR gate reads it as one of its two branch sources and refuses to guess: a declaration that disagrees with the checkout's own branch, two deliverables declaring different branches for one repository, or neither source readable all leave that repository an `unresolved[]` row and the gate `error`. The rule is stated once in [`phase-6-finalize/standards/archive-plan.md`](../../phase-6-finalize/standards/archive-plan.md) § Pre-Archive Foreign-PR Landing Gate.
+
 ### Resolving Verification Commands
 
 Query the architecture for the module's canonical commands **before** writing deliverables:
@@ -66,6 +68,7 @@ Use the returned `executable` value as the Verification Command. Both Command an
 | `domain` | Yes | Single value from `config.domains` |
 | `module` | Yes | Module name from architecture |
 | `depends` | Yes | Use `none` if no dependencies |
+| `foreign_branch` | Conditional | Foreign deliverables only: the branch the foreign change is on, as a `**Metadata:**` entry. Declare it when the foreign checkout is not sitting on it — see "Foreign deliverables" above |
 | `**Intent gloss:**` | Conditional | Required when title head morpheme is a planning-domain verb; ≤15 words |
 | `**Profiles:**` | Yes | At least `implementation`; add `module_testing` only if deliverable creates/modifies test files |
 | `**Affected files:**` | Conditional | Required UNLESS the deliverable is survey-scope (declaring the `Files to survey:` / `Files expected to mutate:` pair instead) or verification-only. Explicit paths only - NO wildcards, NO "all files in...". Each entry MUST carry a required `(intent)` marker: `read`, `write-new`, `write-replace`, or `delete` |

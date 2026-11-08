@@ -362,6 +362,51 @@ def test_the_real_parser_and_column_feed_the_gate_the_narrowed_population(monkey
     ]
 
 
+def test_the_real_parser_carries_the_declared_foreign_branch_to_the_gate(monkeypatch):
+    """A `- foreign_branch:` metadata entry survives the parse and the TOON round trip.
+
+    The declaration is read from the deliverable's `**Metadata:**` block, which
+    the outline parser already emits — so the population test above and this one
+    cover the same path a real plan takes. The landing map answers ONLY the
+    declared branch: the checkout is unreadable, so a gate that ignored the
+    declaration would report `branch_unreadable` instead of `clear`.
+    """
+    monkeypatch.setattr(mso, 'cwd_checkout_root', lambda: '/repo')
+    outline = """### 1. Change a foreign repository
+
+**Metadata:**
+- change_type: bug_fix
+- domain: documentation
+- module: docs
+- depends: none
+- foreign_branch: docs/workflow-dsl
+
+**Affected files:**
+- `/foreign/repo/src/Changed.java` (write-replace)
+"""
+    deliverables = extract_deliverables(outline)
+    mso._annotate_foreign(deliverables)
+    payload = parse_toon(serialize_toon(_listed(deliverables)))
+
+    result = gate.check(
+        'p',
+        deliverables_loader=lambda _p: payload,
+        root_resolver=lambda _path: '/foreign/repo',
+        landing_resolver=lambda _root, branch: {'landing_state': 'merged' if branch == 'docs/workflow-dsl' else None},
+        branch_resolver=lambda _root: None,
+    )
+
+    assert result['status'] == 'clear', result
+    assert result['repos'] == [
+        {
+            'repo_root': '/foreign/repo',
+            'branch': 'docs/workflow-dsl',
+            'landing_state': 'merged',
+            'deliverables': [1],
+        }
+    ]
+
+
 # --------------------------------------------------------------------------- #
 # The foreign repo is classified on the FOREIGN branch, never the plan's name
 # --------------------------------------------------------------------------- #

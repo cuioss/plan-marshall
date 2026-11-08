@@ -877,15 +877,23 @@ def _phase_end_marker_refusal(plan_id: str, status: dict[str, Any]) -> dict[str,
     # invocation. The payload has always carried the whole set in
     # `unrecorded_commits`, but a message that quoted only the first invocation
     # left the operator repairing one commit and retrying into the same refusal.
+    #
+    # ONE line, deliberately: this payload crosses a TOON boundary, and a
+    # multi-line plain string is not a TOON value — its second and later lines
+    # land at column zero, where the parser reads them as sibling keys. A
+    # newline here would truncate the message to its first line and corrupt the
+    # envelope.
     append_invocations = [_append_invocation(worktree_path, sha) for sha in unrecorded]
-    append_block = '\n'.join(append_invocations)
+    append_block = ' | '.join(
+        f'{sha}: {invocation}' for sha, invocation in zip(unrecorded, append_invocations, strict=True)
+    )
     if not recorded:
         error = PHASE_END_MARKERS_MISSING_ERROR
         message = (
             f'Worktree branch holds {len(branch_shas)} commit(s) since diverging from {base_branch} '
             'and the change-ledger holds zero kind=change rows: no commit made on this branch was '
             'recorded. Record every unrecorded commit below — one invocation per SHA '
-            f'({_REPLACE_PLACEHOLDERS}):\n{append_block}'
+            f'({_REPLACE_PLACEHOLDERS}): {append_block}'
         )
         remedy: dict[str, Any] = {}
     else:
@@ -903,7 +911,7 @@ def _phase_end_marker_refusal(plan_id: str, status: dict[str, Any]) -> dict[str,
                     f'{base_branch} carry no kind=change ledger row and no branch commit matches a recorded '
                     'row: the whole branch is unrecorded. If it was rewritten (rebase, amend or cherry-pick), '
                     f'map the recorded rows onto their rewritten counterparts: {remap_invocation} If it was '
-                    f'not rewritten, record every unrecorded commit ({_REPLACE_PLACEHOLDERS}):\n{append_block}'
+                    f'not rewritten, record every unrecorded commit ({_REPLACE_PLACEHOLDERS}): {append_block}'
                 )
             else:
                 # The second D2 condition: the rows describe a history HEAD does
@@ -914,7 +922,7 @@ def _phase_end_marker_refusal(plan_id: str, status: dict[str, Any]) -> dict[str,
                     f'{len(unrecorded)} of {len(branch_shas)} worktree-branch commit(s) since diverging from '
                     f'{base_branch} carry no kind=change ledger row, and every recorded row points at a commit '
                     "outside HEAD's history. Map the recorded rows onto their rewritten counterparts: "
-                    f'{remap_invocation} Or record every unrecorded commit ({_REPLACE_PLACEHOLDERS}):\n'
+                    f'{remap_invocation} Or record every unrecorded commit ({_REPLACE_PLACEHOLDERS}): '
                     f'{append_block}'
                 )
             remedy = {
@@ -930,7 +938,7 @@ def _phase_end_marker_refusal(plan_id: str, status: dict[str, Any]) -> dict[str,
                 f'{base_branch} carry no kind=change ledger row. Every unrecorded commit is named below '
                 'with its own append invocation; a commit is owed its row by the writer that made it — '
                 'the phase-5-execute Step 10a settlement for a deliverable commit, the commit path itself '
-                f'for a finalize commit ({_REPLACE_PLACEHOLDERS}):\n{append_block}'
+                f'for a finalize commit ({_REPLACE_PLACEHOLDERS}): {append_block}'
             )
             remedy = {
                 'signature': 'bookkeeping_gap',

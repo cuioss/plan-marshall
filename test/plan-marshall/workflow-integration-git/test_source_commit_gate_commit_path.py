@@ -458,6 +458,30 @@ def test_the_architecture_refresh_commit_leaves_a_row(tmp_path: Path) -> None:
     assert [row['changed_paths'] for row in rows] == [['.plan/local/plans/PLAN-A/notes.txt']]
 
 
+def test_a_main_checkout_commit_reads_its_phase_through_the_named_plan(tmp_path: Path, monkeypatch) -> None:
+    """A `use_worktree: false` plan's row needs `--plan-id`: the tree cannot name it.
+
+    The guard covers every plan, main-checkout ones included, so their finalize
+    commits need rows too. Such a plan's tree IS the main checkout, so no path
+    segment names it — the documented invocation therefore passes `--plan-id`,
+    and the phase the row writer keys on is read through that id, from the
+    main-anchored record.
+
+    The tree-alone half cannot be asserted here: the suite's own basetemp lives
+    under `.plan/local/worktrees/{plan}/`, so every temporary repository inherits
+    a plan-named segment from its parent. The id-keyed lookup below is the
+    load-bearing half either way.
+    """
+    _init_repo(tmp_path)
+    _write_plan(tmp_path, 'plan-a', phase='6-finalize', steps=['pre-push-quality-gate'])
+    monkeypatch.setenv('PLAN_BASE_DIR', str(_base_dir(tmp_path)))
+
+    assert git_workflow._plan_phase(tmp_path, 'plan-a') == '6-finalize'
+    assert git_workflow._plan_phase(tmp_path, 'no-such-plan') is None, (
+        'an id with no record must resolve nothing, so the phase above came from the record'
+    )
+
+
 def test_a_phase_5_commit_leaves_no_row_so_the_settlement_owns_the_only_one(tmp_path: Path) -> None:
     """Outside `6-finalize` the verb records nothing — Step 10a owns that row.
 

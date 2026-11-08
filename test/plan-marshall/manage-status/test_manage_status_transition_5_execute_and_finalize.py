@@ -450,7 +450,12 @@ def test_5_execute_end_markers_name_every_unrecorded_sha(plan_context, monkeypat
     # The remedy is the append each SHA needs, not the phase-5-only prescription
     # for a commit phase 5 did not make.
     assert 'phase-5-execute Step 10a settlement bookkeeping for the unrecorded commits' not in refusal['message']
+    # One line: the refusal payload crosses a TOON boundary, which cannot carry a
+    # multi-line plain string.
+    assert '\n' not in refusal['message'], refusal['message']
 
+
+def test_5_execute_end_markers_missing_carries_count_shape(plan_context, monkeypatch):
     """The wholly-missing refusal enumerates the gap with counts, like the partial one."""
     plan_id = 'end-marker-5exec-missing-shape'
     status = _execute_status_with_worktree(plan_context, plan_id)
@@ -465,6 +470,7 @@ def test_5_execute_end_markers_name_every_unrecorded_sha(plan_context, monkeypat
     assert refusal['unrecorded_count'] == 1
     assert refusal['branch_commit_count'] == 1
     assert refusal['recorded_count'] == 0
+    assert 'a' * 40 in refusal['message'], refusal['message']
 
 
 @pytest.fixture

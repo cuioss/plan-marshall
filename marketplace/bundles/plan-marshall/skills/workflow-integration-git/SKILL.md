@@ -164,10 +164,13 @@ Commit through the gate-bearing `commit` verb — ONE Bash call. It judges the S
 ```bash
 # ONE Bash call — commit through the gate (message read from the worktree-absolute file)
 python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow commit \
+  --plan-id {plan_id} \
   --project-dir {worktree_path} \
   --message-file {worktree_path}/.plan/temp/{plan_id}-commit-msg.txt \
   [--step {step}]
 ```
+
+`--plan-id` is passed even though `--project-dir` already names the tree: for a `use_worktree: false` plan the tree IS the main checkout, so its path names no plan and the verb would resolve no phase — and therefore write no ledger row (see below). The id is the selector that keeps the phase readable in that case.
 
 A **raw** `git commit` is refused by the enforcement guard in phase `6-finalize` (both harnesses) precisely so this verb is the single commit path; do not bypass it. The `git commit -m "$(cat <<'EOF' … EOF)"` form is forbidden — it combines `$(…)` substitution with a heredoc, both of which trip the Bash safety harness. See `persona-plan-marshall-agent/standards/tool-usage-patterns.md` for the chain-shape and Bash-write rules.
 

@@ -12,9 +12,11 @@ maps ``kind=change`` rows of rewritten commits onto their rewritten
 counterparts. The ledger is the unified ``worktree_sha``-stamped record of
 working-tree transitions; it subsumes the former "build-registry" idea entirely
 (there is NO separate ``builds.jsonl``).
-Both writers — the executor dispatch-boundary ``kind=build`` writer and the
-phase-5 ``kind=change`` writer — and both readers — the ``query`` verb and the
-``pre-commit-verify-freshness`` gate — go through this core so entries are
+Both ``kind`` writers — the executor dispatch-boundary ``kind=build`` writer and
+the two ``kind=change`` commit owners (the phase-5 Step 10a settlement and the
+``workflow-integration-git`` ``commit`` verb's ``6-finalize`` row) — and both
+readers — the ``query`` verb and the ``pre-commit-verify-freshness`` gate — go
+through this core so entries are
 shaped identically and parsed identically. The rewrite-remap writes through the
 same :func:`append_entry`, so it is never a second write path.
 
@@ -251,8 +253,10 @@ def change_record(
 ) -> dict[str, Any]:
     """Construct a ``kind=change`` ledger record.
 
-    Written by the phase-5 execute loop after each deliverable completes and
-    commits. ``commit_sha`` and ``changed_paths`` are git-sourced by the caller
+    Written by whichever commit owner made the commit: the phase-5 execute loop
+    after each deliverable completes and commits, or the
+    ``workflow-integration-git`` ``commit`` verb for a ``6-finalize`` commit.
+    ``commit_sha`` and ``changed_paths`` are git-sourced by the caller
     (from ``git diff-tree`` against the just-produced commit) — this constructor
     stores the caller-supplied list VERBATIM; it does NOT compute or re-derive
     changed paths. Self-computed / ``affected_files``-snapshotted paths are

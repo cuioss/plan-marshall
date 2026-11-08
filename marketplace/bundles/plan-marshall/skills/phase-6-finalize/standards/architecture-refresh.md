@@ -270,11 +270,12 @@ Write(file_path="{worktree_path}/.plan/temp/{plan_id}-architecture-commit-msg.tx
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow commit \
+  --plan-id {plan_id} \
   --project-dir {worktree_path} \
   --message-file {worktree_path}/.plan/temp/{plan_id}-architecture-commit-msg.txt
 ```
 
-This commit carries only `.plan/` state, so the source-commit gate admits it with no `--step`; the verb is also what records it — a `6-finalize` commit leaves its own `kind=change` row (§ Commit Changes in the same skill) — so the next `5-execute` boundary admits it like any other finalize commit. A raw `git commit` is refused by the enforcement guard in `6-finalize` on both harnesses, and would leave no row.
+This commit carries only `.plan/` state, so the source-commit gate admits it with no `--step`; the verb is also what records it — a `6-finalize` commit leaves its own `kind=change` row (§ Commit Changes in the same skill) — so the next `5-execute` boundary admits it like any other finalize commit. `--plan-id` is passed because a `use_worktree: false` plan's tree IS the main checkout, whose path names no plan; without it the verb would resolve no phase and write no row. A raw `git commit` is refused by the enforcement guard in `6-finalize` on both harnesses, and would leave no row.
 
 `{plan-title}` is the plan's short description, captured from `manage-status read --plan-id {plan_id}` field `plan.short_description`. When `short_description` is `None` or empty, use the literal `plan-id` as the slug (e.g., `chore(architecture): refresh derived data after phase-d-auto-refresh`). The subject is accurate because `--apply plan` keeps every tool migration off disk: what this commit carries is plan-caused.
 
@@ -414,6 +415,7 @@ Write(file_path="{worktree_path}/.plan/temp/{plan_id}-architecture-commit-msg.tx
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow commit \
+  --plan-id {plan_id} \
   --project-dir {worktree_path} \
   --message-file {worktree_path}/.plan/temp/{plan_id}-architecture-commit-msg.txt
 ```
@@ -663,7 +665,7 @@ else:
         log decision: "Regression gate green — examined_fields, modules_examined, modules_unreadable"
         git -C {worktree_path} add .plan/project-architecture
         # § 3d: author the message file, then commit through the gate-bearing verb
-        git-workflow commit --project-dir {worktree_path} --message-file {worktree_path}/.plan/temp/{plan_id}-architecture-commit-msg.txt
+        git-workflow commit --plan-id {plan_id} --project-dir {worktree_path} --message-file {worktree_path}/.plan/temp/{plan_id}-architecture-commit-msg.txt
         # no push — the order-11 default:push barrier ships this commit
         committed := true
         log artifact
@@ -728,7 +730,7 @@ switch tier_1:
             architecture --project-dir {worktree_path} enrich skills-by-profile --module M --reasoning ...
         git -C {worktree_path} add .plan/project-architecture
         # as § 3d: author the message file, then commit through the gate-bearing verb
-        git-workflow commit --project-dir {worktree_path} --message-file {worktree_path}/.plan/temp/{plan_id}-architecture-commit-msg.txt
+        git-workflow commit --plan-id {plan_id} --project-dir {worktree_path} --message-file {worktree_path}/.plan/temp/{plan_id}-architecture-commit-msg.txt
         # no push — the order-11 default:push barrier ships this commit
         mark-step-done detail="refreshed + re-enriched ({n} modules)"
 
