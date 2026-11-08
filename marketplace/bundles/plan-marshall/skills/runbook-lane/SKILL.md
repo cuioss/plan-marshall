@@ -146,7 +146,10 @@ recorded is refused, and the violation is visible in the audit record.
 
 `--hotspot-keys` names which of the open keys are SECURITY HOTSPOTS. A hotspot has no transition verb,
 so a recorded dismissal of one would never be transmitted: the gate refuses such a key as
-`hotspot_not_dismissable`, and the finding is fixed or reported as a blocker instead.
+`hotspot_not_dismissable`, and the finding is fixed or reported as a blocker instead. It is REQUIRED
+whenever a selection is made above a confirmed zero (`hotspot_keys_required`) — pass the read's
+hotspot keys, or an explicit EMPTY value when the read reported none, because an omitted flag cannot
+be told from a read that found none.
 
 ### sonar-facts
 

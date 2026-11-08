@@ -160,6 +160,7 @@ def test_every_open_finding_the_operator_selected_admits_the_merge(tmp_path: Pat
             open_count='2',
             open_keys='K1,K2',
             operator_selected_keys='K1,K2',
+            hotspot_keys='',
         )
     )
 
@@ -174,6 +175,7 @@ def test_an_open_finding_the_operator_did_not_select_blocks_the_merge(tmp_path: 
             open_count='2',
             open_keys='K1,K2',
             operator_selected_keys='K1',
+            hotspot_keys='',
         )
     )
 
@@ -220,6 +222,7 @@ def test_a_repeated_key_cannot_stand_in_for_two_findings(tmp_path: Path) -> None
             open_count='2',
             open_keys='K1,K1',
             operator_selected_keys='K1',
+            hotspot_keys='',
         )
     )
 
@@ -310,7 +313,9 @@ def test_a_selection_the_progress_file_records_admits_the_merge(tmp_path: Path) 
     progress = _progress_file(tmp_path, 'K1', 'K2')
 
     verdict = cmd_sonar_gate(
-        _gate_with_progress(progress, open_count='2', open_keys='K1,K2', operator_selected_keys='K1,K2')
+        _gate_with_progress(
+            progress, open_count='2', open_keys='K1,K2', operator_selected_keys='K1,K2', hotspot_keys=''
+        )
     )
 
     assert verdict['merge_allowed'] is True
@@ -322,7 +327,9 @@ def test_a_selection_the_progress_file_does_not_record_is_refused(tmp_path: Path
     progress = _progress_file(tmp_path, 'K1')
 
     verdict = cmd_sonar_gate(
-        _gate_with_progress(progress, open_count='2', open_keys='K1,K2', operator_selected_keys='K1,K2')
+        _gate_with_progress(
+            progress, open_count='2', open_keys='K1,K2', operator_selected_keys='K1,K2', hotspot_keys=''
+        )
     )
 
     assert verdict['merge_allowed'] is False
@@ -332,11 +339,32 @@ def test_a_selection_the_progress_file_does_not_record_is_refused(tmp_path: Path
 
 def test_an_unreadable_progress_file_refuses_every_selection(tmp_path: Path) -> None:
     verdict = cmd_sonar_gate(
-        _gate_with_progress(tmp_path / 'absent.md', open_count='1', open_keys='K1', operator_selected_keys='K1')
+        _gate_with_progress(
+            tmp_path / 'absent.md',
+            open_count='1',
+            open_keys='K1',
+            operator_selected_keys='K1',
+            hotspot_keys='',
+        )
     )
 
     assert verdict['merge_allowed'] is False
     assert verdict['reason'] == 'selection_not_recorded'
+
+
+def test_a_selection_without_the_hotspot_set_is_refused(tmp_path: Path) -> None:
+    """Omitting the hotspot set would let a selected hotspot pass as an issue."""
+    verdict = cmd_sonar_gate(
+        _gate_with_progress(
+            _progress_file(tmp_path, 'K1'),
+            open_count='1',
+            open_keys='K1',
+            operator_selected_keys='K1',
+        )
+    )
+
+    assert verdict['status'] == 'error'
+    assert verdict['error'] == 'hotspot_keys_required'
 
 
 def test_a_selected_hotspot_key_is_refused(tmp_path: Path) -> None:

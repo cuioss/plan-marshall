@@ -2115,6 +2115,25 @@ def cmd_sonar_gate(args: argparse.Namespace) -> dict[str, Any]:
                 'the lane invented'
             ),
         }
+    if (
+        count_status == 'confirmed'
+        and isinstance(open_count, int)
+        and open_count > 0
+        and _split_csv(getattr(args, 'operator_selected_keys', None))
+        and getattr(args, 'hotspot_keys', None) is None
+    ):
+        # Without the hotspot set the gate cannot tell a selected hotspot from a
+        # selected issue, so omitting the flag would let a hotspot through. An
+        # EMPTY value is the answer for a read that found none — required means
+        # stated, not non-empty.
+        return {
+            'status': 'error',
+            'error': 'hotspot_keys_required',
+            'message': (
+                "--hotspot-keys is required when selecting open findings: pass the read's hotspot "
+                'keys, or an explicit empty value when it reported none'
+            ),
+        }
     return _sonar_gate_verdict(
         state,
         count_status,
