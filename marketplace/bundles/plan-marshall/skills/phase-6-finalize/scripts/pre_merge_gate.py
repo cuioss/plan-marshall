@@ -1419,9 +1419,12 @@ def _declared_fact_keys(step: str = _MERGE_RECORD_STEP) -> tuple[set[str] | None
     try:
         import extension_discovery
         from _step_key_canonical import canonicalize_step_key
-    except ImportError as exc:
+    except Exception as exc:  # an unimportable reader is a failed read, never a crash
         return None, f'the finalize-step population is not importable ({exc})'
-    records, population_reason = _finalize_step_population()
+    try:
+        records, population_reason = _finalize_step_population()
+    except Exception as exc:  # the population read itself can raise through its own imports
+        return None, f'the finalize-step population could not be discovered ({exc})'
     if records is None:
         return None, population_reason or 'the finalize-step population could not be discovered'
     wanted = canonicalize_step_key(step)
