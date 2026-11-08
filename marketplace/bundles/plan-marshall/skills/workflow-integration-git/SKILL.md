@@ -171,6 +171,8 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workf
 
 A **raw** `git commit` is refused by the enforcement guard in phase `6-finalize` (both harnesses) precisely so this verb is the single commit path; do not bypass it. The `git commit -m "$(cat <<'EOF' … EOF)"` form is forbidden — it combines `$(…)` substitution with a heredoc, both of which trip the Bash safety harness. See `persona-plan-marshall-agent/standards/tool-usage-patterns.md` for the chain-shape and Bash-write rules.
 
+**This verb is the one writer of a `6-finalize` commit's `kind=change` ledger row.** When the plan's `current_phase` is `6-finalize`, the verb appends the row for the commit it just made — `commit_sha` from the new HEAD, `changed_paths` from `git diff-tree` on that commit, `deliverable_id` from `--step` when one is passed (`finalize-commit` otherwise) — and reports `ledger_recorded`. Every commit owes a row because the `5-execute` boundary refuses unless every branch commit has one, so phase 6 may not depend on phase 5's settlement; and the verb writes it only in `6-finalize`, so a phase-5 deliverable commit keeps its single Step 10a row and no commit ever gets two. `manage-change-ledger` § Integration carries the producer list; the ledger's own field contract is in the same skill § "Entry Shapes". A commit that fails to record still stands, and its missing row surfaces as the boundary's `bookkeeping_gap` refusal rather than as a silent gap.
+
 **Step 6: Push (Optional)**
 
 If `push` parameter, push through the gated verb — never a bare `git push`:

@@ -1330,9 +1330,12 @@ per offending phase.
 
 **5-execute end-marker post-condition.** Completing `5-execute` additionally
 requires every branch commit since the branch diverged from its base
-to carry a `kind=change` change-ledger row (the Step 10a settlement
-bookkeeping). The clean-tree guard only reads *uncommitted* state, so a
-committed-but-unrecorded deliverable commit is the silent skip it cannot see —
+to carry a `kind=change` change-ledger row, whichever phase made it — the
+phase-5 Step 10a settlement records a deliverable commit and the gate-bearing
+`git-workflow commit` verb records a finalize commit's own (see
+[`../workflow-integration-git/SKILL.md`](../workflow-integration-git/SKILL.md)
+§ Commit Changes). The clean-tree guard only reads *uncommitted* state, so a
+committed-but-unrecorded branch commit is the silent skip it cannot see —
 this gate closes it. **It applies to every plan**, not only the isolated-worktree
 ones: a main-checkout plan makes the same per-deliverable commits against the same
 ledger, and its checkout is the one that owns its plan directory. The divergence
@@ -1356,8 +1359,8 @@ wrapper. The single source of truth is `_phase_end_marker_refusal` in
 pass-through conditions are stated there and not restated here.
 
 **`set-phase` into `6-finalize` runs the same gate.** `set-phase` is the second
-door into finalize; a path that reaches it without the 5-execute settlement
-bookkeeping must be refused exactly as `transition` refuses it, or the weaker verb
+door into finalize; a path that reaches it without the `kind=change` rows the
+boundary requires must be refused exactly as `transition` refuses it, or the weaker verb
 is the bypass. The refusal payload is `_phase_end_marker_refusal`'s own and
 nothing is written.
 
@@ -1376,7 +1379,7 @@ No refusal advances the plan: `current_phase` is unchanged and the payload carri
 | `error: missing_exempt_reason` | 0 | `--allow-bare-transition` was passed without a `--bare-reason`. |
 | `error: blocking_findings_present` | 0 | Completing `6-finalize` while an actionable finding is still pending. |
 | `error: open_done_when_criteria` | 0 | Completing `6-finalize` while the plan's frozen criteria snapshot still holds a Done-when criterion the functional review has not graded `met`. An empty findings queue beside an unmet criterion is not a clean exit; a plan with no snapshot carries no frozen clauses and is unaffected. Carries `open_count` and `open_criteria[]`. |
-| `error: phase_end_markers_missing` | 1 | Completing `5-execute` while the end-marker store cannot prove recording — either the change-ledger marker store could not be read at all (no `unrecorded_commits` key: nothing was enumerated), or the store holds zero `kind=change` rows while worktree-branch commits exist (the Step 10a bookkeeping never ran). |
+| `error: phase_end_markers_missing` | 1 | Completing `5-execute` while the end-marker store cannot prove recording — either the change-ledger marker store could not be read at all (no `unrecorded_commits` key: nothing was enumerated), or the store holds zero `kind=change` rows while worktree-branch commits exist (no row writer ever ran). |
 | `error: execute_commits_unrecorded` | 1 | Completing `5-execute` after both sides were read and named worktree-branch commits carry no `kind=change` ledger row, enumerated in `unrecorded_commits` with `recorded_count` / `branch_commit_count`. |
 | `error: phase_boundary_unstamped` | 1 | Advancing past a phase whose metrics boundary is half-stamped — the phase carries a `start_time` and no `end_time` in `work/metrics.toon`. `boundaries[]` names each offending phase and the marker it lacks. |
 

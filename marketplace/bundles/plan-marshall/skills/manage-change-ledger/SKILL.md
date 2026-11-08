@@ -139,10 +139,14 @@ Every entry carries a `kind` discriminator, a `worktree_sha`, and a
   contract lives in
   [`../manage-tasks/SKILL.md`](../manage-tasks/SKILL.md) § "Pre-Commit Verify
   Freshness" and is deliberately not restated here.
-- **`kind=change`** — written by the phase-5 execute loop after each deliverable
-  completes-and-commits. Fields: `kind: "change"`, `deliverable_id` (or
-  `task_id`), `commit_sha`, `changed_paths` (the **git-sourced** list, stored
-  verbatim), `worktree_sha` (post-commit), `timestamp_iso`.
+- **`kind=change`** — written by the two commit owners, one row per commit.
+  The phase-5 execute loop's Step 10a chain-tail writes a deliverable commit's
+  row; the gate-bearing `workflow-integration-git` `commit` verb writes a
+  `6-finalize` commit's own (only in that phase, so no commit gets two). Fields:
+  `kind: "change"`, `deliverable_id` (or `task_id`; a finalize commit that names
+  no manifest step carries the constant `finalize-commit`), `commit_sha`,
+  `changed_paths` (the **git-sourced** list, stored verbatim), `worktree_sha`
+  (post-commit), `timestamp_iso`.
 - **`kind=job`** — written by the `build-server-client` skill's `submit` verb at
   submit time. Fields: `kind: "job"`, `job_id` (the daemon-assigned id),
   `plan_id` (str, **never null** — on the same contract as `kind=build`: a
@@ -387,6 +391,7 @@ from _ledger_core import (
 |---------------------|-----------|----------|
 | `tools-script-executor` dispatch boundary | produces | `append --kind build` (executor template `kind=build` writer) |
 | `phase-5-execute` Step 10a chain-tail | produces | `append --kind change` after each per-deliverable commit |
+| `workflow-integration-git` `commit` verb | produces | appends the `kind=change` row of a `6-finalize` commit (its `changed_paths` from `git diff-tree`, its `deliverable_id` from `--step` or the constant `finalize-commit`) |
 | `phase-6-finalize` `sync-baseline` | produces | `remap` after a rebase rewrote the branch's SHAs (emit the map, then consume it) |
 | `manage-status` 5-execute boundary | reports (never writes) | carries the ready-to-run `remap` invocation in its `execute_commits_unrecorded` refusal; appends nothing itself |
 | `build-server-client` `submit` verb | produces | imports `job_record` + `append_entry`; writes `kind=job` at submit time for re-attach |
