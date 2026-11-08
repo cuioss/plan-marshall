@@ -260,11 +260,10 @@ def _write_scopes(scopes: dict[str, str]) -> set[str]:
 
 #: TOP-LEVEL write scopes that are deliberate, keyed ``(filename, scope)`` so the
 #: population is countable and each entry carries its own justification. Derived
-#: at execute time from a walk of .github/workflows/: seven workflows, each of which
+#: at execute time from a walk of .github/workflows/: six workflows, each of which
 #: declares a top-level block that is entirely read (python-verify.yml carries
 #: `pull-requests: read` beside `contents: read`, still a read scope).
-#: No workflow holds a top-level write scope since cuioss-review-bot.yml was removed,
-#: so the allowlist is empty.
+#: No workflow holds a top-level write scope, so the allowlist is empty.
 _TOP_LEVEL_WRITE_ALLOWLIST: dict[tuple[str, str], str] = {}
 
 #: JOB-LEVEL write scopes. Kept in a SEPARATE allowlist from the top-level one on
@@ -417,7 +416,7 @@ def test_the_permission_scan_is_not_vacuous() -> None:
         workflow.name: _top_level_permissions(workflow.read_text(encoding='utf-8')) for workflow in _workflow_files()
     }
 
-    assert len(parsed) >= 7, f'expected at least seven workflows, parsed {sorted(parsed)}'
+    assert len(parsed) >= 6, f'expected at least six workflows, parsed {sorted(parsed)}'
     empty = sorted(name for name, scopes in parsed.items() if not scopes)
     assert not empty, (
         f'permissions parser extracted no scope from {empty}; the read-only '

@@ -91,9 +91,9 @@ class TestTheReadDistinguishesUnreadableFromEmpty:
         assert unreadable['status'] != empty['status']
 
     def test_a_readable_roster_is_parsed_into_bare_kinds(self):
-        payload = rc.read_roster('any-plan', runner=_readable_runner('coderabbit, cuioss-review-bot', 'sourcery'))
+        payload = rc.read_roster('any-plan', runner=_readable_runner('coderabbit, sourcery', 'sourcery'))
 
-        assert payload['required_bots'] == ['coderabbit', 'cuioss-review-bot']
+        assert payload['required_bots'] == ['coderabbit', 'sourcery']
         assert payload['optional_bots'] == ['sourcery']
 
     def test_a_params_object_that_is_not_a_mapping_is_unreadable(self):
@@ -110,13 +110,13 @@ class TestTheReadDistinguishesUnreadableFromEmpty:
             'any-plan',
             runner=lambda _plan: {
                 'status': 'success',
-                'params': {'required_bots': ['coderabbit', 'cuioss-review-bot'], 'optional_bots': ['sourcery']},
+                'params': {'required_bots': ['coderabbit', 'sourcery'], 'optional_bots': []},
             },
         )
 
         assert payload['status'] == 'success'
-        assert payload['required_bots'] == ['coderabbit', 'cuioss-review-bot']
-        assert payload['optional_bots'] == ['sourcery']
+        assert payload['required_bots'] == ['coderabbit', 'sourcery']
+        assert payload['optional_bots'] == []
 
     def test_a_non_zero_exit_is_an_error_even_when_its_stdout_parses(self):
         """⛔ A failed call whose output happens to be TOON is still a failed read.

@@ -173,8 +173,8 @@ _RESPONDABLE_RESOLUTIONS = frozenset({'fixed', 'suppressed', 'accepted', 'taken_
 #   2. PER-BOT layer — each enabled bot's ``footer_patterns`` (branding / feedback
 #      lines, stripped before the signal test) and ``ignore_patterns`` from the
 #      registry (``automatic-review/standards/{bot_kind}.md``). The ignore entries
-#      are literal whole-comment markers (a walkthrough heading, a no-op review
-#      line, …) that only apply to that bot's own comments. They are
+#      are literal whole-comment markers (a no-op review line, a learnings notice, …)
+#      that only apply to that bot's own comments. They are
 #      sourced from the registry at runtime, so adding/adjusting a bot's noise
 #      drops is a pure standards-doc edit — no change here.
 #
@@ -332,8 +332,9 @@ def _is_contentless_boilerplate(body: str, bot_kind: str | None) -> bool:
     if not all(marker in body for marker in required):
         return False
     # The heading ALTERNATION: a bot publishing one clean shape under several
-    # persistent review comments (PR-Agent's security and code-review Guides) names
-    # each heading here, and the body must carry ANY ONE of them. An empty list
+    # persistent review states of the SAME comment (CodeRabbit's finished walkthrough
+    # and its in-progress notice) names each heading here, and the body must carry ANY
+    # ONE of them. An empty list
     # adds no condition, so the conjunction above stays the whole test for every
     # bot that has not declared the field.
     headings = [h.strip() for h in bot_registry.contentless_review_headings(kind) if h.strip()]
@@ -464,7 +465,7 @@ def _is_obvious_noise(body: str, bot_kind: str | None = None) -> bool:
        feedback prompt never decides a drop by itself), then its ``ignore_patterns``
        (literal whole-comment markers) are matched as case-sensitive substrings
        against the remaining body. These markers are exact fragments the bot emits
-       on a *successful* review (a walkthrough heading, a no-op review line), so only
+       on a *successful* review (a no-op review line, a learnings notice), so only
        that bot's own comments are dropped.
     3. CONTENTLESS BOILERPLATE — ``_is_contentless_boilerplate``: that same bot's
        registry ``contentless_review_markers`` (ALL required) plus any one declared
@@ -1045,7 +1046,7 @@ def _stored_pr_comment_hashes(findings: list[dict]) -> dict[tuple[str, str], str
 # plan has credited, the ``(bot_kind, comment_id)`` key with the merge-candidate SHA
 # AND the comment's ``updated_at`` at the fetch that last credited it. It is the SOLE
 # source the currency test reads, so a comment stored as a finding and a comment
-# dropped as noise (PR-Agent's contentless Guide) are treated identically — the
+# dropped as noise (a clean summary with no concern) are treated identically — the
 # ledger records the credit regardless of whether the comment produced a finding.
 #
 # Recording BOTH the SHA and the ``updated_at`` is load-bearing. Anchoring on the SHA
@@ -2125,8 +2126,7 @@ def cmd_fetch_findings(args):
         # to anchor a review of — which is exactly what produced the #515 false green.
         #
         # The rule is BOT-AGNOSTIC by design: it governs every bot that declares
-        # ``inline`` evidence, ``cuioss-review-bot`` included. Removing that bot is a
-        # separate, parked change; tightening the rule here does not alter which bots
+        # ``inline`` evidence. Tightening the rule here does not alter which bots
         # publish inline evidence.
         if _kind == 'inline':
             if _comment.get('thread_reply') or _comment.get('reply_to_id'):
@@ -2338,9 +2338,8 @@ def cmd_fetch_findings(args):
 
         author = comment.get('author') or 'unknown'
 
-        # Derive bot_kind from the comment author login (coderabbitai ->
-        # coderabbit, cuioss-review-bot -> cuioss-review-bot, whose login and kind
-        # are deliberately the SAME name); a human author resolves to
+        # Derive bot_kind from the comment author login (``coderabbitai`` ->
+        # ``coderabbit``, ``sourcery-ai`` -> ``sourcery``); a human author resolves to
         # None. Computed BEFORE the noise pre-filter (so per-bot ignore patterns
         # apply) AND before the dedup check (so the cross-iteration guard can key
         # on (bot_kind, comment_id)).
@@ -2455,7 +2454,7 @@ def cmd_fetch_findings(args):
 
         # Pre-filter 4: obvious noise — the shared acknowledgment/automation
         # regexes plus, for a known reviewer bot, that bot's per-registry literal
-        # ignore markers (walkthrough headings, marketing footers, no-op reviews).
+        # ignore markers (a no-op review line, a learnings notice, a marketing footer).
         if _is_obvious_noise(body, bot_kind):
             skipped_noise += 1
             continue
@@ -3790,7 +3789,7 @@ Examples:
                         'default': '',
                         'help': (
                             'Comma-joined bot_kinds whose participation is REQUIRED (e.g. '
-                            '"coderabbit,cuioss-review-bot"). A required bot\'s silence is a failure and gates the '
+                            '"coderabbit"). A required bot\'s silence is a failure and gates the '
                             'review-completeness quorum. This list classifies, it does NOT admit: a comment '
                             'from a bot outside both lists is still ingested and its bot is reported in '
                             'unclassified_bots. May be supplied bare (no value), which reads as the empty '

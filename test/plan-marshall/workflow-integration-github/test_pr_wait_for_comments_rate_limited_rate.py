@@ -109,15 +109,6 @@ _SOURCERY_NOTICE = {
     ),
     'created_at': '2026-01-02T00:00:00Z',
 }
-_PR_AGENT_NOTICE = {
-    'author': 'cuioss-review-bot',
-    'body': (
-        '> [!WARNING] The review request could not be served: this account has '
-        'exceeded the limit for the number of commits or files that can be '
-        'reviewed. Please try again later.'
-    ),
-    'created_at': '2026-01-02T00:00:00Z',
-}
 _HUMAN_COMMENT = {
     'author': 'octocat',
     'body': 'Please add a test for the rate limit exceeded branch.',
@@ -313,16 +304,15 @@ def test_several_rate_limited_bots_each_yield_their_own_record(monkeypatch):
     # await decision differs between an awaitable_window and a hard_quota.
     _wire(
         monkeypatch,
-        post_comments=[_HUMAN_COMMENT, _CODERABBIT_NOTICE, _SOURCERY_NOTICE, _PR_AGENT_NOTICE],
+        post_comments=[_HUMAN_COMMENT, _CODERABBIT_NOTICE, _SOURCERY_NOTICE],
     )
 
     result = github_ops.cmd_pr_wait_for_comments(_wait_comments_args())
 
     records = _records_by_kind(result)
-    assert set(records) == {'coderabbit', 'sourcery', 'cuioss-review-bot'}
+    assert set(records) == {'coderabbit', 'sourcery'}
     assert records['coderabbit']['rate_limit_class'] == 'awaitable_window'
     assert records['sourcery']['rate_limit_class'] == 'hard_quota'
-    assert records['cuioss-review-bot']['rate_limit_class'] == 'unknown'
 
 
 def test_no_rate_limited_bot_yields_empty_list(monkeypatch):

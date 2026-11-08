@@ -694,7 +694,7 @@ class TestCrashedGateNeverRecordsAPass:
             '--plan-id',
             plan_id,
             '--required-bots',
-            'coderabbit,cuioss-review-bot',
+            'coderabbit,sourcery',
             '--optional-bots',
             '--participated-bots',
             '--in-progress-bots',

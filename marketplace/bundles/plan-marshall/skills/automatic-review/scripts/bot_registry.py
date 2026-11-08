@@ -39,8 +39,8 @@ Data-block shape (one per ``standards/{bot_kind}.md``)::
       issue_comment: "<!-- recent_review_start -->"
     participation_requires_update: true
     ignore_patterns:
-      - "## Walkthrough"
       - "No actionable comments were generated"
+      - "✏️ Learnings added"
     footer_patterns:                  # branding / feedback lines, stripped before the signal test
       - "Sourcery is free for open source"
     acknowledgment_patterns:          # a reply confirming a command was RECEIVED, never its answer
@@ -583,8 +583,8 @@ class BotRegistry:
 
         This is deliberately a DEDICATED field, never a reuse of
         :meth:`ignore_patterns`. ``ignore_patterns`` lists the routine sections a
-        bot emits on a *successful* review (CodeRabbit's ``## Walkthrough`` and
-        ``✏️ Learnings added``, Sourcery's Reviewer's-Guide marker), so matching
+        bot emits on a *successful* review (CodeRabbit's no-op review line and its
+        ``✏️ Learnings added`` notice, Sourcery's Reviewer's-Guide marker), so matching
         refusals against it would classify ordinary successful reviews as refusals.
         The two lists answer different questions and must stay distinct — see
         ``automatic-review/standards/bot-participation-contract.md`` § "Detecting a
@@ -734,9 +734,10 @@ class BotRegistry:
         """Return the review-comment headings a contentless body may carry (``[]`` if absent).
 
         The ALTERNATION companion to :meth:`contentless_review_markers`. A bot that
-        publishes the same clean shape under more than one persistent review comment
-        — PR-Agent's security ``## PR Reviewer Guide`` and its code-review
-        ``## PR Code Review Guide`` — cannot list both headings in the conjunction,
+        publishes the same clean shape in more than one state of its persistent review
+        comment — CodeRabbit's finished ``## Walkthrough`` and the
+        ``Currently processing new changes`` notice the same comment carries while a
+        review runs — cannot list both headings in the conjunction,
         because no single body carries both. Each entry here is one such heading,
         and the producer's test requires ANY ONE of them to be present, on top of
         every :meth:`contentless_review_markers` entry.
@@ -917,7 +918,7 @@ class BotRegistry:
         """Return whether ``bot_kind``'s evidence additionally requires update movement.
 
         True for a bot that re-reviews by EDITING its single persistent comment in
-        place rather than posting a new one (PR-Agent's Guide comment). For such a bot
+        place rather than posting a new one (CodeRabbit's summary comment). For such a bot
         the mere continued existence of the comment proves only that it reviewed ONCE,
         at some earlier HEAD, so its credit has to clear the producer's CURRENCY TEST.
 

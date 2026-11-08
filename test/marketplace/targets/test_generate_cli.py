@@ -29,16 +29,9 @@ class TestGenerateCli:
         assert '--target' in result.stdout
         assert 'claude' in result.stdout
         assert 'opencode' in result.stdout
-        assert 'cuioss-review-bot' in result.stdout
 
     def test_unknown_target_exits_two(self):
         result = _run_cli('--target', 'nope', '--output', '/tmp/does-not-matter')
-        assert result.returncode == 2
-        assert 'invalid choice' in (result.stderr + result.stdout)
-
-    def test_the_retired_reviewer_target_name_is_rejected(self, tmp_path):
-        """The reviewer target was renamed; its former name is an unknown choice, not an alias."""
-        result = _run_cli('--target', 'pr-agent', '--output', str(tmp_path / 'retired-out'))
         assert result.returncode == 2
         assert 'invalid choice' in (result.stderr + result.stdout)
 
@@ -59,82 +52,8 @@ class TestGenerateCli:
         assert result.returncode == 0, result.stderr
         assert 'opencode' in result.stdout
 
-    def test_cuioss_review_bot_target_known_choice(self, tmp_path):
-        out = tmp_path / 'cuioss-review-bot-out'
-        result = _run_cli('--target', 'cuioss-review-bot', '--output', str(out))
-        assert result.returncode == 0, result.stderr
-        assert (out / 'packs' / 'spine.md').is_file()
-
-    def test_cuioss_review_bot_emits_a_markdown_artifact_set(self, tmp_path):
-        """Shape check only: the run emits a non-empty set, and all of it is Markdown.
-
-        The name and this docstring are deliberately narrower than "one artifact
-        per derived domain": the body below never enumerates the derived set, so
-        a claim of set identity would be one no assertion here establishes. That
-        comparison belongs to test_cuioss_review_bot_target.py, which checks the
-        emitted stems against the composer's own derived set on a fixture
-        marketplace. Re-deriving the same expectation here would share the CLI's
-        composer and cost this smoke test its independence.
-        """
-        out = tmp_path / 'cuioss-review-bot-packs-out'
-
-        result = _run_cli('--target', 'cuioss-review-bot', '--output', str(out))
-
-        assert result.returncode == 0, result.stderr
-        emitted = sorted((out / 'packs').iterdir())
-        assert emitted, 'the run emitted no artifact at all'
-        assert all(path.suffix == '.md' for path in emitted)
-
-    def test_the_emitted_set_is_not_narrowable_by_the_caller(self, tmp_path):
-        """Two argument-free runs land on identical stems, and ``--bundles`` changes nothing.
-
-        Selection used to be a CLI argument, and the emitted file was whatever
-        the caller asked for. It is not any more. The two argument-free runs
-        establish that the emission is fixed by the derivation rather than by the
-        invocation — without them, the shape check above could not distinguish
-        "the emission is fixed" from "this particular invocation happened to emit
-        these".
-
-        The third run is what makes the NAME of this test true. A pair of runs
-        that both pass no narrowing flag cannot observe whether a narrowing flag
-        would be honoured, so the two-run form asserted non-narrowability while
-        testing only determinism. ``--bundles`` is the flag that still narrows
-        every bundle-tree target; here it must be ignored. ``plan-marshall`` is
-        chosen deliberately: it is the spine bundle, excluded from domain
-        derivation, so a target that HONOURED the filter would derive no domain
-        at all and exit non-zero — the failure is loud rather than a quietly
-        shorter set.
-        """
-        first = tmp_path / 'cuioss-review-bot-run-one'
-        second = tmp_path / 'cuioss-review-bot-run-two'
-        scoped = tmp_path / 'cuioss-review-bot-run-scoped'
-
-        one = _run_cli('--target', 'cuioss-review-bot', '--output', str(first))
-        two = _run_cli('--target', 'cuioss-review-bot', '--output', str(second))
-        three = _run_cli('--target', 'cuioss-review-bot', '--output', str(scoped), '--bundles', 'plan-marshall')
-
-        assert one.returncode == 0, one.stderr
-        assert two.returncode == 0, two.stderr
-        assert three.returncode == 0, three.stderr
-        stems = sorted(p.stem for p in (first / 'packs').glob('*.md'))
-        assert stems, 'the run emitted no artifact at all'
-        assert stems == sorted(p.stem for p in (second / 'packs').glob('*.md'))
-        assert stems == sorted(p.stem for p in (scoped / 'packs').glob('*.md')), (
-            '--bundles narrowed the cuioss-review-bot set; this target must ignore it'
-        )
-
-    def test_cuioss_review_bot_emits_no_repo_local_config(self, tmp_path):
-        """The output root holds the artifact set and nothing else."""
-        out = tmp_path / 'cuioss-review-bot-bad-out'
-
-        result = _run_cli('--target', 'cuioss-review-bot', '--output', str(out))
-
-        assert result.returncode == 0, result.stderr
-        assert not (out / '.pr_agent.toml').exists()
-        assert sorted(path.name for path in out.iterdir()) == ['packs']
-
-    def test_a_non_pack_target_emits_no_packs_directory(self, tmp_path):
-        """The ``packs/`` shape is the cuioss-review-bot target's alone."""
+    def test_a_bundle_tree_target_emits_no_packs_directory(self, tmp_path):
+        """A ``packs/`` directory belongs to no registered target any more."""
         out = tmp_path / 'opencode-packs-out'
 
         result = _run_cli('--target', 'opencode', '--output', str(out))
@@ -147,25 +66,7 @@ class TestGenerateCli:
         result = _run_cli('--target', 'all', '--output', str(out))
         assert result.returncode == 0, result.stderr
         # --target all fans out one sub-directory per registered target, and it
-        # reaches the gated post-emit path for every one of them.
-        assert (out / 'cuioss-review-bot' / 'packs' / 'spine.md').is_file()
-
-    def test_all_target_skips_bundle_tree_post_emit_for_cuioss_review_bot(self, tmp_path):
-        """The generic post-emit steps are gated on ``emits_bundle_tree``.
-
-        Version stamping and the dist-manifest are bundle-tree semantics. The
-        cuioss-review-bot output is a reviewer artifact set, so neither artifact
-        may appear there — while the bundle-tree targets keep both.
-        """
-        out = tmp_path / 'all-out'
-
-        result = _run_cli('--target', 'all', '--output', str(out))
-
-        assert result.returncode == 0, result.stderr
-        reviewer_out = out / 'cuioss-review-bot'
-        assert not (reviewer_out / 'dist-manifest.json').exists()
-        assert list(reviewer_out.glob('**/plugin.json')) == []
-        # positive control: the bundle-tree target still gets both artifacts
+        # reaches the post-emit path for every one of them.
         assert (out / 'claude' / 'dist-manifest.json').is_file()
         assert list((out / 'claude').glob('*/.claude-plugin/plugin.json'))
 

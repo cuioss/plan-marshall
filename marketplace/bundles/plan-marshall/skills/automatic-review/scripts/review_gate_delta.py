@@ -366,9 +366,10 @@ def is_status_summary(record: dict) -> bool:
     flattened onto one line are in this shape. It under-counts by at most one finding
     per reviewer per PR, in the direction that flatters the gates, and it is accepted
     because a finer split of the status line needs a content predicate this text
-    match cannot supply; the registry's ``contentless_review_markers`` /
-    ``actionable_content_markers`` pair is the mechanism for that, and CodeRabbit
-    declares neither today.
+    match cannot supply. The registry's ``contentless_review_markers`` /
+    ``actionable_content_markers`` pair is that mechanism, and CodeRabbit declares both
+    for its summary comment — where a concern section is what decides whether that
+    summary carries content.
 
     A bot declaring no summary pattern can never reach ``True``: every one of its
     ``review_body`` records stays counted.

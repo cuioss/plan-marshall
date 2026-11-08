@@ -143,7 +143,7 @@ The charter governs **whether** a finding is reported; § 3 governs **how** a re
 
 ## 10. Harvestable review-rule blocks
 
-The code-review rulebook is harvested from the domain standards skills, by the in-run code review and by the review bot's pack generator alike. A standards skill contributes through two section headings in its `SKILL.md`:
+The code-review rulebook is harvested from the domain standards skills by the in-run code review. A standards skill contributes through two section headings in its `SKILL.md`:
 
 | Heading | Contents |
 |---------|----------|
@@ -155,7 +155,7 @@ Every block follows four rules:
 - **One rule per bullet.** A bullet that carries two rules cannot be cited as one.
 - **Mechanism-naming wording.** A rule names the mechanism that goes wrong — what input or state, and what breaks — so a finding citing it can state a failure scenario.
 - **Addressed to a reviewer.** A rule states what to look for in the code, not how an author should work.
-- **No withholding language.** A rule never tells the reviewer to suppress a finding it could substantiate — no "do not duplicate", no "only when you can name the concrete input". The pack generator drops a harvested rule that carries such a phrase rather than rewriting it, so a rule written that way never reaches a reviewer at all.
+- **No withholding language.** A rule never tells the reviewer to suppress a finding it could substantiate — no "do not duplicate", no "only when you can name the concrete input". A rule written that way makes the reviewer withhold a finding it could state, so the phrase is the defect and the rule is written without it.
 
 ## 11. The not-run state
 

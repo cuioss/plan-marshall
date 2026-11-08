@@ -153,7 +153,7 @@ Both operations take the same `PRRT_` thread ID — pass the comment's `thread_i
 
    **A comment that names a commit is decided by that commit, before the ledger is read.** For a bot declaring `participation_requires_update`, a comment whose body names a full commit id — bare, or inside a `…/commit/{sha}` permalink — is **current only when that commit is the merge candidate** and **stale when it names another**, whatever its timestamps or edit history say. A comment naming the merge candidate is credited on first sight; one that was edited after its last credit and still names the previous HEAD is reported in `stale_participation_bots[]`, where the fresh-edit arm below would have credited it. A comment naming several commits is current when any of them is the merge candidate. Only a full-length id counts as naming a commit — an abbreviated run is hex-shaped but is not evidence of a commit reference. A comment naming no commit, and every comment on a fetch whose merge candidate could not be read, gets no verdict from this arm and is decided by the ledger exactly as described next. The commit reference is read through `_github_pr.commit_tokens`, the one recogniser the re-review matcher also uses.
 
-   **For a comment that names no commit, the currency test reads ONE source: the plan-scoped currency ledger.** `pr-participation-currency-ledger.jsonl` sits beside the findings store and records, per `(bot_kind, comment_id)`, the merge-candidate SHA and the comment's `updated_at` at the fetch that LAST credited it. It is the SOLE source the test consults — there is no second set of SHAs to union in, and a comment dropped as noise (PR-Agent's contentless Guide) is recorded there exactly as one filed as a finding, so the credit does not depend on whether the comment produced a finding. The credit holds on any ONE of three arms, and each is anchored to that ledger:
+   **For a comment that names no commit, the currency test reads ONE source: the plan-scoped currency ledger.** `pr-participation-currency-ledger.jsonl` sits beside the findings store and records, per `(bot_kind, comment_id)`, the merge-candidate SHA and the comment's `updated_at` at the fetch that LAST credited it. It is the SOLE source the test consults — there is no second set of SHAs to union in, and a comment dropped as noise (a clean summary with no concern) is recorded there exactly as one filed as a finding, so the credit does not depend on whether the comment produced a finding. The credit holds on any ONE of three arms, and each is anchored to that ledger:
 
    - **SHA currency** — the SHA recorded at the last credit IS the merge candidate. Re-running at the same HEAD reads the same recorded SHA and returns the same answer, so the verdict consumes no observation state.
    - **First observation** — the key is absent from the ledger, so this fetch is the one observing the comment. It credits only when the merge-candidate SHA is resolvable AND the comment does not demonstrably predate the merge-candidate commit (its own latest timestamp is not earlier than the commit's); an unreadable commit timestamp is not an ordering claim and leaves the arm SHA-only.
@@ -312,7 +312,6 @@ The strategies differ **only** in the trigger comment `request_fresh_review` pos
 |------------|---------------------------------------------------------|--------------|
 | `coderabbit` | Posts `@coderabbitai review`. CodeRabbit's incremental auto-review on push is not a reliable trigger for the new HEAD (it can be debounced or skipped on a force-push), so the explicit comment is the trigger that guarantees a fresh review lands. | The comment-post time. |
 | `sourcery` | Posts `@sourcery-ai review`. | The comment-post time. |
-| `cuioss-review-bot` | Posts `/review` (PR-Agent does **not** auto-review on push). | The comment-post time. |
 
 #### The refusal re-trigger guard
 
@@ -406,7 +405,7 @@ refusal_layers[N]: [the declared layer vocabulary]
 
 `layer` names WHICH arm fired, and the value is what tells a reader how much is actually KNOWN: the registry arm means the bot's own declared phrasing matched, so the notice was READ as data; the structural arm means it was recognised by notice SHAPE alone; the enumerative arm means no arm could read it at all — the weakest, recording only that the body was not review feedback. ⛔ A consumer MUST NOT treat them as interchangeable: the last one supports no claim about *why* the bot declined, and in particular none about when it might reopen.
 
-⛔ **`head_sha_verified` on the comment path is DERIVED from the body, never hard-coded `false`.** The retired wording — that this signal never names the commit it reviewed — was a premise nobody had checked against the registry, and it is false for a bot whose ONLY declared publish shape is an issue comment. `cuioss-review-bot` declares `participation_evidence: issue_comment` with an empty `completion_check_name` (it submits no review object at all) and names its reviewed commit inside that comment as a `…/commit/{sha}` permalink — the exact URL-embedded form the predicate above already recognises. While the field was hard-coded, every correct re-review that bot performed was published as `matched: true` / `head_sha_verified: false`, which both consumers route as an incremental-review **decline**; that member is blocking and its only remedy is a recorded merge authorization over the decline (a required bot is never demoted to `optional_bots`), so a *required* bot in this shape could never verify.
+⛔ **`head_sha_verified` on the comment path is DERIVED from the body, never hard-coded `false`.** The retired wording — that this signal never names the commit it reviewed — was a premise nobody had checked against the registry, and it is false for a bot whose declared publish shape is an issue comment that names its reviewed commit as a `…/commit/{sha}` permalink, the exact URL-embedded form the predicate above already recognises. While the field was hard-coded, a correct re-review published in that shape reported `matched: true` / `head_sha_verified: false`, which both consumers route as an incremental-review **decline**; that member is blocking and its only remedy is a recorded merge authorization over the decline (a required bot is never demoted to `optional_bots`), so a *required* bot in this shape could never verify.
 
 A comment that does NOT reference the awaited HEAD still reports `false`, and that remains the genuine decline — the predicate compares for equality, so naming some other commit does not verify either. The match itself is unchanged and still proves only that the bot **responded**: the SHA reference is a match condition on the review path but a property read off the matched record on the comment path, so a decline stays observable as a match rather than collapsing into a bare timeout. The comment path uses the LATER of `updated_at` / `created_at` so a bot that edits ONE persistent comment in place still registers as fresh activity. No bot is named in code — both matchers are generic across the registry.
 
@@ -415,7 +414,7 @@ A comment that does NOT reference the awaited HEAD still reports `false`, and th
 1. **Invoke the registry** for the new HEAD:
 
    ```bash
-   python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_re_review re-review --pr-number {pr} --bot-kind {coderabbit|sourcery|cuioss-review-bot} --head-sha {new HEAD} --push-time {ISO8601 push time} [--timeout {seconds}] [--escalated] --plan-id {plan_id}
+   python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_re_review re-review --pr-number {pr} --bot-kind {coderabbit|sourcery} --head-sha {new HEAD} --push-time {ISO8601 push time} [--timeout {seconds}] [--escalated] --plan-id {plan_id}
    ```
 
    `--escalated` posts the bot's registry `escalated_trigger_comment` — for CodeRabbit `@coderabbitai full review`, the command that reviews the whole changeset again — instead of its `trigger_comment`. It is the remedy for a `no_unreviewed_commit` refusal and is reached only from the recovery selector's `post_escalated_command` action. See § "The escalated command" below.
@@ -1171,7 +1170,7 @@ no stamp".
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_pr bot_completion \
-  --pr-number N --bot-kind {coderabbit|sourcery|cuioss-review-bot} \
+  --pr-number N --bot-kind {coderabbit|sourcery} \
   [--wait-seconds SECONDS] [--interval-seconds SECONDS]
 ```
 
@@ -1255,7 +1254,7 @@ invocations → `ci checks pull-request-runs` for the abstraction-layer entry po
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_re_review re-review \
-  --pr-number N --bot-kind {coderabbit|sourcery|cuioss-review-bot} --head-sha SHA --push-time ISO8601 \
+  --pr-number N --bot-kind {coderabbit|sourcery} --head-sha SHA --push-time ISO8601 \
   [--timeout SECONDS] [--escalated] [--plan-id PLAN_ID]
 ```
 

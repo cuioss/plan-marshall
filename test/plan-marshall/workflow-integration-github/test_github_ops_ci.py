@@ -169,7 +169,7 @@ def test_fetch_pr_comments_data_surfaces_updated_at_on_issue_comments(monkeypatc
                     {
                         'id': 'IC_1',
                         'body': '## PR Reviewer Guide',
-                        'author': {'login': 'cuioss-review-bot'},
+                        'author': {'login': 'sunset-review-bot'},
                         'createdAt': '2026-07-26T09:27:15Z',
                         'updatedAt': '2026-07-26T11:00:00Z',
                     }

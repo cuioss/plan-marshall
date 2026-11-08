@@ -114,8 +114,8 @@ _SOURCERY_NOTICE = {
     ),
     'created_at': '2026-01-02T00:00:00Z',
 }
-_PR_AGENT_NOTICE = {
-    'author': 'cuioss-review-bot',
+_STRUCTURAL_ONLY_NOTICE = {
+    'author': 'sourcery-ai',
     'body': (
         '> [!WARNING] The review request could not be served: this account has '
         'exceeded the limit for the number of commits or files that can be '
@@ -170,36 +170,35 @@ _FIELD_SET_RE = re.compile(r'\{bot_kind,\s*rate_limit_class,[^}]*\}')
 _BUNDLES = get_script_path('plan-marshall', 'workflow-integration-github', '_github_pr.py').parents[4]
 
 
-def test_bot_without_declared_class_fails_closed_to_unknown(monkeypatch):
-    # ADR-009 fail-closed default: PR-Agent's registry record declares
-    # rate_limit_class: unknown because no refusal has ever been OBSERVED for it.
-    # A bot whose refusal shape is unknown must never be reported as awaitable —
-    # awaiting a quota that does not reopen is the expensive failure mode.
-    _wire(monkeypatch, post_comments=[_PR_AGENT_NOTICE])
+def test_structural_only_refusal_carries_no_registry_class_vocabulary(monkeypatch):
+    # A refusal the bot's own registry record never declared is read by the notice
+    # SHAPE alone, so the record names that layer and the bot's DECLARED class —
+    # never an awaitable_window inferred from the notice. Awaiting a quota that does
+    # not reopen is the expensive failure mode this record must not invite.
+    _wire(monkeypatch, post_comments=[_STRUCTURAL_ONLY_NOTICE])
 
     result = github_ops.cmd_pr_wait_for_comments(_wait_comments_args())
 
     assert result['rate_limited_bots'] == [
         {
-            'bot_kind': 'cuioss-review-bot',
-            'rate_limit_class': 'unknown',
-            # A limit notice. PR-Agent declares no no-unreviewed-commit wording, so
-            # nothing it posts can carry the other condition.
+            'bot_kind': 'sourcery',
+            'rate_limit_class': 'hard_quota',
+            # A limit notice; no registered bot declares the other condition for this body.
             'condition': _github_pr.REFUSAL_CONDITION_RATE_LIMITED,
             'eta': '',
-            # PR-Agent declares no reset-time patterns, so none can be read.
+            # Sourcery declares no reset-time pattern matching this wording.
             'eta_seconds': None,
             'eta_extracted': False,
             # The fixture carries no ``updated_at``, so the last write is its creation.
-            'written_at': _PR_AGENT_NOTICE['created_at'],
+            'written_at': _STRUCTURAL_ONLY_NOTICE['created_at'],
             # No reset time was read, so nothing says the window is over.
             'stale': False,
             'cause': 'quota',
             'cap': '',
-            # PR-Agent declares no refusal_patterns, so only the notice SHAPE can
-            # have read this one.
+            # Sourcery declares no refusal_patterns matching this wording, so only the
+            # notice SHAPE can have read this one.
             'layer': _github_pr.REFUSAL_LAYER_STRUCTURAL,
-            'body': _PR_AGENT_NOTICE['body'],
+            'body': _STRUCTURAL_ONLY_NOTICE['body'],
         }
     ]
 

@@ -9,7 +9,6 @@ Covers the three concerns of the post-merge re-review registry:
        comment per strategy and returns the comment-post time:
          coderabbit: posts ``@coderabbitai review``.
          sourcery:   posts ``@sourcery-ai review``.
-         cuioss-review-bot:   posts ``/review``.
     3. Two-signal completion matching — ``await_fresh_review`` is satisfied by
        EITHER ``_match_review`` (a review authored by the awaited bot — its
        ``user`` login resolves to the awaited ``bot_kind`` — whose reviewed-commit
@@ -222,7 +221,7 @@ def _record_posts(monkeypatch) -> list[tuple]:
     return posted
 
 
-_PR_AGENT_LOGIN = 'cuioss-review-bot'
+_BOT_KIND_LOGIN = 'sourcery-ai'
 _TRIGGER = '2026-01-01T00:02:00Z'
 _HEAD_SHA = 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678'
 _OTHER_SHA = '0f1e2d3c4b5a69788796a5b4c3d2e1f098765432'
@@ -327,57 +326,6 @@ def test_coderabbit_request_fresh_review_propagates_post_failure(monkeypatch):
 
     strategy = github_re_review.resolve_strategy('coderabbit')
     result = strategy.request_fresh_review(42, '2026-01-01T00:00:00Z')
-
-    assert result['status'] == 'error'
-    assert result['operation'] == 'request_fresh_review'
-
-
-def test_pr_agent_request_fresh_review_posts_trigger_comment(monkeypatch):
-    """PR-Agent does NOT auto-review on push — it posts exactly ``/review``."""
-    post_calls = {'args': []}
-
-    def fake_post(pr_number, body):
-        post_calls['args'].append((pr_number, body))
-        return {'status': 'success', 'operation': 'post_pr_comment', 'pr_number': pr_number}
-
-    monkeypatch.setattr(github_re_review._github, 'post_pr_comment', fake_post)
-
-    strategy = github_re_review.resolve_strategy('cuioss-review-bot')
-    result = strategy.request_fresh_review(99, '2026-01-01T00:00:00Z')
-
-    assert result['status'] == 'success'
-    # Exactly one comment posted, with the exact trigger literal (registry-derived).
-    assert post_calls['args'] == [(99, strategy.trigger_comment)]
-    assert strategy.trigger_comment == '/review'
-
-
-def test_pr_agent_request_fresh_review_trigger_time_is_post_time_not_push_time(monkeypatch):
-    """PR-Agent's trigger time is the comment-post time, never the push time."""
-    monkeypatch.setattr(
-        github_re_review._github,
-        'post_pr_comment',
-        lambda *_a, **_kw: {'status': 'success'},
-    )
-    monkeypatch.setattr(github_re_review, '_now_iso', lambda: '2026-06-01T12:00:00+00:00')
-
-    strategy = github_re_review.resolve_strategy('cuioss-review-bot')
-    result = strategy.request_fresh_review(99, '2020-01-01T00:00:00Z')
-
-    assert result['trigger_time'] == '2026-06-01T12:00:00+00:00'
-    # The supplied push_time is deliberately discarded.
-    assert result['trigger_time'] != '2020-01-01T00:00:00Z'
-
-
-def test_pr_agent_request_fresh_review_propagates_post_failure(monkeypatch):
-    """A failed trigger-comment post surfaces as an error envelope."""
-    monkeypatch.setattr(
-        github_re_review._github,
-        'post_pr_comment',
-        lambda *_a, **_kw: {'status': 'error', 'error': 'comment failed'},
-    )
-
-    strategy = github_re_review.resolve_strategy('cuioss-review-bot')
-    result = strategy.request_fresh_review(99, '2026-01-01T00:00:00Z')
 
     assert result['status'] == 'error'
     assert result['operation'] == 'request_fresh_review'

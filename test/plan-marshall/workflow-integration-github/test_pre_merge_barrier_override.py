@@ -222,8 +222,8 @@ def test_stale_override_does_not_satisfy_barrier_after_head_advances(plan_contex
         'barrier-ask-override',
         _DOCS_ONLY_HEAD,
         gap_class=_BARRIER_GAP,
-        granted_over='0 unhandled, docs-only delta, unproven_bots=cuioss-review-bot',
-        reason='operator: docs-only change, proceeding without the cuioss-review-bot review',
+        granted_over='0 unhandled, docs-only delta, unproven_bots=sourcery',
+        reason='operator: docs-only change, proceeding without the sourcery review',
     )
 
     # The rebase lands production commits and the required bot has not reviewed
@@ -237,11 +237,11 @@ def test_stale_override_does_not_satisfy_barrier_after_head_advances(plan_contex
     verdict = _completeness(
         plan_id,
         _participation_csv(result),
-        required=['cuioss-review-bot'],
+        required=['sourcery'],
         optional=['coderabbit'],
     )
     assert verdict['participation_complete'] is False
-    assert verdict['unproven_bots'] == ['cuioss-review-bot']
+    assert verdict['unproven_bots'] == ['sourcery']
 
     # THE property: the ruling made over HEAD A is not evidence at HEAD B.
     stale = _authorization_check(plan_id, _REBASED_HEAD)
@@ -257,7 +257,7 @@ def test_stale_override_does_not_satisfy_barrier_after_head_advances(plan_contex
         'barrier-ask-override',
         _REBASED_HEAD,
         gap_class=_BARRIER_GAP,
-        granted_over='0 unhandled, unproven_bots=cuioss-review-bot',
+        granted_over='0 unhandled, unproven_bots=sourcery',
         reason='operator: re-asked after the rebase, accepting the gap on this tree',
     )
 
@@ -303,7 +303,7 @@ def test_consent_over_a_different_gap_at_the_same_head_does_not_satisfy_barrier(
     verdict = _completeness(
         plan_id,
         _participation_csv(result),
-        required=['cuioss-review-bot'],
+        required=['sourcery'],
         optional=['coderabbit'],
     )
     assert verdict['participation_complete'] is False
@@ -337,7 +337,7 @@ def test_consent_over_a_different_gap_at_the_same_head_does_not_satisfy_barrier(
         'barrier-ask-override',
         _REBASED_HEAD,
         gap_class=_BARRIER_GAP,
-        granted_over='0 unhandled, unproven_bots=cuioss-review-bot',
+        granted_over='0 unhandled, unproven_bots=sourcery',
         reason='operator: accepting the participation gap on this tree',
     )
 

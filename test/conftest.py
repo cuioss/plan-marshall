@@ -1320,7 +1320,6 @@ def pytest_report_header(config):
 _SKIP_CLASSES: frozenset[str] = frozenset(
     {
         'absent-dependency',
-        'in-suite-policy',
         'platform-absent',
     }
 )
@@ -1345,9 +1344,8 @@ _SKIP_CLASSES: frozenset[str] = frozenset(
 #: gate exists to catch. A skip that belongs here is added deliberately, with its
 #: reason, in the same change that introduces it.
 #:
-#: Three classes are represented, and only three are legitimate. They are named
+#: Two classes are represented, and only two are legitimate. They are named
 #: in :data:`_SKIP_CLASSES` so this closure is derived rather than asserted:
-#:
 #: ``absent-dependency``
 #:     An external tool the suite does not require. ``pyright-langserver`` is the
 #:     only one: it is a real language server, deliberately NOT in
@@ -1358,14 +1356,6 @@ _SKIP_CLASSES: frozenset[str] = frozenset(
 #:     and one in ``test_lsp_harvest_search_path.py``. A dependency proposal for
 #:     it is recorded with the plan rather than made here, because installing it
 #:     changes what every run costs.
-#:
-#: ``in-suite-policy``
-#:     The skip is a verdict about the suite's own DATA, not about the
-#:     environment: a parametrized case whose parameter carries nothing to assert.
-#:     It cannot be fixed by installing anything, and it legitimately varies as
-#:     the data changes — so it is listed per case, and a second bot acquiring a
-#:     declared refusal phrasing removes its entry rather than silently widening
-#:     an existing one.
 #:
 #: ``platform-absent``
 #:     A capability the running OS does not provide and no installation can add,
@@ -1434,16 +1424,6 @@ _SKIP_EXCEPTIONS: dict[str, tuple[str, str]] = {
     'test/pm-plugin-development/plan-marshall-plugin/test_lsp_harvest_search_path.py::test_a_real_cross_bundle_import_becomes_a_named_module_edge': (
         'absent-dependency',
         'pyright-langserver not installed',
-    ),
-    # --- in-suite-policy: a parametrized case with no data to assert ---
-    # The reason is the guard's own text, verbatim: the gate compares it against
-    # what pytest records, so an explanatory gloss appended here would never match
-    # and would read as a changed cause. Why this case has nothing to assert is
-    # documented under ``in-suite-policy`` above, where prose belongs.
-    'test/plan-marshall/workflow-integration-github/test_refusal_recovery_arming_detection.py'
-    '::TestRefusalIsNeverABareTimeout::test_a_bots_declared_refusal_is_recognized_as_DATA[cuioss-review-bot]': (
-        'in-suite-policy',
-        'cuioss-review-bot declares no observed refusal phrasing',
     ),
     # --- platform-absent: no /proc outside Linux ---
     # Fires on macOS and not in CI, so this entry is inert on the platform that

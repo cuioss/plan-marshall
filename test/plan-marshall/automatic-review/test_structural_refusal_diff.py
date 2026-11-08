@@ -961,23 +961,21 @@ class TestStaleParticipationSurvivesAnInadmissibleEvidenceKind:
     #: An evidence kind no bot declares, so it is inadmissible for every bot.
     _INADMISSIBLE = 'not-a-declared-kind'
 
-    def test_the_probe_kind_really_is_inadmissible_for_pr_agent(self):
+    def test_the_probe_kind_really_is_inadmissible_for_the_bot(self):
         """⛔ Control: the case below is only meaningful if the filter WOULD drop it.
 
-        If this kind were ever added to cuioss-review-bot's declared publish shapes, the
+        If this kind were ever added to the bot's declared publish shapes, the
         assertions below would pass through the old code path too and prove
         nothing.
         """
-        assert self._INADMISSIBLE not in bot_registry.participation_evidence('cuioss-review-bot')
+        assert self._INADMISSIBLE not in bot_registry.participation_evidence('coderabbit')
         # And the old parse — which still applies the filter — does drop it, which
         # is what made the downgrade reachable.
-        assert rc.parse_participation(f'cuioss-review-bot:{self._INADMISSIBLE}') == {}
+        assert rc.parse_participation(f'coderabbit:{self._INADMISSIBLE}') == {}
 
     def test_the_dedicated_parse_admits_the_pair(self):
         """The new parse keeps the observation the producer emitted."""
-        assert rc.parse_stale_participation(f'cuioss-review-bot:{self._INADMISSIBLE}') == {
-            'cuioss-review-bot': self._INADMISSIBLE
-        }
+        assert rc.parse_stale_participation(f'coderabbit:{self._INADMISSIBLE}') == {'coderabbit': self._INADMISSIBLE}
 
     def test_the_cli_resolves_it_to_participated_stale_and_never_absent(self, plan_context):
         """End-to-end through the real parse — the case the deliverable names."""
@@ -990,14 +988,14 @@ class TestStaleParticipationSurvivesAnInadmissibleEvidenceKind:
             '--plan-id',
             plan_id,
             '--required-bots',
-            'cuioss-review-bot',
+            'coderabbit',
             '--stale-participation-bots',
-            f'cuioss-review-bot:{self._INADMISSIBLE}',
+            f'coderabbit:{self._INADMISSIBLE}',
         )
 
         assert result.returncode == 0
-        assert f'cuioss-review-bot,{rc.STATE_PARTICIPATED_STALE}' in result.stdout
-        assert f'cuioss-review-bot,{rc.STATE_ABSENT}' not in result.stdout
+        assert f'coderabbit,{rc.STATE_PARTICIPATED_STALE}' in result.stdout
+        assert f'coderabbit,{rc.STATE_ABSENT}' not in result.stdout
 
     def test_the_shape_check_still_rejects_a_bare_token(self, plan_context):
         """Dropping the admissibility filter did NOT drop the SHAPE check.
@@ -1015,9 +1013,9 @@ class TestStaleParticipationSurvivesAnInadmissibleEvidenceKind:
             '--plan-id',
             plan_id,
             '--required-bots',
-            'cuioss-review-bot',
+            'coderabbit',
             '--stale-participation-bots',
-            'cuioss-review-bot',
+            'coderabbit',
         )
 
         assert result.returncode == 1
@@ -1025,7 +1023,7 @@ class TestStaleParticipationSurvivesAnInadmissibleEvidenceKind:
 
     def test_an_admissible_pair_is_unchanged(self):
         """Matched control: the fix widened admission, it did not alter the shape."""
-        declared = bot_registry.participation_evidence('cuioss-review-bot')
-        assert declared, 'cuioss-review-bot must declare a publish shape for this control'
+        declared = bot_registry.participation_evidence('coderabbit')
+        assert declared, 'coderabbit must declare a publish shape for this control'
 
-        assert rc.parse_stale_participation(f'cuioss-review-bot:{declared[0]}') == {'cuioss-review-bot': declared[0]}
+        assert rc.parse_stale_participation(f'coderabbit:{declared[0]}') == {'coderabbit': declared[0]}

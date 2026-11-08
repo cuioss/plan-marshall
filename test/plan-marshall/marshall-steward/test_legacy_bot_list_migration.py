@@ -12,7 +12,7 @@ Two properties, both end-to-end from a project fixture through the migration
 and into ``review_completeness``:
 
 1. **Standard roster seeds the migration.** State 1 seeds
-   ``required_bots: cuioss-review-bot,coderabbit`` and
+   ``required_bots: coderabbit`` and
    ``optional_bots: sourcery`` (not the legacy value verbatim), names each
    dropped legacy bot in ``discarded_legacy``, and records provenance
    ``migrated``. Unknown legacy names are reported by ``validate_bot_lists``
@@ -60,8 +60,44 @@ _LEGACY_BOTS = 'coderabbit,sourcery'
 # guarantees for a legacy-only project. Kept as literals mirroring
 # ``upgrade._STANDARD_REQUIRED_BOTS`` / ``_STANDARD_OPTIONAL_BOTS`` so the
 # landing suite pins the exact values a legacy-only config lands on.
-_STANDARD_REQUIRED_BOTS = 'cuioss-review-bot,coderabbit'
+_STANDARD_REQUIRED_BOTS = 'coderabbit'
 _STANDARD_OPTIONAL_BOTS = 'sourcery'
+
+
+def test_a_retired_bot_kind_is_stripped_from_either_roster_list():
+    """A configuration written while a reviewer existed is migrated, not refused.
+
+    An unknown kind classifies ``unregistered_kind`` — unproven and BLOCKING exactly as
+    ``absent`` — so a leftover name would hold that consumer's merge forever. The
+    migration strips every name in ``RETIRED_BOT_KINDS`` from both lists in EVERY state,
+    including the already-answered one, and reports what it removed.
+    """
+    import _config_defaults
+
+    retired = _config_defaults.RETIRED_BOT_KINDS[0]
+    params = {'required_bots': f'{retired},coderabbit', 'optional_bots': retired}
+
+    report = upgrade.migrate_bot_lists(params)
+
+    assert report['state'] == 'noop'
+    assert report['removed_retired'] == [retired, retired]
+    assert params['required_bots'] == 'coderabbit'
+    assert params['optional_bots'] == ''
+
+
+def test_a_retired_bot_kind_is_stripped_from_an_answered_roster():
+    """MATCHED CONTROL: the strip is not gated on the roster being unanswered."""
+    import _config_defaults
+
+    retired = _config_defaults.RETIRED_BOT_KINDS[0]
+    params = {'required_bots': f'{retired},coderabbit', 'bot_lists_provenance': 'answered'}
+
+    report = upgrade.migrate_bot_lists(params)
+
+    assert report['state'] == 'noop'
+    assert report['removed_retired'] == [retired]
+    assert params['required_bots'] == 'coderabbit'
+    assert params['bot_lists_provenance'] == 'answered'
 
 
 def _legacy_project_config() -> dict:
@@ -408,7 +444,7 @@ def test_standard_roster_is_single_sourced_from_config_defaults():
     """
     import _config_defaults
 
-    assert _config_defaults.STANDARD_REQUIRED_BOTS == 'cuioss-review-bot,coderabbit'
+    assert _config_defaults.STANDARD_REQUIRED_BOTS == 'coderabbit'
     assert _config_defaults.STANDARD_OPTIONAL_BOTS == 'sourcery'
     assert upgrade._STANDARD_REQUIRED_BOTS == _config_defaults.STANDARD_REQUIRED_BOTS
     assert upgrade._STANDARD_OPTIONAL_BOTS == _config_defaults.STANDARD_OPTIONAL_BOTS

@@ -97,7 +97,7 @@ Parity gaps vs. the central CodeRabbit config:
 
 ## Pipeline wiring
 
-Sourcery is a registered `bot_kind` alongside CodeRabbit and PR-Agent, wired entirely from the data
+Sourcery is a registered `bot_kind` alongside CodeRabbit, wired entirely from the data
 block above via `automatic-review/scripts/bot_registry.py`:
 
 - `_findings_core.BOT_KINDS` derives from `bot_registry.bot_kinds()`, so `sourcery` is a member
@@ -224,7 +224,7 @@ surface — so its imperative is a discard, not a hint to act on. See
 
 - FIX / REPLY-AND-RESOLVE / ESCALATE per the domain `pr-comment-disposition.md`, after the
   `persona-plan-marshall-agent` plan-intent validity check.
-- **Dedup across bots** — Sourcery, CodeRabbit and PR-Agent run together and routinely raise the
+- **Dedup across bots** — Sourcery and CodeRabbit run together and routinely raise the
   *same* point. Collapse duplicates into one disposition.
 - **Correct ≠ in-scope** — like CodeRabbit, valid Sourcery suggestions are often out of the PR's
   scope; prefer REPLY-AND-RESOLVE with rationale.

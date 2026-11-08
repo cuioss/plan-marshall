@@ -311,17 +311,15 @@ class TestRecoveryArmingFollowsTheTwoAxisRule:
         for bot in hard:
             assert _action(bot) == github_re_review.RECOVERY_ACTION_ESCALATE_NOT_AWAITABLE
 
-    def test_an_unknown_class_escalates_immediately(self):
+    def test_an_undeclared_class_escalates_immediately(self):
         """FAIL-CLOSED (ADR-009): an unverified class is never treated as awaitable.
 
-        Awaiting a quota that never reopens is the expensive failure, so a bot with
-        no observed refusal escalates rather than waits.
+        Awaiting a quota that never reopens is the expensive failure, so a bot with no
+        registry record at all — whose class therefore reads ``unknown`` — escalates
+        rather than waits.
         """
-        unknown = [b for b in _registered_bots() if bot_registry.rate_limit_class(b) == 'unknown']
-        assert unknown, 'registry must declare at least one unknown-class bot'
-
-        for bot in unknown:
-            assert _action(bot) == github_re_review.RECOVERY_ACTION_ESCALATE_NOT_AWAITABLE
+        assert bot_registry.rate_limit_class('sunset-review-bot') == 'unknown'
+        assert _action('sunset-review-bot') == github_re_review.RECOVERY_ACTION_ESCALATE_NOT_AWAITABLE
 
     def test_no_registered_bot_has_an_unhandled_class(self):
         """Totality: the selector names a recovery for every declared class.

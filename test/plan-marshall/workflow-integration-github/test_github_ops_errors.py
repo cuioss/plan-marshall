@@ -179,7 +179,7 @@ def test_fetch_pr_comments_data_preserves_existing_fields_across_all_kinds(monke
                     {
                         'id': 'IC_3',
                         'body': '## PR Reviewer Guide',
-                        'author': {'login': 'cuioss-review-bot'},
+                        'author': {'login': 'sunset-review-bot'},
                         'createdAt': '2026-07-26T09:27:15Z',
                         'updatedAt': '2026-07-26T09:27:15Z',
                     }
