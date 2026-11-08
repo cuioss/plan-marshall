@@ -52,6 +52,9 @@ def test_the_deliverables_section_requires_the_sonar_open_finding_read() -> None
     assert 'analyses its pull requests with Sonar' in section
     assert '`sonar: configured`' in section
     assert 'open-finding read at the head' in section
+    assert 'security hotspots still to review' in section, (
+        'the hotspot leg is the miss the read exists to close; the template must name it'
+    )
     assert 'never `0`' in section, 'a failed read must not be written as a zero'
 
 

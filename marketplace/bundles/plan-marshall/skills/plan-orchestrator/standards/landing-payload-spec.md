@@ -115,10 +115,12 @@ counts" below.
 **A landing written before these keys existed is INCOMPLETE, and it says which keys it lost.** The
 schema marker stays `landing-facts/1`: bumping it would make every pre-existing landing report
 `['schema']` and tell the operator nothing about what to add. Under the one version the
-completeness check names the four absent keys instead, and the remedy is to re-emit the landing with
-a lane text that writes them — the runbook lane writes them from `review-gate` and the Sonar read
-(section 8 of its contract), and the lifecycle's `emit-landing` step does the same from the
-finalize steps' own facts.
+completeness check names the four absent keys instead, and the remedy is to write them. The runbook
+lane writes all four from `review-gate` and the Sonar read (section 8 of its contract). The
+lifecycle's `emit-landing` step writes none of them yet — no finalize step publishes those three
+review numbers, and `sonar-roundtrip` counts issues without the hotspots — so a lifecycle-emitted
+landing is INCOMPLETE at those keys until those steps record them. That gap is named rather than
+papered over: a check that accepted the landing anyway would be the vacuous guard it replaces.
 
 The four runtime-stamp keys — `harness`, `model`, `effort` and `plugin_version` —
 are read from the plan's runtime metadata, which phase-1-init Step 8a.6 stamps
@@ -251,9 +253,9 @@ roundtrip already uses:
 
 The count is scoped to the pull request's analysis — the findings Sonar reports on that head — not a
 whole-project total. A lifecycle landing's `sonar-roundtrip` step records its own fact names on the
-same channel (`count_status`, `new_code_issue_count`, and so on), so a drain reading a lifecycle
-landing finds no `sonar_open_new_issues` and reads "no Sonar figure was recorded" — never "the pull
-request had no open findings". The two key sets are distinct measurements of the same platform, and
+same channel (`count_status`, `new_code_issue_count`), which are NOT this key: until that step also
+writes `sonar_open_new_issues`, the drain reports the required key MISSING rather than reading
+"no Sonar figure was recorded". The two key sets are distinct measurements of the same platform, and
 neither is inferred from the other.
 
 Two sentinels are legal for the required count, and they are different claims:

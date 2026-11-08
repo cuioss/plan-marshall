@@ -2050,6 +2050,11 @@ def cmd_sonar_facts(args: argparse.Namespace) -> dict[str, Any]:
     asserts that nothing was observed and never collapses into ``0``, which is a
     claim the run did not earn. A project without Sonar carries ``n/a``, the
     answered absence, which is a legal value for the required count.
+
+    ``--rules`` is required above zero because a count with no rule beside it
+    renders as "3 open findings, no rule left open" — a figure whose other half is
+    missing. A security hotspot carries no rule, so a read whose only open findings
+    are hotspots passes the literal ``hotspot`` and the fact states exactly that.
     """
     state = getattr(args, 'state', None)
     if state not in _SONAR_STATES:
@@ -2589,7 +2594,14 @@ def _review_gate_verdict(
             continue
         reviewer = _reviewer_of(comment)
         if not reviewer:
-            continue
+            # A review body with no attributable author cannot be disposed by name,
+            # so its findings would vanish — the pass this verb exists to remove.
+            return {
+                **base,
+                'merge_allowed': False,
+                'reason': 'undecidable_read',
+                'detail': 'a review body carries no attributable author',
+            }
         body_findings, undecidable = _body_findings(
             reviewer,
             str(comment.get('body') or ''),

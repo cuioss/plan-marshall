@@ -177,8 +177,10 @@ guesses them.
 
 It answers `merge_allowed: false` with a named `reason` while any of these holds: an unresolved
 thread exists (`unresolved_review_threads`); a body finding carries no disposition naming a commit or
-a stated reason (`body_findings_undisposed`); a resolved thread's last reviewer comment says the
-concern remains (`thread_concern_remains`); a disposition line names no evidence
+a stated reason (`body_findings_undisposed`); a resolved thread whose last comment is the reviewer
+BOT's and says the concern remains (`thread_concern_remains` — a bot's last word is the finding's, and
+a lane reply can itself contain the vocabulary, which is why a human's last comment is not tested);
+a disposition line names no evidence
 (`disposition_unparsable`); the read is undecidable, truncated, carries a review-body section the
 parser cannot read, or carries a record kind the verb does not know (`undecidable_read`); the provider
 publishes no coverage signal for the read (`coverage_unavailable`). An undecidable read is a stop,
@@ -824,9 +826,9 @@ Merge only when all of these hold:
 - The review surfaces of the current head admit the merge: `review-gate` reports `merge_allowed:
   true` on a read taken after the last push — no unresolved review thread, every review-body finding
   carrying a disposition that names a commit or a stated reason, and no resolved thread whose last
-  reviewer comment says the concern remains. Its `--disposition` values are this run's progress-file
-  `finding:` lines. An undecidable or truncated read is a blocker and is retried. The standing review
-  authorization never overrides a `review-gate` `false`.
+  comment is the reviewer bot's and says the concern remains. Its `--disposition` values are this
+  run's progress-file `finding:` lines. An undecidable or truncated read is a blocker and is retried.
+  The standing review authorization never overrides a `review-gate` `false`.
 
 The reviewer quota policy (§ 6 step 7) applies only while no qualifying review exists. The standing
 authorization never applies to a reviewer that is not quota-limited, and never to a PR without a
@@ -851,6 +853,7 @@ incomplete statement in such a question fails the run.
 **Read the delivered mailbox once more before the enqueue — the third read** (`{inbox_read_command}`).
 Every delivered item must already carry its disposition line; an item that has none **blocks the
 enqueue**, whatever else the gates say.
+
 **Immediately before enqueue,** fetch the base branch again. **If it moved:**
 `git -C {worktree} fetch origin {base_branch}`, then
 `git -C {worktree} merge origin/{base_branch} -m "merge: origin/{base_branch} into {branch}" -m "{commit_trailer}"`,
@@ -929,14 +932,16 @@ step.sonar-roundtrip.open_issue_rules={rules left open|none|unknown|n/a}
   `review_body_findings_total` and `review_body_findings_handled` facts, from the read taken on the
   merge head — never a number recalled from the review cycle, and never `n/a`. A landing that omits
   them is rejected by `inbox landing-check`, so a "all handled" claim has its numbers behind it.
-- **Sonar (the count is required):** `sonar_open_new_issues` is a required field. When `sonar` is
+  2. **Sonar (the count is required):** `sonar_open_new_issues` is a required field. When `sonar` is
   `configured`, render it with
   `python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane sonar-facts --state configured --count-status {confirmed|undecidable|unconfigured} [--open-count {n}] [--rules "{r1,r2}"] [--gate-status {ok|error|not_computed|unknown}]`
   and write its `fact_lines` verbatim; when it is `not_configured`, render with
   `--state not_configured` and write `n/a` at the count (a project with no Sonar has no such number —
   one of the four keys at which `n/a` is a legal answer). A confirmed count writes the measured
   figure, with the rules it left open on the optional `step.sonar-roundtrip.open_issue_rules` line
-  (`none` when that count is `0`). An `undecidable` or `unconfigured` read writes `unknown` at both:
+  (`none` when that count is `0`). Where the only open findings are security hotspots — which carry no
+  rule — pass `--rules hotspot`, so the fact states that rather than claiming a rule. An `undecidable`
+  or `unconfigured` read writes `unknown` at both:
   both are failed reads, never `0`, and never a claim the run did not earn. `--gate-status` adds the
   optional `step.sonar-roundtrip.quality_gate_status` line — the quality gate is reported, never
   counted as a finding.

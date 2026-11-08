@@ -310,6 +310,17 @@ def test_a_flattened_body_does_not_mint_a_phantom_inline_count() -> None:
     assert verdict['merge_allowed'] is True, verdict
 
 
+def test_a_review_body_with_no_author_refuses_the_merge() -> None:
+    """An unattributable body's findings could never be disposed by name."""
+    body = _review_body(_OUTSIDE_DIFF_BODY, author='')
+
+    verdict = _verdict(_read(body))
+
+    assert verdict['merge_allowed'] is False
+    assert verdict['reason'] == 'undecidable_read'
+    assert 'no attributable author' in verdict['detail']
+
+
 def test_a_clean_pull_request_admits_the_merge() -> None:
     verdict = _verdict(_read(_review_body('**Actionable comments posted: 0**\n\nLGTM\n')))
 

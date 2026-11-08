@@ -217,6 +217,22 @@ def test_an_unknown_rules_fact_still_drains_complete() -> None:
     assert check_landing_completeness(_landing(['step.sonar-roundtrip.open_issue_rules=unknown'])) == (True, [])
 
 
+def test_a_hotspot_only_count_renders_its_own_rule_token() -> None:
+    """A hotspot carries no rule, so the fact says so instead of claiming one."""
+    facts = cmd_sonar_facts(_facts_args(open_count='1', rules='hotspot'))
+
+    assert facts['open_issue_rules'] == 'hotspot'
+    assert check_landing_completeness(_landing(list(facts['fact_lines']))) == (True, [])
+
+
+def test_the_gate_status_is_validated_with_a_named_error() -> None:
+    """The flag is checked at runtime, so a bad value is a named refusal, not argparse's exit 2."""
+    verdict = cmd_sonar_facts(_facts_args(open_count='0', gate_status='maybe'))
+
+    assert verdict['status'] == 'error'
+    assert verdict['error'] == 'invalid_gate_status'
+
+
 def test_the_required_landing_key_set_names_the_review_and_sonar_numbers() -> None:
     assert LANDING_REQUIRED_KEYS == (
         'schema',

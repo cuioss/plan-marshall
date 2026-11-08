@@ -1422,8 +1422,8 @@ LANDING_ANSWERED_SENTINELS: frozenset[str] = frozenset({'n/a'})
 #: FAILED READ, never an end state. Compared case-insensitively after stripping.
 #:
 #: ⛔ This class carries **NO allow-list and no per-key gate**: a key holding one
-#: of these values is unsupplied at EVERY key, ``pr``, ``merge_state`` and
-#: ``cleanup_owed`` included — precisely the keys
+#: of these values is unsupplied at EVERY key, ``pr``, ``merge_state``,
+#: ``cleanup_owed`` and ``sonar_open_new_issues`` included — precisely the keys
 #: :data:`LANDING_SENTINEL_REJECTING_KEYS` deliberately omits. That asymmetry between the two classes is the whole point
 #: of splitting them. Gating this class the way the answered class is gated would
 #: reintroduce the defect the split closes: ``merge_state=unknown`` would drain as
@@ -1446,17 +1446,14 @@ LANDING_COULD_NOT_READ_SENTINELS: frozenset[str] = frozenset({'unknown'})
 #: exactly the conflation the two-class split removes.
 #:
 #: The set is deliberately a SUBSET of :data:`LANDING_REQUIRED_KEYS`, and the
-#: asymmetry is the point: ``pr``, ``merge_state`` and ``cleanup_owed`` stay
-#: allowed to be ``n/a`` because "no PR exists" and "no cleanup step ran" are real
-#: end states the payload spec names, so an ANSWERED-degraded value there is an
-#: answer rather than a gap; ``sonar_open_new_issues`` joins them because a project
-#: that does not analyse with Sonar has no such number. ``cleanup_owed``
-#: stays outside for the same reason: a plan whose manifest carried no
-#: ``branch-cleanup`` step owes no cleanup it could record, so ``n/a`` there is
-#: an observed absence, not a producer that failed to read the fact. None of the
-#: three is thereby allowed to be ``unknown`` — that value is a failed read at
+#: asymmetry is the point: four keys stay allowed to be ``n/a`` because each names
+#: an absence a run can OBSERVE — ``pr`` ("no PR exists"), ``merge_state``,
+#: ``cleanup_owed`` (no ``branch-cleanup`` step ran, so no cleanup is owed) and
+#: ``sonar_open_new_issues`` (this project does not analyse with Sonar) — so an
+#: ANSWERED-degraded value at any of them is an answer rather than a gap. None of
+#: the four is thereby allowed to be ``unknown``: that value is a failed read at
 #: every key, which is why the fix is this split and NOT the widening of this set
-#: to include ``merge_state``. ``schema`` needs no entry —
+#: to include them. ``schema`` needs no entry —
 #: :func:`check_landing_completeness` fail-closes on any value other than
 #: :data:`LANDING_FACTS_SCHEMA` before the required-key sweep runs, so a sentinel
 #: of either class is already rejected there by the stricter check.
