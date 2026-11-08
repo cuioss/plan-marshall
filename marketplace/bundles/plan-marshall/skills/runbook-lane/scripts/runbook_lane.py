@@ -2330,7 +2330,13 @@ def _enclosing_sections(
             if stack:
                 stack.pop()
         elif index is not None:
-            containers[index] = next((holder for holder in reversed(stack) if holder is not None), None)
+            # The nearest RECOGNISED section, not merely the nearest open block: an
+            # unrecognised per-file group can sit between a section and a deeper
+            # summary, and that deeper summary is still the section's content.
+            containers[index] = next(
+                (holder for holder in reversed(stack) if holder is not None and section_at.get(holder) is not None),
+                None,
+            )
             if stack and stack[-1] is None:
                 stack[-1] = index
     return containers

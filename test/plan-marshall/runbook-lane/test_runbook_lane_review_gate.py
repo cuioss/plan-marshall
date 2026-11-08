@@ -388,6 +388,22 @@ def test_a_body_wrapped_in_one_outer_block_still_counts_its_sections() -> None:
     assert verdict['review_body_findings_total'] == 2
 
 
+def test_a_summary_inside_an_unrecognised_group_inside_a_section_is_content() -> None:
+    """The nearest RECOGNISED section decides containment, not the nearest block."""
+    body = (
+        '<details>\n<summary>🧹 Nitpick comments (1)</summary><blockquote>\n'
+        '<details>\n<summary>src/module (1)</summary>\n'
+        '<details>\n<summary>src/comments.py (2)</summary>\nrename the helper\n</details>\n'
+        '</details>\n'
+        '</blockquote></details>\n'
+    )
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['reason'] == 'body_findings_undisposed', verdict
+    assert verdict['review_body_findings_total'] == 1
+
+
 def test_a_clean_pull_request_admits_the_merge() -> None:
     verdict = _verdict(_read(_review_body('**Actionable comments posted: 0**\n\nLGTM\n')))
 
