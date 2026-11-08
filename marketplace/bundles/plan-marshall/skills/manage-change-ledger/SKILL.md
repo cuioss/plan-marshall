@@ -104,8 +104,9 @@ Every entry carries a `kind` discriminator, a `worktree_sha`, and a
   `notation`, `plan_id` (str, **never null** — a build dispatched outside any
   plan, including an orchestrator global-tier build, is recorded under the
   `NO_PLAN` sentinel, so every build is attributable to the plan that caused it
-  or explicitly to none), `args`, `command`, `duration_seconds`, `outcome`
-  (the three wrapper-reported fields — see **`args` vs `command`** below),
+  or explicitly to none), `args`, `command_args`, `command`, `duration_seconds`,
+  `outcome` (the wrapped-payload fields plus the executor's own
+  `--command-args` VALUE — see **`args` vs `command`** below),
   `exit_code` (int, recorded even when non-zero — orthogonal
   diagnostic detail), `status` (the truthful build outcome of record —
   `success` | `error` | `timeout` | `killed` | `unknown` — derived at the
@@ -373,7 +374,7 @@ from _ledger_core import (
 - `resolve_ledger_path()` — `get_tracked_config_dir() / 'work' / 'change-ledger.jsonl'` (NOT plan-scoped).
 - `append_entry(record)` — append exactly one `json.dumps(record) + '\n'` line. Pure-append; no read-modify-write.
 - `read_entries()` — parse the JSONL line-by-line, skip malformed lines, return `[]` when absent. The library reader the gate imports directly.
-- `build_record(...)` / `change_record(...)` / `job_record(...)` — constructors that stamp `kind`, `worktree_sha`, `timestamp_iso` and the kind-specific fields, so every writer and the CLI produce identically-shaped entries. `build_record` keeps the two invocation layers apart (`args` = executor argv, `command` = wrapper-resolved command) and carries the wrapper-reported `duration_seconds` / `outcome`; those three are keyword-only with a `None` default, so the payload-less CLI writer needs no change. `change_record` stores the caller-supplied `changed_paths` verbatim — it does NOT compute changed paths. `job_record` persists a submit-time `job_id` (+ `fingerprint` / `notation`) for build re-attach.
+- `build_record(...)` / `change_record(...)` / `job_record(...)` — constructors that stamp `kind`, `worktree_sha`, `timestamp_iso` and the kind-specific fields, so every writer and the CLI produce identically-shaped entries. `build_record` keeps the invocation layers apart (`args` = executor argv, `command_args` = the single `--command-args` element, `command` = wrapper-resolved command) and carries the wrapper-reported `duration_seconds` / `outcome`; those optional fields are keyword-only with a `None` default, so the payload-less CLI writer needs no change. `change_record` stores the caller-supplied `changed_paths` verbatim — it does NOT compute changed paths. `job_record` persists a submit-time `job_id` (+ `fingerprint` / `notation`) for build re-attach.
 - `remap_change_rows(...)` — the rewrite-remap: derive or consume an old-to-new map, then append one `remap_record` per affected row. Returns `remap_count`, `mappings`, `unmapped` / `unresolved` and the ledger path. Idempotent at the `(remapped_from, commit_sha)` pair level, so a repeated run appends nothing.
 - `remap_record(...)` — the mapped-row constructor: copies the source row's recorded facts and stamps `commit_sha` / `worktree_sha` / `timestamp_iso` / `remapped_from`.
 - `parse_sha_map_text(...)` — parse the map from JSON (`--emit-map` output) or lines of `old new` / `old:new` / `old=new`; a line that does not name two SHAs is refused rather than dropped, so a typo cannot read as a clean no-op.

@@ -91,6 +91,22 @@ _ROOT_POM = """<?xml version="1.0" encoding="UTF-8"?>
 </project>
 """
 
+#: The same reactor with the test-less ``plain`` DECLARED, which is the precondition
+#: for the root cascade: the root's run must actually build the module it answers for.
+_ROOT_POM_WITH_PLAIN = """<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>probe</groupId>
+  <artifactId>probe-parent</artifactId>
+  <version>1.0.0</version>
+  <packaging>pom</packaging>
+  <modules>
+    <module>core</module>
+    <module>plain</module>
+  </modules>
+</project>
+"""
+
 _CORE_POM = """<?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0">
   <modelVersion>4.0.0</modelVersion>
@@ -101,11 +117,19 @@ _CORE_POM = """<?xml version="1.0" encoding="UTF-8"?>
 </project>
 """
 
-_PLAIN_POM = """<?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0">
+_PLAIN_POM = """<?xml version="1.0" encoding="UTF-8"?><project xmlns="http://maven.apache.org/POM/4.0.0">
   <modelVersion>4.0.0</modelVersion>
   <groupId>probe</groupId>
   <artifactId>plain</artifactId>
+  <version>1.0.0</version>
+  <packaging>jar</packaging>
+</project>
+"""
+
+_EXAMPLES_POM = """<?xml version="1.0" encoding="UTF-8"?><project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>probe</groupId>
+  <artifactId>examples-app</artifactId>
   <version>1.0.0</version>
   <packaging>jar</packaging>
 </project>
@@ -120,14 +144,16 @@ def _variant(base: argparse.Namespace, **overrides: Any) -> argparse.Namespace:
     return derived
 
 
-def _write_reactor(root: Path) -> None:
+def _write_reactor(root: Path, root_pom: str = _ROOT_POM) -> None:
     """Write a Maven reactor whose root is a ``pom`` aggregator with a tested module.
 
     ``plain`` is a module with NO test source, so the reactor also carries the
-    case a ``resolve --command module-tests --module plain`` now cascades from.
+    case a ``resolve --command module-tests --module plain`` cascades from. Whether
+    the root DECLARES ``plain`` decides whether that cascade is legitimate, which is
+    why the root POM is a parameter.
     """
     root.mkdir(parents=True, exist_ok=True)
-    (root / 'pom.xml').write_text(_ROOT_POM, encoding='utf-8')
+    (root / 'pom.xml').write_text(root_pom, encoding='utf-8')
     core = root / 'core'
     (core / 'src' / 'test' / 'java' / 'probe').mkdir(parents=True)
     (core / 'pom.xml').write_text(_CORE_POM, encoding='utf-8')
@@ -265,16 +291,18 @@ def test_a_persisted_maven_architecture_resolves_module_tests_at_default_scope(t
 
 
 def test_a_module_without_tests_cascades_to_the_reactor_roots_run(tmp_path: Path) -> None:
-    """A module with no test canonical of its own cascades to the root's whole-reactor run.
+    """A REACTOR module with no test canonical of its own cascades to the root's run.
 
     This is a consumer-visible consequence of giving the root the canonical: the
-    resolver's root cascade (`resolve_command`) now answers a test-less module
-    with the whole reactor instead of ``Command not found``. The direction is
-    coverage-increasing — the run can only execute more than asked, never less —
-    and it is pinned here rather than left implicit.
+    resolver's root cascade (`resolve_command`) answers a test-less module with the
+    whole reactor instead of ``Command not found``. The direction is
+    coverage-increasing only when the root actually BUILDS the module, which is the
+    precondition this fixture declares: ``plain`` is in the root's ``<modules>``. A
+    module outside the reactor is refused instead —
+    ``test_an_out_of_reactor_module_does_not_borrow_the_root_run``.
     """
     source = tmp_path / 'source'
-    _write_reactor(source)
+    _write_reactor(source, _ROOT_POM_WITH_PLAIN)
     persisted = tmp_path / 'persisted'
     _persist_modules(persisted, discover_maven_modules(str(source)))
 
@@ -283,3 +311,51 @@ def test_a_module_without_tests_cascades_to_the_reactor_roots_run(tmp_path: Path
     assert result['status'] == 'success', result
     assert result['module'] == 'probe-parent'
     assert result['executable'].endswith('--command-args "test"')
+
+
+def test_an_out_of_reactor_module_does_not_borrow_the_root_run(tmp_path) -> None:
+    """A module the root does not build must not answer with the root's run.
+
+    The root's ``module-tests`` builds the reactor, and ``examples`` is not part of
+    it — cascading there would certify a tree that run never touched, so the
+    resolve refuses instead of returning the root's canonical.
+    """
+    source = tmp_path / 'source'
+    _write_reactor(source)
+    examples = source / 'examples'
+    (examples / 'src' / 'test' / 'java' / 'probe').mkdir(parents=True)
+    (examples / 'pom.xml').write_text(_EXAMPLES_POM, encoding='utf-8')
+    (examples / 'src' / 'test' / 'java' / 'probe' / 'ExamplesTest.java').write_text(
+        'package probe;\n\nclass ExamplesTest {}\n', encoding='utf-8'
+    )
+    persisted = tmp_path / 'persisted'
+    _persist_modules(persisted, discover_maven_modules(str(source)))
+
+    result = cmd_resolve(
+        _variant(_RESOLVE_ARGS, project_dir=str(persisted), module='examples-app', resolve_command='module-tests')
+    )
+
+    assert result['status'] == 'error', result
+    assert 'executable' not in result
+
+
+def test_the_gate_record_names_an_unreadable_pom_as_its_cause() -> None:
+    """An unreadable POM is a NAMED cause behind the gate's DEGRADED record.
+
+    Discovery carries ``pom_error: pom_unreadable`` and grants no canonical, so the
+    module-tests arm falls to branch 0. The gate document binds that token to the
+    branch-0 WARNING and to the DEGRADED verdict, so a reader of the step record
+    can tell a broken descriptor from a project that simply has no tests.
+    """
+    from conftest import MARKETPLACE_ROOT
+
+    doc = (
+        MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-6-finalize' / 'standards' / 'pre-push-quality-gate.md'
+    ).read_text(encoding='utf-8')
+    marker = 'pom_error: pom_unreadable'
+    assert marker in doc
+
+    start = doc.index(marker)
+    passage = doc[max(0, start - 1500) : start + 1500]
+    assert 'MUST name `pom_unreadable`' in passage
+    assert 'module-tests DEGRADED' in passage

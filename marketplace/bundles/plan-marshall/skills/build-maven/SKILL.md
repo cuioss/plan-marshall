@@ -83,11 +83,15 @@ The selector grammar, stated once here for the whole corpus: **Classes are separ
 
 A selector that matches nothing is a wrong command, not a test result. `run` reports it as `test_selector_matched_nothing` — an `indeterminate` result naming the selector — whether the runner fails the build with `No tests matching pattern … were executed` or `-Dsurefire.failIfNoSpecifiedTests=false` turns the same miss into an exit-0 summary of zero executed tests.
 
-**Recorded limit — a suppressed miss inside a reactor is not detectable.** With `-Dsurefire.failIfNoSpecifiedTests=false`, a module whose scan is empty returns through the runner's own no-tests path: it prints no `No tests matching pattern` line, and when another module collected tests the aggregate count is non-zero. Such a run reports `success`, and no signal in the log distinguishes it from one whose selector matched everywhere. Detection therefore needs the default setting (a failing build, where the runner names the pattern) or a single-module run (where the aggregate is zero and the zero-test check reports `test_run_executed_nothing`). Stating the limit is deliberate: the alternative would be to guess a miss from a run that says nothing about one.
+**Recorded limit — a suppressed miss inside a reactor is not detectable.** With `-Dsurefire.failIfNoSpecifiedTests=false`, a module whose scan is empty returns through the runner's own no-tests path: it prints no `No tests matching pattern` line, and when another module collected tests the aggregate count is non-zero. Such a run reports `success`, and no signal in the log distinguishes it from one whose selector matched everywhere. The same limit applies to Failsafe's `-Dit.test` under a `verify` run: `-Dtest` and `-Dit.test` are both recognised as selectors, so a miss the runner NAMES is caught, but a miss it suppresses to exit 0 inside a reactor that collected unit tests stays invisible. Detection therefore needs the default setting (a failing build, where the runner names the pattern) or a single-module run (where the aggregate is zero and the zero-test check reports `test_run_executed_nothing`). Stating the limit is deliberate: the alternative would be to guess a miss from a run that says nothing about one.
 
 ## Module Discovery
 
-Reads `pom.xml` `<modules>` declarations from the parent POM.
+Reads `pom.xml` `<modules>` declarations from the parent POM, and Maven 4.1's `<subprojects>` spelling of the same list. A module entry naming a POM file (`child/pom.xml`, `child/pom-alt.xml`) resolves to the directory holding it.
+
+Two under-grants are recorded rather than guessed at: an entry using a property (`${module.dir}/pom.xml`) cannot be resolved without Maven, and a `pom.xml` under `build/` or `target/` is not crawled at all (the shared descriptor walk prunes those trees). In both cases the root keeps no test canonical for that module and the gate records DEGRADED instead of running it — the fail-closed direction.
+
+**A daemon not reconciled to the current code does not run these guards.** The run-path truth checks (the zero-test guard, the selector-miss guard) live in the build skill the daemon child re-runs, so a daemon whose checkout predates a guard keeps running the older code: the reason is recorded here so a stale daemon is diagnosed rather than mistaken for a guard that did not fire.
 
 ### Profile Processing Pipeline
 
