@@ -237,9 +237,7 @@ def test_a_rebase_count_without_an_action_is_refused():
     could not have observed.
     """
     facts = [fact for fact in _declared_merge_facts() if not fact.startswith('action=')]
-    facts = [
-        'merge_mechanism=merge_queue' if fact.startswith('merge_mechanism=') else fact for fact in facts
-    ]
+    facts = ['merge_mechanism=merge_queue' if fact.startswith('merge_mechanism=') else fact for fact in facts]
     written: list[list[str]] = []
 
     result = gate.record_merge(
