@@ -365,6 +365,29 @@ class TestSummaryConcernIsFiled:
         assert result['count_stored'] == 1, result
         assert result['count_skipped_noise'] == 1, result
 
+    def test_a_summary_carrying_only_an_actionable_section_is_filed(self, plan_context):
+        """The actionable section is the veto's fourth member, and it fires the same way.
+
+        A summary that names its actionable comments without rendering a nitpick,
+        outside-diff or follow-up section is the highest-severity case the veto exists
+        for, so it must file rather than drop.
+        """
+        plan_id = 'gh-summary-actionable-only'
+        plan_context.plan_dir_for(plan_id)
+        body = (
+            f'{CODERABBIT_SUMMARY_MARKER}\n'
+            '## Walkthrough\n\n'
+            'The change gates participation credit on a per-shape content marker.\n\n'
+            '**Actionable comments posted: 2**'
+        )
+        comment = _bot_comment('IC-summary-actionable', body)
+
+        result = _fetch_without_provider_reads([comment], _StoreArgs(722, plan_id))
+
+        assert result['status'] == 'success'
+        assert result['count_stored'] == 1, result
+        assert result['count_skipped_noise'] == 0, result
+
     def test_both_in_progress_summaries_are_still_noise(self, plan_context):
         """The in-progress states carry the marker but no concern, and stay noise.
 

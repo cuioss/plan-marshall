@@ -172,6 +172,7 @@ def test_coderabbit_declares_the_summary_rule_as_a_conditional_drop():
         'Currently processing new changes',
     ]
     assert bot_registry.actionable_content_markers('coderabbit') == [
+        'Actionable comments',
         'Nitpick comments',
         'Outside-diff comments',
         'Follow-ups',

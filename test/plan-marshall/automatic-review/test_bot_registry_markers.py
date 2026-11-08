@@ -57,7 +57,7 @@ def test_ignore_patterns_are_nonempty_literal_markers():
     assert 'found 0 issues' in sourcery
 
 
-def test_ignore_patterns_preserve_quoted_special_characters():
+def test_contentless_review_markers_preserve_quoted_special_characters():
     """A quoted marker carrying ``:`` and HTML-comment syntax survives verbatim.
 
     The summary marker moved to the content-aware layer when the summary became a
@@ -126,6 +126,7 @@ def test_contentless_review_headings_unknown_bot_is_empty():
 def test_actionable_content_markers_only_declared_by_coderabbit():
     """CodeRabbit declares its concern sections as the disqualifying markers."""
     assert bot_registry.actionable_content_markers('coderabbit') == [
+        'Actionable comments',
         'Nitpick comments',
         'Outside-diff comments',
         'Follow-ups',
@@ -152,6 +153,7 @@ def test_contentless_markers_survive_inline_comment_stripping():
     # The quoted-``#`` case specifically: each heading keeps its markdown prefix.
     assert '## Walkthrough' in headings
     assert bot_registry.actionable_content_markers('coderabbit') == [
+        'Actionable comments',
         'Nitpick comments',
         'Outside-diff comments',
         'Follow-ups',

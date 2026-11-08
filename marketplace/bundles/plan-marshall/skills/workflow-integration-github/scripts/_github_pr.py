@@ -157,7 +157,7 @@ def _is_rate_limit_notice(body: str) -> bool:
 
     ``refusal_patterns`` is deliberately a DEDICATED field, never a reuse of
     ``ignore_patterns``: ``ignore_patterns`` lists the routine sections a bot emits
-    on a *successful* review (walkthrough headings, learning notices), so matching
+    on a *successful* review (no-op review lines, learning notices), so matching
     refusals against it would classify ordinary successful reviews as refusals. The
     two lists answer different questions. See
     ``automatic-review/standards/bot-participation-contract.md``.

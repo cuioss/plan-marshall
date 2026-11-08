@@ -2454,7 +2454,7 @@ def cmd_fetch_findings(args):
 
         # Pre-filter 4: obvious noise — the shared acknowledgment/automation
         # regexes plus, for a known reviewer bot, that bot's per-registry literal
-        # ignore markers (walkthrough headings, marketing footers, no-op reviews).
+        # ignore markers (a no-op review line, a learnings notice, a marketing footer).
         if _is_obvious_noise(body, bot_kind):
             skipped_noise += 1
             continue

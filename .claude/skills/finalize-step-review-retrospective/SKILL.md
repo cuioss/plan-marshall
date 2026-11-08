@@ -97,7 +97,7 @@ Every terminal `--outcome done` record therefore captures the **main-checkout** 
 
 ## Reviewer comment-structure asymmetry
 
-The three automated reviewers post structurally different comment layers per PR,
+The automated reviewers post structurally different comment layers per PR,
 all under one login each, so a naive "every pr-comment finding = one actionable
 item" count over-counts CodeRabbit. The aggregator discriminates on the
 first-class `kind` field:

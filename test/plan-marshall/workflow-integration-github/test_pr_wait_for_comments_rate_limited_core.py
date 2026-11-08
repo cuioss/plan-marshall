@@ -114,7 +114,7 @@ _SOURCERY_NOTICE = {
     ),
     'created_at': '2026-01-02T00:00:00Z',
 }
-_UNREGISTERED_NOTICE = {
+_STRUCTURAL_ONLY_NOTICE = {
     'author': 'sourcery-ai',
     'body': (
         '> [!WARNING] The review request could not be served: this account has '
@@ -175,7 +175,7 @@ def test_structural_only_refusal_carries_no_registry_class_vocabulary(monkeypatc
     # SHAPE alone, so the record names that layer and the bot's DECLARED class —
     # never an awaitable_window inferred from the notice. Awaiting a quota that does
     # not reopen is the expensive failure mode this record must not invite.
-    _wire(monkeypatch, post_comments=[_UNREGISTERED_NOTICE])
+    _wire(monkeypatch, post_comments=[_STRUCTURAL_ONLY_NOTICE])
 
     result = github_ops.cmd_pr_wait_for_comments(_wait_comments_args())
 
@@ -190,7 +190,7 @@ def test_structural_only_refusal_carries_no_registry_class_vocabulary(monkeypatc
             'eta_seconds': None,
             'eta_extracted': False,
             # The fixture carries no ``updated_at``, so the last write is its creation.
-            'written_at': _UNREGISTERED_NOTICE['created_at'],
+            'written_at': _STRUCTURAL_ONLY_NOTICE['created_at'],
             # No reset time was read, so nothing says the window is over.
             'stale': False,
             'cause': 'quota',
@@ -198,7 +198,7 @@ def test_structural_only_refusal_carries_no_registry_class_vocabulary(monkeypatc
             # Sourcery declares no refusal_patterns matching this wording, so only the
             # notice SHAPE can have read this one.
             'layer': _github_pr.REFUSAL_LAYER_STRUCTURAL,
-            'body': _UNREGISTERED_NOTICE['body'],
+            'body': _STRUCTURAL_ONLY_NOTICE['body'],
         }
     ]
 

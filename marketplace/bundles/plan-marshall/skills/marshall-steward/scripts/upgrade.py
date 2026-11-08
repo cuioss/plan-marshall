@@ -428,6 +428,10 @@ def migrate_bot_lists(params: dict) -> dict:
         (the list of dropped bot names — never the raw ``enabled_bots`` string).
     """
     removed_retired: list[str] = []
+    # Answeredness is a property of what the OPERATOR wrote, so it is read BEFORE the
+    # strip: a roster naming only a retired kind would otherwise be emptied first and
+    # then re-classified as unanswered, reseeding the standard roster over an answer.
+    has_new = _has_operator_answer(params)
     for roster_key in (_REQUIRED_BOTS_KEY, _OPTIONAL_BOTS_KEY):
         if roster_key not in params:
             continue
@@ -438,7 +442,6 @@ def migrate_bot_lists(params: dict) -> dict:
 
     legacy = params.get(_LEGACY_BOT_LIST_KEY)
     has_legacy = legacy is not None
-    has_new = _has_operator_answer(params)
 
     if not has_legacy:
         # States (3) and (4) — nothing to migrate, and deliberately

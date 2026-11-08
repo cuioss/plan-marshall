@@ -461,12 +461,18 @@ CODERABBIT_SUMMARY_TIPS_BLOCK = (
 def coderabbit_summary_with_concern() -> str:
     """Return a summary body whose ONLY content beyond the boilerplate is a concern.
 
-    CONSTRUCTED body, OBSERVED wording: every part — the summary marker, the
-    ``## Walkthrough`` heading, the nitpick section and the tips block — was read off
-    live CodeRabbit comments on ``cuioss/plan-marshall#1939``, but that PM posted its
-    nitpick section in a ``review_body`` and its marker in the summary comment. One
-    comment carrying both is the shape this fixture assembles, which is what makes it
-    the concern case rather than a control.
+    CONSTRUCTED body, OBSERVED parts. A live CodeRabbit summary comment really does
+    carry a concern alongside its boilerplate: on ``cuioss/plan-marshall#1931``
+    (IC_kwDOQ3xasM8AAAABj8Aypw) the comment opening with the summarize marker carries,
+    in its Merge Risk block, "The remaining issue is a contract test that could pass
+    after the never-downgrade rule loses its verdict list; fix it in this PR or as a
+    follow-up." — a concern statement the old unconditional drop discarded whole.
+
+    What the same bot publishes in a machine-readable SECTION form is the nitpick
+    disclosure of a review body, read off ``cuioss/plan-marshall#1939``
+    (PRR_kwDOQ3xasM8AAAABWrdvtQ). This fixture puts that observed section inside the
+    observed summary shape, which is what makes it the concern case rather than a
+    control.
     """
     return (
         f'{CODERABBIT_SUMMARY_MARKER}\n'

@@ -72,6 +72,7 @@ contentless_review_headings:                                                  # 
   - "## Walkthrough"                                                          # the finished summary's walkthrough heading
   - "Currently processing new changes"                                        # the in-progress notice the same comment carries while a review runs
 actionable_content_markers:                                                   # any ONE of these vetoes the drop: sections a summary carries ONLY when it holds a concern
+  - "Actionable comments"                                                     # the section a review body opens with when it has findings; inside a marker-bearing summary it is the same signal, and the veto can only fire there
   - "Nitpick comments"                                                        # the nitpick section a summary renders instead of an inline comment
   - "Outside-diff comments"                                                   # the section for a concern the diff does not reach
   - "Follow-ups"                                                              # the section for a concern that outlives this diff
@@ -145,8 +146,8 @@ marker — those are the signal.
 
 **The summary comment is NOT one of those drops.** It carries the walkthrough, the merge-risk
 paragraph and the tips block on every review, including the reviews that also raise a concern in the
-same body (a nitpick, outside-diff or follow-up section rendered in the summary instead of as an
-inline comment). Dropping it on the walkthrough or the summary marker therefore lost those concerns
+same body (an actionable, nitpick, outside-diff or follow-up section rendered in the summary instead
+of as an inline comment). Dropping it on the walkthrough or the summary marker therefore lost those concerns
 whole, and the bot resolved `participated_but_empty` beside a summary that had filed nothing. It is
 now the conditional drop the content-aware layer expresses: the summary marker is required, one of
 the two headings it is published under must be present, and any concern section vetoes the drop.
@@ -157,9 +158,11 @@ clean-review verdict as the matched controls that must keep filing nothing.
 **The tips block and the marketing lines are not drops either.** They ride the summary comment, so an
 unconditional drop on either would swallow a concern the same body carries — the defect above, one
 marker over. A comment that is nothing BUT that block already fails the conditional drop's own test
-(no walkthrough heading, no in-progress notice), so it is filed as well, which is the fail-closed
-direction: an operator sees an unusual CodeRabbit body once and triages it, rather than a concern
-disappearing unread.
+(no walkthrough heading, no in-progress notice), so it is filed as well. The same holds for the
+command-help echo (`@coderabbitai help`): it used to be an unconditional drop, and it is now filed,
+because it is a line of the summary's own tips block and dropping on it would take the concern with
+it. Both are the fail-closed direction the pre-filter is built on: an operator sees an unusual
+CodeRabbit body once and triages it, rather than a concern disappearing unread.
 
 CodeRabbit declines on **two distinct surfaces**, and each is registered as its own literal in
 `refusal_patterns`:

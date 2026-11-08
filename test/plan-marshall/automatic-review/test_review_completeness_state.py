@@ -125,9 +125,6 @@ assert _UNREGISTERED_TOKEN not in _REGISTERED_BOTS, (
 # retires a publish shape breaks these tests loudly instead of silently.
 CODERABBIT_EVIDENCE = {'coderabbit': 'inline'}
 SOURCERY_EVIDENCE = {'sourcery': 'review_body'}
-#: A bot kind no registry record answers to — the shape a withdrawn reviewer leaves in
-#: a roster. Its participation is never proven, so every state it lands on is a
-#: configuration fact rather than an observation.
 
 
 #: The publish-shape vocabulary DERIVED from the live registry: the union of every
