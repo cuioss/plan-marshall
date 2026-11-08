@@ -30,9 +30,9 @@ from _github_pr_fixtures import (
     UNGATED_EVIDENCE,
     UNGATED_EVIDENCE_COUNT,
     VacuousPopulationError,
+    coderabbit_summary_plain_walkthrough,
     guard_non_empty,
 )
-from _pr_agent_guide_bodies import GUIDE_WITH_FINDING, OBSERVED_CLEAN_GUIDE
 
 from conftest import get_script_path, get_skill_dir, load_script_module, run_script
 
@@ -132,7 +132,7 @@ _COMMENTS = [
     },
     {
         'id': 'c3',
-        'author': 'cuioss-review-bot',
+        'author': 'sourcery-ai',
         'thread_id': 'PRRT_3',
         'kind': 'inline',
         'body': 'This loop can be simplified into a comprehension.',
@@ -486,8 +486,6 @@ _CLASSIFICATION_FLAGS = derive_bot_flags(
     'fetch_findings',
 )
 assert _CLASSIFICATION_FLAGS, 'derive_bot_flags found no classification flags on fetch_findings'
-_PR_AGENT_REQUIRED_MARKERS = bot_registry.contentless_review_markers('cuioss-review-bot')
-assert _PR_AGENT_REQUIRED_MARKERS, 'bot_registry declares no contentless review markers for cuioss-review-bot'
 _BOT_KIND_TO_LOGIN = {kind: login for login, kind in bot_registry.login_to_bot_kind().items()}
 
 
@@ -540,7 +538,7 @@ _ISO_COMMIT_AT = '2026-08-25T12:00:00Z'
 def test_second_fetch_dedupes_all_bot_kinds(plan_context, monkeypatch):
     """A re-fetch of an already-staged PR stores zero new findings for every bot kind.
 
-    Thread-bearing (coderabbit/cuioss-review-bot) AND thread_id-less (sourcery/human)
+    Thread-bearing (coderabbit) AND thread_id-less (sourcery/human)
     comments are all deduped on ``(bot_kind, comment_id)``. Without that, every
     barrier re-fetch re-stores the same comments as fresh ``pending`` findings,
     so the queue accretes duplicates faster than triage can drain it and the
@@ -594,8 +592,9 @@ def test_a_deduped_comment_is_still_credited_as_participating(plan_context, monk
     assert first['status'] == 'success'
     assert first['count_skipped_duplicate'] == 0
     # Every bot with a comment in a declared publish shape is credited: coderabbit and
-    # sourcery by presence of a declared evidence kind, cuioss-review-bot by the first-observation
-    # currency arm at the resolvable head. (The human comment resolves to no bot_kind.)
+    # sourcery by presence of a declared evidence kind, credited through the
+    # first-observation currency arm at the resolvable head. (The human comment resolves
+    # to no bot_kind.)
     # The expected participant list is DERIVED from the registry intersected with the
     # bots the _COMMENTS fixture represents — never a hand-listed set of bot names, which
     # would not notice a bot whose declared publish shapes changed.
@@ -1242,20 +1241,27 @@ def test_deduplicated_mismatch_persist_stays_benign(plan_context, monkeypatch):
     assert second['producer_mismatch_hash_id'] == first['producer_mismatch_hash_id']
 
 
-@pytest.mark.parametrize('missing', _PR_AGENT_REQUIRED_MARKERS)
+#: CodeRabbit's required contentless markers, bound ONCE and guarded non-empty: a
+#: parametrize over an empty list collects zero cases and reports green, so the
+#: sweep below would look like coverage while certifying nothing.
+_CODERABBIT_REQUIRED_MARKERS = bot_registry.contentless_review_markers('coderabbit')
+assert _CODERABBIT_REQUIRED_MARKERS, 'bot_registry declares no contentless review markers for coderabbit'
+
+
+@pytest.mark.parametrize('missing', _CODERABBIT_REQUIRED_MARKERS)
 def test_removing_any_single_required_marker_fails_the_conjunction(missing):
     """The predicate is ``all(required)`` — one absent marker is enough to keep the comment.
 
-    One case PER MARKER rather than one representative case, so the set is
-    covered member-by-member: weakening the registry list to the 🔒 row alone
-    (operator decision Q1's rejected shortcut) turns the corresponding case red
-    instead of silently widening the suppression. The docs-only PR — whose Guide
-    carries the 🔒 clean assertion but not the 🧪 one — is exactly this shape.
+    One case PER MARKER rather than one representative case, so the set is covered
+    member-by-member: a conjunction weakened to any single member would turn the
+    corresponding case red instead of silently widening the suppression. A summary
+    whose marker was edited away carries the same walkthrough with no anchor, which
+    is exactly this shape.
     """
-    body = OBSERVED_CLEAN_GUIDE.replace(missing, '')
+    body = coderabbit_summary_plain_walkthrough().replace(missing, '')
 
     assert missing not in body
-    assert github_pr._is_contentless_boilerplate(body, 'cuioss-review-bot') is False
+    assert github_pr._is_contentless_boilerplate(body, 'coderabbit') is False
 
 
 @pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)

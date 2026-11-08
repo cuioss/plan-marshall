@@ -104,7 +104,7 @@ def _payload(*, with_updated_at: bool) -> dict:
     issue_comment = {
         'id': 'IC_issue',
         'body': 'issue-level comment',
-        'author': {'login': 'cuioss-review-bot'},
+        'author': {'login': 'sunset-review-bot'},
         'createdAt': _EXPECTED_CREATED_AT['issue_comment'],
     }
     if with_updated_at:

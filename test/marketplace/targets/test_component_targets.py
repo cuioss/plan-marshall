@@ -539,14 +539,17 @@ def test_empty_declaration_is_rejected(tmp_path, frontmatter):
     assert str(path) in message
 
 
-def test_only_non_component_tree_targets_is_rejected(tmp_path):
+def test_only_non_component_tree_targets_is_rejected(tmp_path, monkeypatch):
     """A registry-valid list that still ships the component nowhere is rejected.
 
     The offending value passes a membership check, so nothing but the
-    ``emits_bundle_tree`` capability separates it from a valid declaration.
+    ``emits_bundle_tree`` capability separates it from a valid declaration. The
+    shipped registry holds no treeless target, so the capability is supplied by the
+    synthetic one: the guard must keep working for the next target that has it.
     """
+    monkeypatch.setitem(TARGET_REGISTRY, 'treeless', _TreelessTarget)
     treeless = sorted(registered_target_names() - component_tree_target_names())
-    assert treeless, 'fixture assumes at least one registered non-component-tree target'
+    assert treeless == ['treeless'], treeless
     path = _component(tmp_path, f'targets: [{", ".join(treeless)}]')
 
     with pytest.raises(TargetScopeError) as excinfo:
@@ -802,16 +805,17 @@ def test_an_empty_file_declaration_fails_closed(tmp_path):
         excluded_emission_roots(bundle, 'claude')
 
 
-def test_a_file_declaring_only_non_tree_targets_fails_closed(tmp_path):
+def test_a_file_declaring_only_non_tree_targets_fails_closed(tmp_path, monkeypatch):
     """A file-level list naming only non-component-tree targets ships nowhere.
 
     The same registry-valid-but-shipped-nowhere shape the component level
-    rejects is rejected at the file level — a file narrowed onto ``cuioss-review-bot``
-    would vanish from every tree, which is the authoring error the declaration
-    is supposed to name, not silently commit.
+    rejects is rejected at the file level — a file narrowed onto the synthetic
+    treeless target would vanish from every tree, which is the authoring error the
+    declaration is supposed to name, not silently commit.
     """
+    monkeypatch.setitem(TARGET_REGISTRY, 'treeless', _TreelessTarget)
     treeless = sorted(registered_target_names() - component_tree_target_names())
-    assert treeless, 'fixture assumes at least one registered non-component-tree target'
+    assert treeless == ['treeless'], treeless
     bundle = _skill_bundle(tmp_path, parent_declaration=None, file_declaration=f'[{", ".join(treeless)}]')
 
     with pytest.raises(TargetScopeError) as excinfo:
@@ -919,10 +923,11 @@ def test_bundle_target_scope_unknown_target_fails_closed(tmp_path):
         read_bundle_target_scope(bundle)
 
 
-def test_bundle_target_scope_treeless_only_fails_closed(tmp_path):
+def test_bundle_target_scope_treeless_only_fails_closed(tmp_path, monkeypatch):
     """A bundle manifest naming only treeless targets raises TargetScopeError."""
+    monkeypatch.setitem(TARGET_REGISTRY, 'treeless', _TreelessTarget)
     treeless = sorted(registered_target_names() - component_tree_target_names())
-    assert treeless
+    assert treeless == ['treeless'], treeless
     quoted = ', '.join(f'"{t}"' for t in treeless)
     bundle = _bundle_with_manifest(tmp_path, manifest_content=f'{{"name": "test", "targets": [{quoted}]}}')
     with pytest.raises(TargetScopeError, match='ship nowhere'):

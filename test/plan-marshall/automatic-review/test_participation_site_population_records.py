@@ -204,12 +204,6 @@ SITE_EXPECTATIONS: dict[str, SiteExpectation] = {
         'Per-bot registry record. Declares participation_requires_update: true, so this bot '
         'edits its summary comment in place on re-review and its credit is currency-tested.',
     ),
-    f'{_SKILLS}/automatic-review/standards/cuioss-review-bot.md': SiteExpectation(
-        'registry_data',
-        'none',
-        'yes',
-        'Per-bot registry record. Declares participation_requires_update: true, so its credit is currency-tested.',
-    ),
     f'{_SKILLS}/automatic-review/standards/sourcery.md': SiteExpectation(
         'registry_data',
         'none',

@@ -16,31 +16,21 @@ restated in the documents under test.
 
 from __future__ import annotations
 
-import ast
 import re
 from pathlib import Path
 
-from conftest import PROJECT_ROOT, get_skill_dir
+from conftest import get_skill_dir
 
-
-def _generator_withholding_phrases() -> tuple[str, ...]:
-    """The pack generator's own withholding phrases, read from its source.
-
-    Derived rather than copied: the generator drops a harvested rule carrying any
-    of these, so a phrase added there reaches this test automatically instead of
-    drifting behind a second list.
-    """
-    source = PROJECT_ROOT / 'marketplace' / 'targets' / 'cuioss_review_bot' / 'target.py'
-    tree = ast.parse(source.read_text(encoding='utf-8'))
-    for node in tree.body:
-        if isinstance(node, ast.Assign) and any(
-            isinstance(target, ast.Name) and target.id == '_WITHHOLDING_PHRASES' for target in node.targets
-        ):
-            return tuple(ast.literal_eval(node.value))
-    raise AssertionError(f'_WITHHOLDING_PHRASES not found in {source}')
-
-
-_WITHHOLDING_MARKERS = _generator_withholding_phrases()
+#: Withholding language never belongs in a harvestable review rule. These phrases
+#: instruct a reviewer to suppress a finding it could otherwise substantiate. The rule
+#: is § 10 of ``review-rubric.md`` ("No withholding language"); the four wordings below
+#: are the phrasings that once did, enumerated so the check is concrete.
+_WITHHOLDING_MARKERS: tuple[str, ...] = (
+    'do not duplicate',
+    'avoid duplicating',
+    'prefer one well-evidenced',
+    'only when you can name the concrete input',
+)
 
 
 def _section(body: str, heading: str) -> str:
@@ -85,7 +75,7 @@ def _assert_harvestable(rule: str) -> None:
     addressed to a reviewer — are semantic: the parser already yields one bullet
     per rule, and the per-rule needles in the tests below pin the mechanism each
     rule names. What a test can enforce mechanically is that the bullet carries
-    text and none of the phrases the pack generator drops.
+    text and none of the withholding phrases.
     """
     assert rule.strip(), 'a harvested rule must carry text'
     lowered = rule.lower()

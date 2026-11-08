@@ -9,7 +9,6 @@ Covers the three concerns of the post-merge re-review registry:
        comment per strategy and returns the comment-post time:
          coderabbit: posts ``@coderabbitai review``.
          sourcery:   posts ``@sourcery-ai review``.
-         cuioss-review-bot:   posts ``/review``.
     3. Two-signal completion matching — ``await_fresh_review`` is satisfied by
        EITHER ``_match_review`` (a review authored by the awaited bot — its
        ``user`` login resolves to the awaited ``bot_kind`` — whose reviewed-commit
@@ -370,11 +369,11 @@ def test_the_case_folded_match_stays_scoped_to_the_declaring_bot():
     shouted = 'FULL REVIEW FINISHED — but the retry loop at `src/idx.py:12` still spins.'
 
     assert github_re_review.is_acknowledgment_comment(shouted, None) is False
-    assert github_re_review.is_acknowledgment_comment(shouted, 'cuioss-review-bot') is False
+    assert github_re_review.is_acknowledgment_comment(shouted, 'sourcery') is False
     assert github_re_review.is_acknowledgment_comment(shouted, ACKNOWLEDGMENT_BOT_KIND) is True
 
 
-_PR_AGENT_LOGIN = 'cuioss-review-bot'
+_BOT_KIND_LOGIN = 'sourcery-ai'
 _TRIGGER = '2026-01-01T00:02:00Z'
 
 
@@ -383,7 +382,7 @@ def _await_with_comments(
     comments,
     *,
     reviews=None,
-    bot_kind='cuioss-review-bot',
+    bot_kind='sourcery',
     head_sha='headsha',
     in_progress_reader=None,
 ):
@@ -528,11 +527,11 @@ def test_no_hardcoded_trigger_constants_remain():
 
 
 def test_strategies_are_distinct_objects():
-    """coderabbit and cuioss-review-bot must not collapse onto the same strategy object."""
+    """coderabbit and sourcery must not collapse onto the same strategy object."""
     coderabbit = github_re_review.resolve_strategy('coderabbit')
-    pr_agent = github_re_review.resolve_strategy('cuioss-review-bot')
+    sourcery = github_re_review.resolve_strategy('sourcery')
 
-    assert coderabbit is not pr_agent
+    assert coderabbit is not sourcery
 
 
 def test_match_review_matches_when_sha_and_time_satisfy():
@@ -594,13 +593,13 @@ def test_await_matches_bot_issue_comment_when_no_review_exists(monkeypatch):
     comment structurally cannot; see the comment-path verification section below,
     where a body that does name the awaited commit verifies.
     """
-    result = _await_with_comments(monkeypatch, [_comment(_PR_AGENT_LOGIN, created_at='2026-01-01T00:05:00Z')])
+    result = _await_with_comments(monkeypatch, [_comment(_BOT_KIND_LOGIN, created_at='2026-01-01T00:05:00Z')])
 
     assert result['status'] == 'success'
     assert result['matched'] is True
     assert result['matched_signal'] == 'issue_comment'
     assert result['head_sha_verified'] is False
-    assert result['matched_comment']['author'] == _PR_AGENT_LOGIN
+    assert result['matched_comment']['author'] == _BOT_KIND_LOGIN
     # The review slot stays empty — no review was matched.
     assert result['matched_review'] == {}
     assert result['timed_out'] is False
@@ -629,7 +628,7 @@ def test_await_does_not_match_a_human_comment(monkeypatch):
 
 def test_await_does_not_match_a_comment_predating_the_trigger(monkeypatch):
     """A pre-existing bot comment (older than the trigger) does not satisfy await."""
-    result = _await_with_comments(monkeypatch, [_comment(_PR_AGENT_LOGIN, created_at='2026-01-01T00:00:00Z')])
+    result = _await_with_comments(monkeypatch, [_comment(_BOT_KIND_LOGIN, created_at='2026-01-01T00:00:00Z')])
 
     assert result['matched'] is False
     assert result['matched_signal'] == ''
@@ -650,7 +649,7 @@ def test_await_does_not_match_a_rate_limit_notice_from_the_awaited_bot(monkeypat
     )
     result = _await_with_comments(
         monkeypatch,
-        [_comment(_PR_AGENT_LOGIN, created_at='2026-01-01T00:05:00Z', body=notice)],
+        [_comment(_BOT_KIND_LOGIN, created_at='2026-01-01T00:05:00Z', body=notice)],
     )
 
     assert result['matched'] is False
@@ -668,7 +667,7 @@ def test_await_matches_an_edited_persistent_comment_via_updated_at(monkeypatch):
         monkeypatch,
         [
             _comment(
-                _PR_AGENT_LOGIN,
+                _BOT_KIND_LOGIN,
                 created_at='2026-01-01T00:00:00Z',
                 updated_at='2026-01-01T00:05:00Z',
             )
@@ -702,7 +701,7 @@ def test_await_without_bot_kind_never_matches_a_review_or_a_comment(monkeypatch)
 
     monkeypatch.setattr(github_re_review._github, 'fetch_pr_comments_data', exploding_fetch)
 
-    strategy = github_re_review.resolve_strategy('cuioss-review-bot')
+    strategy = github_re_review.resolve_strategy('sourcery')
     result = strategy.await_fresh_review(42, 'headsha', _TRIGGER, timeout=1, interval=0)
 
     assert result['matched'] is False
@@ -714,16 +713,16 @@ def test_await_without_bot_kind_never_matches_a_review_or_a_comment(monkeypatch)
 def test_match_bot_comment_fail_closed_on_unparseable_timestamps():
     """A comment whose only timestamps are unparseable never matches (fail-closed)."""
     trigger_dt = _parse(_TRIGGER)
-    comments = [_comment(_PR_AGENT_LOGIN, created_at='not-a-timestamp', updated_at='')]
+    comments = [_comment(_BOT_KIND_LOGIN, created_at='not-a-timestamp', updated_at='')]
 
-    assert _match_bot_comment(comments, 'headsha', 'cuioss-review-bot', trigger_dt) is None
+    assert _match_bot_comment(comments, 'headsha', 'sourcery', trigger_dt) is None
 
 
 def test_match_bot_comment_fail_closed_on_missing_trigger_time():
     """An unparseable trigger time yields no comment match (fail-closed)."""
-    comments = [_comment(_PR_AGENT_LOGIN, created_at='2026-01-01T00:05:00Z')]
+    comments = [_comment(_BOT_KIND_LOGIN, created_at='2026-01-01T00:05:00Z')]
 
-    assert _match_bot_comment(comments, 'headsha', 'cuioss-review-bot', None) is None
+    assert _match_bot_comment(comments, 'headsha', 'sourcery', None) is None
 
 
 def test_match_review_verifies_a_sha_carried_only_inside_a_commit_url():
@@ -1076,7 +1075,7 @@ def test_the_registry_refusal_arm_is_scoped_to_the_awaited_bot():
 #: control: the same records, and only the awaited bot differs.
 _AUTHOR_GATE_BOTS = {
     'coderabbit': {'review_login': _CODERABBIT_REVIEW_LOGIN, 'comment_login': 'coderabbitai'},
-    'cuioss-review-bot': {'review_login': 'cuioss-review-bot[bot]', 'comment_login': 'cuioss-review-bot'},
+    'sourcery': {'review_login': 'sourcery-ai[bot]', 'comment_login': 'sourcery-ai'},
 }
 _AUTHOR_GATE_PARAMS = [pytest.param(kind, id=kind) for kind in _AUTHOR_GATE_BOTS]
 
@@ -1701,10 +1700,6 @@ _IN_PROGRESS_PARAMS = [pytest.param(body, id=case_id) for case_id, body, _proven
 assert _IN_PROGRESS_PARAMS, 'the in-progress summary population is empty'
 _FINISHED_REVIEW = coderabbit_finished_review(_IN_PROGRESS_BASE_SHA, _HEAD_SHA)
 
-#: Every bot that publishes an ``issue_comment`` it declares NO verdict marker for —
-#: the population the marker gate must leave untouched. Derived from the fixtures'
-#: registry partition, never hand-listed.
-_UNMARKED_COMMENT_BOTS: list[str] = sorted({bot for bot, shape in UNGATED_EVIDENCE if shape == 'issue_comment'})
 _LOGIN_FOR_BOT_KIND: dict[str, str] = {kind: login for login, kind in bot_registry.login_to_bot_kind().items()}
 
 
@@ -1728,8 +1723,6 @@ def test_the_marker_gate_populations_are_not_vacuous():
         assert CODERABBIT_VERDICT_MARKER not in body
         assert github_re_review._references_head_sha(body, _HEAD_SHA)
     assert CODERABBIT_VERDICT_MARKER in _FINISHED_REVIEW
-    assert _UNMARKED_COMMENT_BOTS, 'no bot publishes an ungated issue_comment — the unaffected-bot control is vacuous'
-    assert all(bot in _LOGIN_FOR_BOT_KIND for bot in _UNMARKED_COMMENT_BOTS)
 
 
 @pytest.mark.parametrize('body', _IN_PROGRESS_PARAMS)
@@ -1806,21 +1799,23 @@ def test_match_bot_comment_skips_an_in_progress_summary_without_a_record(body):
     assert acknowledgments == []
 
 
-@pytest.mark.parametrize('bot_kind', _UNMARKED_COMMENT_BOTS)
-def test_a_bot_without_a_declared_marker_still_matches_an_unmarked_comment(monkeypatch, bot_kind):
-    """⛔ NEGATIVE CONTROL: the gate reaches only a bot that declares a marker.
+def test_a_bot_without_a_declared_issue_comment_marker_still_matches_an_unmarked_comment(monkeypatch):
+    """⛔ NEGATIVE CONTROL: the marker gate reaches only a bot that declares a marker.
 
-    The same unmarked body that CodeRabbit may not answer with ends the wait for a bot
-    declaring no ``issue_comment`` marker. Without this control the cases above would
-    pass just as happily against a matcher that rejected every unmarked comment of
-    every bot — a permanent timeout for each bot whose answer carries no marker.
+    The same unmarked body CodeRabbit may not answer with ends the wait for a bot that
+    declares no ``issue_comment`` marker at all — Sourcery publishes no ``issue_comment``
+    shape, so its marker list is empty and nothing gates the shape. Without this control
+    the cases above would pass just as happily against a matcher that rejected every
+    unmarked comment of every bot, which is a permanent timeout for each bot whose
+    answer carries no marker.
     """
     body = 'Overall comments: consider extracting the retry helper at `src/retry.py:12`.'
-    comment = _comment(_LOGIN_FOR_BOT_KIND[bot_kind], created_at='2026-01-01T00:05:00Z', body=body)
+    comment = _comment(_LOGIN_FOR_BOT_KIND['sourcery'], created_at='2026-01-01T00:05:00Z', body=body)
 
-    result = _await_with_comments(monkeypatch, [comment], bot_kind=bot_kind)
+    assert bot_registry.participation_evidence_marker('sourcery', 'issue_comment') == ''
 
-    assert bot_registry.participation_evidence_marker(bot_kind, 'issue_comment') == ''
+    result = _await_with_comments(monkeypatch, [comment], bot_kind='sourcery')
+
     assert result['matched'] is True
     assert result['matched_signal'] == 'issue_comment'
     assert result['matched_comment']['body'] == body

@@ -440,16 +440,18 @@ two — a never-asked key is re-asked, an answered-empty one is not.
 python3 .plan/execute-script.py plan-marshall:marshall-steward:upgrade migrate-bot-lists
 ```
 
-It seeds the **standard roster** (`required_bots: cuioss-review-bot,coderabbit`,
+It seeds the **standard roster** (`required_bots: coderabbit`,
 `optional_bots: sourcery`), removes `enabled_bots`, and records provenance `migrated`. It does NOT
 copy the legacy value verbatim: each discarded bot is named in the `discarded_legacy` list so no
 name disappears silently, and any unknown name is surfaced by `validate-bot-lists` rather than
-copied. (Its sibling Stage-2 sub-step `reconcile-marshal-json` seeds the same standard roster through
-`sync-defaults --backfill-bot-roster` when the block was never answered — both lists otherwise have
-one default, EMPTY.) When the operator has ALREADY answered either new key, their answer WINS — only
-the stale legacy key is removed and both values are reported. The verb is idempotent and
-self-disarming: once the legacy key is gone it is a no-op success, so re-running `upgrade` is always
-safe.
+copied. It also strips every RETIRED bot kind from both roster lists in every state — a name no
+registry answers to classifies `unregistered_kind` and would block that consumer's merge — reporting
+what it removed in `removed_retired`. (Its sibling Stage-2 sub-step `reconcile-marshal-json` seeds the
+same standard roster through `sync-defaults --backfill-bot-roster` when the block was never answered —
+both lists otherwise have one default, EMPTY.) When the operator has ALREADY answered either new key,
+their answer WINS — only the stale legacy key is removed and both values are reported. The verb is
+idempotent and self-disarming: once the legacy key is gone it is a no-op success, so re-running
+`upgrade` is always safe.
 
 When the wizard asks the question above on a project that was just migrated, **pre-fill the migrated
 value as the default selection** so the operator confirms or adjusts a real starting point rather

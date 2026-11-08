@@ -30,9 +30,10 @@ set says so — that is the signal that the consumer boundary is not yet underst
 finding about the spec rather than a licence to write prose.
 
 ⛔ **Where the project analyses its pull requests with Sonar** — `runbook_lane resolve` reports
-`sonar: configured` — the spec's Done-when lists the open-issue read at the head (the pull request's
-open-issue count and the rules left open, with `unknown` for a failed read and never `0`), and the
-Standing Constraints below say how a dismissal is recorded.
+`sonar: configured` — the spec's Done-when lists the open-finding read at the head (the pull request's
+open new-code findings — issues plus the security hotspots still to review — and the rules left open,
+with `unknown` for a failed read and never `0`), and the Standing Constraints below say how a dismissal
+is obtained.
 
 1. {deliverable}
 2. {deliverable}
@@ -45,12 +46,14 @@ it must leave.}
 
 - {constraint}
 - Where the project analyses its pull requests with Sonar (`resolve` reports `sonar: configured`): an
-  open Sonar issue is fixed in a pushed commit, or dismissed with a stated reason recorded as
-  `{issue-key}: {reason}` in the run's progress record and transmitted through the plan-less
+  open Sonar finding is fixed in a pushed commit, or DISMISSED ONLY ON THE OPERATOR'S SELECTION — the
+  question tool names each finding key, the progress record records the selection as
+  `operator-selected: {issue-key}: {reason}`, and the chosen key is transmitted through the plan-less
   transition verb, `plan-marshall:workflow-integration-sonar:sonar_rest transition --issue-key {key}
-  --transition {falsepositive|wontfix}`. A dismissal the run cannot transmit is a blocker, never a
-  silent pass. The merge gate reads the open-issue count at the head — `0` confirmed, or every
-  remaining issue dismissed — and an `undecidable` read blocks.
+  --transition {falsepositive|wontfix}`. The lane never records a dismissal of its own, and
+  `sonar-gate --dismissed-keys` is refused. A dismissal the run cannot transmit is a blocker, never a
+  silent pass. The merge gate reads the open-finding count at the head — `0` confirmed, or every
+  remaining finding's key selected by the operator — and an `undecidable` read blocks.
 
 ## Claim Labels
 

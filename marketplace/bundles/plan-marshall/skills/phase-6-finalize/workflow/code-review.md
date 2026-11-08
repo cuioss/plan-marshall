@@ -141,12 +141,12 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   get-skills-by-profile --domain {domain}
 ```
 
-The domain's rule sources are the skill notations its `implementation`, `module_testing` and `quality` profiles name, in that order, each listed once. The domain's `core` skills are among them: `get-skills-by-profile` merges them into every profile it returns, so this step reads the same four profiles the cuioss-review-bot pack generator harvests (`core`, `implementation`, `module_testing`, `quality`). Two kinds of skill are excluded by construction, because the security review owns them and no security rule belongs in a code review:
+The domain's rule sources are the skill notations its `implementation`, `module_testing` and `quality` profiles name, in that order, each listed once. The domain's `core` skills are among them: `get-skills-by-profile` merges them into every profile it returns, so this step reads those three profiles for every domain. Two kinds of skill are excluded by construction, because the security review owns them and no security rule belongs in a code review:
 
 - every skill whose name ends in `-security`;
 - `plan-marshall:persona-security-expert`.
 
-The `security` profile is not read at all. A domain whose lookup returns a non-`success` status goes to **Step 6 Branch C** with reason `rulebook_unresolved`. These are the same `## Review Rules` blocks the cuioss-review-bot pack generator harvests, so the in-run reviewer and the external bot read one rulebook ([`review-rubric.md`](../standards/review-rubric.md) § 10).
+The `security` profile is not read at all. A domain whose lookup returns a non-`success` status goes to **Step 6 Branch C** with reason `rulebook_unresolved`. These are the same `## Review Rules` blocks a reviewer reads, so the in-run reviewer and any external bot read one rulebook ([`review-rubric.md`](../standards/review-rubric.md) § 10).
 
 Compose `{rule_sources_toon}`: the reviewed domains, and every rule-source notation across them, each listed once, with `plan-marshall:ref-code-quality` — the code-review spine — always present:
 

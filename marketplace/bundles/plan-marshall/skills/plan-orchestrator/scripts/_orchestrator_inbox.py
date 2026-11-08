@@ -1372,6 +1372,20 @@ LANDING_FACTS_SCHEMA = 'landing-facts/1'
 #: comparison, which is the whole reason they are recorded. Every landing emitted
 #: before they were required is INCOMPLETE — accepted deliberately, with no
 #: grandfather rule.
+#:
+#: The four review-and-Sonar numbers are the MEASUREMENTS behind a landing's
+#: "all handled" claim: ``unresolved_review_threads``,
+#: ``review_body_findings_total``, ``review_body_findings_handled`` and
+#: ``sonar_open_new_issues``. They are written from the merge gate's own reads
+#: (``review-gate`` and ``sonar-gate``), never from memory, so a landing that
+#: asserted a clean merge with nothing checkable behind it is now INCOMPLETE.
+#: ``sonar_open_new_issues`` is the one field that may legitimately be ``n/a`` —
+#: a project that does not analyse with Sonar has no such number — so it stays
+#: outside :data:`LANDING_SENTINEL_REJECTING_KEYS`; a FAILED read is ``unknown``
+#: there as at every key. A lane text that predates these keys writes none of
+#: them and is rejected under the SAME schema version, naming the four keys in
+#: ``missing_keys``: a schema bump would collapse the diagnosis to ``['schema']``
+#: and tell the operator nothing about what to add.
 LANDING_REQUIRED_KEYS: tuple[str, ...] = (
     'schema',
     'plan_id',
@@ -1386,6 +1400,10 @@ LANDING_REQUIRED_KEYS: tuple[str, ...] = (
     'effort',
     'plugin_version',
     'steps',
+    'unresolved_review_threads',
+    'review_body_findings_total',
+    'review_body_findings_handled',
+    'sonar_open_new_issues',
 )
 
 #: The ANSWERED-degraded class: a value a producer is SANCTIONED to write
@@ -1404,8 +1422,8 @@ LANDING_ANSWERED_SENTINELS: frozenset[str] = frozenset({'n/a'})
 #: FAILED READ, never an end state. Compared case-insensitively after stripping.
 #:
 #: ⛔ This class carries **NO allow-list and no per-key gate**: a key holding one
-#: of these values is unsupplied at EVERY key, ``pr``, ``merge_state`` and
-#: ``cleanup_owed`` included — precisely the keys
+#: of these values is unsupplied at EVERY key, ``pr``, ``merge_state``,
+#: ``cleanup_owed`` and ``sonar_open_new_issues`` included — precisely the keys
 #: :data:`LANDING_SENTINEL_REJECTING_KEYS` deliberately omits. That asymmetry between the two classes is the whole point
 #: of splitting them. Gating this class the way the answered class is gated would
 #: reintroduce the defect the split closes: ``merge_state=unknown`` would drain as
@@ -1428,15 +1446,14 @@ LANDING_COULD_NOT_READ_SENTINELS: frozenset[str] = frozenset({'unknown'})
 #: exactly the conflation the two-class split removes.
 #:
 #: The set is deliberately a SUBSET of :data:`LANDING_REQUIRED_KEYS`, and the
-#: asymmetry is the point: ``pr`` and ``merge_state`` stay allowed to be ``n/a``
-#: because "no PR exists" is a real end state the payload spec names, so an
-#: ANSWERED-degraded value there is an answer rather than a gap. ``cleanup_owed``
-#: stays outside for the same reason: a plan whose manifest carried no
-#: ``branch-cleanup`` step owes no cleanup it could record, so ``n/a`` there is
-#: an observed absence, not a producer that failed to read the fact. None of the
-#: three is thereby allowed to be ``unknown`` — that value is a failed read at
+#: asymmetry is the point: four keys stay allowed to be ``n/a`` because each names
+#: an absence a run can OBSERVE — ``pr`` ("no PR exists"), ``merge_state``,
+#: ``cleanup_owed`` (no ``branch-cleanup`` step ran, so no cleanup is owed) and
+#: ``sonar_open_new_issues`` (this project does not analyse with Sonar) — so an
+#: ANSWERED-degraded value at any of them is an answer rather than a gap. None of
+#: the four is thereby allowed to be ``unknown``: that value is a failed read at
 #: every key, which is why the fix is this split and NOT the widening of this set
-#: to include ``merge_state``. ``schema`` needs no entry —
+#: to include them. ``schema`` needs no entry —
 #: :func:`check_landing_completeness` fail-closes on any value other than
 #: :data:`LANDING_FACTS_SCHEMA` before the required-key sweep runs, so a sentinel
 #: of either class is already rejected there by the stricter check.
@@ -1451,6 +1468,9 @@ LANDING_SENTINEL_REJECTING_KEYS: frozenset[str] = frozenset(
         'effort',
         'plugin_version',
         'steps',
+        'unresolved_review_threads',
+        'review_body_findings_total',
+        'review_body_findings_handled',
     }
 )
 
@@ -1468,7 +1488,7 @@ def _is_unsupplied(key: str, facts: dict[str, str]) -> bool:
        nothing was observed, which is never an answer, so there is no key at
        which it could legitimately stand in for a fact. This test runs BEFORE the
        per-key gate below precisely so the gate cannot exempt it: ``pr``,
-       ``merge_state`` and ``cleanup_owed`` are outside
+       ``merge_state``, ``cleanup_owed`` and ``sonar_open_new_issues`` are outside
        :data:`LANDING_SENTINEL_REJECTING_KEYS`, and a gated could-not-read value
        would drain there as a settled fact.
     3. **An ANSWERED sentinel** (:data:`LANDING_ANSWERED_SENTINELS`) at a key
@@ -1554,12 +1574,14 @@ def check_landing_completeness(payload_body: str) -> tuple[bool, list[str]]:
 
       - An ANSWERED sentinel (``n/a``, per :data:`LANDING_ANSWERED_SENTINELS`) is
         rejected only at :data:`LANDING_SENTINEL_REJECTING_KEYS`. ``pr``,
-        ``merge_state`` and ``cleanup_owed`` stay allowed to be ``n/a``, because
-        "no PR exists" and "no cleanup step ran" are real end states the payload
+        ``merge_state``, ``cleanup_owed`` and ``sonar_open_new_issues`` stay
+        allowed to be ``n/a``, because "no PR exists", "no cleanup step ran" and
+        "this project does not analyse with Sonar" are real end states the payload
         spec names and the value there is an answer rather than a gap.
       - A COULD-NOT-READ sentinel (``unknown``, per
         :data:`LANDING_COULD_NOT_READ_SENTINELS`) is rejected at EVERY key, with
-        no allow-list — ``pr``, ``merge_state`` and ``cleanup_owed`` included. It asserts only that
+        no allow-list — ``pr``, ``merge_state``, ``cleanup_owed`` and
+        ``sonar_open_new_issues`` included. It asserts only that
         nothing was observed, so it is a failed read wherever it appears. This is
         why the fix was to SPLIT the vocabulary rather than to add ``merge_state``
         to the rejecting set: ``merge_state=n/a`` must stay an answer while
@@ -3564,8 +3586,8 @@ def cmd_inbox_landing_check(args: Any) -> dict[str, Any]:
     reported missing only at :data:`LANDING_SENTINEL_REJECTING_KEYS`; a
     COULD-NOT-READ sentinel (``unknown``,
     :data:`LANDING_COULD_NOT_READ_SENTINELS`) asserts only that nothing was
-    observed and is reported missing at EVERY key, ``pr``, ``merge_state`` and
-    ``cleanup_owed`` included. So ``merge_state=n/a`` leaves a landing complete while
+    observed and is reported missing at EVERY key, ``pr``, ``merge_state``,
+    ``cleanup_owed`` and ``sonar_open_new_issues`` included. So ``merge_state=n/a`` leaves a landing complete while
     ``merge_state=unknown`` does not — the drain records the failed read as a gap
     instead of reconciling against it as a settled merge fact.
 

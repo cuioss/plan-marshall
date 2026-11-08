@@ -3,12 +3,14 @@
 """Tests for the lane's Sonar state and the merge condition it gates on.
 
 The lane's job here is the half the merge gate was missing: a pull request whose
-Sonar analysis still carries open issues is not ready, even when the SonarCloud
-gate passes (that gate judges thresholds on new code, so it passes with issues
+Sonar analysis still carries open findings is not ready, even when the SonarCloud
+gate passes (that gate judges thresholds on new code, so it passes with findings
 open). ``resolve`` reports the project's Sonar state beside its reviewers, the
-lane reads the pull request's open issues through the provider's plan-less read,
+lane reads the pull request's open findings through the provider's plan-less read,
 and the merge is admitted only when the read is a confirmed zero or every
-remaining issue carries a recorded dismissal.
+remaining finding is one the OPERATOR selected for dismissal. The lane never
+records a dismissal itself: a gate that accepted the lane's own list would let the
+run dismiss its own findings.
 
 Two failure modes are pinned here because each looks clean and is not:
 
@@ -22,6 +24,7 @@ Two failure modes are pinned here because each looks clean and is not:
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 from test_runbook_lane import (
@@ -150,32 +153,78 @@ def test_a_confirmed_zero_admits_the_merge() -> None:
     assert verdict['reason'] == 'no_open_issues'
 
 
-def test_every_open_issue_dismissed_with_a_reason_admits_the_merge() -> None:
-    verdict = cmd_sonar_gate(_gate_args(open_count='2', open_keys='K1,K2', dismissed_keys='K1,K2'))
+def test_every_open_finding_the_operator_selected_admits_the_merge(tmp_path: Path) -> None:
+    verdict = cmd_sonar_gate(
+        _gate_with_progress(
+            _progress_file(tmp_path, 'K1', 'K2'),
+            open_count='2',
+            open_keys='K1,K2',
+            operator_selected_keys='K1,K2',
+            hotspot_keys='',
+        )
+    )
 
     assert verdict['merge_allowed'] is True
-    assert verdict['reason'] == 'all_open_issues_dismissed'
+    assert verdict['reason'] == 'all_open_issues_operator_selected'
 
 
-def test_an_open_issue_without_a_dismissal_blocks_the_merge() -> None:
-    verdict = cmd_sonar_gate(_gate_args(open_count='2', open_keys='K1,K2', dismissed_keys='K1'))
+def test_an_open_finding_the_operator_did_not_select_blocks_the_merge(tmp_path: Path) -> None:
+    verdict = cmd_sonar_gate(
+        _gate_with_progress(
+            _progress_file(tmp_path, 'K1'),
+            open_count='2',
+            open_keys='K1,K2',
+            operator_selected_keys='K1',
+            hotspot_keys='',
+        )
+    )
 
     assert verdict['merge_allowed'] is False
-    assert verdict['reason'] == 'open_issues_undismissed'
-    assert verdict['undismissed_keys'] == ['K2']
+    assert verdict['reason'] == 'open_issues_not_operator_selected'
+    assert verdict['unselected_keys'] == ['K2']
+
+
+def test_a_selection_without_a_progress_file_is_refused() -> None:
+    """The flag alone is the lane's word, and the word is what this gate stopped taking."""
+    verdict = cmd_sonar_gate(_gate_args(open_count='1', open_keys='K1', operator_selected_keys='K1'))
+
+    assert verdict['status'] == 'error'
+    assert verdict['error'] == 'progress_file_required'
+
+
+def test_the_gate_refuses_a_dismissal_the_lane_recorded_itself() -> None:
+    """The retired surface: a lane-recorded dismissal is not an input at all.
+
+    The lane dismissing its own findings is the whole defect this closes, so the
+    old flag is a tombstone that refuses BY NAME rather than an argparse
+    rejection an operator would have to read as a typo.
+    """
+    verdict = cmd_sonar_gate(_gate_args(open_count='2', open_keys='K1,K2', dismissed_keys='K1,K2'))
+
+    assert verdict['status'] == 'error'
+    assert verdict['error'] == 'lane_dismissal_not_accepted'
+    assert '--operator-selected-keys' in verdict['message']
 
 
 def test_a_count_with_no_enumerated_keys_cannot_be_verified() -> None:
-    """A count alone is not a per-issue disposition, so it is refused rather than passed."""
+    """A count alone is not a per-finding disposition, so it is refused rather than passed."""
     verdict = cmd_sonar_gate(_gate_args(open_count='3'))
 
     assert verdict['merge_allowed'] is False
     assert verdict['reason'] == 'open_issue_keys_missing'
 
 
-def test_a_repeated_key_cannot_stand_in_for_two_issues() -> None:
-    """Distinct keys, not list length: K1,K1 enumerates one issue, not two."""
-    verdict = cmd_sonar_gate(_gate_args(open_count='2', open_keys='K1,K1', dismissed_keys='K1'))
+def test_a_repeated_key_cannot_stand_in_for_two_findings(tmp_path: Path) -> None:
+    """Distinct keys, not list length: K1,K1 enumerates one finding, not two."""
+    verdict = cmd_sonar_gate(
+        _gate_with_progress(
+            _progress_file(tmp_path, 'K1'),
+            open_count='2',
+            open_keys='K1,K1',
+            operator_selected_keys='K1',
+            hotspot_keys='',
+        )
+    )
 
     assert verdict['merge_allowed'] is False
     assert verdict['reason'] == 'open_issue_keys_missing'
@@ -226,6 +275,115 @@ def test_a_not_configured_state_refuses_a_read_supplied_beside_it() -> None:
     assert verdict['error'] == 'state_contradicts_read'
 
 
+@pytest.mark.parametrize(
+    'flags',
+    [
+        {'count_status': 'confirmed'},
+        {'open_keys': 'K1'},
+        {'operator_selected_keys': 'K1'},
+    ],
+    ids=['count-status', 'open-keys', 'operator-selected-keys'],
+)
+def test_every_read_flag_beside_not_configured_is_refused(flags) -> None:
+    """Every read flag is one read: dropping one silently would let it drain as allowed."""
+    verdict = cmd_sonar_gate(_gate_args(state='not_configured', **flags))
+
+    assert verdict['status'] == 'error'
+    assert verdict['error'] == 'state_contradicts_read'
+    assert '--operator-selected-keys' in verdict['message']
+
+
+def _progress_file(tmp_path: Path, *keys: str) -> Path:
+    path = tmp_path / 'progress.md'
+    path.write_text(
+        '\n'.join(f'operator-selected: {key}: the operator selected it' for key in keys) + '\n',
+        encoding='utf-8',
+    )
+    return path
+
+
+def _gate_with_progress(progress: Path, **flags: str) -> Any:
+    """Build the namespace, then attach the progress file the flag parser would set."""
+    args: Any = _gate_args(**flags)
+    args.progress_file = str(progress)
+    return args
+
+
+def test_a_selection_the_progress_file_records_admits_the_merge(tmp_path: Path) -> None:
+    progress = _progress_file(tmp_path, 'K1', 'K2')
+
+    verdict = cmd_sonar_gate(
+        _gate_with_progress(
+            progress, open_count='2', open_keys='K1,K2', operator_selected_keys='K1,K2', hotspot_keys=''
+        )
+    )
+
+    assert verdict['merge_allowed'] is True
+    assert verdict['reason'] == 'all_open_issues_operator_selected'
+
+
+def test_a_selection_the_progress_file_does_not_record_is_refused(tmp_path: Path) -> None:
+    """The flag alone is the lane's word; the record is what the gate believes."""
+    progress = _progress_file(tmp_path, 'K1')
+
+    verdict = cmd_sonar_gate(
+        _gate_with_progress(
+            progress, open_count='2', open_keys='K1,K2', operator_selected_keys='K1,K2', hotspot_keys=''
+        )
+    )
+
+    assert verdict['merge_allowed'] is False
+    assert verdict['reason'] == 'selection_not_recorded'
+    assert verdict['unrecorded_keys'] == ['K2']
+
+
+def test_an_unreadable_progress_file_refuses_every_selection(tmp_path: Path) -> None:
+    verdict = cmd_sonar_gate(
+        _gate_with_progress(
+            tmp_path / 'absent.md',
+            open_count='1',
+            open_keys='K1',
+            operator_selected_keys='K1',
+            hotspot_keys='',
+        )
+    )
+
+    assert verdict['merge_allowed'] is False
+    assert verdict['reason'] == 'selection_not_recorded'
+
+
+def test_a_selection_without_the_hotspot_set_is_refused(tmp_path: Path) -> None:
+    """Omitting the hotspot set would let a selected hotspot pass as an issue."""
+    verdict = cmd_sonar_gate(
+        _gate_with_progress(
+            _progress_file(tmp_path, 'K1'),
+            open_count='1',
+            open_keys='K1',
+            operator_selected_keys='K1',
+        )
+    )
+
+    assert verdict['status'] == 'error'
+    assert verdict['error'] == 'hotspot_keys_required'
+
+
+def test_a_selected_hotspot_key_is_refused(tmp_path: Path) -> None:
+    """A hotspot has no transition verb, so a recorded dismissal of one is a fiction."""
+    verdict = cmd_sonar_gate(
+        _gate_with_progress(
+            _progress_file(tmp_path, 'H1'),
+            open_count='1',
+            open_keys='H1',
+            operator_selected_keys='H1',
+            hotspot_keys='H1',
+        )
+    )
+
+    assert verdict['merge_allowed'] is False
+    assert verdict['reason'] == 'hotspot_not_dismissable'
+    assert verdict['hotspot_keys'] == ['H1']
+
+
 def test_the_gate_rejects_a_state_outside_the_closed_set() -> None:
     verdict = cmd_sonar_gate(_gate_args(state='maybe'))
 
@@ -267,6 +425,31 @@ def test_the_merge_condition_binds_the_merge_to_the_gate_verdict() -> None:
 
 def test_the_lane_text_states_the_not_configured_skip() -> None:
     assert 'not_configured' in _skill_text()
+
+
+def test_the_lane_text_binds_a_dismissal_to_the_operator_selection() -> None:
+    """The lane may not dismiss its own findings; the gate admits only the operator's keys."""
+    section = _section('## 6. Pull request and reviews')
+
+    assert 'operator' in section.lower(), '§ 6 never mentions the operator in the dismissal rule'
+    assert 'question tool' in section, '§ 6 does not name the selection surface'
+    assert '--operator-selected-keys' in section, '§ 6 does not name the gate flag the selection feeds'
+
+
+def test_the_merge_gate_never_offers_merging_on_recorded_evidence() -> None:
+    section = _section('## 7. Merge gate')
+
+    assert 'operator' in section.lower()
+    assert 'recorded evidence' in section, '§ 7 does not forbid merging on the lane-recorded evidence'
+
+
+def test_the_merge_gate_names_the_review_gate_as_a_condition() -> None:
+    """The verb the review half decides on is a gate condition, not prose judgement."""
+    section = _section('## 7. Merge gate')
+
+    assert 'review-gate' in section
+    assert 'merge_allowed' in section
+    assert 'never overrides' in section, '§ 7 does not say the standing authorization cannot override a false'
 
 
 # =============================================================================

@@ -125,7 +125,7 @@ assert _UNREGISTERED_TOKEN not in _REGISTERED_BOTS, (
 # retires a publish shape breaks these tests loudly instead of silently.
 CODERABBIT_EVIDENCE = {'coderabbit': 'inline'}
 SOURCERY_EVIDENCE = {'sourcery': 'review_body'}
-PR_AGENT_EVIDENCE = {'cuioss-review-bot': 'issue_comment'}
+
 
 #: The publish-shape vocabulary DERIVED from the live registry: the union of every
 #: registered bot's declared ``participation_evidence``, sorted so the pairing order
@@ -480,11 +480,11 @@ class TestStateTaxonomy:
         plan_id = 'rc-state-refused-unknown'
         plan_context.plan_dir_for(plan_id)
 
-        result = rc.check_completeness(plan_id, ['cuioss-review-bot'], refused_bots=['cuioss-review-bot'])
+        result = rc.check_completeness(plan_id, ['retired-bot'], refused_bots=['retired-bot'])
 
-        assert rc.bot_registry.rate_limit_class('cuioss-review-bot') == 'unknown'
-        assert _state_of(result, 'cuioss-review-bot') == rc.STATE_REFUSED_UNKNOWN
-        assert _state_of(result, 'cuioss-review-bot') != rc.STATE_REFUSED_HARD
+        assert rc.bot_registry.rate_limit_class('retired-bot') == 'unknown'
+        assert _state_of(result, 'retired-bot') == rc.STATE_REFUSED_UNKNOWN
+        assert _state_of(result, 'retired-bot') != rc.STATE_REFUSED_HARD
         assert rc.STATE_REFUSED_UNKNOWN in rc._UNPROVEN_STATES
         assert result['participation_complete'] is False
 
@@ -607,19 +607,21 @@ class TestStateTaxonomy:
         plan_id = 'rc-state-declined'
         plan_context.plan_dir_for(plan_id)
 
-        result = rc.check_completeness(plan_id, ['cuioss-review-bot'], declined_bots=['cuioss-review-bot'])
+        result = rc.check_completeness(plan_id, ['retired-bot'], declined_bots=['retired-bot'])
 
-        assert _state_of(result, 'cuioss-review-bot') == rc.STATE_DECLINED
-        assert result['unproven_bots'] == ['cuioss-review-bot']
+        assert _state_of(result, 'retired-bot') == rc.STATE_DECLINED
+        assert result['unproven_bots'] == ['retired-bot']
         assert result['participation_complete'] is False
 
         control_id = 'rc-state-declined-absent-control'
         plan_context.plan_dir_for(control_id)
-        control = rc.check_completeness(control_id, ['cuioss-review-bot'])
+        control = rc.check_completeness(control_id, ['retired-bot'])
 
         assert control['participation_complete'] == result['participation_complete']
         assert control['unproven_bots'] == result['unproven_bots']
-        assert _state_of(control, 'cuioss-review-bot') == rc.STATE_ABSENT
+        # An unobserved unregistered kind is the CONFIGURATION refinement of absent —
+        # unproven and blocking exactly as absent, with a different remedy.
+        assert _state_of(control, 'retired-bot') == rc.STATE_UNREGISTERED_KIND
 
     def test_declined_is_an_unproven_state_distinct_from_refused_and_stale(self, plan_context):
         """``declined`` blocks like the others but is a DISTINCT member with its own remedy.
@@ -653,10 +655,10 @@ class TestStateTaxonomy:
         # Shape B: incremental-review decline.
         decline_id = 'rc-two-shapes-decline'
         plan_context.plan_dir_for(decline_id)
-        decline = rc.check_completeness(decline_id, ['cuioss-review-bot'], declined_bots=['cuioss-review-bot'])
+        decline = rc.check_completeness(decline_id, ['retired-bot'], declined_bots=['retired-bot'])
         assert decline['participation_complete'] is False
-        assert 'cuioss-review-bot' in decline['unproven_bots']
-        assert _state_of(decline, 'cuioss-review-bot') == rc.STATE_DECLINED
+        assert 'retired-bot' in decline['unproven_bots']
+        assert _state_of(decline, 'retired-bot') == rc.STATE_DECLINED
 
     def test_a_refusal_outranks_a_decline(self, plan_context):
         """A bot with BOTH an explicit refusal and a decline is classified refused.
@@ -745,7 +747,7 @@ class TestStateTaxonomy:
         # The expected member is derived from the bot's own three-valued
         # rate_limit_class through the DEFAULT mapping (neither override is in play
         # here), never written as a literal, so a bot whose class is ``unknown``
-        # (cuioss-review-bot) is asserted as ``refused_unknown`` — not folded into
+        # (retired-bot) is asserted as ``refused_unknown`` — not folded into
         # ``refused_hard`` — and the sweep stays correct if a bot's class changes.
         expected = rc._refusal_state(rc.bot_registry.rate_limit_class(bot_kind))
 
@@ -905,13 +907,13 @@ class TestStateTaxonomy:
         result = rc.check_completeness(
             plan_id,
             ['coderabbit', 'sourcery'],
-            optional_bots=['cuioss-review-bot'],
+            optional_bots=['retired-bot'],
             participated_bots=CODERABBIT_EVIDENCE,
             refused_bots=['sourcery'],
         )
 
         classified = [r['bot_kind'] for r in result['bot_states']]
-        assert classified == ['coderabbit', 'sourcery', 'cuioss-review-bot']
+        assert classified == ['coderabbit', 'sourcery', 'retired-bot']
         assert len(set(classified)) == len(classified)
         # DERIVED from the classifier's own ``STATE_`` constants rather than
         # hand-listed. The hand-written set this replaces had already drifted: it
@@ -986,11 +988,11 @@ class TestTriageStateAwareness:
         plan_id = 'rc-empty-store'
         plan_context.plan_dir_for(plan_id)
 
-        result = rc.check_completeness(plan_id, ['coderabbit', 'cuioss-review-bot'])
+        result = rc.check_completeness(plan_id, ['coderabbit', 'retired-bot'])
 
         assert result['participation_complete'] is False
         assert result['pending_bots'] == []
-        assert result['unproven_bots'] == ['coderabbit', 'cuioss-review-bot']
+        assert result['unproven_bots'] == ['coderabbit', 'retired-bot']
 
 
 class TestParticipationIsNotReviewQuality:
@@ -1145,14 +1147,14 @@ class TestReviewStateSummary:
             [
                 {'bot_kind': 'coderabbit', 'state': rc.STATE_REFUSED_AWAITABLE},
                 {'bot_kind': 'sourcery', 'state': rc.STATE_REFUSED_HARD},
-                {'bot_kind': 'cuioss-review-bot', 'state': rc.STATE_REFUSED_UNKNOWN},
+                {'bot_kind': 'retired-bot', 'state': rc.STATE_REFUSED_UNKNOWN},
             ]
         )
         reviewed_clean = rc.compose_review_state_summary(
             [
                 {'bot_kind': 'coderabbit', 'state': rc.STATE_PARTICIPATED_BUT_EMPTY},
                 {'bot_kind': 'sourcery', 'state': rc.STATE_PARTICIPATED_BUT_EMPTY},
-                {'bot_kind': 'cuioss-review-bot', 'state': rc.STATE_PARTICIPATED_BUT_EMPTY},
+                {'bot_kind': 'retired-bot', 'state': rc.STATE_PARTICIPATED_BUT_EMPTY},
             ]
         )
         assert nobody == '3 refused'
@@ -1190,8 +1192,8 @@ class TestReviewStateSummary:
         plan_context.plan_dir_for(plan_id)
         result = rc.check_completeness(
             plan_id,
-            ['coderabbit', 'sourcery', 'cuioss-review-bot'],
-            refused_bots=['coderabbit', 'sourcery', 'cuioss-review-bot'],
+            ['coderabbit', 'sourcery', 'retired-bot'],
+            refused_bots=['coderabbit', 'sourcery', 'retired-bot'],
         )
         assert result['review_state_summary'] == '3 refused'
 

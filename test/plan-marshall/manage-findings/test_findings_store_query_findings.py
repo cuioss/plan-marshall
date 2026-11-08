@@ -236,9 +236,7 @@ def test_query_findings_unified_applies_component_to_both_slices(plan_context):
 def test_query_findings_by_bot_kind(plan_context):
     """query_findings filters by exact bot_kind match."""
     add_finding('store-prc-bybotkind', 'pr-comment', 'C1', 'd', author='coderabbitai[bot]', bot_kind='coderabbit')
-    add_finding(
-        'store-prc-bybotkind', 'pr-comment', 'C2', 'd', author='cuioss-review-bot[bot]', bot_kind='cuioss-review-bot'
-    )
+    add_finding('store-prc-bybotkind', 'pr-comment', 'C2', 'd', author='sourcery-ai[bot]', bot_kind='sourcery')
     add_finding('store-prc-bybotkind', 'pr-comment', 'C3', 'd', author='coderabbitai[bot]', bot_kind='coderabbit')
 
     result = query_findings('store-prc-bybotkind', bot_kind='coderabbit')
@@ -250,9 +248,9 @@ def test_query_findings_by_bot_kind(plan_context):
 def test_query_findings_bot_kind_excludes_unfielded(plan_context):
     """The bot_kind filter excludes pr-comment findings that carry no bot_kind."""
     add_finding('store-prc-botkind-mix', 'pr-comment', 'Legacy', 'd', author='octocat', kind='inline')
-    add_finding('store-prc-botkind-mix', 'pr-comment', 'Bot', 'd', bot_kind='cuioss-review-bot')
+    add_finding('store-prc-botkind-mix', 'pr-comment', 'Bot', 'd', bot_kind='sourcery')
 
-    result = query_findings('store-prc-botkind-mix', bot_kind='cuioss-review-bot')
+    result = query_findings('store-prc-botkind-mix', bot_kind='sourcery')
     assert result['total_count'] == 2
     assert result['filtered_count'] == 1
     assert result['findings'][0]['title'] == 'Bot'
@@ -279,7 +277,7 @@ def test_query_findings_unified_carries_reviewed_commit_sha_and_bot_kind(plan_co
 def test_query_findings_unified_filters_by_bot_kind(plan_context):
     """The unified read narrows the merged result by bot_kind."""
     add_finding('store-prc-unified-bk', 'pr-comment', 'From coderabbit', 'd', bot_kind='coderabbit')
-    add_finding('store-prc-unified-bk', 'pr-comment', 'From cuioss-review-bot', 'd', bot_kind='cuioss-review-bot')
+    add_finding('store-prc-unified-bk', 'pr-comment', 'From retired-bot', 'd', bot_kind='retired-bot')
 
     unified = query_findings_unified('store-prc-unified-bk', bot_kind='coderabbit')
     assert unified['plan_count'] == 1

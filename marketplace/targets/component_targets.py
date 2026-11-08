@@ -45,10 +45,10 @@ moment it is read and an invalid one aborts the build
   that would otherwise silently narrow the component's reach;
 * an empty list — a component shipped nowhere is an authoring error, not
   an intent; omitting the field is how you say "everywhere";
-* a list naming ONLY targets that emit no component tree (``cuioss-review-bot``
-  derives a set of reviewer pack artifacts from skill rules, so it has no
-  component to filter) — such a declaration passes a registry-membership
-  check while still shipping the component nowhere;
+* a list naming ONLY targets that emit no component tree (a target whose
+  output is not an assistant bundle tree derives its artifacts from bundle
+  content rather than filtering components) — such a declaration passes a
+  registry-membership check while still shipping the component nowhere;
 * a file inside a skill declaring a scope its enclosing component does not
   share — a file may only narrow its parent's. ``[claude]`` inside a skill
   scoped ``[opencode]`` contradicts the component it lives in. Only the
@@ -474,13 +474,12 @@ def emits_to(path: Path, target_name: str) -> bool:
     Raises:
         TargetScopeError: The component's declaration is invalid. Validation
             runs on every read, so an invalid declaration aborts any run that
-            calls this predicate. What that covers is every component-tree
+            calls this predicate. What that covers is every bundle-tree
             target's emit, plus the Claude target's validate-only mode (which
-            re-walks each bundle's components for this check alone). A
-            ``cuioss-review-bot``-only run does NOT validate: it opens skill manifests
-            to harvest rule text, but it never asks whether a component is
-            in scope, because it emits no component. The plugin-doctor
-            ``targets-scope-invalid`` rule is the authoring-time net there.
+            re-walks each bundle's components for this check alone). A target
+            that emits no component tree never asks this question, so it does
+            not validate; the plugin-doctor ``targets-scope-invalid`` rule is
+            the authoring-time net there.
     """
     scope = read_target_scope(path)
     return scope is None or target_name in scope

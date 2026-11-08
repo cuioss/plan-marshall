@@ -306,7 +306,7 @@ of 11 PRs to it.
 === A second control: PR-Agent's canned no-op
 
 This epic exists to fix reviewer-signal reliability, so its own PRs are first-party evidence for its
-own subject. `cuioss-review-bot` (PR-Agent) posted a Reviewer Guide on **every** PR in both lanes —
+own subject. The in-house PR-Agent reviewer posted a Reviewer Guide on **every** PR in both lanes —
 so its *coverage* is 100% and carries no information. Its **content** does:
 
 [cols="4,2,2",options="header"]
