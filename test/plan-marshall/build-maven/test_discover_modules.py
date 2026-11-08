@@ -850,7 +850,7 @@ def test_normalise_module_path_reads_a_pom_file_entry():
     """A ``<module>`` naming a POM FILE resolves to the directory holding it.
 
     Maven 4 allows ``<module>child/pom-alt.xml</module>``; reading only the
-    ``pom.xml`` suffix left that module out of the reactor, which under-granted
+    ``pom.xml`` suffix leaves that module out of the reactor, which under-grants
     the root's whole-reactor test canonicals.
     """
     assert _normalise_module_path('.', 'child/pom-alt.xml') == 'child'
@@ -871,8 +871,8 @@ def test_normalise_module_path_keeps_a_property_entry_as_a_named_under_grant():
 def test_discover_reads_maven4_subprojects_as_the_reactor():
     """Maven 4.1's ``<subprojects>`` is the same reactor list as ``<modules>``.
 
-    Reading only ``<modules>`` left a Maven 4 reactor with no whole-reactor test
-    canonical at its root and no ``-pl`` form on its members.
+    Reading only ``<modules>`` would leave a Maven 4 reactor with no whole-reactor
+    test canonical at its root and no ``-pl`` form on its members.
     """
     root = _make_module_tree({'.': _SUBPROJECTS_POM, 'core': _CORE_JAR_POM})
     _add_test_source(root, 'core')

@@ -134,9 +134,9 @@ def test_a_merge_candidate_newer_than_the_functional_review_head_refuses():
 def test_a_merge_with_no_stale_record_never_scans_the_step_population(monkeypatch):
     """A merge whose records all sit at the candidate pays for no declaration scan.
 
-    The population scan walks every bundle and skill root; running it before any
-    record is known stale charged every ordinary merge for a check that never
-    answered anything.
+    The population scan walks every bundle and skill root, so running it before any
+    record is known stale charges every ordinary merge for a check that answers
+    nothing.
     """
 
     def _unexpected_scan():
@@ -200,6 +200,27 @@ def test_every_declared_fact_key_is_accepted():
     assert written, 'the accepted fact set reaches the writer'
     for fact in _declared_merge_facts():
         assert fact in written[0]
+
+
+def test_an_unreadable_fact_declaration_refuses_the_record(monkeypatch):
+    """A declaration nobody could read refuses the write, naming the fault.
+
+    Failing open here would write facts no reader of the step can check, which is
+    the same silent pass the key check exists to remove.
+    """
+    monkeypatch.setattr(gate, '_declared_fact_keys', lambda: (None, 'the population raised'))
+    written: list[list[str]] = []
+
+    result = gate.record_merge(
+        'lb55-plan',
+        facts=_declared_merge_facts(),
+        mark_done_runner=lambda argv: written.append(list(argv)) or {'status': 'success'},
+    )
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'facts_declaration_unreadable'
+    assert 'the population raised' in result['message']
+    assert written == []
 
 
 def test_a_fault_text_with_a_quote_and_a_newline_is_recorded_intact():

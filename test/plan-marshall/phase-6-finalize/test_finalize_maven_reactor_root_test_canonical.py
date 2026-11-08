@@ -283,3 +283,24 @@ def test_a_module_without_tests_cascades_to_the_reactor_roots_run(tmp_path: Path
     assert result['status'] == 'success', result
     assert result['module'] == 'probe-parent'
     assert result['executable'].endswith('--command-args "test"')
+
+
+def test_the_gate_record_names_an_unreadable_pom_as_its_cause() -> None:
+    """An unreadable POM is a NAMED cause behind the gate's DEGRADED record.
+
+    Discovery carries ``pom_error: pom_unreadable`` and grants no canonical, so the
+    module-tests arm falls to branch 0. The gate document binds that token to the
+    branch-0 WARNING and to the DEGRADED verdict, so a reader of the step record
+    can tell a broken descriptor from a project that simply has no tests.
+    """
+    from conftest import MARKETPLACE_ROOT
+
+    doc = (
+        MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-6-finalize' / 'standards' / 'pre-push-quality-gate.md'
+    ).read_text(encoding='utf-8')
+    marker = 'pom_error: pom_unreadable'
+    assert marker in doc
+
+    passage = doc[doc.index(marker) :]
+    assert 'MUST name `pom_unreadable`' in passage
+    assert 'module-tests DEGRADED' in doc

@@ -1020,8 +1020,9 @@ def test_without_a_project_dir_a_summary_less_run_stays_indeterminate(tmp_path):
 def test_a_skip_phrase_inside_test_output_does_not_silence_the_guard(tmp_path):
     """Only Maven's OWN line is the skip marker, not the same words inside output.
 
-    A test that prints "Tests are skipped." used to satisfy a substring match over
-    the whole log and turn a run that summarised nothing into a green.
+    A test that prints "Tests are skipped." must not satisfy the marker: a
+    substring match over the whole log turns a run that summarised nothing into a
+    green.
     """
     result = _quiet_guard_result(tmp_path, 'maven-quiet-green-no-summary.log')
     log = Path(result['log_file'])
@@ -1037,10 +1038,43 @@ def test_a_skip_phrase_inside_test_output_does_not_silence_the_guard(tmp_path):
     assert guarded['status'] == 'indeterminate'
 
 
+def test_a_report_written_before_the_log_finished_still_counts(tmp_path):
+    """The bound is the run's START, not the log's last write (Maven 3.9.16, Surefire 3.5.2).
+
+    A real run writes its Surefire reports mid-build and keeps appending to the
+    log afterwards (``BUILD SUCCESS``, the reactor summary), so a report is
+    normally OLDER than the log's final stamp. Bounding on the start keeps it;
+    bounding on the log's last write would discard every real report.
+    """
+    result = _quiet_guard_result(tmp_path, 'maven-quiet-green-no-summary.log')
+    _write_surefire_report(tmp_path, 7)
+    log_file = Path(result['log_file'])
+    log_file.write_text(log_file.read_text(encoding='utf-8') + '[INFO] BUILD SUCCESS\n', encoding='utf-8')
+
+    guarded = apply_zero_test_guard(result, 'test', project_dir=str(tmp_path))
+
+    assert guarded['status'] == 'success'
+
+
+def test_a_no_tests_phrase_inside_test_output_does_not_earn_a_green(tmp_path):
+    """Only Surefire's OWN line is the no-test-class answer, not the same words inside output."""
+    result = _quiet_guard_result(tmp_path, 'maven-quiet-green-no-summary.log')
+    Path(result['log_file']).write_text(
+        '[INFO] --- surefire:3.5.2:test (default-test) @ a ---\n'
+        '[INFO] com.example.OutputTest: No tests to run. (this is test stdout)\n'
+        '[INFO] BUILD SUCCESS\n',
+        encoding='utf-8',
+    )
+
+    guarded = apply_zero_test_guard(result, 'test', project_dir=str(tmp_path))
+
+    assert guarded['status'] == 'indeterminate'
+
+
 def test_a_fully_qualified_plugin_goal_is_a_test_phase_goal():
     """``g:a:v:test`` is a goal Maven accepts, so the guard must read it.
 
-    The version segment broke the old two-part pattern, leaving the run unguarded.
+    A two-part pattern cannot see the version segment, so the run stays unguarded.
     """
     goal = 'org.apache.maven.plugins:maven-surefire-plugin:3.5.2:test'
 
@@ -1067,12 +1101,13 @@ def test_a_failsafe_integration_selector_is_read():
     assert _maven_cmd_parse_mod.dtest_selector('mvnw test -Dtest=Awaits#runs') == 'Awaits#runs'
 
 
-def test_a_named_failsafe_miss_on_a_green_verify_is_not_a_green(tmp_path):
+def test_a_named_failsafe_miss_on_a_verify_run_is_not_a_green(tmp_path):
     """A ``verify`` run whose Failsafe selector matched nothing is not green.
 
-    The miss is on the runner's failure path, so the log NAMES it even when the
-    build exits 0. Reading only ``-Dtest`` left the whole integration-test
-    selector unguarded.
+    The runner names the pattern on its FAILURE path, which is the shape a
+    ``-Dit.test`` miss takes under the default ``failIfNoSpecifiedTests``. Reading
+    only ``-Dtest`` leaves the whole integration-test selector unguarded, so this
+    run reads as its own bare failure rather than as the named wrong selection.
     """
     log_file = tmp_path / 'failsafe-miss.log'
     log_file.write_text(
@@ -1080,12 +1115,12 @@ def test_a_named_failsafe_miss_on_a_green_verify_is_not_a_green(tmp_path):
         '[ERROR] Failed to execute goal org.apache.maven.plugins:maven-failsafe-plugin:3.5.2:integration-test '
         '(default) on project a: No tests matching pattern "Awaits#runs" were executed! '
         '(Set -Dfailsafe.failIfNoSpecifiedTests=false to ignore this error.)\n'
-        '[INFO] BUILD SUCCESS\n',
+        '[INFO] BUILD FAILURE\n',
         encoding='utf-8',
     )
     result = {
-        'status': 'success',
-        'exit_code': 0,
+        'status': 'error',
+        'exit_code': 1,
         'duration_seconds': 3,
         'log_file': str(log_file),
         'command': 'mvnw verify -Dit.test=Awaits#runs',

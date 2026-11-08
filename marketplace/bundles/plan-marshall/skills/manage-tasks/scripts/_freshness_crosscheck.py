@@ -639,14 +639,15 @@ def _row_payload_tokens(entry: dict[str, Any]) -> list[str] | None:
 def parse_row_scope(entry: dict[str, Any]) -> RowScope | None:
     """Read the canonical and scope a ``kind=build`` row records, or ``None``.
 
-    Reads ``args`` — the executor argv — and takes the tokens that follow
-    ``--command-args``: the first non-flag is the canonical, the remaining
+    Reads the payload the row recorded — the ``command_args`` field when the
+    executor wrote one, otherwise the tokens that follow ``--command-args`` in the
+    joined ``args`` — and takes its first non-flag as the canonical: the remaining
     non-flag tokens are positional scope (the module / directory names other
     build tools accept), and a KNOWN scope-bearing flag (:data:`_SCOPE_FLAGS`)
-    contributes its value to the scope too. Both the space-separated
-    (``--command-args verify``) and the joined (``--command-args=verify``)
-    spellings are accepted, because argparse accepts both and the ledger stamps
-    whichever the caller used.
+    contributes its value to the scope too. In the joined fallback both the
+    space-separated (``--command-args verify``) and the joined
+    (``--command-args=verify``) spellings are accepted, because argparse accepts
+    both and the ledger stamps whichever the caller used.
 
     ⛔ ``None`` means UNREADABLE and is never equivalent to a ``RowScope`` with an
     empty ``scope_tokens``. Empty tokens assert *whole-tree*, which is the widest

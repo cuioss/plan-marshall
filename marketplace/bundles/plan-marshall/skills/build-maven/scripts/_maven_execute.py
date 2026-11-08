@@ -163,20 +163,16 @@ _VALUE_TAKING_OPTIONS = frozenset(
 #: ``-DskipTests`` set through ``.mvn/maven.config`` or ``MAVEN_OPTS`` — invisible
 #: on the command line this guard is handed — is still recognised as a requested
 #: skip rather than reported as an empty population.
-_TEST_SKIP_MARKER = 'Tests are skipped.'
-
 #: Maven's own statement that a test-phase invocation skipped its tests, anchored
 #: to a LOG LINE. Anchoring matters: a test's own output can contain the same
 #: words, and treating that as the run's skip would silence the zero-test guard
 #: for a run that genuinely executed nothing.
 _SKIP_MARKER_PATTERN = re.compile(r'(?m)^(?:\[[A-Z]+\]\s*)?Tests are skipped\.\s*$')
 
-#: Surefire's own statement that it matched no test class. A module whose
-#: ``src/test/java`` holds only helpers produces exactly this and a green exit:
-#: there is genuinely nothing to run, so the green is truthful. Checked AFTER the
-#: measured-zero branch, because a run that reports ``Tests run: 0`` beside this
-#: marker measured an empty population, which stays indeterminate.
-_NO_TESTS_TO_RUN_MARKER = 'No tests to run.'
+#: Surefire's own statement that it matched no test class, anchored to a LOG LINE
+#: for the same reason as :data:`_SKIP_MARKER_PATTERN`: a run whose test output
+#: happens to print the phrase is not a run that matched nothing.
+_NO_TESTS_TO_RUN_PATTERN = re.compile(r'(?m)^(?:\[[A-Z]+\]\s*)?No tests to run\.\s*$')
 
 #: Directories a Surefire/Failsafe run writes its per-class XML reports into
 #: (``target/surefire-reports`` in the module that ran the tests).
@@ -450,7 +446,40 @@ def _report_collected_tests(report: Path) -> int:
         return 0
 
 
-def _reports_show_executed_tests(project_dir: str | None, log_file: str | None) -> bool:
+def _run_start_time(log_file: str | None, duration_seconds: object) -> float | None:
+    """Return the moment this run began, or ``None`` when it cannot be bounded.
+
+    The log file is written THROUGH the run, so its last-write stamp is the run's
+    END, not its start. The start is that stamp minus the duration the wrapper
+    measured, less a second of truncation slack. Where the duration is
+    unavailable the end stamp cannot bound the start, so the answer is ``None``
+    and no report is credited.
+
+    Args:
+        log_file: This run's log path.
+        duration_seconds: The wrapper's measured run duration, when it reported one.
+
+    Returns:
+        The run's start as a POSIX timestamp, or ``None``.
+    """
+    if not log_file:
+        return None
+    try:
+        ended = Path(log_file).stat().st_mtime
+    except OSError:
+        return None
+    try:
+        duration = float(duration_seconds)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    return ended - duration - 1.0
+
+
+def _reports_show_executed_tests(
+    project_dir: str | None,
+    log_file: str | None,
+    duration_seconds: object = None,
+) -> bool:
     """Whether a Surefire/Failsafe report written by THIS run reported executed tests.
 
     A quiet run — ``-q`` supplied through ``.mvn/maven.config`` or ``MAVEN_OPTS``,
@@ -459,15 +488,18 @@ def _reports_show_executed_tests(project_dir: str | None, log_file: str | None) 
     therefore the evidence a hidden summary leaves behind, and reading them is
     what tells "the summary was suppressed" from "nothing was collected".
 
-    A report older than this run's log belongs to a PREVIOUS run, and crediting it
-    would turn "executed nothing" into a green — the exact false credit this guard
-    exists to remove — so it is ignored. The log file is created when the run
-    starts, which is what makes its creation time the bound.
+    A report older than this run's START belongs to a PREVIOUS run, and crediting
+    it would turn "executed nothing" into a green — the exact false credit this
+    guard exists to remove — so it is ignored. The start is derived from the log's
+    last write minus the wrapper's measured duration (see
+    :func:`_run_start_time`): the log is appended to THROUGH the run, so its own
+    stamp marks the end, and reports are written before that end.
 
     Args:
         project_dir: The directory the Maven invocation ran in, or ``None`` when
             the caller supplied none — then no report can be attributed to it.
         log_file: This run's log path.
+        duration_seconds: The wrapper's measured run duration, when it reported one.
 
     Returns:
         True only when a report written by this run reports one or more collected
@@ -478,12 +510,7 @@ def _reports_show_executed_tests(project_dir: str | None, log_file: str | None) 
     root = Path(project_dir)
     if not root.is_dir():
         return False
-    started: float | None = None
-    if log_file:
-        try:
-            started = Path(log_file).stat().st_ctime
-        except OSError:
-            started = None
+    started = _run_start_time(log_file, duration_seconds)
     for report in _report_files(root):
         try:
             modified = report.stat().st_mtime
@@ -506,11 +533,13 @@ def apply_zero_test_guard(result: dict, args: str, *, project_dir: str | None = 
 
     - a parsed summary reporting zero COLLECTED tests is evidence of an empty
       population;
-    - no summary at all on a leading ``test`` goal is the same population: a
-      collected test is a summary line, so no summary means nothing was
-      collected. A leading ``package`` goal without a summary is a compile and
-      package run that reported no tests — only a summary naming a zero
-      population is evidence there;
+    - no summary on a leading ``test`` goal is EITHER an empty population OR a
+      summary the run's log level hid, and the evidence tells them apart: a
+      Surefire/Failsafe report this run wrote with executed tests,
+      or Surefire's own ``No tests to run.`` line, keeps the green; with neither,
+      nothing was collected. A leading ``package`` goal without a summary is a
+      compile and package run that reported no tests — only a summary naming a
+      zero population is evidence there;
     - an unreadable log of a test-phase run is no evidence either, and no
       evidence never becomes a green for a run whose truth lives in its log;
     - an empty population whose log carries NO test summary at all and states
@@ -554,14 +583,14 @@ def apply_zero_test_guard(result: dict, args: str, *, project_dir: str | None = 
         return result
     if collected == 0:
         evidence = "the run's log reports zero collected tests, so nothing executed"
-    elif _reports_show_executed_tests(project_dir, result.get('log_file')):
+    elif _reports_show_executed_tests(project_dir, result.get('log_file'), result.get('duration_seconds')):
         # The summary was hidden (a quiet run, or Surefire's printSummary=false),
         # not absent: the reports this run wrote name executed test classes.
         return result
     elif goal.split(':')[-1] == 'test':
         if _SKIP_MARKER_PATTERN.search(log_text):
             return result
-        if _NO_TESTS_TO_RUN_MARKER in log_text:
+        if _NO_TESTS_TO_RUN_PATTERN.search(log_text):
             # Surefire RAN and matched no test class: the module has nothing to
             # run, so its green is truthful. A run that reported ``Tests run: 0``
             # took the measured-zero branch above and stays indeterminate.

@@ -631,12 +631,11 @@ variant below, which says "green" for no arm it did not gate:
 --display-detail "{N} bundles + whole-tree gates green, module-tests DEGRADED"
 ```
 
-ONE variant serves both paths, and that is this section's existing division of labour rather than
-a shortcut: the bounded field reports THAT the arm degraded, and the unbounded `[WARNING]` each
+ONE variant serves both paths, and that is this section's existing division of labour rather thana shortcut: the bounded field reports THAT the arm degraded, and the unbounded `[WARNING]` each
 branch-0 path already emits reports WHICH cause degraded it — the same split the skipped-bundle
 variant below states for its own set. When the cause is a module whose own `pom.xml` could not be
 read — the discovery metadata carries `pom_error: pom_unreadable` and that module has no canonicals
-— the branch-0 `[WARNING]` names `pom_unreadable` and the module directory, so the step record's
+— the branch-0 `[WARNING]` MUST name `pom_unreadable` and the module directory, so the step record's
 DEGRADED verdict is followed to the named cause instead of reading as a project that simply has no
 tests. The bounded `display_detail` stays the variant above and does not grow. Naming the cause here instead would make the field's width
 depend on which of the two fired, and neither cause is a value this field can be sized against.

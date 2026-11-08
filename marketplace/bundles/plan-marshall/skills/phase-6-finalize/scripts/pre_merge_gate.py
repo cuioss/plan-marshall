@@ -2,11 +2,11 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Pre-merge findings gate that owns the merge dispatch for ``default:branch-cleanup``.
 
-The merge verb is reachable only through this gate: it evaluates the blocking-findings
-invariant itself, and only then issues the merge verb. Neither merge verb accepts a
-call that skipped the check, so a skipped or misread check cannot merge, and the
-later archive refusal cannot strand a plan whose change is already on the base
-branch. It is the ONLY merge-shaped
+This gate evaluates the blocking-findings invariant itself before it issues the merge
+verb, and it is the only merge-shaped dispatch ``branch-cleanup`` issues. A step body
+that skipped or misread an instruction therefore cannot reach the merge through this
+step, and the later archive refusal cannot strand a plan whose change is already on
+the base branch. It is the ONLY merge-shaped
 dispatch ``branch-cleanup`` issues: it evaluates the blocking-findings invariant
 for phase ``6-finalize`` and issues the routed merge verb only when that
 evaluation proved the store clean. The merge is therefore unreachable without

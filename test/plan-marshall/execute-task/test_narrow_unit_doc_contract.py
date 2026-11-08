@@ -303,10 +303,9 @@ def test_the_per_task_gate_names_the_indeterminate_route() -> None:
 def test_branches_4_and_6_of_the_pre_push_gate_name_the_same_route() -> None:
     """Both pre-push branches that run a module test say why ``indeterminate`` differs.
 
-    Before, both lumped it with ``timeout`` and ``killed`` and stopped. That stop
-    was right; what was missing is that the run FINISHED and its log was read, so
-    the wrapper's own named reason — not a generic "did not finish" — is what the
-    record owes its reader.
+    Lumping it with ``timeout`` and ``killed`` states the right stop but the wrong
+    fact: the run FINISHED and its log was read, so the wrapper's own named
+    reason — not a generic "did not finish" — is what the record owes its reader.
     """
     text = _PRE_PUSH_GATE.read_text(encoding='utf-8')
     marker = 'An `indeterminate` is distinguishable from'

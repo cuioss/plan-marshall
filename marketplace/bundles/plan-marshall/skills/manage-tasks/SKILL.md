@@ -595,10 +595,11 @@ on observed evidence.
   `expected_notations` / `candidate_notations` / `row_scopes` /
   `missing_analyses` on every cross-check route. `missing_analyses` is the sorted
   list of required analyses no citable row performed at an adequate scope; it is
-  empty where what the change requires could not be derived — and it is also
-  empty on the whole-tree-unreadable route, where the refusal rests on a scope
-  nobody could read rather than on an analysis nobody ran, so `scope_cross_check`
-  says `undetermined` there too. `observed_status` is absent on `worktree_mutated` (no row
+  empty where what the change requires could not be derived, empty where the
+  analysis vocabulary could not be imported, and empty on the
+  whole-tree-unreadable route, where the refusal rests on a scope nobody could
+  read rather than on an analysis nobody ran, so `scope_cross_check` says
+  `undetermined` there too. `observed_status` is absent on `worktree_mutated` (no row
   was observed), on the `build_indeterminate` sub-case where the row carried no
   readable `status` at all, and on every cross-check route (where every candidate
   was `success`, so reporting it would say nothing); supplying one where none was

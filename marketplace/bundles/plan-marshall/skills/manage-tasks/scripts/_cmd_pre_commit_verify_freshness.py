@@ -125,7 +125,8 @@ Outcomes:
                      cross-check. A cross-check refusal also carries
                      ``missing_analyses``: the required analyses no citable row
                      performed at an adequate scope, which is what to run. It is
-                     empty on two routes — an underivable requirement, and the
+                     empty on three routes — an underivable requirement, an
+                     unimportable analysis vocabulary, and the
                      whole-tree-unreadable one, where the refusal rests on a scope
                      nobody could read rather than on an analysis nobody ran.
 - ``undecidable``  — no positive freshness proof can be established. Two
