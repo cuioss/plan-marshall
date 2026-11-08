@@ -190,6 +190,28 @@ def test_a_project_without_sonar_still_drains_complete() -> None:
     assert check_landing_completeness(_landing(list(facts['fact_lines']))) == (True, [])
 
 
+def test_the_quality_gate_status_rides_the_optional_fact() -> None:
+    """A failing gate is reported without becoming a finding."""
+    facts = cmd_sonar_facts(_facts_args(open_count='0', gate_status='error'))
+
+    assert 'step.sonar-roundtrip.quality_gate_status=error' in facts['fact_lines']
+    assert facts['open_issue_count'] == '0'
+    assert check_landing_completeness(_landing(list(facts['fact_lines']))) == (True, [])
+
+
+def test_no_quality_gate_line_rides_when_none_was_read() -> None:
+    facts = cmd_sonar_facts(_facts_args(open_count='0'))
+
+    assert not any('quality_gate_status' in line for line in facts['fact_lines'])
+
+
+def test_a_not_configured_state_refuses_a_quality_gate_status() -> None:
+    verdict = cmd_sonar_facts(_facts_args(state='not_configured', count_status=None, gate_status='ok'))
+
+    assert verdict['status'] == 'error'
+    assert verdict['error'] == 'state_contradicts_read'
+
+
 def test_the_required_landing_key_set_names_the_review_and_sonar_numbers() -> None:
     assert LANDING_REQUIRED_KEYS == (
         'schema',

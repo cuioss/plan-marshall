@@ -89,6 +89,20 @@ _SONAR_OPEN_ISSUES_FACT = 'sonar_open_new_issues'
 #: lifecycle's ``sonar-roundtrip`` step already uses.
 _SONAR_FACT_STEP = 'sonar-roundtrip'
 
+#: The landing's OPTIONAL quality-gate fact. A Sonar quality gate can fail on a
+#: new-code METRIC (coverage, duplication, maintainability) that is neither an
+#: open finding nor an unreviewed hotspot, so such a failure is not a finding for
+#: the open-findings rule — but it is reported, because a landing that says the
+#: merge head was clean and stays silent about a failing gate would be stating
+#: half the read.
+_SONAR_QUALITY_GATE_FACT = f'step.{_SONAR_FACT_STEP}.quality_gate_status'
+
+#: The four states the quality-gate read can answer with. ``not_computed`` is a
+#: provider answer (no new-code analysis for the head), distinct from ``unknown``
+#: (the read itself failed) — the same answered-absence / failed-read split the
+#: count facts use.
+SONAR_GATE_STATUSES = ('ok', 'error', 'not_computed', 'unknown')
+
 #: The provider's own CE-readiness default, used when the active target imposes no
 #: Bash ceiling (the seam answers ``no-op``).
 _SONAR_CE_DEFAULT_SECONDS = 600
@@ -1866,25 +1880,28 @@ def _sonar_gate_verdict(
     count_status: str | None,
     open_count: int | None,
     open_keys: list[str],
-    dismissed_keys: list[str],
+    selected_keys: list[str],
 ) -> dict[str, Any]:
     """Decide whether the Sonar read admits the merge (section 7's condition).
 
-    The verdict is a pure function of the read and the run's recorded dismissals,
+    The verdict is a pure function of the read and of the OPERATOR'S selection,
     so the lane's merge condition is a decision a script makes rather than a
     judgement a reader re-derives:
 
     - ``not_configured`` — the project does not analyse with Sonar, so there is
-      no open-issue condition to satisfy.
+      no open-finding condition to satisfy.
     - ``undecidable`` — the read never settled. This is a BLOCKER, never a ``0``:
-      no count and no key set were observed, so "no open issues" is unknowable.
+      no count and no key set were observed, so "no open findings" is unknowable.
     - ``unconfigured`` — resolve said ``configured`` and the read could not
       authenticate. Also a blocker: the credentials the project claims are not
       usable, which is a defect nobody would otherwise see.
-    - ``confirmed`` — admitted when the count is ``0``, or when every open issue
-      the read enumerated is covered by a recorded dismissal. A count with no
-      enumerated key set cannot be verified key by key, so it is refused rather
-      than passed on the count alone.
+    - ``confirmed`` — admitted when the count is ``0``, or when every open key
+      the read enumerated is one the OPERATOR selected for dismissal. The lane
+      never records a dismissal itself: a finding stays open unless the operator
+      named its key, so a gate that accepted the lane's own list would let the
+      run dismiss its own findings. A count with no enumerated key set cannot be
+      verified key by key, so it is refused rather than passed on the count
+      alone.
     """
     if state == 'not_configured':
         return {
@@ -1947,24 +1964,24 @@ def _sonar_gate_verdict(
             'reason': 'open_issue_keys_missing',
             'open_issue_count': count,
         }
-    dismissed = set(dismissed_keys)
-    undismissed = [key for key in open_keys if key not in dismissed]
-    if undismissed:
+    selected = set(selected_keys)
+    unselected = [key for key in open_keys if key not in selected]
+    if unselected:
         return {
             'status': 'success',
             'operation': 'sonar-gate',
             'merge_allowed': False,
-            'reason': 'open_issues_undismissed',
+            'reason': 'open_issues_not_operator_selected',
             'open_issue_count': count,
-            'undismissed_keys': undismissed,
+            'unselected_keys': unselected,
         }
     return {
         'status': 'success',
         'operation': 'sonar-gate',
         'merge_allowed': True,
-        'reason': 'all_open_issues_dismissed',
+        'reason': 'all_open_issues_operator_selected',
         'open_issue_count': count,
-        'dismissed_count': len(dismissed),
+        'selected_count': len(selected),
     }
 
 
@@ -1978,6 +1995,18 @@ def cmd_sonar_gate(args: argparse.Namespace) -> dict[str, Any]:
             'status': 'error',
             'error': 'invalid_sonar_state',
             'message': f'--state must be one of {", ".join(_SONAR_STATES)}; got {state!r}',
+        }
+    if getattr(args, 'dismissed_keys', None) is not None:
+        # The tombstone for the retired surface: a lane-recorded dismissal is no
+        # longer an input at all, and refusing it by name says WHY rather than
+        # letting argparse report an unknown flag.
+        return {
+            'status': 'error',
+            'error': 'lane_dismissal_not_accepted',
+            'message': (
+                "a dismissal needs the operator's selection: pass the keys the operator named with "
+                '--operator-selected-keys, never a list the lane recorded itself'
+            ),
         }
     if state == 'not_configured':
         # A read state supplied beside `not_configured` is a contradiction: a
@@ -2004,7 +2033,7 @@ def cmd_sonar_gate(args: argparse.Namespace) -> dict[str, Any]:
         count_status,
         open_count,
         _split_csv(getattr(args, 'open_keys', None)),
-        _split_csv(getattr(args, 'dismissed_keys', None)),
+        _split_csv(getattr(args, 'operator_selected_keys', None)),
     )
 
 
@@ -2034,15 +2063,22 @@ def cmd_sonar_facts(args: argparse.Namespace) -> dict[str, Any]:
         # Symmetric with the gate: a read supplied beside `not_configured` is a
         # contradiction, and rendering `n/a` over it would hide that the caller
         # read one project's issues and reported another project's state.
-        if any(getattr(args, name, None) is not None for name in ('count_status', 'open_count', 'rules')):
+        if any(
+            getattr(args, name, None) is not None for name in ('count_status', 'open_count', 'rules', 'gate_status')
+        ):
             return {
                 'status': 'error',
                 'error': 'state_contradicts_read',
-                'message': 'a not_configured state carries no read; drop --count-status, --open-count and --rules',
+                'message': (
+                    'a not_configured state carries no read; drop --count-status, --open-count, '
+                    '--rules and --gate-status'
+                ),
             }
         count, rules = 'n/a', 'n/a'
+        gate_status = None
     else:
         count_status = getattr(args, 'count_status', None)
+        gate_status = getattr(args, 'gate_status', None)
         if count_status not in _SONAR_COUNT_STATUSES:
             return {
                 'status': 'error',
@@ -2051,6 +2087,12 @@ def cmd_sonar_facts(args: argparse.Namespace) -> dict[str, Any]:
                     f'--count-status must be one of {", ".join(_SONAR_COUNT_STATUSES)} when --state configured; '
                     f'got {count_status!r}'
                 ),
+            }
+        if gate_status is not None and gate_status not in SONAR_GATE_STATUSES:
+            return {
+                'status': 'error',
+                'error': 'invalid_gate_status',
+                'message': (f'--gate-status must be one of {", ".join(SONAR_GATE_STATUSES)}; got {gate_status!r}'),
             }
         if count_status in ('undecidable', 'unconfigured'):
             # Both are failed reads: nothing was observed, so the figure is
@@ -2085,15 +2127,19 @@ def cmd_sonar_facts(args: argparse.Namespace) -> dict[str, Any]:
                     'message': 'a confirmed count of zero carries no rule left open',
                 }
 
+    fact_lines = [f'{_SONAR_OPEN_ISSUES_FACT}={count}', f'step.{_SONAR_FACT_STEP}.open_issue_rules={rules}']
+    # The quality-gate fact is OPTIONAL and rides only when the caller read one:
+    # a line asserting a state nothing observed would be worse than its absence.
+    if gate_status is not None:
+        fact_lines.append(f'{_SONAR_QUALITY_GATE_FACT}={gate_status}')
+
     return {
         'status': 'success',
         'operation': 'sonar-facts',
         'open_issue_count': count,
         'open_issue_rules': rules,
-        'fact_lines': [
-            f'{_SONAR_OPEN_ISSUES_FACT}={count}',
-            f'step.{_SONAR_FACT_STEP}.open_issue_rules={rules}',
-        ],
+        'quality_gate_status': gate_status if gate_status is not None else 'not_read',
+        'fact_lines': fact_lines,
     }
 
 
@@ -2737,10 +2783,16 @@ def main() -> int:
         help='Comma-separated issue keys the read enumerated',
     )
     gate_parser.add_argument(
+        '--operator-selected-keys',
+        dest='operator_selected_keys',
+        default=None,
+        help='Comma-separated finding keys the OPERATOR selected for dismissal',
+    )
+    gate_parser.add_argument(
         '--dismissed-keys',
         dest='dismissed_keys',
         default=None,
-        help='Comma-separated issue keys this run dismissed with a stated reason',
+        help='Retired: a lane-recorded dismissal is refused (lane_dismissal_not_accepted)',
     )
 
     facts_parser = subparsers.add_parser(
@@ -2770,6 +2822,13 @@ def main() -> int:
         '--rules',
         default=None,
         help='Comma-separated rules of the issues left open at the merge head',
+    )
+    facts_parser.add_argument(
+        '--gate-status',
+        dest='gate_status',
+        default=None,
+        choices=SONAR_GATE_STATUSES,
+        help='The new-code quality-gate status read at the merge head (reported, never a finding)',
     )
 
     review_parser = subparsers.add_parser(

@@ -55,6 +55,10 @@ def _stub_sonar_configured():
     no real Sonar client in the sandbox, the gate would otherwise reach for one and
     the read would never report a count. Revision truth itself is covered against a
     stubbed Sonar API by ``test_sonar_analysis_revision.py``.
+
+    The hotspot leg is stubbed EMPTY here so the issue-shaped cases below assert
+    only what they name; the hotspot cases patch it themselves, and a real client
+    would never answer in the sandbox.
     """
     with (
         patch.object(sonar_mod, '_sonar_credential_missing', return_value=''),
@@ -63,6 +67,7 @@ def _stub_sonar_configured():
             '_verify_analysis_revision',
             return_value={'count_status': 'confirmed', 'analysis_revision': 'a' * 40, 'head_revision': 'a' * 40},
         ),
+        patch.object(sonar_mod, '_fetch_hotspots', return_value={'status': 'success', 'hotspots': [], 'total': 0}),
     ):
         yield
 
@@ -175,6 +180,133 @@ class TestConfirmedRead:
 
         assert result['count_status'] == 'confirmed'
         assert result['open_issue_count'] == 0
+
+
+def _hotspot(*, key='HOT-1', status='TO_REVIEW', file='src/Main.java') -> dict:
+    return {
+        'key': key,
+        'status': status,
+        'vulnerabilityProbability': 'HIGH',
+        'securityCategory': 'sql-injection',
+        'component': f'com.example:proj:{file}',
+        'file': file,
+        'line': 7,
+        'message': 'Make sure this SQL is safe',
+    }
+
+
+class TestHotspotsStillToReview:
+    """A hotspot is a new-code finding the issue search never returns.
+
+    Reading the issue search alone answers a clean zero over a head whose only
+    new-code defect is an unreviewed hotspot, which is the miss this leg closes.
+    """
+
+    def test_an_unreviewed_hotspot_with_no_issue_is_not_a_confirmed_zero(self):
+        """The Done-when fixture: one unreviewed hotspot, zero issues."""
+        with (
+            patch.object(sonar_mod, '_wait_for_ce_ready', return_value={'count_status': 'confirmed'}),
+            patch.object(sonar_mod, '_fetch_issues', return_value={'status': 'success', 'issues': [], 'total': 0}),
+            patch.object(
+                sonar_mod,
+                '_fetch_hotspots',
+                return_value={'status': 'success', 'hotspots': [_hotspot()], 'observed': 1, 'total': 1},
+            ),
+        ):
+            result = cmd_read_open_issues(_args('--pr', '42'))
+
+        assert result['count_status'] == 'confirmed'
+        assert result['open_issue_count'] == 1
+        assert result['open_issue_count'] != 0
+        assert result['open_keys'] == ['HOT-1']
+        assert [hotspot['key'] for hotspot in result['hotspots']] == ['HOT-1']
+
+    def test_hotspots_count_toward_the_total_beside_the_issues(self):
+        with (
+            patch.object(sonar_mod, '_wait_for_ce_ready', return_value={'count_status': 'confirmed'}),
+            patch.object(
+                sonar_mod,
+                '_fetch_issues',
+                return_value={'status': 'success', 'issues': [_issue(key='K1')], 'total': 1},
+            ),
+            patch.object(
+                sonar_mod,
+                '_fetch_hotspots',
+                return_value={'status': 'success', 'hotspots': [_hotspot(key='HOT-1')], 'observed': 1, 'total': 1},
+            ),
+        ):
+            result = cmd_read_open_issues(_args('--pr', '42'))
+
+        assert result['open_issue_count'] == 2
+        assert result['open_keys'] == ['K1', 'HOT-1']
+
+    def test_a_reviewed_hotspot_is_not_open_work(self):
+        """A provider that ignores the status filter cannot smuggle a reviewed hotspot in."""
+        with (
+            patch.object(sonar_mod, '_wait_for_ce_ready', return_value={'count_status': 'confirmed'}),
+            patch.object(sonar_mod, '_fetch_issues', return_value={'status': 'success', 'issues': [], 'total': 0}),
+            patch.object(
+                sonar_mod,
+                '_fetch_hotspots',
+                return_value={
+                    'status': 'success',
+                    'hotspots': [_hotspot(key='HOT-1', status='REVIEWED')],
+                    'observed': 1,
+                    'total': 1,
+                },
+            ),
+        ):
+            result = cmd_read_open_issues(_args('--pr', '42'))
+
+        assert result['open_issue_count'] == 0
+        assert result['hotspots'] == []
+
+    def test_a_truncated_hotspot_page_is_undecidable(self):
+        with (
+            patch.object(sonar_mod, '_wait_for_ce_ready', return_value={'count_status': 'confirmed'}),
+            patch.object(sonar_mod, '_fetch_issues', return_value={'status': 'success', 'issues': [], 'total': 0}),
+            patch.object(
+                sonar_mod,
+                '_fetch_hotspots',
+                return_value={'status': 'success', 'hotspots': [_hotspot()], 'observed': 1, 'total': 40},
+            ),
+        ):
+            result = cmd_read_open_issues(_args('--pr', '42'))
+
+        assert result['count_status'] == 'undecidable'
+        assert result['open_issue_count'] is None
+        assert '1 of 40 hotspots' in result['count_status_reason']
+
+    def test_a_hotspot_response_without_a_total_is_undecidable(self):
+        with (
+            patch.object(sonar_mod, '_wait_for_ce_ready', return_value={'count_status': 'confirmed'}),
+            patch.object(sonar_mod, '_fetch_issues', return_value={'status': 'success', 'issues': [], 'total': 0}),
+            patch.object(
+                sonar_mod,
+                '_fetch_hotspots',
+                return_value={'status': 'success', 'hotspots': [_hotspot()], 'observed': 1, 'total': None},
+            ),
+        ):
+            result = cmd_read_open_issues(_args('--pr', '42'))
+
+        assert result['count_status'] == 'undecidable'
+        assert 'no usable hotspot total' in result['count_status_reason']
+
+    def test_a_failed_hotspot_fetch_is_undecidable(self):
+        with (
+            patch.object(sonar_mod, '_wait_for_ce_ready', return_value={'count_status': 'confirmed'}),
+            patch.object(sonar_mod, '_fetch_issues', return_value={'status': 'success', 'issues': [], 'total': 0}),
+            patch.object(
+                sonar_mod,
+                '_fetch_hotspots',
+                return_value={'status': 'error', 'message': 'Sonar API error: HTTP 500'},
+            ),
+        ):
+            result = cmd_read_open_issues(_args('--pr', '42'))
+
+        assert result['count_status'] == 'undecidable'
+        assert result['open_issue_count'] is None
+        assert 'HTTP 500' in result['count_status_reason']
 
 
 class TestUndecidableRead:

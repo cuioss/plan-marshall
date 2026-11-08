@@ -21,14 +21,18 @@ lives here:
   ``falsepositive`` for ``rejected``) — keyed by each finding's own ``hash_id``.
   It makes NO triage decision.
 - ``read_open_issues`` is the PLAN-LESS read: given a project key and a pull
-  request it returns that pull request's open new-code issues — their count,
-  rules and files, with the same verified ``count_status`` discriminator — and
+  request it returns that pull request's open new-code FINDINGS — the open issues
+  plus the security hotspots still to review, their count, rules and files, with
+  the same verified ``count_status`` discriminator — and
   persists NOTHING. It needs no plan id and no manifest, because its caller (the
   runbook lane) has no plan directory: that lane passes ``NO_PLAN`` to the CI
-  verbs and reads the issues to fix or dismiss them before it reports the pull
-  request ready. The untrusted Sonar ``message`` is deliberately NOT part of the
+  verbs and reads the findings to fix or dismiss them before it reports the pull
+  request ready. The hotspot leg is not optional: the issue search does not return
+  hotspots, so an issue-only read would report a head whose only new-code defect
+  is an unreviewed hotspot as a clean zero. The untrusted Sonar ``message`` is
+  deliberately NOT part of the
   returned contract: the count, the rule and the file are what a caller needs to
-  act on an issue, and a message copied forward is the escalation the
+  act on a finding, and a message copied forward is the escalation the
   producer-side ``raw_input`` quarantine exists to prevent.
 
 Both PERSISTING verbs FAIL LOUD when Sonar is not configured: a typed
@@ -639,6 +643,54 @@ def _fetch_issues(project: str, pr: str | None, severities: str | None, types: s
     return {'status': 'success', 'issues': formatted, 'total': total}
 
 
+def _fetch_hotspots(project: str, pr: str | None) -> dict[str, Any]:
+    """Fetch the pull request's security hotspots STILL TO REVIEW.
+
+    The issue search does not return hotspots, so a read that consulted it alone
+    would report a pull request carrying an unreviewed hotspot and no open issue
+    as a clean zero. A hotspot that has been reviewed or fixed is no longer open
+    work, so the request asks for ``TO_REVIEW`` and the response is filtered on
+    the same status: a provider that ignores the parameter then cannot smuggle a
+    reviewed hotspot into the open count.
+
+    ``total`` is the provider's ``paging.total`` from the page it returned, or
+    ``None`` when it reported none. Like the issue fetch's, it travels back beside
+    the page so the caller can tell a whole population from a clipped one.
+    """
+    from _providers_core import (
+        RestClientError,
+        get_authenticated_client,
+    )
+
+    client = get_authenticated_client('workflow-integration-sonar')
+    params: dict[str, str] = {'projectKey': project, 'ps': '500', 'status': 'TO_REVIEW'}
+    if pr:
+        params['pullRequest'] = pr
+
+    try:
+        result = client.get('/api/hotspots/search', params=params)
+        client.close()
+    except RestClientError as e:
+        return {'status': 'error', 'message': f'Sonar API error: HTTP {e.status}'}
+
+    nodes = result.get('hotspots', []) or []
+    formatted = [
+        {
+            'key': hotspot.get('key', ''),
+            'status': hotspot.get('status', ''),
+            'vulnerabilityProbability': hotspot.get('vulnerabilityProbability', ''),
+            'securityCategory': hotspot.get('securityCategory', ''),
+            'file': hotspot.get('component', '').split(':')[-1],
+            'line': hotspot.get('line', 0),
+            'component': hotspot.get('component', ''),
+        }
+        for hotspot in nodes
+    ]
+    paging = result.get('paging') or {}
+    total = paging.get('total') if isinstance(paging, dict) else None
+    return {'status': 'success', 'hotspots': formatted, 'observed': len(formatted), 'total': total}
+
+
 def _undecidable_fetch(plan_id: str, project: str, pr: str | None, verdict: dict[str, Any]) -> dict[str, Any]:
     """Build the ``undecidable`` fetch result and write its attestation row.
 
@@ -955,9 +1007,13 @@ def cmd_read_open_issues(args):
        request's analysis is compared with the PR head (the same gate
        ``fetch_findings`` applies), so a clean analysis of an older head is never
        read as a clean analysis of this one.
-    3. Fetch the PR-scoped new-code issues via ``_fetch_issues``.
-    4. Return the count, each issue's rule and file (plus its key, type,
-       severity, line and component), and the ``count_status`` discriminator.
+    3. Fetch the PR-scoped new-code issues via ``_fetch_issues``, and the security
+       hotspots still to review via ``_fetch_hotspots`` — the issue search does not
+       return hotspots, so the second read is what keeps an unreviewed hotspot from
+       hiding behind a clean issue count.
+    4. Return the count (issues plus open hotspots), each finding's rule and file
+       (plus its key, type, severity, line and component), the enumerated
+       ``open_keys`` and the ``count_status`` discriminator.
 
     Takes NO plan id and reads NO manifest: there is no finding store to file
     into, no plan directory to write and no scan-summary marker — the caller
@@ -1035,6 +1091,25 @@ def cmd_read_open_issues(args):
         for issue in raw_issues
     ]
 
+    # 3. The security hotspots still to review. The issue search does not return
+    #    them, so a read that stopped at step 2 would answer a clean zero over a
+    #    head carrying an unreviewed hotspot. Their completeness is checked the
+    #    same way the issue page's is: against the provider's own total.
+    hotspot_result = _fetch_hotspots(project, pr)
+    if hotspot_result.get('status') != 'success':
+        return _undecidable_read(project, pr, hotspot_result.get('message', 'Sonar hotspot fetch failed'))
+    raw_hotspots: list[dict[str, Any]] = hotspot_result.get('hotspots') or []
+    hotspot_total = hotspot_result.get('total')
+    if not isinstance(hotspot_total, int) or hotspot_total != int(hotspot_result.get('observed') or 0):
+        detail = (
+            f'hotspot list truncated: {hotspot_result.get("observed")} of {hotspot_total} hotspots returned'
+            if isinstance(hotspot_total, int)
+            else 'the response carried no usable hotspot total'
+        )
+        return _undecidable_read(project, pr, detail)
+    open_hotspots = [hotspot for hotspot in raw_hotspots if hotspot.get('status', 'TO_REVIEW') == 'TO_REVIEW']
+    open_keys = [issue['key'] for issue in issues if issue['key']] + [hotspot['key'] for hotspot in open_hotspots]
+
     return {
         'status': 'success',
         'operation': 'read_open_issues',
@@ -1042,12 +1117,14 @@ def cmd_read_open_issues(args):
         'project': project,
         'pull_request': pr or 'none',
         'count_status': 'confirmed',
-        'open_issue_count': len(issues),
+        'open_issue_count': len(issues) + len(open_hotspots),
+        'open_keys': open_keys,
         'analysis_revision': revision_result['analysis_revision'],
         'head_revision': revision_result['head_revision'],
         'rules': sorted({issue['rule'] for issue in issues if issue['rule']}),
         'files': sorted({issue['file'] for issue in issues if issue['file']}),
         'issues': issues,
+        'hotspots': open_hotspots,
     }
 
 
