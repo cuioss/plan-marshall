@@ -38,8 +38,8 @@ python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane resolve 
 Resolves the epic slug, the derived names, the build commands, the required and optional reviewers
 with their trigger comments, the commit trailer, the harness and guard state, the build server's
 preflight state (`build_server`, plus `build_server_reason` when it is `down`), the Sonar state
-(`sonar`, plus `sonar_project_key` when it is `configured`) and the `inbox write`
-command. `--project-dir` defaults to the current directory and anchors every project-scoped read.
+(`sonar`, plus `sonar_project_key` when it is `configured`) and the `inbox write` and `inbox read`
+commands. `--project-dir` defaults to the current directory and anchors every project-scoped read.
 The spec read is worktree-first: the shared ledger worktree's copy is read when it exists and the
 main checkout's is the fallback. The result always carries `spec_source` (`ledger_worktree` |
 `main_checkout`), plus `spec_differ: true` when both copies exist and differ.
@@ -122,32 +122,92 @@ footprint gate, and `source: architecture` otherwise.
 ```bash
 python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane sonar-gate \
   --state {configured|not_configured} [--count-status {confirmed|undecidable|unconfigured}] \
-  [--open-count N] [--open-keys "K1,K2"] [--dismissed-keys "K1,K2"]
+  [--open-count N] [--open-keys "K1,K2"] [--operator-selected-keys "K1,K2"] [--progress-file PATH] \
+  [--hotspot-keys "H1,H2"]
 ```
 
-`--count-status`, `--open-count`, `--open-keys` and `--dismissed-keys` belong to a `configured`
-state: supplying any of them beside `--state not_configured` is refused as `state_contradicts_read`,
-because a project with no Sonar has no read to report.
+`--count-status`, `--open-count`, `--open-keys` and `--operator-selected-keys` belong to a
+`configured` state: supplying any of them beside `--state not_configured` is refused as
+`state_contradicts_read`, because a project with no Sonar has no read to report.
 
 Decides the merge gate's Sonar condition (section 7) from the read taken on the head:
-`merge_allowed: true` for `not_configured`, for a confirmed `0`, and for a confirmed count whose
-every enumerated key carries a recorded dismissal. `undecidable` and `unconfigured` reads, an
-undismissed key and a count with no enumerated keys all answer `merge_allowed: false` with their
-`reason`.
+`merge_allowed: true` for `not_configured`, for a confirmed `0`, and for a confirmed count whose every
+enumerated key is one the OPERATOR selected for dismissal. `undecidable` and `unconfigured` reads, a
+key the operator did not select and a count with no enumerated keys all answer `merge_allowed: false`
+with their `reason`. The retired `--dismissed-keys` flag is refused as
+`lane_dismissal_not_accepted`: the lane never records a dismissal of its own.
+
+`--progress-file` is the MECHANISM behind the operator rule, not a second opinion: it is REQUIRED
+whenever `--operator-selected-keys` is non-empty (a selection with no record is refused as
+`progress_file_required`), and every OPEN key must appear in the run's progress file as an
+`operator-selected: {key}: {reason}` line, or the gate answers `selection_not_recorded`. Without it a
+lane could pass any key set under the new flag and be believed; with it, a supplied key the run never
+recorded is refused, and the violation is visible in the audit record.
+
+`--hotspot-keys` names which of the open keys are SECURITY HOTSPOTS. A hotspot has no transition verb,
+so a recorded dismissal of one would never be transmitted: the gate refuses such a key as
+`hotspot_not_dismissable`, and the finding is fixed or reported as a blocker instead. It is REQUIRED
+whenever a selection is made above a confirmed zero (`hotspot_keys_required`) — pass the read's
+hotspot keys, or an explicit EMPTY value when the read reported none, because an omitted flag cannot
+be told from a read that found none.
 
 ### sonar-facts
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane sonar-facts \
   --state {configured|not_configured} [--count-status {confirmed|undecidable|unconfigured}] \
-  [--open-count N] [--rules "R1,R2"]
+  [--open-count N] [--rules "R1,R2"] [--gate-status {ok|error|not_computed|unknown}]
 ```
 
-Renders the landing's optional Sonar facts (section 8) from the read taken at the merge head:
-`step.sonar-roundtrip.open_issue_count` and `step.sonar-roundtrip.open_issue_rules` in `fact_lines`.
-A confirmed count carries the measured figure and the rules it left open (`--rules` is required
-above zero, and `none` at a measured `0`); `undecidable` and `unconfigured` both carry `unknown`, and
-a project without Sonar carries `n/a` at both.
+Renders the landing's Sonar facts (section 8) from the read taken at the merge head:
+`sonar_open_new_issues` — the landing's REQUIRED count key, one spelling for one measurement — and
+`step.sonar-roundtrip.open_issue_rules` in `fact_lines`. A confirmed count carries the measured figure
+and the rules it left open (`--rules` is required above zero, and `none` at a measured `0`);
+`undecidable` and `unconfigured` both carry `unknown`, and a project without Sonar carries `n/a` at
+both — the answered absence, which is a legal value for the required count. `--gate-status` adds the
+OPTIONAL `step.sonar-roundtrip.quality_gate_status` fact: a Sonar quality gate can fail on a new-code
+metric that is neither an open finding nor an unreviewed hotspot, so that failure is not a finding for
+the open-findings rule — but it is reported, because a landing silent about a failing gate states half
+its read.
+
+### review-gate
+
+```bash
+python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane review-gate \
+  --pr-number {N} [--project-dir DIR] [--disposition "{reviewer} {section} {id} — {sha|reason}" ...]
+```
+
+Decides the merge gate's review condition (section 7) from the surfaces read on the head. It reads
+through the CI abstraction (never `gh`): the unresolved review threads with their `path:line`, and
+the body of every reviewer's review, whose `inline`, `duplicate`, `outside-diff`, `nitpick` and
+`followup` sections are parsed into individually identified findings. Each `--disposition` is one
+progress-file line, repeated once per finding.
+
+**The `--disposition` value is `{reviewer} {section} {id} — {sha|reason}`**, exactly the tail of the
+progress line, with no `finding: ` prefix: `reviewer` is the bot kind the registry reports for that
+reviewer's login (not the login a human reader sees), or a human reviewer's lower-cased login;
+`section` and `id` are the parser's own vocabulary (`nitpick`, `followup`, `outside-diff`, `duplicate`,
+`inline`; ids `{section}-{n}`), which the verb reports in its `undisposed` rows so the lane never
+guesses them.
+
+It answers `merge_allowed: false` with a named `reason` while any of these holds: an unresolved
+thread exists (`unresolved_review_threads`); a body finding carries no disposition naming a commit or
+a stated reason (`body_findings_undisposed`); a resolved thread whose last comment is the reviewer
+BOT's and says the concern remains (`thread_concern_remains` — a bot's last word is the finding's, and
+a lane reply can itself contain the vocabulary, which is why a human's last comment is not tested);
+a disposition line names no evidence
+(`disposition_unparsable`); the read is undecidable, truncated, carries a review-body section the
+parser cannot read, carries a record kind the verb does not know, or carries a review body with no
+attributable author (`undecidable_read`); the provider
+publishes no coverage signal for the read (`coverage_unavailable`). An undecidable read is a stop,
+never a pass. Otherwise it answers `merge_allowed: true` with `all_handled`, and reports
+`unresolved_review_threads`, `review_body_findings_total` and `review_body_findings_handled` for the
+landing.
+
+**The read's coverage signal is GitHub's.** `ci pr comments` publishes `complete` for the GitHub
+provider and no coverage field for GitLab, so on a GitLab project the verb answers
+`coverage_unavailable` and the merge gate cannot be satisfied until that provider publishes one. That
+is a stated limitation of this gate, not a pass: the lane records the verdict and stops.
 
 ## 0. Input
 
@@ -208,6 +268,7 @@ The result supplies, and nothing below is spelled from anywhere else:
 | branch | `{branch} = {prefix}{plan}`; one closed set supplies the prefix — the canonical `feature/` (a new capability), `fix/` (a bug fix) and `chore/` (docs or maintenance), plus a prefix the project's configured `working_prefixes` declares. The two sources are one set with no precedence between them |
 | base branch | `base_branch` (the project's own base branch, never a spelling of it) |
 | inbox sender id | `sender_id` |
+| inbox read command | `inbox_read_command` |
 | progress file | `progress_file` |
 | landing file | `landing_file` |
 | build commands | `build` |
@@ -279,12 +340,14 @@ re-read: lane text loaded at {timestamp} ({session start|compaction|restart|idle
 D{n} hypothesis: {claim} — confirmed|refuted, {file:line}
 D{n} test: {test name} — order {test-first|mutation-after|none}; failing run {commit} {output identifier}; passed at {sha}
 D{n} done: commit {sha}
-sonar: {configured (project key)}|{not_configured}; read at {sha}: {count} confirmed|{undecidable, retried}|{not_configured}; dismissals: {issue-key: reason, … or none}
+finding: {reviewer} {section} {id} — {sha|reason}
+sonar: {configured (project key)}|{not_configured}; read at {sha}: {count} confirmed|{undecidable, retried}|{not_configured}; operator-selected: {issue-key: reason, … or none}
 gate: {quality-gate|module-tests|verify} at {sha} — {result}
 self-review round {k}: {findings and disposition}; open: {list or none}
 pr: #{N} created at {sha}
 review: {bot} triggered at {time} on {sha} — {reviewed|refused|silent}; next trigger not before {time}
 operator: asked "{question}" — options {…}; selected "{option}"
+mailbox: {item} — {done|declined with reason|asked}
 merge: {settle result}, merge commit {sha}
 cleanup: done
 landing: written as {message name}
@@ -314,6 +377,11 @@ so git alone shows which deliverables are committed.
     `none` order says so instead.
   - The failing run is reported by its commit and output identifier wherever the order is not
     `none`.
+  - **An evidence claim needs an artifact.** A browser check cites its screenshot FILES, not only the
+    snapshots it looked at; a mutation run or an end-to-end run cites the log path it produced, and
+    that path must exist. A claim carrying no artifact is reported **`not evidenced`**, and it does
+    not count toward `deliverables_done`: it is graded exactly as a not-met Done-when, because a
+    Done-when the run cannot show is a Done-when it did not meet as written.
   - Never cite a test, file or log you have not just read or run.
 - **Executor only.**
   - Every script: `python3 .plan/execute-script.py {bundle}:{skill}:{script} …`.
@@ -457,6 +525,14 @@ decides whether the job runs in-process or is submitted to the build daemon.
      the reason. Read that verdict and record it; a `present` slot is what lets a routed build submit.
      Section 4 still runs the `build-routing` check before the first routed build, and only an
      `absent` slot degrades it to `in_process` with the `executor_absent_from_worktree` reason.
+
+7. **Read the delivered mailbox — the first of three reads.**
+   `{inbox_read_command}` enumerates what the orchestrator delivered to this plan. Read it here, at
+   setup, then again before self-review (section 5) and once more immediately before the merge-gate
+   work (section 7). Every delivered item gets one disposition line in the progress file —
+   `mailbox: {item} — {done|declined with reason|asked}` — and an item with no disposition line
+   **blocks the enqueue**. A mailbox that reports it could not look (`mailbox_state` other than
+   `present`) is not an empty mailbox: say so in the landing rather than reading it as no mail.
 
 ## 3. Implement, deliverable by deliverable
 
@@ -610,6 +686,10 @@ publishes no test part supplies no `{build.module-tests}`:
 
 ## 5. Self-review before the PR
 
+**Read the delivered mailbox again — the second of the three reads** (`{inbox_read_command}`), and
+give every newly delivered item its disposition line before the round below grades anything. An item
+still without one blocks the enqueue (section 7).
+
 Dispatch one sub-agent (the `Task` tool, the general agent) with `persona-code-reviewer` loaded as a
 standard. It reports and never edits. Have it apply its adversarial-refute lenses — defect or
 preference, surplus or load-bearing, real or false-positive drift, and severity — to every finding
@@ -643,29 +723,50 @@ whether to continue at the limit. Record every finding and its disposition.
 2. **Trigger each reviewer** with a PR comment (`ci pr prepare-comment` + `ci pr reply`), posting
    its resolved `trigger_comment`.
 3. **Wait for CI:** `python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci checks wait --pr-number {N} --timeout 540`.
-4. **Read the pull request's open Sonar issues** — after CI is green on the head and before the
+4. **Read the pull request's open Sonar findings** — after CI is green on the head and before the
    pull request is reported ready. Skip nothing when `sonar` is `configured`:
    - `resolve` reported `not_configured`: there is nothing to read. Record `sonar: not_configured`
      in the progress file and the landing, and go on.
-   - `configured`: read the head's open new-code issues with the provider's plan-less read, which
+   - `configured`: read the head's open new-code findings with the provider's plan-less read, which
      needs no plan directory —
      `python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar read_open_issues --project {sonar_project_key} --pr {N} --ce-wait-timeout {sonar_ce_wait_timeout_seconds}`.
      Pass the resolved budget: it sits below this harness's Bash ceiling, so a read that does not
      settle returns its own `undecidable` instead of being killed with no state at all.
-     Fix each issue in a pushed commit, or dismiss it with a stated reason (see the dismissal rule
-     below). Re-read after every push until the count is `0` confirmed, or every remaining issue
-     carries a recorded dismissal. Then decide the gate:
-     `python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane sonar-gate --state configured --count-status {confirmed|undecidable|unconfigured} --open-count {n} --open-keys {k1,k2} --dismissed-keys {k1,k2}`.
-   - **A dismissal** is recorded in the progress file as `{issue-key}: {reason}` and transmitted with
-     the provider's raw REST transition, which is the one dismissal surface that takes a bare issue
-     key and needs no plan —
+     The read covers the open new-code issues AND the security hotspots still to review — the issue
+     search does not return hotspots — and its `open_issue_count` is their sum. A response whose
+     `paging.total` exceeds the page it carries, or carries none, comes back `undecidable`: a count
+     the read cannot show to be complete is never a number.
+     Fix each finding in a pushed commit, or have the OPERATOR dismiss it (see the dismissal rule
+     below). Re-read after every push until the count is `0` confirmed, or every remaining finding's
+     key is one the operator selected. The gate's `--open-keys` is the read's own `open_keys` field —
+     it enumerates the issue keys AND the hotspot keys, so a hotspot is never lost by reading `issues`
+     alone. Then decide the gate:
+     `python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane sonar-gate --state configured --count-status {confirmed|undecidable|unconfigured} --open-count {n} --open-keys {open_keys} --operator-selected-keys {k1,k2} --progress-file {progress_file} --hotspot-keys {hotspot_keys}`.
+   - **A dismissal is the operator's act, never the lane's.** When a finding should not be fixed, ask
+     the operator with the question tool, naming each finding key and what dismissing it would mean,
+     and transmit a key only on the option the operator SELECTED. The progress file records the
+     selection as `operator-selected: {issue-key}: {reason}`, never as a lane decision. The
+     transmission is the provider's raw REST transition, which is the one dismissal surface that takes
+     a bare issue key and needs no plan —
      `python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar_rest transition --issue-key {key} --transition {falsepositive|wontfix}`.
+     The gate reads the same record back through `--progress-file`, so a key the run did not record is
+     refused as `selection_not_recorded` — the record is the witness, not the flag alone.
      A dismissal the lane cannot transmit is a **blocker**, never a silent pass: record the failure
-     and stop.
+     and stop. The gate admits a key only through `--operator-selected-keys`; `--dismissed-keys` is
+     refused as `lane_dismissal_not_accepted`. A HOTSPOT key can be carried by `open_keys` but there is
+     no hotspot transition verb, so a hotspot is FIXED or reported as a blocker — never dismissed.
+   - **A failing new-code quality gate is reported, never counted as a finding.** Read it with
+     `python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar_rest gate-status --project {sonar_project_key} --pr {N}`
+     and pass its verdict to `sonar-facts` as `--gate-status`, mapping the provider's answer to the
+     flag's vocabulary: `gate_status: OK` → `ok`, `ERROR` → `error`, `NONE` → `not_computed`, and a
+     failed call (the verb answers `status: error`) → `unknown`. A quality gate can fail on a new-code
+     metric — coverage, duplication, maintainability — that is neither an open finding nor an
+     unreviewed hotspot, so it is not a finding for this rule, and it does not block on its own; the
+     landing reports it, so a failing gate is never silent.
    - An `undecidable` read (the analysis did not settle, the analysis is of another commit —
-     `stale_analysis` — no revision was reported for it, its head could not be resolved, or the
-     REST/auth call failed) is a **blocker**, never a `0`: retry the read, and if it stays
-     undecidable do not merge. An
+     `stale_analysis` — no revision was reported for it, its head could not be resolved, a page
+     shorter than the provider's own total, or the REST/auth call failed) is a **blocker**, never a
+     `0`: retry the read, and if it stays undecidable do not merge. An
      `unconfigured` read — the typed status the provider answers when the credential resolve said
      existed could not authenticate — is a blocker too; pass it to the gate and to `sonar-facts` as
      `--count-status unconfigured`.
@@ -677,8 +778,15 @@ whether to continue at the limit. Record every finding and its disposition.
    - fix it, commit and push; or
    - answer it with `ci pr thread-reply` (the reason it does not apply), then close it with
      `ci pr resolve-thread`.
+
+   **A thread is resolved only after a reply that names a commit or a stated reason** — never to
+   silence it: `ci pr thread-reply` first, `ci pr resolve-thread` second, in that order. Every
+   finding — whether it arrived as a thread or only inside a review body — gets one disposition line
+   in the progress file, `finding: {reviewer} {section} {id} — {sha|reason}`, and each line is handed
+   to the merge gate's `review-gate` call (section 7) as one `--disposition` value, with the
+   `finding: ` prefix dropped and `{reviewer}`/`{section}`/`{id}` exactly as the verb reports them.
 6. **After every push, re-trigger** a reviewer whose last review predates the head. Re-read the open
-   Sonar issues after every push too, on the same condition as step 4.
+   Sonar findings after every push too, on the same condition as step 4.
 7. **Reviewer quota policy** ("review limit reached" or similar), for ANY required reviewer that
    refuses on quota **while no qualifying review exists** (see section 7):
    1. Wait 90 minutes. Record the refusal and the next allowed trigger time in the progress file,
@@ -724,18 +832,30 @@ Merge only when all of these hold:
   form's parts are the run that must be green.
 - CI is green on the current head.
 - The Sonar state of the current head admits the merge: `sonar-gate` reports `merge_allowed: true`
-  on a read taken after the last push — its open new-code issue count is `0` confirmed, or every
-  remaining issue carries a recorded dismissal with its reason, or `resolve` reported
-  `not_configured`. An `undecidable` read is a blocker and is retried, and an `unconfigured` read is
-  a blocker too; the lane never treats either as `0`.
+  on a read taken after the last push — its open new-code finding count is `0` confirmed, or every
+  remaining finding is one the OPERATOR selected for dismissal, or `resolve` reported
+  `not_configured`. The count covers the open issues AND the security hotspots still to review. An
+  `undecidable` read is a blocker and is retried, and an `unconfigured` read is a blocker too; the
+  lane never treats either as `0`.
+- **A question that bears on the merge never offers "merge on the recorded evidence"** while the
+  open Sonar count is above `0` or `review-gate` reports `false`. The options it presents are the
+  ones the gate's actual verdicts leave open: fix, dismiss on the operator's explicit selection, or
+  stop. A free-text answer is never that selection.
+- The review surfaces of the current head admit the merge: `review-gate` reports `merge_allowed:
+  true` on a read taken after the last push — no unresolved review thread, every review-body finding
+  carrying a disposition that names a commit or a stated reason, and no resolved thread whose last
+  comment is the reviewer bot's and says the concern remains. Its `--disposition` values are this
+  run's progress-file `finding:` lines. An undecidable or truncated read is a blocker and is retried.
+  The standing review authorization never overrides a `review-gate` `false`.
 
 The reviewer quota policy (§ 6 step 7) applies only while no qualifying review exists. The standing
 authorization never applies to a reviewer that is not quota-limited, and never to a PR without a
 qualifying review.
 
-**An unresolved review thread or an unhandled outside-diff finding on the merge head blocks the
-standing authorization.** A reviewer's thread that is still open, or an outside-diff finding the run
-neither fixed nor answered, means a finding is not handled, so the second condition fails however
+**An unresolved review thread or an unhandled review-body finding on the merge head blocks the
+standing authorization.** A reviewer's thread that is still open, or a finding from any review-body
+section — inline, duplicate, outside-diff, nitpick or follow-up — that the run neither fixed nor
+answered, means a finding is not handled, so the second condition fails however
 strong the review credit is.
 
 **Any question that bears on the merge** first re-reads the review surfaces — `ci pr comments`,
@@ -748,12 +868,16 @@ alone. Its options never mark a rule-bending choice "Recommended". A review of t
 arrived after the question was asked invalidates the answer: ask the question again. A false or
 incomplete statement in such a question fails the run.
 
+**Read the delivered mailbox once more before the enqueue — the third read** (`{inbox_read_command}`).
+Every delivered item must already carry its disposition line; an item that has none **blocks the
+enqueue**, whatever else the gates say.
+
 **Immediately before enqueue,** fetch the base branch again. **If it moved:**
 `git -C {worktree} fetch origin {base_branch}`, then
 `git -C {worktree} merge origin/{base_branch} -m "merge: origin/{base_branch} into {branch}" -m "{commit_trailer}"`,
 so the merge commit it creates ends with the resolved `{commit_trailer}` line the Commit trailer rule
-requires. Run the build gate again, push, re-trigger the reviewers, re-read the Sonar issues, and
-repeat the reviewer quota policy (§ 6 step 7).
+requires. Run the build gate again, push, re-trigger the reviewers, re-read the Sonar findings, re-run
+the review gate, and repeat the reviewer quota policy (§ 6 step 7).
 
 **Before enqueue, re-check the authorization rule:** merge only when every condition above holds, or
 when the operator **selected** an option in a question-tool call that names the exact gap (which
@@ -811,22 +935,34 @@ effort={the effort level measured with the model}
 plugin_version={the plan-marshall bundle version}
 executor_version={the executor version when resolve returned one; drop this line when it did not (optional)}
 steps=setup:done,implement:done,build-gate:done,self-review:{clear|budget-exhausted},pr:done,reviews:done,merge:done
-step.sonar-roundtrip.open_issue_count={measured count|unknown|n/a}
+unresolved_review_threads={review-gate fact|unknown}
+review_body_findings_total={review-gate fact|unknown}
+review_body_findings_handled={review-gate fact|unknown}
+sonar_open_new_issues={measured count|n/a|unknown}
 step.sonar-roundtrip.open_issue_rules={rules left open|none|unknown|n/a}
 ```
 
 - **Values:** for a required key, write `unknown` for anything you could not read, never `n/a` and
   never a guess. `deliverables_done` counts only fully met deliverables. The optional per-step facts
   below carry their own two sentinels, where `n/a` is a legal answered absence.
-- **Sonar (optional):** when `sonar` is `configured`, render the two facts with
-  `python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane sonar-facts --state configured --count-status {confirmed|undecidable|unconfigured} [--open-count {n}] [--rules "{r1,r2}"]`
-  and write its `fact_lines` verbatim. When it is `not_configured`, render them with
-  `--state not_configured` and write `n/a` at both. They are the lane's own measurement of the
-  merge head — the open new-code issue count and the rules of the issues left open there — and they
-  are **optional**: the required key set above is unchanged, so their absence never makes a landing
-  incomplete. A confirmed count writes the measured figure, with the rules it left open (`none`
-  when that count is `0`). An `undecidable` or `unconfigured` read writes `unknown` at both: both
-  are failed reads, never `0`, and never a claim the run did not earn.
+- **The review numbers (required):** `unresolved_review_threads`, `review_body_findings_total` and
+  `review_body_findings_handled` are the `review-gate` call's own `unresolved_review_threads`,
+  `review_body_findings_total` and `review_body_findings_handled` facts, from the read taken on the
+  merge head — never a number recalled from the review cycle, and never `n/a`. A landing that omits
+  them is rejected by `inbox landing-check`, so a "all handled" claim has its numbers behind it.
+- **Sonar (the count is required):** `sonar_open_new_issues` is a required field. When `sonar` is
+  `configured`, render it with
+  `python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane sonar-facts --state configured --count-status {confirmed|undecidable|unconfigured} [--open-count {n}] [--rules "{r1,r2}"] [--gate-status {ok|error|not_computed|unknown}]`
+  and write its `fact_lines` verbatim; when it is `not_configured`, render with
+  `--state not_configured` and write `n/a` at the count (a project with no Sonar has no such number —
+  one of the four keys at which `n/a` is a legal answer). A confirmed count writes the measured
+  figure, with the rules it left open on the optional `step.sonar-roundtrip.open_issue_rules` line
+  (`none` when that count is `0`). Where the only open findings are security hotspots — which carry no
+  rule — pass `--rules hotspot`, so the fact states that rather than claiming a rule. An `undecidable`
+  or `unconfigured` read writes `unknown` at both:
+  both are failed reads, never `0`, and never a claim the run did not earn. `--gate-status` adds the
+  optional `step.sonar-roundtrip.quality_gate_status` line — the quality gate is reported, never
+  counted as a finding.
 - **Runtime stamp:** `harness`, `model`, `effort`, `plugin_version` and the optional `executor_version` are
   the resolve result's fields of those names, resolved from the platform-runtime `runtime-info` seam.
   Read the stamp from a `resolve` **re-run at landing time**, not from the setup-time result, so a model
@@ -846,7 +982,9 @@ step.sonar-roundtrip.open_issue_rules={rules left open|none|unknown|n/a}
      that the order names; and the commit. The words "fail-first" and "observed failing before the
      fix" are reserved for `test-first` — `mutation-after` means the failing output came from
      mutating or reverting the committed fix, and `none` means no failing output was captured. A
-     `not met as written` Done-when leaves its deliverable not fully met. Also report the sha of
+     `not met as written` Done-when leaves its deliverable not fully met. A claim carrying no
+     artifact is reported **`not evidenced`** — section 1's Evidence rule — and it counts as not
+     met, so it does not raise `deliverables_done` either. Also report the sha of
      every per-head test run (`module-tests`, and `test-compile` where the project publishes one)
      against a pushed head.
   2. **Personas and skills** — per step, which persona was applied (section 1's table, or the

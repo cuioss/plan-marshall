@@ -1,6 +1,6 @@
 ---
 name: workflow-integration-sonar
-description: SonarQube/SonarCloud provider - three pure verbs (fetch_findings files new-code issues to the ledger, post_responses transmits triaged dismissals, read_open_issues returns a pull request's open issues to a plan-less caller) via the REST client
+description: SonarQube/SonarCloud provider - three pure verbs (fetch_findings files new-code issues to the ledger, post_responses transmits triaged dismissals, read_open_issues returns a pull request's open new-code findings, issues plus hotspots still to review, to a plan-less caller) via the REST client
 user-invocable: false
 mode: workflow
 ---
@@ -11,7 +11,7 @@ Sonar provider for the findings-pipeline `sonar-issue` producer. The provider su
 
 - **`fetch_findings`** — fetch gate-blocking new-code issues from SonarQube/SonarCloud, apply the pre-filter (`sonar-rules.json`), and file one `sonar-issue` finding per surviving issue via `manage-findings add`. The untrusted Sonar `message` is quarantined under `raw_input.{message}` (never embedded raw in the top-level `detail`); the batched `manage-findings ingest` pass promotes it after `validate_struct`.
 - **`post_responses`** — apply already-decided triage dispositions back to Sonar (a `do_transition` dismissal: `wontfix` for `suppressed`, `falsepositive` for `rejected`), keyed by each finding's own `hash_id`.
-- **`read_open_issues`** — the plan-less read: given a project key and a pull request, return that pull request's open new-code issues (count, rules, files, and the same `count_status` discriminator) and persist nothing. It takes no plan id and reads no manifest, because its caller — the runbook lane — has no plan directory. The untrusted Sonar `message` is not part of its contract.
+- **`read_open_issues`** — the plan-less read: given a project key and a pull request, return that pull request's open new-code FINDINGS — the open issues plus the security hotspots still to review (count, rules, files, enumerated `open_keys`, and the same `count_status` discriminator) — and persist nothing. It takes no plan id and reads no manifest, because its caller — the runbook lane — has no plan directory. The untrusted Sonar `message` is not part of its contract.
 
 All three verbs FAIL LOUD when Sonar is not configured (a typed `unconfigured` status). Consumer dispatch lives in [`phase-6-finalize/workflow/sonar-roundtrip.md`](../phase-6-finalize/workflow/sonar-roundtrip.md) for the two plan-scoped verbs, and in [`runbook-lane/SKILL.md`](../runbook-lane/SKILL.md) § 6 for the plan-less read.
 
@@ -19,7 +19,7 @@ All three verbs FAIL LOUD when Sonar is not configured (a typed `unconfigured` s
 
 ## Enforcement
 
-**Execution mode**: Three pure provider verbs — `fetch_findings` files new-code Sonar issues to the ledger (untrusted message quarantined under `raw_input`); `post_responses` transmits already-decided triage dismissals back to Sonar; `read_open_issues` returns a pull request's open issues to a caller that has no plan and persists nothing. Triage judgment lives in the consolidated triage pass, NOT in this provider.
+**Execution mode**: Three pure provider verbs — `fetch_findings` files new-code Sonar issues to the ledger (untrusted message quarantined under `raw_input`); `post_responses` transmits already-decided triage dismissals back to Sonar; `read_open_issues` returns a pull request's open findings — the new-code issues plus the security hotspots still to review — to a caller that has no plan, and persists nothing. Triage judgment lives in the consolidated triage pass, NOT in this provider.
 
 **Prohibited actions:**
 - Never make a triage decision inside the provider verbs — they only fetch and transmit already-decided dispositions
@@ -191,7 +191,7 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar f
 
 ### sonar.py read_open_issues
 
-**Purpose:** The plan-less read the runbook lane calls before it reports a pull request ready. Given a project key and a pull request it performs the same bounded CE-readiness wait and PR-scoped new-code enumeration `fetch_findings` performs, then RETURNS the enumeration: the count, each issue's rule and file (plus key, type, severity, line and component), and the `count_status` discriminator. The scope is the pull request's analysis (the `inNewCodePeriod` issue set), so the count is "open issues the analysis found on this head", not a whole-project total — which is why the same analysis-revision comparison `fetch_findings` applies gates this read too. It files no finding, writes no scan-summary marker and reads no manifest — it has no plan id to take.
+**Purpose:** The plan-less read the runbook lane calls before it reports a pull request ready. Given a project key and a pull request it performs the same bounded CE-readiness wait and PR-scoped new-code issue enumeration `fetch_findings` performs, then reads the security hotspots still to review — the issue search does not return them — and RETURNS the enumeration: the combined count, each issue's rule and file (plus key, type, severity, line and component), the open hotspots, and the enumerated `open_keys` (issue keys and hotspot keys together) with the `count_status` discriminator. The ISSUE scope is the pull request's analysis (the `inNewCodePeriod` issue set) and the HOTSPOT scope is the pull request named by `--pr`, so the count is "open findings on this head", not a whole-project total — which is why the same analysis-revision comparison `fetch_findings` applies gates this read too. A read with no `--pr` names no pull request, so its hotspot leg is project-scoped; the lane always passes `--pr`. Every page is checked against the provider's own `paging.total`, and a page shorter than that total — or carrying none — is `undecidable`, never a short count. It files no finding, writes no scan-summary marker and reads no manifest — it has no plan id to take.
 
 **Usage:**
 ```bash
@@ -199,7 +199,7 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar r
   --project {project_key} --pr {pr} [--ce-wait-timeout {secs}]
 ```
 
-**Output:** TOON carrying `count_status` (`confirmed` | `undecidable`), `open_issue_count` (`0`-or-more on `confirmed`, `null` on `undecidable` — never a false `0`), `analysis_revision` and `head_revision` (the compared pair; both blank on a non-PR read, where no comparison happens), `rules[]`, `files[]`, `issues[]` and `count_status_reason` on `undecidable`. An unconfigured provider returns the typed `unconfigured` status, distinct from a read that failed. The issue `message` is deliberately absent: the trusted structured fields are what a caller acts on.
+**Output:** TOON carrying `count_status` (`confirmed` | `undecidable`), `open_issue_count` (`0`-or-more on `confirmed` — the open ISSUES plus the security hotspots still to review — and `null` on `undecidable`, never a false `0`), `open_keys[]` (every open key, issue and hotspot together, as one enumerated set), `hotspots[]` (the open security hotspots, with their `securityCategory` rather than a rule), `analysis_revision` and `head_revision` (the compared pair; both blank on a non-PR read, where no comparison happens), `rules[]`, `files[]`, `issues[]` and `count_status_reason` on `undecidable`. An unconfigured provider returns the typed `unconfigured` status, distinct from a read that failed. The issue `message` is deliberately absent: the trusted structured fields are what a caller acts on.
 
 ### Scan-Summary Marker (sonar-scan-summary.jsonl)
 
