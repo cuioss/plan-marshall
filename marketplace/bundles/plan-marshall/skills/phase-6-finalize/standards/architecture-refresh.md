@@ -14,12 +14,12 @@ implements: plan-marshall:extension-api/standards/ext-point-finalize-step
 
 Pure executor for the `architecture-refresh` finalize step. The pre-baseline is the committed `origin/main` tree: `_project.json` and the per-module `enriched.json` files are git-tracked, so `origin/main`'s `.plan/project-architecture/` is a zero-cost baseline of the architecture surface as it stood before this plan. The architecture verbs read that baseline by ref (`--pre-ref origin/main`) — this step materializes nothing on disk. Tier 0 re-runs `discover --force --apply plan`, which writes only the plan-attributable part of the regenerated descriptor, and commits it when the regression gate is green; Tier 1 optionally re-enriches the affected modules via an LLM pass.
 
-## Exit-code convention for `manage-*` script calls
+## Exit-code convention for every script call
 
-Every `manage-*` script call in this document carries the following exit-code contract unless a step explicitly states otherwise:
-
-- **`exit_code == 0`**: parse the returned TOON and use the value as the step describes.
-- **`exit_code != 0`**: STOP and return an error TOON to the orchestrator carrying the script's stderr verbatim. Non-zero exits include `argparse_rejection` (exit 2) — silent swallowing of `wrong_parameters` rejections is the prohibited anti-pattern; "log and continue" is equally forbidden.
+The exit-code contract for every `python3 .plan/execute-script.py` call in this
+document — of EVERY notation, not only `manage-*` — is stated once in
+[`tools-script-executor/standards/exit-code-convention.md`](../../tools-script-executor/standards/exit-code-convention.md);
+it is not restated here.
 
 This document carries NO step-activation logic. Activation is controlled by the dispatcher in `phase-6-finalize/SKILL.md` Step 3 and is driven solely by presence of `architecture-refresh` in `manifest.phase_6.steps`. When the dispatcher runs this step, the document executes top to bottom — there is no skip-conditional branching at this layer beyond the documented Tier-0 / Tier-1 knob reads, the absent-baseline short-circuit, and the attribution-verdict branches.
 
@@ -361,7 +361,7 @@ The user has chosen to never re-enrich automatically, so the affected-module lis
 >
 > The fix is a **re-homing**, not a rewrite of this branch: the deferred-enrichment note belongs in a surface that runs after `default:create-pr` (order 20) — either appended by a post-`create-pr` step, or carried as a fact this step records and a later step consumes when it edits the PR body. Re-homing it is deliberately **out of scope here** and is recorded as owed rather than left standing as a prescription that cannot succeed. Until it lands, the deferral is recorded in the decision log and the step's `display_detail` (below), both of which are readable without a PR.
 >
-> **Condition on the re-homing.** Wherever the `ci pr view` → `ci pr prepare-body --for edit` → `ci pr edit` chain is re-homed, it lands with a positive shape requirement per call — each is usable when and only when the return carries `status: success` together with the field the next call consumes (`pr_number` for `view`, the prepared body path for `prepare-body`), and every other shape stops the step. The chain also makes its host document's exit-code convention obligatory in the widened form, because none of the three calls is `manage-*`. This document keeps the `manage-*`-scoped convention below precisely because, with the chain removed, every call it now issues IS `manage-*` — the scope is derived from the calls present, not inherited.
+> **Condition on the re-homing.** Wherever the `ci pr view` → `ci pr prepare-body --for edit` → `ci pr edit` chain is re-homed, it lands with a positive shape requirement per call — each is usable when and only when the return carries `status: success` together with the field the next call consumes (`pr_number` for `view`, the prepared body path for `prepare-body`), and every other shape stops the step. The chain also makes its host document's exit-code convention obligatory in the widened form, because none of the three calls is `manage-*`. This document carries the widened form above for the same reason: it commissions the gate-bearing `git-workflow commit` verb (§ 3d and the Tier-1 branch), which is not `manage-*` — the scope is derived from the calls present, not inherited.
 
 Record the deferral in the decision log. `{affected_modules_csv}` is the sorted, comma-separated module-name list (e.g., `oauth-sheriff-core, oauth-sheriff-quarkus`):
 
