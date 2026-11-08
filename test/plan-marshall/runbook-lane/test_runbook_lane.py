@@ -3002,3 +3002,28 @@ def test_the_progress_template_carries_the_mailbox_disposition_line() -> None:
     assert mailbox_lines, 'the progress template carries no mailbox disposition line'
     assert 'declined with reason' in mailbox_lines[0]
     assert 'asked' in mailbox_lines[0]
+
+
+# =============================================================================
+# D5 — an evidence claim needs an artifact
+# =============================================================================
+
+
+def test_the_grading_rule_requires_an_artifact_for_every_claim() -> None:
+    """§1 owns the rule: an artifact-less claim is `not evidenced` and is not counted."""
+    rules = _section('## 1. Rules (every one binds; breaking one fails the run)')
+
+    assert 'not evidenced' in rules
+    assert 'artifact' in rules
+    assert 'screenshot' in rules, '§1 does not say what a browser check cites'
+    assert 'log path' in rules, '§1 does not say what a run must cite'
+    assert 'does not count toward `deliverables_done`' in rules
+
+
+def test_the_landing_report_grades_a_claim_by_the_artifact_rule() -> None:
+    """§8 refers to the §1 rule instead of restating it, and names the verdict."""
+    landing = _section('## 8. Landing message (the last step, after the merge)')
+
+    assert 'not evidenced' in landing
+    assert 'section 1' in landing, '§8 does not point at the grading rule'
+    assert '`test-first` is met' not in landing, '§8 restates the §1 grading rule'

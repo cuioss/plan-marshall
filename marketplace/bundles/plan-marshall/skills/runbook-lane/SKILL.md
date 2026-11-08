@@ -345,6 +345,11 @@ so git alone shows which deliverables are committed.
     `none` order says so instead.
   - The failing run is reported by its commit and output identifier wherever the order is not
     `none`.
+  - **An evidence claim needs an artifact.** A browser check cites its screenshot FILES, not only the
+    snapshots it looked at; a mutation run or an end-to-end run cites the log path it produced, and
+    that path must exist. A claim carrying no artifact is reported **`not evidenced`**, and it does
+    not count toward `deliverables_done`: it is graded exactly as a not-met Done-when, because a
+    Done-when the run cannot show is a Done-when it did not meet as written.
   - Never cite a test, file or log you have not just read or run.
 - **Executor only.**
   - Every script: `python3 .plan/execute-script.py {bundle}:{skill}:{script} …`.
@@ -934,7 +939,9 @@ step.sonar-roundtrip.open_issue_rules={rules left open|none|unknown|n/a}
      that the order names; and the commit. The words "fail-first" and "observed failing before the
      fix" are reserved for `test-first` — `mutation-after` means the failing output came from
      mutating or reverting the committed fix, and `none` means no failing output was captured. A
-     `not met as written` Done-when leaves its deliverable not fully met. Also report the sha of
+     `not met as written` Done-when leaves its deliverable not fully met. A claim carrying no
+     artifact is reported **`not evidenced`** — section 1's Evidence rule — and it counts as not
+     met, so it does not raise `deliverables_done` either. Also report the sha of
      every per-head test run (`module-tests`, and `test-compile` where the project publishes one)
      against a pushed head.
   2. **Personas and skills** — per step, which persona was applied (section 1's table, or the
