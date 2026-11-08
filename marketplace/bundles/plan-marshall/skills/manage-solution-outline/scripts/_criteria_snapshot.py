@@ -1839,7 +1839,7 @@ def open_criteria(plan_id: str, verdict_file: Path | None = None) -> dict[str, A
     rows are not outstanding work), and ``none`` when no snapshot exists (the
     legacy shape — no frozen criteria, so nothing is reported open). The
     ``frozen_deleted`` / ``frozen_tampered`` and ``review_closed`` sources are the
-    other two answers.
+    other answers.
 
     A criterion counts as ``met`` only under three conditions, all of which the
     validator would also enforce and none of which this reader may skip, because

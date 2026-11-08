@@ -608,6 +608,42 @@ def test_a_python_call_line_is_not_a_jvm_method_identity(plan_context, tmp_path,
     assert _rows(payload) == [], payload
 
 
+def test_a_kotlin_class_header_is_scope_not_a_method(plan_context, tmp_path, monkeypatch) -> None:
+    """``class FooTest() {`` is a class, so its method is ``FooTest::a`` — not a bare ``a``.
+
+    The JVM method arm's shape also fits the class line; consuming it as a method left
+    every method unqualified, so a deleted ``A::a`` and an unrelated new ``B::a`` with
+    the same body were credited as a move.
+    """
+    repo = _repo(tmp_path)
+    _commit(repo, {'README.md': 'readme\n'})
+    kotlin = 'class FooTest() {\n    fun a() {\n        assertTrue(true)\n    }\n}\n'
+    _commit(repo, {'src/test/kotlin/FooTest.kt': kotlin})
+    _git(repo, 'checkout', '--quiet', '-b', 'feature')
+    _git(repo, 'rm', 'src/test/kotlin/FooTest.kt')
+    _commit(
+        repo,
+        {'src/test/kotlin/BarTest.kt': 'class BarTest() {\n    fun a() {\n        assertTrue(true)\n    }\n}\n'},
+        'add an unrelated same-named method in another class',
+    )
+
+    payload = _run(repo, plan_context, monkeypatch)
+
+    rows = _rows(payload)
+    assert any(row['path'] == 'src/test/kotlin/FooTest.kt' for row in rows), payload
+    row = next(row for row in rows if row['path'] == 'src/test/kotlin/FooTest.kt')
+    assert any(entry['identity'] == 'FooTest::a' for entry in row['removed_tests']), row
+
+
+def test_an_anonymous_class_initializer_is_not_a_method_identity() -> None:
+    """``return new Bar() {`` has the JVM header shape but is not a method."""
+    text = 'class FooTest {\n    void b() {\n        return new Bar() {\n        };\n    }\n}\n'
+
+    identities = [name for _, name in _integrity._identity_spans(text, 'src/test/java/FooTest.java')]
+
+    assert identities == ['FooTest::b'], identities
+
+
 def test_a_js_identity_is_qualified_by_its_enclosing_describe(plan_context, tmp_path, monkeypatch) -> None:
     """A deleted ``A::renders`` is not credited by an unrelated new ``B::renders``.
 

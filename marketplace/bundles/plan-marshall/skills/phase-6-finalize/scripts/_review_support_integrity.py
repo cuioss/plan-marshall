@@ -450,21 +450,31 @@ def _identity_spans(text: str, path: str | None = None) -> list[tuple[int, str]]
             prefix = f'{class_stack[-1][1]}::' if class_stack else ''
             spans.append((offset, prefix + match.group(1)))
             continue
+        # A class header is SCOPE, never a method. `_JVM_METHOD_RE`'s
+        # `<word> <name>(...)` shape also matches `class FooTest() {`, so checking the
+        # method arm first would consume the class line and leave every method
+        # unqualified (`a` instead of `FooTest::a`) — a cross-file move could then
+        # credit a deleted method with an unrelated same-named one.
+        class_match = _CLASS_DEF_RE.match(line)
+        if class_match is not None:
+            parent = f'{class_stack[-1][1]}.' if class_stack else ''
+            class_stack.append((indent, parent + class_match.group(2)))
+            continue
+        any_class = _ANY_CLASS_RE.match(line)
+        if any_class is not None:
+            parent = f'{class_stack[-1][1]}.' if class_stack else ''
+            class_stack.append((indent, parent + any_class.group(1)))
+            continue
         jvm_match = _JVM_METHOD_RE.match(line) if _is_jvm_path(path) else None
         if jvm_match:
             name = jvm_match.group(1) or jvm_match.group(2)
-            prefix = f'{class_stack[-1][1]}::' if class_stack else ''
-            spans.append((offset, prefix + name))
-            continue
-        class_match = _CLASS_DEF_RE.match(line)
-        if class_match:
-            parent = f'{class_stack[-1][1]}.' if class_stack else ''
-            class_stack.append((indent, parent + class_match.group(2)))
-        else:
-            any_class = _ANY_CLASS_RE.match(line)
-            if any_class:
-                parent = f'{class_stack[-1][1]}.' if class_stack else ''
-                class_stack.append((indent, parent + any_class.group(1)))
+            # `return new Foo() {` is an anonymous-class initializer, not a method.
+            if re.search(rf'\bnew\s+{re.escape(name)}\s*\(', line):
+                jvm_match = None
+            else:
+                prefix = f'{class_stack[-1][1]}::' if class_stack else ''
+                spans.append((offset, prefix + name))
+                continue
         js_match = _JS_TEST_RE.match(line)
         if js_match:
             name = js_match.group(1)
