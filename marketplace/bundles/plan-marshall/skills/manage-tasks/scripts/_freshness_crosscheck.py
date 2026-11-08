@@ -674,14 +674,6 @@ def parse_row_scope(entry: dict[str, Any]) -> RowScope | None:
     docstring for why a build-tool-specific command line cannot be read for scope
     without risking a wrong *whole-tree* answer.
 
-    The payload is read from the row's ``command_args`` field when the executor
-    recorded one: that value is the single argv element ``--command-args``
-    received, so the payload boundary is explicit and an executor flag beside it
-    (``--timeout 900``) cannot be mistaken for part of the command. A row written
-    before that field existed is read from the joined ``args`` exactly as before,
-    which is why the joined form keeps its unreadable answer wherever a flag
-    follows the payload.
-
     Args:
         entry: A ``kind=build`` ledger row.
 

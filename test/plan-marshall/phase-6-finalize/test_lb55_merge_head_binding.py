@@ -152,14 +152,17 @@ def test_a_merge_with_no_stale_record_never_scans_the_step_population(monkeypatc
 
 
 def _declared_merge_facts() -> list[str]:
-    """The facts ``record-merge`` requires, plus one declared fault key."""
+    """Every fact key ``default:branch-cleanup`` declares, plus the required set."""
     return [
         'action=rebased',
         'upstream_commit_count=3',
         'merge_mechanism=pr_safe_merge',
         'merge_state=merged',
-        'cleanup_owed=false',
         'work_performed=true',
+        'cleanup_owed=false',
+        'head_binding_waived=none',
+        'head_binding_unconsulted=none',
+        'head_binding_fallback=none',
         'head_binding_status_read_fault=none',
     ]
 
@@ -189,16 +192,20 @@ def test_a_misspelled_fact_key_is_refused():
 def test_every_declared_fact_key_is_accepted():
     """CONTROL: every key the step declares passes the same validation."""
     written: list[list[str]] = []
+    declared, reason = gate._declared_fact_keys()
+    assert declared is not None, reason
+    facts = _declared_merge_facts()
+    assert {fact.split('=', 1)[0] for fact in facts} == declared
 
     result = gate.record_merge(
         'lb55-plan',
-        facts=_declared_merge_facts(),
+        facts=facts,
         mark_done_runner=lambda argv: written.append(list(argv)) or {'status': 'success'},
     )
 
     assert result['status'] == 'success', result
     assert written, 'the accepted fact set reaches the writer'
-    for fact in _declared_merge_facts():
+    for fact in facts:
         assert fact in written[0]
 
 

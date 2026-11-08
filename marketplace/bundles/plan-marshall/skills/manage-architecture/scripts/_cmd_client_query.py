@@ -934,6 +934,17 @@ def resolve_command(command_name: str, module_name: str | None = None, project_d
     if command_name in commands:
         return _resolved_command_dict(commands, command_name, module_name, 'module')
 
+    # A module that declares NO canonical at all is one the root's reactor does not
+    # build (the Maven discoverer drops every ``-pl`` form for such a module, since
+    # Maven refuses ``-pl`` for a project outside the reactor). Cascading to the
+    # root there would answer with the root's whole-reactor run, which by
+    # definition does not build this module — a coverage claim nobody measured.
+    if not commands and module_name != root_module_name:
+        raise ValueError(
+            f'Command not found: {command_name} — module {module_name!r} declares no canonicals '
+            'and is not built by the root reactor, so the root form does not cover it'
+        )
+
     # Cascade: try root module if current module is not already root.
     if root_module_name and module_name != root_module_name:
         try:

@@ -481,7 +481,11 @@ owners:
 | `analysis_vocabulary_unimportable` | The canonical→analyses map (`_build_examined`) could not be imported | **This check is broken** — a deployment or `PYTHONPATH` fault, not a quiet pass. |
 | `required_coverage_unknown` | The live footprint or the registered-target set could not be resolved | The plan state — a worktree not yet materialised, or an unreadable marketplace root. |
 | `build_scope_unreadable` | No candidate row can be read for scope: none carries a usable `--command-args`, or every canonical it names is outside the vocabulary, or a row carries a flag that is neither a known scope-bearing one (`-pl`/`--projects`, `--workspace`) nor the known non-narrowing `-am`/`--also-make` | The producer when no row carries `--command-args` (something wrote rows the dispatch boundary would not have written); otherwise the argv's lost quoting, which is why an unknown flag is unreadable rather than guessed at. |
-| `build_scope_unreadable_for_whole_tree_change` — the JOINT reason, never a `scope_cross_check_reason` (the scope verdict there stays `undetermined`) | The same unreadable rows, against a change that needs whole-tree coverage | The same owner, with a decision attached: an unreadable row cannot substantiate a whole-tree claim, so the gate refuses instead of passing on no evidence. A change that needs less keeps the plain `build_scope_unreadable` pass. |
+
+`build_scope_unreadable_for_whole_tree_change` is NOT in this vocabulary: it is a
+JOINT reason, one the selection takes when these unreadable rows meet a change that
+needs whole-tree coverage, and the scope verdict itself stays `undetermined`. It is
+listed with the other `stale` reasons below.
 
 ⛔ An unresolvable footprint is an **inability**, never an empty one. Rendering it
 as "the change requires nothing" would make every row cover it, re-opening the

@@ -631,7 +631,8 @@ variant below, which says "green" for no arm it did not gate:
 --display-detail "{N} bundles + whole-tree gates green, module-tests DEGRADED"
 ```
 
-ONE variant serves both paths, and that is this section's existing division of labour rather thana shortcut: the bounded field reports THAT the arm degraded, and the unbounded `[WARNING]` each
+ONE variant serves both paths, and that is this section's existing division of labour rather than
+a shortcut: the bounded field reports THAT the arm degraded, and the unbounded `[WARNING]` each
 branch-0 path already emits reports WHICH cause degraded it — the same split the skipped-bundle
 variant below states for its own set. When the cause is a module whose own `pom.xml` could not be
 read — the discovery metadata carries `pom_error: pom_unreadable` and that module has no canonicals

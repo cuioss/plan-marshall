@@ -314,7 +314,7 @@ def _drop_commands_outside_the_root_reactor(modules: list[dict], reactor_paths: 
         reactor_paths: The module directories the root POM's reactor builds.
     """
     for module in modules:
-        path = (module.get('paths') or {}).get('module') or '.'
+        path = ((module.get('paths') or {}).get('module') or '.').replace('\\', '/')
         if path == '.' or path in reactor_paths:
             continue
         module['commands'] = {}

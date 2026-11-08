@@ -3,14 +3,11 @@
 """Pre-merge findings gate that owns the merge dispatch for ``default:branch-cleanup``.
 
 This gate evaluates the blocking-findings invariant itself before it issues the merge
-verb, and it is the only merge-shaped dispatch ``branch-cleanup`` issues. A step body
-that skipped or misread an instruction therefore cannot reach the merge through this
-step, and the later archive refusal cannot strand a plan whose change is already on
-the base branch. It is the ONLY merge-shaped
-dispatch ``branch-cleanup`` issues: it evaluates the blocking-findings invariant
-for phase ``6-finalize`` and issues the routed merge verb only when that
-evaluation proved the store clean. The merge is therefore unreachable without
-the check having run and passed.
+verb, and it is the only merge-shaped dispatch ``branch-cleanup`` issues: it evaluates
+the invariant for phase ``6-finalize`` and issues the routed merge verb only when that
+evaluation proved the store clean. A step body that skipped or misread an instruction
+therefore cannot reach the merge through this step, and the later archive refusal
+cannot strand a plan whose change is already on the base branch.
 
 * **One verdict vocabulary.** The verdict comes from
   ``_handshake_commands.cmd_findings_check`` called in-process — the very handler

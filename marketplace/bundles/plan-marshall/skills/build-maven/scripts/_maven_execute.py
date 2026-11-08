@@ -159,14 +159,13 @@ _VALUE_TAKING_OPTIONS = frozenset(
     }
 )
 
-#: What Surefire/Failsafe print when the build asked them to skip, so a
-#: ``-DskipTests`` set through ``.mvn/maven.config`` or ``MAVEN_OPTS`` — invisible
-#: on the command line this guard is handed — is still recognised as a requested
-#: skip rather than reported as an empty population.
 #: Maven's own statement that a test-phase invocation skipped its tests, anchored
-#: to a LOG LINE. Anchoring matters: a test's own output can contain the same
-#: words, and treating that as the run's skip would silence the zero-test guard
-#: for a run that genuinely executed nothing.
+#: to a LOG LINE. The phrase is what a ``-DskipTests`` set through
+#: ``.mvn/maven.config`` or ``MAVEN_OPTS`` — invisible on the command line this
+#: guard is handed — leaves behind, so it is recognised as a requested skip rather
+#: than reported as an empty population. Anchoring matters: a test's own output can
+#: contain the same words, and treating that as the run's skip would silence the
+#: zero-test guard for a run that genuinely executed nothing.
 _SKIP_MARKER_PATTERN = re.compile(r'(?m)^(?:\[[A-Z]+\]\s*)?Tests are skipped\.\s*$')
 
 #: Surefire's own statement that it matched no test class, anchored to a LOG LINE
@@ -511,12 +510,16 @@ def _reports_show_executed_tests(
     if not root.is_dir():
         return False
     started = _run_start_time(log_file, duration_seconds)
+    if started is None:
+        # Without a bound, any report on disk could be a previous run's — the exact
+        # false credit this bound exists to stop.
+        return False
     for report in _report_files(root):
         try:
             modified = report.stat().st_mtime
         except OSError:
             continue
-        if started is not None and modified < started:
+        if modified < started:
             continue
         if _report_collected_tests(report) > 0:
             return True
