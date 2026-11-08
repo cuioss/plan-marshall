@@ -922,6 +922,19 @@ def resolve_command(command_name: str, module_name: str | None = None, project_d
     derived = _load_module_or_raise(module_name, project_dir)
     commands = derived.get('commands', {})
 
+    # A module that declares NO canonical at all is one the root's reactor does not
+    # build (the Maven discoverer drops every ``-pl`` form for such a module, since
+    # Maven refuses ``-pl`` for a project outside the reactor). Cascading to the
+    # root there would answer with the root's whole-reactor run, which by
+    # definition does not build this module — a coverage claim nobody measured.
+    # Checked BEFORE enrichment: a profile-derived canonical merged below would not
+    # have come from the discovery refusal.
+    if not commands and module_name != root_module_name:
+        raise ValueError(
+            f'Command not found: {command_name} — module {module_name!r} declares no canonicals '
+            'and is not built by the root reactor, so the root form does not cover it'
+        )
+
     # Lazy profile enrichment: a profile-derived canonical (coverage,
     # integration-tests, e2e, benchmark, or a profile-overridable quality-gate)
     # may be missing from the cheap crawl. Enrich this ONE module and merge the

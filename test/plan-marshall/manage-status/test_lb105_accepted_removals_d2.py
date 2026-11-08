@@ -236,12 +236,12 @@ def test_declared_removal_yields_no_blocking_row(plan_context, tmp_path, monkeyp
 # --- D2 controls: a removal nobody decided on still blocks ----------------------------------
 
 
-def test_a_java_class_removal_is_declared_and_accepted(plan_context, tmp_path, monkeypatch) -> None:
-    """A test class whose language has no per-function leg still has an identity.
+def test_a_java_method_removal_is_declared_and_accepted(plan_context, tmp_path, monkeypatch) -> None:
+    """A JVM test METHOD has its own ``Class::method`` identity and can be declared.
 
-    The consumer that saw this defect runs Maven, so a file-level-only row must
-    still be decidable: the class header gives it an identity, and a declared
-    removal of that class suppresses the row.
+    The consumer that saw this defect runs Maven, so the removal must be decidable
+    per method: the method header gives it the same identity a Python method gets,
+    and a declared removal of that identity suppresses the row.
     """
     repo = _repo(tmp_path)
     java = 'package com.example;\n\npublic class SampleTest {\n    @Test\n    public void present() {\n        Assertions.assertEquals(1, 1);\n    }\n}\n'
@@ -253,13 +253,13 @@ def test_a_java_class_removal_is_declared_and_accepted(plan_context, tmp_path, m
     monkeypatch.setattr(_integrity, 'resolve_live_worktree', lambda _plan_id: repo)
     monkeypatch.setattr(_attr, 'resolve_live_worktree', lambda _plan_id: None)
     criteria = ['parser accepts input']
-    _plan(plan_context, criteria, removals=['SampleTest'])
+    _plan(plan_context, criteria, removals=['SampleTest::present'])
     assert _snap.write_snapshot(PLAN_ID)['status'] == 'success'
 
     payload = review_support.run_validate(PLAN_ID, 'functional', _sealed(tmp_path, criteria), None)
 
     assert _blocking(payload) == [], payload['findings']
-    assert any(entry['identity'] == 'SampleTest' for entry in payload['accepted_removals']), payload[
+    assert any(entry['identity'] == 'SampleTest::present' for entry in payload['accepted_removals']), payload[
         'accepted_removals'
     ]
 

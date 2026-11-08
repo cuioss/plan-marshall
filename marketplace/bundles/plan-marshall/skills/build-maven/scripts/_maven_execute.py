@@ -12,7 +12,11 @@ Usage:
     from _maven_execute import execute_direct, cmd_run
 """
 
+import os
 import re
+from collections.abc import Iterator
+from pathlib import Path
+from xml.etree import ElementTree as ET
 
 from _build_execute import CaptureStrategy
 from _build_execute_factory import ExecuteConfig, create_execute_handlers, default_command_key_fn
@@ -112,11 +116,13 @@ _LIFECYCLE_PHASES = frozenset(
 #: an explicit ``=false`` is NOT read as a skip.
 _SKIP_FLAG_PATTERN = re.compile(r'-D(?:skipTests|maven\.test\.skip)(?:=(?P<value>true|false))?(?=\s|$)', re.IGNORECASE)
 
-#: A plugin-goal coordinate (``surefire:test``), the other shape a goal takes.
-#: Deliberately narrow — no slashes and no empty prefix — so an option's value
-#: that happens to contain a colon (``-pl :core``, ``-f C:/repo/pom.xml``) is not
-#: mistaken for a goal.
-_PLUGIN_GOAL_PATTERN = re.compile(r'[A-Za-z0-9_.\-]+:[A-Za-z0-9_.\-]+')
+#: A plugin-goal coordinate (``surefire:test``, ``org.apache.maven.plugins:maven-surefire-plugin:test``,
+#: ``g:a:v:test``). At least one colon and at least two segments; deliberately
+#: narrow — no slashes and no empty first segment — so an option's value that
+#: happens to contain a colon (``-pl :core``, ``-f C:/repo/pom.xml``) is not
+#: mistaken for a goal. The version segment is what a fully-qualified goal adds,
+#: and dropping it left such a goal unguarded.
+_PLUGIN_GOAL_PATTERN = re.compile(r'[A-Za-z0-9_.\-]+(?::[A-Za-z0-9_.\-]+)+')
 
 #: Options that take a SEPARATE value token. Their value is consumed so a value
 #: that is spelled like a phase or a coordinate (``-pl integration-test``,
@@ -153,11 +159,27 @@ _VALUE_TAKING_OPTIONS = frozenset(
     }
 )
 
-#: What Surefire/Failsafe print when the build asked them to skip, so a
-#: ``-DskipTests`` set through ``.mvn/maven.config`` or ``MAVEN_OPTS`` — invisible
-#: on the command line this guard is handed — is still recognised as a requested
-#: skip rather than reported as an empty population.
-_TEST_SKIP_MARKER = 'Tests are skipped.'
+#: Maven's own statement that a test-phase invocation skipped its tests, anchored
+#: to a LOG LINE. The phrase is what a ``-DskipTests`` set through
+#: ``.mvn/maven.config`` or ``MAVEN_OPTS`` — invisible on the command line this
+#: guard is handed — leaves behind, so it is recognised as a requested skip rather
+#: than reported as an empty population. Anchoring matters: a test's own output can
+#: contain the same words, and treating that as the run's skip would silence the
+#: zero-test guard for a run that genuinely executed nothing.
+_SKIP_MARKER_PATTERN = re.compile(r'(?m)^(?:\[[A-Z]+\]\s*)?Tests are skipped\.\s*$')
+
+#: Surefire's own statement that it matched no test class, anchored to a LOG LINE
+#: for the same reason as :data:`_SKIP_MARKER_PATTERN`: a run whose test output
+#: happens to print the phrase is not a run that matched nothing.
+_NO_TESTS_TO_RUN_PATTERN = re.compile(r'(?m)^(?:\[[A-Z]+\]\s*)?No tests to run\.\s*$')
+
+#: Directories a Surefire/Failsafe run writes its per-class XML reports into
+#: (``target/surefire-reports`` in the module that ran the tests).
+_REPORT_SUMMARY_DIRS = ('surefire-reports', 'failsafe-reports')
+
+#: Directories a report scan never descends into: none of them is a module build
+#: output, and walking them would make the guard pay for the whole checkout.
+_REPORT_SCAN_PRUNED = frozenset({'.git', '.plan', 'node_modules', '.venv', '__pycache__'})
 
 
 def _asks_to_skip_tests(args: str) -> bool:
@@ -379,7 +401,132 @@ def _test_phase_goal(args: str) -> str | None:
     return goal
 
 
-def apply_zero_test_guard(result: dict, args: str) -> dict:
+def _report_files(root: Path) -> Iterator[Path]:
+    """Yield every Surefire/Failsafe ``TEST-*.xml`` report under ``root``.
+
+    Walks the module tree (a reactor run writes reports in every module that ran
+    tests) while pruning directories no build output lives in.
+
+    Args:
+        root: The directory the Maven invocation ran in.
+
+    Yields:
+        Paths to per-class report files.
+    """
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [name for name in dirnames if name not in _REPORT_SCAN_PRUNED]
+        if os.path.basename(dirpath) not in _REPORT_SUMMARY_DIRS:
+            continue
+        for name in filenames:
+            if name.startswith('TEST-') and name.endswith('.xml'):
+                yield Path(dirpath) / name
+
+
+def _report_collected_tests(report: Path) -> int:
+    """Return the collected test count a Surefire/Failsafe report records, or 0.
+
+    A malformed or unreadable report is 0 rather than an error: this reader only
+    ever ADDS evidence, so an unreadable one must not manufacture any.
+
+    Args:
+        report: One ``TEST-*.xml`` file.
+
+    Returns:
+        The ``tests`` attribute of the report's root element, or 0.
+    """
+    try:
+        root = ET.parse(report).getroot()
+    except (ET.ParseError, OSError):
+        return 0
+    raw = root.get('tests')
+    try:
+        return int(raw) if raw is not None else 0
+    except (TypeError, ValueError):
+        return 0
+
+
+def _run_start_time(log_file: str | None, duration_seconds: object) -> float | None:
+    """Return the moment this run began, or ``None`` when it cannot be bounded.
+
+    The log file is written THROUGH the run, so its last-write stamp is the run's
+    END, not its start. The start is that stamp minus the duration the wrapper
+    measured, less a second of truncation slack. Where the duration is
+    unavailable the end stamp cannot bound the start, so the answer is ``None``
+    and no report is credited.
+
+    Args:
+        log_file: This run's log path.
+        duration_seconds: The wrapper's measured run duration, when it reported one.
+
+    Returns:
+        The run's start as a POSIX timestamp, or ``None``.
+    """
+    if not log_file:
+        return None
+    try:
+        ended = Path(log_file).stat().st_mtime
+    except OSError:
+        return None
+    try:
+        duration = float(duration_seconds)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    return ended - duration - 1.0
+
+
+def _reports_show_executed_tests(
+    project_dir: str | None,
+    log_file: str | None,
+    duration_seconds: object = None,
+) -> bool:
+    """Whether a Surefire/Failsafe report written by THIS run reported executed tests.
+
+    A quiet run — ``-q`` supplied through ``.mvn/maven.config`` or ``MAVEN_OPTS``,
+    or Surefire's ``printSummary=false`` — still writes one ``TEST-*.xml`` per
+    executed test class; only the LOG's summary line is hidden. Those reports are
+    therefore the evidence a hidden summary leaves behind, and reading them is
+    what tells "the summary was suppressed" from "nothing was collected".
+
+    A report older than this run's START belongs to a PREVIOUS run, and crediting
+    it would turn "executed nothing" into a green — the exact false credit this
+    guard exists to remove — so it is ignored. The start is derived from the log's
+    last write minus the wrapper's measured duration (see
+    :func:`_run_start_time`): the log is appended to THROUGH the run, so its own
+    stamp marks the end, and reports are written before that end.
+
+    Args:
+        project_dir: The directory the Maven invocation ran in, or ``None`` when
+            the caller supplied none — then no report can be attributed to it.
+        log_file: This run's log path.
+        duration_seconds: The wrapper's measured run duration, when it reported one.
+
+    Returns:
+        True only when a report written by this run reports one or more collected
+        tests.
+    """
+    if not project_dir:
+        return False
+    root = Path(project_dir)
+    if not root.is_dir():
+        return False
+    started = _run_start_time(log_file, duration_seconds)
+    if started is None:
+        # Without a bound, any report on disk could be a previous run's — the exact
+        # false credit this bound exists to stop.
+        return False
+    for report in _report_files(root):
+        try:
+            modified = report.stat().st_mtime
+        except OSError:
+            continue
+        if modified < started:
+            continue
+        if _report_collected_tests(report) > 0:
+            return True
+    return False
+
+
+def apply_zero_test_guard(result: dict, args: str, *, project_dir: str | None = None) -> dict:
     """Refuse to credit a green test-phase run that executed no test.
 
     A green exit code from ``mvn test`` reads as "the tests passed" to every
@@ -389,11 +536,13 @@ def apply_zero_test_guard(result: dict, args: str) -> dict:
 
     - a parsed summary reporting zero COLLECTED tests is evidence of an empty
       population;
-    - no summary at all on a leading ``test`` goal is the same population: a
-      collected test is a summary line, so no summary means nothing was
-      collected. A leading ``package`` goal without a summary is a compile and
-      package run that reported no tests — only a summary naming a zero
-      population is evidence there;
+    - no summary on a leading ``test`` goal is EITHER an empty population OR a
+      summary the run's log level hid, and the evidence tells them apart: a
+      Surefire/Failsafe report this run wrote with executed tests,
+      or Surefire's own ``No tests to run.`` line, keeps the green; with neither,
+      nothing was collected. A leading ``package`` goal without a summary is a
+      compile and package run that reported no tests — only a summary naming a
+      zero population is evidence there;
     - an unreadable log of a test-phase run is no evidence either, and no
       evidence never becomes a green for a run whose truth lives in its log;
     - an empty population whose log carries NO test summary at all and states
@@ -407,12 +556,17 @@ def apply_zero_test_guard(result: dict, args: str) -> dict:
     Args:
         result: A finished execution result (``execute_direct``'s dict).
         args: The Maven arguments the invocation carried.
+        project_dir: The directory the invocation ran in. The report-file read
+            that tells a hidden summary from an empty population needs it; an
+            absent value means no report can be attributed to this run, and the
+            no-summary case then stays indeterminate.
 
     Returns:
         The same result unchanged when the run collected a test, when it is no
-        test-phase run, when it was not green, or when an empty population was a
-        requested skip — otherwise an ``indeterminate`` result naming
-        ``TEST_RUN_EXECUTED_NOTHING``.
+        test-phase run, when it was not green, when an empty population was a
+        requested skip, when Surefire matched no test class at all, or when a
+        report this run wrote shows executed tests — otherwise an
+        ``indeterminate`` result naming ``TEST_RUN_EXECUTED_NOTHING``.
     """
     if result.get('status') != STATUS_SUCCESS:
         return result
@@ -432,8 +586,17 @@ def apply_zero_test_guard(result: dict, args: str) -> dict:
         return result
     if collected == 0:
         evidence = "the run's log reports zero collected tests, so nothing executed"
+    elif _reports_show_executed_tests(project_dir, result.get('log_file'), result.get('duration_seconds')):
+        # The summary was hidden (a quiet run, or Surefire's printSummary=false),
+        # not absent: the reports this run wrote name executed test classes.
+        return result
     elif goal.split(':')[-1] == 'test':
-        if _TEST_SKIP_MARKER in log_text:
+        if _SKIP_MARKER_PATTERN.search(log_text):
+            return result
+        if _NO_TESTS_TO_RUN_PATTERN.search(log_text):
+            # Surefire RAN and matched no test class: the module has nothing to
+            # run, so its green is truthful. A run that reported ``Tests run: 0``
+            # took the measured-zero branch above and stays indeterminate.
             return result
         evidence = 'the log carries no Surefire or Failsafe test summary, so the run collected and executed nothing'
     else:
@@ -477,7 +640,7 @@ def _selector_miss_guard(inner):
             plan_id=plan_id,
         )
         guarded = apply_selector_miss_guard(result)
-        return apply_zero_test_guard(guarded, args)
+        return apply_zero_test_guard(guarded, args, project_dir=working_dir or project_dir)
 
     return execute_direct
 

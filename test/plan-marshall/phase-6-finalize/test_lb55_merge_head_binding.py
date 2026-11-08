@@ -46,7 +46,7 @@ def _merge(status, head, **kwargs):
 
     Participation is stubbed COMPLETE here because this module's subject is the head
     binding: the production participation reader spawns its own provider and predicate
-    subprocesses, and LB-100's participation behaviour has its own cases in
+    subprocesses, and the participation behaviour has its own cases in
     ``test_pre_merge_gate.py``.
 
     Head-dependence discovery and the verdict-currency classifier are stubbed too, for
@@ -82,11 +82,12 @@ def _merge(status, head, **kwargs):
 def _merge_pre_seam(status, head, **kwargs):
     """Run the gate with ONLY the seams the pre-change module already accepted.
 
-    The two Done-whens marked "Red at HEAD" drive the production declaration reader
-    and the production waiver row through these seams, so their failure at HEAD is
-    the defect (a refused merge) rather than a missing keyword. They therefore must
-    not pass the declaration seam. A case that needs the production declaration
-    reader but not the production classifier passes it through ``kwargs``.
+    The two cases marked red-before-the-change drive the production declaration
+    reader and the production waiver row through these seams, so their failure
+    against the unfixed module is the defect (a refused merge) rather than a
+    missing keyword. They therefore must not pass the declaration seam. A case
+    that needs the production declaration reader but not the production classifier
+    passes it through ``kwargs``.
     """
     flags = {
         'status_reader': lambda _pid: status,
@@ -125,6 +126,149 @@ def test_a_merge_candidate_newer_than_the_functional_review_head_refuses():
     for item in result['steps']:
         assert item['recorded_head'] == HEAD_GATED
         assert item['head'] == HEAD_MERGED
+    assert 'loop-back close --waive-refire' in result['message'], (
+        'the refusal must name the verb that records the waiver, not only the rule'
+    )
+
+
+def test_a_merge_with_no_stale_record_never_scans_the_step_population(monkeypatch):
+    """A merge whose records all sit at the candidate pays for no declaration scan.
+
+    The population scan walks every bundle and skill root, so running it before any
+    record is known stale charges every ordinary merge for a check that answers
+    nothing.
+    """
+
+    def _unexpected_scan():
+        raise AssertionError('the head-dependence population was scanned for a merge that needed none')
+
+    monkeypatch.setattr(gate, '_head_dependence_probe', _unexpected_scan)
+    status = _status({'functional-review': HEAD_MERGED, 'pre-push-quality-gate': HEAD_MERGED})
+
+    result = _merge(status, HEAD_MERGED, head_dependence_reader=None)
+
+    assert result['status'] == 'success'
+    assert result['dispatched'] is True
+
+
+def _declared_merge_facts() -> list[str]:
+    """Every fact key ``default:branch-cleanup`` declares, plus the required set."""
+    return [
+        'action=rebased',
+        'upstream_commit_count=3',
+        'merge_mechanism=pr_safe_merge',
+        'merge_state=merged',
+        'work_performed=true',
+        'cleanup_owed=false',
+        'head_binding_waived=none',
+        'head_binding_unconsulted=none',
+        'head_binding_fallback=none',
+        'head_binding_status_read_fault=none',
+    ]
+
+
+def test_a_misspelled_fact_key_is_refused():
+    """A key the step does not declare is a typo, and nothing is written.
+
+    ``mark-step-done`` does not check keys against the step's ``records_facts``, so
+    without this guard a misspelled key reaches the record and no reader of the
+    step ever sees it.
+    """
+    written: list[list[str]] = []
+    facts = [*_declared_merge_facts()[:-1], 'merge_stat=merged']
+
+    result = gate.record_merge(
+        'lb55-plan',
+        facts=facts,
+        mark_done_runner=lambda argv: written.append(list(argv)) or {'status': 'success'},
+    )
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'facts_malformed'
+    assert 'merge_stat' in result['message']
+    assert written == [], 'a refused fact set writes nothing'
+
+
+def test_every_declared_fact_key_is_accepted():
+    """CONTROL: every key the step declares passes the same validation."""
+    written: list[list[str]] = []
+    declared, reason = gate._declared_fact_keys()
+    assert declared is not None, reason
+    facts = _declared_merge_facts()
+    assert {fact.split('=', 1)[0] for fact in facts} == declared
+
+    result = gate.record_merge(
+        'lb55-plan',
+        facts=facts,
+        mark_done_runner=lambda argv: written.append(list(argv)) or {'status': 'success'},
+    )
+
+    assert result['status'] == 'success', result
+    assert written, 'the accepted fact set reaches the writer'
+    for fact in facts:
+        assert fact in written[0]
+
+
+def test_an_unreadable_fact_declaration_refuses_the_record(monkeypatch):
+    """A declaration nobody could read refuses the write, naming the fault.
+
+    Failing open here would write facts no reader of the step can check, which is
+    the same silent pass the key check exists to remove.
+    """
+    monkeypatch.setattr(gate, '_declared_fact_keys', lambda: (None, 'the population raised'))
+    written: list[list[str]] = []
+
+    result = gate.record_merge(
+        'lb55-plan',
+        facts=_declared_merge_facts(),
+        mark_done_runner=lambda argv: written.append(list(argv)) or {'status': 'success'},
+    )
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'facts_declaration_unreadable'
+    assert 'the population raised' in result['message']
+    assert written == []
+
+
+def test_a_rebase_count_without_an_action_is_refused():
+    """A count names a rebase; a record with no action performed none.
+
+    The merge-queue route never rebases, so an unpaired count would record one it
+    could not have observed.
+    """
+    facts = [fact for fact in _declared_merge_facts() if not fact.startswith('action=')]
+    facts = ['merge_mechanism=merge_queue' if fact.startswith('merge_mechanism=') else fact for fact in facts]
+    written: list[list[str]] = []
+
+    result = gate.record_merge(
+        'lb55-plan',
+        facts=facts,
+        mark_done_runner=lambda argv: written.append(list(argv)) or {'status': 'success'},
+    )
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'upstream_count_without_action'
+    assert written == []
+
+
+def test_a_fault_text_with_a_quote_and_a_newline_is_recorded_intact():
+    """The fault text is data, not prose: a quote and a newline survive verbatim.
+
+    It carries the reader's own exception text, which can hold both, and any
+    re-quoting or re-encoding on the way to the record would silently change what
+    the fault said.
+    """
+    fault = 'the plan-status read raised (it\'s "broken")\nsecond line'
+    written: list[list[str]] = []
+
+    result = gate.record_merge(
+        'lb55-plan',
+        facts=[*_declared_merge_facts()[:-1], f'head_binding_status_read_fault={fault}'],
+        mark_done_runner=lambda argv: written.append(list(argv)) or {'status': 'success'},
+    )
+
+    assert result['status'] == 'success', result
+    assert f'head_binding_status_read_fault={fault}' in written[0]
 
 
 def test_the_same_records_at_the_candidate_head_dispatch_the_merge():
@@ -289,8 +433,8 @@ def test_an_undeclared_step_with_a_stale_stamp_is_listed_not_refused():
     """(a) An undeclared stamp is evidence, never an offence.
 
     Drives the PRODUCTION declaration reader: ``finalize-step-sync-baseline``
-    genuinely declares no ``head_dependent`` fact, so at HEAD this merge is refused
-    for the defect itself, not for a missing seam.
+    genuinely declares no ``head_dependent`` fact, so against the unfixed module
+    this merge is refused for the defect itself, not for a missing seam.
     """
     status = _status({'finalize-step-sync-baseline': HEAD_GATED})
 
@@ -400,6 +544,29 @@ def test_the_production_classifier_is_reached_through_the_executor_seam(monkeypa
             ],
         )
     ]
+
+
+def test_the_currency_classifier_decides_and_the_entry_point_does_not():
+    """The decision comes from the classifier, not from being inside ``pre_merge_gate merge``.
+
+    A weaker test that only asserted the merge entry point exists would pass with the
+    classifier bypassed. Here the SAME entry point dispatches or refuses purely on the
+    classifier's verdict.
+    """
+    status = _status({'functional-review': HEAD_GATED})
+    preserved = _merge(
+        status,
+        HEAD_MERGED,
+        classifier=lambda _step, _project_dir, _recorded: {'status': 'success', 'verdict': 'preserved'},
+    )
+    invalidated = _merge(
+        status,
+        HEAD_MERGED,
+        classifier=lambda _step, _project_dir, _recorded: {'status': 'success', 'verdict': 'invalidated'},
+    )
+
+    assert preserved['dispatched'] is True
+    assert invalidated['error'] == gate.MERGE_HEAD_NOT_GATED
 
 
 @pytest.mark.parametrize(

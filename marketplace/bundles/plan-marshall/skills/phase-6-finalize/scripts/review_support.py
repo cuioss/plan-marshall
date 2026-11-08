@@ -277,6 +277,11 @@ def _row_acceptance_record(row: dict[str, Any]) -> dict[str, Any]:
         'kind': str(row.get('kind') or 'assertion_removed'),
     }
     if record['kind'] == 'test_filtered':
+        record['pairs'] = [
+            {'test': str(pair.get('test')), 'marker': str(pair.get('marker'))}
+            for pair in row.get('pairs') or []
+            if isinstance(pair, dict) and isinstance(pair.get('test'), str) and isinstance(pair.get('marker'), str)
+        ]
         record['markers'] = list(row.get('markers') or [])
         if row.get('marked_tests'):
             record['marked_tests'] = list(row.get('marked_tests') or [])
@@ -288,13 +293,34 @@ def _row_acceptance_record(row: dict[str, Any]) -> dict[str, Any]:
     return record
 
 
+def _pair_set(pairs: Any) -> set[tuple[str, str]] | None:
+    """The ``(test, marker)`` pairs an acceptance or a row names, or ``None``.
+
+    ``None`` means the value carries no usable pair list, which is how an entry
+    recorded under the previous, UNPAIRED key is told from a current one. Such an
+    entry re-raises its row rather than accepting more: the pairing it was recorded
+    under is unknown, so it cannot decide which marker filtered which test.
+    """
+    if not isinstance(pairs, list):
+        return None
+    result: set[tuple[str, str]] = set()
+    for pair in pairs:
+        if not isinstance(pair, dict):
+            continue
+        test = pair.get('test')
+        marker = pair.get('marker')
+        if isinstance(test, str) and isinstance(marker, str):
+            result.add((test, marker))
+    return result
+
+
 def _row_is_accepted(row: dict[str, Any], accepted: list[dict[str, Any]]) -> bool:
     """Whether a whole test-integrity row is covered by the accepted-removal set.
 
     An identity-bearing row is accepted when every removed identity is, plus any
     residual the identities do not cover. A row with no identity is accepted by its
     explicit path-level key (`{path, kind, assertions_removed, acceptance_kind}`, or
-    `{path, kind: test_filtered, markers, marked_tests}`).
+    `{path, kind: test_filtered, pairs}`).
     """
     removed_tests = [entry for entry in row.get('removed_tests') or [] if isinstance(entry, dict)]
     path = row.get('path')
@@ -317,13 +343,17 @@ def _row_is_accepted(row: dict[str, Any], accepted: list[dict[str, Any]]) -> boo
             for entry in accepted
         )
     if kind == 'test_filtered':
-        wanted = set(row.get('markers') or [])
-        wanted_tests = set(row.get('marked_tests') or [])
+        wanted_pairs = _pair_set(row.get('pairs'))
+        if wanted_pairs is None:
+            # A row with no paired key cannot be accepted: the entry it would match
+            # names no pairing either. Fail closed rather than credit by marker-only
+            # superset, which is the L3-9 unpaired shape.
+            return False
         return any(
             str(entry.get('kind') or '') == 'test_filtered'
             and entry.get('path') == path
-            and set(entry.get('markers') or []) >= wanted
-            and (not wanted_tests or set(entry.get('marked_tests') or []) >= wanted_tests)
+            and (entry_pairs := _pair_set(entry.get('pairs'))) is not None
+            and entry_pairs >= wanted_pairs
             for entry in accepted
         )
     count = row.get('removed_assertions')

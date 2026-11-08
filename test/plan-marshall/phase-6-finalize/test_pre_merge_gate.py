@@ -2,13 +2,12 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the pre-merge findings gate that owns the branch-cleanup merge dispatch.
 
-The merge verb used to be reachable without the blocking-findings check having
-run: the check was an instruction the step body could skip or misread. The
-entry point closes that by being the only route to the merge verb. The load-
-bearing property under test is therefore NEGATIVE — on a pending actionable
-finding, and on an unevaluable count, the injected merge runner is NEVER invoked —
-with the positive control that a clean store reaches it exactly once, with the
-routed verb's arguments unchanged, on both routes.
+The merge verb is reachable only through this entry point, so the blocking-findings
+check cannot be skipped or misread by a step body. The load-bearing property under
+test is therefore NEGATIVE — on a pending actionable finding, and on an unevaluable
+count, the injected merge runner is NEVER invoked — with the positive control that a
+clean store reaches it exactly once, with the routed verb's arguments unchanged, on
+both routes.
 """
 
 import re
@@ -1702,7 +1701,7 @@ def test_the_participation_refusal_publishes_the_labels_the_grant_accepts():
 def test_an_unimportable_override_label_source_is_named_in_the_refusal(monkeypatch):
     """A fault in the label source degrades the prompt, so the refusal says so.
 
-    Swallowing it left a refusal whose ``override_options`` was simply absent —
+    Swallowing it would leave a refusal whose ``override_options`` is simply absent —
     indistinguishable from a participation gap that needs no ask at all.
     """
     monkeypatch.setitem(sys.modules, '_cmd_merge_authorization', None)
@@ -1718,8 +1717,8 @@ def test_an_unimportable_override_label_source_is_named_in_the_refusal(monkeypat
 def test_an_unreadable_status_names_the_fault_in_the_evidence(monkeypatch):
     """The gate admits on an unreadable status, and the admission names the unknown.
 
-    A silent ``None`` from the in-process read was an empty admit: a plan whose
-    status could not be read merged with nothing saying the head binding was never
+    A silent ``None`` from the in-process read is an empty admit: a plan whose
+    status cannot be read would merge with nothing saying the head binding was never
     consulted.
     """
     import _status_core

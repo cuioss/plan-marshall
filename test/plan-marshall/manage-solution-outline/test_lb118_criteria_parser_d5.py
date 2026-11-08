@@ -81,6 +81,23 @@ def test_a_shorter_or_different_marker_does_not_close_a_fence() -> None:
     assert unparsed == [], unparsed
 
 
+def test_a_fenced_deliverable_heading_is_not_a_split() -> None:
+    """A ``### N.`` inside a fenced block is an example, not a deliverable heading.
+
+    Without the fence-aware reader the number-keyed body map in
+    ``outline_deliverables`` replaced the real body with the fenced example, so the
+    real criteria block was never parsed and no ``criterion_unparsed`` was reported.
+    """
+    section = (
+        '### 1. Deliver the change\n\n**Success Criteria:**\n- a real criterion\n```\n### 1. a fenced example\n```\n'
+    )
+
+    blocks = _snap.split_deliverable_blocks(section)
+
+    assert len(blocks) == 1, blocks
+    assert 'a real criterion' in blocks[0]['content']
+
+
 def test_a_fence_marker_with_trailing_text_does_not_close() -> None:
     body = '**Success Criteria:**\n- real\n```\n``` not a close\n- not a criterion\n```\n- second\n'
 

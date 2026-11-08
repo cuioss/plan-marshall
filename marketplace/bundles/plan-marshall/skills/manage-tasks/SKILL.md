@@ -480,8 +480,12 @@ owners:
 |---|---|---|
 | `analysis_vocabulary_unimportable` | The canonical→analyses map (`_build_examined`) could not be imported | **This check is broken** — a deployment or `PYTHONPATH` fault, not a quiet pass. |
 | `required_coverage_unknown` | The live footprint or the registered-target set could not be resolved | The plan state — a worktree not yet materialised, or an unreadable marketplace root. |
-| `build_scope_unreadable` | No candidate row can be read for scope: none carries a usable `--command-args`, or every canonical it names is outside the vocabulary, or a row carries a flag that is neither a known scope-bearing one (`-pl`/`--projects`, `--workspace`) nor the known non-narrowing `-am`/`--also-make` | The producer when no row carries `--command-args` (something wrote rows the dispatch boundary would not have written); otherwise the argv's lost quoting, which is why an unknown flag is unreadable rather than guessed at. |
-| `build_scope_unreadable_for_whole_tree_change` | The same unreadable rows, against a change that needs whole-tree coverage | The same owner, with a decision attached: an unreadable row cannot substantiate a whole-tree claim, so the gate refuses instead of passing on no evidence. A change that needs less keeps the plain `build_scope_unreadable` pass. |
+| `build_scope_unreadable` | No candidate row can be read for scope: none carries a usable `--command-args`, or every canonical it names is outside the vocabulary, or a row carries a flag that is neither a known scope-bearing one (`-pl`/`--projects`, `--workspace`) nor the known non-narrowing `-am`/`--also-make` | The producer when no row carries `--command-args` (something wrote rows the dispatch boundary would not have written); otherwise the argv's lost quoting, which is why an unknown flag is unreadable rather than guessed at. An unknown CANONICAL shares this token because both are inabilities, but only an unreadable row reaches the whole-tree refusal: a row whose scope is readable and adequate stays an inability that passes. |
+
+`build_scope_unreadable_for_whole_tree_change` is NOT in this vocabulary: it is a
+JOINT reason, one the selection takes when these unreadable rows meet a change that
+needs whole-tree coverage, and the scope verdict itself stays `undetermined`. It is
+listed with the other `stale` reasons below.
 
 ⛔ An unresolvable footprint is an **inability**, never an empty one. Rendering it
 as "the change requires nothing" would make every row cover it, re-opening the
@@ -585,8 +589,9 @@ on observed evidence.
 - `status: stale` — the ledger has entries but none is citable: either none is a
   successful build against the current working-tree sha, or every such build
   names a notation this project does not resolve, or such builds fall short of
-  the change alone and combined, or the attributable rows fall short while the
-  rows that would close the gap are unattributable. The gate
+  the change alone and combined, or the change needs whole-tree coverage and a
+  candidate row's scope cannot be read, or the attributable rows fall short while
+  the rows that would close the gap are unattributable. The gate
   MUST fail closed. Carries `worktree_sha`, `worktree_root`, `ledger_path`, and a
   **`reason` naming which route to `stale` was taken** — plus `observed_status`
   (the offending row's own build status) whenever a row carried a readable status
@@ -594,8 +599,11 @@ on observed evidence.
   `expected_notations` / `candidate_notations` / `row_scopes` /
   `missing_analyses` on every cross-check route. `missing_analyses` is the sorted
   list of required analyses no citable row performed at an adequate scope; it is
-  empty where what the change requires could not be derived, and
-  `scope_cross_check` then says `undetermined`. `observed_status` is absent on `worktree_mutated` (no row
+  empty where what the change requires could not be derived, empty where the
+  analysis vocabulary could not be imported, and empty on the
+  whole-tree-unreadable route, where the refusal rests on a scope nobody could
+  read rather than on an analysis nobody ran, so `scope_cross_check` says
+  `undetermined` there too. `observed_status` is absent on `worktree_mutated` (no row
   was observed), on the `build_indeterminate` sub-case where the row carried no
   readable `status` at all, and on every cross-check route (where every candidate
   was `success`, so reporting it would say nothing); supplying one where none was
@@ -615,7 +623,7 @@ on observed evidence.
   | `notation_absent` | Successful rows carry this sha, but **none** carries a usable `notation` — the key is missing, empty, or not a string | `build_record` always emits a non-empty `notation` for a dispatched build, so no such row came from the dispatch boundary. Something other than a build of this project is writing to the ledger; find it. |
   | `build_scope_narrow` | Successful, attributable rows carry this sha, but alone and combined they leave a required analysis uncovered — no row performed it, the rows that did were scoped too narrowly for the change, or the only test row measured zero tests | Run the missing analysis — `missing_analyses` names it — at a scope adequate for this change. Do not re-run `verify` by reflex: an analysis a row already covers needs no second run. `row_scopes` names what each row actually ran. |
   | `no_row_both_attributable_and_adequate` | Neither dimension refused, yet the citable rows do not cover the change — the attributable rows fall short AND every row that would close the gap was unattributable | Both remedies at once: run the analyses `missing_analyses` names, AND establish where the unattributable row came from. |
-| `build_scope_unreadable_for_whole_tree_change` | The change needs whole-tree coverage and at least one candidate row's scope could not be read — a trailing executor flag puts the row's blast radius inside or outside the command's lost quoting, and nobody can say which | Dispatch a build whose recorded argv carries no flag after the canonical command (or only a known scope-bearing one), so the row's scope is readable. `row_scopes` shows the rows as `unreadable`. |
+  | `build_scope_unreadable_for_whole_tree_change` | The change needs whole-tree coverage and at least one candidate row's scope could not be read — a trailing flag puts the row's blast radius inside or outside the command's lost quoting, and nobody can say which | Dispatch a build whose recorded argv carries no flag after the canonical command (or only a known scope-bearing one), so the row's scope is readable. A row written by an executor that records `command_args` is readable this way already; for an older row, put the executor's own flag before `--command-args` (or drop it) and re-run so the row records the payload as its own field. `row_scopes` shows the rows as `unreadable`. |
 
   The two `notation_*` routes are mutually exclusive and `notation_unrelated`
   wins a mixed set: a candidate list holding one notation-less row and one

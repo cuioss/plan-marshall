@@ -133,6 +133,19 @@ def _fetch_over(comments, args):
         return cmd_fetch_findings(args)
 
 
+def _fetch_over_real_provider(payload, args, monkeypatch):
+    """Run ``cmd_fetch_findings`` through the REAL ``fetch_pr_comments_data`` layer.
+
+    Only the GraphQL transport is stubbed, so the fetch layer's parsing, placement
+    and connection drain run for real. A test injected after the fetch would never
+    notice a regression in that layer — the weakness this helper removes.
+    """
+    monkeypatch.setattr(github_pr._github, 'check_auth', lambda: (True, ''))
+    monkeypatch.setattr(github_pr._github, 'get_repo_info', lambda: ('octo', 'repo'))
+    monkeypatch.setattr(github_pr._github, 'run_graphql', lambda query, variables: (0, payload, ''))
+    return cmd_fetch_findings(args)
+
+
 _SUBSTANTIVE_COMMENT = {
     'id': 'C-store-1',
     'kind': 'inline',
@@ -853,95 +866,106 @@ _HEAD_ONE = '1111111111111111111111111111111111111111'
 _HEAD_TWO = '2222222222222222222222222222222222222222'
 
 
-def _two_review_comments():
-    """One PR carrying two CodeRabbit reviews, the second at a new head.
+def _graphql_page(nodes):
+    return {'nodes': nodes, 'pageInfo': {'hasNextPage': False, 'endCursor': ''}}
 
-    The second review has an inline comment in a NEW thread, one replying in an
-    OPEN thread, and one replying in a RESOLVED thread. The opening comment of
-    the first review's thread is included so the thread exists to reply into.
-    """
-    return [
+
+def _two_review_graphql_payload():
+    """The two-review fixture in the PROVIDER shape ``fetch_pr_comments_data`` parses."""
+
+    def _inline(cid, body, commit):
+        return {
+            'id': cid,
+            'body': body,
+            'author': {'login': 'coderabbitai'},
+            'createdAt': '2026-11-05T00:00:00Z',
+            'updatedAt': '2026-11-05T00:00:00Z',
+            'originalCommit': {'oid': commit},
+            'commit': {'oid': commit},
+        }
+
+    threads = [
         {
-            'id': 'rv1',
-            'kind': 'review_body',
-            'author': 'coderabbitai',
-            'body': 'Actionable comments posted: 1.',
-            'path': '',
-            'line': 0,
-            'thread_id': '',
-            'resolved': False,
-            'commit_id': _HEAD_ONE,
-        },
-        {
-            'id': 'open-1',
-            'kind': 'inline',
-            'author': 'coderabbitai',
-            'body': 'This slice drops the final element; use len(items).',
+            'id': 'PRRT_open',
+            'isResolved': False,
             'path': 'src/a.py',
             'line': 4,
-            'thread_id': 'PRRT_open',
-            'resolved': False,
-            'commit_id': _HEAD_ONE,
+            'comments': _graphql_page(
+                [
+                    _inline('open-1', 'This slice drops the final element; use len(items).', _HEAD_ONE),
+                    _inline(
+                        'open-reply-2',
+                        'Still unfixed at the new head: the bound is still dropped.',
+                        _HEAD_TWO,
+                    ),
+                ]
+            ),
+        },
+        {
+            'id': 'PRRT_new',
+            'isResolved': False,
+            'path': 'src/b.py',
+            'line': 9,
+            'comments': _graphql_page(
+                [
+                    _inline(
+                        'new-thread-2',
+                        'The retry loop can spin forever when the backoff cap is zero.',
+                        _HEAD_TWO,
+                    )
+                ]
+            ),
+        },
+        {
+            'id': 'PRRT_closed',
+            'isResolved': True,
+            'path': 'src/c.py',
+            'line': 2,
+            'comments': _graphql_page([_inline('resolved-reply-2', 'Confirmed resolved at the new head.', _HEAD_TWO)]),
+        },
+    ]
+    reviews = [
+        {
+            'id': 'rv1',
+            'body': 'Actionable comments posted: 1.',
+            'author': {'login': 'coderabbitai'},
+            'submittedAt': '2026-11-05T00:00:00Z',
+            'updatedAt': '2026-11-05T00:00:00Z',
+            'commit': {'oid': _HEAD_ONE},
         },
         {
             'id': 'rv2',
-            'kind': 'review_body',
-            'author': 'coderabbitai',
             'body': 'Actionable comments posted: 2.',
-            'path': '',
-            'line': 0,
-            'thread_id': '',
-            'resolved': False,
-            'commit_id': _HEAD_TWO,
-        },
-        {
-            'id': 'new-thread-2',
-            'kind': 'inline',
-            'author': 'coderabbitai',
-            'body': 'The retry loop can spin forever when the backoff cap is zero.',
-            'path': 'src/b.py',
-            'line': 9,
-            'thread_id': 'PRRT_new',
-            'resolved': False,
-            'commit_id': _HEAD_TWO,
-        },
-        {
-            'id': 'open-reply-2',
-            'kind': 'inline',
-            'author': 'coderabbitai',
-            'body': 'Still unfixed at the new head: the bound is still dropped.',
-            'path': 'src/a.py',
-            'line': 4,
-            'thread_id': 'PRRT_open',
-            'resolved': False,
-            'commit_id': _HEAD_TWO,
-        },
-        {
-            'id': 'resolved-reply-2',
-            'kind': 'inline',
-            'author': 'coderabbitai',
-            'body': 'Confirmed resolved at the new head.',
-            'path': 'src/c.py',
-            'line': 2,
-            'thread_id': 'PRRT_closed',
-            'resolved': True,
-            'commit_id': _HEAD_TWO,
+            'author': {'login': 'coderabbitai'},
+            'submittedAt': '2026-11-05T00:00:00Z',
+            'updatedAt': '2026-11-05T00:00:00Z',
+            'commit': {'oid': _HEAD_TWO},
         },
     ]
+    return {
+        'repository': {
+            'pullRequest': {
+                'reviewThreads': _graphql_page(threads),
+                'reviews': _graphql_page(reviews),
+                'comments': _graphql_page([]),
+            }
+        }
+    }
 
 
-def test_a_second_review_inline_comments_outside_a_resolved_thread_are_filed(plan_context):
+def test_a_second_review_inline_comments_outside_a_resolved_thread_are_filed(plan_context, monkeypatch):
     """Every inline comment of the second review outside a resolved thread is stored.
 
     The case that decides the ``-067``/``#512`` lead: ``fetch_findings`` pages every
     connection to exhaustion and dedupes per comment id, so a second review is not
     lost. The resolved thread is skipped by the documented pre-filter, which is
-    recorded here rather than mistaken for a defect.
+    recorded here rather than mistaken for a defect. The REAL fetch layer runs — only
+    the GraphQL transport is stubbed — so a regression in its parsing is caught here.
     """
     plan_id = 'gh-pr-two-reviews'
     plan_context.plan_dir_for(plan_id)
 
-    result = _fetch_over(_two_review_comments(), _StoreArgs(510, plan_id))
+    result = _fetch_over_real_provider(_two_review_graphql_payload(), _StoreArgs(510, plan_id), monkeypatch)
 
     from _findings_core import query_findings
 
@@ -1052,3 +1076,29 @@ def test_a_clean_sourcery_body_with_a_multiline_footer_is_not_filed(plan_context
     assert result['count_stored'] == 0
     assert result['count_skipped_noise'] == 1
     assert query_findings(plan_id, finding_type='pr-comment')['findings'] == []
+
+
+def test_a_sourcery_body_with_signal_and_a_multiline_footer_is_filed(plan_context):
+    """A multi-line footer is stripped WITHOUT taking the body's signal with it.
+
+    The footer-only control above proves the strip removes the footer; this positive
+    case proves it leaves the actionable text alone. A strip keyed on the footer's
+    first line alone would either leave the continuation lines (filing noise) or cut
+    the signal that precedes them.
+    """
+    from _findings_core import query_findings
+
+    plan_id = 'gh-pr-sourcery-multiline-footer-signal'
+    plan_context.plan_dir_for(plan_id)
+    body = (
+        '### Overall Comments\n\n'
+        '- Extract the retry policy out of the transport client.\n\n'
+        f'{_SOURCERY_MULTILINE_FOOTER_CLEAN}'
+    )
+
+    result = _fetch_over([_sourcery_review('sr-multiline-signal', body)], _StoreArgs(523, plan_id))
+
+    stored = query_findings(plan_id, finding_type='pr-comment')['findings']
+    assert result['count_stored'] == 1, result
+    assert len(stored) == 1, stored
+    assert 'Extract the retry policy' in stored[0]['raw_input']['body']
