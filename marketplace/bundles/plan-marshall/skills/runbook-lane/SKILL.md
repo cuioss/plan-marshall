@@ -38,8 +38,8 @@ python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane resolve 
 Resolves the epic slug, the derived names, the build commands, the required and optional reviewers
 with their trigger comments, the commit trailer, the harness and guard state, the build server's
 preflight state (`build_server`, plus `build_server_reason` when it is `down`), the Sonar state
-(`sonar`, plus `sonar_project_key` when it is `configured`) and the `inbox write`
-command. `--project-dir` defaults to the current directory and anchors every project-scoped read.
+(`sonar`, plus `sonar_project_key` when it is `configured`) and the `inbox write` and `inbox read`
+commands. `--project-dir` defaults to the current directory and anchors every project-scoped read.
 The spec read is worktree-first: the shared ledger worktree's copy is read when it exists and the
 main checkout's is the fallback. The result always carries `spec_source` (`ledger_worktree` |
 `main_checkout`), plus `spec_differ: true` when both copies exist and differ.
@@ -236,6 +236,7 @@ The result supplies, and nothing below is spelled from anywhere else:
 | branch | `{branch} = {prefix}{plan}`; one closed set supplies the prefix — the canonical `feature/` (a new capability), `fix/` (a bug fix) and `chore/` (docs or maintenance), plus a prefix the project's configured `working_prefixes` declares. The two sources are one set with no precedence between them |
 | base branch | `base_branch` (the project's own base branch, never a spelling of it) |
 | inbox sender id | `sender_id` |
+| inbox read command | `inbox_read_command` |
 | progress file | `progress_file` |
 | landing file | `landing_file` |
 | build commands | `build` |
@@ -314,6 +315,7 @@ self-review round {k}: {findings and disposition}; open: {list or none}
 pr: #{N} created at {sha}
 review: {bot} triggered at {time} on {sha} — {reviewed|refused|silent}; next trigger not before {time}
 operator: asked "{question}" — options {…}; selected "{option}"
+mailbox: {item} — {done|declined with reason|asked}
 merge: {settle result}, merge commit {sha}
 cleanup: done
 landing: written as {message name}
@@ -487,6 +489,14 @@ decides whether the job runs in-process or is submitted to the build daemon.
      Section 4 still runs the `build-routing` check before the first routed build, and only an
      `absent` slot degrades it to `in_process` with the `executor_absent_from_worktree` reason.
 
+7. **Read the delivered mailbox — the first of three reads.**
+   `{inbox_read_command}` enumerates what the orchestrator delivered to this plan. Read it here, at
+   setup, then again before self-review (section 5) and once more immediately before the merge-gate
+   work (section 7). Every delivered item gets one disposition line in the progress file —
+   `mailbox: {item} — {done|declined with reason|asked}` — and an item with no disposition line
+   **blocks the enqueue**. A mailbox that reports it could not look (`mailbox_state` other than
+   `present`) is not an empty mailbox: say so in the landing rather than reading it as no mail.
+
 ## 3. Implement, deliverable by deliverable
 
 For each deliverable, in the spec's order:
@@ -638,6 +648,10 @@ publishes no test part supplies no `{build.module-tests}`:
   `no question tool was available`.
 
 ## 5. Self-review before the PR
+
+**Read the delivered mailbox again — the second of the three reads** (`{inbox_read_command}`), and
+give every newly delivered item its disposition line before the round below grades anything. An item
+still without one blocks the enqueue (section 7).
 
 Dispatch one sub-agent (the `Task` tool, the general agent) with `persona-code-reviewer` loaded as a
 standard. It reports and never edits. Have it apply its adversarial-refute lenses — defect or
@@ -807,6 +821,10 @@ status and the Sonar state only from a result obtained on that head AFTER the la
 alone. Its options never mark a rule-bending choice "Recommended". A review of the current head that
 arrived after the question was asked invalidates the answer: ask the question again. A false or
 incomplete statement in such a question fails the run.
+
+**Read the delivered mailbox once more before the enqueue — the third read** (`{inbox_read_command}`).
+Every delivered item must already carry its disposition line; an item that has none **blocks the
+enqueue**, whatever else the gates say.
 
 **Immediately before enqueue,** fetch the base branch again. **If it moved:**
 `git -C {worktree} fetch origin {base_branch}`, then

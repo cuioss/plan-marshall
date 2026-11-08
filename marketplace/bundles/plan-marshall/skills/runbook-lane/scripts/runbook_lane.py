@@ -2628,6 +2628,13 @@ def cmd_resolve(args: argparse.Namespace) -> dict[str, Any]:
         'python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator inbox write '
         f'--slug {slug} --sender-type plan --sender-id {sender_id} --kind landing --payload-file {landing_file}'
     )
+    # The READ half of the same channel: the orchestrator delivers a plan's mail to
+    # ``inbox/to/{plan_id}/``, so the lane reads its own mailbox through the verb
+    # that resolves that address — never by opening a path under the epic tree.
+    inbox_read_command = (
+        'python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator inbox read '
+        f'--slug {slug} --plan-id {plan_id}'
+    )
 
     resolved: dict[str, Any] = {
         'status': 'success',
@@ -2641,6 +2648,7 @@ def cmd_resolve(args: argparse.Namespace) -> dict[str, Any]:
         'landing_file': landing_file,
         'sender_id': sender_id,
         'inbox_write_command': inbox_write_command,
+        'inbox_read_command': inbox_read_command,
         'build': build,
         'build_timeout_seconds': build_timeout_seconds,
         'base_branch': base_branch,

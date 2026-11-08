@@ -53,6 +53,7 @@ from conftest import (
     get_script_path,
     get_scripts_dir,
     load_script_module,
+    parse_ns,
     run_script,
 )
 
@@ -2932,3 +2933,72 @@ def test_a_landing_from_the_section_8_template_is_complete_except_total_tokens(p
     data = result.toon()
     assert data['complete'] is False
     assert data['missing_keys'] == ['total_tokens']
+
+
+# =============================================================================
+# D4 — the lane reads its delivered mailbox
+# =============================================================================
+
+
+def test_resolve_publishes_the_mailbox_read_command(tmp_path: Path) -> None:
+    """`resolve` reports the command that reads this plan's delivered mailbox."""
+    spec = _seed_fixture(tmp_path, executable=_PYPROJECT_EXEC, required_bots='x')
+    data = _run_resolve(spec, tmp_path)
+
+    assert data['inbox_read_command'].startswith('python3 .plan/execute-script.py ')
+    assert 'plan-marshall:plan-orchestrator:orchestrator inbox read' in data['inbox_read_command']
+
+
+def test_the_mailbox_read_and_write_address_the_same_plan(tmp_path: Path) -> None:
+    """One address rule: the read names the slug and plan id the write delivers under."""
+    spec = _seed_fixture(tmp_path, executable=_PYPROJECT_EXEC, required_bots='x')
+    data = _run_resolve(spec, tmp_path)
+
+    assert f'--slug {data["slug"]}' in data['inbox_read_command']
+    assert f'--plan-id {data["plan"]}' in data['inbox_read_command']
+    assert f'--sender-id rb-{data["plan"]}' in data['inbox_write_command']
+
+
+def test_the_mailbox_read_command_is_the_orchestrator_s_own_surface(tmp_path: Path) -> None:
+    """The emitted flags are the ones `orchestrator inbox read` actually accepts.
+
+    Parsed through the orchestrator's OWN argparse surface, so a flag this lane
+    invented would be an argparse rejection here rather than a broken call in a
+    live run.
+    """
+    spec = _seed_fixture(tmp_path, executable=_PYPROJECT_EXEC, required_bots='x')
+    data = _run_resolve(spec, tmp_path)
+
+    argv = data['inbox_read_command'].split()
+    verb_at = argv.index('read')
+    flags = argv[verb_at + 1 :]
+    namespace = parse_ns('plan-marshall', 'plan-orchestrator', 'orchestrator.py', 'inbox', 'read', *flags)
+
+    assert namespace.slug == data['slug']
+    assert namespace.plan_id == data['plan']
+
+
+def test_the_lane_text_reads_the_mailbox_at_three_points() -> None:
+    """Setup, before self-review and before the enqueue — and each item disposed."""
+    setup = _section('## 2. Set up the worktree')
+    self_review = _section('## 5. Self-review before the PR')
+    gate = _section('## 7. Merge gate')
+
+    assert '{inbox_read_command}' in setup
+    assert '{inbox_read_command}' in self_review
+    assert '{inbox_read_command}' in gate
+    assert 'the first of three reads' in setup
+    assert 'the third read' in gate
+    assert 'blocks the enqueue' in setup
+    assert 'blocks the enqueue' in gate
+
+
+def test_the_progress_template_carries_the_mailbox_disposition_line() -> None:
+    progress = _raw_section('## 0a. Progress file and resume (do this first, every session)')
+    template = next((block for block in _fenced_blocks(progress) if 'setup: worktree' in block), None)
+
+    assert template is not None, 'section 0a carries no progress template'
+    mailbox_lines = [line for line in template.splitlines() if line.startswith('mailbox:')]
+    assert mailbox_lines, 'the progress template carries no mailbox disposition line'
+    assert 'declined with reason' in mailbox_lines[0]
+    assert 'asked' in mailbox_lines[0]
