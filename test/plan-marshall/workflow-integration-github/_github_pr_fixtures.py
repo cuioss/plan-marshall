@@ -411,3 +411,131 @@ def coderabbit_finished_review(base_sha: str, head_sha: str) -> str:
         'the backoff cap is zero — guard the cap before entering the loop.\n\n'
         f'Reviewing files that changed from the base of the PR and between {base_sha} and {head_sha}.'
     )
+
+
+#: The summary comment's own marker — the literal every CodeRabbit review summary OPENS
+#: with, and the one the producer treated as an unconditional whole-comment drop before the
+#: concern veto existed.
+CODERABBIT_SUMMARY_MARKER = '<!-- This is an auto-generated comment: summarize by coderabbit.ai -->'
+
+#: The concern section CodeRabbit renders inside a review body, OBSERVED verbatim on
+#: ``cuioss/plan-marshall#1939`` (the "Nitpick comments: 1" disclosure of the review
+#: published at ``f5a16312f``). Its rows carry the same ``cr-comment`` marker an inline
+#: finding carries, so the section is a real concern rather than prose.
+CODERABBIT_SUMMARY_CONCERN_SECTION = (
+    '<details>\n'
+    '<summary>Nitpick comments: 1</summary><blockquote>\n'
+    '<dl>\n'
+    '<dd>\n'
+    '<br>\n'
+    '`873-959`: **Trivial** · **Maintainability & Code Quality** · **Low value**\n'
+    '\n'
+    '**Add a review-commit fallback case to the GraphQL fixture.**\n'
+    '\n'
+    'The `_inline` helper accepts `path` and `line` but never uses them.\n'
+    '\n'
+    '<!-- cr-comment:v1:f5938e42944c13ae985adcbf -->\n'
+    '\n'
+    '</dd>\n'
+    '</dl>\n'
+    '</blockquote></details>'
+)
+
+#: The trailing marketing block every CodeRabbit summary carries, OBSERVED on the same
+#: comment set. Its three literals are distinct whole-comment markers of their own, so a
+#: summary that carries a concern must survive all three.
+CODERABBIT_SUMMARY_TIPS_BLOCK = (
+    '<!-- tips_start -->\n'
+    '\n'
+    '---\n'
+    '\n'
+    'Thanks for using [CodeRabbit](https://coderabbit.ai?utm_source=oss&utm_medium=github)! '
+    "It's free for OSS, and your support helps us grow.\n"
+    '\n'
+    '<sub>Comment `@coderabbitai help` to get the list of available commands.</sub>\n'
+    '\n'
+    '<!-- tips_end -->'
+)
+
+
+def coderabbit_summary_with_concern() -> str:
+    """Return a summary body whose ONLY content beyond the boilerplate is a concern.
+
+    OBSERVED wording, assembled shape: every part — the summary marker, the
+    ``## Walkthrough`` heading, the nitpick section and the tips block — was read off
+    ``cuioss/plan-marshall#1939``, but that PM posted its nitpick section in a
+    ``review_body`` and its marker in the summary comment. One comment carrying both is
+    the shape this fixture reconstructs, which is what makes it the concern case rather
+    than a control.
+    """
+    return (
+        f'{CODERABBIT_SUMMARY_MARKER}\n'
+        '## Walkthrough\n\n'
+        'The change gates participation credit on a per-shape content marker.\n\n'
+        f'{CODERABBIT_SUMMARY_CONCERN_SECTION}\n\n'
+        f'{CODERABBIT_SUMMARY_TIPS_BLOCK}'
+    )
+
+
+def coderabbit_summary_plain_walkthrough() -> str:
+    """Return the matched control: the same summary with the concern section removed.
+
+    OBSERVED wording and OBSERVED shape — this is the ``review-in-progress`` body's
+    structure with the real summary's tips block attached. It differs from
+    :func:`coderabbit_summary_with_concern` in exactly one fact: it carries no
+    concern section.
+    """
+    return (
+        f'{CODERABBIT_SUMMARY_MARKER}\n'
+        '## Walkthrough\n\n'
+        'The change gates participation credit on a per-shape content marker.\n\n'
+        f'{CODERABBIT_SUMMARY_TIPS_BLOCK}'
+    )
+
+
+def coderabbit_summary_bodies() -> tuple[tuple[str, str, str], ...]:
+    """Return ``(case id, body, provenance)`` for the two summary shapes that decide D1.
+
+    The pair is published together so a case that passes for the concern body and a case
+    that passes for the control are read off the SAME wording: the two differ only in the
+    concern section, which is the fact under test. Provenance is the module's vocabulary
+    (:data:`ACKNOWLEDGMENT_OBSERVED` / :data:`IN_PROGRESS_RECONSTRUCTED`).
+    """
+    return guard_non_empty(
+        (
+            ('summary-with-concern', coderabbit_summary_with_concern(), ACKNOWLEDGMENT_OBSERVED),
+            ('summary-plain-walkthrough', coderabbit_summary_plain_walkthrough(), ACKNOWLEDGMENT_OBSERVED),
+        ),
+        'coderabbit_summary_bodies',
+        'the two literal summary bodies declared in _github_pr_fixtures',
+    )
+
+
+#: The file-count skip notice as CodeRabbit posts it in answer to a COMMANDED review,
+#: OBSERVED verbatim on ``cuioss/plan-marshall#1753`` (the reply to ``@coderabbitai review``
+#: published ``2026-10-12T09:15:22Z``). It names the cause without the "Too many files!"
+#: wording the automatic-review notice uses, so no declared refusal literal matched it.
+CODERABBIT_FILE_LIMIT_NOTICE = (
+    '<!-- This is an auto-generated reply by CodeRabbit --> '
+    '<!-- CodeRabbit review command invocation: '
+    'v2:57c08c35620f62fc1d91024182d87913ab6333f1a107c5cdd683918c879aef5d --> '
+    '<details> <summary>⚠️ Action not completed</summary> '
+    'Review skipped: 198 files exceed the limit of 100. '
+    '</details>'
+)
+
+#: NEGATIVE control, same bot and the same ceiling stated a different way: the
+#: automatic-review skip notice, OBSERVED on the same PR, which opens with
+#: ``Review skipped`` and states the ceiling as "98 over the limit of 100".
+CODERABBIT_FILE_LIMIT_SUMMARY_NOTICE = (
+    f'{CODERABBIT_SUMMARY_MARKER}\n'
+    '> [!IMPORTANT]\n'
+    '> ## Review skipped\n'
+    '>\n'
+    '> Too many files!\n'
+    '>\n'
+    '> This PR contains 198 files, which is 98 over the limit of 100.\n'
+    '>\n'
+    '> To get a review, reduce the PR to 100 files or fewer by splitting it into smaller PRs '
+    'or changing its base branch.'
+)

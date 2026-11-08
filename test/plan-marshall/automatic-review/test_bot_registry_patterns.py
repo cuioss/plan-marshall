@@ -133,9 +133,9 @@ def test_refusal_size_patterns_mark_the_diff_size_cause():
     (detection stays that field's job). Both of its account-quota wordings are
     deliberately absent here, so both classify ``quota``.
 
-    CodeRabbit declares one, and it is the reason the two axes cannot be collapsed: its
-    ``rate_limit_class`` is ``awaitable_window``, yet its file-count skip is not
-    awaitable at all. A file count does not fall while you wait.
+    CodeRabbit declares two, and it is the reason the two axes cannot be collapsed: its
+    ``rate_limit_class`` is ``awaitable_window``, yet its file-count skip is not awaitable at all —
+    and it states that one ceiling in two wordings, so both literals are size-caused.
     """
     sourcery_size = bot_registry.refusal_size_patterns('sourcery')
     assert sourcery_size == [
@@ -151,16 +151,70 @@ def test_refusal_size_patterns_mark_the_diff_size_cause():
         assert quota_marker in bot_registry.refusal_patterns('sourcery')
         assert quota_marker not in sourcery_size
 
-    # CodeRabbit's file-count skip is size-caused even though its class is awaitable.
+    # CodeRabbit's file-count skip is size-caused even though its class is awaitable, and it
+    # states the one ceiling in two wordings: the automatic-review notice's "Too many files!"
+    # cause line and the commanded-review reply's "files exceed the limit of".
     coderabbit_size = bot_registry.refusal_size_patterns('coderabbit')
-    assert coderabbit_size == ['Too many files!']
-    assert coderabbit_size[0] in bot_registry.refusal_patterns('coderabbit')
+    assert coderabbit_size == ['Too many files!', 'files exceed the limit of']
+    for size_marker in coderabbit_size:
+        assert size_marker in bot_registry.refusal_patterns('coderabbit')
     assert bot_registry.rate_limit_class('coderabbit') == 'awaitable_window'
     for quota_marker in ('Review limit reached', 'Review rate limited'):
         assert quota_marker in bot_registry.refusal_patterns('coderabbit')
         assert quota_marker not in coderabbit_size
 
     assert bot_registry.refusal_size_patterns('cuioss-review-bot') == []
+
+
+def test_coderabbit_declares_the_summary_rule_as_a_conditional_drop():
+    """The summary is dropped on its boilerplate alone, never on the summary marker as such.
+
+    The marker is the conjunction anchor, the two states the one persistent summary comment
+    is published in are the heading alternation, and the concern sections veto the drop. A
+    marker left in ``ignore_patterns`` would drop a summary that carries a concern whole.
+    """
+    assert bot_registry.contentless_review_markers('coderabbit') == [
+        '<!-- This is an auto-generated comment: summarize by coderabbit.ai -->'
+    ]
+    assert bot_registry.contentless_review_headings('coderabbit') == [
+        '## Walkthrough',
+        'Currently processing new changes',
+    ]
+    assert bot_registry.actionable_content_markers('coderabbit') == [
+        'Nitpick comments',
+        'Outside-diff comments',
+        'Follow-ups',
+    ]
+    # The three lists are the ONLY place the summary wording may sit: an entry that stayed
+    # in the unconditional drops would make the veto unreachable for any body carrying it.
+    for marker in (
+        *bot_registry.contentless_review_markers('coderabbit'),
+        *bot_registry.contentless_review_headings('coderabbit'),
+        *bot_registry.actionable_content_markers('coderabbit'),
+    ):
+        assert marker not in bot_registry.ignore_patterns('coderabbit'), marker
+
+
+def test_coderabbit_reads_the_file_count_cap_from_either_wording():
+    """Each declared size literal states its ceiling in a wording a cap regex reads.
+
+    Non-vacuity: both shipped wordings are covered, so a literal whose cap cannot be
+    extracted fails here rather than recording an empty cap at refusal time.
+    """
+    size_patterns = bot_registry.refusal_size_patterns('coderabbit')
+    cap_patterns = bot_registry.refusal_size_cap_patterns('coderabbit')
+    notices = (
+        ('automatic-review notice', 'Too many files! This PR contains 198 files, which is 98 over the limit of 100.'),
+        ('commanded-review reply', 'Review skipped: 198 files exceed the limit of 100.'),
+    )
+    assert len(size_patterns) == len(notices), size_patterns
+
+    for marker, notice in zip(size_patterns, notices, strict=True):
+        wording, text = notice
+        assert marker in text, (marker, wording)
+        caps = [match.group(1) for pattern in cap_patterns for match in [re.search(pattern, text)] if match]
+        assert caps == ['100'], (wording, caps)
+        assert marker not in bot_registry.ignore_patterns('coderabbit'), marker
 
 
 def test_refusal_size_patterns_absent_is_empty():

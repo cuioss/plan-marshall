@@ -25,6 +25,10 @@ from contextlib import redirect_stdout
 from unittest.mock import patch
 
 import pytest
+from _github_pr_fixtures import (
+    CODERABBIT_FILE_LIMIT_NOTICE,
+    CODERABBIT_FILE_LIMIT_SUMMARY_NOTICE,
+)
 from _resolve_project_dir_fixtures import worktree_query_result
 
 from conftest import get_script_path, load_script_module, run_script
@@ -483,6 +487,83 @@ class TestCommentsStage:
             m.group('id') for m in (github_pr._COMMENT_ID_DETAIL.search(f['detail'] or '') for f in q['findings']) if m
         }
         assert stored_ids == {'RB1', 'RB2'}
+
+
+class TestFileLimitNoticeIsAStructuralRefusal:
+    """CodeRabbit's file-count skip notice is a refusal with ``cause: size``.
+
+    The notice names the cause on its own line ("Review skipped: 198 files exceed the
+    limit of 100"), which no declared literal or structural arm matched, so the producer
+    filed it as review feedback. It is registered in ``refusal_patterns`` and
+    ``refusal_size_patterns``, and its ceiling is read from the notice itself.
+    """
+
+    def _fetch_notice(self, plan_id, pr_number, body, *, kind='issue_comment', author='coderabbitai'):
+        plan_context_args = _stage_make_args(pr_number, plan_id)
+        comment = {
+            'id': f'IC-{plan_id}',
+            'kind': kind,
+            'author': author,
+            'body': body,
+            'path': '',
+            'line': 0,
+            'thread_id': '',
+            'resolved': False,
+        }
+        with (
+            patch('github_pr._github.fetch_pr_comments_data') as mock_fetch,
+            patch.object(github_pr._github, 'fetch_pr_head_committed_at', return_value=''),
+            patch.object(github_pr._github, 'run_gh', return_value=(0, '{"additions": 9, "deletions": 3}', '')),
+        ):
+            mock_fetch.return_value = {
+                'status': 'success',
+                'provider': 'github',
+                'comments': [comment],
+                'total': 1,
+                'unresolved': 1,
+            }
+            return cmd_fetch_findings(plan_context_args)
+
+    def test_the_commanded_notice_is_counted_as_a_size_refusal(self, plan_context):
+        """The observed command reply files nothing and states its own ceiling."""
+        plan_id = 'gh-pr-file-limit-command-reply'
+        plan_context.plan_dir_for(plan_id)
+
+        result = self._fetch_notice(plan_id, 718, CODERABBIT_FILE_LIMIT_NOTICE)
+
+        assert result['status'] == 'success'
+        assert result['count_stored'] == 0, result
+        assert result['count_skipped_noise'] == 0, result
+        assert result['count_skipped_refusal'] == 1, result
+        assert 'coderabbit' in result['refused_bots']
+        assert result['refused_causes'] == [{'bot_kind': 'coderabbit', 'cause': 'size'}]
+        assert result['refused_size_caps'] == [{'bot_kind': 'coderabbit', 'cap': '100'}]
+
+    def test_the_automatic_review_notice_keeps_its_size_cause_and_cap(self, plan_context):
+        """CONTROL: the "Too many files! … over the limit of 100" wording is unchanged."""
+        plan_id = 'gh-pr-file-limit-summary'
+        plan_context.plan_dir_for(plan_id)
+
+        result = self._fetch_notice(plan_id, 719, CODERABBIT_FILE_LIMIT_SUMMARY_NOTICE)
+
+        assert result['status'] == 'success'
+        assert result['count_stored'] == 0, result
+        assert result['count_skipped_refusal'] == 1, result
+        assert result['refused_causes'] == [{'bot_kind': 'coderabbit', 'cause': 'size'}]
+        assert result['refused_size_caps'] == [{'bot_kind': 'coderabbit', 'cap': '100'}]
+
+    def test_the_review_limit_notice_keeps_its_quota_cause(self, plan_context):
+        """CONTROL: a rate-limit notice is a quota refusal and states no ceiling."""
+        plan_id = 'gh-pr-review-limit-quota'
+        plan_context.plan_dir_for(plan_id)
+
+        result = self._fetch_notice(plan_id, 720, _CODERABBIT_REVIEW_LIMIT_REFUSAL)
+
+        assert result['status'] == 'success'
+        assert result['count_stored'] == 0, result
+        assert result['count_skipped_refusal'] == 1, result
+        assert result['refused_causes'] == [{'bot_kind': 'coderabbit', 'cause': 'quota'}]
+        assert result['refused_size_caps'] == []
 
 
 class TestRefusalLayerVocabulary:

@@ -50,8 +50,8 @@ _SHIPPED_BOTS = ['coderabbit', 'cuioss-review-bot', 'sourcery']
 def test_ignore_patterns_are_nonempty_literal_markers():
     """Each bot exposes at least one literal whole-comment ignore marker."""
     coderabbit = bot_registry.ignore_patterns('coderabbit')
-    assert '## Walkthrough' in coderabbit
     assert 'No actionable comments were generated' in coderabbit
+    assert '✏️ Learnings added' in coderabbit
 
     sourcery = bot_registry.ignore_patterns('sourcery')
     assert 'found 0 issues' in sourcery
@@ -65,18 +65,24 @@ def test_ignore_patterns_are_nonempty_literal_markers():
 
 
 def test_ignore_patterns_preserve_quoted_special_characters():
-    """A quoted marker carrying ``:`` and HTML-comment syntax survives verbatim."""
-    coderabbit = bot_registry.ignore_patterns('coderabbit')
-    assert '<!-- This is an auto-generated comment: summarize by coderabbit.ai -->' in coderabbit
+    """A quoted marker carrying ``:`` and HTML-comment syntax survives verbatim.
+
+    The summary marker moved to the content-aware layer when the summary became a
+    conditional drop, so the round-trip is asserted there — it is still one quoted value
+    carrying ``:``, ``<!--`` and ``-->``.
+    """
+    assert '<!-- This is an auto-generated comment: summarize by coderabbit.ai -->' in (
+        bot_registry.contentless_review_markers('coderabbit')
+    )
 
 
-def test_contentless_review_markers_only_declared_by_pr_agent():
-    """PR-Agent declares the clean-Guide marker set; the other two declare none.
+def test_contentless_review_markers_per_bot():
+    """PR-Agent declares the clean-Guide marker set; CodeRabbit the summary marker.
 
     The list is a CONJUNCTION target — every entry must be present for the
-    producer's contentless layer to fire — so all three entries are asserted
-    member-by-member rather than by one representative. An empty list for the
-    other two bots is the fail-closed default that keeps their ingest behaviour
+    producer's contentless layer to fire — so all entries are asserted
+    member-by-member rather than by one representative. An empty list for
+    sourcery is the fail-closed default that keeps its ingest behaviour
     byte-identical to before the field existed.
 
     The two assertion entries are BARE INNER TEXT, not the ``**bold**`` a human
@@ -91,38 +97,47 @@ def test_contentless_review_markers_only_declared_by_pr_agent():
         'No security concerns identified',
         'PR contains tests',
     ]
-    assert bot_registry.contentless_review_markers('coderabbit') == []
+    assert bot_registry.contentless_review_markers('coderabbit') == [
+        '<!-- This is an auto-generated comment: summarize by coderabbit.ai -->',
+    ]
     assert bot_registry.contentless_review_markers('sourcery') == []
 
 
-def test_contentless_review_headings_name_both_pr_agent_guides():
-    """PR-Agent declares one heading per persistent Guide; the other two declare none.
+def test_contentless_review_headings_name_both_pr_agent_guides_and_both_summary_states():
+    """PR-Agent declares one heading per persistent Guide; CodeRabbit one per summary state.
 
     The heading list is an ALTERNATION — the body must carry any one entry — so
     the security pass's ``## PR Reviewer Guide`` and the code-review pass's
-    ``## PR Code Review Guide`` can share one clean-shape rule. Exact equality,
-    so a dropped heading (a clean code-review Guide filed as a finding) or a
-    heading moved back into the conjunction (no body could ever satisfy it) turns
-    this red at the data boundary.
+    ``## PR Code Review Guide`` can share one clean-shape rule, and CodeRabbit's one
+    persistent summary comment can be dropped both while a review runs and once it
+    finished. Exact equality, so a dropped heading (a clean code-review Guide filed as a
+    finding) or a heading moved back into the conjunction (no body could ever satisfy it)
+    turns this red at the data boundary.
     """
     assert bot_registry.contentless_review_headings('cuioss-review-bot') == [
         '## PR Reviewer Guide',
         '## PR Code Review Guide',
     ]
-    assert bot_registry.contentless_review_headings('coderabbit') == []
+    assert bot_registry.contentless_review_headings('coderabbit') == [
+        '## Walkthrough',
+        'Currently processing new changes',
+    ]
     assert bot_registry.contentless_review_headings('sourcery') == []
 
 
 def test_no_heading_sits_in_the_conjunction():
-    """Negative control: neither Guide heading is a REQUIRED marker.
+    """Negative control: no declared heading is a REQUIRED marker, for any bot.
 
     A heading in ``contentless_review_markers`` is required of every body, so a
     clean Guide under the OTHER heading could never be dropped — and with both
     headings there no body could. The headings belong to the alternation only.
     """
-    required = bot_registry.contentless_review_markers('cuioss-review-bot')
-    for heading in bot_registry.contentless_review_headings('cuioss-review-bot'):
-        assert heading not in required
+    declarers = [kind for kind in bot_registry.bot_kinds() if bot_registry.contentless_review_headings(kind)]
+    assert declarers, 'no shipped bot declares a heading — the sweep below is vacuous'
+    for kind in declarers:
+        required = bot_registry.contentless_review_markers(kind)
+        for heading in bot_registry.contentless_review_headings(kind):
+            assert heading not in required, kind
 
 
 def test_contentless_review_headings_unknown_bot_is_empty():
@@ -133,10 +148,14 @@ def test_contentless_review_headings_unknown_bot_is_empty():
     )
 
 
-def test_actionable_content_markers_only_declared_by_pr_agent():
-    """``<details>`` is PR-Agent's disqualifying marker; the other two declare none."""
+def test_actionable_content_markers_only_declared_by_pr_agent_and_coderabbit():
+    """``<details>`` is PR-Agent's disqualifying marker; CodeRabbit declares its sections."""
     assert bot_registry.actionable_content_markers('cuioss-review-bot') == ['<details>']
-    assert bot_registry.actionable_content_markers('coderabbit') == []
+    assert bot_registry.actionable_content_markers('coderabbit') == [
+        'Nitpick comments',
+        'Outside-diff comments',
+        'Follow-ups',
+    ]
     assert bot_registry.actionable_content_markers('sourcery') == []
 
 

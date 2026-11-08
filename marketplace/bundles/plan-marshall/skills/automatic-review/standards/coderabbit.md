@@ -17,11 +17,26 @@ a fenced code block that plugin-doctor treats as an example, not an executable d
 read `bot_kind`, `author_login`, `trigger_comment`, `escalated_trigger_comment`, `quota_limited`, `completion_check_name`, `honors_skip_label`,
 `participation_evidence`, `participation_evidence_markers`, `participation_requires_update`, `ignore_patterns`,
 `acknowledgment_patterns`, `review_body_summary_patterns`, `refusal_patterns`, `no_unreviewed_commit_patterns`, `contentless_review_markers`,
-`actionable_content_markers`, `rate_limit_class`, `rate_limit_eta_patterns`, and `severity_map` from
-it; the prose sections that follow carry the rationale. CodeRabbit declares neither
-`contentless_review_markers` nor `actionable_content_markers`, so the producer's content-aware layer
-never fires for it — the empty list is the fail-closed default and this bot's ingest behaviour is
-unchanged by it.
+`contentless_review_headings`, `actionable_content_markers`, `rate_limit_class`, `rate_limit_eta_patterns`, and `severity_map` from
+it; the prose sections that follow carry the rationale.
+
+CodeRabbit DOES declare the content-aware trio, and the summary rule is the reason. Its
+summary comment carries the walkthrough, the merge-risk paragraph and the tips block whether or not
+it also carries a concern, so no single unconditional marker can say "this summary found nothing"
+without also dropping the summaries that found something. The rule is therefore the registry's
+three-list conjunction and involution, not a longer `ignore_patterns`:
+
+- `contentless_review_markers` holds the summary marker — every summary carries it, so it is the
+  conjunction's anchor;
+- `contentless_review_headings` holds the two states the one persistent summary comment is published
+  in, `## Walkthrough` and the in-progress `Currently processing new changes` notice, and ANY ONE of
+  them satisfies the heading arm;
+- `actionable_content_markers` holds the concern sections — a nitpick, an outside-diff or a
+  follow-up section means the summary carries a finding, and any ONE of them vetoes the drop.
+
+A summary that carries only boilerplate is noise; a summary that carries a concern is filed. That is
+the fail-closed direction the whole pre-filter is built on: a body that strays from a declared clean
+shape is filed, never dropped.
 
 CodeRabbit DOES declare `review_body_summary_patterns`, and it is the only registered bot that does.
 Its `review_body` comes in two shapes — the consolidated review, and the
@@ -60,13 +75,17 @@ participation_requires_update: true    # the summary comment is EDITED in place 
                                  # bot-participation-contract.md § "The currency rule", the
                                  # cross-bot contract that defines them.
 ignore_patterns:
-  - "<!-- This is an auto-generated comment: summarize by coderabbit.ai -->"  # walkthrough / summary
-  - "## Walkthrough"                                                          # walkthrough heading
   - "No actionable comments were generated"                                   # no-op review
-  - "Thanks for using [CodeRabbit]"                                           # marketing / tips
-  - "<!-- tips_start -->"                                                     # tips block
-  - "@coderabbitai help"                                                      # command help echo
   - "✏️ Learnings added"                                                      # learnings-only reply
+contentless_review_markers:                                                   # boilerplate a summary carries when it holds no concern
+  - "<!-- This is an auto-generated comment: summarize by coderabbit.ai -->"  # the summary comment's own marker — every review summary opens with it
+contentless_review_headings:                                                  # ANY ONE of these must also be present: the two states one summary comment is published in
+  - "## Walkthrough"                                                          # the finished summary's walkthrough heading
+  - "Currently processing new changes"                                        # the in-progress notice the same comment carries while a review runs
+actionable_content_markers:                                                   # any ONE of these vetoes the drop: sections a summary carries ONLY when it holds a concern
+  - "Nitpick comments"                                                        # the nitpick section a summary renders instead of an inline comment
+  - "Outside-diff comments"                                                   # the section for a concern the diff does not reach
+  - "Follow-ups"                                                              # the section for a concern that outlives this diff
 acknowledgment_patterns:                                                      # command replies that confirm a command was RECEIVED — never the answer to it, never a finding
   - "Review triggered"                                                        # the reply to `@coderabbitai review` while the commanded review is running
   - "Review finished"                                                         # the same reply once that review has ended — it reports that a review ran, and carries none of it
@@ -76,6 +95,7 @@ refusal_patterns:
   - "Review limit reached"                                                    # review-summary notice — posted in place of an automatic review
   - "Review rate limited"                                                     # command-invocation reply — posted in place of a commanded review
   - "Too many files!"                                                         # #1407 skip notice — the per-PR FILE-COUNT ceiling, posted in place of a review under a "Review skipped" heading. Detected on the cause line rather than on "Review skipped", which heads several unrelated skips (draft PRs, ignored paths, skip labels) and would over-match
+  - "files exceed the limit of"                                               # the SAME ceiling stated the OTHER way — the form the commanded-review reply uses ("Review skipped: 198 files exceed the limit of 100."). A separate literal because it shares no phrase with "Too many files!" and the structural arm cannot read it: "exceed the limit of" is not the past-tense "exceeded / reached / hit" statement that arm requires
   - "Already reviewed the last commit"                                        # command-invocation reply to `@coderabbitai review` when no commit is unreviewed — posted in place of a review, so it is detected here; its CONDITION is declared below
   - "No new commits to review"                                                # the skip notice for the same situation, detected on the cause line for the reason "Too many files!" is
 no_unreviewed_commit_patterns:                                                # the CONDITION overlay: which refusal above says nothing NEW is left to review. Not a limit — no window is open and it is never waited for
@@ -83,8 +103,10 @@ no_unreviewed_commit_patterns:                                                # 
   - "No new commits to review"
 refusal_size_patterns:                                                        # the CAUSE overlay: which refusal above is diff-SIZE (needs a smaller diff), not a rate-limit window (needs backoff)
   - "Too many files!"                                                         # cause=size, resolving refused_structural — the two rate-limit notices above are NOT here, so both keep cause=quota and the awaitable_window awaitability below. A file count does not fall on its own, so offering a wait for it would be an option guaranteed not to work
+  - "files exceed the limit of"                                               # the same ceiling, same cause — both wordings of the one skip notice
 refusal_size_cap_patterns:                                                    # extraction regexes reading the CAP the skip notice itself states
-  - "over the limit of ([0-9][0-9,]*)"                                        # captures the configured plan ceiling ("100"); number-free in the DETECTION list above so the ceiling is READ here rather than encoded, and a plan upgrade that raises it needs no pattern change
+  - "over the limit of ([0-9][0-9,]*)"                                        # captures the configured plan ceiling ("100") from "… 98 over the limit of 100"; number-free in the DETECTION list above so the ceiling is READ here rather than encoded, and a plan upgrade that raises it needs no pattern change
+  - "exceed the limit of ([0-9][0-9,]*)"                                      # the same figure in the other wording ("198 files exceed the limit of 100")
 rate_limit_class: awaitable_window   # the AWAITABILITY of the rolling review-limit window; the file-count ceiling does not rely on this field, since cause=size resolves refused_structural on its own
 rate_limit_eta_patterns:
   - "wait ([0-9]+ minutes? and [0-9]+ seconds?) before requesting another review"
@@ -127,11 +149,22 @@ CodeRabbit is a first-class bot in plan-marshall — this rule refines, not intr
 
 ## Producer stage — what to DROP before it becomes a finding
 
-The `ignore_patterns` above are whole-comment drops — CodeRabbit comments that carry no per-line
-finding: the walkthrough / summary issue comment, no-op reviews (`No actionable comments were
-generated`), marketing / tips, learnings-only replies, and bot self-acknowledgement replies (login
-`coderabbitai` + reply-to-human + no `cr-indicator-types` marker). Do **not** ignore inline review
-comments that carry a `cr-indicator-types` marker — those are the signal.
+`ignore_patterns` above are whole-comment drops — CodeRabbit comments that carry no per-line
+finding whatever else the body says: a no-op review (`No actionable comments were generated`) and a
+learnings-only reply. Do **not** ignore inline review comments that carry a `cr-indicator-types`
+marker — those are the signal.
+
+**The summary comment is NOT one of those drops.** It carries the walkthrough, the merge-risk
+paragraph and the tips block on every review, including the reviews that also raise a concern in the
+same body (a nitpick, outside-diff or follow-up section rendered in the summary instead of as an
+inline comment). Dropping it on the walkthrough or the summary marker therefore lost those concerns
+whole, and the bot resolved `participated_but_empty` beside a summary that had filed nothing. It is
+now the conditional drop the content-aware layer expresses: the summary marker is required, one of
+the two headings it is published under must be present, and any concern section vetoes the drop.
+Because that layer is keyed on the body, a summary that strays from the declared clean shape is
+filed — fail-closed toward filing, with the plain walkthrough, both in-progress states and the
+clean-review verdict as the matched controls that must keep filing nothing.
+
 CodeRabbit declines on **two distinct surfaces**, and each is registered as its own literal in
 `refusal_patterns`:
 
@@ -139,25 +172,33 @@ CodeRabbit declines on **two distinct surfaces**, and each is registered as its 
 - the **command-invocation reply** (`Review rate limited`) — posted in place of a review that
   `@coderabbitai review` explicitly asked for, wrapped in the `<details>` disclosure CodeRabbit uses
   for every auto-generated reply.
-- the **file-count skip notice** (`Too many files!`) — posted in place of an automatic review when
-  the PR's file count exceeds the plan ceiling, under a `Review skipped` heading.
+- the **file-count skip notice** — posted in place of a review when the PR's file count exceeds the
+  plan ceiling, under a `Review skipped` heading. It states that ceiling in two wordings and each is
+  its own literal: `Too many files!` on the automatic-review notice, and `files exceed the limit of`
+  on the commanded-review reply. A compact form of the ceiling is read out of whichever one arrived —
+  `over the limit of N` or `exceed the limit of N` — so the recorded gap carries the figure the
+  notice itself stated.
 
-All three file no finding, and none is a noise drop: CodeRabbit posts each *in place of* a review, so
+All of them file no finding, and none is a noise drop: CodeRabbit posts each *in place of* a review, so
 each carries no finding to extract AND is positive evidence the bot declined. `fetch_findings`
 therefore branches on any of them — counting it in `count_skipped_refusal` and naming `coderabbit` in
-`refused_bots[]` — instead of folding it into `count_skipped_noise`. Separate surfaces means separate
-data records: the command reply says "Review rate **limited**", which the summary notice's "Review
-limit **reached**" does not contain, and the skip notice shares no phrase with either, so registering
-one never covers the others. Do NOT restate the arm list here — `_github_pr.REFUSAL_LAYERS` remains
-the single place the arms are named.
+`refused_bots[]` — instead of folding it into `count_skipped_noise` or storing it as review feedback.
+Separate surfaces means separate data records: the command reply says "Review rate **limited**", which
+the summary notice's "Review limit **reached**" does not contain, and neither skip-notice wording
+shares a phrase with the other or with either rate-limit notice, so registering one never covers the
+others. Do NOT restate the arm list here — `_github_pr.REFUSAL_LAYERS` remains the single place the
+arms are named.
 
-**The third one differs on the CAUSE axis, not just in wording.** The two rate-limit notices describe
-a rolling window that reopens by itself, so their remedy is backoff and `rate_limit_class:
-awaitable_window` governs. A file count does not fall while you wait: the skip notice is listed in
-`refusal_size_patterns`, so `_github_pr.refusal_cause` classifies it `size` and it resolves to
-`refused_structural`, whose remedies are split the diff / accept the gap under a recorded merge authorization, and never wait. That one
-bot carries two causes at one awaitability class is exactly why the cause cannot be read off
-`rate_limit_class` — the same split Sourcery already carries. See
+**The file-count skip differs on the CAUSE axis, not just in wording.** The two rate-limit notices
+describe a rolling window that reopens by itself, so their remedy is backoff and
+`rate_limit_class: awaitable_window` governs. A file count does not fall while you wait: every
+skip-notice literal is listed in `refusal_size_patterns`, so `_github_pr.refusal_cause` classifies it
+`size` and it resolves to `refused_structural`, whose remedies are split the diff / accept the gap
+under a recorded merge authorization, and never wait. The structural arm is blind to both wordings —
+`files exceed the limit of` is a present-tense comparison and `Too many files!` states no limit at
+all — so the registry literals are what carry recognition here. That one bot carries two causes at one
+awaitability class is exactly why the cause cannot be read off `rate_limit_class` — the same split
+Sourcery already carries. See
 [`bot-participation-contract.md`](bot-participation-contract.md) § "Two axes: awaitability and CAUSE".
 
 The command-reply literal is deliberately the NARROW `Review rate limited` rather than the broader
@@ -168,17 +209,18 @@ wrapper would also capture — registering the wrapper would arm a wait on a win
 reopen.
 
 For the same reason the reply's own HTML marker (`<!-- This is an auto-generated reply by
-CodeRabbit -->`) is deliberately **absent from `ignore_patterns`**, despite sitting one near-miss
-away from the walkthrough marker already listed there. The noise filter runs AFTER the registry and
+CodeRabbit -->`) is deliberately **absent from `ignore_patterns`**, though it is a near miss for the
+summary marker the content-aware layer keys on. The noise filter runs AFTER the registry and
 structural arms but BEFORE the enumerative arm, so listing the reply marker would drop every FUTURE
 command-reply refusal — a rewording no arm yet enumerates — as noise, converting the one refusal
 shape the enumerative arm exists to catch back into silence. The marker's whole treatment stays the
 consumer-stage body strip below.
 
-The two lists must stay distinct in the other direction too: `ignore_patterns` here lists sections of
-a *successful* review (`## Walkthrough`, `✏️ Learnings added`), so reusing it for refusal detection
-would classify CodeRabbit's ordinary successful reviews as refusals, and unioning the two collapses
-the distinction. See [`bot-participation-contract.md`](bot-participation-contract.md) §
+The two lists must stay distinct in the other direction too: `ignore_patterns` here lists the
+boilerplate a *successful* review carries (`No actionable comments were generated`, `✏️ Learnings
+added`), so reusing it for refusal detection would classify CodeRabbit's ordinary successful reviews
+as refusals, and unioning the two collapses the distinction. See
+[`bot-participation-contract.md`](bot-participation-contract.md) §
 "A refusal is never noise — it is a branch".
 
 ## "Nothing new to review" replies — a refusal that is not a limit

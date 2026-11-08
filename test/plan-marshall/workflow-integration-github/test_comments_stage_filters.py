@@ -33,7 +33,12 @@ from _github_pr_fixtures import (
     CODERABBIT_ACKNOWLEDGMENTS,
     CODERABBIT_FULL_REVIEW_ACKNOWLEDGMENTS,
     CODERABBIT_GENUINE_SHORT_REVIEW_COMMENT,
+    CODERABBIT_NO_UNREVIEWED_COMMIT_REPLIES,
+    CODERABBIT_SUMMARY_CONCERN_SECTION,
+    CODERABBIT_SUMMARY_MARKER,
     HUMAN_COMMENT_QUOTING_AN_ACKNOWLEDGMENT,
+    coderabbit_in_progress_summaries,
+    coderabbit_summary_bodies,
 )
 from _resolve_project_dir_fixtures import worktree_query_result
 
@@ -109,6 +114,13 @@ _GENUINE_REVIEW_MENTIONING_A_LIMIT = (
 )
 _REWORDED_REFUSAL = 'Skipping this one for now.'
 _SHORT_REVIEW_WITH_ANCHOR = 'Guard the bound at `src/Idx.java:12`.'
+# The clean-review verdict: the bot's finished-review marker followed by the sentence that
+# says its review found nothing. Built from the registry marker so a renamed marker moves
+# both the fixture and the producer that gates on it.
+_CODERABBIT_CLEAN_VERDICT = (
+    f'{bot_registry.participation_evidence_marker("coderabbit", "issue_comment")}  '
+    'No actionable comments were generated in the recent review. 🎉'
+)
 
 
 class _StoreArgs:
@@ -284,6 +296,160 @@ class TestAcknowledgmentIsNoise:
         assert result['count_skipped_noise'] == CODERABBIT_ACKNOWLEDGMENT_COUNT
         assert result['count_stored'] == 0
         assert result['count_skipped_refusal'] == 0
+
+
+class TestSummaryConcernIsFiled:
+    """A concern CodeRabbit raises only in its summary must reach the findings store.
+
+    The summary marker and the ``## Walkthrough`` heading are boilerplate, not a finding;
+    they became conditional drops so that a summary carrying a concern section is filed
+    while a summary carrying nothing but boilerplate is not. Every case below runs the
+    real producer verb, because the drop happens inside its noise pre-filter and a
+    predicate-only assertion would not prove which counter moved.
+    """
+
+    def test_the_two_summary_shapes_differ_only_in_the_concern_section(self):
+        """Non-vacuity: the concern body is the control body plus its concern section.
+
+        Without this the two cases could pass while testing two unrelated bodies, and the
+        control would prove nothing about the marker that dropped the concern.
+        """
+        bodies = {case_id: body for case_id, body, _provenance in coderabbit_summary_bodies()}
+        concern = bodies['summary-with-concern']
+        control = bodies['summary-plain-walkthrough']
+
+        assert concern != control
+        assert concern.replace(
+            '\n\n' + CODERABBIT_SUMMARY_CONCERN_SECTION, ''
+        ) == control, 'the concern body is not the control body plus one section'
+        for case_id, body, provenance in coderabbit_summary_bodies():
+            assert provenance in {'observed', 'constructed', 'reconstructed'}, (case_id, provenance)
+
+    def test_a_summary_that_carries_only_a_concern_files_one_finding(self, plan_context):
+        """The defect: this body is dropped by the summary marker and files nothing at HEAD."""
+        plan_id = 'gh-summary-concern-filed'
+        plan_context.plan_dir_for(plan_id)
+        bodies = {case_id: body for case_id, body, _p in coderabbit_summary_bodies()}
+        comment = _bot_comment('IC-summary-concern', bodies['summary-with-concern'])
+
+        result = _fetch_without_provider_reads([comment], _StoreArgs(712, plan_id))
+
+        assert result['status'] == 'success'
+        assert result['count_stored'] == 1, result
+        assert result['count_skipped_noise'] == 0, result
+        assert result['count_skipped_refusal'] == 0, result
+
+    def test_the_matched_control_plain_walkthrough_still_files_nothing(self, plan_context):
+        """MATCHED CONTROL: the same body minus the concern section stays noise."""
+        plan_id = 'gh-summary-plain-walkthrough'
+        plan_context.plan_dir_for(plan_id)
+        bodies = {case_id: body for case_id, body, _p in coderabbit_summary_bodies()}
+        comment = _bot_comment('IC-summary-plain', bodies['summary-plain-walkthrough'])
+
+        result = _fetch_without_provider_reads([comment], _StoreArgs(713, plan_id))
+
+        assert result['status'] == 'success'
+        assert result['count_stored'] == 0, result
+        assert result['count_skipped_noise'] == 1, result
+
+    def test_one_fetch_tells_the_two_apart(self, plan_context):
+        """Both shapes in one fetch: the concern is filed, the boilerplate is dropped."""
+        plan_id = 'gh-summary-concern-and-control'
+        plan_context.plan_dir_for(plan_id)
+        comments = [
+            _bot_comment(f'IC-summary-{case_id}', body) for case_id, body, _p in coderabbit_summary_bodies()
+        ]
+
+        result = _fetch_without_provider_reads(comments, _StoreArgs(714, plan_id))
+
+        assert result['status'] == 'success'
+        assert result['count_fetched'] == 2
+        assert result['count_stored'] == 1, result
+        assert result['count_skipped_noise'] == 1, result
+
+    def test_both_in_progress_summaries_are_still_noise(self, plan_context):
+        """The in-progress states carry the marker but no concern, and stay noise.
+
+        One of them carries ``## Walkthrough`` and one carries only the "Currently
+        processing new changes" notice, so a drop keyed on either heading alone would file
+        the other.
+        """
+        plan_id = 'gh-summary-in-progress-noise'
+        plan_context.plan_dir_for(plan_id)
+        summaries = coderabbit_in_progress_summaries('a' * 40, 'b' * 40)
+        comments = [_bot_comment(f'IC-in-progress-{case_id}', body) for case_id, body, _p in summaries]
+
+        result = _fetch_without_provider_reads(comments, _StoreArgs(715, plan_id))
+
+        assert result['status'] == 'success'
+        assert result['count_stored'] == 0, result
+        assert result['count_skipped_noise'] == len(summaries), result
+
+    def test_the_clean_review_verdict_is_still_noise(self, plan_context):
+        """A verdict comment that reports no actionable comments files nothing."""
+        plan_id = 'gh-summary-clean-verdict-noise'
+        plan_context.plan_dir_for(plan_id)
+        comment = _bot_comment('IC-clean-verdict', _CODERABBIT_CLEAN_VERDICT)
+
+        result = _fetch_without_provider_reads([comment], _StoreArgs(716, plan_id))
+
+        assert result['status'] == 'success'
+        assert result['count_stored'] == 0, result
+        assert result['count_skipped_noise'] == 1, result
+
+    def test_the_skip_notice_summary_still_files_nothing(self, plan_context):
+        """The "Review skipped / no new commits" notice is a refusal, not a finding."""
+        plan_id = 'gh-summary-skip-notice'
+        plan_context.plan_dir_for(plan_id)
+        skip_notice = {case_id: body for case_id, body, _p in CODERABBIT_NO_UNREVIEWED_COMMIT_REPLIES}['no-new-commits']
+        comment = _bot_comment('IC-skip-notice', skip_notice)
+
+        result = _fetch_without_provider_reads([comment], _StoreArgs(717, plan_id))
+
+        assert result['status'] == 'success'
+        assert result['count_stored'] == 0, result
+        assert result['count_skipped_noise'] == 0, result
+        assert result['count_skipped_refusal'] == 1, result
+
+    def test_a_finished_summary_that_also_carries_a_rate_limit_block_is_a_refusal(self, plan_context):
+        """PINNED SHAPE: a readable coverage marker does not outrank the refusal branch here.
+
+        CodeRabbit edits its one summary comment in place, so a comment that had been a
+        finished review can present, later, as a rate-limit notice carrying its
+        ``final_review_risk_coverage`` marker over an earlier head. The participation loop
+        reads that marker (``review_coverage_is_finished``) to keep the credit; the filing
+        loop's refusal branch reads ``_is_refusal_notice`` alone, so the body is counted in
+        ``count_skipped_refusal`` and files nothing. That behaviour is pinned, not changed:
+        the live shape carries no concern section, so no finding is lost through it today,
+        and a concern section riding this shape would need its own deliverable.
+        """
+        plan_id = 'gh-summary-finished-plus-refusal'
+        plan_context.plan_dir_for(plan_id)
+        sha = 'a' * 40
+        body = (
+            f'{CODERABBIT_SUMMARY_MARKER}\n'
+            '## Walkthrough\n\n'
+            'The change gates participation credit on a per-shape content marker.\n\n'
+            f'<!-- final_review_risk_coverage:{{"sourceCommitId":"{sha}","coveredCommitId":"{sha}",'
+            '"kind":"reviewed"} -->\n\n'
+            '> [!WARNING]\n'
+            '> ## Review limit reached\n'
+            '>\n'
+            '> You have used the included review currently available.\n'
+        )
+        # The marker IS readable — the pin is that the filing loop does not consult it.
+        import _github_pr
+
+        assert _github_pr.review_coverage_is_finished(body) is True
+        comment = _bot_comment('IC-finished-plus-refusal', body)
+
+        result = _fetch_without_provider_reads([comment], _StoreArgs(721, plan_id))
+
+        assert result['status'] == 'success'
+        assert result['count_stored'] == 0, result
+        assert result['count_skipped_refusal'] == 1, result
+        assert result['refused_bots'] == ['coderabbit']
+        assert result['refused_causes'] == [{'bot_kind': 'coderabbit', 'cause': 'quota'}]
 
 
 class TestPRMain:

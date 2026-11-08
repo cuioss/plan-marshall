@@ -1458,8 +1458,8 @@ class _ReReviewStrategy:
 
         The data layer reads ``refusal_patterns``, NEVER ``ignore_patterns``. The
         two lists answer different questions: ``ignore_patterns`` names routine
-        sections of a *successful* review (CodeRabbit's ``## Walkthrough`` and
-        ``✏️ Learnings added``), so reading it here would classify ordinary
+        sections of a *successful* review (CodeRabbit's no-op review line and its
+        ``✏️ Learnings added`` notice), so reading it here would classify ordinary
         successful reviews as refusals and let a bot that reviewed fine be reported
         as having declined. ``refusal_patterns`` names only what a bot publishes
         when it DECLINES, so a match is positive evidence of non-participation.

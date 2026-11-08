@@ -222,8 +222,8 @@ class TestPerBotIgnoreFilter:
         assert _is_obvious_noise('lgtm', None)
 
     def test_per_bot_marker_drops_only_its_own_bot(self):
-        """CodeRabbit's ``## Walkthrough`` marker drops a coderabbit comment only."""
-        body = '## Walkthrough\n\nThis PR changes a few files.'
+        """CodeRabbit's learnings notice drops a coderabbit comment only."""
+        body = '✏️ Learnings added\n\nAdded a preference for guarding array bounds.'
         # Dropped for the owning bot.
         assert _is_obvious_noise(body, 'coderabbit')
         # NOT dropped for a different bot or a human — the marker is bot-scoped.
@@ -233,10 +233,10 @@ class TestPerBotIgnoreFilter:
     def test_pr_agent_walkthrough_marker_drops_only_pr_agent(self):
         """PR-Agent's ``## PR Agent Walkthrough`` marker drops a cuioss-review-bot comment only.
 
-        The two bots' markers are deliberately near-identical in shape
-        (``## Walkthrough`` vs ``## PR Agent Walkthrough``), which makes this the
-        sharpest available test of bot-scoping: a substring-based or unscoped
-        filter would cross-drop.
+        The two bots' near-identical wording (CodeRabbit's summary carries ``## Walkthrough``
+        as a contentless *heading*, PR-Agent's ``## PR Agent Walkthrough`` is an
+        ``ignore_patterns`` marker) makes this the sharpest available test of bot-scoping: a
+        substring-based or unscoped filter would cross-drop.
         """
         body = '## PR Agent Walkthrough\n\nAvailable commands: /review, /ask, /help.'
         assert _is_obvious_noise(body, 'cuioss-review-bot')
@@ -261,14 +261,14 @@ class TestPerBotIgnoreFilter:
         body = 'This null dereference needs a guard before the call on line 42.'
         assert not _is_obvious_noise(body, 'coderabbit')
 
-    def test_fetch_findings_drops_per_bot_walkthrough_keeps_substantive(self, plan_context):
-        """End-to-end: a coderabbit walkthrough is dropped; a substantive one is stored."""
+    def test_fetch_findings_drops_per_bot_noise_keeps_substantive(self, plan_context):
+        """End-to-end: a coderabbit learnings notice is dropped; a substantive one is stored."""
         comments = [
             {
                 'id': 'W1',
                 'kind': 'issue_comment',
                 'author': 'coderabbitai',
-                'body': '## Walkthrough\n\nThis PR touches three files and adds a helper.',
+                'body': '✏️ Learnings added\n\nAdded a preference for guarding array bounds.',
                 'path': '',
                 'line': 0,
                 'thread_id': '',
@@ -296,7 +296,7 @@ class TestPerBotIgnoreFilter:
             result = cmd_fetch_findings(_stage_make_args(150, 'gh-pr-perbot-walkthrough'))
 
         assert result['status'] == 'success'
-        # The walkthrough is dropped as noise; only the substantive finding is stored.
+        # The learnings notice is dropped as noise; only the substantive finding is stored.
         assert result['count_stored'] == 1
         assert result['count_skipped_noise'] == 1
         # count_stored == expected_stored, so no producer-mismatch Q-Gate fires.
@@ -306,22 +306,22 @@ class TestPerBotIgnoreFilter:
 
         q = query_findings('gh-pr-perbot-walkthrough', finding_type='pr-comment')
         assert q['filtered_count'] == 1
-        # The surviving finding is the substantive comment (W2), not the walkthrough (W1).
+        # The surviving finding is the substantive comment (W2), not the notice (W1).
         assert 'comment_id: W2' in q['findings'][0]['detail']
 
     def test_fetch_findings_does_not_apply_one_bots_marker_to_another(self, plan_context):
-        """A cuioss-review-bot comment carrying CodeRabbit's ``## Walkthrough`` text is NOT dropped.
+        """A cuioss-review-bot comment carrying CodeRabbit's ``✏️ Learnings added`` text is NOT dropped.
 
-        Proves the per-bot layer is scoped to the authoring bot: the walkthrough
-        marker belongs to coderabbit's registry entry, so a cuioss-review-bot-authored
-        comment with the same heading survives and becomes a finding.
+        Proves the per-bot layer is scoped to the authoring bot: the learnings marker
+        belongs to coderabbit's registry entry, so a cuioss-review-bot-authored comment
+        with the same line survives and becomes a finding.
         """
         comments = [
             {
                 'id': 'G1',
                 'kind': 'issue_comment',
                 'author': 'cuioss-review-bot',
-                'body': '## Walkthrough\n\nPR-Agent would not normally emit this, but it must not be cross-dropped.',
+                'body': '✏️ Learnings added\n\nPR-Agent would not normally emit this, but it must not be cross-dropped.',
                 'path': '',
                 'line': 0,
                 'thread_id': '',

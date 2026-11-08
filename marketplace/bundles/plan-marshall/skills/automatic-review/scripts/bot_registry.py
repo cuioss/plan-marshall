@@ -39,8 +39,8 @@ Data-block shape (one per ``standards/{bot_kind}.md``)::
       issue_comment: "<!-- recent_review_start -->"
     participation_requires_update: true
     ignore_patterns:
-      - "## Walkthrough"
       - "No actionable comments were generated"
+      - "✏️ Learnings added"
     footer_patterns:                  # branding / feedback lines, stripped before the signal test
       - "Sourcery is free for open source"
     acknowledgment_patterns:          # a reply confirming a command was RECEIVED, never its answer
@@ -583,8 +583,8 @@ class BotRegistry:
 
         This is deliberately a DEDICATED field, never a reuse of
         :meth:`ignore_patterns`. ``ignore_patterns`` lists the routine sections a
-        bot emits on a *successful* review (CodeRabbit's ``## Walkthrough`` and
-        ``✏️ Learnings added``, Sourcery's Reviewer's-Guide marker), so matching
+        bot emits on a *successful* review (CodeRabbit's no-op review line and its
+        ``✏️ Learnings added`` notice, Sourcery's Reviewer's-Guide marker), so matching
         refusals against it would classify ordinary successful reviews as refusals.
         The two lists answer different questions and must stay distinct — see
         ``automatic-review/standards/bot-participation-contract.md`` § "Detecting a

@@ -173,8 +173,8 @@ _RESPONDABLE_RESOLUTIONS = frozenset({'fixed', 'suppressed', 'accepted', 'taken_
 #   2. PER-BOT layer — each enabled bot's ``footer_patterns`` (branding / feedback
 #      lines, stripped before the signal test) and ``ignore_patterns`` from the
 #      registry (``automatic-review/standards/{bot_kind}.md``). The ignore entries
-#      are literal whole-comment markers (a walkthrough heading, a no-op review
-#      line, …) that only apply to that bot's own comments. They are
+#      are literal whole-comment markers (a no-op review line, a learnings notice, …)
+#      that only apply to that bot's own comments. They are
 #      sourced from the registry at runtime, so adding/adjusting a bot's noise
 #      drops is a pure standards-doc edit — no change here.
 #
@@ -464,7 +464,7 @@ def _is_obvious_noise(body: str, bot_kind: str | None = None) -> bool:
        feedback prompt never decides a drop by itself), then its ``ignore_patterns``
        (literal whole-comment markers) are matched as case-sensitive substrings
        against the remaining body. These markers are exact fragments the bot emits
-       on a *successful* review (a walkthrough heading, a no-op review line), so only
+       on a *successful* review (a no-op review line, a learnings notice), so only
        that bot's own comments are dropped.
     3. CONTENTLESS BOILERPLATE — ``_is_contentless_boilerplate``: that same bot's
        registry ``contentless_review_markers`` (ALL required) plus any one declared

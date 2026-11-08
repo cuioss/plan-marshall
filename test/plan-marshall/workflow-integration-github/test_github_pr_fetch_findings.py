@@ -542,15 +542,15 @@ def test_clean_guide_fixture_carries_every_declared_required_marker():
         assert marker in OBSERVED_CLEAN_GUIDE
 
 
-@pytest.mark.parametrize('bot_kind', ['coderabbit', 'sourcery', 'not-a-registered-bot', None])
+@pytest.mark.parametrize('bot_kind', ['sourcery', 'not-a-registered-bot', None])
 def test_empty_required_markers_short_circuit_to_false(bot_kind):
     """A bot declaring no clean shape can never have a comment dropped by layer 3.
 
-    This is the fail-closed default and the state EVERY bot other than PR-Agent
-    is in — including an unregistered kind and the human path (``bot_kind`` is
-    ``None``). It is asserted against a body that carries PR-Agent's every
-    required marker, so the ``False`` can only come from the empty-required
-    short-circuit and not from a failed marker match.
+    This is the fail-closed default and the state every bot that has not opted in is in
+    — including an unregistered kind and the human path (``bot_kind`` is ``None``). It is
+    asserted against a body that carries PR-Agent's every required marker, so the
+    ``False`` can only come from the empty-required short-circuit and not from a failed
+    marker match.
     """
     assert bot_registry.contentless_review_markers(bot_kind or '') == []
     assert github_pr._is_contentless_boilerplate(OBSERVED_CLEAN_GUIDE, bot_kind) is False
