@@ -144,6 +144,7 @@ def build_record(
     worktree_sha: str | None,
     log_file: str | None,
     command: str | None = None,
+    command_args: str | None = None,
     duration_seconds: float | None = None,
     outcome: dict[str, Any] | None = None,
     timestamp_iso: str | None = None,
@@ -182,14 +183,24 @@ def build_record(
     "what did the operator ask for" reads ``args`` and one that needs "what
     actually ran" reads ``command``.
 
-    ``command``, ``duration_seconds`` and ``outcome`` are all sourced from the
-    wrapper's stdout TOON and are therefore OPTIONAL: they default to ``None``
-    and stay ``None`` when the payload is absent or unparseable (a killed or
-    crashed build), and for a hand-appended row that legitimately has no
-    resolved command, no measured duration and no wrapper payload. ``outcome``
-    is the wrapper's whole stdout TOON as a dict, retained verbatim so a
-    reader gets the wrapper's own report (log file path, per-error rows)
-    without re-reading the build log.
+    ``command_args`` is the VALUE the executor's ``--command-args`` received.
+    It exists because ``args`` joins the argv WITHOUT quoting, so a flag after
+    the payload cannot be placed inside or outside the payload's own quoting —
+    an executor flag (``--timeout 900``) and a build flag (``-k foo``) are
+    indistinguishable there. The executor holds the argv as a ``list[str]``
+    before it joins, so the payload is one element and can be recorded as one.
+    A flag INSIDE this value stays ambiguous and is therefore still unreadable
+    to the freshness reader.
+
+    ``command``, ``command_args``, ``duration_seconds`` and ``outcome`` are all
+    OPTIONAL: they default to ``None`` and stay ``None`` when the source is
+    absent — a killed or crashed build for the payload-sourced fields, a
+    dispatch with no ``--command-args`` for ``command_args``, and a
+    hand-appended row for any of them. ``command_args`` is sourced from the
+    executor argv layer, not the wrapper payload, which is why it is the one
+    field here that no wrapper can supply. ``outcome`` is the wrapper's whole
+    stdout TOON as a dict, retained verbatim so a reader gets the wrapper's own
+    report (log file path, per-error rows) without re-reading the build log.
 
     **Secrets discipline — a DELIBERATE divergence from the build-server audit
     log, not an oversight.** ``build_server._audit_log`` refuses to record the
@@ -209,7 +220,8 @@ def build_record(
     the ``build_results_days`` retention target, while the ledger is append-only
     with no cleanup target, so the excerpt outlives the log it came from. Do NOT
     widen this record with a field sourced from anywhere other than the wrapper
-    payload, and do NOT copy this exemption into a store that leaves the
+    payload or the executor argv layer it already records (``args``,
+    ``command_args``), and do NOT copy this exemption into a store that leaves the
     machine.
     """
     return {
@@ -217,6 +229,7 @@ def build_record(
         'notation': notation,
         'plan_id': plan_id,
         'args': args,
+        'command_args': command_args,
         'command': command,
         'duration_seconds': duration_seconds,
         'outcome': outcome,
