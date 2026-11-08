@@ -473,8 +473,8 @@ def _reconcile_pending_build_findings(
     its green says nothing about that dimension and clears nothing in it. A run
     whose population could not be determined at all clears nothing whatsoever.
     ``test-failure`` keeps the stronger, pre-existing requirement of a MEASURED
-    non-zero executed-test count, and an unknown count no longer masquerades as a
-    zero that merely happens to refuse.
+    non-zero executed-test count, and an unknown count is never read as a zero that
+    merely happens to refuse.
 
     The population the decision was made on is stamped into every resolution
     detail via :func:`_build_examined.population_label`, so a reader of a resolved
@@ -553,10 +553,9 @@ def _cap_errors_with_truncation(errors: list[Issue], cap: int = _ERRORS_EMIT_CAP
     ``len(errors) - len(shown)`` so ``len(shown) + truncated`` always reconstructs
     the true total — count-vs-shown can never silently disagree.
 
-    Because this cap lives in the SHARED helper, the reconciliation benefits
-    Maven/Gradle/npm as well as pyproject: their parsers still emit terse
-    per-failure messages until the follow-on, but the cap and the ``truncated``
-    marker are now correct for every build tool.
+    Because this cap lives in the SHARED helper, the reconciliation applies to
+    Maven/Gradle/npm as well as pyproject: the cap and the ``truncated`` marker are
+    correct for every build tool, whatever its parser's per-failure message style.
     """
     total = len(errors)
     deduped: list[Issue] = []
@@ -747,7 +746,14 @@ def cmd_run_common(
             default, never a silent full-entitlement one.
 
     Returns:
-        Exit code (0 for success, 1 for failure).
+        The process exit code. The build's status is modelled in the emitted
+        payload, so ``0`` is the answer for ``success``, for the ``killed`` /
+        ``timeout`` / ``indeterminate`` / ``running`` non-finishes, and for a build
+        that ran and failed. The two exceptions are the faults that produced no
+        build verdict at all: ``1`` for a LAUNCH fault, and the CHILD's own
+        positive code for a PRE-TOOL refusal — so the direct and routed routes
+        answer the same number (exit ``2`` for ``worktree_resolution_failed``),
+        falling back to ``1`` when the child stated a non-positive one.
     """
     base_formatter = format_json if output_format == 'json' else format_toon
 
@@ -828,9 +834,8 @@ def cmd_run_common(
     # terminated, so a kill must be routed out before it can be read as one.
     # The result carries the kill's own diagnostic fields (`error: killed` and
     # the shared no-blind-retry `message`), and BOTH are propagated onto the
-    # emitted payload rather than reconstructed — an earlier shape built a fresh
-    # `error_result` here and silently dropped them, so the discriminator the
-    # daemon had already computed never reached any consumer.
+    # emitted payload rather than reconstructed — a reconstruction drops them and
+    # the discriminator the daemon had already computed never reaches a consumer.
     if result['status'] == STATUS_KILLED:
         killed_extra = _non_finish_evidence(log_file, command_str, parser_fn, parser_needs_command, 'Killed')
         # The bound that did NOT fire is still diagnostic: it says how much
@@ -885,8 +890,8 @@ def cmd_run_common(
             'command': command_str,
             'job_id': result.get('job_id', ''),
             # The observed daemon status when the producer carried one — `queued`
-            # for a job that had not started when the bound expired — else the
-            # historical `running`.
+            # for a job that had not started when the bound expired — else
+            # `running`.
             'job_status': result.get('job_status') or STATUS_RUNNING,
         }
         print(formatter(running_output))
@@ -973,7 +978,7 @@ def cmd_run_common(
             # clear — the types whose analysis it actually performed. A run that
             # examined nothing, or whose population is unknown, clears nothing
             # (see _reconcile_pending_build_findings). A plan-less build owns no
-            # finding store and reconciles nothing, exactly as before.
+            # finding store and reconciles nothing.
             if names_real_plan(plan_id):
                 try:
                     _reconcile_pending_build_findings(
@@ -1055,7 +1060,7 @@ def cmd_run_common(
         # lint-issue) is appended to the per-type finding store before any
         # mode-specific warning filtering is applied. Producer-side mismatch
         # (parsed != stored) is surfaced as a Q-Gate finding. A plan-less build
-        # owns no finding store and stores nothing, exactly as before.
+        # owns no finding store and stores nothing.
         if names_real_plan(plan_id):
             count_seen, count_stored, store_failures = _store_build_findings(
                 plan_id=plan_id,
