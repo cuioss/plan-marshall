@@ -404,6 +404,24 @@ def test_a_summary_inside_an_unrecognised_group_inside_a_section_is_content() ->
     assert verdict['review_body_findings_total'] == 1
 
 
+def test_a_bot_confirming_a_fix_beside_a_new_concern_does_not_trip_the_gate() -> None:
+    """A resolved thread whose bot confirms it — and names a DIFFERENT concern — is handled."""
+    read = _read(
+        _inline(thread_id='T1', resolved=True, body='the guard coerces UNKNOWN', author='coderabbitai'),
+        _inline(
+            thread_id='T1',
+            resolved=True,
+            body='Thanks, the parser is fixed. A separate Sonar concern remains: hotspots are not counted.',
+            author='coderabbitai',
+        ),
+    )
+
+    verdict = _verdict(read)
+
+    assert verdict['merge_allowed'] is True, verdict
+    assert verdict['reason'] == 'all_handled'
+
+
 def test_a_clean_pull_request_admits_the_merge() -> None:
     verdict = _verdict(_read(_review_body('**Actionable comments posted: 0**\n\nLGTM\n')))
 

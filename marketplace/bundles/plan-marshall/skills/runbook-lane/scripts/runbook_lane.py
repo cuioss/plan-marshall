@@ -2305,8 +2305,13 @@ _SECTION_KEYWORDS = ('comment', 'follow-up', 'followup', 'nitpick', 'outside')
 #: The markers that make a resolved thread's last reviewer comment an answer that
 #: the concern REMAINS. A reviewer that closes a thread with an acknowledgement
 #: ("Addressed in commit …", "verified", "fixed") matches none of these, so the
-#: thread counts as handled; one that restates the defect matches, so a thread
-#: resolved to silence it is refused.
+#: thread counts as handled; one that restates THIS thread's defect matches, so a
+#: thread resolved to silence it is refused.
+#:
+#: Every marker names the thread's own defect in the present tense. A generic
+#: "a separate concern remains" is deliberately NOT one: a reviewer that confirms a
+#: fix and opens a NEW concern elsewhere in the same breath would otherwise leave a
+#: resolved thread refused forever, and the new concern has its own thread.
 _CONCERN_REMAINS_MARKERS = (
     'still applies',
     'still present',
@@ -2315,7 +2320,6 @@ _CONCERN_REMAINS_MARKERS = (
     'still not addressed',
     'not addressed',
     'remains unresolved',
-    'concern remains',
 )
 
 _SUMMARY_RE = re.compile(r'<summary>(?P<title>.*?)</summary>', re.IGNORECASE | re.DOTALL)
