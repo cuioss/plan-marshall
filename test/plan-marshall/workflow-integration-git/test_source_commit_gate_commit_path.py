@@ -32,6 +32,7 @@ from conftest import get_script_path, load_script_module, run_script
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'workflow-integration-git', 'git-workflow.py')
 MANAGE_STATUS = get_script_path('plan-marshall', 'manage-status', 'manage-status.py')
+MANAGE_CHANGE_LEDGER = get_script_path('plan-marshall', 'manage-change-ledger', 'manage-change-ledger.py')
 
 # Loaded for the pure-predicate pin; ``register=False`` publishes nothing.
 git_workflow = load_script_module(
@@ -39,6 +40,14 @@ git_workflow = load_script_module(
     'workflow-integration-git',
     'git-workflow.py',
     module_name='git_workflow_commit_path',
+    register=False,
+)
+# The boundary guard whose enumeration the verb's rows must satisfy.
+_lifecycle = load_script_module(
+    'plan-marshall',
+    'manage-status',
+    '_cmd_lifecycle.py',
+    module_name='lb126_status_lifecycle',
     register=False,
 )
 
@@ -345,6 +354,224 @@ def test_commit_verb_rejects_a_caller_supplied_phase(tmp_path: Path) -> None:
 
     assert result.returncode == 2, f'--phase must be rejected by argparse: {result.stdout}{result.stderr}'
     assert 'unrecognized arguments' in result.stderr, result.stderr
+
+
+# =============================================================================
+# The finalize commit's own change-ledger row
+#
+# The 5-execute boundary refuses unless every branch commit carries a
+# `kind=change` row, and phase 5's Step 10a settlement only ever wrote the
+# deliverable commits'. So the commit verb — the one path every finalize commit
+# goes through — writes the row for a `6-finalize` commit, and ONLY in that
+# phase, which is what keeps Step 10a's row single.
+# =============================================================================
+
+
+def _ledger_path(root: Path) -> Path:
+    """The change-ledger the commit verb's process resolves, under the test base."""
+    return _base_dir(root) / 'work' / 'change-ledger.jsonl'
+
+
+def _ledger_rows(root: Path) -> list[dict]:
+    path = _ledger_path(root)
+    if not path.is_file():
+        return []
+    return [json.loads(line) for line in path.read_text(encoding='utf-8').splitlines() if line.strip()]
+
+
+def test_a_step_commit_leaves_exactly_one_change_row(tmp_path: Path) -> None:
+    """A 5f(b) commit is recorded, with git-sourced paths and the step as its id.
+
+    Item 5f(b) relays `{step_id}` as `--step`; the row's `deliverable_id` is that
+    id, and `changed_paths` comes from `git diff-tree` on the commit — the
+    ledger's own sourcing rule, never the caller's staged list.
+    """
+    _init_repo(tmp_path)
+    _write_plan(tmp_path, 'plan-a', phase='6-finalize', steps=['pre-push-quality-gate'])
+    _stage(tmp_path, 'src/a.py')
+
+    result, code = _run_commit(tmp_path, _worktree(tmp_path, 'plan-a'), '--step', 'pre-push-quality-gate')
+
+    assert code == 0, f'{result!r}'
+    assert result['ledger_recorded'] is True
+    assert result['ledger_deliverable_id'] == 'pre-push-quality-gate'
+    rows = _ledger_rows(tmp_path)
+    assert len(rows) == 1, rows
+    row = rows[0]
+    assert row['kind'] == 'change'
+    assert row['commit_sha'] == result['commit_hash']
+    assert row['changed_paths'] == ['src/a.py']
+    assert row['deliverable_id'] == 'pre-push-quality-gate'
+
+
+def test_the_inline_triage_commit_leaves_a_row_under_the_fixed_prefix(tmp_path: Path) -> None:
+    """Item 7c(4a) passes no step; its commit is still recorded.
+
+    The triage is not a manifest step, so the row's id is the constant
+    `finalize-commit`. That id ends in no digit, which is what stops a reader
+    that maps ids onto outline deliverables from reading a finalize commit as
+    deliverable work.
+    """
+    _init_repo(tmp_path)
+    plan_dir = _write_plan(tmp_path, 'plan-a', phase='6-finalize', steps=['pre-push-quality-gate'])
+    findings = plan_dir / 'artifacts' / 'findings'
+    findings.mkdir(parents=True, exist_ok=True)
+    (findings / 'qgate-6-finalize.jsonl').write_text(
+        json.dumps(
+            {
+                'title': 'Code review finding per review-rubric section 6',
+                'detail': 'inline-correction applied for the section-6 loop-back',
+            }
+        )
+        + '\n',
+        encoding='utf-8',
+    )
+    _stage(tmp_path, 'src/a.py')
+
+    result, code = _run_commit(tmp_path, _worktree(tmp_path, 'plan-a'))
+
+    assert code == 0, f'{result!r}'
+    assert result['reason'] == 'section6_record'
+    rows = _ledger_rows(tmp_path)
+    assert [row['deliverable_id'] for row in rows] == ['finalize-commit']
+    assert rows[0]['commit_sha'] == result['commit_hash']
+
+
+def test_the_architecture_refresh_commit_leaves_a_row(tmp_path: Path) -> None:
+    """The plan-only architecture refresh commit is a finalize commit like any other.
+
+    `architecture-refresh` commits `.plan/project-architecture`, so the
+    source-commit gate admits it as `plan_only` and it carries no step. It still
+    owes a row: the boundary enumerates every branch commit, not only the source
+    ones.
+    """
+    _init_repo(tmp_path)
+    _write_plan(tmp_path, 'plan-a', phase='6-finalize', steps=[])
+    _stage(tmp_path, '.plan/local/plans/PLAN-A/notes.txt', 'plan state\n')
+
+    result, code = _run_commit(tmp_path, _worktree(tmp_path, 'plan-a'))
+
+    assert code == 0, f'{result!r}'
+    assert result['reason'] == 'plan_only'
+    assert result['ledger_recorded'] is True
+    rows = _ledger_rows(tmp_path)
+    assert [row['changed_paths'] for row in rows] == [['.plan/local/plans/PLAN-A/notes.txt']]
+
+
+def test_a_phase_5_commit_leaves_no_row_so_the_settlement_owns_the_only_one(tmp_path: Path) -> None:
+    """Outside `6-finalize` the verb records nothing — Step 10a owns that row.
+
+    This is the no-double-row control: the phase-5 commit itself writes none, and
+    the settlement's append leaves exactly one.
+    """
+    _init_repo(tmp_path)
+    _write_plan(tmp_path, 'plan-a', phase='5-execute', steps=['pre-push-quality-gate'])
+    _stage(tmp_path, 'src/a.py')
+
+    result, code = _run_commit(tmp_path, _worktree(tmp_path, 'plan-a'))
+
+    assert code == 0, f'{result!r}'
+    assert 'ledger_recorded' not in result
+    assert _ledger_rows(tmp_path) == []
+
+    head = _git(tmp_path, 'rev-parse', 'HEAD').stdout.strip()
+    appended = run_script(
+        MANAGE_CHANGE_LEDGER,
+        'append',
+        '--kind',
+        'change',
+        '--deliverable-id',
+        '1',
+        '--commit-sha',
+        head,
+        '--changed-paths',
+        'src/a.py',
+        '--worktree-root',
+        str(tmp_path),
+        env_overrides=_env(tmp_path),
+    )
+    assert appended.returncode == 0, f'{appended.stdout}{appended.stderr}'
+
+    rows = _ledger_rows(tmp_path)
+    assert [row['deliverable_id'] for row in rows] == ['1'], rows
+    assert [row['commit_sha'] for row in rows] == [head]
+
+
+# =============================================================================
+# The ordinary finalize loop-back: both writers' rows admit the boundary
+# =============================================================================
+
+
+def _feature_branch_repo(tmp_path: Path) -> None:
+    """A repo on `main` with a plan feature branch checked out."""
+    _init_repo(tmp_path)
+    _git(tmp_path, 'branch', '-M', 'main')
+    _git(tmp_path, 'checkout', '-b', 'feature/lb-126')
+
+
+def test_a_finalize_commit_then_a_loop_back_and_a_step_10a_commit_admit_the_boundary(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """The refused loop-back, reproduced and closed: both commits carry a row.
+
+    The scenario the guard used to refuse: a finalize commit (item 5f(b)) lands,
+    the review loop-backs to `5-execute`, and a Step 10a fix commit follows. At
+    HEAD the finalize commit has no row, so the boundary refuses with
+    `phase_end_markers_missing` and the plan can never re-enter `6-finalize`.
+    The two writers together cover the branch, so the boundary admits it.
+    """
+    monkeypatch.setenv('PLAN_BASE_DIR', str(_base_dir(tmp_path)))
+    _feature_branch_repo(tmp_path)
+    worktree = _worktree(tmp_path, 'plan-a')
+    plan_dir = _write_plan(tmp_path, 'plan-a', phase='6-finalize', steps=['pre-push-quality-gate'])
+    (plan_dir / 'references.json').write_text(json.dumps({'base_branch': 'main'}), encoding='utf-8')
+    status = {'plan_id': 'plan-a', 'metadata': {'use_worktree': True, 'worktree_path': str(tmp_path)}}
+
+    # 5f(b): the dispatcher's finalize commit, through the verb.
+    _stage(tmp_path, 'src/finalize.py')
+    finalize_result, finalize_code = _run_commit(tmp_path, worktree, '--step', 'pre-push-quality-gate')
+    assert finalize_code == 0, f'{finalize_result!r}'
+    assert _lifecycle._phase_end_marker_refusal('plan-a', status) is None, (
+        'the finalize commit alone must satisfy the boundary: it wrote its own row'
+    )
+
+    # Loop-back to 5-execute, then the Step 10a settlement commit.
+    shifted = run_script(
+        MANAGE_STATUS,
+        'set-phase',
+        '--plan-id',
+        'plan-a',
+        '--phase',
+        '5-execute',
+        env_overrides=_env(tmp_path),
+    )
+    assert shifted.returncode == 0, f'{shifted.stdout}{shifted.stderr}'
+    _stage(tmp_path, 'src/fix.py')
+    fix_result, fix_code = _run_commit(tmp_path, worktree)
+    assert fix_code == 0, f'{fix_result!r}'
+    fix_head = _git(tmp_path, 'rev-parse', 'HEAD').stdout.strip()
+    appended = run_script(
+        MANAGE_CHANGE_LEDGER,
+        'append',
+        '--kind',
+        'change',
+        '--deliverable-id',
+        '1',
+        '--commit-sha',
+        fix_head,
+        '--changed-paths',
+        'src/fix.py',
+        '--worktree-root',
+        str(tmp_path),
+        env_overrides=_env(tmp_path),
+    )
+    assert appended.returncode == 0, f'{appended.stdout}{appended.stderr}'
+
+    assert _lifecycle._phase_end_marker_refusal('plan-a', status) is None, (
+        'the loop-back branch must be admitted: each commit has exactly one row'
+    )
+    rows = _ledger_rows(tmp_path)
+    assert len(rows) == len({row['commit_sha'] for row in rows}) == 2, rows
 
 
 # =============================================================================

@@ -421,7 +421,36 @@ def test_end_marker_gate_scoped_to_5_execute_only(plan_context, _stubbed_invaria
     assert result['next_phase'] == '5-execute'
 
 
-def test_5_execute_end_markers_missing_carries_count_shape(plan_context, monkeypatch):
+def test_5_execute_end_markers_name_every_unrecorded_sha(plan_context, monkeypatch):
+    """The refusal names EVERY unrecorded SHA, with one append invocation each.
+
+    A message that quotes only the first SHA's invocation sends the operator to
+    repair one commit and retry into the same refusal. The control has two
+    unrecorded commits, so a message naming one is distinguishable from one
+    naming both.
+    """
+    plan_id = 'end-marker-5exec-two-shas'
+    status = _execute_status_with_worktree(plan_context, plan_id)
+    first, second, missing_one, missing_two = ('a' * 40, 'b' * 40, 'c' * 40, 'd' * 40)
+    monkeypatch.setattr(_lifecycle, '_branch_commit_shas', lambda _p, _b: [first, second, missing_one, missing_two])
+    monkeypatch.setattr(_lifecycle, '_recorded_change_shas', lambda: {first, second})
+
+    refusal = _lifecycle._phase_end_marker_refusal(plan_id, status)
+
+    assert refusal is not None
+    assert refusal['signature'] == 'bookkeeping_gap'
+    assert refusal['unrecorded_commits'] == [missing_one, missing_two]
+    assert refusal['unrecorded_count'] == 2
+    assert missing_one in refusal['message'], refusal['message']
+    assert missing_two in refusal['message'], refusal['message']
+    assert len(refusal['append_invocations']) == 2
+    assert refusal['append_invocation'] == refusal['append_invocations'][0]
+    for sha, invocation in zip([missing_one, missing_two], refusal['append_invocations'], strict=True):
+        assert sha in invocation, invocation
+    # The remedy is the append each SHA needs, not the phase-5-only prescription
+    # for a commit phase 5 did not make.
+    assert 'phase-5-execute Step 10a settlement bookkeeping for the unrecorded commits' not in refusal['message']
+
     """The wholly-missing refusal enumerates the gap with counts, like the partial one."""
     plan_id = 'end-marker-5exec-missing-shape'
     status = _execute_status_with_worktree(plan_context, plan_id)
