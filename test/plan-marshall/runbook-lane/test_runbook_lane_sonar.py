@@ -24,6 +24,7 @@ Two failure modes are pinned here because each looks clean and is not:
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 from test_runbook_lane import (
@@ -258,6 +259,55 @@ def test_every_read_flag_beside_not_configured_is_refused(flags) -> None:
     assert verdict['status'] == 'error'
     assert verdict['error'] == 'state_contradicts_read'
     assert '--operator-selected-keys' in verdict['message']
+
+
+def _progress_file(tmp_path: Path, *keys: str) -> Path:
+    path = tmp_path / 'progress.md'
+    path.write_text(
+        '\n'.join(f'operator-selected: {key}: the operator selected it' for key in keys) + '\n',
+        encoding='utf-8',
+    )
+    return path
+
+
+def _gate_with_progress(progress: Path, **flags: str) -> Any:
+    """Build the namespace, then attach the progress file the flag parser would set."""
+    args: Any = _gate_args(**flags)
+    args.progress_file = str(progress)
+    return args
+
+
+def test_a_selection_the_progress_file_records_admits_the_merge(tmp_path: Path) -> None:
+    progress = _progress_file(tmp_path, 'K1', 'K2')
+
+    verdict = cmd_sonar_gate(
+        _gate_with_progress(progress, open_count='2', open_keys='K1,K2', operator_selected_keys='K1,K2')
+    )
+
+    assert verdict['merge_allowed'] is True
+    assert verdict['reason'] == 'all_open_issues_operator_selected'
+
+
+def test_a_selection_the_progress_file_does_not_record_is_refused(tmp_path: Path) -> None:
+    """The flag alone is the lane's word; the record is what the gate believes."""
+    progress = _progress_file(tmp_path, 'K1')
+
+    verdict = cmd_sonar_gate(
+        _gate_with_progress(progress, open_count='2', open_keys='K1,K2', operator_selected_keys='K1,K2')
+    )
+
+    assert verdict['merge_allowed'] is False
+    assert verdict['reason'] == 'selection_not_recorded'
+    assert verdict['unrecorded_keys'] == ['K2']
+
+
+def test_an_unreadable_progress_file_refuses_every_selection(tmp_path: Path) -> None:
+    verdict = cmd_sonar_gate(
+        _gate_with_progress(tmp_path / 'absent.md', open_count='1', open_keys='K1', operator_selected_keys='K1')
+    )
+
+    assert verdict['merge_allowed'] is False
+    assert verdict['reason'] == 'selection_not_recorded'
 
 
 def test_the_gate_rejects_a_state_outside_the_closed_set() -> None:

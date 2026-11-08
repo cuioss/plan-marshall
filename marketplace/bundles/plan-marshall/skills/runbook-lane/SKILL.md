@@ -122,7 +122,7 @@ footprint gate, and `source: architecture` otherwise.
 ```bash
 python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane sonar-gate \
   --state {configured|not_configured} [--count-status {confirmed|undecidable|unconfigured}] \
-  [--open-count N] [--open-keys "K1,K2"] [--operator-selected-keys "K1,K2"]
+  [--open-count N] [--open-keys "K1,K2"] [--operator-selected-keys "K1,K2"] [--progress-file PATH]
 ```
 
 `--count-status`, `--open-count`, `--open-keys` and `--operator-selected-keys` belong to a
@@ -135,6 +135,12 @@ enumerated key is one the OPERATOR selected for dismissal. `undecidable` and `un
 key the operator did not select and a count with no enumerated keys all answer `merge_allowed: false`
 with their `reason`. The retired `--dismissed-keys` flag is refused as
 `lane_dismissal_not_accepted`: the lane never records a dismissal of its own.
+
+`--progress-file` is the MECHANISM behind the operator rule, not a second opinion: every key supplied
+in `--operator-selected-keys` must also appear in the run's progress file as an
+`operator-selected: {key}: {reason}` line, or the gate answers `selection_not_recorded`. Without it a
+lane could pass any key set under the new flag and be believed; with it, a supplied key the run never
+recorded is refused, and the violation is visible in the audit record.
 
 ### sonar-facts
 
@@ -726,7 +732,7 @@ whether to continue at the limit. Record every finding and its disposition.
      key is one the operator selected. The gate's `--open-keys` is the read's own `open_keys` field —
      it enumerates the issue keys AND the hotspot keys, so a hotspot is never lost by reading `issues`
      alone. Then decide the gate:
-     `python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane sonar-gate --state configured --count-status {confirmed|undecidable|unconfigured} --open-count {n} --open-keys {open_keys} --operator-selected-keys {k1,k2}`.
+     `python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane sonar-gate --state configured --count-status {confirmed|undecidable|unconfigured} --open-count {n} --open-keys {open_keys} --operator-selected-keys {k1,k2} --progress-file {progress_file}`.
    - **A dismissal is the operator's act, never the lane's.** When a finding should not be fixed, ask
      the operator with the question tool, naming each finding key and what dismissing it would mean,
      and transmit a key only on the option the operator SELECTED. The progress file records the
@@ -734,6 +740,8 @@ whether to continue at the limit. Record every finding and its disposition.
      transmission is the provider's raw REST transition, which is the one dismissal surface that takes
      a bare issue key and needs no plan —
      `python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar_rest transition --issue-key {key} --transition {falsepositive|wontfix}`.
+     The gate reads the same record back through `--progress-file`, so a key the run did not record is
+     refused as `selection_not_recorded` — the record is the witness, not the flag alone.
      A dismissal the lane cannot transmit is a **blocker**, never a silent pass: record the failure
      and stop. The gate admits a key only through `--operator-selected-keys`; `--dismissed-keys` is
      refused as `lane_dismissal_not_accepted`. A HOTSPOT key can be carried by `open_keys` but there is

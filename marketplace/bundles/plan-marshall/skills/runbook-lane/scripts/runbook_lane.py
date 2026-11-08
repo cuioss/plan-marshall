@@ -1876,12 +1876,44 @@ def cmd_build_classify(args: argparse.Namespace) -> dict[str, Any]:
     return result
 
 
+def _operator_selection_records(progress_file: Path) -> set[str] | None:
+    """Return the finding keys the progress file records as OPERATOR-selected.
+
+    The lane writes one line per selection, ``operator-selected: {key}: {reason}``
+    (section 6 step 4). Reading them back is what turns "the lane passed a key" into
+    "the run recorded the operator's answer naming that key": a key the lane types
+    into ``--operator-selected-keys`` without that record is refused. The record is
+    still lane-written, so this makes a violation VISIBLE in the audit trail rather
+    than impossible; the spec's own dismissal rule is an operator answer, and this is
+    the strongest witness a plan-less lane has.
+
+    ``None`` when the file cannot be read — a caller that named no file makes no
+    cross-check, and a caller that named one it cannot read gets the strict answer
+    (no key is recorded) rather than a silent pass.
+    """
+    try:
+        text = progress_file.read_text(encoding='utf-8')
+    except OSError:
+        return set()
+    recorded: set[str] = set()
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith(_OPERATOR_SELECTION_PREFIX):
+            continue
+        tail = stripped[len(_OPERATOR_SELECTION_PREFIX) :].strip()
+        key = tail.split(':', 1)[0].strip()
+        if key:
+            recorded.add(key)
+    return recorded
+
+
 def _sonar_gate_verdict(
     state: str,
     count_status: str | None,
     open_count: int | None,
     open_keys: list[str],
     selected_keys: list[str],
+    recorded_keys: set[str] | None = None,
 ) -> dict[str, Any]:
     """Decide whether the Sonar read admits the merge (section 7's condition).
 
@@ -1976,6 +2008,20 @@ def _sonar_gate_verdict(
             'open_issue_count': count,
             'unselected_keys': unselected,
         }
+    if recorded_keys is not None:
+        unrecorded = [key for key in open_keys if key not in recorded_keys]
+        if unrecorded:
+            # The keys are supplied, but the run never recorded the operator's
+            # answer naming them. The gate cannot tell a selection from a list the
+            # lane invented, so it admits only what the progress file witnesses.
+            return {
+                'status': 'success',
+                'operation': 'sonar-gate',
+                'merge_allowed': False,
+                'reason': 'selection_not_recorded',
+                'open_issue_count': count,
+                'unrecorded_keys': unrecorded,
+            }
     return {
         'status': 'success',
         'operation': 'sonar-gate',
@@ -2046,7 +2092,20 @@ def cmd_sonar_gate(args: argparse.Namespace) -> dict[str, Any]:
         open_count,
         _split_csv(getattr(args, 'open_keys', None)),
         _split_csv(getattr(args, 'operator_selected_keys', None)),
+        _progress_selection(getattr(args, 'progress_file', None)),
     )
+
+
+def _progress_selection(value: str | None) -> set[str] | None:
+    """Resolve ``--progress-file`` to the recorded operator selections, or ``None``.
+
+    ``None`` means the caller named no file, so no cross-check is made. A file that
+    was named is READ; one that cannot be read answers the empty set, which refuses
+    every selection rather than waving it through.
+    """
+    if not value:
+        return None
+    return _operator_selection_records(Path(value))
 
 
 def cmd_sonar_facts(args: argparse.Namespace) -> dict[str, Any]:
@@ -2213,6 +2272,41 @@ _CONCERN_REMAINS_MARKERS = (
 _SUMMARY_RE = re.compile(r'<summary>(?P<title>.*?)</summary>', re.IGNORECASE | re.DOTALL)
 _TRAILING_COUNT_RE = re.compile(r'\((?P<count>\d+)\)\s*$')
 
+#: A ``<details>`` open or close tag, used to measure the nesting depth at which a
+#: ``<summary>`` sits.
+_DETAILS_TOKEN_RE = re.compile(r'</?details\b[^>]*>', re.IGNORECASE)
+
+
+def _summary_depths(body: str, matches: list[re.Match[str]]) -> dict[int, int]:
+    """Return the ``<details>`` nesting depth AT each ``<summary>`` match start.
+
+    THE nesting rule this parser depends on: a reviewer nests a per-FILE grouping
+    inside a section block, so ``<details><summary>Nitpick comments (2)</summary>
+    … <details><summary>src/comments.py (2)</summary>`` carries one section summary
+    at depth 1 and one file summary at depth 2. Without the depth, a file path that
+    happens to contain ``comment`` or ``nitpick`` reads as an unreadable SECTION and
+    stops the gate on a body the reviewer meant to be readable — which is exactly
+    what "fail closed" must not mean.
+    """
+    tokens = [
+        (token.start(), -1 if token.group(0).startswith('</') else 1) for token in _DETAILS_TOKEN_RE.finditer(body)
+    ]
+    depths: dict[int, int] = {}
+    for index, match in enumerate(matches):
+        depth = 0
+        for start, delta in tokens:
+            if start >= match.start():
+                break
+            depth += delta
+        depths[index] = depth
+    return depths
+
+
+#: The depth at or above which a ``<summary>`` is a reviewer's SECTION heading. A
+#: section block opens one ``<details>``, so its summary sits at depth 1; a deeper
+#: summary is the per-file grouping inside a section, and is content.
+_SECTION_DEPTH = 1
+
 #: The CI notation this verb reads through. The lane never calls ``gh``: the
 #: review surfaces come from the CI abstraction, whose provider module owns the
 #: ``gh`` invocation.
@@ -2222,6 +2316,11 @@ _CI_NOTATION = 'plan-marshall:tools-integration-ci:ci'
 #: is a surface this verb cannot read, so it stops the gate rather than being
 #: filtered away as "no findings".
 _RECORD_KINDS = ('inline', 'review_body', 'issue_comment')
+
+#: The progress line that records the OPERATOR's dismissal selection, and the
+#: separator after which the key sits. Read back by ``sonar-gate --progress-file``
+#: so a supplied selection is checked against the run's own record.
+_OPERATOR_SELECTION_PREFIX = 'operator-selected:'
 
 #: The reviewer-neutral evidence field of one disposition line, and the progress
 #: template's own separator.
@@ -2308,27 +2407,35 @@ def _body_findings(
     counters = counters if counters is not None else {}
     matches = list(_SUMMARY_RE.finditer(body))
     starts = list(enumerate(matches))
+    depths = _summary_depths(body, matches)
+    section_at = {index: _section_for_title(matches[index].group('title'))[0] for index, _ in starts}
+
+    def _is_section(index: int) -> bool:
+        """Whether this summary is a section heading: at the section depth and a known label."""
+        return depths.get(index, 0) <= _SECTION_DEPTH and section_at[index] is not None
+
     findings: list[dict[str, str]] = []
     seen_inline = False
     span_end_of: dict[int, int] = {}
-    for position, (index, match) in enumerate(starts):
-        if _section_for_title(match.group('title'))[0] is None:
+    for position, (index, _match) in enumerate(starts):
+        if not _is_section(index):
             continue
         span_end_of[index] = next(
-            (
-                later.start()
-                for later_index, later in starts[position + 1 :]
-                if _section_for_title(later.group('title'))[0] is not None
-            ),
+            (later.start() for later_index, later in starts[position + 1 :] if _is_section(later_index)),
             len(body),
         )
     for index, match in starts:
-        section, declared = _section_for_title(match.group('title'))
+        if depths.get(index, 0) > _SECTION_DEPTH:
+            # A per-file grouping inside a section, not a heading: its content is
+            # counted by the section that encloses it.
+            continue
+        section = section_at[index]
         if section is None:
             normalised = _normalise_section_title(match.group('title'))
             if _TRAILING_COUNT_RE.search(normalised) and any(keyword in normalised for keyword in _SECTION_KEYWORDS):
                 return [], f'unreadable review-body section: {match.group("title").strip()!r}'
             continue
+        declared = _section_for_title(match.group('title'))[1]
         if section == 'inline':
             seen_inline = True
         count = _count_section_findings(body[match.end() : span_end_of[index]], declared)
@@ -2902,6 +3009,12 @@ def main() -> int:
         dest='operator_selected_keys',
         default=None,
         help='Comma-separated finding keys the OPERATOR selected for dismissal',
+    )
+    gate_parser.add_argument(
+        '--progress-file',
+        dest='progress_file',
+        default=None,
+        help='The run progress file; a selected key must be recorded there as an operator selection',
     )
     gate_parser.add_argument(
         '--dismissed-keys',

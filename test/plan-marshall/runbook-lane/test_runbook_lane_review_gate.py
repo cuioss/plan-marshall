@@ -323,6 +323,41 @@ def test_a_review_body_with_no_author_refuses_the_merge() -> None:
     assert 'no attributable author' in verdict['detail']
 
 
+def test_a_nested_file_summary_is_not_read_as_an_unreadable_section() -> None:
+    """A per-file grouping inside a section is content, not a heading.
+
+    The reviewer nests ``<summary>path (n)</summary>`` inside a section block; a
+    file path that happens to contain ``comment`` or ``nitpick`` must not stop the
+    gate on a body the reviewer meant to be readable.
+    """
+    body = (
+        '**Actionable comments posted: 0**\n\n'
+        '<details>\n<summary>🧹 Nitpick comments (1)</summary><blockquote>\n'
+        '<details>\n<summary>src/comments.py (1)</summary>\nrename the helper\n</details>\n'
+        '</blockquote></details>\n'
+    )
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['reason'] == 'body_findings_undisposed', verdict
+    assert verdict['review_body_findings_total'] == 1
+    assert [row['id'] for row in verdict['undisposed']] == ['nitpick-1']
+
+
+def test_a_nested_summary_deeper_than_a_section_never_raises_undecidable() -> None:
+    """The depth rule, stated as a control: any depth-2 summary is content."""
+    body = (
+        '<details>\n<summary>Outside-diff comments (2)</summary><blockquote>\n'
+        '<details>\n<summary>src/nitpick_notes.md (3)</summary>\nsee the note\n</details>\n'
+        '</blockquote></details>\n'
+    )
+
+    verdict = _verdict(_read(_review_body(body)), 'coderabbit outside-diff outside-diff-1 — abc1234')
+
+    assert verdict['reason'] == 'body_findings_undisposed', verdict
+    assert verdict['review_body_findings_total'] == 2
+
+
 def test_a_clean_pull_request_admits_the_merge() -> None:
     verdict = _verdict(_read(_review_body('**Actionable comments posted: 0**\n\nLGTM\n')))
 
