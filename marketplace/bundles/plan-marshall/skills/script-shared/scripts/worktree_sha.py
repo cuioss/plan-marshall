@@ -7,8 +7,10 @@ compute_worktree_sha``. NOT an executor entry point.
 
 This module is the ONE implementation of the working-tree currency hash used by
 every freshness writer and reader: the ``manage-change-ledger worktree-sha``
-verb, the executor dispatch-boundary ``kind=build`` ledger writer, the phase-5
-``kind=change`` ledger writer, and the ``pre-commit-verify-freshness`` gate. The
+verb, the executor dispatch-boundary ``kind=build`` ledger writer, the
+``kind=change`` ledger writers (the phase-5 Step 10a settlement and the
+``workflow-integration-git`` ``commit`` verb's ``6-finalize`` row), and the
+``pre-commit-verify-freshness`` gate. The
 writer/gate symmetry is correctness-critical — a divergent hash silently breaks
 every freshness match — so the helper lives here once and is imported, never
 re-implemented.

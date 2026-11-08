@@ -484,8 +484,13 @@ residual deliverable" would be wrong or ambiguous:
    `dirty_files[]` back to the deliverable that claims it: match against
    each deliverable's `affected_files` declaration (from the solution
    outline / `references.json`), extended by the already-committed
-   `kind=change` ledger rows' `changed_paths` (a path a deliverable already
-   touched in a prior settled commit attributes to that same deliverable).
+   `kind=change` ledger rows' `changed_paths` whose row names a deliverable
+   (a path a deliverable already touched in a prior settled commit attributes
+   to that same deliverable). A row whose `deliverable_id` names no outline
+   deliverable — a finalize commit's, which carries a phase-6 manifest step id
+   or the constant `finalize-commit` — attributes its paths to no deliverable,
+   so such a path must be claimed by a declaration or lands in the unmappable
+   remainder.
    The result partitions `dirty_files[]` into per-deliverable groups plus a
    possibly-empty *unmappable* remainder.
 
