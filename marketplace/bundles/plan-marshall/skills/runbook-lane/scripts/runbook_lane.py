@@ -2086,6 +2086,20 @@ def cmd_sonar_gate(args: argparse.Namespace) -> dict[str, Any]:
                 f'when --state configured; got {count_status!r}'
             ),
         }
+    if getattr(args, 'operator_selected_keys', None) and not getattr(args, 'progress_file', None):
+        # A selection with no record behind it is exactly the self-attested
+        # dismissal this gate exists to remove. The flag alone is the lane's word;
+        # the progress file is the witness, so it is not optional when a key is
+        # claimed.
+        return {
+            'status': 'error',
+            'error': 'progress_file_required',
+            'message': (
+                '--operator-selected-keys needs --progress-file: the key must be recorded as an '
+                'operator-selected line in the run, or the gate cannot tell a selection from a list '
+                'the lane invented'
+            ),
+        }
     return _sonar_gate_verdict(
         state,
         count_status,
@@ -2272,34 +2286,54 @@ _CONCERN_REMAINS_MARKERS = (
 _SUMMARY_RE = re.compile(r'<summary>(?P<title>.*?)</summary>', re.IGNORECASE | re.DOTALL)
 _TRAILING_COUNT_RE = re.compile(r'\((?P<count>\d+)\)\s*$')
 
-#: A ``<details>`` open or close tag, used to measure the nesting depth at which a
-#: ``<summary>`` sits.
+#: A ``<details>`` open or close tag, used to find the container a ``<summary>``
+#: sits in.
 _DETAILS_TOKEN_RE = re.compile(r'</?details\b[^>]*>', re.IGNORECASE)
 
 
-def _summary_depths(body: str, matches: list[re.Match[str]]) -> dict[int, int]:
-    """Return the ``<details>`` nesting depth AT each ``<summary>`` match start.
+def _enclosing_sections(
+    body: str,
+    matches: list[re.Match[str]],
+    section_at: dict[int, str | None],
+) -> dict[int, int | None]:
+    """Map each ``<summary>`` to the recognised SECTION summary that encloses it.
 
     THE nesting rule this parser depends on: a reviewer nests a per-FILE grouping
     inside a section block, so ``<details><summary>Nitpick comments (2)</summary>
-    … <details><summary>src/comments.py (2)</summary>`` carries one section summary
-    at depth 1 and one file summary at depth 2. Without the depth, a file path that
-    happens to contain ``comment`` or ``nitpick`` reads as an unreadable SECTION and
-    stops the gate on a body the reviewer meant to be readable — which is exactly
-    what "fail closed" must not mean.
+    … <details><summary>src/comments.py (2)</summary>`` has one section summary and
+    one file summary inside it. A summary nested inside a RECOGNISED section is
+    content — a file path that happens to contain ``comment`` or ``nitpick`` must
+    not read as an unreadable heading.
+
+    Depth alone is not the rule, because a reviewer may wrap a whole body in one
+    outer block: every real section then sits one level deeper, and a bare depth
+    test would drop its findings silently — the "cannot read means pass" failure
+    this gate exists to close. Nesting inside an UNRECOGNISED block is therefore
+    not containment: such a summary stays a section candidate at any depth.
     """
-    tokens = [
-        (token.start(), -1 if token.group(0).startswith('</') else 1) for token in _DETAILS_TOKEN_RE.finditer(body)
+    containers: dict[int, int | None] = {}
+    stack: list[int | None] = []
+    events: list[tuple[int, str, int | None]] = [
+        (match.start(), 'summary', index) for index, match in enumerate(matches)
     ]
-    depths: dict[int, int] = {}
-    for index, match in enumerate(matches):
-        depth = 0
-        for start, delta in tokens:
-            if start >= match.start():
-                break
-            depth += delta
-        depths[index] = depth
-    return depths
+    events.extend(
+        (token.start(), 'close' if token.group(0).startswith('</') else 'open', None)
+        for token in _DETAILS_TOKEN_RE.finditer(body)
+    )
+    # A close sorts before an open at the same offset, so an empty block cannot
+    # leave its opener on the stack.
+    events.sort(key=lambda event: (event[0], 0 if event[1] == 'close' else 1))
+    for _position, kind, index in events:
+        if kind == 'open':
+            stack.append(None)
+        elif kind == 'close':
+            if stack:
+                stack.pop()
+        elif index is not None:
+            containers[index] = next((holder for holder in reversed(stack) if holder is not None), None)
+            if stack and stack[-1] is None:
+                stack[-1] = index
+    return containers
 
 
 #: The depth at or above which a ``<summary>`` is a reviewer's SECTION heading. A
@@ -2407,12 +2441,17 @@ def _body_findings(
     counters = counters if counters is not None else {}
     matches = list(_SUMMARY_RE.finditer(body))
     starts = list(enumerate(matches))
-    depths = _summary_depths(body, matches)
-    section_at = {index: _section_for_title(matches[index].group('title'))[0] for index, _ in starts}
+    section_at = {index: _section_for_title(match.group('title'))[0] for index, match in starts}
+    containers = _enclosing_sections(body, matches, section_at)
+
+    def _is_content(index: int) -> bool:
+        """Whether this summary is a per-file grouping inside a RECOGNISED section."""
+        parent = containers.get(index)
+        return parent is not None and section_at.get(parent) is not None
 
     def _is_section(index: int) -> bool:
-        """Whether this summary is a section heading: at the section depth and a known label."""
-        return depths.get(index, 0) <= _SECTION_DEPTH and section_at[index] is not None
+        """Whether this summary is a section heading."""
+        return not _is_content(index) and section_at[index] is not None
 
     findings: list[dict[str, str]] = []
     seen_inline = False
@@ -2425,7 +2464,7 @@ def _body_findings(
             len(body),
         )
     for index, match in starts:
-        if depths.get(index, 0) > _SECTION_DEPTH:
+        if _is_content(index):
             # A per-file grouping inside a section, not a heading: its content is
             # counted by the section that encloses it.
             continue

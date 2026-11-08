@@ -136,8 +136,9 @@ key the operator did not select and a count with no enumerated keys all answer `
 with their `reason`. The retired `--dismissed-keys` flag is refused as
 `lane_dismissal_not_accepted`: the lane never records a dismissal of its own.
 
-`--progress-file` is the MECHANISM behind the operator rule, not a second opinion: every key supplied
-in `--operator-selected-keys` must also appear in the run's progress file as an
+`--progress-file` is the MECHANISM behind the operator rule, not a second opinion: it is REQUIRED
+whenever `--operator-selected-keys` is non-empty (a selection with no record is refused as
+`progress_file_required`), and every OPEN key must appear in the run's progress file as an
 `operator-selected: {key}: {reason}` line, or the gate answers `selection_not_recorded`. Without it a
 lane could pass any key set under the new flag and be believed; with it, a supplied key the run never
 recorded is refused, and the violation is visible in the audit record.

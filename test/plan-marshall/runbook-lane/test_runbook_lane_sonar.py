@@ -153,19 +153,41 @@ def test_a_confirmed_zero_admits_the_merge() -> None:
     assert verdict['reason'] == 'no_open_issues'
 
 
-def test_every_open_finding_the_operator_selected_admits_the_merge() -> None:
-    verdict = cmd_sonar_gate(_gate_args(open_count='2', open_keys='K1,K2', operator_selected_keys='K1,K2'))
+def test_every_open_finding_the_operator_selected_admits_the_merge(tmp_path: Path) -> None:
+    verdict = cmd_sonar_gate(
+        _gate_with_progress(
+            _progress_file(tmp_path, 'K1', 'K2'),
+            open_count='2',
+            open_keys='K1,K2',
+            operator_selected_keys='K1,K2',
+        )
+    )
 
     assert verdict['merge_allowed'] is True
     assert verdict['reason'] == 'all_open_issues_operator_selected'
 
 
-def test_an_open_finding_the_operator_did_not_select_blocks_the_merge() -> None:
-    verdict = cmd_sonar_gate(_gate_args(open_count='2', open_keys='K1,K2', operator_selected_keys='K1'))
+def test_an_open_finding_the_operator_did_not_select_blocks_the_merge(tmp_path: Path) -> None:
+    verdict = cmd_sonar_gate(
+        _gate_with_progress(
+            _progress_file(tmp_path, 'K1'),
+            open_count='2',
+            open_keys='K1,K2',
+            operator_selected_keys='K1',
+        )
+    )
 
     assert verdict['merge_allowed'] is False
     assert verdict['reason'] == 'open_issues_not_operator_selected'
     assert verdict['unselected_keys'] == ['K2']
+
+
+def test_a_selection_without_a_progress_file_is_refused() -> None:
+    """The flag alone is the lane's word, and the word is what this gate stopped taking."""
+    verdict = cmd_sonar_gate(_gate_args(open_count='1', open_keys='K1', operator_selected_keys='K1'))
+
+    assert verdict['status'] == 'error'
+    assert verdict['error'] == 'progress_file_required'
 
 
 def test_the_gate_refuses_a_dismissal_the_lane_recorded_itself() -> None:
@@ -190,9 +212,16 @@ def test_a_count_with_no_enumerated_keys_cannot_be_verified() -> None:
     assert verdict['reason'] == 'open_issue_keys_missing'
 
 
-def test_a_repeated_key_cannot_stand_in_for_two_findings() -> None:
+def test_a_repeated_key_cannot_stand_in_for_two_findings(tmp_path: Path) -> None:
     """Distinct keys, not list length: K1,K1 enumerates one finding, not two."""
-    verdict = cmd_sonar_gate(_gate_args(open_count='2', open_keys='K1,K1', operator_selected_keys='K1'))
+    verdict = cmd_sonar_gate(
+        _gate_with_progress(
+            _progress_file(tmp_path, 'K1'),
+            open_count='2',
+            open_keys='K1,K1',
+            operator_selected_keys='K1',
+        )
+    )
 
     assert verdict['merge_allowed'] is False
     assert verdict['reason'] == 'open_issue_keys_missing'

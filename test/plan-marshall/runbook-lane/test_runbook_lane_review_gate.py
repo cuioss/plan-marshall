@@ -358,6 +358,36 @@ def test_a_nested_summary_deeper_than_a_section_never_raises_undecidable() -> No
     assert verdict['review_body_findings_total'] == 2
 
 
+def test_a_section_wrapped_in_an_unrecognised_block_is_still_a_section() -> None:
+    """Nesting inside an unknown block is not containment: its findings must survive."""
+    body = (
+        '<details>\n<summary>Review details</summary>\n'
+        '<details>\n<summary>Nitpick comments (1)</summary>\nx\n</details>\n'
+        '</details>\n'
+    )
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['reason'] == 'body_findings_undisposed', verdict
+    assert verdict['review_body_findings_total'] == 1
+
+
+def test_a_body_wrapped_in_one_outer_block_still_counts_its_sections() -> None:
+    """The whole body in one ``<details>`` must not drop every finding."""
+    body = (
+        '<details>\n<summary>Walkthrough</summary>\n'
+        '<details>\n<summary>🧹 Nitpick comments (2)</summary><blockquote>\n'
+        '<details>\n<summary>src/a.py (2)</summary>\nrename the helper\n</details>\n'
+        '</blockquote></details>\n'
+        '</details>\n'
+    )
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['reason'] == 'body_findings_undisposed', verdict
+    assert verdict['review_body_findings_total'] == 2
+
+
 def test_a_clean_pull_request_admits_the_merge() -> None:
     verdict = _verdict(_read(_review_body('**Actionable comments posted: 0**\n\nLGTM\n')))
 
