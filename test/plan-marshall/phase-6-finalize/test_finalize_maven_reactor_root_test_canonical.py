@@ -355,6 +355,7 @@ def test_the_gate_record_names_an_unreadable_pom_as_its_cause() -> None:
     marker = 'pom_error: pom_unreadable'
     assert marker in doc
 
-    passage = doc[doc.index(marker) :]
+    start = doc.index(marker)
+    passage = doc[max(0, start - 1500) : start + 1500]
     assert 'MUST name `pom_unreadable`' in passage
-    assert 'module-tests DEGRADED' in doc
+    assert 'module-tests DEGRADED' in passage

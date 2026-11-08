@@ -261,6 +261,11 @@ def discover_maven_modules(project_root: str) -> list:
 
     # Pass 1: parse every POM once and collect the reactor coordinate set.
     parsed_poms = [(pom_path, _parse_pom_xml(pom_path)) for pom_path in descriptors]
+    # A ``<module>`` entry naming a POM FILE other than ``pom.xml`` selects a module
+    # the shared ``pom.xml`` walk never finds; read those files here so the entry is
+    # a real module rather than an unmatched reactor path.
+    for extra in _declared_pom_files(root, parsed_poms):
+        parsed_poms.append((extra, _parse_pom_xml(extra)))
     reactor_coordinates = {
         f'{pom_data["group_id"]}:{pom_data["artifact_id"]}'
         for _, pom_data in parsed_poms
@@ -309,6 +314,12 @@ def _drop_commands_outside_the_root_reactor(modules: list[dict], reactor_paths: 
     module, so emitting it would trade one false block for another. That form is
     deliberately not emitted here.
 
+    A ``pom`` root that lists nothing is treated the same way: Maven 4 can discover
+    direct child directories implicitly, and this reader cannot see that membership
+    — so the module keeps no root-runnable canonical rather than a ``-pl`` form
+    Maven may refuse. That is a recorded under-grant (fail-closed: the gate reports
+    the missing canonical instead of crediting a command nobody ran).
+
     Args:
         modules: Every discovered module dict, mutated in place.
         reactor_paths: The module directories the root POM's reactor builds.
@@ -318,6 +329,39 @@ def _drop_commands_outside_the_root_reactor(modules: list[dict], reactor_paths: 
         if path == '.' or path in reactor_paths:
             continue
         module['commands'] = {}
+
+
+def _declared_pom_files(root: Path, parsed_poms: list[tuple[Path, dict]]) -> list[Path]:
+    """Return the POM FILE paths a ``<module>`` entry names but the walk did not find.
+
+    The shared descriptor walk looks for ``pom.xml`` only, while Maven accepts a
+    module entry that names a different POM file (``child/pom-alt.xml``). Reading
+    those files makes the entry a discovered module instead of an unmatched reactor
+    path. A missing or unreadable file is skipped — the entry then stays an
+    under-grant, which fails closed at the gate.
+
+    Args:
+        root: The project root.
+        parsed_poms: The ``(path, parse)`` pairs the walk already produced.
+
+    Returns:
+        Additional POM paths, de-duplicated, in discovery order.
+    """
+    known = {path.resolve() for path, _data in parsed_poms}
+    extra: list[Path] = []
+    for pom_path, pom_data in parsed_poms:
+        for entry in pom_data.get('modules', []):
+            text = entry.strip().replace('\\', '/')
+            if not text.endswith('.xml'):
+                continue
+            candidate = (pom_path.parent / text).resolve()
+            if candidate in known or not candidate.is_file():
+                continue
+            if not candidate.is_relative_to(root):
+                continue
+            known.add(candidate)
+            extra.append(candidate)
+    return extra
 
 
 def _normalise_module_path(aggregator_dir: str, entry: str) -> str | None:

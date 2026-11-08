@@ -230,6 +230,29 @@ def test_an_unreadable_fact_declaration_refuses_the_record(monkeypatch):
     assert written == []
 
 
+def test_a_rebase_count_without_an_action_is_refused():
+    """A count names a rebase; a record with no action performed none.
+
+    The merge-queue route never rebases, so an unpaired count would record one it
+    could not have observed.
+    """
+    facts = [fact for fact in _declared_merge_facts() if not fact.startswith('action=')]
+    facts = [
+        'merge_mechanism=merge_queue' if fact.startswith('merge_mechanism=') else fact for fact in facts
+    ]
+    written: list[list[str]] = []
+
+    result = gate.record_merge(
+        'lb55-plan',
+        facts=facts,
+        mark_done_runner=lambda argv: written.append(list(argv)) or {'status': 'success'},
+    )
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'upstream_count_without_action'
+    assert written == []
+
+
 def test_a_fault_text_with_a_quote_and_a_newline_is_recorded_intact():
     """The fault text is data, not prose: a quote and a newline survive verbatim.
 

@@ -816,6 +816,24 @@ def test_discover_a_root_that_builds_no_reactor_grants_no_child_a_pl_command():
     assert modules['sub']['commands'] == {}
 
 
+def test_discover_reads_a_module_entry_that_names_another_pom_file(tmp_path=None):
+    """A ``<module>`` naming ``child/pom-alt.xml`` is a MODULE, not an unmatched path.
+
+    The shared descriptor walk looks for ``pom.xml`` only, so normalising the entry
+    to its directory was not enough: discovery had to read the named file too.
+    """
+    root = Path(tempfile.mkdtemp())
+    (root / 'pom.xml').write_text(_AGGREGATOR_LISTING_ALT_POM)
+    child = root / 'child'
+    child.mkdir()
+    (child / 'pom-alt.xml').write_text(_CORE_JAR_POM)
+    _add_test_source(root, 'child')
+
+    modules = {module['paths']['module']: module for module in discover_maven_modules(str(root))}
+
+    assert modules['child']['commands']['module-tests'] == _executable('test -pl child -am')
+
+
 def test_discover_malformed_pom_names_the_stop_and_grants_no_canonical():
     """An unreadable descriptor is a NAMED stop, not a silent jar.
 
@@ -1020,8 +1038,7 @@ _AGGREGATOR_LISTING_CORE_POM = """<?xml version="1.0" encoding="UTF-8"?>
 </project>
 """
 
-_AGGREGATOR_LISTING_SELF_POM = """<?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0">
+_AGGREGATOR_LISTING_SELF_POM = """<?xml version="1.0" encoding="UTF-8"?><project xmlns="http://maven.apache.org/POM/4.0.0">
   <modelVersion>4.0.0</modelVersion>
   <groupId>com.example</groupId>
   <artifactId>parent-agg</artifactId>
@@ -1033,8 +1050,20 @@ _AGGREGATOR_LISTING_SELF_POM = """<?xml version="1.0" encoding="UTF-8"?>
 </project>
 """
 
-_SUBPROJECTS_POM = """<?xml version="1.0" encoding="UTF-8"?>
+_AGGREGATOR_LISTING_ALT_POM = """<?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.example</groupId>
+  <artifactId>parent-agg</artifactId>
+  <version>1.0.0</version>
+  <packaging>pom</packaging>
+  <modules>
+    <module>child/pom-alt.xml</module>
+  </modules>
+</project>
+"""
+
+_SUBPROJECTS_POM = """<?xml version="1.0" encoding="UTF-8"?><project xmlns="http://maven.apache.org/POM/4.0.0">
   <modelVersion>4.0.0</modelVersion>
   <groupId>com.example</groupId>
   <artifactId>parent-agg</artifactId>

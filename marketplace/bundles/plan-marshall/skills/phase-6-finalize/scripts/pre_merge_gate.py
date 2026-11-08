@@ -1398,7 +1398,7 @@ def _mark_step_done(argv: list[str]) -> dict[str, Any]:
 
 #: The finalize step whose record ``record-merge`` writes, and therefore whose
 #: ``records_facts`` declaration its ``--fact`` keys must satisfy.
-_MERGE_RECORD_STEP = 'default:branch-cleanup'
+_MERGE_RECORD_STEP = f'default:{MERGE_STEP_ID}'
 
 _RECORDS_FACTS_KEY = 'records_facts'
 
@@ -1565,6 +1565,14 @@ def record_merge(
         return _refuse(
             'upstream_count_required_with_action',
             'a recorded rebase action must carry the upstream_commit_count read from the same payload',
+        )
+    if action is None and 'upstream_commit_count' in recorded:
+        # The mirror of the rule above: a count names a rebase, and a record with no
+        # action performed none — the merge-queue route in particular never rebases.
+        return _refuse(
+            'upstream_count_without_action',
+            'upstream_commit_count names a rebase this record did not perform; record it only '
+            'alongside the action fact',
         )
 
     try:
