@@ -1914,6 +1914,7 @@ def _sonar_gate_verdict(
     open_keys: list[str],
     selected_keys: list[str],
     recorded_keys: set[str] | None = None,
+    hotspot_keys: list[str] | None = None,
 ) -> dict[str, Any]:
     """Decide whether the Sonar read admits the merge (section 7's condition).
 
@@ -2008,6 +2009,19 @@ def _sonar_gate_verdict(
             'open_issue_count': count,
             'unselected_keys': unselected,
         }
+    undismissable = [key for key in (hotspot_keys or []) if key in selected]
+    if undismissable:
+        # A security hotspot has no transition verb, so a "dismissal" of one would
+        # be recorded and never transmitted. The lane's rule is that a hotspot is
+        # FIXED or reported as a blocker, and this is the gate saying so.
+        return {
+            'status': 'success',
+            'operation': 'sonar-gate',
+            'merge_allowed': False,
+            'reason': 'hotspot_not_dismissable',
+            'open_issue_count': count,
+            'hotspot_keys': undismissable,
+        }
     if recorded_keys is not None:
         unrecorded = [key for key in open_keys if key not in recorded_keys]
         if unrecorded:
@@ -2067,13 +2081,14 @@ def cmd_sonar_gate(args: argparse.Namespace) -> dict[str, Any]:
             or open_count is not None
             or getattr(args, 'open_keys', None) is not None
             or getattr(args, 'operator_selected_keys', None) is not None
+            or getattr(args, 'hotspot_keys', None) is not None
         ):
             return {
                 'status': 'error',
                 'error': 'state_contradicts_read',
                 'message': (
                     'a not_configured state carries no read; drop --count-status, --open-count, '
-                    '--open-keys and --operator-selected-keys'
+                    '--open-keys, --operator-selected-keys and --hotspot-keys'
                 ),
             }
         return _sonar_gate_verdict(state, None, None, [], [])
@@ -2107,6 +2122,7 @@ def cmd_sonar_gate(args: argparse.Namespace) -> dict[str, Any]:
         _split_csv(getattr(args, 'open_keys', None)),
         _split_csv(getattr(args, 'operator_selected_keys', None)),
         _progress_selection(getattr(args, 'progress_file', None)),
+        _split_csv(getattr(args, 'hotspot_keys', None)),
     )
 
 
@@ -3060,6 +3076,12 @@ def main() -> int:
         dest='progress_file',
         default=None,
         help='The run progress file; a selected key must be recorded there as an operator selection',
+    )
+    gate_parser.add_argument(
+        '--hotspot-keys',
+        dest='hotspot_keys',
+        default=None,
+        help='Comma-separated SECURITY HOTSPOT keys among the open ones; a hotspot is never dismissable',
     )
     gate_parser.add_argument(
         '--dismissed-keys',

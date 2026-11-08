@@ -122,7 +122,8 @@ footprint gate, and `source: architecture` otherwise.
 ```bash
 python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane sonar-gate \
   --state {configured|not_configured} [--count-status {confirmed|undecidable|unconfigured}] \
-  [--open-count N] [--open-keys "K1,K2"] [--operator-selected-keys "K1,K2"] [--progress-file PATH]
+  [--open-count N] [--open-keys "K1,K2"] [--operator-selected-keys "K1,K2"] [--progress-file PATH] \
+  [--hotspot-keys "H1,H2"]
 ```
 
 `--count-status`, `--open-count`, `--open-keys` and `--operator-selected-keys` belong to a
@@ -142,6 +143,10 @@ whenever `--operator-selected-keys` is non-empty (a selection with no record is 
 `operator-selected: {key}: {reason}` line, or the gate answers `selection_not_recorded`. Without it a
 lane could pass any key set under the new flag and be believed; with it, a supplied key the run never
 recorded is refused, and the violation is visible in the audit record.
+
+`--hotspot-keys` names which of the open keys are SECURITY HOTSPOTS. A hotspot has no transition verb,
+so a recorded dismissal of one would never be transmitted: the gate refuses such a key as
+`hotspot_not_dismissable`, and the finding is fixed or reported as a blocker instead.
 
 ### sonar-facts
 
@@ -733,7 +738,7 @@ whether to continue at the limit. Record every finding and its disposition.
      key is one the operator selected. The gate's `--open-keys` is the read's own `open_keys` field —
      it enumerates the issue keys AND the hotspot keys, so a hotspot is never lost by reading `issues`
      alone. Then decide the gate:
-     `python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane sonar-gate --state configured --count-status {confirmed|undecidable|unconfigured} --open-count {n} --open-keys {open_keys} --operator-selected-keys {k1,k2} --progress-file {progress_file}`.
+     `python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane sonar-gate --state configured --count-status {confirmed|undecidable|unconfigured} --open-count {n} --open-keys {open_keys} --operator-selected-keys {k1,k2} --progress-file {progress_file} --hotspot-keys {hotspot_keys}`.
    - **A dismissal is the operator's act, never the lane's.** When a finding should not be fixed, ask
      the operator with the question tool, naming each finding key and what dismissing it would mean,
      and transmit a key only on the option the operator SELECTED. The progress file records the

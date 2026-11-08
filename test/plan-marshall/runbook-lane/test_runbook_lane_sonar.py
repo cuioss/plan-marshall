@@ -339,6 +339,23 @@ def test_an_unreadable_progress_file_refuses_every_selection(tmp_path: Path) -> 
     assert verdict['reason'] == 'selection_not_recorded'
 
 
+def test_a_selected_hotspot_key_is_refused(tmp_path: Path) -> None:
+    """A hotspot has no transition verb, so a recorded dismissal of one is a fiction."""
+    verdict = cmd_sonar_gate(
+        _gate_with_progress(
+            _progress_file(tmp_path, 'H1'),
+            open_count='1',
+            open_keys='H1',
+            operator_selected_keys='H1',
+            hotspot_keys='H1',
+        )
+    )
+
+    assert verdict['merge_allowed'] is False
+    assert verdict['reason'] == 'hotspot_not_dismissable'
+    assert verdict['hotspot_keys'] == ['H1']
+
+
 def test_the_gate_rejects_a_state_outside_the_closed_set() -> None:
     verdict = cmd_sonar_gate(_gate_args(state='maybe'))
 
