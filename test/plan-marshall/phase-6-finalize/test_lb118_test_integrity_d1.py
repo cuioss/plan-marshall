@@ -586,6 +586,28 @@ def test_a_class_level_annotation_belongs_to_the_class_not_its_first_method(
     assert rows[0]['marked_tests'] == ['FooTest'], rows
 
 
+def test_a_python_call_line_is_not_a_jvm_method_identity(plan_context, tmp_path, monkeypatch) -> None:
+    """``assert is_valid(cfg)`` has a JVM header's shape but is part of ``test_a``.
+
+    The JVM arm is scoped by file suffix. Applied to every file it would read the
+    call as a method named ``is_valid``, splitting ``test_a``'s span and reporting a
+    false loss for an ADDITION.
+    """
+    repo = _repo(tmp_path)
+    _commit(repo, {'README.md': 'readme\n'})
+    _commit(repo, {'test/plain_test.py': 'def test_a():\n    assert 1 == 1\n    assert 3 == 3\n'})
+    _git(repo, 'checkout', '--quiet', '-b', 'feature')
+    _commit(
+        repo,
+        {'test/plain_test.py': 'def test_a():\n    assert 1 == 1\n    assert is_valid(cfg)\n    assert 3 == 3\n'},
+        'add a call-shaped assertion',
+    )
+
+    payload = _run(repo, plan_context, monkeypatch)
+
+    assert _rows(payload) == [], payload
+
+
 def test_a_js_identity_is_qualified_by_its_enclosing_describe(plan_context, tmp_path, monkeypatch) -> None:
     """A deleted ``A::renders`` is not credited by an unrelated new ``B::renders``.
 

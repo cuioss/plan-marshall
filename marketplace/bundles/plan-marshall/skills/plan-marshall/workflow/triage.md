@@ -48,10 +48,11 @@ python3 .plan/execute-script.py plan-marshall:phase-6-finalize:review_support op
 
 Every row in the returned `open[]` is one frozen criterion the functional review has not graded `met` — `unevidenced`, `not_met` or `ungraded`; `verdict_state` says whether that verdict was sealed (`sealed`) or not (`unsealed` / `absent` / `unreadable`, where every criterion is open by definition); and `source: none` means the plan predates the freeze and has no frozen criteria to report.
 
-Two sources close criteria rather than reporting them open, and this triage source applies exactly what the finalize completion gate applies, through the same reader:
+The `source` field says what the read found, and this triage source applies exactly what the finalize completion gate applies, through the same reader:
 
 - `source: review_dropped` — the composed manifest dropped the functional review (a surgical scope, a disabled commit-push, or a `functional_review: off` lane), so there is no verdict to grade the frozen rows and `drop_reason` names why. File **nothing** for this plan's frozen criteria: the completion gate exempts the same case.
-- `source: frozen_deleted` / `source: frozen_tampered` — the status record froze a snapshot that is now deleted or edited. The snapshot's own absence is the open criterion and is reported **regardless of a dropped review**; file it like any open row.
+- `source: review_closed` — the operator closed the review past its round cap; its criteria are not outstanding work and nothing is filed for them.
+- `source: frozen_deleted` / `source: frozen_tampered` — the status record froze a snapshot that is now deleted or edited. The snapshot's own absence is the open criterion and is REPORTED open **regardless of a dropped review**; file it like any open row.
 
 **Ingest each open row into the findings store before Step 1**, so it carries a `hash_id` and every later step — the Step 3c resolve call, the Step 7 loop-back count, the provider reply — applies to it unchanged:
 

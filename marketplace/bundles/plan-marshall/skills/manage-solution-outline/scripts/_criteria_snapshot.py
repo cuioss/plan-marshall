@@ -354,7 +354,7 @@ def accepted_test_removals(plan_id: str) -> list[dict[str, Any]]:
     Each entry names a test identity (``{identity, assertions_removed}``) or, for a
     row that carries none, an explicit path-level key that also names the row KIND
     (``{path, kind, acceptance_kind, assertions_removed}``, or ``{path, kind:
-    test_filtered, markers, marked_tests}``).
+    test_filtered, pairs}`` — the paired ``{test, marker}`` set).
     ``assertions_removed`` is ``None`` for a declaration that names no count, which
     accepts the identity for a REMOVAL only — never for a drop of a surviving test.
     Deduplicated by the entry's own key.
@@ -1834,8 +1834,12 @@ def open_criteria(plan_id: str, verdict_file: Path | None = None) -> dict[str, A
     completion gate: a plan whose criteria snapshot still holds an unmet clause
     has open work even when the findings store is empty.
 
-    ``source`` is ``snapshot`` when a snapshot exists and ``none`` when it does
-    not (the legacy shape — no frozen criteria, so nothing is reported open).
+    ``source`` is ``snapshot`` when a snapshot exists and nothing exempts it,
+    ``review_dropped`` when the manifest dropped the functional review (its frozen
+    rows are not outstanding work), and ``none`` when no snapshot exists (the
+    legacy shape — no frozen criteria, so nothing is reported open). The
+    ``frozen_deleted`` / ``frozen_tampered`` and ``review_closed`` sources are the
+    other two answers.
 
     A criterion counts as ``met`` only under three conditions, all of which the
     validator would also enforce and none of which this reader may skip, because

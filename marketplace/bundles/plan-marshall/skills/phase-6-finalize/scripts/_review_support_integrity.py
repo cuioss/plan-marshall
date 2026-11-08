@@ -123,9 +123,9 @@ _JVM_METHOD_RE = re.compile(
     r'|suspend\s+|operator\s+|infix\s+|external\s+|tailrec\s+|const\s+|lateinit\s+'
     r')*'
     r'(?:'
-    r'fun\s+(?:<[^>]*>\s*)?([A-Za-z_$][\w$]*)\s*\([^;{}]*\)\s*(?::\s*[^{]+)?\{?\s*$'
+    r'fun\s+(?:<[^>]*>\s*)?([A-Za-z_$][\w$]*)\s*\([^;{}]*\)\s*(?::\s*[^{]+)?(?:\{.*)?\s*$'
     r'|'
-    r'(?:<[^>]+>\s+)?[\w$.[\]<>?, ]+?\s+([A-Za-z_$][\w$]*)\s*\([^;{}]*\)\s*(?:throws\s+[^{]+)?\{?\s*$'
+    r'(?:<[^>]+>\s+)?[\w$.[\]<>?, ]+?\s+([A-Za-z_$][\w$]*)\s*\([^;{}]*\)\s*(?:throws\s+[^{]+)?(?:\{.*)?\s*$'
     r')'
 )
 
@@ -343,25 +343,27 @@ def _markers(text: str) -> set[str]:
     return {marker for marker in SKIP_MARKERS if marker in text}
 
 
-def _function_assertion_counts(text: str) -> dict[str, int]:
+def _function_assertion_counts(text: str, path: str | None = None) -> dict[str, int]:
     """Count assertion constructs per test identity, in the whole file.
 
     The identity does NOT depend on the file path: ``Class::method`` for a method
-    declared inside a Python class, the bare function name for a top-level one, and
-    the quoted name for a JS/TS ``it``/``test``/``describe``. ``async def`` counts as
-    a test, and an indented ``def`` is the method arm of the class identity.
+    declared inside a Python or Java/Kotlin class, the bare function name for a
+    top-level one, and the quoted name for a JS/TS ``it``/``test``/``describe``,
+    qualified by its enclosing ``describe`` (``suite::renders``). ``async def``
+    counts as a test, and an indented ``def`` is the method arm of the class
+    identity. The JVM arm is scoped by file suffix.
 
     A file that declares none of those — a test class in a language whose headers
-    the two arms do not parse — falls back to its CLASS headers as the identity, one
-    entry per class. That fallback is what keeps such a removal decidable under an
-    identity; a row with NO identity at all is acceptable by its explicit path-level
-    key, so no row is unacceptable by construction.
+    the three arms do not parse — falls back to its CLASS headers as the identity,
+    one entry per class. That fallback is what keeps such a removal decidable under
+    an identity; a row with NO identity at all is acceptable by its explicit
+    path-level key, so no row is unacceptable by construction.
 
     A file-level count misses an assertion removed from one test and added to
     another — the file total is unchanged — while the per-identity counts still
     show the loss.
     """
-    spans = _identity_spans(text)
+    spans = _identity_spans(text, path)
     if not spans:
         spans = _class_spans(text)
     counts: dict[str, int] = {}
@@ -371,7 +373,7 @@ def _function_assertion_counts(text: str) -> dict[str, int]:
     return counts
 
 
-def _identity_bodies(text: str) -> dict[str, str]:
+def _identity_bodies(text: str, path: str | None = None) -> dict[str, str]:
     """The whitespace-normalized BODY of every UNIQUE test identity.
 
     The body runs from the identity's own header to the next identity's header, so a
@@ -382,7 +384,7 @@ def _identity_bodies(text: str) -> dict[str, str]:
     move would over-credit it — the identity then survives nothing and its loss is
     reported, the fail-closed direction.
     """
-    spans = _identity_spans(text) or _class_spans(text)
+    spans = _identity_spans(text, path) or _class_spans(text)
     bodies: dict[str, str] = {}
     repeated: set[str] = set()
     for index, (start, name) in enumerate(spans):
@@ -400,7 +402,21 @@ def _assertion_lines(text: str) -> list[str]:
     return [line.strip() for line in text.splitlines() if any(pattern.search(line) for pattern in ASSERTION_PATTERNS)]
 
 
-def _identity_spans(text: str) -> list[tuple[int, str]]:
+#: File suffixes whose method headers the JVM arm may read. The arm is scoped by
+#: path, never applied to every file: a Python ``assert is_valid(cfg)`` or a JS
+#: ``function helper(x) {`` has the shape ``<word> <name>(...)`` and would otherwise
+#: become a phantom identity, splitting a real test's span.
+_JVM_SUFFIXES = ('.java', '.kt', '.kts', '.scala')
+
+
+def _is_jvm_path(path: str | None) -> bool:
+    """Whether ``path`` names a JVM source file whose method headers the JVM arm reads."""
+    if not path:
+        return False
+    return path.lower().endswith(_JVM_SUFFIXES)
+
+
+def _identity_spans(text: str, path: str | None = None) -> list[tuple[int, str]]:
     """The Python/JS/JVM test-function identities, in document order.
 
     The class scope is a stack of ``(indent, full_path)``. A class is popped only
@@ -411,8 +427,11 @@ def _identity_spans(text: str) -> list[tuple[int, str]]:
 
     A Java or Kotlin method is the same ``Class::method`` identity a Python method
     gets (:data:`_JVM_METHOD_RE`), which is what makes a second ``@Disabled`` in an
-    accepted JVM class a new row. A JS/TS ``it``/``test`` is qualified by its
-    enclosing ``describe`` (``suite::renders``), so an unrelated new same-named
+    accepted JVM class a new row. That arm is gated on ``path``: its shape
+    (``<word> <name>(...)``) also describes a Python ``assert is_valid(cfg)`` or a
+    JS ``function helper(x)``, so applying it to every file would invent a phantom
+    identity and split a real test's span. A JS/TS ``it``/``test`` is qualified by
+    its enclosing ``describe`` (``suite::renders``), so an unrelated new same-named
     test in another suite is a different identity and cannot absorb a move.
     """
     spans: list[tuple[int, str]] = []
@@ -431,7 +450,7 @@ def _identity_spans(text: str) -> list[tuple[int, str]]:
             prefix = f'{class_stack[-1][1]}::' if class_stack else ''
             spans.append((offset, prefix + match.group(1)))
             continue
-        jvm_match = _JVM_METHOD_RE.match(line)
+        jvm_match = _JVM_METHOD_RE.match(line) if _is_jvm_path(path) else None
         if jvm_match:
             name = jvm_match.group(1) or jvm_match.group(2)
             prefix = f'{class_stack[-1][1]}::' if class_stack else ''
@@ -712,12 +731,12 @@ def _grade_test_integrity(
             if post is not None:
                 after[path] = post
 
-    before_fns_by_path = {path: _function_assertion_counts(text) for path, text in before.items()}
-    after_fns_by_path = {path: _function_assertion_counts(text) for path, text in after.items()}
-    before_bodies_by_path = {path: _identity_bodies(text) for path, text in before.items()}
+    before_fns_by_path = {path: _function_assertion_counts(text, path) for path, text in before.items()}
+    after_fns_by_path = {path: _function_assertion_counts(text, path) for path, text in after.items()}
+    before_bodies_by_path = {path: _identity_bodies(text, path) for path, text in before.items()}
     after_bodies: dict[str, set[str]] = {}
-    for text in after.values():
-        for identity, body in _identity_bodies(text).items():
+    for path, text in after.items():
+        for identity, body in _identity_bodies(text, path).items():
             after_bodies.setdefault(identity, set()).add(body)
 
     def _surviving_assertions(path: str, identity: str, count: int) -> int:
@@ -918,10 +937,10 @@ def _grade_test_integrity(
         if pre_path is not None:
             pre = before.get(pre_path, '')
         else:
-            pre = _moved_pre_image(post, before, after)
+            pre = _moved_pre_image(post, before, after, path)
             if pre is None:
                 continue
-        units = _added_marker_units(post, pre)
+        units = _added_marker_units(post, pre, path)
         if units:
             added_markers = sorted({marker for markers in units.values() for marker in markers})
             marked_tests = sorted(identity for identity in units if identity)
@@ -975,7 +994,7 @@ def _without_markers(text: str) -> str:
     return _normalized_body(stripped)
 
 
-def _moved_pre_image(post: str, before: dict[str, str], after: dict[str, str]) -> str | None:
+def _moved_pre_image(post: str, before: dict[str, str], after: dict[str, str], path: str | None = None) -> str | None:
     """The deleted body an ADDED file logically came from, or ``None``.
 
     A split (one file deleted, two added) carries its tests into files that did not
@@ -1000,20 +1019,20 @@ def _moved_pre_image(post: str, before: dict[str, str], after: dict[str, str]) -
             continue
         if _without_markers(text) == wanted:
             return text
-    added_identities = set(_function_assertion_counts(post))
+    added_identities = set(_function_assertion_counts(post, path))
     if not added_identities:
         return None
     best: tuple[int, str] | None = None
-    for path, text in before.items():
-        if path in after:
+    for before_path, text in before.items():
+        if before_path in after:
             continue
-        shared = len(added_identities & set(_function_assertion_counts(text)))
+        shared = len(added_identities & set(_function_assertion_counts(text, before_path)))
         if shared and (best is None or shared > best[0]):
             best = (shared, text)
     return best[1] if best is not None else None
 
 
-def _identity_markers(text: str) -> dict[str, set[str]]:
+def _identity_markers(text: str, path: str | None = None) -> dict[str, set[str]]:
     """The skip markers attributed to each test identity.
 
     A marker on a header line (an indented ``it.skip(...)``) belongs to THAT test;
@@ -1029,7 +1048,7 @@ def _identity_markers(text: str) -> dict[str, set[str]]:
     class-level ``@Disabled`` would be read as a marker on whichever method the
     header precedes.
     """
-    method_spans = _identity_spans(text)
+    method_spans = _identity_spans(text, path)
     spans = method_spans or _class_spans(text)
     if not spans:
         return {'': _markers(text)}
@@ -1056,7 +1075,7 @@ def _identity_markers(text: str) -> dict[str, set[str]]:
     return markers
 
 
-def _added_marker_units(post: str, pre: str) -> dict[str, set[str]]:
+def _added_marker_units(post: str, pre: str, path: str | None = None) -> dict[str, set[str]]:
     """The markers the branch ADDED, keyed by the test identity that gained them.
 
     An identity present only after the change is a new test: it has no pre-image to
@@ -1066,8 +1085,8 @@ def _added_marker_units(post: str, pre: str) -> dict[str, set[str]]:
     and the pre-existing behaviour. The returned map is what lets a filter acceptance
     name the identity of each marked test rather than only the marker kind.
     """
-    after_markers = _identity_markers(post)
-    before_markers = _identity_markers(pre)
+    after_markers = _identity_markers(post, path)
+    before_markers = _identity_markers(pre, path)
     if set(after_markers) == {''} or set(before_markers) == {''}:
         added = _markers(post) - _markers(pre)
         return {'': added} if added else {}

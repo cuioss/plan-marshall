@@ -457,8 +457,8 @@ _COMMENT_BASE_FIELDS = """
 #: ``PullRequestReviewComment`` adds the PLACEMENT fields: the review it belongs to,
 #: the commit it was originally made against, the commit it is attached to, and the
 #: comment it replies to (absent on a thread's opening comment). ``originalCommit``
-#: is the STABLE placement — see :func:`_inline_comment_placement` for why the
-#: mutable ``commit`` is a last resort.
+#: is the STABLE placement — see :func:`_inline_comment_placement`: the mutable
+#: ``commit`` is never read as a placement.
 _THREAD_COMMENT_NODE_FIELDS = (
     _COMMENT_BASE_FIELDS
     + """

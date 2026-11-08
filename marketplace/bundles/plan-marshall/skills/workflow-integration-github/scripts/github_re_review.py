@@ -148,7 +148,9 @@ in-progress state while a review runs. That in-progress summary names the head S
 the end of the range under review, so before the gate it was eligible, verified the
 head, and ended the wait as ``head_sha_verified: true`` on a review still running.
 :meth:`_ReReviewStrategy._match_bot_comment` therefore admits a comment of such a
-bot only when its body carries one of the declared literals. The gate runs after the
+bot only when its body carries one of the declared literals, read through the
+production parser: a coverage-marker literal inside a closed fence (a quote) or
+after an unterminated fence (unreadable) is not admitted. The gate runs after the
 refusal stack and the acknowledgment test, so a marker-less refusal is still recorded;
 a marker-less comment neither of them classified is skipped without a record. This
 is the gate the producer

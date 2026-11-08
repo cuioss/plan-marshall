@@ -477,12 +477,18 @@ def _coverage_payload_at(lines: list[str], index: int) -> tuple[bool, dict | Non
         return None
     first = line[position + len(_REVIEW_COVERAGE_OPENING) :]
     payload = _balanced_json_object(first)
-    if payload is None:
+    if payload is None and '-->' not in first:
         joined = first
         for extra in lines[index + 1 : index + 1 + _COVERAGE_PAYLOAD_MAX_LINES]:
+            # A fence line ends the marker's own text: a payload-shaped object in a
+            # later fenced example is NOT this marker's payload.
+            if _fence_marker(extra) is not None:
+                break
             joined += '\n' + extra
             payload = _balanced_json_object(joined)
             if payload is not None:
+                break
+            if '-->' in extra:
                 break
     if payload is None:
         return True, None
@@ -521,6 +527,10 @@ def _coverage_payload(body: str) -> tuple[bool, dict | None]:
         if fence is not None:
             if marker is not None and marker[0] == fence[0] and marker[1] >= fence[1] and not marker[2].strip():
                 fence = None
+                # A marker seen inside THIS fence was a quote: the fence closed, so
+                # it must not license the unclosed-fence state for a LATER, unrelated
+                # fence that happens to stay open.
+                unclosed_marker_seen = False
             elif _coverage_opener_position(line) >= 0:
                 unclosed_marker_seen = True
             continue
