@@ -18,6 +18,7 @@ Verb surface::
     runbook_lane sonar-gate --state STATE [--count-status STATUS] [--open-count N]
                              [--open-keys K1,K2] [--operator-selected-keys K1,K2]
     runbook_lane sonar-facts --state STATE [--count-status STATUS] [--open-count N] [--rules R1,R2]
+                             [--gate-status STATUS]
     runbook_lane review-gate --pr-number N [--project-dir DIR] [--disposition TEXT ...]
 
 ``--spec`` must name a staged spec, i.e. a file below
@@ -2011,12 +2012,23 @@ def cmd_sonar_gate(args: argparse.Namespace) -> dict[str, Any]:
     if state == 'not_configured':
         # A read state supplied beside `not_configured` is a contradiction: a
         # project with no Sonar has no read to report. Refuse it rather than let a
-        # stale count ride an "allowed" verdict.
-        if count_status is not None or open_count is not None:
+        # stale count ride an "allowed" verdict. Every read flag is checked, not
+        # only the two count flags: `--open-keys` and `--operator-selected-keys`
+        # describe the same read, so dropping one silently would report
+        # `merge_allowed: true` for a project whose findings nobody looked at.
+        if (
+            count_status is not None
+            or open_count is not None
+            or getattr(args, 'open_keys', None) is not None
+            or getattr(args, 'operator_selected_keys', None) is not None
+        ):
             return {
                 'status': 'error',
                 'error': 'state_contradicts_read',
-                'message': 'a not_configured state carries no read; drop --count-status and --open-count',
+                'message': (
+                    'a not_configured state carries no read; drop --count-status, --open-count, '
+                    '--open-keys and --operator-selected-keys'
+                ),
             }
         return _sonar_gate_verdict(state, None, None, [], [])
     if count_status not in _SONAR_COUNT_STATUSES:

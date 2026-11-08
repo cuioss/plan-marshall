@@ -1488,7 +1488,7 @@ def _is_unsupplied(key: str, facts: dict[str, str]) -> bool:
        nothing was observed, which is never an answer, so there is no key at
        which it could legitimately stand in for a fact. This test runs BEFORE the
        per-key gate below precisely so the gate cannot exempt it: ``pr``,
-       ``merge_state`` and ``cleanup_owed`` are outside
+       ``merge_state``, ``cleanup_owed`` and ``sonar_open_new_issues`` are outside
        :data:`LANDING_SENTINEL_REJECTING_KEYS`, and a gated could-not-read value
        would drain there as a settled fact.
     3. **An ANSWERED sentinel** (:data:`LANDING_ANSWERED_SENTINELS`) at a key
@@ -3586,8 +3586,8 @@ def cmd_inbox_landing_check(args: Any) -> dict[str, Any]:
     reported missing only at :data:`LANDING_SENTINEL_REJECTING_KEYS`; a
     COULD-NOT-READ sentinel (``unknown``,
     :data:`LANDING_COULD_NOT_READ_SENTINELS`) asserts only that nothing was
-    observed and is reported missing at EVERY key, ``pr``, ``merge_state`` and
-    ``cleanup_owed`` included. So ``merge_state=n/a`` leaves a landing complete while
+    observed and is reported missing at EVERY key, ``pr``, ``merge_state``,
+    ``cleanup_owed`` and ``sonar_open_new_issues`` included. So ``merge_state=n/a`` leaves a landing complete while
     ``merge_state=unknown`` does not — the drain records the failed read as a gap
     instead of reconciling against it as a settled merge fact.
 

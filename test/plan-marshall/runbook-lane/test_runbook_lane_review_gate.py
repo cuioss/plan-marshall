@@ -23,6 +23,8 @@ verb answers "refused", or the fixture proves nothing about what changed.
 
 from __future__ import annotations
 
+from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import patch
 
@@ -357,3 +359,25 @@ def test_the_verb_is_reachable_through_its_cli_surface() -> None:
 
     assert result.success, result.stderr
     assert result.toon()['error'] == 'invalid_pr_number'
+
+
+def test_the_ci_read_is_the_abstraction_s_own_invocation(monkeypatch) -> None:
+    """The one seam D1 rests on: the read goes through `ci`, never a CLI of its own."""
+    seen: dict[str, Any] = {}
+
+    def fake_run(argv, **kwargs):
+        seen['argv'] = argv
+        seen['cwd'] = kwargs.get('cwd')
+        return SimpleNamespace(returncode=0, stdout='status: success\ncomplete: true\ncomments[0]:\n', stderr='')
+
+    monkeypatch.setattr('subprocess.run', fake_run)
+
+    lane._read_review_surfaces(7, Path('/tmp/project'))
+
+    argv = seen['argv']
+    assert 'python' in str(argv[0])
+    assert str(argv[1]).endswith('execute-script.py')
+    assert argv[2] == 'plan-marshall:tools-integration-ci:ci', 'the read must go through the CI abstraction'
+    assert argv[3:6] == ['pr', 'comments', '--pr-number']
+    assert argv[6] == '7'
+    assert seen['cwd'] == '/tmp/project', 'the read runs in the project it was handed'

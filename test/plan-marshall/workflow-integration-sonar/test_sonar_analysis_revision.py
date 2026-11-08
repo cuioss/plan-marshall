@@ -401,7 +401,7 @@ class TestBranchReadOutOfScope:
         assert result['count_status'] == 'confirmed'
         assert result['open_issue_count'] == 0
         consulted = [path for path, _ in client.calls]
-        assert _PR_LIST not in consulted, 'a plan-less read consults no revision endpoint'
+        assert consulted == [_HOTSPOTS], 'a plan-less read consults the hotspot leg and no revision endpoint'
 
 
 class TestHeadResolution:

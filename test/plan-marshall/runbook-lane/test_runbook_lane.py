@@ -2950,12 +2950,19 @@ def test_resolve_publishes_the_mailbox_read_command(tmp_path: Path) -> None:
 
 
 def test_the_mailbox_read_and_write_address_the_same_plan(tmp_path: Path) -> None:
-    """One address rule: the read names the slug and plan id the write delivers under."""
+    """Both commands name this plan's own address, taken from the resolve result.
+
+    The write half queues a landing under the epic; the read half addresses the
+    plan's mailbox. What this pins is that neither spells its own slug or plan id
+    — both are the resolved values, so a rename of the plan cannot leave one
+    command pointing at the previous one.
+    """
     spec = _seed_fixture(tmp_path, executable=_PYPROJECT_EXEC, required_bots='x')
     data = _run_resolve(spec, tmp_path)
 
     assert f'--slug {data["slug"]}' in data['inbox_read_command']
     assert f'--plan-id {data["plan"]}' in data['inbox_read_command']
+    assert f'--slug {data["slug"]}' in data['inbox_write_command']
     assert f'--sender-id rb-{data["plan"]}' in data['inbox_write_command']
 
 

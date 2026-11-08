@@ -199,7 +199,7 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar r
   --project {project_key} --pr {pr} [--ce-wait-timeout {secs}]
 ```
 
-**Output:** TOON carrying `count_status` (`confirmed` | `undecidable`), `open_issue_count` (`0`-or-more on `confirmed`, `null` on `undecidable` — never a false `0`), `analysis_revision` and `head_revision` (the compared pair; both blank on a non-PR read, where no comparison happens), `rules[]`, `files[]`, `issues[]` and `count_status_reason` on `undecidable`. An unconfigured provider returns the typed `unconfigured` status, distinct from a read that failed. The issue `message` is deliberately absent: the trusted structured fields are what a caller acts on.
+**Output:** TOON carrying `count_status` (`confirmed` | `undecidable`), `open_issue_count` (`0`-or-more on `confirmed` — the open ISSUES plus the security hotspots still to review — and `null` on `undecidable`, never a false `0`), `open_keys[]` (every open key, issue and hotspot together, as one enumerated set), `hotspots[]` (the open security hotspots, with their `securityCategory` rather than a rule), `analysis_revision` and `head_revision` (the compared pair; both blank on a non-PR read, where no comparison happens), `rules[]`, `files[]`, `issues[]` and `count_status_reason` on `undecidable`. An unconfigured provider returns the typed `unconfigured` status, distinct from a read that failed. The issue `message` is deliberately absent: the trusted structured fields are what a caller acts on.
 
 ### Scan-Summary Marker (sonar-scan-summary.jsonl)
 

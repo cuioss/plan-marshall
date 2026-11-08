@@ -182,7 +182,8 @@ BOT's and says the concern remains (`thread_concern_remains` — a bot's last wo
 a lane reply can itself contain the vocabulary, which is why a human's last comment is not tested);
 a disposition line names no evidence
 (`disposition_unparsable`); the read is undecidable, truncated, carries a review-body section the
-parser cannot read, or carries a record kind the verb does not know (`undecidable_read`); the provider
+parser cannot read, carries a record kind the verb does not know, or carries a review body with no
+attributable author (`undecidable_read`); the provider
 publishes no coverage signal for the read (`coverage_unavailable`). An undecidable read is a stop,
 never a pass. Otherwise it answers `merge_allowed: true` with `all_handled`, and reports
 `unresolved_review_threads`, `review_body_findings_total` and `review_body_findings_handled` for the
@@ -932,7 +933,7 @@ step.sonar-roundtrip.open_issue_rules={rules left open|none|unknown|n/a}
   `review_body_findings_total` and `review_body_findings_handled` facts, from the read taken on the
   merge head — never a number recalled from the review cycle, and never `n/a`. A landing that omits
   them is rejected by `inbox landing-check`, so a "all handled" claim has its numbers behind it.
-  2. **Sonar (the count is required):** `sonar_open_new_issues` is a required field. When `sonar` is
+- **Sonar (the count is required):** `sonar_open_new_issues` is a required field. When `sonar` is
   `configured`, render it with
   `python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane sonar-facts --state configured --count-status {confirmed|undecidable|unconfigured} [--open-count {n}] [--rules "{r1,r2}"] [--gate-status {ok|error|not_computed|unknown}]`
   and write its `fact_lines` verbatim; when it is `not_configured`, render with
