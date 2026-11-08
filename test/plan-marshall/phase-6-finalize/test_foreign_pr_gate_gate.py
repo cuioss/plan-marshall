@@ -33,29 +33,45 @@ def _listed(deliverables):
     return {'status': 'success', 'plan_id': 'p', 'deliverable_count': len(deliverables), 'deliverables': deliverables}
 
 
-def _deliverable(number, *, foreign, paths, intent='write-replace'):
+def _deliverable(number, *, foreign, paths, intent='write-replace', branch=None):
     """One deliverable whose every ``affected_files`` entry carries ``intent``.
 
     The default is a write intent, so a test that does not name an intent is
     asserting about a declared CHANGE — the population the gate exists to guard.
+    ``branch`` declares the foreign branch the way an outline does, through the
+    deliverable's ``**Metadata:**`` block.
     """
-    return {
+    deliverable = {
         'number': number,
         'foreign': foreign,
         'affected_files': [{'path': p, 'intent': intent, 'foreign': foreign} for p in paths],
     }
+    if branch is not None:
+        deliverable['metadata'] = {'foreign_branch': branch}
+    return deliverable
 
 
-def _run(deliverables, *, roots=None, landings=None, resolved_paths=None):
+def _run(deliverables, *, roots=None, landings=None, resolved_paths=None, branches=None, landing_branches=None):
     """Drive gate.check with fully in-memory seams.
 
     ``roots`` maps a declared path to its resolved repo root. ``landings`` maps a
-    repo root to a landing state string. ``resolved_paths``, when given, is a list
-    the root resolver appends every path it is asked about to — the observable
-    that a path did or did not enter the population.
+    repo root to a landing state, either a plain state string or a
+    ``{branch: state}`` map so a fixture can answer DIFFERENTLY per branch — the
+    red-at-HEAD shape, where the plan's own branch name reads ``pushed_no_pr``
+    and the branch the change is actually on reads ``merged``. ``branches`` maps a
+    repo root to the branch its checkout is on (absent or ``None`` for a detached
+    or unreadable checkout). ``resolved_paths``, when given, is a list the root
+    resolver appends every path it is asked about to — the observable that a path
+    did or did not enter the population. ``landing_branches``, when given, records
+    the branch each landing read was made for.
     """
     roots = roots or {}
     landings = landings or {}
+    # Every resolved root sits on a readable branch unless a test says otherwise:
+    # the checkout is one of the two branch sources, so a default of "no branch"
+    # would turn every unrelated fixture into a branch_unreadable error.
+    if branches is None:
+        branches = {root: 'fix/foreign-branch' for root in roots.values() if root}
 
     def loader(_plan_id):
         return _listed(deliverables)
@@ -65,8 +81,15 @@ def _run(deliverables, *, roots=None, landings=None, resolved_paths=None):
             resolved_paths.append(path)
         return roots.get(path)
 
-    def landing_resolver(root):
+    def branch_resolver(root):
+        return branches.get(root)
+
+    def landing_resolver(root, branch):
+        if landing_branches is not None:
+            landing_branches.setdefault(root, branch)
         state = landings.get(root)
+        if isinstance(state, dict):
+            state = state.get(branch)
         return {'landing_state': state} if state is not None else {'status': 'error', 'error': 'no state'}
 
     return gate.check(
@@ -74,6 +97,7 @@ def _run(deliverables, *, roots=None, landings=None, resolved_paths=None):
         deliverables_loader=loader,
         root_resolver=root_resolver,
         landing_resolver=landing_resolver,
+        branch_resolver=branch_resolver,
     )
 
 
@@ -331,8 +355,148 @@ def test_the_pre_walk_errors_carry_no_exclusion_fields():
     def loader(_plan_id):
         return {'status': 'error', 'error': 'document_not_found'}
 
-    result = gate.check('p', deliverables_loader=loader, root_resolver=lambda p: None, landing_resolver=lambda r: {})
+    result = gate.check('p', deliverables_loader=loader, root_resolver=lambda p: None, landing_resolver=lambda r, b: {})
 
     assert result['status'] == 'error'
     assert 'excluded_read_only_count' not in result
     assert 'excluded_read_only' not in result
+
+
+# --------------------------------------------------------------------------- #
+# The branch a foreign repository is classified on
+# --------------------------------------------------------------------------- #
+
+
+def test_a_foreign_change_on_a_branch_the_plan_id_does_not_name_is_clear():
+    """The red-at-HEAD fixture: the change is on a branch, and the plan id is not it.
+
+    The landing resolver answers PER BRANCH, and it answers ``pushed_no_pr`` for
+    the plan's own ``feature/p`` — the branch the gate assumed at HEAD. So the
+    verdict distinguishes "read the wrong branch" (blocked) from "read the
+    foreign branch" (clear) rather than passing on either.
+    """
+    deliverables = [_deliverable(1, foreign=True, paths=['/foreign/repo/a.py'], branch='docs/workflow-dsl')]
+    result = _run(
+        deliverables,
+        roots={'/foreign/repo/a.py': '/foreign/repo'},
+        branches={'/foreign/repo': 'docs/workflow-dsl'},
+        landings={'/foreign/repo': {'docs/workflow-dsl': 'merged', 'feature/p': 'pushed_no_pr'}},
+    )
+
+    assert result['status'] == 'clear'
+    assert result['repos'] == [
+        {
+            'repo_root': '/foreign/repo',
+            'branch': 'docs/workflow-dsl',
+            'landing_state': 'merged',
+            'deliverables': [1],
+        }
+    ]
+
+
+def test_the_same_change_without_a_pr_is_still_blocked():
+    """Control: the correct branch name does not weaken the block.
+
+    ``pushed_no_pr`` on the foreign branch is exactly the state the gate exists
+    to refuse, so reading the RIGHT branch must still block.
+    """
+    deliverables = [_deliverable(1, foreign=True, paths=['/foreign/repo/a.py'], branch='docs/workflow-dsl')]
+    result = _run(
+        deliverables,
+        roots={'/foreign/repo/a.py': '/foreign/repo'},
+        branches={'/foreign/repo': 'docs/workflow-dsl'},
+        landings={'/foreign/repo': {'docs/workflow-dsl': 'pushed_no_pr'}},
+    )
+
+    assert result['status'] == 'blocked'
+    assert result['blocking'] == [{'repo_root': '/foreign/repo', 'deliverables': [1]}]
+
+
+def test_a_declared_branch_that_disagrees_with_the_checkout_is_unresolved():
+    """Two sources that say different things are an error, never a preference."""
+    deliverables = [_deliverable(1, foreign=True, paths=['/foreign/repo/a.py'], branch='docs/workflow-dsl')]
+    result = _run(
+        deliverables,
+        roots={'/foreign/repo/a.py': '/foreign/repo'},
+        branches={'/foreign/repo': 'main'},
+        landings={'/foreign/repo': {'docs/workflow-dsl': 'merged', 'main': 'merged'}},
+    )
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'foreign_landing_indeterminate'
+    assert any(str(item['reason']).startswith('branch_disagreement') for item in result['unresolved']), result[
+        'unresolved'
+    ]
+
+
+def test_deliverables_declaring_different_branches_for_one_repo_disagree():
+    """One repository, two declared branches: the gate has no basis to pick one."""
+    deliverables = [
+        _deliverable(1, foreign=True, paths=['/foreign/repo/a.py'], branch='docs/one'),
+        _deliverable(2, foreign=True, paths=['/foreign/repo/b.py'], branch='docs/two'),
+    ]
+    result = _run(
+        deliverables,
+        roots={'/foreign/repo/a.py': '/foreign/repo', '/foreign/repo/b.py': '/foreign/repo'},
+        branches={'/foreign/repo': 'docs/one'},
+        landings={'/foreign/repo': {'docs/one': 'merged', 'docs/two': 'merged'}},
+    )
+
+    assert result['status'] == 'error'
+    assert any(str(item['reason']).startswith('branch_disagreement') for item in result['unresolved']), result[
+        'unresolved'
+    ]
+
+
+def test_an_unreadable_branch_is_a_named_unresolved_row():
+    """No declaration and a checkout that reports no branch: fail closed, named."""
+    deliverables = [_deliverable(1, foreign=True, paths=['/foreign/repo/a.py'])]
+    result = _run(
+        deliverables,
+        roots={'/foreign/repo/a.py': '/foreign/repo'},
+        branches={},
+        landings={'/foreign/repo': 'merged'},
+    )
+
+    assert result['status'] == 'error'
+    assert [str(item['reason']).split(':')[0] for item in result['unresolved']] == ['branch_unreadable']
+    assert result['unresolved'][0]['path'] == '/foreign/repo'
+    assert 'repos' in result and result['repos'] == []
+
+
+def test_the_checkout_branch_is_used_when_nothing_is_declared():
+    """No declaration: the branch the foreign checkout is on is the answer."""
+    branches_seen: dict[str, str] = {}
+    deliverables = [_deliverable(1, foreign=True, paths=['/foreign/repo/a.py'])]
+    result = _run(
+        deliverables,
+        roots={'/foreign/repo/a.py': '/foreign/repo'},
+        branches={'/foreign/repo': 'docs/workflow-dsl'},
+        landings={'/foreign/repo': {'docs/workflow-dsl': 'merged', 'feature/p': 'pushed_no_pr'}},
+        landing_branches=branches_seen,
+    )
+
+    assert result['status'] == 'clear'
+    assert result['repos'][0]['branch'] == 'docs/workflow-dsl'
+    assert branches_seen == {'/foreign/repo': 'docs/workflow-dsl'}
+
+
+def test_the_plan_id_branch_is_never_the_fallback():
+    """A repository whose checkout names a branch is read on THAT branch only.
+
+    ``feature/p`` is the plan's own name (the plan id in this suite is ``p``), and
+    the landing fixture answers it ``pushed_no_pr``. Any fall-back to it would
+    turn this clear into a block, so the verdict pins the absence of a fall-back.
+    """
+    branches_seen: dict[str, str] = {}
+    deliverables = [_deliverable(1, foreign=True, paths=['/foreign/repo/a.py'])]
+    result = _run(
+        deliverables,
+        roots={'/foreign/repo/a.py': '/foreign/repo'},
+        branches={'/foreign/repo': 'main'},
+        landings={'/foreign/repo': {'main': 'merged', 'feature/p': 'pushed_no_pr'}},
+        landing_branches=branches_seen,
+    )
+
+    assert result['status'] == 'clear'
+    assert branches_seen == {'/foreign/repo': 'main'}

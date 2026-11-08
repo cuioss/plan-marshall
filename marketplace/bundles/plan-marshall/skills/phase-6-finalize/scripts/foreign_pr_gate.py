@@ -31,13 +31,12 @@ Return shape (CLI emits TOON; programmatic callers consume the dict directly)::
 
     status: clear | blocked | error
     plan_id: <id>
-    plan_branch: feature/<id>                             # the branch every foreign repo is classified on
     foreign_deliverable_count: <int>
     excluded_read_only_count: <int>                       # count of excluded_read_only rows
     excluded_read_only[E]{deliverable,path}: ...          # one row per (deliverable, excluded path)
-    repos[N]{repo_root,landing_state,deliverables}: ...   # one row per foreign repo
+    repos[N]{repo_root,branch,landing_state,deliverables}: ...   # one row per foreign repo
     blocking[M]{repo_root,deliverables}: ...              # the pushed_no_pr rows (blocked only)
-    unresolved[K]{path,reason}: ...                       # foreign paths whose repo could not be resolved
+    unresolved[K]{path,reason}: ...                       # foreign paths/repos the gate could not evaluate
 
 ``excluded_read_only_count`` and ``excluded_read_only[]`` ride on every result
 the population walk reached, whatever its status, and are absent only from the
@@ -60,10 +59,26 @@ Outcome semantics:
 * ``error`` — the gate could not evaluate, or could not READ the evidence for at
   least one foreign deliverable: the solution outline could not be listed, the
   project root could not be resolved, a foreign repository root could not be
-  resolved, or its landing state came back unreadable / outside the declared
-  ``LANDING_STATES`` model. Fails CLOSED — a gate that cannot see the evidence
-  must not certify the population clean. The ``unresolved[]`` list names every
-  such item.
+  resolved, its BRANCH could not be established, or its landing state came back
+  unreadable / outside the declared ``LANDING_STATES`` model. Fails CLOSED — a
+  gate that cannot see the evidence must not certify the population clean. The
+  ``unresolved[]`` list names every such item.
+
+**Which branch a foreign repository is classified on.** Two sources, and the
+plan's own branch is neither of them:
+
+* the branch a deliverable declares for its foreign change — the optional
+  ``foreign_branch`` key of its ``**Metadata:**`` block; and
+* the branch the foreign checkout itself has checked out at ``repo_root``.
+
+A declaration wins over the checkout when the checkout reports no branch (a
+detached HEAD); when BOTH are readable and disagree, the repository is an
+``unresolved[]`` row rather than a guess, because the two say different things
+about where the change is. With neither readable — no declaration and no
+readable checkout branch — the repository is likewise ``unresolved[]``. There is
+deliberately no fall-back to ``feature/{plan_id}``: the change may live on any
+branch (a documentation branch, a plain ``main``), so assuming the plan's own
+name reads ``error`` for a merged foreign PR and blocks the archive for nothing.
 
 An ``error`` outcome stops the archive exactly as ``blocked`` does; the two
 differ only in why. The gate CLEARS only when it has POSITIVELY read a landing
@@ -166,9 +181,86 @@ def _resolve_repo_root(path: str) -> str | None:
     return root or None
 
 
-def plan_branch_for(plan_id: str) -> str:
-    """Return the branch a plan's changes are committed on: ``feature/{plan_id}``."""
-    return f'feature/{plan_id}'
+def _current_branch(repo_root: str) -> str | None:
+    """Return the branch the foreign checkout has checked out, or ``None``.
+
+    ``None`` is the honest answer for a detached HEAD (no branch at all) and for
+    any git failure. It is never collapsed into a branch name: the caller reports
+    an unreadable branch as an ``unresolved[]`` row rather than classifying a
+    branch nobody read.
+    """
+    completed = subprocess.run(
+        ['git', '-C', repo_root, 'symbolic-ref', '--short', '--quiet', 'HEAD'],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        return None
+    branch = completed.stdout.strip()
+    return branch or None
+
+
+def declared_branch_for(deliverable: dict) -> str | None:
+    """Return the branch a deliverable declares for its foreign change, or ``None``.
+
+    The declaration is optional: it is the ``foreign_branch`` key of the
+    deliverable's ``**Metadata:**`` block, which the solution-outline parser
+    emits verbatim as ``metadata``. A declaration is what makes the gate
+    independent of the foreign checkout's ambient state — the fact the plan
+    author knows and the checkout may have forgotten.
+    """
+    metadata = deliverable.get('metadata')
+    if not isinstance(metadata, dict):
+        return None
+    raw = metadata.get('foreign_branch')
+    if not isinstance(raw, str):
+        return None
+    value = raw.strip()
+    return value or None
+
+
+def _branch_for_repo(
+    repo_root: str,
+    deliverable_numbers: list[int],
+    declared_branches: dict[int, str],
+    read_branch,
+) -> tuple[str | None, str]:
+    """Return ``(branch, reason)`` for one foreign repository.
+
+    ``branch`` is the branch the repository is classified on, or ``None`` with a
+    named ``reason`` when the gate cannot establish one:
+
+    * the deliverables naming this repository declare DIFFERENT branches — the
+      gate has no basis to prefer one;
+    * a declaration and the checkout's own branch are both readable and differ;
+    * nothing is declared and the checkout reports no branch.
+
+    A declaration alone is enough (the checkout may sit on a detached HEAD), and
+    a readable checkout branch alone is enough. The plan's own branch is never a
+    candidate — see the module docstring.
+    """
+    declared = sorted({declared_branches[number] for number in deliverable_numbers if declared_branches.get(number)})
+    if len(declared) > 1:
+        return None, (
+            'branch_disagreement: the deliverables naming this repository declare different branches: '
+            + ', '.join(repr(branch) for branch in declared)
+        )
+    checkout = read_branch(repo_root)
+    if declared:
+        declared_branch = declared[0]
+        if checkout is not None and checkout != declared_branch:
+            return None, (
+                f'branch_disagreement: the deliverable declares {declared_branch!r} but the '
+                f'foreign checkout at {repo_root} is on {checkout!r}'
+            )
+        return declared_branch, ''
+    if checkout is None:
+        return None, (
+            'branch_unreadable: no branch is declared for this repository and its checkout reports no '
+            'branch (detached HEAD or unreadable git state)'
+        )
+    return checkout, ''
 
 
 def _resolve_landing_state(repo_root: str, branch: str) -> dict:
@@ -176,12 +268,12 @@ def _resolve_landing_state(repo_root: str, branch: str) -> dict:
 
     Routes the landing-state verb at the foreign repository's checkout via the
     router-level ``--project-dir`` flag, so the verb answers "did THIS
-    repository's change land?" for the foreign tree. ``branch`` is the PLAN's
-    branch, passed explicitly: the foreign checkout's ambient HEAD is whatever
-    that tree happens to have checked out (typically ``main`` after branch
-    cleanup), and classifying it reads ``pushed_no_pr`` for a change whose plan
-    branch already merged. Returns the parsed dict verbatim; the caller reads
-    ``landing_state``.
+    repository's change land?" for the foreign tree. ``branch`` is the branch
+    the gate established for that repository — a deliverable's declared branch,
+    or the branch the foreign checkout is on — and is passed explicitly rather
+    than left to the checkout's ambient HEAD, so the classification names the
+    branch it judged and the result can be read back against it. Returns the
+    parsed dict verbatim; the caller reads ``landing_state``.
     """
     executor = get_executor_path()
     cmd = [
@@ -220,13 +312,17 @@ class _ForeignPopulation(NamedTuple):
     """One walk of the listed deliverables' foreign entries, with both outcomes.
 
     ``by_deliverable`` is the population the gate iterates; ``excluded_read_only``
-    is every foreign path :func:`declares_change` kept out of it. Both come from
-    the SAME pass, so the exclusions reported on the result are exactly the ones
-    the population was narrowed by.
+    is every foreign path :func:`declares_change` kept out of it; and
+    ``declared_branches`` maps the number of each deliverable IN the population to
+    the branch it declares for its foreign change (absent when it declares none).
+    All three come from the SAME pass, so the exclusions reported on the result
+    are exactly the ones the population was narrowed by, and no branch is
+    attributed to a deliverable the population dropped.
     """
 
     by_deliverable: list[tuple[int, list[str]]]
     excluded_read_only: list[dict]
+    declared_branches: dict[int, str]
 
 
 def _partition_foreign_paths(deliverables: list[dict]) -> _ForeignPopulation:
@@ -252,6 +348,7 @@ def _partition_foreign_paths(deliverables: list[dict]) -> _ForeignPopulation:
     unit-testable against a fixture deliverable list.
     """
     walked: list[tuple[int, list[str], list[str]]] = []
+    declared_branches: dict[int, str] = {}
     for deliverable in deliverables:
         if not isinstance(deliverable, dict):
             continue
@@ -283,7 +380,14 @@ def _partition_foreign_paths(deliverables: list[dict]) -> _ForeignPopulation:
                 elif path not in read_seen:
                     read_seen.add(path)
                     read_paths.append(path)
-        walked.append((int(deliverable.get('number', 0)), paths, read_paths))
+        number = int(deliverable.get('number', 0))
+        branch = declared_branch_for(deliverable)
+        # Only a deliverable that PUT a path in the population may speak for the
+        # repository's branch: a deliverable the predicate excluded names no
+        # change, so its declaration says nothing about where the change is.
+        if paths and branch:
+            declared_branches[number] = branch
+        walked.append((number, paths, read_paths))
     # The exclusion test runs against the WHOLE population, not one
     # deliverable's slice of it, so a path gated through one deliverable is
     # never also reported as excluded through another.
@@ -295,7 +399,7 @@ def _partition_foreign_paths(deliverables: list[dict]) -> _ForeignPopulation:
         for path in read_paths
         if path not in population
     ]
-    return _ForeignPopulation(by_deliverable, excluded_read_only)
+    return _ForeignPopulation(by_deliverable, excluded_read_only, declared_branches)
 
 
 # ---------------------------------------------------------------------------
@@ -309,6 +413,7 @@ def check(
     deliverables_loader=None,
     root_resolver=None,
     landing_resolver=None,
+    branch_resolver=None,
 ) -> dict:
     """Evaluate the pre-archive foreign-PR landing gate for ``plan_id``.
 
@@ -320,8 +425,10 @@ def check(
         root_resolver: Optional test seam in place of :func:`_resolve_repo_root`.
             Signature: ``(path) -> str | None``.
         landing_resolver: Optional test seam in place of
-            :func:`_resolve_landing_state` bound to the plan's branch.
-            Signature: ``(repo_root) -> dict``.
+            :func:`_resolve_landing_state` bound to the branch established for
+            the repository. Signature: ``(repo_root, branch) -> dict``.
+        branch_resolver: Optional test seam in place of :func:`_current_branch`.
+            Signature: ``(repo_root) -> str | None``.
 
     Returns:
         The gate result dict (see the module docstring for the shape and the
@@ -329,8 +436,8 @@ def check(
     """
     load = deliverables_loader or _list_deliverables
     resolve_root = root_resolver or _resolve_repo_root
-    plan_branch = plan_branch_for(plan_id)
-    resolve_landing = landing_resolver or (lambda root: _resolve_landing_state(root, plan_branch))
+    read_branch = branch_resolver or _current_branch
+    resolve_landing = landing_resolver or _resolve_landing_state
 
     # The project root is the substrate the foreign classification rests on. When
     # it cannot be resolved, the advisory `foreign` column fails open (stamps
@@ -343,7 +450,6 @@ def check(
         return {
             'status': 'error',
             'plan_id': plan_id,
-            'plan_branch': plan_branch,
             'error': 'project_root_unresolvable',
             'message': f'Could not resolve the project root for foreign classification: {exc}',
         }
@@ -354,7 +460,6 @@ def check(
         return {
             'status': 'error',
             'plan_id': plan_id,
-            'plan_branch': plan_branch,
             'error': 'deliverables_unavailable',
             'message': str(message),
         }
@@ -372,7 +477,6 @@ def check(
         return {
             'status': 'clear',
             'plan_id': plan_id,
-            'plan_branch': plan_branch,
             'project_root': project_root,
             'foreign_deliverable_count': 0,
             **exclusions,
@@ -400,7 +504,15 @@ def check(
     blocking: list[dict] = []
     for root in root_order:
         deliverable_numbers = sorted(root_to_deliverables[root])
-        landing = resolve_landing(root)
+        # The branch this repository is judged on, established BEFORE the landing
+        # read: an unreadable or conflicting branch is not a landing verdict, so
+        # it is an `unresolved[]` row and the gate stays closed. There is no
+        # fall-back to the plan's own branch name.
+        branch, branch_reason = _branch_for_repo(root, deliverable_numbers, population.declared_branches, read_branch)
+        if branch is None:
+            unresolved.append({'path': root, 'reason': branch_reason})
+            continue
+        landing = resolve_landing(root, branch)
         state = landing.get('landing_state') if isinstance(landing, dict) else None
         if state not in LANDING_STATES:
             # Unreadable, absent, or outside the declared model. Fail closed: an
@@ -413,9 +525,9 @@ def check(
                 or (landing or {}).get('message')
                 or f'landing-state returned {state!r}, not one of {list(LANDING_STATES)}'
             )
-            unresolved.append({'path': root, 'reason': f'landing-state unresolved: {reason}'})
+            unresolved.append({'path': root, 'reason': f'landing-state unresolved for branch {branch!r}: {reason}'})
             continue
-        row = {'repo_root': root, 'landing_state': state, 'deliverables': deliverable_numbers}
+        row = {'repo_root': root, 'branch': branch, 'landing_state': state, 'deliverables': deliverable_numbers}
         repos.append(row)
         if state == BLOCKING_LANDING_STATE:
             blocking.append({'repo_root': root, 'deliverables': deliverable_numbers})
@@ -434,7 +546,6 @@ def check(
         'status': status,
         'plan_id': plan_id,
         'project_root': project_root,
-        'plan_branch': plan_branch,
         'foreign_deliverable_count': len(foreign),
         **exclusions,
         'repos': repos,

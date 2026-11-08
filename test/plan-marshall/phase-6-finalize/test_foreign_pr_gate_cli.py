@@ -46,16 +46,22 @@ def _deliverable(number, *, foreign, paths, intent='write-replace'):
     }
 
 
-def _run(deliverables, *, roots=None, landings=None, resolved_paths=None):
+def _run(deliverables, *, roots=None, landings=None, resolved_paths=None, branches=None):
     """Drive gate.check with fully in-memory seams.
 
     ``roots`` maps a declared path to its resolved repo root. ``landings`` maps a
-    repo root to a landing state string. ``resolved_paths``, when given, is a list
-    the root resolver appends every path it is asked about to — the observable
-    that a path did or did not enter the population.
+    repo root to a landing state, either a plain state string or a
+    ``{branch: state}`` map. ``branches`` maps a repo root to the branch its
+    checkout is on; the default is a readable branch, because the checkout is one
+    of the two branch sources and a default of "no branch" would make every
+    unrelated fixture a ``branch_unreadable`` error. ``resolved_paths``, when
+    given, is a list the root resolver appends every path it is asked about to —
+    the observable that a path did or did not enter the population.
     """
     roots = roots or {}
     landings = landings or {}
+    if branches is None:
+        branches = {root: 'fix/foreign-branch' for root in roots.values() if root}
 
     def loader(_plan_id):
         return _listed(deliverables)
@@ -65,8 +71,13 @@ def _run(deliverables, *, roots=None, landings=None, resolved_paths=None):
             resolved_paths.append(path)
         return roots.get(path)
 
-    def landing_resolver(root):
+    def branch_resolver(root):
+        return branches.get(root)
+
+    def landing_resolver(root, branch):
         state = landings.get(root)
+        if isinstance(state, dict):
+            state = state.get(branch)
         return {'landing_state': state} if state is not None else {'status': 'error', 'error': 'no state'}
 
     return gate.check(
@@ -74,6 +85,7 @@ def _run(deliverables, *, roots=None, landings=None, resolved_paths=None):
         deliverables_loader=loader,
         root_resolver=root_resolver,
         landing_resolver=landing_resolver,
+        branch_resolver=branch_resolver,
     )
 
 
@@ -102,7 +114,14 @@ def test_merged_foreign_deliverable_clears():
     deliverables = [_deliverable(1, foreign=True, paths=['/foreign/repo/a.py'])]
     result = _run(deliverables, roots={'/foreign/repo/a.py': '/foreign/repo'}, landings={'/foreign/repo': 'merged'})
     assert result['status'] == 'clear'
-    assert result['repos'] == [{'repo_root': '/foreign/repo', 'landing_state': 'merged', 'deliverables': [1]}]
+    assert result['repos'] == [
+        {
+            'repo_root': '/foreign/repo',
+            'branch': 'fix/foreign-branch',
+            'landing_state': 'merged',
+            'deliverables': [1],
+        }
+    ]
 
 
 def test_unpushed_foreign_deliverable_clears():
@@ -111,14 +130,21 @@ def test_unpushed_foreign_deliverable_clears():
     deliverables = [_deliverable(1, foreign=True, paths=['/foreign/repo/a.py'])]
     result = _run(deliverables, roots={'/foreign/repo/a.py': '/foreign/repo'}, landings={'/foreign/repo': 'unpushed'})
     assert result['status'] == 'clear'
-    assert result['repos'] == [{'repo_root': '/foreign/repo', 'landing_state': 'unpushed', 'deliverables': [1]}]
+    assert result['repos'] == [
+        {
+            'repo_root': '/foreign/repo',
+            'branch': 'fix/foreign-branch',
+            'landing_state': 'unpushed',
+            'deliverables': [1],
+        }
+    ]
 
 
 def test_unlistable_outline_is_error_and_fails_closed():
     def loader(_plan_id):
         return {'status': 'error', 'error': 'document_not_found'}
 
-    result = gate.check('p', deliverables_loader=loader, root_resolver=lambda p: None, landing_resolver=lambda r: {})
+    result = gate.check('p', deliverables_loader=loader, root_resolver=lambda p: None, landing_resolver=lambda r, b: {})
     assert result['status'] == 'error'
 
 
@@ -142,7 +168,7 @@ def test_unresolvable_project_root_fails_closed(monkeypatch):
         'p',
         deliverables_loader=lambda _p: _listed([_deliverable(1, foreign=True, paths=['/foreign/a.py'])]),
         root_resolver=lambda _path: '/foreign',
-        landing_resolver=lambda _root: {'landing_state': 'merged'},
+        landing_resolver=lambda _root, _branch: {'landing_state': 'merged'},
     )
     assert result['status'] == 'error'
     assert result['error'] == 'project_root_unresolvable'
@@ -323,7 +349,8 @@ def test_the_real_parser_and_column_feed_the_gate_the_narrowed_population(monkey
         'p',
         deliverables_loader=lambda _p: payload,
         root_resolver=root_resolver,
-        landing_resolver=lambda root: {'landing_state': landings[root]},
+        landing_resolver=lambda root, branch: {'landing_state': landings[root]},
+        branch_resolver=lambda _root: 'fix/foreign-branch',
     )
 
     assert result['status'] == 'blocked'
@@ -336,15 +363,15 @@ def test_the_real_parser_and_column_feed_the_gate_the_narrowed_population(monkey
 
 
 # --------------------------------------------------------------------------- #
-# The foreign repo is classified on the PLAN's branch, not its ambient HEAD
+# The foreign repo is classified on the FOREIGN branch, never the plan's name
 # --------------------------------------------------------------------------- #
 
 
-def test_landing_state_is_requested_for_the_plan_branch_not_the_checked_out_one(monkeypatch):
-    # After branch cleanup the foreign checkout sits on `main`; classifying that
-    # ambient HEAD read `pushed_no_pr` for a plan branch that had already merged
-    # (PLAN-PR-066, cuioss-organization #288). The constructed argv must name the
-    # plan's own branch explicitly.
+def test_landing_state_is_requested_for_the_branch_the_gate_established(monkeypatch):
+    # The constructed argv must name the branch explicitly. The gate never builds
+    # it from the plan id: a foreign change can live on any branch, and after
+    # branch cleanup the foreign checkout typically sits on `main`, which would
+    # read `pushed_no_pr` for a change that already merged.
     captured = {}
 
     class _Completed:
@@ -357,19 +384,37 @@ def test_landing_state_is_requested_for_the_plan_branch_not_the_checked_out_one(
         return _Completed()
 
     monkeypatch.setattr(gate.subprocess, 'run', fake_run)
-    result = gate._resolve_landing_state('/repos/foreign', gate.plan_branch_for('my-plan'))
+    result = gate._resolve_landing_state('/repos/foreign', 'docs/workflow-dsl')
 
     assert result['landing_state'] == 'merged'
     cmd = captured['cmd']
-    assert cmd[cmd.index('--branch') + 1] == 'feature/my-plan'
+    assert cmd[cmd.index('--branch') + 1] == 'docs/workflow-dsl'
     assert cmd[cmd.index('--project-dir') + 1] == '/repos/foreign'
 
 
-def test_the_gate_result_names_the_branch_it_classified():
+def test_the_gate_result_names_the_branch_each_repo_was_classified_on():
     result = gate.check(
         'my-plan',
-        deliverables_loader=lambda _p: _listed([]),
-        root_resolver=lambda _p: None,
-        landing_resolver=lambda _r: {'landing_state': 'merged'},
+        deliverables_loader=lambda _p: _listed(
+            [
+                {
+                    'number': 1,
+                    'foreign': True,
+                    'metadata': {'foreign_branch': 'docs/workflow-dsl'},
+                    'affected_files': [{'path': '/foreign/a.py', 'intent': 'write-replace', 'foreign': True}],
+                }
+            ]
+        ),
+        root_resolver=lambda _p: '/foreign',
+        landing_resolver=lambda _root, _branch: {'landing_state': 'merged'},
+        branch_resolver=lambda _root: 'docs/workflow-dsl',
     )
-    assert result['plan_branch'] == 'feature/my-plan'
+    assert result['repos'] == [
+        {
+            'repo_root': '/foreign',
+            'branch': 'docs/workflow-dsl',
+            'landing_state': 'merged',
+            'deliverables': [1],
+        }
+    ]
+    assert 'plan_branch' not in result
