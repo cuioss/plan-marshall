@@ -168,14 +168,28 @@ the body of every reviewer's review, whose `inline`, `duplicate`, `outside-diff`
 `followup` sections are parsed into individually identified findings. Each `--disposition` is one
 progress-file line, repeated once per finding.
 
+**The `--disposition` value is `{reviewer} {section} {id} — {sha|reason}`**, exactly the tail of the
+progress line, with no `finding: ` prefix: `reviewer` is the bot kind the registry reports for that
+reviewer's login (not the login a human reader sees), or a human reviewer's lower-cased login;
+`section` and `id` are the parser's own vocabulary (`nitpick`, `followup`, `outside-diff`, `duplicate`,
+`inline`; ids `{section}-{n}`), which the verb reports in its `undisposed` rows so the lane never
+guesses them.
+
 It answers `merge_allowed: false` with a named `reason` while any of these holds: an unresolved
 thread exists (`unresolved_review_threads`); a body finding carries no disposition naming a commit or
 a stated reason (`body_findings_undisposed`); a resolved thread's last reviewer comment says the
 concern remains (`thread_concern_remains`); a disposition line names no evidence
-(`disposition_unparsable`); the read is undecidable, truncated, or carries a review-body section the
-parser cannot read (`undecidable_read`). An undecidable read is a stop, never a pass. Otherwise it
-answers `merge_allowed: true` with `all_handled`, and reports `unresolved_review_threads`,
-`review_body_findings_total` and `review_body_findings_handled` for the landing.
+(`disposition_unparsable`); the read is undecidable, truncated, carries a review-body section the
+parser cannot read, or carries a record kind the verb does not know (`undecidable_read`); the provider
+publishes no coverage signal for the read (`coverage_unavailable`). An undecidable read is a stop,
+never a pass. Otherwise it answers `merge_allowed: true` with `all_handled`, and reports
+`unresolved_review_threads`, `review_body_findings_total` and `review_body_findings_handled` for the
+landing.
+
+**The read's coverage signal is GitHub's.** `ci pr comments` publishes `complete` for the GitHub
+provider and no coverage field for GitLab, so on a GitLab project the verb answers
+`coverage_unavailable` and the merge gate cannot be satisfied until that provider publishes one. That
+is a stated limitation of this gate, not a pass: the lane records the verdict and stops.
 
 ## 0. Input
 
@@ -706,8 +720,10 @@ whether to continue at the limit. Record every finding and its disposition.
      the read cannot show to be complete is never a number.
      Fix each finding in a pushed commit, or have the OPERATOR dismiss it (see the dismissal rule
      below). Re-read after every push until the count is `0` confirmed, or every remaining finding's
-     key is one the operator selected. Then decide the gate:
-     `python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane sonar-gate --state configured --count-status {confirmed|undecidable|unconfigured} --open-count {n} --open-keys {k1,k2} --operator-selected-keys {k1,k2}`.
+     key is one the operator selected. The gate's `--open-keys` is the read's own `open_keys` field —
+     it enumerates the issue keys AND the hotspot keys, so a hotspot is never lost by reading `issues`
+     alone. Then decide the gate:
+     `python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane sonar-gate --state configured --count-status {confirmed|undecidable|unconfigured} --open-count {n} --open-keys {open_keys} --operator-selected-keys {k1,k2}`.
    - **A dismissal is the operator's act, never the lane's.** When a finding should not be fixed, ask
      the operator with the question tool, naming each finding key and what dismissing it would mean,
      and transmit a key only on the option the operator SELECTED. The progress file records the
@@ -717,10 +733,13 @@ whether to continue at the limit. Record every finding and its disposition.
      `python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar_rest transition --issue-key {key} --transition {falsepositive|wontfix}`.
      A dismissal the lane cannot transmit is a **blocker**, never a silent pass: record the failure
      and stop. The gate admits a key only through `--operator-selected-keys`; `--dismissed-keys` is
-     refused as `lane_dismissal_not_accepted`.
+     refused as `lane_dismissal_not_accepted`. A HOTSPOT key can be carried by `open_keys` but there is
+     no hotspot transition verb, so a hotspot is FIXED or reported as a blocker — never dismissed.
    - **A failing new-code quality gate is reported, never counted as a finding.** Read it with
      `python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar_rest gate-status --project {sonar_project_key} --pr {N}`
-     and pass its verdict to `sonar-facts` as `--gate-status`. A quality gate can fail on a new-code
+     and pass its verdict to `sonar-facts` as `--gate-status`, mapping the provider's answer to the
+     flag's vocabulary: `gate_status: OK` → `ok`, `ERROR` → `error`, `NONE` → `not_computed`, and a
+     failed call (the verb answers `status: error`) → `unknown`. A quality gate can fail on a new-code
      metric — coverage, duplication, maintainability — that is neither an open finding nor an
      unreviewed hotspot, so it is not a finding for this rule, and it does not block on its own; the
      landing reports it, so a failing gate is never silent.
@@ -743,8 +762,9 @@ whether to continue at the limit. Record every finding and its disposition.
    **A thread is resolved only after a reply that names a commit or a stated reason** — never to
    silence it: `ci pr thread-reply` first, `ci pr resolve-thread` second, in that order. Every
    finding — whether it arrived as a thread or only inside a review body — gets one disposition line
-   in the progress file, `finding: {reviewer} {section} {id} — {sha|reason}`, and the merge gate's
-   `review-gate` call (section 7) is handed those lines as its `--disposition` values.
+   in the progress file, `finding: {reviewer} {section} {id} — {sha|reason}`, and each line is handed
+   to the merge gate's `review-gate` call (section 7) as one `--disposition` value, with the
+   `finding: ` prefix dropped and `{reviewer}`/`{section}`/`{id}` exactly as the verb reports them.
 6. **After every push, re-trigger** a reviewer whose last review predates the head. Re-read the open
    Sonar findings after every push too, on the same condition as step 4.
 7. **Reviewer quota policy** ("review limit reached" or similar), for ANY required reviewer that
@@ -812,9 +832,10 @@ The reviewer quota policy (§ 6 step 7) applies only while no qualifying review 
 authorization never applies to a reviewer that is not quota-limited, and never to a PR without a
 qualifying review.
 
-**An unresolved review thread or an unhandled outside-diff finding on the merge head blocks the
-standing authorization.** A reviewer's thread that is still open, or an outside-diff finding the run
-neither fixed nor answered, means a finding is not handled, so the second condition fails however
+**An unresolved review thread or an unhandled review-body finding on the merge head blocks the
+standing authorization.** A reviewer's thread that is still open, or a finding from any review-body
+section — inline, duplicate, outside-diff, nitpick or follow-up — that the run neither fixed nor
+answered, means a finding is not handled, so the second condition fails however
 strong the review credit is.
 
 **Any question that bears on the merge** first re-reads the review surfaces — `ci pr comments`,
@@ -830,13 +851,12 @@ incomplete statement in such a question fails the run.
 **Read the delivered mailbox once more before the enqueue — the third read** (`{inbox_read_command}`).
 Every delivered item must already carry its disposition line; an item that has none **blocks the
 enqueue**, whatever else the gates say.
-
 **Immediately before enqueue,** fetch the base branch again. **If it moved:**
 `git -C {worktree} fetch origin {base_branch}`, then
 `git -C {worktree} merge origin/{base_branch} -m "merge: origin/{base_branch} into {branch}" -m "{commit_trailer}"`,
 so the merge commit it creates ends with the resolved `{commit_trailer}` line the Commit trailer rule
-requires. Run the build gate again, push, re-trigger the reviewers, re-read the Sonar issues, and
-repeat the reviewer quota policy (§ 6 step 7).
+requires. Run the build gate again, push, re-trigger the reviewers, re-read the Sonar findings, re-run
+the review gate, and repeat the reviewer quota policy (§ 6 step 7).
 
 **Before enqueue, re-check the authorization rule:** merge only when every condition above holds, or
 when the operator **selected** an option in a question-tool call that names the exact gap (which

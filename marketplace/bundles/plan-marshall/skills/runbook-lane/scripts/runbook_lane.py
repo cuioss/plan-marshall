@@ -2201,6 +2201,11 @@ _TRAILING_COUNT_RE = re.compile(r'\((?P<count>\d+)\)\s*$')
 #: ``gh`` invocation.
 _CI_NOTATION = 'plan-marshall:tools-integration-ci:ci'
 
+#: The record kinds the review-surface read publishes. A record of any OTHER kind
+#: is a surface this verb cannot read, so it stops the gate rather than being
+#: filtered away as "no findings".
+_RECORD_KINDS = ('inline', 'review_body', 'issue_comment')
+
 #: The reviewer-neutral evidence field of one disposition line, and the progress
 #: template's own separator.
 _DISPOSITION_SEPARATOR = '—'
@@ -2259,22 +2264,33 @@ def _count_section_findings(span: str, declared: int | None) -> int:
     return 1 if re.sub(r'<[^>]+>', ' ', span).strip() else 0
 
 
-def _body_findings(reviewer: str, body: str, bot_kind: str) -> tuple[list[dict[str, str]], str | None]:
+def _body_findings(
+    reviewer: str,
+    body: str,
+    bot_kind: str,
+    counters: dict[str, int] | None = None,
+) -> tuple[list[dict[str, str]], str | None]:
     """Parse one review body into its findings, or name the section it cannot read.
 
     Every recognised section contributes ``{section}-{n}`` findings under
-    ``reviewer``. An inline count the reviewer states only as its status line
-    (the registry's ``review_body_summary_patterns`` literal) is read as the
-    ``inline`` section when no inline section block is present — one declara-
-    tion, one reading.
+    ``reviewer``. ``counters`` carries the per-(reviewer, section) numbering
+    ACROSS this reviewer's bodies, so two review bodies do not both mint
+    ``nitpick-1``: a disposition naming ``nitpick-1`` then discharges exactly one
+    finding rather than one per body, which is what a stale finding riding a
+    fresh sha looks like.
+
+    An inline count the reviewer states only as its status line (the registry's
+    ``review_body_summary_patterns`` literal) is read as the ``inline`` section
+    when no inline section block is present — one declaration, one reading.
 
     A ``<summary>`` title that COUNTS a finding block but matches no declared
     label is the undecidable answer: the parser cannot tell what it contains, and
     reporting it as no findings would be the "cannot read means pass" failure
     this gate exists to close.
     """
+    counters = counters if counters is not None else {}
     matches = list(_SUMMARY_RE.finditer(body))
-    starts = [(index, match) for index, match in enumerate(matches)]
+    starts = list(enumerate(matches))
     findings: list[dict[str, str]] = []
     seen_inline = False
     span_end_of: dict[int, int] = {}
@@ -2299,18 +2315,43 @@ def _body_findings(reviewer: str, body: str, bot_kind: str) -> tuple[list[dict[s
         if section == 'inline':
             seen_inline = True
         count = _count_section_findings(body[match.end() : span_end_of[index]], declared)
-        findings.extend({'reviewer': reviewer, 'section': section, 'id': f'{section}-{n}'} for n in range(1, count + 1))
+        findings.extend(_numbered_findings(reviewer, section, count, counters))
 
     if not seen_inline:
-        findings.extend(_inline_status_findings(reviewer, body, bot_kind))
+        findings.extend(_inline_status_findings(reviewer, body, bot_kind, counters))
     return findings, None
 
 
-def _inline_status_findings(reviewer: str, body: str, bot_kind: str) -> list[dict[str, str]]:
+def _numbered_findings(
+    reviewer: str,
+    section: str,
+    count: int,
+    counters: dict[str, int],
+) -> list[dict[str, str]]:
+    """Mint ``count`` findings for one section, continuing this reviewer's numbering."""
+    rows = []
+    for _ in range(count):
+        counters[section] = counters.get(section, 0) + 1
+        rows.append({'reviewer': reviewer, 'section': section, 'id': f'{section}-{counters[section]}'})
+    return rows
+
+
+def _inline_status_findings(
+    reviewer: str,
+    body: str,
+    bot_kind: str,
+    counters: dict[str, int],
+) -> list[dict[str, str]]:
     """Read the reviewer's inline count off its declared status line, if any.
 
     The literal comes from the registry (``review_body_summary_patterns``), never
     from this module: the bot standard remains the one place the phrase lives.
+
+    The number is matched IMMEDIATELY after the literal, never as the first
+    digit run anywhere in the rest of the body: the CI read the lane uses is the display
+    path, which flattens a body to one line, so a "first digit in the tail" read
+    would turn any later ``(N)`` into a phantom inline count. Matching forward
+    from the literal is the same read on a flattened and on a structured body.
     """
     if not bot_kind:
         return []
@@ -2320,28 +2361,36 @@ def _inline_status_findings(reviewer: str, body: str, bot_kind: str) -> list[dic
         index = body.find(pattern)
         if index < 0:
             continue
-        tail = body[index + len(pattern) :].split('\n', 1)[0]
-        declared = re.search(r'\d+', tail)
+        declared = re.match(r'\s*(\d+)', body[index + len(pattern) :])
         if declared is None:
             continue
-        return [
-            {'reviewer': reviewer, 'section': 'inline', 'id': f'inline-{n}'}
-            for n in range(1, int(declared.group()) + 1)
-        ]
+        return _numbered_findings(reviewer, 'inline', int(declared.group(1)), counters)
     return []
 
 
-def _reviewer_of(comment: dict[str, Any]) -> str:
-    """Return the reviewer identity a comment is attributed to (``''`` for a human).
-
-    A registered bot resolves to its ``bot_kind``, so the disposition ledger names
-    the reviewer the same way the reviewer's own standard does. Anything the
-    registry does not know is a human, and a human's review body is not this
-    gate's finding source.
-    """
+def _bot_of(comment: dict[str, Any]) -> str:
+    """Return the registered bot a comment is attributed to (``''`` for anyone else)."""
     import bot_registry
 
     return bot_registry.bot_kind_for_login(comment.get('author'))
+
+
+def _reviewer_of(comment: dict[str, Any]) -> str:
+    """Return the reviewer identity a comment is attributed to (``''`` when nameless).
+
+    A registered bot resolves to its ``bot_kind``, so the disposition ledger names
+    the reviewer the same way the reviewer's own standard does. Anyone else is a
+    HUMAN reviewer, and is named by its login: the gate covers every reviewer's
+    review body, not only the registered bots' — a human's sectioned review is a
+    finding source like any other, and silently dropping it would be the pass this
+    verb exists to remove.
+    """
+    import bot_registry
+
+    kind = bot_registry.bot_kind_for_login(comment.get('author'))
+    if kind:
+        return kind
+    return str(comment.get('author') or '').strip().lower()
 
 
 def _threads(comments: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
@@ -2367,7 +2416,7 @@ def _thread_concern_remains(thread: list[dict[str, Any]]) -> bool:
     over the marker vocabulary rather than over who spoke last.
     """
     last = thread[-1]
-    if not _reviewer_of(last):
+    if not _bot_of(last):
         return False
     body = str(last.get('body') or '').lower()
     return any(marker in body for marker in _CONCERN_REMAINS_MARKERS)
@@ -2425,16 +2474,16 @@ def _read_review_surfaces(pr_number: int, project_dir: Path) -> dict[str, Any]:
     from file_ops import get_executor_path
     from toon_parser import parse_toon
 
-    argv = [
-        sys.executable,
-        str(get_executor_path()),
-        _CI_NOTATION,
-        'pr',
-        'comments',
-        '--pr-number',
-        str(pr_number),
-    ]
     try:
+        argv = [
+            sys.executable,
+            str(get_executor_path()),
+            _CI_NOTATION,
+            'pr',
+            'comments',
+            '--pr-number',
+            str(pr_number),
+        ]
         completed = subprocess.run(
             argv,
             capture_output=True,
@@ -2444,6 +2493,9 @@ def _read_review_surfaces(pr_number: int, project_dir: Path) -> dict[str, Any]:
             cwd=str(project_dir),
         )
     except (RuntimeError, OSError, subprocess.SubprocessError) as exc:
+        # ``get_executor_path`` raises RuntimeError when it cannot anchor the
+        # executor, and an unresolvable executor is a failed read like any other —
+        # never a traceback, which is the one shape the lane cannot classify.
         return {'status': 'error', 'error': f'the CI read could not run: {exc}'}
     if completed.returncode != 0:
         return {
@@ -2493,6 +2545,19 @@ def _review_gate_verdict(
             'reason': 'undecidable_read',
             'detail': str(read.get('error') or 'the review surface read failed'),
         }
+    if 'complete' not in read:
+        # A read that publishes no coverage signal cannot be shown whole. It is a
+        # separate reason from a truncation, because the remedy differs: nothing is
+        # wrong with the pull request, the PROVIDER does not report coverage (the
+        # GitLab read publishes none today), so the gate cannot decide the merge on
+        # it at all.
+        return {
+            **base,
+            'merge_allowed': False,
+            'reason': 'coverage_unavailable',
+            'provider': str(read.get('provider') or 'unknown'),
+            'detail': 'the provider reported no coverage signal for this read, so the surface cannot be shown whole',
+        }
     if read.get('complete') is not True:
         return {
             **base,
@@ -2502,17 +2567,35 @@ def _review_gate_verdict(
         }
 
     comments = [comment for comment in (read.get('comments') or []) if isinstance(comment, dict)]
+    unrecognised = sorted({str(comment.get('kind')) for comment in comments} - set(_RECORD_KINDS))
+    if unrecognised:
+        # A record shape this verb does not know is a surface it cannot read. The
+        # alternative — filtering to the shapes it knows and reporting the rest as
+        # no findings — is the "cannot read means pass" failure once more, and it is
+        # silent: a provider that renamed ``kind`` would drain as a clean merge.
+        return {
+            **base,
+            'merge_allowed': False,
+            'reason': 'undecidable_read',
+            'detail': f'unrecognised review-surface record kind(s): {", ".join(unrecognised)}',
+        }
     threads = _threads(comments)
     unresolved, remains = _review_thread_rows(threads)
 
     findings: list[dict[str, str]] = []
+    counters: dict[str, dict[str, int]] = {}
     for comment in comments:
         if comment.get('kind') != 'review_body':
             continue
         reviewer = _reviewer_of(comment)
         if not reviewer:
             continue
-        body_findings, undecidable = _body_findings(reviewer, str(comment.get('body') or ''), reviewer)
+        body_findings, undecidable = _body_findings(
+            reviewer,
+            str(comment.get('body') or ''),
+            _bot_of(comment),
+            counters.setdefault(reviewer, {}),
+        )
         if undecidable is not None:
             return {**base, 'merge_allowed': False, 'reason': 'undecidable_read', 'detail': undecidable}
         findings.extend(body_findings)
@@ -2835,8 +2918,7 @@ def main() -> int:
         '--gate-status',
         dest='gate_status',
         default=None,
-        choices=SONAR_GATE_STATUSES,
-        help='The new-code quality-gate status read at the merge head (reported, never a finding)',
+        help='The new-code quality-gate status read at the merge head: ok, error, not_computed or unknown',
     )
 
     review_parser = subparsers.add_parser(

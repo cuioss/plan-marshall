@@ -301,6 +301,15 @@ def test_the_merge_gate_never_offers_merging_on_recorded_evidence() -> None:
     assert 'recorded evidence' in section, '§ 7 does not forbid merging on the lane-recorded evidence'
 
 
+def test_the_merge_gate_names_the_review_gate_as_a_condition() -> None:
+    """The verb the review half decides on is a gate condition, not prose judgement."""
+    section = _section('## 7. Merge gate')
+
+    assert 'review-gate' in section
+    assert 'merge_allowed' in section
+    assert 'never overrides' in section, '§ 7 does not say the standing authorization cannot override a false'
+
+
 # =============================================================================
 # the CE-readiness budget — below the harness ceiling, so the read returns a state
 # =============================================================================

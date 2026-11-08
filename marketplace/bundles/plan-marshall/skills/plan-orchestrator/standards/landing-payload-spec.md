@@ -178,7 +178,8 @@ the two are separate vocabularies rather than one list: `merge_state=n/a` must s
 the allow-list to cover `merge_state` would reject the legitimate `n/a` alongside the failed read.
 
 The two classes therefore split by CONDITION, not by key. Routing a failed read to `n/a` is the
-false-completeness defect this split closes: `n/a` is exempt at `pr`, `merge_state` and `cleanup_owed`, so a merge state
+false-completeness defect this split closes: `n/a` is exempt at `pr`, `merge_state`, `cleanup_owed` and
+`sonar_open_new_issues`, so a merge state
 nobody managed to read would drain as a settled "no PR exists".
 
 `schema` needs no such rule for either class: any value other than

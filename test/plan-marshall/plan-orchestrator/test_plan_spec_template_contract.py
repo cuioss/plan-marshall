@@ -45,22 +45,26 @@ def _section(heading: str) -> str:
     return ' '.join(match.group('body').split())
 
 
-def test_the_deliverables_section_requires_the_sonar_open_issue_read() -> None:
-    """A Sonar project's spec must list the head's open-issue read in its Done-when."""
+def test_the_deliverables_section_requires_the_sonar_open_finding_read() -> None:
+    """A Sonar project's spec must list the head's open-finding read in its Done-when."""
     section = _section('## Deliverables')
 
     assert 'analyses its pull requests with Sonar' in section
     assert '`sonar: configured`' in section
-    assert 'open-issue read at the head' in section
+    assert 'open-finding read at the head' in section
     assert 'never `0`' in section, 'a failed read must not be written as a zero'
 
 
-def test_the_standing_constraints_section_states_how_a_dismissal_is_recorded() -> None:
+def test_the_standing_constraints_section_states_how_a_dismissal_is_obtained() -> None:
     section = _section('## Standing Constraints')
 
-    assert '`{issue-key}: {reason}`' in section, 'the record shape of a dismissal must be stated'
+    assert 'OPERATOR' in section, 'a dismissal is the operator decision, never the lane decision'
+    assert '`operator-selected: {issue-key}: {reason}`' in section, (
+        'the record shape of an operator selection must be stated'
+    )
     assert 'sonar_rest transition' in section, 'the plan-less transmission verb must be named'
     assert 'blocker' in section, 'a dismissal that cannot be transmitted must block'
+    assert '`sonar-gate --dismissed-keys` is refused' in section, 'the retired lane-dismissal surface must be named'
 
 
 def test_the_deliverables_section_requires_the_consumer_visible_set() -> None:
@@ -78,4 +82,4 @@ def test_the_template_asks_both_obligations_of_a_deliverable() -> None:
     deliverables = _section('## Deliverables')
 
     assert 'consumer-visible field and edge set' in deliverables
-    assert 'open-issue read at the head' in deliverables
+    assert 'open-finding read at the head' in deliverables

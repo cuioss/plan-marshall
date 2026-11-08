@@ -212,6 +212,11 @@ def test_a_not_configured_state_refuses_a_quality_gate_status() -> None:
     assert verdict['error'] == 'state_contradicts_read'
 
 
+def test_an_unknown_rules_fact_still_drains_complete() -> None:
+    """The RULES key stays optional, so its failed read is not a landing gap."""
+    assert check_landing_completeness(_landing(['step.sonar-roundtrip.open_issue_rules=unknown'])) == (True, [])
+
+
 def test_the_required_landing_key_set_names_the_review_and_sonar_numbers() -> None:
     assert LANDING_REQUIRED_KEYS == (
         'schema',

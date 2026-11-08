@@ -1446,9 +1446,11 @@ LANDING_COULD_NOT_READ_SENTINELS: frozenset[str] = frozenset({'unknown'})
 #: exactly the conflation the two-class split removes.
 #:
 #: The set is deliberately a SUBSET of :data:`LANDING_REQUIRED_KEYS`, and the
-#: asymmetry is the point: ``pr`` and ``merge_state`` stay allowed to be ``n/a``
-#: because "no PR exists" is a real end state the payload spec names, so an
-#: ANSWERED-degraded value there is an answer rather than a gap. ``cleanup_owed``
+#: asymmetry is the point: ``pr``, ``merge_state`` and ``cleanup_owed`` stay
+#: allowed to be ``n/a`` because "no PR exists" and "no cleanup step ran" are real
+#: end states the payload spec names, so an ANSWERED-degraded value there is an
+#: answer rather than a gap; ``sonar_open_new_issues`` joins them because a project
+#: that does not analyse with Sonar has no such number. ``cleanup_owed``
 #: stays outside for the same reason: a plan whose manifest carried no
 #: ``branch-cleanup`` step owes no cleanup it could record, so ``n/a`` there is
 #: an observed absence, not a producer that failed to read the fact. None of the
@@ -1575,12 +1577,14 @@ def check_landing_completeness(payload_body: str) -> tuple[bool, list[str]]:
 
       - An ANSWERED sentinel (``n/a``, per :data:`LANDING_ANSWERED_SENTINELS`) is
         rejected only at :data:`LANDING_SENTINEL_REJECTING_KEYS`. ``pr``,
-        ``merge_state`` and ``cleanup_owed`` stay allowed to be ``n/a``, because
-        "no PR exists" and "no cleanup step ran" are real end states the payload
+        ``merge_state``, ``cleanup_owed`` and ``sonar_open_new_issues`` stay
+        allowed to be ``n/a``, because "no PR exists", "no cleanup step ran" and
+        "this project does not analyse with Sonar" are real end states the payload
         spec names and the value there is an answer rather than a gap.
       - A COULD-NOT-READ sentinel (``unknown``, per
         :data:`LANDING_COULD_NOT_READ_SENTINELS`) is rejected at EVERY key, with
-        no allow-list — ``pr``, ``merge_state`` and ``cleanup_owed`` included. It asserts only that
+        no allow-list — ``pr``, ``merge_state``, ``cleanup_owed`` and
+        ``sonar_open_new_issues`` included. It asserts only that
         nothing was observed, so it is a failed read wherever it appears. This is
         why the fix was to SPLIT the vocabulary rather than to add ``merge_state``
         to the rejecting set: ``merge_state=n/a`` must stay an answer while

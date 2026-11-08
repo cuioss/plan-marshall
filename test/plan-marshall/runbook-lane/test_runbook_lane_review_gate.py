@@ -248,6 +248,68 @@ def test_a_disposition_that_does_not_name_its_evidence_is_refused() -> None:
     assert verdict['reason'] == 'disposition_unparsable'
 
 
+def test_an_unrecognised_record_kind_refuses_the_merge() -> None:
+    """A record shape the verb does not know is a surface it cannot read."""
+    read = _read()
+    read['comments'] = [{**_inline(), 'kind': 'thread_comment'}]
+
+    verdict = _verdict(read)
+
+    assert verdict['merge_allowed'] is False
+    assert verdict['reason'] == 'undecidable_read'
+    assert 'thread_comment' in verdict['detail']
+
+
+def test_a_read_without_a_coverage_signal_is_its_own_reason() -> None:
+    """A provider that publishes no coverage cannot be shown whole — not a truncation."""
+    read = _read(_review_body('**Actionable comments posted: 0**'))
+    del read['complete']
+    read['provider'] = 'gitlab'
+
+    verdict = _verdict(read)
+
+    assert verdict['merge_allowed'] is False
+    assert verdict['reason'] == 'coverage_unavailable'
+    assert verdict['provider'] == 'gitlab'
+
+
+def test_a_human_review_body_is_a_finding_source_too() -> None:
+    """The gate covers every reviewer's body, not only the registered bots'."""
+    read = _read(_review_body(_OUTSIDE_DIFF_BODY, author='octocat'))
+
+    verdict = _verdict(read)
+
+    assert verdict['merge_allowed'] is False
+    assert verdict['undisposed'][0]['reviewer'] == 'octocat'
+
+
+def test_two_review_bodies_do_not_share_finding_ids() -> None:
+    """One disposition must discharge one finding, not one per review body."""
+    read = _read(_review_body(_NITPICK_BODY), _review_body(_NITPICK_BODY))
+
+    verdict = _verdict(read)
+
+    assert verdict['review_body_findings_total'] == 6
+    assert [row['id'] for row in verdict['undisposed']] == [
+        'nitpick-1',
+        'nitpick-2',
+        'followup-1',
+        'nitpick-3',
+        'nitpick-4',
+        'followup-2',
+    ]
+
+
+def test_a_flattened_body_does_not_mint_a_phantom_inline_count() -> None:
+    """The CI read flattens a body to one line; a count is read off the literal only."""
+    flattened = '**Actionable comments posted:** <details><summary>src/a.py (3)</summary> rename the helper </details>'
+
+    verdict = _verdict(_read(_review_body(flattened)))
+
+    assert verdict['review_body_findings_total'] == 0
+    assert verdict['merge_allowed'] is True, verdict
+
+
 def test_a_clean_pull_request_admits_the_merge() -> None:
     verdict = _verdict(_read(_review_body('**Actionable comments posted: 0**\n\nLGTM\n')))
 
