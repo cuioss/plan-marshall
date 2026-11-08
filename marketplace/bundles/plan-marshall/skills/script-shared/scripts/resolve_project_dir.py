@@ -140,7 +140,7 @@ def resolve_carried_project_dir(resolved_project_dir: str, project_dir: str | No
     """Return the tree a routing process already resolved for this dispatch.
 
     The counterpart of :func:`resolve_project_dir`'s ``--plan-id`` branch, and the
-    reason that branch is never taken by a routed daemon child. The routing process
+    reason that branch is not taken when the carry is present. The routing process
     resolves the plan's tree, submits the build, and the daemon re-runs the same
     argv from THAT tree. Re-resolving ``--plan-id`` there is what fails in the
     finalize move-back window: ``integrate_into_main`` has already moved the plan
