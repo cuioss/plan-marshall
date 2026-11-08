@@ -190,12 +190,18 @@ Both selectors are passed on purpose: `--plan-id` resolves the plan's own workin
 
 ```toon
 status: success
+allowed: true
+reason: settle_band_step
+phase: 6-finalize
+step: pre-push-quality-gate
 commit_hash: abc123
-commit_message: "feat(http): add retry configuration"
 files_changed: 5
-artifacts_cleaned: 2
 pushed: true
+ledger_recorded: true
+ledger_deliverable_id: pre-push-quality-gate
 ```
+
+`ledger_recorded` is present only when the plan's `current_phase` is `6-finalize`; `ledger_error` rides beside it when the row could not be written. See Step 5.
 
 ## Scripts
 

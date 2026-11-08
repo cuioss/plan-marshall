@@ -935,8 +935,8 @@ def _phase_end_marker_refusal(plan_id: str, status: dict[str, Any]) -> dict[str,
             error = EXECUTE_COMMITS_UNRECORDED_ERROR
             message = (
                 f'{len(unrecorded)} of {len(branch_shas)} worktree-branch commit(s) since diverging from '
-                f'{base_branch} carry no kind=change ledger row. Every unrecorded commit is named below '
-                'with its own append invocation; a commit is owed its row by the writer that made it — '
+                f'{base_branch} carry no kind=change ledger row. Every unrecorded commit is named with '
+                'its own append invocation; a commit is owed its row by the writer that made it — '
                 'the phase-5-execute Step 10a settlement for a deliverable commit, the commit path itself '
                 f'for a finalize commit ({_REPLACE_PLACEHOLDERS}): {append_block}'
             )
