@@ -442,14 +442,19 @@ def test_a_decorated_unreadable_section_is_still_undecidable() -> None:
     assert 'unreadable review-body section' in verdict['detail']
 
 
-def test_a_counted_additional_comments_section_is_not_a_finding() -> None:
-    """The spec's HYPOTHESIS names it as a counted title that is NOT findings."""
-    body = '<details>\n<summary>🔇 Additional comments (2)</summary>\nverification notes\n</details>\n'
+def test_a_counted_additional_comments_section_counts_its_findings() -> None:
+    """A counted `Additional comments (N)` is counted, never declared away.
+
+    The #1940 capture does not carry the section, so it is not *shown* to be
+    boilerplate; counting it is the fail-closed read and leaves no false pass.
+    """
+    body = '<details>\n<summary>🔇 Additional comments (2)</summary>\nfirst\nsecond\n</details>\n'
 
     verdict = _verdict(_read(_review_body(body)))
 
-    assert verdict['merge_allowed'] is True, verdict
-    assert verdict['review_body_findings_total'] == 0
+    assert verdict['reason'] == 'body_findings_undisposed', verdict
+    assert verdict['review_body_findings_total'] == 2
+    assert [row['id'] for row in verdict['undisposed']] == ['additional-1', 'additional-2']
 
 
 @pytest.mark.parametrize(
@@ -457,14 +462,18 @@ def test_a_counted_additional_comments_section_is_not_a_finding() -> None:
     [
         '📒 Files selected for processing: 19',
         '🙈 Files ignored due to path filters (4)',
-        '📝 Review details',
         'ℹ️ Review info (2)',
         '⚙️ Run configuration: 3',
         '🔀 Commits (5)',
     ],
 )
 def test_a_counted_declared_non_finding_title_is_not_a_finding(title: str) -> None:
-    """Every declared non-finding label is exercised as a counted title, not as prose."""
+    """The declared non-finding labels stay non-findings when a count rides the title.
+
+    The titles are OBSERVED on #1940 (uncounted there); the counts on `Review info`,
+    `Run configuration` and `Commits` are CONSTRUCTED, to prove the label wins over
+    the count rather than the block becoming a finding or an undecidable read.
+    """
     body = f'<details>\n<summary>{title}</summary>\n* `a.py`\n</details>\n'
 
     verdict = _verdict(_read(_review_body(body)))

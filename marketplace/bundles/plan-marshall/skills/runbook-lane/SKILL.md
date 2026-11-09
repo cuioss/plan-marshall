@@ -181,17 +181,17 @@ Decides the merge gate's review condition (section 7) from the surfaces read on 
 through the CI abstraction (never `gh`): the unresolved review threads with their `path:line`, and
 the body of every reviewer's review, whose `inline`, `duplicate`, `outside-diff`, `nitpick` and
 `followup` sections are parsed into individually identified findings. A section contributes the
-count its title declares (`(N)` or `: N`); with none declared, its per-row `cr-comment` markers
-count, then its nested per-file blocks, then the block reads as one finding. A counted title that
-matches neither a section nor a declared non-finding label (a file list, a review-info block) is an
-undecidable read, never zero. Each `--disposition` is one progress-file line, repeated once per
-finding.
+count its title declares (`(N)` or `: N`); with none declared, it contributes the larger of its
+per-row `cr-comment` markers and its nested per-file block counts, and a block with neither reads as
+one finding. A counted title that matches neither a section nor a declared non-finding label (a file
+list, a review-info block) is an undecidable read, never zero. Each `--disposition` is one
+progress-file line, repeated once per finding.
 
 **The `--disposition` value is `{reviewer} {section} {id} — {sha|reason}`**, exactly the tail of the
 progress line, with no `finding: ` prefix: `reviewer` is the bot kind the registry reports for that
 reviewer's login (not the login a human reader sees), or a human reviewer's lower-cased login;
 `section` and `id` are the parser's own vocabulary (`nitpick`, `followup`, `outside-diff`, `duplicate`,
-`inline`; ids `{section}-{n}`), which the verb reports in its `undisposed` rows so the lane never
+`inline`, `additional`; ids `{section}-{n}`), which the verb reports in its `undisposed` rows so the lane never
 guesses them.
 
 It answers `merge_allowed: false` with a named `reason` while any of these holds: an unresolved
@@ -860,7 +860,7 @@ qualifying review.
 
 **An unresolved review thread or an unhandled review-body finding on the merge head blocks the
 standing authorization.** A reviewer's thread that is still open, or a finding from any review-body
-section — inline, duplicate, outside-diff, nitpick or follow-up — that the run neither fixed nor
+section — inline, duplicate, outside-diff, nitpick, follow-up or additional — that the run neither fixed nor
 answered, means a finding is not handled, so the second condition fails however
 strong the review credit is.
 

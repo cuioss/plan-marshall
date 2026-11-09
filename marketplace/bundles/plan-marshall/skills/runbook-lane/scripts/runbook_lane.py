@@ -2294,6 +2294,7 @@ _REVIEW_BODY_SECTIONS = (
     ('nitpicks', 'nitpick'),
     ('follow-ups', 'followup'),
     ('followups', 'followup'),
+    ('additional comments', 'additional'),
 )
 
 #: The ``<summary>`` titles a reviewer posts that COUNT their block while the block
@@ -2301,13 +2302,17 @@ _REVIEW_BODY_SECTIONS = (
 #: findings. Matched as a case-insensitive PREFIX of the normalised title, like the
 #: section table.
 #:
-#: Every entry is grounded: ``review info``, ``run configuration``, ``commits``,
-#: ``files selected for processing`` and ``additional comments`` are named by the
-#: spec's HYPOTHESIS as counted titles that are NOT findings, OBSERVED in the review
-#: body of ``cuioss/plan-marshall#1940`` (review ``PRR_kwDOQ3xasM8AAAABWsFY6g``);
-#: ``review details`` is the block the fixtures and the inline bodies render; ``files
-#: ignored due to path filters`` is the spec-named sibling of the observed file list.
-#: A counted title that is none of these is refused rather than declared away.
+#: Every entry is grounded: ``review info``, ``run configuration``, ``commits`` and
+#: ``files selected for processing`` are OBSERVED as titles in the review body of
+#: ``cuioss/plan-marshall#1940`` (review ``PRR_kwDOQ3xasM8AAAABWsFY6g``) — the file
+#: list is the one that carries a declared count there (``: 19``), and the other
+#: three carry none; ``review details`` is the block the fixtures and the inline
+#: bodies render; ``files ignored due to path filters`` is the spec-named sibling of
+#: the observed file list. A counted title that is none of these is refused rather
+#: than declared away — and ``Additional comments (N)`` is deliberately NOT here: the
+#: capture does not carry it, the spec names the shape, and a counted title that
+#: cannot be shown to be boilerplate is COUNTED as findings so a block is never a
+#: false pass.
 _NON_FINDING_SECTION_LABELS = (
     'files selected for processing',
     'files ignored due to path filters',
@@ -2315,7 +2320,6 @@ _NON_FINDING_SECTION_LABELS = (
     'review info',
     'run configuration',
     'commits',
-    'additional comments',
 )
 
 #: The markers that make a resolved thread's last BOT-authored comment an answer that
