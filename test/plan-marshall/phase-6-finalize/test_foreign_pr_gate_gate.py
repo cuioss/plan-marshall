@@ -430,6 +430,35 @@ def test_the_same_change_without_a_pr_is_still_blocked():
     assert result['blocking'] == [{'repo_root': '/foreign/repo', 'deliverables': [1]}]
 
 
+def test_a_settled_branch_never_reads_the_default_branch():
+    """A declaration the checkout agrees with settles the answer with no default read.
+
+    The default-branch read is a repository call (and, on the remote arm, a network
+    one), so it is made only when a decision needs it. A gate that read it
+    unconditionally would still pass every verdict assertion — this pins the
+    observation itself.
+    """
+    reads: list[str] = []
+
+    def default_resolver(root):
+        reads.append(root)
+        return 'main'
+
+    result = gate.check(
+        'p',
+        deliverables_loader=lambda _p: _listed(
+            [_deliverable(1, foreign=True, paths=['/foreign/repo/a.py'], branch='docs/x')]
+        ),
+        root_resolver=lambda _p: '/foreign/repo',
+        landing_resolver=lambda _root, _branch: {'landing_state': 'merged'},
+        branch_resolver=lambda _root: 'docs/x',
+        default_branch_resolver=default_resolver,
+    )
+
+    assert result['status'] == 'clear'
+    assert reads == []
+
+
 def test_a_declared_branch_that_disagrees_with_the_checkout_is_unresolved():
     """Two sources that say different things are an error, never a preference."""
     deliverables = [_deliverable(1, foreign=True, paths=['/foreign/repo/a.py'], branch='docs/workflow-dsl')]

@@ -192,9 +192,8 @@ def _default_branch(repo_root: str) -> str | None:
 
     Two reads, in order: the local remote-tracking symbolic ref
     ``refs/remotes/origin/HEAD`` (with ``origin/`` stripped), and — when that ref
-    is absent, which is the usual state of a fresh clone and of a foreign tree
-    that was never fetched — the remote's own answer to
-    ``git ls-remote --symref origin HEAD``.
+    is absent, which is the case for a tree that was never fetched — the remote's
+    own answer to ``git ls-remote --symref origin HEAD``.
 
     ``None`` is the honest answer for a tree that is not a checkout, has no
     ``origin`` remote, and cannot reach one. The caller fails closed on it rather
