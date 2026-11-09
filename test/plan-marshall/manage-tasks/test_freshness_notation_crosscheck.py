@@ -1119,11 +1119,29 @@ def test_the_executor_run_flag_registry_names_the_flags_after_the_payload() -> N
     the common five, the ``--project-dir`` / ``--plan-id`` pair, the routed
     ``--resolved-project-dir`` carry, and the tool-local ``--working-dir`` /
     ``--env``. ``--command-args`` is excluded because it is the marker the payload
-    is read FROM. Asserting the exact set keeps a build-tool flag (``-k``,
-    ``-Ppre-commit``) from being read as one — which would tell the operator to
-    move a flag the executor does not own — and keeps the set from silently
-    growing into a hole.
+    is read FROM, and argparse's own ``-h`` / ``--help`` pair is excluded because
+    it is declared by the parser, not by the subcommand.
+
+    The shared half is DERIVED from the parser declaration rather than compared
+    against a second literal copy, so a flag the shared subparser gains or loses
+    fails here instead of leaving the remedy quietly wrong.
     """
+    import argparse
+
+    import _build_cli
+
+    root = argparse.ArgumentParser()
+    run_parser = _build_cli.add_run_subparser(root.add_subparsers())
+    declared = {
+        # argparse publishes no public roster, so the parser's own actions are the
+        # only honest source for what it declares.
+        option
+        for action in run_parser._actions
+        for option in action.option_strings
+    }
+    shared = declared - {'--command-args', '-h', '--help'}
+
+    assert shared <= set(crosscheck._EXECUTOR_RUN_FLAGS), sorted(shared - set(crosscheck._EXECUTOR_RUN_FLAGS))
     assert crosscheck._EXECUTOR_RUN_FLAGS == {
         '--timeout': 1,
         '--mode': 1,
@@ -1152,6 +1170,24 @@ def test_a_gradle_submodule_multi_task_row_is_unreadable_not_whole_tree(monkeypa
         args=_args_for(':core:test :core:jacocoTestReport'),
         outcome=_outcome_for(120),
     )
+
+    assert crosscheck.parse_row_scope(row) is None
+
+    outcome = crosscheck.cross_check_candidates([row], '/nonexistent-project-dir', _required())
+
+    assert outcome['contributing'] == []
+    assert outcome['joint_reason'] == crosscheck.REASON_SCOPE_UNREADABLE_WHOLE_TREE
+
+
+def test_a_single_task_gradle_submodule_row_is_also_unreadable(monkeypatch) -> None:
+    """A lone ``:core:test`` names the same subproject, so it must not read whole-tree.
+
+    The project prefix lives on the FIRST task here, and reading the row as
+    goal-plus-no-scope would credit a whole-tree change a one-subproject run never
+    performed.
+    """
+    _stub_expected(monkeypatch, {_GRADLE})
+    row = _build_entry(notation=_GRADLE, args=_args_for(':core:test'), outcome=_outcome_for(120))
 
     assert crosscheck.parse_row_scope(row) is None
 

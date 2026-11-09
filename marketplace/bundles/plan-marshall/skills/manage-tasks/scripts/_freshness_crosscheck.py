@@ -444,11 +444,11 @@ _PYPROJECT_NOTATION = 'plan-marshall:build-pyproject:pyproject_build'
 #: exists to avoid.
 #:
 #: ⛔ A Gradle SUBMODULE row is the exception the dropping must not swallow: its
-#: discoverer prefixes every task with the subproject path
-#: (``:core:test :core:jacocoTestReport``), so those positionals name a real
-#: blast radius. Dropping them would read a one-subproject run as whole-tree — the
-#: false green this dimension exists to close — so :func:`parse_row_scope` reports
-#: a row carrying a ``:module:``-prefixed positional as unreadable instead.
+#: discoverer prefixes every task with the subproject path (``:core:test``,
+#: ``:core:test :core:jacocoTestReport``), so those tokens name a real blast
+#: radius. Dropping them would read a one-subproject run as whole-tree — the false
+#: green this dimension exists to close — so :func:`parse_row_scope` reports a row
+#: carrying any ``:module:``-prefixed token as unreadable instead.
 _GOAL_POSITIONAL_NOTATIONS: frozenset[str] = frozenset(
     {
         'plan-marshall:build-maven:maven',
@@ -834,14 +834,14 @@ def parse_row_scope(entry: dict[str, Any]) -> RowScope | None:
         # names. They narrow nothing, so they are dropped rather than read as a
         # module scope: ``run test`` is a whole-tree run, and only the tool's own
         # scope flag can narrow it. The one exception is a ``:module:``-prefixed
-        # positional — the Gradle submodule shape, whose discoverer embeds the
-        # module in EVERY task (``:core:test :core:jacocoTestReport``). Those
-        # tokens DO name a blast radius, and dropping them would assert whole-tree
-        # over a run that built one subproject. No other goal-positional tool
-        # emits that shape, and if one did the same reading is the safe one: the
-        # project paths are not recoverable here, so the row is unreadable rather
-        # than widened.
-        if any(token.startswith(':') for token in payload[1:]):
+        # token — the Gradle submodule shape, whose discoverer embeds the module
+        # in EVERY task (``:core:test``, ``:core:test :core:jacocoTestReport``).
+        # Those tokens DO name a blast radius, and dropping them would assert
+        # whole-tree over a run that built one subproject. No other
+        # goal-positional tool emits that shape, and if one did the same reading
+        # is the safe one: the project paths are not recoverable here, so the row
+        # is unreadable rather than widened.
+        if any(token.startswith(':') for token in payload):
             return None
         payload = payload[:1]
     elif notation != _PYPROJECT_NOTATION and len(payload) > 1:

@@ -1029,6 +1029,27 @@ def test_control_a_report_with_executed_tests_still_credits_the_run(tmp_path):
     assert guarded['status'] == 'success'
 
 
+def test_a_report_without_a_skipped_count_credits_nothing(tmp_path):
+    """An unstated skip count is not zero skips — the report must STATE both counts.
+
+    A ``TEST-*.xml`` that names ``tests`` but omits ``skipped`` (or carries a
+    non-integer there) cannot show that any test executed, and reading the absence
+    as zero would credit the run on a count the report never gave.
+    """
+    report_dir = tmp_path / 'target' / 'surefire-reports'
+    report_dir.mkdir(parents=True)
+    (report_dir / 'TEST-com.example.SampleTest.xml').write_text(
+        '<testsuite name="com.example.SampleTest" tests="3" failures="0" errors="0"/>\n',
+        encoding='utf-8',
+    )
+    result = _quiet_guard_result(tmp_path, 'maven-quiet-green-no-summary.log')
+
+    guarded = apply_zero_test_guard(result, 'test', project_dir=str(tmp_path))
+
+    assert guarded['status'] == 'indeterminate'
+    assert TEST_RUN_EXECUTED_NOTHING in guarded['message']
+
+
 def test_a_module_with_no_test_class_keeps_its_green(tmp_path):
     """Surefire matched no test class, so the green is truthful (Maven 3.9.16, Surefire 3.5.2).
 

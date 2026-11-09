@@ -431,8 +431,11 @@ def _report_executed_tests(report: Path) -> int:
     ``tests - skipped``, clamped at 0 for a report that claims more skips than
     tests.
 
-    A malformed or unreadable report is 0 rather than an error: this reader only
-    ever ADDS evidence, so an unreadable one must not manufacture any.
+    A report that states neither count is no evidence: an absent or unparseable
+    ``skipped`` is NEVER read as zero skips, because that would credit tests the
+    report does not say ran. A malformed or unreadable report is 0 rather than an
+    error: this reader only ever ADDS evidence, so an unreadable one must not
+    manufacture any.
 
     Args:
         report: One ``TEST-*.xml`` file.
@@ -446,16 +449,24 @@ def _report_executed_tests(report: Path) -> int:
         return 0
     collected = _report_attribute_as_int(root, 'tests')
     skipped = _report_attribute_as_int(root, 'skipped')
+    if collected is None or skipped is None:
+        return 0
     return max(collected - skipped, 0)
 
 
-def _report_attribute_as_int(root: ET.Element, name: str) -> int:
-    """Return the integer value of ``root``'s ``name`` attribute, or 0."""
+def _report_attribute_as_int(root: ET.Element, name: str) -> int | None:
+    """Return the integer value of ``root``'s ``name`` attribute, or ``None``.
+
+    ``None`` is the "the attribute is absent or unparseable" answer, never 0: the
+    two are different facts, and only a STATED count may credit a run.
+    """
     raw = root.get(name)
+    if raw is None:
+        return None
     try:
-        return int(raw) if raw is not None else 0
+        return int(raw)
     except (TypeError, ValueError):
-        return 0
+        return None
 
 
 def _run_start_time(log_file: str | None, duration_seconds: object) -> float | None:
