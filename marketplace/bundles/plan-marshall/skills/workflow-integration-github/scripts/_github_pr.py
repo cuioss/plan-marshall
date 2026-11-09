@@ -1580,21 +1580,25 @@ def _branch_tip_sha(branch: str) -> tuple[str | None, dict | None]:
     return None, None
 
 
-def _branch_pushed_state(branch: str) -> tuple[bool | None, dict | None]:
-    """Return ``(pushed, None)`` or ``(None, error_dict)`` for ``branch``.
+def _branch_pushed_state(rev: str) -> tuple[bool | None, dict | None]:
+    """Return ``(pushed, None)`` or ``(None, error_dict)`` for ``rev``.
 
-    ``git branch -r --contains <branch>`` lists the remote-tracking branches that
-    contain the ref's tip; ``rc == 0`` with non-empty output proves the commit is
+    ``git branch -r --contains <rev>`` lists the remote-tracking branches that
+    contain the rev's tip; ``rc == 0`` with non-empty output proves the commit is
     on a remote, ``rc == 0`` with empty output proves it is not. A NON-zero exit
     is neither proof — it is an UNREADABLE result, returned as ``(None, error)``
     so the caller can fail closed rather than silently reading a git failure as
     ``unpushed``, which would clear the archive gate on evidence nobody read.
+
+    The caller passes the resolved tip SHA, never the branch NAME: after branch
+    cleanup only ``refs/remotes/origin/{branch}`` may remain, and a bare short
+    name no longer rev-parses then, while the SHA always does.
     """
-    rc, out, err = github_ops.run_git(['branch', '-r', '--contains', branch])
+    rc, out, err = github_ops.run_git(['branch', '-r', '--contains', rev])
     if rc != 0:
         return None, make_error(
             'pr_landing_state',
-            f'Could not determine whether branch {branch!r} is on a remote',
+            f'Could not determine whether the commit {rev!r} is on a remote',
             err.strip(),
         )
     return bool(out.strip()), None
@@ -1624,8 +1628,8 @@ def cmd_pr_landing_state(args: argparse.Namespace) -> dict:
     branch exists in none of them, nothing unlanded can live under the name, so
     the PR listing alone decides: a MERGED PR reads ``merged`` — the state a
     merged change keeps after branch cleanup — an OPEN PR is an inconsistency
-    error (an open PR implies an existing ref), and no PR at all is an error
-    naming ``branch_absent``.
+    error (an open PR implies an existing ref), and no MERGED or OPEN PR is an
+    error naming ``branch_absent``.
 
     Routed through the CI router's ``--project-dir``, every git/gh subprocess runs
     in the named working tree, so the verb answers "did THIS repository's change
@@ -1727,13 +1731,13 @@ def cmd_pr_landing_state(args: argparse.Namespace) -> dict:
             }
         return make_error(
             'pr_landing_state',
-            f'branch_absent: branch {branch!r} exists in no local ref, no origin ref, and no PR head',
+            f'branch_absent: branch {branch!r} exists in no local ref, no origin ref, and no MERGED or OPEN PR head',
         )
 
     # Push state informs only the no-PR verdicts (pushed_no_pr vs unpushed). It is
     # gathered unconditionally, but its unreadability is fatal only when the
     # verdict actually rests on it — a tip-matching merged/open PR needs no git.
-    pushed_state, pushed_err = _branch_pushed_state(branch)
+    pushed_state, pushed_err = _branch_pushed_state(tip_sha)
     pushed_known = pushed_state is not None
     landing_state = derive_landing_state(tip_pr_states, bool(pushed_state))
     if landing_state in ('pushed_no_pr', 'unpushed') and not pushed_known:

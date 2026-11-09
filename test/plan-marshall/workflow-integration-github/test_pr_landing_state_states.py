@@ -303,6 +303,41 @@ def test_a_branch_gone_everywhere_reads_merged_from_the_merged_pr(monkeypatch):
     assert result['pr_count'] == 1
 
 
+def test_the_push_probe_uses_the_resolved_tip_not_the_branch_name(monkeypatch):
+    """With only ``origin/X`` left, a bare branch name no longer rev-parses.
+
+    ``git branch -r --contains X`` needs a rev, and after branch cleanup only the
+    remote-tracking ref remains, so the probe must ask about the tip the handler
+    already resolved. Left on the short name, the pushed/unpushed verdict becomes
+    an unreadable-evidence error in exactly the cleaned-up state this verb serves.
+    """
+    monkeypatch.setattr(github_ops, 'check_auth', lambda: (True, ''))
+    monkeypatch.setattr(github_ops, 'run_gh', lambda args, capture_json=False, timeout=60: (0, '[]', ''))
+
+    def fake_run_git(args, timeout=60):
+        if args[:2] == ['rev-parse', '--abbrev-ref']:
+            return 0, 'feature/x\n', ''
+        if args[:1] == ['rev-parse']:
+            if args[-1] == 'refs/remotes/origin/feature/x':
+                return 0, f'{_TIP_SHA}\n', ''
+            return 1, '', 'unknown revision'
+        if args[:1] == ['ls-remote']:
+            return 0, '', ''
+        if args[:3] == ['branch', '-r', '--contains']:
+            if args[3] == _TIP_SHA:
+                return 0, '  origin/feature/x\n', ''
+            return 129, '', 'malformed object name'
+        return 1, '', f'unexpected git args: {args}'
+
+    monkeypatch.setattr(github_ops, 'run_git', fake_run_git)
+
+    result = github_ops.cmd_pr_landing_state(argparse.Namespace(branch='feature/x'))
+
+    assert result['status'] == 'success'
+    assert result['landing_state'] == 'pushed_no_pr'
+    assert result['tip_sha'] == _TIP_SHA
+
+
 def test_stale_merged_pr_for_an_earlier_tip_is_not_merged(monkeypatch):
     # A merged PR whose head is an OLD tip on a reused branch name must not report
     # merged for the current tip's new, unlanded commits.
