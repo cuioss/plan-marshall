@@ -2,10 +2,10 @@
   "id": "PLAN-LB-124",
   "slug": "push-gate-and-maven-guard-truth-fixes",
   "workstream": "WS-01",
-  "status": "staged",
+  "status": "shipped",
   "lane": "runbook",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "plan_marshall_plan_id": "rb-lb-124-push-gate-and-maven-guard-truth-fixes",
+  "pr": "1938",
+  "landing": "landings/PLAN-LB-124.md",
   "seq": 127
 }

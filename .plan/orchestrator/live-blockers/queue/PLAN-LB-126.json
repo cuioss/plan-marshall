@@ -2,10 +2,10 @@
   "id": "PLAN-LB-126",
   "slug": "finalize-commit-rows-and-foreign-branch",
   "workstream": "WS-01",
-  "status": "staged",
+  "status": "shipped",
   "lane": "runbook",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "plan_marshall_plan_id": "rb-lb-126-finalize-commit-rows-and-foreign-branch",
+  "pr": "1942",
+  "landing": "landings/PLAN-LB-126.md",
   "seq": 126
 }

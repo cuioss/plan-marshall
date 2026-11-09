@@ -121,6 +121,7 @@ or the same script. D3 is settled first because its answer changes D1's text.
 - OBSERVED: the decision pass admits a command only when its tier is `orchestrator` and `exceeds_bash_ceiling` is true, the routing
   pass records the first orchestrator-tier module-tests command, qualifying or not, and a re-compose re-measures the recorded command —
   `marketplace/bundles/plan-marshall/skills/manage-execution-manifest/scripts/manage-execution-manifest.py` L1343-1362, L1517-1551.
+  - verdict: corroborated | checked_at: 323bc766c | by: live-blockers/analyze | rescoped: n/a | evidence: git diff 5cd8ccd92 323bc766c on manage-execution-manifest.py: the parent recorded the first orchestrator-tier module-tests command (if not recorded_this_pass); the merge gates it on qualifies (tier orchestrator and exceeds_bash_ceiling True), lines 1537-1541, 1572, 1577
 - OBSERVED: the predicate decides before the hand-back and subtracts only tasks held open with `verification_owed` —
   `_tasks_query.py` L613-631 (code re-read; the precondition is not settled).
 - OBSERVED: `type(value) is int` accepts any integer and `predicate_holds` needs `delta == 0`, so a negative delta reads as progress;

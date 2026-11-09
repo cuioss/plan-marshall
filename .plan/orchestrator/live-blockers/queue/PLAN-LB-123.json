@@ -2,10 +2,10 @@
   "id": "PLAN-LB-123",
   "slug": "execute-handback-and-manifest-gaps",
   "workstream": "WS-01",
-  "status": "running",
+  "status": "shipped",
   "lane": "runbook",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "plan_marshall_plan_id": "lb-123-execute-handback-and-manifest-gaps",
+  "pr": "1933",
+  "landing": "landings/PLAN-LB-123.md",
   "seq": 123
 }
