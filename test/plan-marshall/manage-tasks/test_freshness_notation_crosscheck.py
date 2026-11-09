@@ -13,6 +13,8 @@ import file_ops
 import pytest
 from _freshness_notation_crosscheck_fixtures import (
     _CURRENT_SHA,
+    _GRADLE,
+    _MAVEN,
     _NPM,
     _OTHER_SHA,
     _PYPROJECT,
@@ -29,6 +31,12 @@ from _freshness_notation_crosscheck_fixtures import (
     _write_ledger,
     _write_status,
     cmd_pre_commit_verify_freshness,
+)
+from _pre_commit_verify_freshness_fixtures import (
+    _py_footprint_requirement,
+    _run_gate_over_rows,
+    _same_sha_row,
+    _stub_verdict,
 )
 from _resolve_project_dir_fixtures import worktree_query_result
 
@@ -917,7 +925,6 @@ def test_a_canonical_outside_the_vocabulary_is_undetermined_not_refuted(
         ('run --command-args module-tests --projects mod-a,mod-b', ('module-tests', ('mod-a', 'mod-b'))),
         ('run --command-args module-tests -pl=mod-a', ('module-tests', ('mod-a',))),
         ('run --command-args verify plan-marshall -pl mod-a', ('verify', ('plan-marshall', 'mod-a'))),
-        ('run --command-args test --workspace=pkg-a', ('test', ('pkg-a',))),
         # The KNOWN non-narrowing companion maven emits beside ``-pl`` is ignored,
         # so the resolved module row stays scoped instead of unreadable.
         ('run --command-args package -pl consumer -am', ('package', ('consumer',))),
@@ -1278,3 +1285,155 @@ def test_a_broken_vocabulary_stays_visible_beside_an_unreadable_row(monkeypatch)
     assert outcome['scope_verdict'] == crosscheck.UNDETERMINED
     assert outcome['scope_reason'] == crosscheck.REASON_VOCABULARY_UNIMPORTABLE
     assert outcome['joint_reason'] is None, 'the broken-check token must stay the stated reason'
+
+
+# =============================================================================
+# Positional tokens are module scope only for the tool whose positionals are
+# modules
+# =============================================================================
+#
+# The npm, Maven and Gradle discoverers emit tool-native goals, tasks and script
+# names after the canonical — ``run test``, ``clean install``,
+# ``spotlessCheck check``. Reading those as a module scope turned a whole-tree
+# change into ``build_scope_narrow`` where it used to be an unmapped canonical,
+# an inability that passed. The reader therefore keys the positional reading on
+# the row's own ``notation``, the only field that says what its positionals mean.
+
+_GOAL_POSITIONAL_ROWS = [
+    (_NPM, 'run test', 'run'),
+    (_MAVEN, 'clean install', 'clean'),
+    (_GRADLE, 'spotlessCheck check', 'spotlessCheck'),
+    (_GRADLE, 'test jacocoTestReport', 'test'),
+]
+
+
+@pytest.mark.parametrize(('notation', 'command_args', 'canonical'), _GOAL_POSITIONAL_ROWS)
+def test_a_goal_positional_row_is_undetermined_rather_than_narrow(
+    monkeypatch, notation, command_args, canonical
+) -> None:
+    """A tool-native goal is not a module, so the row cannot narrow the change.
+
+    The goal-positional tools must not read as unreadable either: an unreadable
+    row refuses every whole-tree change, which is the same false red by another
+    route. The row is readable, names its canonical, and that canonical is
+    outside the vocabulary — an INABILITY that passes with its reason recorded.
+    """
+    _stub_expected(monkeypatch, {notation})
+
+    row = _build_entry(notation=notation, args=_args_for(command_args))
+    outcome = crosscheck.cross_check_candidates([row], '/nonexistent-project-dir', _required())
+
+    assert outcome['scope_verdict'] == crosscheck.UNDETERMINED, outcome
+    assert outcome['scope_reason'] == crosscheck.REASON_SCOPE_UNREADABLE
+    assert outcome['contributing'] == [0], outcome
+    assert outcome['joint_reason'] is None, outcome
+    assert outcome['row_scopes'] == [f'{canonical}: {crosscheck.ROW_CANONICAL_UNKNOWN}'], outcome
+
+
+def test_the_npm_goal_row_parses_to_its_canonical_with_no_scope() -> None:
+    """``run test`` is a GOAL and its task, not a canonical and a module."""
+    parsed = crosscheck.parse_row_scope(_build_entry(notation=_NPM, args=_args_for('run test')))
+
+    assert parsed is not None
+    assert (parsed.canonical, parsed.scope_tokens) == ('run', ())
+
+
+def test_parse_row_scope_reads_an_npm_workspace_row_as_scoped() -> None:
+    """npm's ``--workspace`` is its module selector, so it IS the row's scope."""
+    parsed = crosscheck.parse_row_scope(_build_entry(notation=_NPM, args='run --command-args test --workspace=pkg-a'))
+
+    assert parsed is not None
+    assert (parsed.canonical, parsed.scope_tokens) == ('test', ('pkg-a',))
+
+
+def test_two_positional_tokens_under_an_unknown_notation_are_unreadable() -> None:
+    """The reader cannot tell a module from a goal, so it refuses to guess."""
+    assert crosscheck.parse_row_scope(_build_entry(notation=None, args=_args_for('run test'))) is None
+    assert (
+        crosscheck.parse_row_scope(
+            _build_entry(notation='plan-marshall:build-unknown:tool', args=_args_for('run test'))
+        )
+        is None
+    )
+
+
+def test_an_npm_workspace_row_still_narrows_by_its_workspace_selector(monkeypatch) -> None:
+    """MATCHED CONTROL: the module flag still names the one module the row built.
+
+    Held fixed and varied only by what the change needs, exactly as the
+    pyproject pair above does for positional scope.
+    """
+    vocabulary, reason = crosscheck.load_analysis_vocabulary()
+    assert vocabulary is not None, reason
+    _stub_expected(monkeypatch, {_NPM})
+    row = _build_entry(notation=_NPM, args=_args_for('run test --workspace=pkg-a'), outcome=_outcome_for(120))
+    test_only = {vocabulary.test}
+
+    whole_tree = crosscheck.cross_check_candidates(
+        [row], '/nonexistent-project-dir', _required(analyses=test_only, whole_tree=True)
+    )
+    other_module = crosscheck.cross_check_candidates(
+        [row],
+        '/nonexistent-project-dir',
+        _required(analyses=test_only, whole_tree=False, modules={'pkg-b'}),
+    )
+    own_module = crosscheck.cross_check_candidates(
+        [row],
+        '/nonexistent-project-dir',
+        _required(analyses=test_only, whole_tree=False, modules={'pkg-a'}),
+    )
+
+    assert whole_tree['scope_verdict'] == crosscheck.NARROW, whole_tree
+    assert other_module['scope_verdict'] == crosscheck.NARROW, other_module
+    assert own_module['scope_verdict'] == crosscheck.UNDETERMINED, own_module
+    assert own_module['contributing'] == [0], own_module
+
+
+def test_a_maven_goal_row_with_a_module_flag_is_narrow(monkeypatch) -> None:
+    """``clean install -pl core-api -am`` built one module, whatever the goals say.
+
+    The module comes from the flag, so the dropped goals leave the refusal exactly
+    where it was for a Maven row that really was scoped.
+    """
+    vocabulary, reason = crosscheck.load_analysis_vocabulary()
+    assert vocabulary is not None, reason
+    _stub_expected(monkeypatch, {_MAVEN})
+    row = _build_entry(notation=_MAVEN, args=_args_for('clean install -pl core-api -am'), outcome=_outcome_for(120))
+
+    outcome = crosscheck.cross_check_candidates(
+        [row],
+        '/nonexistent-project-dir',
+        _required(analyses={vocabulary.test}, whole_tree=True),
+    )
+
+    assert outcome['scope_verdict'] == crosscheck.NARROW, outcome
+    assert outcome['contributing'] == []
+    assert outcome['row_scopes'] == ['clean core-api: ' + crosscheck.ROW_SCOPE_TOO_NARROW], outcome
+
+
+def test_a_whole_tree_npm_goal_row_passes_the_gate_with_the_inability_recorded(
+    plan_context, monkeypatch, tmp_path
+) -> None:
+    """Gate level: a bare npm ``run test`` row no longer refutes a whole-tree change.
+
+    Against the unfixed reader this ledger returned ``stale`` /
+    ``build_scope_narrow``. The goals are not scope, so the row is whole-tree,
+    its canonical is outside the vocabulary, and the inability passes with its
+    reason recorded on the decision record.
+    """
+    _stub_expected(monkeypatch, {_NPM})
+    _stub_verdict(monkeypatch, {'decision': 'build'})
+
+    result = _run_gate_over_rows(
+        plan_context,
+        monkeypatch,
+        tmp_path,
+        [_same_sha_row('run test', notation=_NPM)],
+        required=_py_footprint_requirement(whole_tree=True),
+        plan_id='scope-npm-goal-positional',
+    )
+
+    assert result['status'] == 'fresh', result
+    assert result['scope_cross_check'] == crosscheck.UNDETERMINED
+    assert result['scope_cross_check_reason'] == crosscheck.REASON_SCOPE_UNREADABLE
+    assert result['row_scopes'] == ['run: ' + crosscheck.ROW_CANONICAL_UNKNOWN]

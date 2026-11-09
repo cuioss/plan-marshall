@@ -208,6 +208,20 @@ unreadable**. Reading an unknown flag as "no scope" would assert whole-tree over
 run that might have been narrowed inside the lost quoting — the false-green
 direction — so it is an inability with its reason recorded instead.
 
+**A POSITIONAL token is module scope only for the tool whose positionals are
+modules.** The pyproject wrapper's canonical commands take ``<canonical>
+<module>``, so its positionals are scope. npm, Maven and Gradle do not: their
+discoverers emit the tool's own goals, tasks and script names (``run test``,
+``clean install``, ``spotlessCheck check``), and reading those as a module scope
+refutes a whole-tree change as ``build_scope_narrow`` when the row in fact ran
+whole-tree. Which reading applies is decided by the row's own ``notation`` — the
+one field that says what its positionals ARE — never by guessing a tool from its
+arguments (:data:`_GOAL_POSITIONAL_NOTATIONS` and
+:data:`_PYPROJECT_NOTATION`). A notation the reader does not know is read only
+when it carries a single positional (the canonical); with two or more it is an
+inability, because the reader cannot tell a module from a goal and either guess
+manufactures a coverage claim nobody measured.
+
 The claim the gate now makes, and why it is bounded
 ====================================================
 
@@ -402,6 +416,37 @@ _SCOPE_FLAGS: dict[str, int] = {
 #: it (or a positional module) still names the scope. With NO scope of any kind
 #: the row is unreadable instead — ``package -am`` alone selects nothing.
 _SCOPE_NEUTRAL_FLAGS: frozenset[str] = frozenset({'-am', '--also-make'})
+
+#: The one notation whose POSITIONAL payload tokens are module names: the
+#: pyproject wrapper's canonical commands take ``<canonical> <module>``, so every
+#: positional after the canonical is scope.
+_PYPROJECT_NOTATION = 'plan-marshall:build-pyproject:pyproject_build'
+
+#: Notations whose positional payload tokens are the tool's OWN goals, tasks or
+#: script names rather than module names. Each is emitted by a discoverer that
+#: records the tool-native shape:
+#:
+#: * ``plan-marshall:build-maven:maven`` — ``clean install``, ``test``, and
+#:   ``verify -pl X -am`` (:mod:`_maven_cmd_discover`);
+#: * ``plan-marshall:build-gradle:gradle`` — ``spotlessCheck check``,
+#:   ``test jacocoTestReport``, and the single tokens ``build`` / ``test``
+#:   (:mod:`_gradle_cmd_discover`);
+#: * ``plan-marshall:build-npm:npm`` — ``install``, ``run build``, ``run lint``,
+#:   ``run test`` (:mod:`_npm_cmd_discover`).
+#:
+#: For these, the first positional is still the canonical — the same reading
+#: ``_build_examined.examined_analyses`` takes — every remaining positional is
+#: dropped, and the scope is only what a known scope-bearing flag selects.
+#: Reading a goal as a module would refute every whole-tree change of a project
+#: built by one of these tools, which is the false red :func:`parse_row_scope`
+#: exists to avoid.
+_GOAL_POSITIONAL_NOTATIONS: frozenset[str] = frozenset(
+    {
+        'plan-marshall:build-maven:maven',
+        'plan-marshall:build-gradle:gradle',
+        'plan-marshall:build-npm:npm',
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -641,13 +686,26 @@ def parse_row_scope(entry: dict[str, Any]) -> RowScope | None:
 
     Reads the payload the row recorded — the ``command_args`` field when the
     executor wrote one, otherwise the tokens that follow ``--command-args`` in the
-    joined ``args`` — and takes its first non-flag as the canonical: the remaining
-    non-flag tokens are positional scope (the module / directory names other
-    build tools accept), and a KNOWN scope-bearing flag (:data:`_SCOPE_FLAGS`)
-    contributes its value to the scope too. In the joined fallback both the
-    space-separated (``--command-args verify``) and the joined
-    (``--command-args=verify``) spellings are accepted, because argparse accepts
-    both and the ledger stamps whichever the caller used.
+    joined ``args`` — and takes its first non-flag as the canonical. What the
+    REMAINING positional tokens mean is decided by the row's own ``notation``,
+    because that is the only field that says what its tool's positionals ARE:
+
+    * a pyproject row (:data:`_PYPROJECT_NOTATION`) keeps the ``<canonical>
+      <module>`` reading: its positionals are module names and are scope;
+    * an npm, Maven or Gradle row (:data:`_GOAL_POSITIONAL_NOTATIONS`) carries the
+      tool's own goals, tasks or script names, never module names: its remaining
+      positionals are dropped and contribute no scope, exactly as
+      ``_build_examined.examined_analyses`` reads only the first token;
+    * any other notation — absent or unknown — is read only when it carries ONE
+      positional token; two or more return ``None``, because the reader cannot
+      tell a module from a goal and either guess would manufacture a coverage
+      claim nobody measured.
+
+    A KNOWN scope-bearing flag (:data:`_SCOPE_FLAGS`) contributes its value to the
+    scope for every notation, since the flag is what selects the tool's modules.
+    In the joined fallback both the space-separated (``--command-args verify``) and
+    the joined (``--command-args=verify``) spellings are accepted, because argparse
+    accepts both and the ledger stamps whichever the caller used.
 
     ⛔ ``None`` means UNREADABLE and is never equivalent to a ``RowScope`` with an
     empty ``scope_tokens``. Empty tokens assert *whole-tree*, which is the widest
@@ -720,6 +778,15 @@ def parse_row_scope(entry: dict[str, Any]) -> RowScope | None:
             payload.append(token)
         index += 1
     if not payload:
+        return None
+    notation = entry.get('notation')
+    if isinstance(notation, str) and notation in _GOAL_POSITIONAL_NOTATIONS:
+        # The remaining positionals are the tool's own goals, tasks or script
+        # names. They narrow nothing, so they are dropped rather than read as a
+        # module scope: ``run test`` is a whole-tree run, and only the tool's own
+        # scope flag can narrow it.
+        payload = payload[:1]
+    elif notation != _PYPROJECT_NOTATION and len(payload) > 1:
         return None
     if saw_neutral and not scope and len(payload) == 1:
         # A neutral companion with NO scope of any kind (``package -am``) is not a
