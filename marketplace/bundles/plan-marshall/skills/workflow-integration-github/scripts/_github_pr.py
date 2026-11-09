@@ -1626,10 +1626,12 @@ def cmd_pr_landing_state(args: argparse.Namespace) -> dict:
     **A branch whose refs are gone is still readable.** The tip is resolved from
     the local ref, then from ``origin``, then from the remote directly. When the
     branch exists in none of them, nothing unlanded can live under the name, so
-    the PR listing alone decides: a MERGED PR reads ``merged`` — the state a
-    merged change keeps after branch cleanup — an OPEN PR is an inconsistency
-    error (an open PR implies an existing ref), and no MERGED or OPEN PR is an
-    error naming ``branch_absent``.
+    the same-repository PRs in the listing alone decide: a MERGED PR reads
+    ``merged`` — the state a merged change keeps after branch cleanup — an OPEN PR
+    is an inconsistency error (an open PR implies an existing ref), and no MERGED
+    or OPEN PR is an error naming ``branch_absent``. A cross-repository PR is
+    skipped there: ``gh pr list --head`` matches the head BRANCH NAME alone, so a
+    fork PR can carry the same name and says nothing about this repository.
 
     Routed through the CI router's ``--project-dir``, every git/gh subprocess runs
     in the named working tree, so the verb answers "did THIS repository's change
@@ -1665,7 +1667,7 @@ def cmd_pr_landing_state(args: argparse.Namespace) -> dict:
             '--limit',
             str(_PR_LIST_LIMIT),
             '--json',
-            'number,state,url,headRefName,headRefOid',
+            'number,state,url,headRefName,headRefOid,isCrossRepository',
         ]
     )
     if rc != 0:
@@ -1694,7 +1696,12 @@ def cmd_pr_landing_state(args: argparse.Namespace) -> dict:
         state = pr.get('state')
         if not isinstance(state, str) or not state.strip():
             return make_error('pr_landing_state', 'gh pr list returned a PR entry with no usable state', str(pr)[:100])
-        branch_pr_states.append(state)
+        # `--head` matches headRefName ALONE, so a fork PR can carry the same head
+        # name. With a tip to compare against, `headRefOid` settles that; with no
+        # tip (the branch exists nowhere) only a same-repository PR can speak to
+        # THIS repository's branch, so a cross-repository one is skipped.
+        if pr.get('isCrossRepository') is not True:
+            branch_pr_states.append(state)
         if tip_sha is not None and str(pr.get('headRefOid') or '') == tip_sha:
             tip_pr_states.append(state)
 

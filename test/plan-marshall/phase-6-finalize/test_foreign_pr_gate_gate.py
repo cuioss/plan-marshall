@@ -12,6 +12,8 @@ orchestration be driven without a live outline, a live foreign checkout, or a
 live CI provider.
 """
 
+import subprocess
+
 import pytest
 from _plan_parsing import extract_deliverables
 from toon_parser import parse_toon, serialize_toon
@@ -428,6 +430,57 @@ def test_the_same_change_without_a_pr_is_still_blocked():
 
     assert result['status'] == 'blocked'
     assert result['blocking'] == [{'repo_root': '/foreign/repo', 'deliverables': [1]}]
+
+
+def _fake_git_run(monkeypatch, answers):
+    """Answer ``gate.subprocess.run`` per argv marker; return the recorded calls."""
+    calls: list[list[str]] = []
+
+    def fake_run(argv, **kwargs):
+        calls.append(list(argv))
+        for marker, answer in answers.items():
+            if not any(marker in arg for arg in argv):
+                continue
+            if isinstance(answer, Exception):
+                raise answer
+            return subprocess.CompletedProcess(argv, answer[0], answer[1], answer[2])
+        raise AssertionError(f'unexpected argv: {argv}')
+
+    monkeypatch.setattr(gate.subprocess, 'run', fake_run)
+    return calls
+
+
+def test_the_default_branch_reader_prefers_the_local_symbolic_ref(monkeypatch):
+    calls = _fake_git_run(monkeypatch, {'refs/remotes/origin/HEAD': (0, 'origin/trunk\n', '')})
+
+    assert gate._default_branch('/repo') == 'trunk'
+    assert len(calls) == 1  # the remote was not asked
+
+
+def test_the_default_branch_reader_asks_the_remote_when_the_ref_is_absent(monkeypatch):
+    calls = _fake_git_run(
+        monkeypatch,
+        {
+            'refs/remotes/origin/HEAD': (1, '', ''),
+            'ls-remote': (0, 'ref: refs/heads/trunk\tHEAD\n' + '0' * 40 + '\tHEAD\n', ''),
+        },
+    )
+
+    assert gate._default_branch('/repo') == 'trunk'
+    assert any('ls-remote' in arg for call in calls for arg in call)
+
+
+def test_the_default_branch_reader_returns_none_when_the_remote_is_unreadable(monkeypatch):
+    _fake_git_run(monkeypatch, {'refs/remotes/origin/HEAD': (1, '', ''), 'ls-remote': (128, '', 'boom')})
+
+    assert gate._default_branch('/repo') is None
+
+
+def test_the_default_branch_reader_returns_none_when_a_read_times_out(monkeypatch):
+    timeout = subprocess.TimeoutExpired(cmd='git', timeout=60)
+    _fake_git_run(monkeypatch, {'refs/remotes/origin/HEAD': timeout, 'ls-remote': timeout})
+
+    assert gate._default_branch('/repo') is None
 
 
 def test_a_settled_branch_never_reads_the_default_branch():

@@ -97,13 +97,14 @@ def _documented_landing_states(text: str) -> set[str]:
     return set(_MEMBER_RE.findall(matched.group(1)))
 
 
-def _install_ref_scoped_primitives(monkeypatch, *, resolves, ls_remote_out, pr_states, head_oids=None):
+def _install_ref_scoped_primitives(monkeypatch, *, resolves, ls_remote_out, pr_states, head_oids=None, ls_remote_rc=0):
     """Monkeypatch a run whose branch refs are resolved one full ref at a time.
 
     ``resolves`` maps a full ref name to the tip it answers; a ref absent from the
     map does not resolve. ``ls_remote_out`` is the stdout of
-    ``git ls-remote --heads origin x``. ``pr_states`` becomes the ``gh pr list``
-    payload, each head defaulting to ``_TIP_SHA``.
+    ``git ls-remote --heads origin x`` and ``ls_remote_rc`` its exit code, so a
+    non-zero value is the unreadable-remote case. ``pr_states`` becomes the
+    ``gh pr list`` payload, each head defaulting to ``_TIP_SHA``.
     """
     monkeypatch.setattr(github_ops, 'check_auth', lambda: (True, ''))
     oids = head_oids if head_oids is not None else [_TIP_SHA] * len(pr_states)
@@ -129,13 +130,35 @@ def _install_ref_scoped_primitives(monkeypatch, *, resolves, ls_remote_out, pr_s
             sha = resolves.get(args[-1])
             return (0, f'{sha}\n', '') if sha else (1, '', 'unknown revision')
         if args[:1] == ['ls-remote']:
-            return 0, ls_remote_out, ''
+            return ls_remote_rc, ls_remote_out if ls_remote_rc == 0 else '', 'remote unreachable'
         if args[:3] == ['branch', '-r', '--contains']:
             return 0, '', ''
         return 1, '', f'unexpected git args: {args}'
 
     monkeypatch.setattr(github_ops, 'run_gh', fake_run_gh)
     monkeypatch.setattr(github_ops, 'run_git', fake_run_git)
+
+
+def test_an_unreadable_remote_is_an_error_not_a_branch_absent_verdict(monkeypatch):
+    # A git failure on the remote arm cannot be told from "no such branch", so it
+    # must stay an unresolved-tip error rather than becoming a classification.
+    _install_ref_scoped_primitives(monkeypatch, resolves={}, ls_remote_out='', pr_states=['MERGED'], ls_remote_rc=128)
+
+    result = github_ops.cmd_pr_landing_state(argparse.Namespace(branch='feature/x'))
+
+    assert result['status'] == 'error'
+    assert 'branch_absent' not in result['error']
+
+
+def test_an_open_pr_beside_a_merged_pr_with_no_branch_is_inconsistent(monkeypatch):
+    # The reused-name edge: an open PR implies a live ref the read could not find,
+    # so the inconsistency wins over the old merged PR.
+    _install_ref_scoped_primitives(monkeypatch, resolves={}, ls_remote_out='', pr_states=['MERGED', 'OPEN'])
+
+    result = github_ops.cmd_pr_landing_state(argparse.Namespace(branch='feature/x'))
+
+    assert result['status'] == 'error'
+    assert 'inconsistent' in result['error']
 
 
 def test_a_branch_gone_everywhere_without_a_pr_is_branch_absent(monkeypatch):

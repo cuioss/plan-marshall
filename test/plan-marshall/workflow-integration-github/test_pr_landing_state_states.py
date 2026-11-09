@@ -338,6 +338,36 @@ def test_the_push_probe_uses_the_resolved_tip_not_the_branch_name(monkeypatch):
     assert result['tip_sha'] == _TIP_SHA
 
 
+def test_a_cross_repository_pr_does_not_settle_a_branch_that_exists_nowhere(monkeypatch):
+    """`--head` matches the branch NAME alone, so a fork PR must not read as merged.
+
+    With no tip to compare against, a same-named PR from another repository says
+    nothing about this one; honouring it would clear the pre-archive gate on
+    evidence that does not concern this repository's change.
+    """
+    monkeypatch.setattr(github_ops, 'check_auth', lambda: (True, ''))
+
+    def fake_run_git(args, timeout=60):
+        if args[:1] == ['ls-remote']:
+            return 0, '', ''
+        return 1, '', 'unknown revision'
+
+    monkeypatch.setattr(github_ops, 'run_git', fake_run_git)
+
+    def fake_run_gh(args, capture_json=False, timeout=60):
+        payload = [
+            {'number': 1, 'state': 'MERGED', 'headRefOid': 'f' * 40, 'isCrossRepository': True},
+        ]
+        return 0, json.dumps(payload), ''
+
+    monkeypatch.setattr(github_ops, 'run_gh', fake_run_gh)
+
+    result = github_ops.cmd_pr_landing_state(argparse.Namespace(branch='feature/x'))
+
+    assert result['status'] == 'error'
+    assert 'branch_absent' in result['error']
+
+
 def test_stale_merged_pr_for_an_earlier_tip_is_not_merged(monkeypatch):
     # A merged PR whose head is an OLD tip on a reused branch name must not report
     # merged for the current tip's new, unlanded commits.
