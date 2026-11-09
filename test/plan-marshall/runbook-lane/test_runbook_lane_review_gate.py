@@ -10,8 +10,9 @@ from the surfaces the CI abstraction returns on the head:
 
 * an unresolved thread (``path:line``) refuses the merge;
 * a body finding with no disposition refuses it;
-* a resolved thread whose last reviewer comment says the concern remains refuses
-  it — resolution is not silence;
+* a resolved thread whose last BOT comment says the concern remains refuses it —
+  resolution is not silence, and a lane reply below the bot's restatement never
+  discharges it;
 * an unreadable or truncated read refuses it, because an unread read is not an
   empty one;
 * a pull request with none of these is allowed.
@@ -214,6 +215,47 @@ def test_a_resolved_thread_closed_with_an_acknowledgement_admits_the_merge() -> 
 
     assert verdict['merge_allowed'] is True, verdict
     assert verdict['unresolved_review_threads'] == 0
+
+
+def test_a_lane_reply_below_the_bot_s_restatement_does_not_discharge_the_concern() -> None:
+    """The last BOT word is the finding's: a human "done" below it changes nothing.
+
+    The shape the landing recorded on PLAN-LB-116: the bot restates the defect, the
+    lane closes the thread with an acknowledgement, and the concern sits one comment
+    above the last word. Reading ``thread[-1]`` let it through.
+    """
+    read = _read(
+        _inline(thread_id='T1', resolved=True, body='the guard coerces UNKNOWN', author='coderabbitai'),
+        _inline(thread_id='T1', resolved=True, body='fixed in abc1234', author='octocat'),
+        _inline(
+            thread_id='T1', resolved=True, body='This still applies: the guard is unchanged.', author='coderabbitai'
+        ),
+        _inline(thread_id='T1', resolved=True, body='done', author='octocat'),
+    )
+
+    verdict = _verdict(read)
+
+    assert verdict['merge_allowed'] is False
+    assert verdict['reason'] == 'thread_concern_remains'
+    assert verdict['threads'][0]['location'] == 'src/mod.py:42'
+
+
+def test_a_later_bot_acknowledgement_after_the_restatement_admits_the_merge() -> None:
+    """The bot's own later acknowledgement without a marker is the discharge."""
+    read = _read(
+        _inline(thread_id='T1', resolved=True, body='the guard coerces UNKNOWN', author='coderabbitai'),
+        _inline(thread_id='T1', resolved=True, body='fixed in abc1234', author='octocat'),
+        _inline(
+            thread_id='T1', resolved=True, body='This still applies: the guard is unchanged.', author='coderabbitai'
+        ),
+        _inline(thread_id='T1', resolved=True, body='done', author='octocat'),
+        _inline(thread_id='T1', resolved=True, body='Addressed in commit def5678.', author='coderabbitai'),
+    )
+
+    verdict = _verdict(read)
+
+    assert verdict['merge_allowed'] is True, verdict
+    assert verdict['reason'] == 'all_handled'
 
 
 def test_a_failed_read_refuses_the_merge() -> None:
@@ -439,9 +481,26 @@ def test_a_clean_pull_request_admits_the_merge() -> None:
         _read(
             _inline(thread_id='T1', resolved=True, body='still applies', author='coderabbitai'),
         ),
+        _read(
+            _inline(thread_id='T1', resolved=True, body='the guard coerces UNKNOWN', author='coderabbitai'),
+            _inline(thread_id='T1', resolved=True, body='fixed in abc1234', author='octocat'),
+            _inline(
+                thread_id='T1',
+                resolved=True,
+                body='This still applies: the guard is unchanged.',
+                author='coderabbitai',
+            ),
+            _inline(thread_id='T1', resolved=True, body='done', author='octocat'),
+        ),
         _read(status='error'),
     ],
-    ids=['body-finding', 'nitpicks-and-follow-ups', 'concern-remains', 'undecidable'],
+    ids=[
+        'body-finding',
+        'nitpicks-and-follow-ups',
+        'concern-remains',
+        'concern-remains-after-lane-reply',
+        'undecidable',
+    ],
 )
 def test_each_refusing_case_is_red_against_the_unresolved_threads_only_stub(read) -> None:
     """The pre-fix policy allows every one of these; the verb refuses them."""

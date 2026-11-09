@@ -192,9 +192,10 @@ guesses them.
 
 It answers `merge_allowed: false` with a named `reason` while any of these holds: an unresolved
 thread exists (`unresolved_review_threads`); a body finding carries no disposition naming a commit or
-a stated reason (`body_findings_undisposed`); a resolved thread whose last comment is the reviewer
-BOT's and says the concern remains (`thread_concern_remains` — a bot's last word is the finding's, and
-a lane reply can itself contain the vocabulary, which is why a human's last comment is not tested);
+a stated reason (`body_findings_undisposed`); a resolved thread whose last BOT
+comment says the concern remains (`thread_concern_remains` — the bot's last word is
+the finding's, so a lane or human reply below it never discharges the concern, and
+a lane reply can itself contain the vocabulary);
 a disposition line names no evidence
 (`disposition_unparsable`); the read is undecidable, truncated, carries a review-body section the
 parser cannot read, carries a record kind the verb does not know, or carries a review body with no
@@ -844,7 +845,7 @@ Merge only when all of these hold:
 - The review surfaces of the current head admit the merge: `review-gate` reports `merge_allowed:
   true` on a read taken after the last push — no unresolved review thread, every review-body finding
   carrying a disposition that names a commit or a stated reason, and no resolved thread whose last
-  comment is the reviewer bot's and says the concern remains. Its `--disposition` values are this
+  BOT comment says the concern remains. Its `--disposition` values are this
   run's progress-file `finding:` lines. An undecidable or truncated read is a blocker and is retried.
   The standing review authorization never overrides a `review-gate` `false`.
 

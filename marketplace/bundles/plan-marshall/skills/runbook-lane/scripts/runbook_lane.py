@@ -2615,16 +2615,17 @@ def _threads(comments: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
 
 
 def _thread_concern_remains(thread: list[dict[str, Any]]) -> bool:
-    """Whether a RESOLVED thread's last reviewer comment says the concern remains.
+    """Whether a RESOLVED thread's last BOT comment says the concern remains.
 
-    A thread the lane answered and closed ends with the lane's reply, so nothing
-    is tested. When the last word is a reviewer's, it counts as "the concern
-    remains" only when it carries one of the declared markers: an acknowledgement
-    ("Addressed in commit …") leaves the thread handled, which is why the test is
-    over the marker vocabulary rather than over who spoke last.
+    The last BOT-authored comment is the finding's last word: a reviewer that
+    restates the defect and is then answered by the lane (or a human) still has an
+    open concern, and a lane reply can itself carry the marker vocabulary, so the
+    comments after the bot's are never tested. A later bot comment WITHOUT a marker
+    (the bot's own acknowledgement, "Addressed in commit …") is the discharge; a
+    thread with no bot comment at all carries no reviewer concern.
     """
-    last = thread[-1]
-    if not _bot_of(last):
+    last = next((comment for comment in reversed(thread) if _bot_of(comment)), None)
+    if last is None:
         return False
     body = str(last.get('body') or '').lower()
     return any(marker in body for marker in _CONCERN_REMAINS_MARKERS)
