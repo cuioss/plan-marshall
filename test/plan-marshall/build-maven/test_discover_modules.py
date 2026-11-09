@@ -20,8 +20,9 @@ Contract requirements tested:
 - coordinates: parsed from dependency:tree header
 """
 
-import tempfile
 from pathlib import Path
+
+import system_temp
 
 # discover_descriptors lives in script-shared/scripts/extension/, which conftest
 # already places on sys.path at import time (it scans immediate scripts/ subdirectories).
@@ -822,7 +823,7 @@ def test_discover_reads_a_module_entry_that_names_another_pom_file(tmp_path=None
     The shared descriptor walk looks for ``pom.xml`` only, so normalising the entry
     to its directory was not enough: discovery had to read the named file too.
     """
-    root = Path(tempfile.mkdtemp())
+    root = system_temp.create(prefix='discover-alt-pom-')
     (root / 'pom.xml').write_text(_AGGREGATOR_LISTING_ALT_POM)
     child = root / 'child'
     child.mkdir()
@@ -978,8 +979,11 @@ def _make_module_tree(parent_dirs: dict[str, str]) -> Path:
 
     A relative_dir of '.' plants the pom at the project root. Each pom is
     written verbatim; ``src/main/java`` is NOT created unless the test seeds it.
+
+    The tree comes from :func:`system_temp.create`, so its removal is
+    registered rather than left to the next suite run to discover.
     """
-    root = Path(tempfile.mkdtemp())
+    root = system_temp.create(prefix='discover-tree-')
     for rel, content in parent_dirs.items():
         target = root if rel == '.' else root / rel
         target.mkdir(parents=True, exist_ok=True)
@@ -1460,7 +1464,7 @@ def test_discovery_never_descends_into_excluded_dirs():
     directories plus one real module under src/, then asserts neither
     discover_descriptors nor discover_maven_modules surfaces the decoys.
     """
-    root = Path(tempfile.mkdtemp())
+    root = system_temp.create(prefix='discover-excluded-')
 
     # Real module at the root with a real src/ tree.
     (root / 'pom.xml').write_text(_JAR_POM)
