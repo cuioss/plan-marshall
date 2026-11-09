@@ -213,6 +213,96 @@ def test_handler_produces_each_declared_state(monkeypatch, expected_state):
     assert result['tip_sha'] == _TIP_SHA
 
 
+def _install_ref_scoped_primitives(monkeypatch, *, resolves, ls_remote_out, pr_states, head_oids=None):
+    """Monkeypatch a run whose branch refs are resolved one full ref at a time.
+
+    ``resolves`` maps a full ref name (``refs/heads/x`` / ``refs/remotes/origin/x``)
+    to the tip it answers; a ref absent from the map does not resolve.
+    ``ls_remote_out`` is the stdout of ``git ls-remote --heads origin x``, so an
+    empty value is a branch the remote does not carry either. ``pr_states`` becomes
+    the ``gh pr list --json`` payload, each PR head defaulting to ``_TIP_SHA``.
+    """
+    monkeypatch.setattr(github_ops, 'check_auth', lambda: (True, ''))
+    oids = head_oids if head_oids is not None else [_TIP_SHA] * len(pr_states)
+
+    def fake_run_gh(args, capture_json=False, timeout=60):
+        assert args[:2] == ['pr', 'list']
+        payload = [
+            {
+                'number': i + 1,
+                'state': s,
+                'url': f'https://x/pull/{i + 1}',
+                'headRefName': 'feature/x',
+                'headRefOid': oids[i],
+            }
+            for i, s in enumerate(pr_states)
+        ]
+        return 0, json.dumps(payload), ''
+
+    def fake_run_git(args, timeout=60):
+        if args[:2] == ['rev-parse', '--abbrev-ref']:
+            return 0, 'feature/x\n', ''
+        if args[:1] == ['rev-parse']:
+            sha = resolves.get(args[-1])
+            return (0, f'{sha}\n', '') if sha else (1, '', 'unknown revision')
+        if args[:1] == ['ls-remote']:
+            return 0, ls_remote_out, ''
+        if args[:3] == ['branch', '-r', '--contains']:
+            return 0, '', ''
+        return 1, '', f'unexpected git args: {args}'
+
+    monkeypatch.setattr(github_ops, 'run_gh', fake_run_gh)
+    monkeypatch.setattr(github_ops, 'run_git', fake_run_git)
+
+
+def test_a_branch_whose_local_ref_is_gone_is_resolved_from_origin(monkeypatch):
+    # Branch cleanup deleted the local ref; the remote-tracking ref still names the
+    # tip, so the merged PR that carried it still matches and reads merged.
+    _install_ref_scoped_primitives(
+        monkeypatch,
+        resolves={'refs/remotes/origin/feature/x': _TIP_SHA},
+        ls_remote_out='',
+        pr_states=['MERGED'],
+    )
+
+    result = github_ops.cmd_pr_landing_state(argparse.Namespace(branch='feature/x'))
+
+    assert result['status'] == 'success'
+    assert result['landing_state'] == 'merged'
+    assert result['tip_sha'] == _TIP_SHA
+    assert result['pr_count'] == 1
+
+
+def test_a_branch_absent_locally_is_resolved_from_the_remote(monkeypatch):
+    # Both refs are gone: the tip comes from origin's own answer, so the listing
+    # is still correlated by revision rather than read wholesale.
+    _install_ref_scoped_primitives(
+        monkeypatch,
+        resolves={},
+        ls_remote_out=f'{_TIP_SHA}\trefs/heads/feature/x\n',
+        pr_states=['MERGED'],
+    )
+
+    result = github_ops.cmd_pr_landing_state(argparse.Namespace(branch='feature/x'))
+
+    assert result['status'] == 'success'
+    assert result['landing_state'] == 'merged'
+    assert result['tip_sha'] == _TIP_SHA
+
+
+def test_a_branch_gone_everywhere_reads_merged_from_the_merged_pr(monkeypatch):
+    # Nothing unlanded can live under a name that exists nowhere, so the merged PR
+    # alone settles the state — the read a cleaned-up foreign tree needs.
+    _install_ref_scoped_primitives(monkeypatch, resolves={}, ls_remote_out='', pr_states=['MERGED'])
+
+    result = github_ops.cmd_pr_landing_state(argparse.Namespace(branch='feature/x'))
+
+    assert result['status'] == 'success'
+    assert result['landing_state'] == 'merged'
+    assert result['tip_sha'] is None
+    assert result['pr_count'] == 1
+
+
 def test_stale_merged_pr_for_an_earlier_tip_is_not_merged(monkeypatch):
     # A merged PR whose head is an OLD tip on a reused branch name must not report
     # merged for the current tip's new, unlanded commits.

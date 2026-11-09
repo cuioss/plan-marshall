@@ -97,6 +97,70 @@ def _documented_landing_states(text: str) -> set[str]:
     return set(_MEMBER_RE.findall(matched.group(1)))
 
 
+def _install_ref_scoped_primitives(monkeypatch, *, resolves, ls_remote_out, pr_states, head_oids=None):
+    """Monkeypatch a run whose branch refs are resolved one full ref at a time.
+
+    ``resolves`` maps a full ref name to the tip it answers; a ref absent from the
+    map does not resolve. ``ls_remote_out`` is the stdout of
+    ``git ls-remote --heads origin x``. ``pr_states`` becomes the ``gh pr list``
+    payload, each head defaulting to ``_TIP_SHA``.
+    """
+    monkeypatch.setattr(github_ops, 'check_auth', lambda: (True, ''))
+    oids = head_oids if head_oids is not None else [_TIP_SHA] * len(pr_states)
+
+    def fake_run_gh(args, capture_json=False, timeout=60):
+        assert args[:2] == ['pr', 'list']
+        payload = [
+            {
+                'number': i + 1,
+                'state': s,
+                'url': f'https://x/pull/{i + 1}',
+                'headRefName': 'feature/x',
+                'headRefOid': oids[i],
+            }
+            for i, s in enumerate(pr_states)
+        ]
+        return 0, json.dumps(payload), ''
+
+    def fake_run_git(args, timeout=60):
+        if args[:2] == ['rev-parse', '--abbrev-ref']:
+            return 0, 'feature/x\n', ''
+        if args[:1] == ['rev-parse']:
+            sha = resolves.get(args[-1])
+            return (0, f'{sha}\n', '') if sha else (1, '', 'unknown revision')
+        if args[:1] == ['ls-remote']:
+            return 0, ls_remote_out, ''
+        if args[:3] == ['branch', '-r', '--contains']:
+            return 0, '', ''
+        return 1, '', f'unexpected git args: {args}'
+
+    monkeypatch.setattr(github_ops, 'run_gh', fake_run_gh)
+    monkeypatch.setattr(github_ops, 'run_git', fake_run_git)
+
+
+def test_a_branch_gone_everywhere_without_a_pr_is_branch_absent(monkeypatch):
+    # The name exists in no local ref, no origin ref and no PR head: there is no
+    # change to classify, so an error naming the absence is the answer — never a
+    # fabricated state.
+    _install_ref_scoped_primitives(monkeypatch, resolves={}, ls_remote_out='', pr_states=[])
+
+    result = github_ops.cmd_pr_landing_state(argparse.Namespace(branch='feature/x'))
+
+    assert result['status'] == 'error'
+    assert 'branch_absent' in result['error']
+
+
+def test_a_branch_gone_everywhere_with_an_open_pr_is_an_inconsistency(monkeypatch):
+    # An OPEN PR implies its head ref exists, so a missing ref beside an open PR is
+    # a read that contradicts itself rather than a landing verdict.
+    _install_ref_scoped_primitives(monkeypatch, resolves={}, ls_remote_out='', pr_states=['OPEN'])
+
+    result = github_ops.cmd_pr_landing_state(argparse.Namespace(branch='feature/x'))
+
+    assert result['status'] == 'error'
+    assert 'inconsistent' in result['error']
+
+
 def test_cause_parity_rejects_a_renamed_member():
     text = _api_contract_text()
     mutated = text.replace('`no_pr_found`', '`no_pr_found_x`')

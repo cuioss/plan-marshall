@@ -1548,16 +1548,36 @@ def _branch_tip_sha(branch: str) -> tuple[str | None, dict | None]:
     The tip SHA is what makes PR correlation revision-accurate: ``gh pr list
     --head`` returns EVERY PR ever opened from the branch NAME, including one that
     merged an earlier tip and left the name to be reused. Only a PR whose head is
-    the branch's current tip speaks to the revision being classified, so a failure
-    to resolve the tip is fatal — the verdict cannot be trusted without it.
+    the branch's current tip speaks to the revision being classified.
+
+    Three answers, in resolution order: the local branch ref
+    (``refs/heads/{branch}``), the remote-tracking ref
+    (``refs/remotes/origin/{branch}``), and the remote itself
+    (``git ls-remote --heads origin {branch}``). The remote arms are what let a
+    merged branch still be classified after its refs were deleted locally and on
+    the remote — the state a foreign repository is left in by branch cleanup.
+
+    ``(None, None)`` is the third answer: the branch exists in none of the three
+    places. That is not a failure to read — it means no unlanded commit lives
+    under the name — so the caller classifies from the PR listing alone rather
+    than reporting an unreadable tip. An UNREADABLE remote (a git failure) stays
+    ``(None, error_dict)``: the handler cannot tell "no such branch" from "could
+    not ask", and a landing verdict must not rest on that.
     """
-    rc, out, err = github_ops.run_git(['rev-parse', branch])
+    for rev in (f'refs/heads/{branch}', f'refs/remotes/origin/{branch}'):
+        rc, out, _err = github_ops.run_git(['rev-parse', '--verify', '--quiet', rev])
+        if rc == 0:
+            sha = out.strip()
+            if sha:
+                return sha, None
+    rc, out, err = github_ops.run_git(['ls-remote', '--heads', 'origin', branch])
     if rc != 0:
         return None, make_error('pr_landing_state', f'Could not resolve the tip SHA of branch {branch!r}', err.strip())
-    sha = out.strip()
-    if not sha:
-        return None, make_error('pr_landing_state', f'git rev-parse returned an empty tip SHA for branch {branch!r}')
-    return sha, None
+    for line in out.splitlines():
+        parts = line.split()
+        if len(parts) >= 2 and parts[1] == f'refs/heads/{branch}':
+            return parts[0], None
+    return None, None
 
 
 def _branch_pushed_state(branch: str) -> tuple[bool | None, dict | None]:
@@ -1599,6 +1619,14 @@ def cmd_pr_landing_state(args: argparse.Namespace) -> dict:
     a **tip-matching** PR counts, so a stale PR that merged an earlier tip on a
     reused branch name cannot report ``merged`` for new, unlanded commits.
 
+    **A branch whose refs are gone is still readable.** The tip is resolved from
+    the local ref, then from ``origin``, then from the remote directly. When the
+    branch exists in none of them, nothing unlanded can live under the name, so
+    the PR listing alone decides: a MERGED PR reads ``merged`` — the state a
+    merged change keeps after branch cleanup — an OPEN PR is an inconsistency
+    error (an open PR implies an existing ref), and no PR at all is an error
+    naming ``branch_absent``.
+
     Routed through the CI router's ``--project-dir``, every git/gh subprocess runs
     in the named working tree, so the verb answers "did THIS repository's change
     land?" for a foreign checkout as readily as for the host one. It is the
@@ -1621,7 +1649,6 @@ def cmd_pr_landing_state(args: argparse.Namespace) -> dict:
     tip_sha, err_dict = _branch_tip_sha(branch)
     if err_dict is not None:
         return err_dict
-    assert tip_sha is not None  # narrowed by the err_dict guard
 
     rc, stdout, stderr = github_ops.run_gh(
         [
@@ -1656,14 +1683,47 @@ def cmd_pr_landing_state(args: argparse.Namespace) -> dict:
 
     # Validate every entry, then keep only PRs whose head IS the current tip.
     tip_pr_states: list[str] = []
+    branch_pr_states: list[str] = []
     for pr in prs:
         if not isinstance(pr, dict):
             return make_error('pr_landing_state', 'gh pr list returned a non-object PR entry', str(pr)[:100])
         state = pr.get('state')
         if not isinstance(state, str) or not state.strip():
             return make_error('pr_landing_state', 'gh pr list returned a PR entry with no usable state', str(pr)[:100])
-        if str(pr.get('headRefOid') or '') == tip_sha:
+        branch_pr_states.append(state)
+        if tip_sha is not None and str(pr.get('headRefOid') or '') == tip_sha:
             tip_pr_states.append(state)
+
+    if tip_sha is None:
+        # The branch exists nowhere, so no unlanded commit lives under the name and
+        # there is no tip to match: the listing alone settles the state. A MERGED
+        # PR means the change landed and its refs were cleaned up; an OPEN PR
+        # contradicts a missing ref, so the read is inconsistent; nothing at all
+        # means the branch was never pushed.
+        normalized = {str(state).strip().upper() for state in branch_pr_states if str(state).strip()}
+        if 'OPEN' in normalized:
+            return make_error(
+                'pr_landing_state',
+                f'Branch {branch!r} exists in no local ref, no origin ref and no PR head, yet an OPEN PR '
+                f'names it as its head; the read is inconsistent',
+                'branch_missing_but_pr_open',
+            )
+        if 'MERGED' in normalized:
+            return {
+                'status': 'success',
+                'operation': 'pr_landing_state',
+                'provider': 'github',
+                'branch': branch,
+                'tip_sha': None,
+                'pushed': None,
+                'pr_count': len(branch_pr_states),
+                'landing_state': 'merged',
+                'landing_states': list(LANDING_STATES),
+            }
+        return make_error(
+            'pr_landing_state',
+            f'branch_absent: branch {branch!r} exists in no local ref, no origin ref, and no PR head',
+        )
 
     # Push state informs only the no-PR verdicts (pushed_no_pr vs unpushed). It is
     # gathered unconditionally, but its unreadability is fatal only when the
