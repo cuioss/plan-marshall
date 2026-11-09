@@ -1522,3 +1522,21 @@ def test_a_legacy_row_whose_executor_flag_explains_the_unreadability_keeps_the_h
     row = _build_entry(args='run --command-args verify --timeout 900')
 
     assert crosscheck.row_scope_remedy_hint(row) == crosscheck.LEGACY_ROW_SCOPE_REMEDY
+
+
+@pytest.mark.parametrize(
+    ('args', 'tokens'),
+    [
+        ('run --command-args module-tests --env A=1 B=2', ['module-tests', '--env', 'A=1', 'B=2']),
+        ('run --command-args module-tests --env=A=1 B=2', ['module-tests', '--env=A=1', 'B=2']),
+    ],
+)
+def test_a_multi_token_env_value_is_stripped_with_its_flag(args, tokens) -> None:
+    """``--env`` takes a space-separated list, so the join left residue behind.
+
+    Both tokens belong to the flag, not to the payload: stripping only the first
+    would leave ``B=2`` to be read as payload scope, and the remedy would then be
+    aimed at a payload the row never had.
+    """
+    assert crosscheck._payload_without_executor_run_flags(tokens) == ['module-tests']
+    assert crosscheck.row_scope_remedy_hint(_build_entry(args=args)) == crosscheck.LEGACY_ROW_SCOPE_REMEDY

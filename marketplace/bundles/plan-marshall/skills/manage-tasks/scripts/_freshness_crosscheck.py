@@ -460,11 +460,8 @@ _GOAL_POSITIONAL_NOTATIONS: frozenset[str] = frozenset(
 #: The ``run`` subparser's OWN flags — the ones that sit in a legacy row's joined
 #: ``args`` beside the payload, in the same unquoted token stream, so the reader
 #: cannot tell whether they belonged to the payload or to the executor. Each
-#: consumes ONE recorded token; a value that itself carried spaces
-#: (``--env 'A=1 B=2'``) lands as several tokens, so a residue stays in the
-#: payload — it either keeps the row unreadable (and the hint is not offered) or
-#: is read as scope. Either way the ambiguity is inherent to the unquoted ``args``
-#: join, which is why this hint is only ever advisory. Copied from the shared
+#: consumes ONE recorded token, except the flags whose value is itself a
+#: space-separated list (:data:`_MULTI_TOKEN_VALUE_FLAGS`). Copied from the shared
 #: subparser declaration (``_build_cli.add_run_subparser``: ``--timeout``,
 #: ``--mode``, ``--format``, ``--execution-mode``, the ``--project-dir`` /
 #: ``--plan-id`` pair and the routed ``--resolved-project-dir`` carry) and the
@@ -487,6 +484,13 @@ _EXECUTOR_RUN_FLAGS: dict[str, int] = {
     '--working-dir': 1,
     '--env': 1,
 }
+
+#: The declared flags whose value is a space-separated LIST, so the unquoted join
+#: records more than one token for it: ``--env`` takes shell-style ``KEY=VALUE``
+#: assignments (``--env 'NODE_ENV=test CI=true'``). The stripper consumes the
+#: first value token and then every following ``KEY=VALUE`` token, so the residue
+#: the join creates is not left in the payload to be read as scope.
+_MULTI_TOKEN_VALUE_FLAGS: frozenset[str] = frozenset({'--env'})
 
 
 @dataclass(frozen=True)
@@ -856,8 +860,11 @@ def _payload_without_executor_run_flags(tokens: list[str]) -> list[str] | None:
     """Return ``tokens`` with every declared executor ``run`` flag removed.
 
     A declared flag is dropped together with its one value token, and the
-    ``--flag=value`` spelling drops the whole token. ``None`` means a declared
-    flag had no value to drop, so no reconstruction of the payload is possible.
+    ``--flag=value`` spelling drops the whole token. A flag whose value is a
+    space-separated list (:data:`_MULTI_TOKEN_VALUE_FLAGS`) additionally consumes
+    the ``KEY=VALUE`` tokens the unquoted join made of the rest of that value.
+    ``None`` means a declared flag had no value to drop, so no reconstruction of
+    the payload is possible.
 
     Args:
         tokens: The row's recorded payload-and-tail tokens.
@@ -877,10 +884,17 @@ def _payload_without_executor_run_flags(tokens: list[str]) -> list[str] | None:
             continue
         if separator:
             index += 1
-            continue
-        if index + arity >= len(tokens):
-            return None
-        index += arity + 1
+        else:
+            if index + arity >= len(tokens):
+                return None
+            index += arity + 1
+        if name in _MULTI_TOKEN_VALUE_FLAGS:
+            # The value is a space-separated list, so the join recorded the REST
+            # of it as bare tokens (``--env A=1 B=2``, and the same residue after
+            # the ``--env=A=1`` spelling). Consume those too, or the residue would
+            # be read as payload scope.
+            while index < len(tokens) and '=' in tokens[index] and not tokens[index].startswith('-'):
+                index += 1
     return remaining
 
 

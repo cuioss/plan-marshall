@@ -995,6 +995,30 @@ def test_a_report_whose_whole_population_was_skipped_does_not_credit_the_run(tmp
     assert TEST_RUN_EXECUTED_NOTHING in guarded['message']
 
 
+def test_a_measured_summary_that_skipped_its_whole_population_is_not_a_green():
+    """The summary path counts executed tests too, not only the report credit.
+
+    ``Tests run: 3, Failures: 0, Errors: 0, Skipped: 3`` is a visible summary of
+    three collected tests and zero executed ones. Reading its COLLECTED total as
+    evidence credited a green run that ran nothing.
+    """
+    result = _run_result('maven-all-skipped-summary.log', status='success', exit_code=0, command='mvnw test')
+
+    guarded = apply_zero_test_guard(result, 'test')
+
+    assert guarded['status'] == 'indeterminate'
+    assert TEST_RUN_EXECUTED_NOTHING in guarded['message']
+
+
+def test_control_a_measured_summary_with_executed_tests_keeps_its_green():
+    """MATCHED CONTROL: a measured summary with executed tests stays green."""
+    result = _run_result('maven-success-real.log', status='success', exit_code=0, command='mvnw test')
+
+    guarded = apply_zero_test_guard(result, 'test')
+
+    assert guarded['status'] == 'success'
+
+
 def test_control_a_report_with_executed_tests_still_credits_the_run(tmp_path):
     """MATCHED CONTROL: the same report shape with nothing skipped still credits."""
     result = _quiet_guard_result(tmp_path, 'maven-quiet-green-no-summary.log')

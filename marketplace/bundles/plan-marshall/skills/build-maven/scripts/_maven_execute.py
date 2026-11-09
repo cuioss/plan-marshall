@@ -547,8 +547,9 @@ def apply_zero_test_guard(result: dict, args: str, *, project_dir: str | None = 
     reactor root that builds no test module — collects nothing, and no gate may
     credit that. Such a run is neither a failure nor a green:
 
-    - a parsed summary reporting zero COLLECTED tests is evidence of an empty
-      population;
+    - a parsed, MEASURED summary that reports zero EXECUTED tests — either no
+      test collected, or a population that was skipped in full — is evidence of
+      an empty population;
     - no summary on a leading ``test`` goal is EITHER an empty population OR a
       summary the run's log level hid, and the evidence tells them apart: a
       Surefire/Failsafe report this run wrote with executed tests,
@@ -575,7 +576,7 @@ def apply_zero_test_guard(result: dict, args: str, *, project_dir: str | None = 
             no-summary case then stays indeterminate.
 
     Returns:
-        The same result unchanged when the run collected a test, when it is no
+        The same result unchanged when the run executed a test, when it is no
         test-phase run, when it was not green, when an empty population was a
         requested skip, when Surefire matched no test class at all, or when a
         report this run wrote shows executed tests — otherwise an
@@ -595,10 +596,19 @@ def apply_zero_test_guard(result: dict, args: str, *, project_dir: str | None = 
             'nothing establishes that a test ran — not a green.',
         )
     collected = collected_test_count(log_text)
-    if collected:
+    executed = executed_test_count(log_text)
+    if collected and executed != 0:
+        # A MEASURED summary that executed nothing (``executed == 0``) is a
+        # non-empty population that still credits no gate: the suite collected
+        # tests and skipped every one. An UNMEASURED summary (``executed is
+        # None``) keeps the plain collected-count evidence it has always had —
+        # its executed count is not a measurement, so it cannot refute one.
         return result
-    if collected == 0:
-        evidence = "the run's log reports zero collected tests, so nothing executed"
+    if collected == 0 or executed == 0:
+        if collected:
+            evidence = f"the run's log reports {collected} collected test(s) of which none executed"
+        else:
+            evidence = "the run's log reports zero collected tests, so nothing executed"
     elif _reports_show_executed_tests(project_dir, result.get('log_file'), result.get('duration_seconds')):
         # The summary was hidden (a quiet run, or Surefire's printSummary=false),
         # not absent: the reports this run wrote name executed test classes.
