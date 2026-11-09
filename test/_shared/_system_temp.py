@@ -1,21 +1,25 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Registered system temp roots — the one place test support may create one.
+"""Registered system temp roots for the test support code.
 
-A test-support module that calls :func:`tempfile.mkdtemp` directly leaves the
-directory behind: nothing removes it, so every suite run adds to the system temp
-tree until the tmpfs inode pool is exhausted. Two such sites (the relocated guard
-harness root and the executor-mapping stub directory) did exactly that, and the
-accumulated ``guard-node-*`` directories exhausted ``/tmp`` on the machine the
-suite runs on.
+A test-support module that calls :func:`tempfile.mkdtemp` and leaves the result
+for a caller it cannot see leaks the directory: every suite run adds to the
+system temp tree until the tmpfs inode pool is exhausted. Two such sites (the
+relocated guard harness root and the executor-mapping stub directory) did
+exactly that, and the accumulated ``guard-node-*`` directories exhausted ``/tmp``
+on the machine the suite runs on.
 
-:func:`create` is the sanctioned replacement. It creates the directory, records
-it in a registry, AND registers an ``atexit`` removal at the create site, so:
+:func:`create` is the form a test-support module uses when the directory
+outlives the function that builds it. It creates the directory, records it in a
+registry, AND registers an ``atexit`` removal at the create site, so:
 
 * ``test/conftest.py::pytest_unconfigure`` drains the registry at the end of
   every pytest process — including each xdist worker, which the verify-first
   measurement confirmed runs that hook;
 * a process that exits normally without pytest still leaves nothing behind,
   because the ``atexit`` handler runs in every process that created a root.
+
+A directory removed inside the function that creates it (``shutil.rmtree`` in a
+``finally``, a fixture finalizer, a class lifecycle method) needs no helper.
 
 ``test/plan-marshall/platform-runtime/test_tempdir_teardown.py`` enforces the
 rule: a bare ``tempfile.mkdtemp`` call in a test module fails the suite.

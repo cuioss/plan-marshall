@@ -16,8 +16,8 @@ import shutil
 import tempfile
 from pathlib import Path
 
+import _system_temp
 import pytest
-import system_temp
 from extension_base import ExtensionBase
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
@@ -107,7 +107,7 @@ def create_test_project(build_system: str) -> Path:
     them would conflate concepts. The D5 outline explicitly permits this
     file to retain its local copy with a justification comment.
     """
-    temp_dir = system_temp.create()
+    temp_dir = _system_temp.create()
 
     if build_system == 'maven':
         (temp_dir / 'pom.xml').write_text('<project></project>')

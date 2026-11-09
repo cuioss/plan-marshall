@@ -12,7 +12,7 @@ namespace-less POMs. No Maven binary is required.
 
 from pathlib import Path
 
-import system_temp
+import _system_temp
 
 from conftest import load_script_module
 
@@ -26,11 +26,11 @@ _parse_pom_xml = _maven_cmd_discover._parse_pom_xml
 def _write_pom(content: str) -> Path:
     """Write ``content`` to a ``pom.xml`` in a fresh tmp dir and return the path.
 
-    The directory comes from :func:`system_temp.create`, so its removal is
+    The directory comes from :func:`_system_temp.create`, so its removal is
     registered: before that, every call here leaked one system temp directory per
     parsed POM.
     """
-    tmpdir = system_temp.create(prefix='pom-parse-')
+    tmpdir = _system_temp.create(prefix='pom-parse-')
     pom = tmpdir / 'pom.xml'
     pom.write_text(content)
     return pom

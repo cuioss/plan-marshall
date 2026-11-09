@@ -319,11 +319,11 @@ for _helper_dir in _TEST_HELPER_DIRS:
     if _helper_dir not in sys.path:
         sys.path.insert(0, _helper_dir)
 
-# The registered-teardown helper every system temp root in the test tree goes
-# through (see ``test/_shared/system_temp.py``). Bound here, before any test
-# module imports it, so the drain below and the creating module share one
+# The registered-teardown helper every long-lived system temp root in the test
+# tree goes through (see ``test/_shared/_system_temp.py``). Bound here, before any
+# test module imports it, so the drain below and the creating module share one
 # registry object.
-import system_temp as _system_temp  # noqa: E402
+import _system_temp  # noqa: E402
 
 # Shared isolation fixtures live directly in this root conftest rather than
 # in bundle-scoped ``_fixtures.py`` modules: the production modules they
@@ -1612,9 +1612,9 @@ def pytest_unconfigure(config):
 
     The hook rather than only the per-root ``atexit`` handler, because
     ``pytest_unconfigure`` runs at the end of the session, before interpreter
-    shutdown: nothing a — possibly failing — session leaves behind can skip it,
-    while a killed worker takes both down and is out of scope for in-process
-    teardown.
+    shutdown: a session that fails, errors out of collection or leaves fixtures
+    un-finalised still drains here, while a KILLED worker skips both and is out
+    of scope for in-process teardown (the janitor rule the plan records as owed).
 
     Without it, a suite run from inside a plan worktree leaves one
     ``guard-node-*`` directory per relocated harness behind (the guard's scratch

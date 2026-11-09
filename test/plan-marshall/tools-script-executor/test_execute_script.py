@@ -10,8 +10,8 @@ from collections.abc import Iterator
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import _system_temp
 import pytest
-import system_temp
 from _executor_template_render import BOOTSTRAP_BUNDLE, PLACEHOLDER_RE, TEMPLATE_PATH, render_executor_template
 
 from conftest import (
@@ -41,39 +41,53 @@ SCRIPTS_DIR = SKILL_DIR / 'scripts'
 # so the mapped targets must be real files on disk for the direct-hit branch to return
 # them. Create stub files in a temp dir and map the test notations to them.
 #
-# The stub directory is owned by the session-scoped fixture below rather than
-# created at import time. A module-level ``tempfile.mkdtemp`` runs during
-# COLLECTION, once per pytest process, so a collection error, an aborted run or an
-# xdist worker that never runs a test from this module left the directory behind
-# for good — thousands of ``executor-mappings-*`` directories accumulated that way.
+# The stub directory is created lazily and owned by the module, not at import time.
+# A module-level ``tempfile.mkdtemp`` ran during COLLECTION, once per pytest process,
+# so a collection error, an aborted run or an xdist worker that never ran a test from
+# this module left the directory behind for good — about 3 200 ``executor-mappings-*``
+# directories accumulated that way.
+#
+# Creation is lazy rather than fixture-only because ``load_executor_module`` is a
+# cross-module helper: ``test_dispatch_boundary_error`` and
+# ``test_population_derived_surface_guard`` call it too, and in a process where this
+# module's own fixture never ran, fixture-only creation would render ``"None"`` as a
+# mapped target. The session fixture still owns the teardown.
 _MAPPED_DIR: Path | None = None
 _MAP_MANAGE_FILES: Path | None = None
 _MAP_MAVEN: Path | None = None
 _MAP_TEST_SKILL: Path | None = None
 
 
+def _mapping_stub_directory() -> Path:
+    """Create (once per process) the stub directory and its three files."""
+    global _MAPPED_DIR, _MAP_MANAGE_FILES, _MAP_MAVEN, _MAP_TEST_SKILL
+    if _MAPPED_DIR is None:
+        directory = _system_temp.create(prefix='executor-mappings-')
+        _MAPPED_DIR = directory
+        _MAP_MANAGE_FILES = directory / 'manage-files.py'
+        _MAP_MAVEN = directory / 'maven.py'
+        _MAP_TEST_SKILL = directory / 'test-skill.py'
+        for stub in (_MAP_MANAGE_FILES, _MAP_MAVEN, _MAP_TEST_SKILL):
+            stub.write_text('# test stub\n')
+    return _MAPPED_DIR
+
+
 @pytest.fixture(scope='session', autouse=True)
 def _executor_mapping_stubs() -> Iterator[Path]:
-    """Create the three notation stub files in one session-owned directory.
+    """Own the session teardown of the notation stub directory.
 
-    Autouse and session-scoped so no call site changes: the module-level names
-    below are bound here, before any test in this module asks for them, and every
-    ``load_executor_module()`` call reads them. The teardown removes the
-    directory; ``system_temp`` registers the same removal for the process exit as
+    Autouse and session-scoped so no call site changes: the directory the module
+    names above point at exists before any test here asks for it. The teardown
+    removes it; ``_system_temp`` registers the same removal for the process exit as
     well, so a worker that is torn down without reaching this finalizer still
     leaves nothing behind.
     """
     global _MAPPED_DIR, _MAP_MANAGE_FILES, _MAP_MAVEN, _MAP_TEST_SKILL
-    _MAPPED_DIR = system_temp.create(prefix='executor-mappings-')
-    _MAP_MANAGE_FILES = _MAPPED_DIR / 'manage-files.py'
-    _MAP_MAVEN = _MAPPED_DIR / 'maven.py'
-    _MAP_TEST_SKILL = _MAPPED_DIR / 'test-skill.py'
+    directory = _mapping_stub_directory()
     try:
-        for stub in (_MAP_MANAGE_FILES, _MAP_MAVEN, _MAP_TEST_SKILL):
-            stub.write_text('# test stub\n')
-        yield _MAPPED_DIR
+        yield directory
     finally:
-        system_temp.release(_MAPPED_DIR)
+        _system_temp.release(directory)
         _MAPPED_DIR = None
         _MAP_MANAGE_FILES = None
         _MAP_MAVEN = None
@@ -111,7 +125,13 @@ def test_shared_renderer_leaves_no_placeholder_in_the_real_template():
 
 
 def load_executor_module():
-    """Load the execute-script module from template for testing."""
+    """Load the execute-script module from template for testing.
+
+    The mapped targets are materialised first: this helper is called from other
+    test modules too, and in a process where this module's own session fixture
+    never ran, a fixture-only directory would render ``"None"`` as a mapped path.
+    """
+    _mapping_stub_directory()
     code = render_executor_template(
         f"""
     "plan-marshall:manage-files": "{_MAP_MANAGE_FILES}",
