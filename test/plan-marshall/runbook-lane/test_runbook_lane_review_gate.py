@@ -408,6 +408,29 @@ def test_a_disposition_that_does_not_name_its_evidence_is_refused() -> None:
     assert verdict['reason'] == 'disposition_unparsable'
 
 
+@pytest.mark.parametrize('evidence', ['TBD', 'TBD.', '-', 'n/a', 'TODO', 'none', 'pending'])
+def test_a_placeholder_evidence_does_not_dispose_the_finding(evidence: str) -> None:
+    """A placeholder is what a line says when nothing was decided."""
+    disposition = f'coderabbit outside-diff outside-diff-1 — {evidence}'
+
+    verdict = _verdict(_read(_review_body(_OUTSIDE_DIFF_BODY)), disposition)
+
+    assert verdict['merge_allowed'] is False
+    assert verdict['reason'] == 'disposition_unparsable'
+    assert verdict['refused'] == [disposition]
+
+
+@pytest.mark.parametrize(
+    'evidence',
+    ['a1b2c3d', 'fixed in a1b2c3d', 'declined: the call is deliberate and documented'],
+)
+def test_a_real_commit_or_reason_disposes_the_finding(evidence: str) -> None:
+    verdict = _verdict(_read(_review_body(_OUTSIDE_DIFF_BODY)), f'coderabbit outside-diff outside-diff-1 — {evidence}')
+
+    assert verdict['merge_allowed'] is True, verdict
+    assert verdict['reason'] == 'all_handled'
+
+
 def test_an_unrecognised_record_kind_refuses_the_merge() -> None:
     """A record shape the verb does not know is a surface it cannot read."""
     read = _read()

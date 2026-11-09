@@ -2437,6 +2437,31 @@ _DISPOSITION_RE = re.compile(
     r'^(?P<reviewer>\S+)\s+(?P<section>\S+)\s+(?P<id>\S+)\s*' + _DISPOSITION_SEPARATOR + r'\s*(?P<evidence>\S.*)$'
 )
 
+#: The evidence values that name neither a commit nor a reason — the shape a line has
+#: when nothing was decided. Compared as one punctuation-stripped, case-folded token, so
+#: ``TBD.``, ``N/A`` and ``—`` reduce to ``tbd``, ``na`` and the empty entry.
+_DISPOSITION_PLACEHOLDER_EVIDENCE = frozenset({'', 'tbd', 'todo', 'na', 'none', 'later', 'wip', 'pending'})
+
+#: A hex commit id is evidence on its own, with no other token needed.
+_COMMIT_SHA_RE = re.compile(r'[0-9a-f]{7,40}')
+
+#: Everything a placeholder comparison does not need: punctuation, markup and symbols.
+_PLACEHOLDER_PUNCTUATION_RE = re.compile(r'[^a-z0-9]+')
+
+
+def _disposition_evidence_is_real(evidence: str) -> bool:
+    """Whether a disposition's evidence names a commit or a stated reason.
+
+    A hex commit id is evidence on its own. Any other text is a stated reason unless it
+    reduces to a placeholder once case and punctuation are stripped — a placeholder is
+    what a line says when nothing was decided, so counting it as disposed is the pass
+    this gate exists to remove.
+    """
+    token = _PLACEHOLDER_PUNCTUATION_RE.sub('', evidence.strip().lower())
+    if _COMMIT_SHA_RE.fullmatch(token):
+        return True
+    return token not in _DISPOSITION_PLACEHOLDER_EVIDENCE
+
 
 def _normalise_section_title(title: str) -> str:
     """Return a ``<summary>`` title reduced to lowercase words.
@@ -2709,14 +2734,15 @@ def _parse_dispositions(values: list[str]) -> tuple[list[dict[str, str]], list[s
 
     One row per progress line, in the progress template's own wording:
     ``finding: {reviewer} {section} {id} — {sha|reason}``. The evidence token is
-    what makes the disposition a disposition — an empty one answers nothing about
-    the finding — so a line without it is refused by name rather than counted.
+    what makes the disposition a disposition: a line with none, or with a placeholder
+    (``TBD``, ``-``, ``n/a``, …), answers nothing about the finding, so it is refused
+    by name rather than counted.
     """
     rows: list[dict[str, str]] = []
     refused: list[str] = []
     for value in values:
         match = _DISPOSITION_RE.match(value.strip())
-        if match is None:
+        if match is None or not _disposition_evidence_is_real(match.group('evidence')):
             refused.append(value)
             continue
         rows.append({key: match.group(key) for key in ('reviewer', 'section', 'id', 'evidence')})

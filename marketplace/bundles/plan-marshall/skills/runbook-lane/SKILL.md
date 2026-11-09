@@ -200,8 +200,9 @@ a stated reason (`body_findings_undisposed`); a resolved thread whose last BOT
 comment says the concern remains (`thread_concern_remains` — the bot's last word is
 the finding's, so a lane or human reply below it never discharges the concern, and
 a lane reply can itself contain the vocabulary);
-a disposition line names no evidence
-(`disposition_unparsable`); the read is undecidable, truncated, carries a review-body section the
+a disposition line names no real evidence
+(`disposition_unparsable` — a commit sha or a stated reason; a placeholder such as `TBD`, `-` or
+`n/a` is not evidence); the read is undecidable, truncated, carries a review-body section the
 parser cannot read, carries a record kind the verb does not know, or carries a review body with no
 attributable author (`undecidable_read`); the provider
 publishes no coverage signal for the read (`coverage_unavailable`). An undecidable read is a stop,
