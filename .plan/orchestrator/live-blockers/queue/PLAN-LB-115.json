@@ -2,10 +2,10 @@
   "id": "PLAN-LB-115",
   "slug": "routed-build-carry-and-fault-corrections",
   "workstream": "WS-04",
-  "status": "running",
+  "status": "shipped",
   "lane": "runbook",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "plan_marshall_plan_id": "rb-lb-115-routed-build-carry-and-fault-corrections",
+  "pr": "1932",
+  "landing": "landings/PLAN-LB-115.md",
   "seq": 115
 }
