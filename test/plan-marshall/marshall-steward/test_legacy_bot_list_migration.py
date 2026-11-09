@@ -514,6 +514,78 @@ class TestLiveConfigVerb:
         assert persisted['required_bots'] == 'coderabbit'
         assert persisted['bot_lists_provenance'] == 'migrated'
 
+    def test_the_reseed_drops_the_coderabbit_name_from_optional_bots(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """The re-seeded reviewer is never demanded twice.
+
+        When the strip empties ``required_bots`` and the standard required roster is seeded
+        back, a member that also sat in ``optional_bots`` is removed from that list.
+        """
+        import argparse
+
+        import _config_defaults
+
+        retired = _config_defaults.RETIRED_BOT_KINDS[0]
+        config = {
+            'plan': {
+                'phase-6-finalize': {
+                    'steps': {
+                        _AUTOMATIC_REVIEW_STEP_ID: {
+                            'required_bots': retired,
+                            'optional_bots': 'sourcery,coderabbit',
+                            'bot_lists_provenance': 'answered',
+                        }
+                    }
+                }
+            }
+        }
+        marshal = self._stage_marshal_json(tmp_path, monkeypatch, config)
+
+        result = upgrade.cmd_migrate_bot_lists(argparse.Namespace())
+
+        assert result['status'] == 'success'
+        assert result['reseeded_required'] is True
+        persisted = _step_params(json.loads(marshal.read_text(encoding='utf-8')))
+        assert persisted['required_bots'] == 'coderabbit'
+        assert persisted['optional_bots'] == 'sourcery'
+
+    def test_an_empty_required_list_the_operator_wrote_is_not_reseeded(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """A strip that had nothing to empty never re-seeds, even when ``required_bots`` is ''.
+
+        The operator's explicit empty required list stays empty; only the retired kind is
+        stripped from ``optional_bots``.
+        """
+        import argparse
+
+        import _config_defaults
+
+        retired = _config_defaults.RETIRED_BOT_KINDS[0]
+        config = {
+            'plan': {
+                'phase-6-finalize': {
+                    'steps': {
+                        _AUTOMATIC_REVIEW_STEP_ID: {
+                            'required_bots': '',
+                            'optional_bots': f'{retired},sourcery',
+                        }
+                    }
+                }
+            }
+        }
+        marshal = self._stage_marshal_json(tmp_path, monkeypatch, config)
+
+        result = upgrade.cmd_migrate_bot_lists(argparse.Namespace())
+
+        assert result['status'] == 'success'
+        assert result['state'] == 'retired_stripped'
+        assert 'reseeded_required' not in result
+        persisted = _step_params(json.loads(marshal.read_text(encoding='utf-8')))
+        assert persisted['required_bots'] == ''
+        assert persisted['optional_bots'] == 'sourcery'
+
 
 def test_a_degraded_retired_bot_tombstone_is_reported(monkeypatch: pytest.MonkeyPatch):
     """A strip that cannot fire because the tombstone degraded to empty is reported.

@@ -37,6 +37,8 @@ from _github_pr_fixtures import (
     CODERABBIT_NO_UNREVIEWED_COMMIT_REPLIES,
     CODERABBIT_SUMMARY_CONCERN_SECTION,
     CODERABBIT_SUMMARY_MARKER,
+    CODERABBIT_SUMMARY_MERGE_RISK_CLEAN,
+    CODERABBIT_SUMMARY_MERGE_RISK_CONCERN,
     HUMAN_COMMENT_QUOTING_AN_ACKNOWLEDGMENT,
     coderabbit_in_progress_summaries,
     coderabbit_summary_bodies,
@@ -554,6 +556,53 @@ class TestSummaryConcernIsFiled:
         assert result['status'] == 'success'
         assert result['count_stored'] == 1, result
         assert result['count_skipped_noise'] == 0, result
+
+    def test_every_merge_risk_occurrence_is_judged(self, plan_context):
+        """A second Merge Risk block that states a concern still files the body.
+
+        The rule judges EVERY occurrence, not the first: a clean block followed by a
+        concern block must file, or a later concern would hide behind an earlier clean one.
+        """
+        plan_id = 'gh-summary-merge-risk-two-blocks'
+        plan_context.plan_dir_for(plan_id)
+        body = (
+            f'{CODERABBIT_SUMMARY_MARKER}\n'
+            '## Walkthrough\n\n'
+            f'{CODERABBIT_SUMMARY_MERGE_RISK_CLEAN}\n\n'
+            f'{CODERABBIT_SUMMARY_MERGE_RISK_CONCERN}'
+        )
+        comment = _bot_comment('IC-merge-risk-two-blocks', body)
+
+        result = _fetch_without_provider_reads([comment], _StoreArgs(739, plan_id))
+
+        assert result['status'] == 'success'
+        assert result['count_stored'] == 1, result
+        assert result['count_skipped_noise'] == 0, result
+
+    def test_an_unclosed_comment_files_the_section_as_unreadable(self, plan_context):
+        """FAIL CLOSED: a section whose bounds cannot be read is never proved clean.
+
+        An unclosed ``<!--`` cannot be stripped, so the section boundary is unknowable. The
+        body would otherwise carry the clean verdict and drop; it must be filed instead.
+        """
+        plan_id = 'gh-summary-merge-risk-unclosed-comment'
+        plan_context.plan_dir_for(plan_id)
+        body = (
+            f'{CODERABBIT_SUMMARY_MARKER}\n'
+            '## Walkthrough\n\n'
+            '<details><summary><strong>Merge Risk:</strong></summary>\n'
+            'No actionable merge-blocking risk remains.\n'
+            '<!-- final_review_risk_start\n'
+        )
+        comment = _bot_comment('IC-merge-risk-unclosed-comment', body)
+
+        result = _fetch_without_provider_reads([comment], _StoreArgs(740, plan_id))
+
+        assert result['status'] == 'success'
+        assert result['count_stored'] == 1, result
+        assert result['count_skipped_noise'] == 0, result
+
+    def test_the_file_limit_summary_notice_is_a_counted_refusal(self, plan_context):
         """A marker-bearing skip notice that states a registered refusal stays a refusal.
 
         ``## Review skipped`` is a declared contentless heading, but the file-count notice
@@ -596,6 +645,7 @@ class TestSummaryConcernIsFiled:
         assert result['count_stored'] == 0, result
         assert result['count_skipped_noise'] == 1, result
         assert result['count_skipped_refusal'] == 0, result
+        assert result['participated_bots'] == [], result
 
     def test_a_finished_summary_that_also_carries_a_rate_limit_block_is_a_refusal(self, plan_context):
         """PINNED SHAPE: a readable coverage marker does not outrank the refusal branch here.

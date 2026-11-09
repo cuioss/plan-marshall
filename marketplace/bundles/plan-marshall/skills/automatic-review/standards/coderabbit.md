@@ -146,8 +146,9 @@ CodeRabbit is a first-class bot in plan-marshall — this rule refines, not intr
 
 `ignore_patterns` above are whole-comment drops — CodeRabbit comments that carry no per-line
 finding whatever else the body says: a no-op review (`No actionable comments were generated`) and a
-learnings-only reply. The drop is itself vetoed by the same bot's `actionable_content_markers`, so a
-clean-review verdict that co-occurs with a nitpick, outside-diff or follow-up section keeps that
+learnings-only reply. The drop is itself vetoed by the same bot's `actionable_content_markers` and by
+a declared concern section whose text carries no `clean_section_verdicts` literal, so a
+clean-review verdict that co-occurs with a nitpick, outside-diff, follow-up or Merge Risk concern keeps that
 section: the verdict cannot veto itself, because the markers are case-sensitive and the verdict reads
 "No actionable comments", not "Actionable comments". Do **not** ignore inline review comments that
 carry a `cr-indicator-types` marker — those are the signal.
