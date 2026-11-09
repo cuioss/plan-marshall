@@ -12,6 +12,7 @@ comment, its escalated trigger comment, its trigger semantics, its completion
 check-run name, its skip-label-honoring flag, its ignore patterns, its footer
 markers, its acknowledgment patterns, its refusal patterns, its no-unreviewed-commit
 patterns, its contentless-review markers and headings, its actionable-content markers,
+its concern-section headings and clean-section verdicts,
 its participation-evidence publish shapes and the content literals each of those
 shapes must carry to count, its severity map, its rate-limit class, and its
 rate-limit ETA patterns) instead of hard-coding three bots across several code
@@ -62,6 +63,10 @@ Data-block shape (one per ``standards/{bot_kind}.md``)::
       - "## Code Review Guide"
     actionable_content_markers:
       - "<details>"
+    concern_section_headings:         # the TEXT under one of these decides clean vs concern
+      - "Merge Risk:"
+    clean_section_verdicts:           # the literals that mark that section clean; empty = fail closed
+      - "No actionable merge-blocking risk remains."
     rate_limit_eta_patterns:
       - "wait ([0-9]+ minutes)"
     severity_map:
@@ -75,6 +80,7 @@ scalars, lists (``ignore_patterns``, ``footer_patterns``,
 ``refusal_patterns``, ``refusal_size_patterns``, ``no_unreviewed_commit_patterns``,
 ``refusal_size_cap_patterns``, ``contentless_review_markers``,
 ``contentless_review_headings``, ``actionable_content_markers``,
+``concern_section_headings``, ``clean_section_verdicts``,
 ``participation_evidence``,
 ``rate_limit_eta_patterns``), and two nested maps
 (``participation_evidence_markers``, ``severity_map``) — parsed by a small
@@ -802,6 +808,36 @@ class BotRegistry:
         value = self._by_kind.get(bot_kind, {}).get('actionable_content_markers', [])
         return list(value) if isinstance(value, list) else []
 
+    def concern_section_headings(self, bot_kind: str) -> list[str]:
+        """Return the summary headings whose TEXT decides clean versus concern-bearing.
+
+        A summary comment can carry a free-text concern under a heading that is not one
+        of the ``actionable_content_markers`` sections — CodeRabbit states its Merge Risk
+        paragraph as prose. Each entry here names such a heading; the producer takes the
+        text under it and requires that it carry at least one
+        :meth:`clean_section_verdicts` entry before the body may be dropped as contentless.
+
+        An empty list adds no section condition, so a bot that has not declared the field
+        keeps exactly its previous behaviour. The companion of
+        :meth:`clean_section_verdicts`; together they carry the rule as data.
+        """
+        value = self._by_kind.get(bot_kind, {}).get('concern_section_headings', [])
+        return list(value) if isinstance(value, list) else []
+
+    def clean_section_verdicts(self, bot_kind: str) -> list[str]:
+        """Return the literals that mark a concern section CLEAN (``[]`` = fail closed).
+
+        Read by the producer against the text under a :meth:`concern_section_headings`
+        entry. A section that carries none of these literals holds a concern and vetoes
+        the contentless drop.
+
+        An empty list is the FAIL-CLOSED default: a bot that declares a concern heading
+        but no clean wording has that section filed on every body, so an undeclared
+        clean shape is filed rather than swallowed.
+        """
+        value = self._by_kind.get(bot_kind, {}).get('clean_section_verdicts', [])
+        return list(value) if isinstance(value, list) else []
+
     def participation_evidence(self, bot_kind: str) -> list[str]:
         """Return the publish shapes that are EVIDENCE ``bot_kind`` participated.
 
@@ -1099,6 +1135,16 @@ def contentless_review_headings(bot_kind: str) -> list[str]:
 def actionable_content_markers(bot_kind: str) -> list[str]:
     """The literals that disqualify a contentless drop for ``bot_kind`` (``[]`` if absent)."""
     return REGISTRY.actionable_content_markers(bot_kind)
+
+
+def concern_section_headings(bot_kind: str) -> list[str]:
+    """The summary headings whose text decides clean vs concern for ``bot_kind`` (``[]`` if absent)."""
+    return REGISTRY.concern_section_headings(bot_kind)
+
+
+def clean_section_verdicts(bot_kind: str) -> list[str]:
+    """The literals marking a ``bot_kind`` concern section clean (``[]`` = fail closed)."""
+    return REGISTRY.clean_section_verdicts(bot_kind)
 
 
 def review_body_summary_patterns(bot_kind: str) -> list[str]:

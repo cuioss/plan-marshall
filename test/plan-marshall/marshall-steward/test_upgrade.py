@@ -393,13 +393,15 @@ def test_project_kind_auto_invokes_detector(monkeypatch, capsys: pytest.CaptureF
 
 
 # =============================================================================
-# migrate-bot-lists — the one-shot legacy auto-map, over its four input states
+# migrate-bot-lists — the one-shot legacy auto-map, over its five input states
 # =============================================================================
 #
-# The four states are exhaustive over the presence/absence cross-product of the
-# retired ``enabled_bots`` key and the two replacement keys. States (3) and (4)
-# are deliberately indistinguishable once the legacy key is gone — that
-# collapse is what makes the migration self-disarming and safe to re-run.
+# The five states are exhaustive over the presence/absence cross-product of the
+# retired ``enabled_bots`` key and the two replacement keys, plus the strip-only
+# state: a roster that still names a retired kind is SAVED even with no legacy key
+# left. States (3) and (4) are deliberately indistinguishable once the legacy key is
+# gone and nothing is stripped — that collapse is what makes the migration
+# self-disarming and safe to re-run.
 
 
 def test_migrate_bot_lists_seeds_required_from_legacy_verbatim():
@@ -509,9 +511,9 @@ def test_migrate_bot_lists_is_self_disarming_on_second_run():
 # states plus the matched negative control
 # =============================================================================
 #
-# The four states mirror the shape the ``migrate_bot_lists`` suite above already
-# establishes for this file: every configured token valid, one token unknown, an
-# empty list, and an absent step.
+# The four states below are this verb's own input cross-product: every configured
+# token valid, one token unknown, an empty list, and an absent step. (The
+# ``migrate_bot_lists`` suite above covers five states of a different verb.)
 #
 # The load-bearing addition is the CONTROL. Asserting only that a valid list
 # produced no unknown tokens would pass just as happily for a check that examined

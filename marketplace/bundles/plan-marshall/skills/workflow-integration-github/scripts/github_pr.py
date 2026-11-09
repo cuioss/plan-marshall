@@ -174,7 +174,10 @@ _RESPONDABLE_RESOLUTIONS = frozenset({'fixed', 'suppressed', 'accepted', 'taken_
 #      lines, stripped before the signal test) and ``ignore_patterns`` from the
 #      registry (``automatic-review/standards/{bot_kind}.md``). The ignore entries
 #      are literal whole-comment markers (a no-op review line, a learnings notice, …)
-#      that only apply to that bot's own comments. They are
+#      that only apply to that bot's own comments. The drop is vetoed by the same
+#      bot's ``actionable_content_markers`` and by a declared concern section whose
+#      text carries no declared clean verdict, so a clean-review verdict that
+#      co-occurs with a finding keeps it. They are
 #      sourced from the registry at runtime, so adding/adjusting a bot's noise
 #      drops is a pure standards-doc edit — no change here.
 #
@@ -182,8 +185,10 @@ _RESPONDABLE_RESOLUTIONS = frozenset({'fixed', 'suppressed', 'accepted', 'taken_
 #      and ``actionable_content_markers`` from the same registry. Unlike layer 2
 #      this one is CONDITIONAL on the whole body: it drops a comment only when
 #      EVERY ``contentless_review_markers`` entry is present, ANY ONE declared
-#      ``contentless_review_headings`` entry is present, AND no
-#      ``actionable_content_markers`` entry is. It exists for a bot whose review
+#      ``contentless_review_headings`` entry is present, no
+#      ``actionable_content_markers`` entry is, AND every declared
+#      ``concern_section_headings`` section carries a ``clean_section_verdicts``
+#      literal. It exists for a bot whose review
 #      comments each carry both their findings and their clean-result assertions,
 #      so no unconditional whole-body marker can express "this review found
 #      nothing" without also dropping the reviews that found something. Empty
@@ -227,6 +232,17 @@ _FENCED_BLOCK = re.compile(r'(`{3,}|~{3,})[\s\S]*?\1')
 # repeatedly so nested blocks peel from the inside out.
 _INNERMOST_DETAILS_BLOCK = re.compile(r'<details\b[^>]*>(?:(?!<details\b)[\s\S])*?</details\s*>', re.IGNORECASE)
 _BLOCKQUOTE_LINE = re.compile(r'^[ \t]*>.*$', re.MULTILINE)
+# A closed HTML comment. CodeRabbit wraps its Merge Risk paragraph in
+# ``<!-- final_review_risk_start --> … <!-- final_review_risk_end -->`` and names the
+# level in another comment, so the comments are removed BEFORE a concern section is
+# delimited: otherwise the block's own machine markers would truncate the very text
+# the clean-verdict test must read. An UNCLOSED comment cannot be removed, so the
+# section boundary is unknowable and the caller treats the body as NOT clean (fail
+# closed) rather than risk reading a verdict out of text that was never a section.
+_HTML_COMMENT = re.compile(r'<!--[\s\S]*?-->')
+# The boundaries that end a concern section: the next markdown heading, the next
+# sibling ``<details>`` block, or the close of the block the heading sits in.
+_SECTION_BOUNDARY = re.compile(r'(?m)^#{1,6}[ \t]|<details\b|</details\s*>', re.IGNORECASE)
 
 
 # ============================================================================
@@ -305,6 +321,66 @@ def cmd_fetch_comments(args):
 # ============================================================================
 
 
+def _section_texts_after_heading(body: str, heading: str) -> list[str] | None:
+    """Return every section under each occurrence of ``heading`` (``None`` = unreadable).
+
+    HTML comments are removed first (see :data:`_HTML_COMMENT`), so a bot's own machine
+    markers inside the section do not truncate it. Each section ends at the next markdown
+    heading, the next ``<details>`` block, or the close of the block it sits in; a heading
+    with no following boundary runs to the end of the body.
+
+    ``None`` means an HTML comment could not be closed, so the section boundaries are
+    unknowable. The caller treats that as NOT clean, the fail-closed direction: an
+    unreadable section is never allowed to prove itself clean.
+    """
+    text = _HTML_COMMENT.sub(' ', body)
+    if '<!--' in text:
+        return None
+    sections: list[str] = []
+    start = 0
+    while True:
+        index = text.find(heading, start)
+        if index < 0:
+            break
+        section_start = index + len(heading)
+        boundary = _SECTION_BOUNDARY.search(text, section_start)
+        end = boundary.start() if boundary else len(text)
+        sections.append(text[section_start:end])
+        start = end
+    return sections
+
+
+def _concern_sections_are_clean(body: str, bot_kind: str) -> bool:
+    """True when every declared concern section carries a declared clean verdict.
+
+    The content-aware layer's second veto, and the one that closes a free-text concern:
+    a summary states its Merge Risk paragraph as prose, so no section-title marker can
+    express it. For EVERY occurrence of each ``concern_section_headings`` entry present
+    in ``body``, the text under that heading must contain at least one
+    ``clean_section_verdicts`` entry; otherwise the body holds a concern and the
+    contentless drop is vetoed.
+
+    Fail-closed in both directions: a body with no declared concern heading and no
+    unreadable comment is clean (there is no section to judge), while a body whose
+    section carries no declared clean wording — or whose comments cannot be closed, making
+    the boundaries unreadable — is NOT clean. An empty
+    ``clean_section_verdicts`` therefore files every block under a declared heading until
+    the clean wording is declared.
+    """
+    headings = [h.strip() for h in bot_registry.concern_section_headings(bot_kind) if h.strip()]
+    if not headings:
+        return True
+    verdicts = [v.strip() for v in bot_registry.clean_section_verdicts(bot_kind) if v.strip()]
+    for heading in headings:
+        sections = _section_texts_after_heading(body, heading)
+        if sections is None:
+            return False
+        for section in sections:
+            if not any(verdict in section for verdict in verdicts):
+                return False
+    return True
+
+
 def _is_contentless_boilerplate(body: str, bot_kind: str | None) -> bool:
     """True if ``body`` is ``bot_kind``'s review boilerplate carrying no content.
 
@@ -317,6 +393,10 @@ def _is_contentless_boilerplate(body: str, bot_kind: str | None) -> bool:
     bot's persistent review comments. All three lists are literal substrings, stripped
     before matching so an incidentally-indented registry value still matches the
     raw body (the project's normalize-both-sides-of-a-registry-comparison rule).
+
+    A second veto covers a concern stated as PROSE under a declared
+    ``concern_section_headings`` entry — the free-text shape no section-title marker
+    can express — through :func:`_concern_sections_are_clean`.
 
     An empty ``contentless_review_markers`` short-circuits to ``False`` — the
     fail-closed default, and the state every bot that has not declared a clean
@@ -341,7 +421,9 @@ def _is_contentless_boilerplate(body: str, bot_kind: str | None) -> bool:
     if headings and not any(heading in body for heading in headings):
         return False
     disqualifying = [m.strip() for m in bot_registry.actionable_content_markers(kind) if m.strip()]
-    return not any(marker in body for marker in disqualifying)
+    if any(marker in body for marker in disqualifying):
+        return False
+    return _concern_sections_are_clean(body, kind)
 
 
 def _is_participation_evidence(comment: dict, bot_kind: str) -> bool:
@@ -466,11 +548,15 @@ def _is_obvious_noise(body: str, bot_kind: str | None = None) -> bool:
        (literal whole-comment markers) are matched as case-sensitive substrings
        against the remaining body. These markers are exact fragments the bot emits
        on a *successful* review (a no-op review line, a learnings notice), so only
-       that bot's own comments are dropped.
+       that bot's own comments are dropped. The same bot's
+       ``actionable_content_markers`` VETO that drop: a clean-review verdict that
+       co-occurs with a nitpick/concern section keeps its findings.
     3. CONTENTLESS BOILERPLATE — ``_is_contentless_boilerplate``: that same bot's
        registry ``contentless_review_markers`` (ALL required) plus any one declared
        ``contentless_review_headings`` entry, vetoed by any
-       ``actionable_content_markers`` entry. Layer 2 cannot express this case: for
+       ``actionable_content_markers`` entry and by a declared concern section whose
+       text carries no declared ``clean_section_verdicts`` wording. Layer 2 cannot
+       express this case: for
        a bot whose review comment carries both its findings and its clean-result
        assertions, an unconditional whole-body marker would drop the reviews that
        found something too.
@@ -550,7 +636,15 @@ def _is_obvious_noise(body: str, bot_kind: str | None = None) -> bool:
         if not signal.strip():
             return True
         if any(marker in signal for marker in bot_registry.ignore_patterns(bot_kind)):
-            return True
+            # The same bot's actionable-content markers and a declared concern section
+            # VETO the whole-comment ignore drop: a clean-review verdict that co-occurs
+            # with a nitpick/concern section, or with a Merge Risk paragraph that states
+            # a concern, must keep that finding. The verdict cannot veto itself — the
+            # marker vocabulary is case-sensitive and the verdict reads "No actionable
+            # comments", not "Actionable comments".
+            actionables = [m.strip() for m in bot_registry.actionable_content_markers(bot_kind) if m.strip()]
+            if not any(marker in signal for marker in actionables) and _concern_sections_are_clean(signal, bot_kind):
+                return True
         return _is_contentless_boilerplate(signal, bot_kind)
     return False
 
