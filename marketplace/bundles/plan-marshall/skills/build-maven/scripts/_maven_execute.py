@@ -457,16 +457,19 @@ def _report_executed_tests(report: Path) -> int:
 def _report_attribute_as_int(root: ET.Element, name: str) -> int | None:
     """Return the integer value of ``root``'s ``name`` attribute, or ``None``.
 
-    ``None`` is the "the attribute is absent or unparseable" answer, never 0: the
-    two are different facts, and only a STATED count may credit a run.
+    ``None`` is the "absent, unparseable or impossible" answer, never 0: the three
+    are different facts, and only a STATED count may credit a run. A negative
+    count is refused for the same reason — a report claiming ``skipped="-1"``
+    would otherwise turn a zero-collection report into one executed test.
     """
     raw = root.get(name)
     if raw is None:
         return None
     try:
-        return int(raw)
+        count = int(raw)
     except (TypeError, ValueError):
         return None
+    return count if count >= 0 else None
 
 
 def _run_start_time(log_file: str | None, duration_seconds: object) -> float | None:

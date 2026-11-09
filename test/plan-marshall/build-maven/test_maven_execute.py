@@ -995,6 +995,26 @@ def test_a_report_whose_whole_population_was_skipped_does_not_credit_the_run(tmp
     assert TEST_RUN_EXECUTED_NOTHING in guarded['message']
 
 
+def test_a_report_with_a_negative_count_credits_nothing(tmp_path):
+    """A negative count is impossible, so it is no evidence either.
+
+    ``skipped="-1"`` beside ``tests="0"`` would otherwise compute one executed
+    test out of a report that collected none.
+    """
+    report_dir = tmp_path / 'target' / 'surefire-reports'
+    report_dir.mkdir(parents=True)
+    (report_dir / 'TEST-com.example.SampleTest.xml').write_text(
+        '<testsuite name="com.example.SampleTest" tests="0" failures="0" errors="0" skipped="-1"/>\n',
+        encoding='utf-8',
+    )
+    result = _quiet_guard_result(tmp_path, 'maven-quiet-green-no-summary.log')
+
+    guarded = apply_zero_test_guard(result, 'test', project_dir=str(tmp_path))
+
+    assert guarded['status'] == 'indeterminate'
+    assert TEST_RUN_EXECUTED_NOTHING in guarded['message']
+
+
 def test_a_measured_summary_that_skipped_its_whole_population_is_not_a_green():
     """The summary path counts executed tests too, not only the report credit.
 

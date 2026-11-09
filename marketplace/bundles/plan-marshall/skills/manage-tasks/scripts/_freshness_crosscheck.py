@@ -448,7 +448,9 @@ _PYPROJECT_NOTATION = 'plan-marshall:build-pyproject:pyproject_build'
 #: ``:core:test :core:jacocoTestReport``), so those tokens name a real blast
 #: radius. Dropping them would read a one-subproject run as whole-tree — the false
 #: green this dimension exists to close — so :func:`parse_row_scope` reports a row
-#: carrying any ``:module:``-prefixed token as unreadable instead.
+#: carrying any ``:module:``-prefixed token as unreadable instead. npm is exempt
+#: from that guard: a script name may begin with a colon, but it selects no
+#: project path, so dropping it keeps the row's real ``--workspace`` scope.
 _GOAL_POSITIONAL_NOTATIONS: frozenset[str] = frozenset(
     {
         'plan-marshall:build-maven:maven',
@@ -744,7 +746,9 @@ def parse_row_scope(entry: dict[str, Any]) -> RowScope | None:
       ``_build_examined.examined_analyses`` reads only the first token. The one
       exception is a Gradle submodule row, whose ``:module:``-prefixed task list
       DOES name one subproject: its project paths are not recoverable here, so
-      such a row is unreadable rather than widened to whole-tree;
+      such a row is unreadable rather than widened to whole-tree. npm is exempt
+      from that exception: a script name may begin with a colon without naming any
+      project path, so it is dropped and the row's ``--workspace`` scope stands;
     * any other notation — absent or unknown — is read only when it carries ONE
       positional token; two or more return ``None``, because the reader cannot
       tell a module from a goal and either guess would manufacture a coverage
@@ -838,10 +842,11 @@ def parse_row_scope(entry: dict[str, Any]) -> RowScope | None:
         # in EVERY task (``:core:test``, ``:core:test :core:jacocoTestReport``).
         # Those tokens DO name a blast radius, and dropping them would assert
         # whole-tree over a run that built one subproject. No other
-        # goal-positional tool emits that shape, and if one did the same reading
-        # is the safe one: the project paths are not recoverable here, so the row
-        # is unreadable rather than widened.
-        if any(token.startswith(':') for token in payload):
+        # goal-positional tool emits that shape — an npm script name may also
+        # begin with a colon, but it selects no project path — and if one did the
+        # same reading is the safe one: the project paths are not recoverable
+        # here, so such a row is unreadable rather than widened.
+        if notation != 'plan-marshall:build-npm:npm' and any(token.startswith(':') for token in payload):
             return None
         payload = payload[:1]
     elif notation != _PYPROJECT_NOTATION and len(payload) > 1:

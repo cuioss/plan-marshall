@@ -1113,46 +1113,45 @@ def test_the_scope_flag_registry_names_the_flags_each_build_tool_carries() -> No
 
 
 def test_the_executor_run_flag_registry_names_the_flags_after_the_payload() -> None:
-    """The hint's flag set is explicit, so a flag cannot become "executor" by accident.
+    """The hint's flag set is derived from the parsers, so parser drift fails here.
 
-    The set is every flag the shared ``run`` subparser accepts after the payload:
-    the common five, the ``--project-dir`` / ``--plan-id`` pair, the routed
-    ``--resolved-project-dir`` carry, and the tool-local ``--working-dir`` /
-    ``--env``. ``--command-args`` is excluded because it is the marker the payload
-    is read FROM, and argparse's own ``-h`` / ``--help`` pair is excluded because
-    it is declared by the parser, not by the subcommand.
+    The set is every flag the ``run`` subparser accepts after the payload: the
+    shared declaration plus the tool-local extras npm and pyproject declare.
+    ``--command-args`` is excluded because it is the marker the payload is read
+    FROM, and argparse's own ``-h`` / ``--help`` pair because it is declared by the
+    parser, not by the subcommand.
 
-    The shared half is DERIVED from the parser declaration rather than compared
-    against a second literal copy, so a flag the shared subparser gains or loses
-    fails here instead of leaving the remedy quietly wrong.
+    The expected option-to-arity map is DERIVED from the actual parser
+    declarations — shared, plus each tool's ``extra_args_fn`` — rather than
+    compared against a second literal copy, so a flag that is added, removed or
+    given another arity fails this test instead of leaving the remedy quietly
+    wrong. The non-vacuity guard keeps an empty derivation from passing.
     """
     import argparse
 
     import _build_cli
+    import npm
+    import pyproject_build
 
-    root = argparse.ArgumentParser()
-    run_parser = _build_cli.add_run_subparser(root.add_subparsers())
-    declared = {
-        # argparse publishes no public roster, so the parser's own actions are the
-        # only honest source for what it declares.
-        option
-        for action in run_parser._actions
-        for option in action.option_strings
-    }
-    shared = declared - {'--command-args', '-h', '--help'}
+    def declared(extra_args_fn) -> dict[str, int]:
+        root = argparse.ArgumentParser()
+        run_parser = _build_cli.add_run_subparser(root.add_subparsers(), extra_args_fn=extra_args_fn)
+        mapping: dict[str, int] = {}
+        for action in run_parser._actions:
+            for option in action.option_strings:
+                if option in {'--command-args', '-h', '--help'}:
+                    continue
+                # Every run flag takes exactly one value; ``--env``'s documented
+                # value is a space-separated list, handled apart in the reader.
+                mapping[option] = 1
+        return mapping
 
-    assert shared <= set(crosscheck._EXECUTOR_RUN_FLAGS), sorted(shared - set(crosscheck._EXECUTOR_RUN_FLAGS))
-    assert crosscheck._EXECUTOR_RUN_FLAGS == {
-        '--timeout': 1,
-        '--mode': 1,
-        '--format': 1,
-        '--execution-mode': 1,
-        '--project-dir': 1,
-        '--plan-id': 1,
-        '--resolved-project-dir': 1,
-        '--working-dir': 1,
-        '--env': 1,
-    }
+    derived = declared(None)
+    derived.update(declared(npm._npm_extra_args))
+    derived.update(declared(pyproject_build._pyproject_extra_args))
+
+    assert derived, 'the derivation must not be vacuous'
+    assert crosscheck._EXECUTOR_RUN_FLAGS == derived
 
 
 def test_a_gradle_submodule_multi_task_row_is_unreadable_not_whole_tree(monkeypatch) -> None:
@@ -1472,6 +1471,37 @@ def test_an_npm_workspace_row_still_narrows_by_its_workspace_selector(monkeypatc
     assert other_module['scope_verdict'] == crosscheck.NARROW, other_module
     assert own_module['scope_verdict'] == crosscheck.UNDETERMINED, own_module
     assert own_module['contributing'] == [0], own_module
+
+
+def test_an_npm_colon_script_name_keeps_its_workspace_scope(monkeypatch) -> None:
+    """An npm script may start with a colon; that is a name, not a project path.
+
+    The ``:module:`` guard is Gradle's shape. Applying it to npm would discard the
+    row's real scope and turn a correctly refused change into an inability.
+    """
+    vocabulary, reason = crosscheck.load_analysis_vocabulary()
+    assert vocabulary is not None, reason
+    _stub_expected(monkeypatch, {_NPM})
+    row = _build_entry(notation=_NPM, args=_args_for('run :check --workspace=pkg-a'), outcome=_outcome_for(120))
+    test_only = {vocabulary.test}
+
+    parsed = crosscheck.parse_row_scope(row)
+    assert parsed is not None
+    assert (parsed.canonical, parsed.scope_tokens) == ('run', ('pkg-a',))
+
+    other_module = crosscheck.cross_check_candidates(
+        [row],
+        '/nonexistent-project-dir',
+        _required(analyses=test_only, whole_tree=False, modules={'pkg-b'}),
+    )
+    own_module = crosscheck.cross_check_candidates(
+        [row],
+        '/nonexistent-project-dir',
+        _required(analyses=test_only, whole_tree=False, modules={'pkg-a'}),
+    )
+
+    assert other_module['scope_verdict'] == crosscheck.NARROW, other_module
+    assert own_module['scope_verdict'] == crosscheck.UNDETERMINED, own_module
 
 
 def test_a_maven_goal_row_with_a_module_flag_is_narrow(monkeypatch) -> None:
