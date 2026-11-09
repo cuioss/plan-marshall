@@ -552,4 +552,3 @@ def test_an_unreadable_default_branch_without_a_declaration_fails_closed():
 
     assert result['status'] == 'error'
     assert str(result['unresolved'][0]['reason']).startswith('default_branch_unreadable')
-

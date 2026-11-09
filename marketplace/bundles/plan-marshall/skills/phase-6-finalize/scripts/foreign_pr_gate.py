@@ -326,7 +326,7 @@ def _branch_for_repo(
     if checkout is not None and checkout == default:
         return None, (
             f'branch_is_default: the foreign checkout at {repo_root} is on its default branch '
-            f'{default!r}, which is never a change\'s branch; declare foreign_branch: <change branch> '
+            f"{default!r}, which is never a change's branch; declare foreign_branch: <change branch> "
             f"in the deliverable's **Metadata:** block"
         )
     if checkout is None:
