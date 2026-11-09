@@ -461,13 +461,16 @@ _GOAL_POSITIONAL_NOTATIONS: frozenset[str] = frozenset(
 #: ``args`` beside the payload, in the same unquoted token stream, so the reader
 #: cannot tell whether they belonged to the payload or to the executor. Each
 #: consumes ONE recorded token; a value that itself carried spaces
-#: (``--env 'A=1 B=2'``) lands as several tokens, so stripping leaves residue and
-#: the hint then simply does not fire. Copied from the shared subparser
-#: declaration (``_build_cli.add_run_subparser``: ``--timeout``, ``--mode``,
-#: ``--format``, ``--execution-mode``, the ``--project-dir`` / ``--plan-id`` pair
-#: and the routed ``--resolved-project-dir`` carry) and the tool-local extras npm
-#: and pyproject declare (``--working-dir``, ``--env``). ``--command-args`` itself
-#: is absent on purpose: it is the marker the payload is read FROM.
+#: (``--env 'A=1 B=2'``) lands as several tokens, so a residue stays in the
+#: payload — it either keeps the row unreadable (and the hint is not offered) or
+#: is read as scope. Either way the ambiguity is inherent to the unquoted ``args``
+#: join, which is why this hint is only ever advisory. Copied from the shared
+#: subparser declaration (``_build_cli.add_run_subparser``: ``--timeout``,
+#: ``--mode``, ``--format``, ``--execution-mode``, the ``--project-dir`` /
+#: ``--plan-id`` pair and the routed ``--resolved-project-dir`` carry) and the
+#: tool-local extras npm and pyproject declare (``--working-dir``, ``--env``).
+#: ``--command-args`` itself is absent on purpose: it is the marker the payload is
+#: read FROM.
 #:
 #: A flag outside this set is not the executor's: it either belongs to the build
 #: tool itself (``-k``, ``-Ppre-commit``) or is a scope-bearing one the reader
