@@ -51,7 +51,16 @@ def _deliverable(number, *, foreign, paths, intent='write-replace', branch=None)
     return deliverable
 
 
-def _run(deliverables, *, roots=None, landings=None, resolved_paths=None, branches=None, landing_branches=None):
+def _run(
+    deliverables,
+    *,
+    roots=None,
+    landings=None,
+    resolved_paths=None,
+    branches=None,
+    landing_branches=None,
+    default_branches=None,
+):
     """Drive gate.check with fully in-memory seams.
 
     ``roots`` maps a declared path to its resolved repo root. ``landings`` maps a
@@ -60,10 +69,13 @@ def _run(deliverables, *, roots=None, landings=None, resolved_paths=None, branch
     red-at-HEAD shape, where the plan's own branch name reads ``pushed_no_pr``
     and the branch the change is actually on reads ``merged``. ``branches`` maps a
     repo root to the branch its checkout is on (absent or ``None`` for a detached
-    or unreadable checkout). ``resolved_paths``, when given, is a list the root
-    resolver appends every path it is asked about to — the observable that a path
-    did or did not enter the population. ``landing_branches``, when given, records
-    the branch each landing read was made for.
+    or unreadable checkout). ``default_branches`` maps a repo root to the default
+    branch the fixture reads for it; it answers ``'main'`` for every resolved root
+    unless a test says otherwise, so a checkout on ``main`` is a checkout on the
+    default branch. ``resolved_paths``, when given, is a list the root resolver
+    appends every path it is asked about to — the observable that a path did or
+    did not enter the population. ``landing_branches``, when given, records the
+    branch each landing read was made for.
     """
     roots = roots or {}
     landings = landings or {}
@@ -72,6 +84,8 @@ def _run(deliverables, *, roots=None, landings=None, resolved_paths=None, branch
     # would turn every unrelated fixture into a branch_unreadable error.
     if branches is None:
         branches = {root: 'fix/foreign-branch' for root in roots.values() if root}
+    if default_branches is None:
+        default_branches = {root: 'main' for root in roots.values() if root}
 
     def loader(_plan_id):
         return _listed(deliverables)
@@ -83,6 +97,9 @@ def _run(deliverables, *, roots=None, landings=None, resolved_paths=None, branch
 
     def branch_resolver(root):
         return branches.get(root)
+
+    def default_branch_resolver(root):
+        return default_branches.get(root)
 
     def landing_resolver(root, branch):
         if landing_branches is not None:
@@ -98,6 +115,7 @@ def _run(deliverables, *, roots=None, landings=None, resolved_paths=None, branch
         root_resolver=root_resolver,
         landing_resolver=landing_resolver,
         branch_resolver=branch_resolver,
+        default_branch_resolver=default_branch_resolver,
     )
 
 
@@ -418,8 +436,8 @@ def test_a_declared_branch_that_disagrees_with_the_checkout_is_unresolved():
     result = _run(
         deliverables,
         roots={'/foreign/repo/a.py': '/foreign/repo'},
-        branches={'/foreign/repo': 'main'},
-        landings={'/foreign/repo': {'docs/workflow-dsl': 'merged', 'main': 'merged'}},
+        branches={'/foreign/repo': 'fix/other'},
+        landings={'/foreign/repo': {'docs/workflow-dsl': 'merged', 'fix/other': 'merged'}},
     )
 
     assert result['status'] == 'error'
@@ -483,22 +501,55 @@ def test_the_checkout_branch_is_used_when_nothing_is_declared():
     assert branches_seen == {'/foreign/repo': 'docs/workflow-dsl'}
 
 
-def test_the_plan_id_branch_is_never_the_fallback():
-    """A repository whose checkout names a branch is read on THAT branch only.
+def test_a_checkout_on_the_default_branch_is_never_a_change_branch():
+    """Undeclared and checked out on the default branch: no change branch exists.
 
-    ``feature/p`` is the plan's own name (the plan id in this suite is ``p``), and
-    the landing fixture answers it ``pushed_no_pr``. Any fall-back to it would
-    turn this clear into a block, so the verdict pins the absence of a fall-back.
+    After branch cleanup the foreign tree sits on its default branch, so the
+    checkout names no change and every landing read for it would be a read of the
+    wrong branch — ``main`` answers ``pushed_no_pr`` here, the state that blocked
+    the archive for a change that already merged. The gate names the condition
+    and makes NO landing read at all.
     """
-    branches_seen: dict[str, str] = {}
+    landing_branches: dict[str, str] = {}
     deliverables = [_deliverable(1, foreign=True, paths=['/foreign/repo/a.py'])]
     result = _run(
         deliverables,
         roots={'/foreign/repo/a.py': '/foreign/repo'},
         branches={'/foreign/repo': 'main'},
-        landings={'/foreign/repo': {'main': 'merged', 'feature/p': 'pushed_no_pr'}},
-        landing_branches=branches_seen,
+        landings={'/foreign/repo': {'main': 'pushed_no_pr', 'feature/p': 'pushed_no_pr'}},
+        landing_branches=landing_branches,
+    )
+
+    assert result['status'] == 'error'
+    assert str(result['unresolved'][0]['reason']).startswith('branch_is_default')
+    assert landing_branches == {}
+
+
+def test_a_declaration_wins_over_a_checkout_on_the_default_branch():
+    """The declaration is the change branch; a default-branch checkout says nothing."""
+    deliverables = [_deliverable(1, foreign=True, paths=['/foreign/repo/a.py'], branch='docs/x')]
+    result = _run(
+        deliverables,
+        roots={'/foreign/repo/a.py': '/foreign/repo'},
+        branches={'/foreign/repo': 'main'},
+        landings={'/foreign/repo': {'docs/x': 'merged'}},
     )
 
     assert result['status'] == 'clear'
-    assert branches_seen == {'/foreign/repo': 'main'}
+    assert result['repos'][0]['branch'] == 'docs/x'
+
+
+def test_an_unreadable_default_branch_without_a_declaration_fails_closed():
+    """An unread default cannot be told apart from a change branch, so it blocks."""
+    deliverables = [_deliverable(1, foreign=True, paths=['/foreign/repo/a.py'])]
+    result = _run(
+        deliverables,
+        roots={'/foreign/repo/a.py': '/foreign/repo'},
+        branches={'/foreign/repo': 'main'},
+        default_branches={},
+        landings={'/foreign/repo': 'merged'},
+    )
+
+    assert result['status'] == 'error'
+    assert str(result['unresolved'][0]['reason']).startswith('default_branch_unreadable')
+
