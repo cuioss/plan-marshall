@@ -470,9 +470,11 @@ def test_a_counted_additional_comments_section_counts_its_findings() -> None:
 def test_a_counted_declared_non_finding_title_is_not_a_finding(title: str) -> None:
     """The declared non-finding labels stay non-findings when a count rides the title.
 
-    The titles are OBSERVED on #1940 (uncounted there); the counts on `Review info`,
-    `Run configuration` and `Commits` are CONSTRUCTED, to prove the label wins over
-    the count rather than the block becoming a finding or an undecidable read.
+    Provenance: `Files selected for processing: 19` is OBSERVED with its count on
+    #1940; `Review info`, `Run configuration` and `Commits` are OBSERVED there
+    uncounted, so their counts are CONSTRUCTED; `Files ignored due to path filters (4)`
+    is spec-named, with a CONSTRUCTED count. The label wins over the count in every
+    case.
     """
     body = f'<details>\n<summary>{title}</summary>\n* `a.py`\n</details>\n'
 

@@ -2306,8 +2306,8 @@ _REVIEW_BODY_SECTIONS = (
 #: ``files selected for processing`` are OBSERVED as titles in the review body of
 #: ``cuioss/plan-marshall#1940`` (review ``PRR_kwDOQ3xasM8AAAABWsFY6g``) — the file
 #: list is the one that carries a declared count there (``: 19``), and the other
-#: three carry none; ``review details`` is the block the fixtures and the inline
-#: bodies render; ``files ignored due to path filters`` is the spec-named sibling of
+#: three carry none; ``review details`` is the block the automatic-review fixtures
+#: render; ``files ignored due to path filters`` is the spec-named sibling of
 #: the observed file list. A counted title that is none of these is refused rather
 #: than declared away — and ``Additional comments (N)`` is deliberately NOT here: the
 #: capture does not carry it, the spec names the shape, and a counted title that
