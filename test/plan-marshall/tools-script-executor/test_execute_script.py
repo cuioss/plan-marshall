@@ -6,10 +6,12 @@ import os
 import subprocess
 import sys
 import tempfile
+from collections.abc import Iterator
 from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
+import system_temp
 from _executor_template_render import BOOTSTRAP_BUNDLE, PLACEHOLDER_RE, TEMPLATE_PATH, render_executor_template
 
 from conftest import (
@@ -38,12 +40,44 @@ SCRIPTS_DIR = SKILL_DIR / 'scripts'
 # resolve_notation existence-checks embedded SCRIPTS paths (self-healing contract),
 # so the mapped targets must be real files on disk for the direct-hit branch to return
 # them. Create stub files in a temp dir and map the test notations to them.
-_MAPPED_DIR = Path(tempfile.mkdtemp(prefix='executor-mappings-'))
-_MAP_MANAGE_FILES = _MAPPED_DIR / 'manage-files.py'
-_MAP_MAVEN = _MAPPED_DIR / 'maven.py'
-_MAP_TEST_SKILL = _MAPPED_DIR / 'test-skill.py'
-for _stub in (_MAP_MANAGE_FILES, _MAP_MAVEN, _MAP_TEST_SKILL):
-    _stub.write_text('# test stub\n')
+#
+# The stub directory is owned by the session-scoped fixture below rather than
+# created at import time. A module-level ``tempfile.mkdtemp`` runs during
+# COLLECTION, once per pytest process, so a collection error, an aborted run or an
+# xdist worker that never runs a test from this module left the directory behind
+# for good — thousands of ``executor-mappings-*`` directories accumulated that way.
+_MAPPED_DIR: Path | None = None
+_MAP_MANAGE_FILES: Path | None = None
+_MAP_MAVEN: Path | None = None
+_MAP_TEST_SKILL: Path | None = None
+
+
+@pytest.fixture(scope='session', autouse=True)
+def _executor_mapping_stubs() -> Iterator[Path]:
+    """Create the three notation stub files in one session-owned directory.
+
+    Autouse and session-scoped so no call site changes: the module-level names
+    below are bound here, before any test in this module asks for them, and every
+    ``load_executor_module()`` call reads them. The teardown removes the
+    directory; ``system_temp`` registers the same removal for the process exit as
+    well, so a worker that is torn down without reaching this finalizer still
+    leaves nothing behind.
+    """
+    global _MAPPED_DIR, _MAP_MANAGE_FILES, _MAP_MAVEN, _MAP_TEST_SKILL
+    _MAPPED_DIR = system_temp.create(prefix='executor-mappings-')
+    _MAP_MANAGE_FILES = _MAPPED_DIR / 'manage-files.py'
+    _MAP_MAVEN = _MAPPED_DIR / 'maven.py'
+    _MAP_TEST_SKILL = _MAPPED_DIR / 'test-skill.py'
+    try:
+        for stub in (_MAP_MANAGE_FILES, _MAP_MAVEN, _MAP_TEST_SKILL):
+            stub.write_text('# test stub\n')
+        yield _MAPPED_DIR
+    finally:
+        system_temp.release(_MAPPED_DIR)
+        _MAPPED_DIR = None
+        _MAP_MANAGE_FILES = None
+        _MAP_MAVEN = None
+        _MAP_TEST_SKILL = None
 
 
 def test_rendered_template_carries_the_generator_bootstrap_bundle():
@@ -129,6 +163,33 @@ def test_resolve_all_mappings():
     assert 'plan-marshall:manage-files' in executor.SCRIPTS
     assert 'pm-dev-builder:builder-maven-rules' in executor.SCRIPTS
     assert 'test:skill' in executor.SCRIPTS
+
+
+@pytest.mark.parametrize(
+    ('notation', 'stub_name'),
+    [
+        ('plan-marshall:manage-files', 'manage-files.py'),
+        ('pm-dev-builder:builder-maven-rules', 'maven.py'),
+        ('test:skill', 'test-skill.py'),
+    ],
+    ids=['manage-files', 'builder-maven-rules', 'test-skill'],
+)
+def test_each_mapped_notation_resolves_to_its_existing_stub(notation: str, stub_name: str) -> None:
+    """One verification criterion per notation the mapping JSON binds.
+
+    ``resolve_notation`` self-heals: it returns a mapped target only when that
+    file EXISTS. A stub the session fixture did not create would therefore make
+    the direct-hit branch fall through silently, and every test that renders the
+    executor would pin a different path than the one it names. The criterion is
+    the resolved path AND that the file is really there, per notation.
+    """
+    executor = load_executor_module()
+    assert _MAPPED_DIR is not None
+
+    resolved = executor.resolve_notation(notation)
+
+    assert resolved == str(_MAPPED_DIR / stub_name)
+    assert Path(resolved).is_file(), f'the mapped stub {resolved} must exist for the direct-hit branch'
 
 
 @pytest.mark.parametrize(
