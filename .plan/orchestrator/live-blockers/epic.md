@@ -1224,6 +1224,23 @@ derive, for rows still live.
 
 ## Decisions
 
+- 2026-11-09 — **The `/tmp` inode exhaustion is staged as PLAN-LB-141 (operator word: "Analyze and create a plan for the following",
+  with the operator's own incident analysis pasted).** The incident stopped every tool call on the machine, including the ledger land of
+  the same day, which was left in flight after its snapshot and resumes with the next `land`. The paste was treated as a lead and
+  checked against HEAD: both defects are as described (`_guard_node_harness.py:251`, a bare `mkdtemp` with no removal path in the
+  module; `test_execute_script.py:41`, a module-level `mkdtemp` that runs once per pytest process). Two corrections to the paste: the
+  call sites are 68 across ten files, not about 60; and the other `mkdtemp` sites it names as secondary (`pm-recovery-`,
+  `pm-consumer-lane-`, `pm-consumer-stale-`) are not systematic leaks, the consumer pair removing its directory in a `finally` and the
+  recovery test opening a `try` at once (its `finally` was not read). One acceptance criterion was changed: "zero `guard-node-*` in
+  `/tmp`" would fail a correct fix while four plans run concurrently and each holds live ones, so the spec measures against a run-private
+  `TMPDIR`. Three deliverables (harness teardown, executor stub fixture, a regression guard whose flagged sites are all fixed or
+  recorded), below the six-deliverable guard, no split needed. Scoped OUT and owed to the operator: a `systemd-tmpfiles` janitor for
+  killed runs and any raise of `nr_inodes`; both live outside the repository. The xdist teardown mechanism is left as a verify-first
+  clause because an `atexit` registration is not known to run in a worker. Gate read: the spec is declarative with four paths, its own
+  `spec_comparisons[]` row is determinate with no blocking candidate and no overlap prompt, and `corpus verdicts` has no row for it.
+  The only live-spec neighbour is PLAN-LB-137 on `test/conftest.py`, one shared file, which does not fire the prompt. Staged, not
+  emitted: the four slots are taken, so it is the first candidate for the next free slot, ahead of 132 to 140 unless the operator says
+  otherwise, because the leak grows with every suite run the four running plans make.
 - 2026-11-09 — **The five reported majors are staged as fix plans and the parked plans are regrouped (operator word: "Fix and regroup
   the plans").** Thirteen plans, PLAN-LB-128 to PLAN-LB-140, all runbook-lane rows with explicit Expected Surface sections that the
   corpus reads as declarative and admitting. Fix plans: 128 (the PLAN-LB-127 majors: the unsaved retired-bot strip and the free-text

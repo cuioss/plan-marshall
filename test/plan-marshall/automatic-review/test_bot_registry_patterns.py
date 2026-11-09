@@ -160,9 +160,9 @@ def test_refusal_size_patterns_mark_the_diff_size_cause():
 def test_coderabbit_declares_the_summary_rule_as_a_conditional_drop():
     """The summary is dropped on its boilerplate alone, never on the summary marker as such.
 
-    The marker is the conjunction anchor, the two states the one persistent summary comment
-    is published in are the heading alternation, and the concern sections veto the drop. A
-    marker left in ``ignore_patterns`` would drop a summary that carries a concern whole.
+    The marker is the conjunction anchor, the declared headings are the alternation, and the
+    actionable sections plus the Merge Risk block's text veto the drop. A marker left in
+    ``ignore_patterns`` would drop a summary that carries a concern whole.
     """
     assert bot_registry.contentless_review_markers('coderabbit') == [
         '<!-- This is an auto-generated comment: summarize by coderabbit.ai -->'
@@ -170,6 +170,7 @@ def test_coderabbit_declares_the_summary_rule_as_a_conditional_drop():
     assert bot_registry.contentless_review_headings('coderabbit') == [
         '## Walkthrough',
         'Currently processing new changes',
+        '## Review skipped',
     ]
     assert bot_registry.actionable_content_markers('coderabbit') == [
         'Actionable comments',
@@ -177,14 +178,56 @@ def test_coderabbit_declares_the_summary_rule_as_a_conditional_drop():
         'Outside-diff comments',
         'Follow-ups',
     ]
-    # The three lists are the ONLY place the summary wording may sit: an entry that stayed
+    # The concern-section pair is the second veto: the heading whose text is judged, and
+    # the observed literals that mark that text clean.
+    assert bot_registry.concern_section_headings('coderabbit') == ['Merge Risk:']
+    assert bot_registry.clean_section_verdicts('coderabbit') == [
+        'No actionable merge-blocking risk remains.',
+        'No merge-blocking risk was found.',
+    ]
+    # These lists are the ONLY place the summary wording may sit: an entry that stayed
     # in the unconditional drops would make the veto unreachable for any body carrying it.
     for marker in (
         *bot_registry.contentless_review_markers('coderabbit'),
         *bot_registry.contentless_review_headings('coderabbit'),
         *bot_registry.actionable_content_markers('coderabbit'),
+        *bot_registry.concern_section_headings('coderabbit'),
+        *bot_registry.clean_section_verdicts('coderabbit'),
     ):
         assert marker not in bot_registry.ignore_patterns('coderabbit'), marker
+
+
+def test_the_concern_section_fields_absent_read_as_empty(tmp_path):
+    """A record that declares neither field reads as ``[]`` — the layer adds no condition.
+
+    An undeclared concern heading means the body has no such section to judge; an
+    undeclared clean verdict beside a declared heading is the fail-closed direction the
+    producer applies (it files), not an empty list that silently marks the section clean.
+    """
+    (tmp_path / 'demo.md').write_text('```yaml\nbot_kind: demo\nauthor_login: demo-bot\n```\n', encoding='utf-8')
+    reg = bot_registry.BotRegistry(standards_dir=tmp_path)
+
+    assert reg.concern_section_headings('demo') == []
+    assert reg.clean_section_verdicts('demo') == []
+
+
+def test_the_concern_section_fields_parse_from_a_declared_block(tmp_path):
+    """The two fields are read off the fenced data block like every other registry field."""
+    (tmp_path / 'demo.md').write_text(
+        '```yaml\n'
+        'bot_kind: demo\n'
+        'author_login: demo-bot\n'
+        'concern_section_headings:\n'
+        '  - "Merge Risk:"\n'
+        'clean_section_verdicts:\n'
+        '  - "No actionable merge-blocking risk remains."\n'
+        '```\n',
+        encoding='utf-8',
+    )
+    reg = bot_registry.BotRegistry(standards_dir=tmp_path)
+
+    assert reg.concern_section_headings('demo') == ['Merge Risk:']
+    assert reg.clean_section_verdicts('demo') == ['No actionable merge-blocking risk remains.']
 
 
 def test_coderabbit_reads_the_file_count_cap_from_either_wording():
@@ -532,6 +575,10 @@ def test_module_functions_match_registry_singleton():
         assert bot_registry.actionable_content_markers(bot_kind) == (
             bot_registry.REGISTRY.actionable_content_markers(bot_kind)
         )
+        assert bot_registry.concern_section_headings(bot_kind) == (
+            bot_registry.REGISTRY.concern_section_headings(bot_kind)
+        )
+        assert bot_registry.clean_section_verdicts(bot_kind) == (bot_registry.REGISTRY.clean_section_verdicts(bot_kind))
         for shape in ('review_body', 'inline', 'issue_comment'):
             assert bot_registry.participation_evidence_marker(bot_kind, shape) == (
                 bot_registry.REGISTRY.participation_evidence_marker(bot_kind, shape)
