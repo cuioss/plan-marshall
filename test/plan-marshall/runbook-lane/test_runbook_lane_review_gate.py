@@ -538,6 +538,22 @@ def test_a_real_commit_or_reason_disposes_the_finding(evidence: str) -> None:
     assert verdict['reason'] == 'all_handled'
 
 
+def test_a_placeholder_embedded_in_a_stated_reason_is_a_stated_reason() -> None:
+    """The comparison is over the whole evidence token, never per word.
+
+    A word-wise test would refuse a real reason that happens to contain ``none`` or
+    ``later`` ("none of the callers use this"); the rule the spec states is that the
+    evidence as a whole is a commit or a reason outside the placeholder set.
+    """
+    verdict = _verdict(
+        _read(_review_body(_OUTSIDE_DIFF_BODY)),
+        'coderabbit outside-diff outside-diff-1 — n/a — see later',
+    )
+
+    assert verdict['merge_allowed'] is True, verdict
+    assert verdict['reason'] == 'all_handled'
+
+
 def test_an_unrecognised_record_kind_refuses_the_merge() -> None:
     """A record shape the verb does not know is a surface it cannot read."""
     read = _read()
