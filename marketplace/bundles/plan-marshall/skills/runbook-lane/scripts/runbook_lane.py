@@ -2294,15 +2294,35 @@ _REVIEW_BODY_SECTIONS = (
     ('nitpicks', 'nitpick'),
     ('follow-ups', 'followup'),
     ('followups', 'followup'),
+    ('additional comments', 'additional'),
 )
 
-#: The keywords that mark a ``<summary>`` title as one of the reviewer's FINDING
-#: sections. Used only by the fail-closed arm: a counted title carrying one of
-#: these but matching no declared label is a section this parser cannot read, and
-#: an unreadable section is an undecidable read rather than an empty one.
-_SECTION_KEYWORDS = ('comment', 'follow-up', 'followup', 'nitpick', 'outside')
+#: The ``<summary>`` titles a reviewer posts that COUNT their block while the block
+#: is not a findings section — the boilerplate a reviewer renders beside its
+#: findings. Matched as a case-insensitive PREFIX of the normalised title, like the
+#: section table.
+#:
+#: Every entry is grounded: ``review info``, ``run configuration``, ``commits`` and
+#: ``files selected for processing`` are OBSERVED as titles in the review body of
+#: ``cuioss/plan-marshall#1940`` (review ``PRR_kwDOQ3xasM8AAAABWsFY6g``) — the file
+#: list is the one that carries a declared count there (``: 19``), and the other
+#: three carry none; ``review details`` is the block the automatic-review fixtures
+#: render; ``files ignored due to path filters`` is the spec-named sibling of
+#: the observed file list. A counted title that is none of these is refused rather
+#: than declared away — and ``Additional comments (N)`` is deliberately NOT here: the
+#: capture does not carry it, the spec names the shape, and a counted title that
+#: cannot be shown to be boilerplate is COUNTED as findings so a block is never a
+#: false pass.
+_NON_FINDING_SECTION_LABELS = (
+    'files selected for processing',
+    'files ignored due to path filters',
+    'review details',
+    'review info',
+    'run configuration',
+    'commits',
+)
 
-#: The markers that make a resolved thread's last reviewer comment an answer that
+#: The markers that make a resolved thread's last BOT-authored comment an answer that
 #: the concern REMAINS. A reviewer that closes a thread with an acknowledgement
 #: ("Addressed in commit …", "verified", "fixed") matches none of these, so the
 #: thread counts as handled; one that restates THIS thread's defect matches, so a
@@ -2323,7 +2343,21 @@ _CONCERN_REMAINS_MARKERS = (
 )
 
 _SUMMARY_RE = re.compile(r'<summary>(?P<title>.*?)</summary>', re.IGNORECASE | re.DOTALL)
-_TRAILING_COUNT_RE = re.compile(r'\((?P<count>\d+)\)\s*$')
+#: The count a reviewer declares at the end of a ``<summary>`` title, in either
+#: OBSERVED spelling: a parenthesised ``(N)`` (``Nitpick comments (2)``) or a
+#: trailing ``: N`` (``Nitpick comments: 1``, and the per-file ``path: 1``). The
+#: colon form needs whitespace after it, so a bare location (``src/a.py:12``) is not
+#: a count.
+_COUNT_SUFFIX_RE = re.compile(r'(?:\((?P<paren>\d+)\)|:\s+(?P<colon>\d+))\s*$')
+
+#: What a count read does not need: markup and decoration AROUND the declared count.
+#: The colon and the parentheses survive, because both spellings are counts.
+_COUNT_TITLE_NOISE_RE = re.compile(r'[^a-z0-9\- ():]+')
+
+#: The per-row finding marker the reviewer puts in a section's rows, OBSERVED on
+#: ``cuioss/plan-marshall#1940`` (``<!-- cr-comment:v1:…``). A section that declares
+#: no count states its findings one per marker, so the markers are its count.
+_ROW_MARKER_RE = re.compile(r'<!--\s*cr-comment:v1:')
 
 #: A ``<details>`` open or close tag, used to find the container a ``<summary>``
 #: sits in.
@@ -2408,18 +2442,70 @@ _DISPOSITION_RE = re.compile(
     r'^(?P<reviewer>\S+)\s+(?P<section>\S+)\s+(?P<id>\S+)\s*' + _DISPOSITION_SEPARATOR + r'\s*(?P<evidence>\S.*)$'
 )
 
+#: The evidence values that name neither a commit nor a reason — the shape a line has
+#: when nothing was decided. Compared as one punctuation-stripped, case-folded token, so
+#: ``TBD.``, ``N/A`` and ``—`` reduce to ``tbd``, ``na`` and the empty entry.
+_DISPOSITION_PLACEHOLDER_EVIDENCE = frozenset({'', 'tbd', 'todo', 'na', 'none', 'later', 'wip', 'pending'})
+
+#: A hex commit id is evidence on its own, with no other token needed.
+_COMMIT_SHA_RE = re.compile(r'[0-9a-f]{7,40}')
+
+#: Everything a placeholder comparison does not need: punctuation, markup and symbols.
+_PLACEHOLDER_PUNCTUATION_RE = re.compile(r'[^a-z0-9]+')
+
+
+def _disposition_evidence_is_real(evidence: str) -> bool:
+    """Whether a disposition's evidence names a commit or a stated reason.
+
+    A hex commit id is evidence on its own. Any other text is a stated reason unless it
+    reduces to a placeholder once case and punctuation are stripped — a placeholder is
+    what a line says when nothing was decided, so counting it as disposed is the pass
+    this gate exists to remove.
+    """
+    token = _PLACEHOLDER_PUNCTUATION_RE.sub('', evidence.strip().lower())
+    if _COMMIT_SHA_RE.fullmatch(token):
+        return True
+    return token not in _DISPOSITION_PLACEHOLDER_EVIDENCE
+
 
 def _normalise_section_title(title: str) -> str:
-    """Return a ``<summary>`` title reduced to lowercase words.
+    """Return a ``<summary>`` title reduced to lowercase words for LABEL matching.
 
-    A reviewer decorates its headings with emoji, bold markers and punctuation.
-    Everything that is not a letter, a digit, a hyphen, a space or a parenthesised
-    group is dropped, so ``🧹 Nitpick comments (2)`` and ``**Nitpick comments
-    (2)**`` reduce to the same ``nitpick comments (2)`` the label table is written
-    against. The parentheses survive on purpose: the ``(N)`` count is read off the
-    normalised title, and stripping the group would erase it.
+    A reviewer decorates its headings with markup, emoji, bold markers and
+    punctuation. The markup is dropped first (a ``<picture>``/``<strong>`` wrapper
+    carries no words of the heading), then everything that is not a letter, a digit,
+    a hyphen, a space or a parenthesised group is dropped, so ``🧹 Nitpick comments
+    (2)`` and ``**Nitpick comments (2)**`` reduce to the same ``nitpick comments
+    (2)`` the label table is written against. The parentheses survive on purpose:
+    they let a normalised title keep the shape it declares, though the COUNT itself is
+    read off the raw title by ``_declared_count`` — normalisation drops the colon
+    spelling the reviewer uses.
     """
-    return ' '.join(re.sub(r'[^a-z0-9\- ()]+', ' ', title.lower()).split())
+    text = re.sub(r'<[^>]+>', ' ', title)
+    return ' '.join(re.sub(r'[^a-z0-9\- ()]+', ' ', text.lower()).split())
+
+
+def _declared_count(title: str) -> int | None:
+    """Return the count a ``<summary>`` title declares, or ``None``.
+
+    The count is read off the RAW title, because the colon spelling does not survive
+    ``_normalise_section_title`` — and it is the spelling the reviewer really posts
+    (OBSERVED: ``Nitpick comments: 1`` on #1940). Markup and decoration AROUND the
+    count are dropped first, so ``**Nitpick comments (3)**`` and ``Nitpick comments:
+    3 🧹`` still declare three; both spellings name the same statement about the block.
+    """
+    text = re.sub(r'<[^>]+>', ' ', title)
+    plain = ' '.join(_COUNT_TITLE_NOISE_RE.sub(' ', text.lower()).split())
+    declared = _COUNT_SUFFIX_RE.search(plain)
+    if declared is None:
+        return None
+    return int(declared.group('paren') or declared.group('colon'))
+
+
+def _is_non_finding_title(title: str) -> bool:
+    """Whether a counted title is a declared non-finding block (a file list, review info)."""
+    normalised = _normalise_section_title(title)
+    return any(normalised.startswith(label) for label in _NON_FINDING_SECTION_LABELS)
 
 
 def _section_for_title(title: str) -> tuple[str | None, int | None]:
@@ -2427,35 +2513,38 @@ def _section_for_title(title: str) -> tuple[str | None, int | None]:
 
     ``(None, None)`` when the title is not a finding section at all (a
     walkthrough, a "Review details" block, the AI-prompt block). The count is the
-    ``(N)`` the reviewer declares, or ``None`` when it declares none — the caller
-    then counts the nested per-file blocks.
+    one the reviewer declares — ``(N)`` or ``: N`` — or ``None`` when it declares
+    none; the caller then counts the section's row markers or nested per-file blocks.
     """
     normalised = _normalise_section_title(title)
     for label, section in sorted(_REVIEW_BODY_SECTIONS, key=lambda row: -len(row[0])):
         if normalised.startswith(label):
-            declared = _TRAILING_COUNT_RE.search(normalised)
-            return section, (int(declared.group('count')) if declared else None)
+            return section, _declared_count(title)
     return None, None
 
 
 def _count_section_findings(span: str, declared: int | None) -> int:
     """Return the number of findings the reviewer declares inside one section.
 
-    The declared ``(N)`` wins: it is the reviewer's own statement about the block.
-    Without one, the nested per-file ``<summary>file (n)</summary>`` blocks are
-    summed — the rendering a section uses when it lists each file's findings
-    separately. A block carrying neither, but carrying prose of its own, states
-    one finding; an empty block states none.
+    The declared count wins: it is the reviewer's own statement about the block, and
+    reading it is what keeps one disposition from clearing several findings. Without
+    one, the section's own rows state it — one ``<!-- cr-comment:v1:`` marker per
+    finding — and its nested per-file blocks state it as ``file: n`` or ``file (n)``.
+    The two are taken at their larger value, because a disagreement between them is a
+    block that under-states its findings, and an under-count clears several with one
+    disposition. A block carrying neither, but prose of its own, states one finding; an
+    empty block states none.
     """
     if declared is not None:
         return declared
+    rows = len(_ROW_MARKER_RE.findall(span))
     nested = 0
     for match in _SUMMARY_RE.finditer(span):
-        counted = _TRAILING_COUNT_RE.search(_normalise_section_title(match.group('title')))
+        counted = _declared_count(match.group('title'))
         if counted is not None:
-            nested += int(counted.group('count'))
-    if nested:
-        return nested
+            nested += counted
+    if rows or nested:
+        return max(rows, nested)
     return 1 if re.sub(r'<[^>]+>', ' ', span).strip() else 0
 
 
@@ -2478,10 +2567,10 @@ def _body_findings(
     ``review_body_summary_patterns`` literal) is read as the ``inline`` section
     when no inline section block is present — one declaration, one reading.
 
-    A ``<summary>`` title that COUNTS a finding block but matches no declared
-    label is the undecidable answer: the parser cannot tell what it contains, and
-    reporting it as no findings would be the "cannot read means pass" failure
-    this gate exists to close.
+    A ``<summary>`` title that COUNTS its block while matching neither a declared
+    finding section nor a declared non-finding label is the undecidable answer: the
+    parser cannot tell what it contains, and reporting it as no findings would be
+    the "cannot read means pass" failure this gate exists to close.
     """
     counters = counters if counters is not None else {}
     matches = list(_SUMMARY_RE.finditer(body))
@@ -2515,8 +2604,8 @@ def _body_findings(
             continue
         section = section_at[index]
         if section is None:
-            normalised = _normalise_section_title(match.group('title'))
-            if _TRAILING_COUNT_RE.search(normalised) and any(keyword in normalised for keyword in _SECTION_KEYWORDS):
+            counted = _declared_count(match.group('title'))
+            if counted is not None and not _is_non_finding_title(match.group('title')):
                 return [], f'unreadable review-body section: {match.group("title").strip()!r}'
             continue
         declared = _section_for_title(match.group('title'))[1]
@@ -2615,16 +2704,17 @@ def _threads(comments: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
 
 
 def _thread_concern_remains(thread: list[dict[str, Any]]) -> bool:
-    """Whether a RESOLVED thread's last reviewer comment says the concern remains.
+    """Whether a RESOLVED thread's last BOT comment says the concern remains.
 
-    A thread the lane answered and closed ends with the lane's reply, so nothing
-    is tested. When the last word is a reviewer's, it counts as "the concern
-    remains" only when it carries one of the declared markers: an acknowledgement
-    ("Addressed in commit …") leaves the thread handled, which is why the test is
-    over the marker vocabulary rather than over who spoke last.
+    The last BOT-authored comment is the finding's last word: a reviewer that
+    restates the defect and is then answered by the lane (or a human) still has an
+    open concern, and a lane reply can itself carry the marker vocabulary, so the
+    comments after the bot's are never tested. A later bot comment WITHOUT a marker
+    (the bot's own acknowledgement, "Addressed in commit …") is the discharge; a
+    thread with no bot comment at all carries no reviewer concern.
     """
-    last = thread[-1]
-    if not _bot_of(last):
+    last = next((comment for comment in reversed(thread) if _bot_of(comment)), None)
+    if last is None:
         return False
     body = str(last.get('body') or '').lower()
     return any(marker in body for marker in _CONCERN_REMAINS_MARKERS)
@@ -2654,14 +2744,15 @@ def _parse_dispositions(values: list[str]) -> tuple[list[dict[str, str]], list[s
 
     One row per progress line, in the progress template's own wording:
     ``finding: {reviewer} {section} {id} — {sha|reason}``. The evidence token is
-    what makes the disposition a disposition — an empty one answers nothing about
-    the finding — so a line without it is refused by name rather than counted.
+    what makes the disposition a disposition: a line with none, or with a placeholder
+    (``TBD``, ``-``, ``n/a``, …), answers nothing about the finding, so it is refused
+    by name rather than counted.
     """
     rows: list[dict[str, str]] = []
     refused: list[str] = []
     for value in values:
         match = _DISPOSITION_RE.match(value.strip())
-        if match is None:
+        if match is None or not _disposition_evidence_is_real(match.group('evidence')):
             refused.append(value)
             continue
         rows.append({key: match.group(key) for key in ('reviewer', 'section', 'id', 'evidence')})
@@ -2734,8 +2825,9 @@ def _review_gate_verdict(
     - an unresolved thread is ``unresolved_review_threads``;
     - a body finding with no disposition naming a commit or a stated reason is
       ``body_findings_undisposed``;
-    - a resolved thread whose last reviewer comment states that the concern
-      remains is ``thread_concern_remains`` — resolution is not silence;
+    - a resolved thread whose last BOT-authored comment states that the concern
+      remains is ``thread_concern_remains`` — resolution is not silence, and a lane
+      reply below the bot's restatement never discharges it;
     - otherwise ``all_handled``.
     """
     base: dict[str, Any] = {'status': 'success', 'operation': 'review-gate', 'pr_number': pr_number}
