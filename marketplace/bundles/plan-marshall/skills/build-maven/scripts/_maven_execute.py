@@ -495,8 +495,8 @@ def _reports_show_executed_tests(
     """Whether a Surefire/Failsafe report written by THIS run reported executed tests.
 
     A quiet run — ``-q`` supplied through ``.mvn/maven.config`` or ``MAVEN_OPTS``,
-    or Surefire's ``printSummary=false`` — still writes one ``TEST-*.xml`` per
-    executed test class; only the LOG's summary line is hidden. Those reports are
+    or Surefire's ``printSummary=false`` — still writes one ``TEST-*.xml`` per test
+    class it processed; only the LOG's summary line is hidden. Those reports are
     therefore the evidence a hidden summary leaves behind, and reading them is
     what tells "the summary was suppressed" from "nothing was collected".
 

@@ -1112,13 +1112,17 @@ def test_the_scope_flag_registry_names_the_flags_each_build_tool_carries() -> No
     assert crosscheck._SCOPE_NEUTRAL_FLAGS == frozenset({'-am', '--also-make'})
 
 
-def test_the_executor_run_flag_registry_names_the_flags_the_run_subparser_declares() -> None:
+def test_the_executor_run_flag_registry_names_the_flags_after_the_payload() -> None:
     """The hint's flag set is explicit, so a flag cannot become "executor" by accident.
 
-    Only the ``run`` subparser's own flags explain a legacy row's unreadability.
-    Asserting the exact set keeps a build-tool flag (``-k``, ``-Ppre-commit``) from
-    being read as one — which would tell the operator to move a flag the executor
-    does not own — and keeps the set from silently growing into a hole.
+    The set is every flag the shared ``run`` subparser accepts after the payload:
+    the common five, the ``--project-dir`` / ``--plan-id`` pair, the routed
+    ``--resolved-project-dir`` carry, and the tool-local ``--working-dir`` /
+    ``--env``. ``--command-args`` is excluded because it is the marker the payload
+    is read FROM. Asserting the exact set keeps a build-tool flag (``-k``,
+    ``-Ppre-commit``) from being read as one — which would tell the operator to
+    move a flag the executor does not own — and keeps the set from silently
+    growing into a hole.
     """
     assert crosscheck._EXECUTOR_RUN_FLAGS == {
         '--timeout': 1,
@@ -1127,6 +1131,7 @@ def test_the_executor_run_flag_registry_names_the_flags_the_run_subparser_declar
         '--execution-mode': 1,
         '--project-dir': 1,
         '--plan-id': 1,
+        '--resolved-project-dir': 1,
         '--working-dir': 1,
         '--env': 1,
     }

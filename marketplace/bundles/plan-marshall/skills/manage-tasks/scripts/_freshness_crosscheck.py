@@ -448,7 +448,7 @@ _PYPROJECT_NOTATION = 'plan-marshall:build-pyproject:pyproject_build'
 #: (``:core:test :core:jacocoTestReport``), so those positionals name a real
 #: blast radius. Dropping them would read a one-subproject run as whole-tree — the
 #: false green this dimension exists to close — so :func:`parse_row_scope` reports
-#: such a row unreadable instead.
+#: a row carrying a ``:module:``-prefixed positional as unreadable instead.
 _GOAL_POSITIONAL_NOTATIONS: frozenset[str] = frozenset(
     {
         'plan-marshall:build-maven:maven',
@@ -460,15 +460,19 @@ _GOAL_POSITIONAL_NOTATIONS: frozenset[str] = frozenset(
 #: The ``run`` subparser's OWN flags — the ones that sit in a legacy row's joined
 #: ``args`` beside the payload, in the same unquoted token stream, so the reader
 #: cannot tell whether they belonged to the payload or to the executor. Each
-#: consumes one value token. Copied from the shared subparser declaration
-#: (``_build_cli.add_run_subparser``: ``--timeout``, ``--mode``, ``--format`` and
-#: ``--execution-mode``, plus the ``--project-dir`` / ``--plan-id`` pair) and the
-#: tool-local extras npm and pyproject declare (``--working-dir``, ``--env``).
+#: consumes ONE recorded token; a value that itself carried spaces
+#: (``--env 'A=1 B=2'``) lands as several tokens, so stripping leaves residue and
+#: the hint then simply does not fire. Copied from the shared subparser
+#: declaration (``_build_cli.add_run_subparser``: ``--timeout``, ``--mode``,
+#: ``--format``, ``--execution-mode``, the ``--project-dir`` / ``--plan-id`` pair
+#: and the routed ``--resolved-project-dir`` carry) and the tool-local extras npm
+#: and pyproject declare (``--working-dir``, ``--env``). ``--command-args`` itself
+#: is absent on purpose: it is the marker the payload is read FROM.
 #:
-#: Only one of these can be the flag that made a legacy row unreadable, because
-#: only these are the EXECUTOR's: any other flag either belongs to the build tool
-#: itself (``-k``, ``-Ppre-commit``) or is a scope-bearing one the reader already
-#: knows (``-pl``, ``--workspace``).
+#: A flag outside this set is not the executor's: it either belongs to the build
+#: tool itself (``-k``, ``-Ppre-commit``) or is a scope-bearing one the reader
+#: already knows (``-pl``, ``--workspace``). Only an executor flag can be the one
+#: that made a legacy row unreadable.
 _EXECUTOR_RUN_FLAGS: dict[str, int] = {
     '--timeout': 1,
     '--mode': 1,
@@ -476,6 +480,7 @@ _EXECUTOR_RUN_FLAGS: dict[str, int] = {
     '--execution-mode': 1,
     '--project-dir': 1,
     '--plan-id': 1,
+    '--resolved-project-dir': 1,
     '--working-dir': 1,
     '--env': 1,
 }
@@ -821,12 +826,14 @@ def parse_row_scope(entry: dict[str, Any]) -> RowScope | None:
         # The remaining positionals are the tool's own goals, tasks or script
         # names. They narrow nothing, so they are dropped rather than read as a
         # module scope: ``run test`` is a whole-tree run, and only the tool's own
-        # scope flag can narrow it. The one exception is a Gradle submodule row:
-        # its discoverer embeds the module in EVERY task
-        # (``:core:test :core:jacocoTestReport``), so those positionals DO name a
-        # blast radius, and dropping them would assert whole-tree over a run that
-        # built one subproject. Its project paths are not recoverable here, so
-        # the row is unreadable rather than widened.
+        # scope flag can narrow it. The one exception is a ``:module:``-prefixed
+        # positional — the Gradle submodule shape, whose discoverer embeds the
+        # module in EVERY task (``:core:test :core:jacocoTestReport``). Those
+        # tokens DO name a blast radius, and dropping them would assert whole-tree
+        # over a run that built one subproject. No other goal-positional tool
+        # emits that shape, and if one did the same reading is the safe one: the
+        # project paths are not recoverable here, so the row is unreadable rather
+        # than widened.
         if any(token.startswith(':') for token in payload[1:]):
             return None
         payload = payload[:1]
