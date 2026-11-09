@@ -422,8 +422,14 @@ def _report_files(root: Path) -> Iterator[Path]:
                 yield Path(dirpath) / name
 
 
-def _report_collected_tests(report: Path) -> int:
-    """Return the collected test count a Surefire/Failsafe report records, or 0.
+def _report_executed_tests(report: Path) -> int:
+    """Return the EXECUTED test count a Surefire/Failsafe report records, or 0.
+
+    Surefire's ``tests`` attribute counts every collected test, skipped ones
+    included, so a class whose whole population was ``@Disabled`` reports a
+    non-zero ``tests`` while the run executed nothing. Executed is therefore
+    ``tests - skipped``, clamped at 0 for a report that claims more skips than
+    tests.
 
     A malformed or unreadable report is 0 rather than an error: this reader only
     ever ADDS evidence, so an unreadable one must not manufacture any.
@@ -432,13 +438,20 @@ def _report_collected_tests(report: Path) -> int:
         report: One ``TEST-*.xml`` file.
 
     Returns:
-        The ``tests`` attribute of the report's root element, or 0.
+        The number of tests the report's root element says were executed, or 0.
     """
     try:
         root = ET.parse(report).getroot()
     except (ET.ParseError, OSError):
         return 0
-    raw = root.get('tests')
+    collected = _report_attribute_as_int(root, 'tests')
+    skipped = _report_attribute_as_int(root, 'skipped')
+    return max(collected - skipped, 0)
+
+
+def _report_attribute_as_int(root: ET.Element, name: str) -> int:
+    """Return the integer value of ``root``'s ``name`` attribute, or 0."""
+    raw = root.get(name)
     try:
         return int(raw) if raw is not None else 0
     except (TypeError, ValueError):
@@ -501,8 +514,8 @@ def _reports_show_executed_tests(
         duration_seconds: The wrapper's measured run duration, when it reported one.
 
     Returns:
-        True only when a report written by this run reports one or more collected
-        tests.
+        True only when a report written by this run reports one or more EXECUTED
+        tests — Surefire's ``tests`` attribute less its ``skipped`` count.
     """
     if not project_dir:
         return False
@@ -521,7 +534,7 @@ def _reports_show_executed_tests(
             continue
         if modified < started:
             continue
-        if _report_collected_tests(report) > 0:
+        if _report_executed_tests(report) > 0:
             return True
     return False
 
