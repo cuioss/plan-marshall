@@ -97,8 +97,9 @@ executor proxy::
       plan-marshall:phase-6-finalize:foreign_pr_gate check --plan-id {plan_id}
 
 Subprocess seams (``_list_deliverables``, ``_resolve_repo_root``,
-``_resolve_landing_state``) are split out so the orchestration body is testable
-without a live solution outline, a live foreign checkout, or a live CI provider.
+``_resolve_landing_state``, ``_current_branch``, ``_default_branch``) are split
+out so the orchestration body is testable without a live solution outline, a live
+foreign checkout, or a live CI provider.
 """
 
 from __future__ import annotations
@@ -200,27 +201,25 @@ def _default_branch(repo_root: str) -> str | None:
     than guessing a default branch name. The checkout's DEFAULT branch is never a
     change's branch — a foreign tree sits on it after branch cleanup — so the
     gate must know it to tell "the checkout says nothing" from "the checkout
-    says a different branch".
+    says a different branch". A read that exceeds the bound is the same answer:
+    an unreachable remote must not stall the archive.
     """
-    completed = subprocess.run(
-        ['git', '-C', repo_root, 'symbolic-ref', '--short', 'refs/remotes/origin/HEAD'],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if completed.returncode == 0:
+
+    def _run(argv: list[str]) -> subprocess.CompletedProcess[str] | None:
+        try:
+            return subprocess.run(argv, capture_output=True, text=True, check=False, timeout=60)
+        except subprocess.TimeoutExpired:
+            return None
+
+    completed = _run(['git', '-C', repo_root, 'symbolic-ref', '--short', 'refs/remotes/origin/HEAD'])
+    if completed is not None and completed.returncode == 0:
         ref = completed.stdout.strip()
         if ref.startswith('origin/'):
             ref = ref[len('origin/') :]
         if ref:
             return ref
-    completed = subprocess.run(
-        ['git', '-C', repo_root, 'ls-remote', '--symref', 'origin', 'HEAD'],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if completed.returncode != 0:
+    completed = _run(['git', '-C', repo_root, 'ls-remote', '--symref', 'origin', 'HEAD'])
+    if completed is None or completed.returncode != 0:
         return None
     # `ref: refs/heads/main\tHEAD` — the symbolic ref is named first, and the
     # token it points at last, so a line is only read when both are present.
@@ -308,13 +307,23 @@ def _branch_for_repo(
             + ', '.join(repr(branch) for branch in declared)
         )
     checkout = read_branch(repo_root)
-    default = read_default_branch(repo_root)
+    resolved_default: list[str | None] = []
+
+    def read_default() -> str | None:
+        # Read once, and only when a decision needs it: a declaration the checkout
+        # agrees with, and a checkout with no branch, both settle the answer
+        # without asking the repository for its default branch at all.
+        if not resolved_default:
+            resolved_default.append(read_default_branch(repo_root))
+        return resolved_default[0]
+
     if declared:
         declared_branch = declared[0]
         if checkout is not None and checkout != declared_branch:
             # A checkout on the default branch says nothing about the change, so
             # it is not a disagreement. Only a checkout on some OTHER branch
             # contradicts the declaration.
+            default = read_default()
             if default is not None and checkout == default:
                 return declared_branch, ''
             return None, (
@@ -322,6 +331,7 @@ def _branch_for_repo(
                 f'foreign checkout at {repo_root} is on {checkout!r}'
             )
         return declared_branch, ''
+    default = read_default()
     if default is None:
         return None, (
             'default_branch_unreadable: no branch is declared for this repository and its default '

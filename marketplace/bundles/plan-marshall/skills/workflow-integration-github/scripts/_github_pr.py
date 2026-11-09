@@ -1700,6 +1700,11 @@ def cmd_pr_landing_state(args: argparse.Namespace) -> dict:
         # PR means the change landed and its refs were cleaned up; an OPEN PR
         # contradicts a missing ref, so the read is inconsistent; nothing at all
         # means the branch was never pushed.
+        #
+        # An OPEN beside a MERGED is the reused-name edge, and the inconsistency
+        # wins there: an open PR implies a live ref the read could not find, so a
+        # `merged` drawn from the old PR would clear the pre-archive gate on a read
+        # nobody could verify. Fail closed, and let the operator look.
         normalized = {str(state).strip().upper() for state in branch_pr_states if str(state).strip()}
         if 'OPEN' in normalized:
             return make_error(
