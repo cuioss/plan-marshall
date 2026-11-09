@@ -448,6 +448,29 @@ _GOAL_POSITIONAL_NOTATIONS: frozenset[str] = frozenset(
     }
 )
 
+#: The ``run`` subparser's OWN flags — the ones that sit in a legacy row's joined
+#: ``args`` beside the payload, in the same unquoted token stream, so the reader
+#: cannot tell whether they belonged to the payload or to the executor. Each
+#: consumes one value token. Copied from the shared subparser declaration
+#: (``_build_cli.add_run_subparser``: ``--timeout``, ``--mode``, ``--format`` and
+#: ``--execution-mode``, plus the ``--project-dir`` / ``--plan-id`` pair) and the
+#: tool-local extras npm and pyproject declare (``--working-dir``, ``--env``).
+#:
+#: Only one of these can be the flag that made a legacy row unreadable, because
+#: only these are the EXECUTOR's: any other flag either belongs to the build tool
+#: itself (``-k``, ``-Ppre-commit``) or is a scope-bearing one the reader already
+#: knows (``-pl``, ``--workspace``).
+_EXECUTOR_RUN_FLAGS: dict[str, int] = {
+    '--timeout': 1,
+    '--mode': 1,
+    '--format': 1,
+    '--execution-mode': 1,
+    '--project-dir': 1,
+    '--plan-id': 1,
+    '--working-dir': 1,
+    '--env': 1,
+}
+
 
 @dataclass(frozen=True)
 class AnalysisVocabulary:
@@ -798,6 +821,38 @@ def parse_row_scope(entry: dict[str, Any]) -> RowScope | None:
     return RowScope(canonical=payload[0], scope_tokens=tuple(payload[1:] + scope))
 
 
+def _payload_without_executor_run_flags(tokens: list[str]) -> list[str] | None:
+    """Return ``tokens`` with every declared executor ``run`` flag removed.
+
+    A declared flag is dropped together with its one value token, and the
+    ``--flag=value`` spelling drops the whole token. ``None`` means a declared
+    flag had no value to drop, so no reconstruction of the payload is possible.
+
+    Args:
+        tokens: The row's recorded payload-and-tail tokens.
+
+    Returns:
+        The remaining tokens, or ``None`` when a declared flag carries no value.
+    """
+    remaining: list[str] = []
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
+        name, separator, _inline = token.partition('=')
+        arity = _EXECUTOR_RUN_FLAGS.get(name)
+        if arity is None:
+            remaining.append(token)
+            index += 1
+            continue
+        if separator:
+            index += 1
+            continue
+        if index + arity >= len(tokens):
+            return None
+        index += arity + 1
+    return remaining
+
+
 def row_scope_remedy_hint(entry: dict[str, Any]) -> str | None:
     """Name the row-specific remedy when ``entry`` is unreadable for want of the field.
 
@@ -805,6 +860,13 @@ def row_scope_remedy_hint(entry: dict[str, Any]) -> str | None:
     ``command_args`` field cannot say whether a later flag belonged to the payload
     or to the executor. Telling its reader to "re-run a build" loops — the re-run
     writes the same shape — so the refusal names the changes that work.
+
+    The hint applies only where that ambiguity is the actual cause: the tail after
+    the payload must carry one of the ``run`` subparser's OWN flags
+    (:data:`_EXECUTOR_RUN_FLAGS`) AND the payload with those flags and their
+    values removed must parse. A row made unreadable by a flag that belongs to the
+    build tool (``module-tests -k foo``) has no executor flag to move, and naming
+    one would send its reader after a remedy that does not exist.
 
     Args:
         entry: A ``kind=build`` ledger row.
@@ -816,7 +878,13 @@ def row_scope_remedy_hint(entry: dict[str, Any]) -> str | None:
         return None
     if parse_row_scope(entry) is not None:
         return None
-    if _row_payload_tokens(entry) is None:
+    tokens = _row_payload_tokens(entry)
+    if not tokens:
+        return None
+    stripped = _payload_without_executor_run_flags(tokens)
+    if stripped is None:
+        return None
+    if parse_row_scope({**entry, 'command_args': ' '.join(stripped)}) is None:
         return None
     return LEGACY_ROW_SCOPE_REMEDY
 

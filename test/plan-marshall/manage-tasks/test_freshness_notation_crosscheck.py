@@ -1437,3 +1437,39 @@ def test_a_whole_tree_npm_goal_row_passes_the_gate_with_the_inability_recorded(
     assert result['scope_cross_check'] == crosscheck.UNDETERMINED
     assert result['scope_cross_check_reason'] == crosscheck.REASON_SCOPE_UNREADABLE
     assert result['row_scopes'] == ['run: ' + crosscheck.ROW_CANONICAL_UNKNOWN]
+
+
+# =============================================================================
+# The remedy hint fires only for a row an executor flag actually broke
+# =============================================================================
+#
+# ``row_scope_remedy_hint`` used to return the legacy hint for EVERY legacy row
+# with payload tokens that did not parse, telling the operator to move an
+# executor flag that does not exist — ``module-tests -k foo`` has no such flag.
+# The hint now requires that the unreadable tail really carries one of the
+# ``run`` subparser's own flags and that removing it makes the payload parse.
+
+
+@pytest.mark.parametrize(
+    'args',
+    [
+        'run --command-args module-tests -k foo',
+        'run --command-args package -am',
+        'run --command-args module-tests -pl=,',
+        'run --command-args ',
+    ],
+)
+def test_a_legacy_row_with_no_executor_flag_after_the_payload_gets_no_remedy_hint(args) -> None:
+    """The remedy must fit the row: none of these carries an executor flag to move."""
+    assert crosscheck.row_scope_remedy_hint(_build_entry(args=args)) is None
+
+
+def test_a_legacy_row_whose_executor_flag_explains_the_unreadability_keeps_the_hint() -> None:
+    """MATCHED CONTROL: with one of the ``run`` flags present, the hint applies.
+
+    ``--timeout 900`` is the executor's own flag, so moving it before
+    ``--command-args`` is a remedy that actually makes this row readable.
+    """
+    row = _build_entry(args='run --command-args verify --timeout 900')
+
+    assert crosscheck.row_scope_remedy_hint(row) == crosscheck.LEGACY_ROW_SCOPE_REMEDY
