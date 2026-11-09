@@ -84,7 +84,16 @@ promotion rule below turns on.
 | Audience | Every bundle | One subtree |
 | Import | Bare name, from anywhere (`conftest.py` puts it on `sys.path`) | Bare name, from inside that subtree |
 | Knows about | No bundle in particular | Its own domain's scripts and vocabulary |
-| Example | `_poll_until.py` — a bounded-poll primitive with no domain knowledge | `_manage_config_fixtures.py` — the manage-config script path and its config baselines |
+| Example | `_poll_until.py` — a bounded-poll primitive with no domain knowledge; `_system_temp.py` — the registered-teardown creator every long-lived system temp directory goes through | `_manage_config_fixtures.py` — the manage-config script path and its config baselines |
+
+A helper that creates a **system temp directory** whose lifetime outlives the
+function that builds it must create it with `_system_temp.create(prefix=...)`:
+that records the root and registers its removal, and
+`conftest.py::pytest_unconfigure` drains the registry in every pytest process.
+A directory removed inside the creating function (a `finally`, a fixture
+finalizer, a class lifecycle method) needs no helper. The sweep in
+`test/plan-marshall/platform-runtime/test_tempdir_teardown.py` fails the suite on
+any other shape, naming every site.
 
 Naming is not cosmetic. A helper module must be `_{domain}_fixtures.py`: never
 `test_*.py` (pytest collects it, and a helper that collects zero tests is a

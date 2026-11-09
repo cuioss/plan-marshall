@@ -46,10 +46,10 @@ _LIFECYCLE_METHODS = frozenset({'__exit__', 'cleanup', 'teardown', 'close'})
 #: ``TemporaryDirectory`` handle; the rest are direct filesystem removals.
 _REMOVAL_CALLS = frozenset({'rmtree', 'rmdir', 'unlink', 'cleanup'})
 
-#: Attribute names whose call REGISTERS a later removal (``atexit.register``,
-#: ``weakref.finalize``). The registration is the removal path: it is what runs
-#: when the process exits, and the sweep cannot see the callback's body.
-_DEFERRED_REMOVAL_CALLS = frozenset({'register', 'finalize'})
+#: ``(receiver, attribute)`` pairs whose CALL registers a removal that runs later
+#: (``atexit.register``, ``weakref.finalize``). The receiver is part of the key:
+#: ``scheduler.register(root)`` registers a job, not a removal.
+_DEFERRED_REMOVAL_RECEIVERS = frozenset({('atexit', 'register'), ('weakref', 'finalize')})
 
 
 def _is_mkdtemp_call(node: ast.AST) -> bool:
@@ -103,18 +103,44 @@ def _names_target(node: ast.AST, name: str | None, attr: str | None) -> bool:
     return attr is not None and attribute == attr
 
 
+def _nodes_of_own_scope(node: ast.AST) -> list[ast.AST]:
+    """Every node in ``node``'s own scope, excluding nested definitions.
+
+    A removal inside a nested function or lambda is not the enclosing function's
+    removal: it may never run, and attributing it to the outer site is exactly the
+    kind of vacuous credit this guard exists to refuse.
+    """
+    found: list[ast.AST] = []
+    stack = [node]
+    while stack:
+        current = stack.pop()
+        found.append(current)
+        for child in ast.iter_child_nodes(current):
+            if isinstance(child, (*_FUNCTION_NODES, ast.ClassDef, ast.Lambda)):
+                continue
+            stack.append(child)
+    return found
+
+
 def _bound_target(function: ast.AST, call: ast.Call) -> tuple[str | None, str | None]:
     """The name the mkdtemp result is assigned to, as ``(local, self-attribute)``.
 
     A result that is never assigned — returned, passed on, or wrapped inline — has
-    no name, so no removal of it can be shown and the site is an offender.
+    no name, so no removal of it can be shown and the site is an offender. Every
+    binding form counts: ``=``, an annotated ``: Path =`` and a walrus.
     """
-    for node in ast.walk(function):
-        if not isinstance(node, ast.Assign):
+    bindings: list[tuple[ast.AST, list[ast.AST]]] = []
+    for node in _nodes_of_own_scope(function):
+        if isinstance(node, ast.Assign):
+            bindings.append((node.value, list(node.targets)))
+        elif isinstance(node, ast.AnnAssign) and node.value is not None:
+            bindings.append((node.value, [node.target]))
+        elif isinstance(node, ast.NamedExpr):
+            bindings.append((node.value, [node.target]))
+    for value, targets in bindings:
+        if not any(inner is call for inner in ast.walk(value)):
             continue
-        if not any(inner is call for inner in ast.walk(node.value)):
-            continue
-        for target in node.targets:
+        for target in targets:
             if isinstance(target, ast.Name):
                 return target.id, None
             if isinstance(target, ast.Attribute) and isinstance(target.value, ast.Name) and target.value.id == 'self':
@@ -125,7 +151,7 @@ def _bound_target(function: ast.AST, call: ast.Call) -> tuple[str | None, str | 
 def _removes_in(statements: list[ast.stmt], name: str | None, attr: str | None) -> bool:
     """Whether any of ``statements`` removes the named directory."""
     for statement in statements:
-        for node in ast.walk(statement):
+        for node in _nodes_of_own_scope(statement):
             if _is_removal_call(node) and node.args and _names_target(node.args[0], name, attr):
                 return True
     return False
@@ -138,16 +164,19 @@ def _removes_in_a_finally(function: ast.AST, name: str | None, attr: str | None)
     the success path alone leaks on every exception, which is exactly the shape
     this arm rejects.
     """
-    return any(isinstance(node, ast.Try) and _removes_in(node.finalbody, name, attr) for node in ast.walk(function))
+    return any(
+        isinstance(node, (ast.Try, ast.TryStar)) and _removes_in(node.finalbody, name, attr)
+        for node in _nodes_of_own_scope(function)
+    )
 
 
 def _removes_after_a_yield(function: ast.AST, name: str | None, attr: str | None) -> bool:
     """Whether a generator fixture removes the directory after its ``yield``."""
-    yields = [node.lineno for node in ast.walk(function) if isinstance(node, ast.Yield)]
+    yields = [node.lineno for node in _nodes_of_own_scope(function) if isinstance(node, (ast.Yield, ast.YieldFrom))]
     if not yields:
         return False
     last_yield = max(yields)
-    for node in ast.walk(function):
+    for node in _nodes_of_own_scope(function):
         if _is_removal_call(node) and getattr(node, 'lineno', 0) > last_yield and node.args:
             if _names_target(node.args[0], name, attr):
                 return True
@@ -155,11 +184,16 @@ def _removes_after_a_yield(function: ast.AST, name: str | None, attr: str | None
 
 
 def _registers_a_removal(function: ast.AST, name: str | None, attr: str | None) -> bool:
-    """Whether ``function`` hands the directory to a registered teardown."""
-    for node in ast.walk(function):
+    """Whether ``function`` hands the directory to a REGISTERED teardown.
+
+    The receiver is checked, not just the attribute name: ``scheduler.register(root)``
+    registers a job, not a removal, and must not clear a leaking site.
+    """
+    for node in _nodes_of_own_scope(function):
         if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
             continue
-        if node.func.attr not in _DEFERRED_REMOVAL_CALLS:
+        receiver = node.func.value
+        if not isinstance(receiver, ast.Name) or (receiver.id, node.func.attr) not in _DEFERRED_REMOVAL_RECEIVERS:
             continue
         if any(_names_target(argument, name, attr) for argument in node.args):
             return True
@@ -348,8 +382,53 @@ def build():
     assert len(offenders) == 1, offenders
 
 
+def test_the_sweep_does_not_credit_an_unrelated_register_call():
+    """Positive control: only ``atexit``/``weakref`` registration is a removal."""
+    source = """
+import tempfile
+from pathlib import Path
+
+
+def build(scheduler):
+    root = Path(tempfile.mkdtemp())
+    scheduler.register(root)
+    return root
+"""
+
+    offenders, _sites = _sites_without_removal(source, 'control.py')
+
+    assert len(offenders) == 1, offenders
+
+
+def test_the_sweep_does_not_credit_a_lifecycle_method_removing_another_attribute():
+    """Positive control: a lifecycle method clears only the attribute it removes."""
+    source = """
+import shutil
+import tempfile
+from pathlib import Path
+
+
+class Owner:
+    def __init__(self):
+        self.root = Path(tempfile.mkdtemp())
+        self.other = None
+
+    def cleanup(self):
+        shutil.rmtree(self.other, ignore_errors=True)
+"""
+
+    offenders, _sites = _sites_without_removal(source, 'control.py')
+
+    assert len(offenders) == 1, offenders
+
+
 def test_the_sweep_clears_the_accepted_removal_paths():
-    """Matched negative control: finally-removal, post-yield removal, class lifecycle."""
+    """Matched negative control: finally-removal, post-yield removal, class lifecycle.
+
+    The annotated assignment is in the population on purpose: ``root: Path = …`` is
+    a binding like any other, and a guard that reported it as "never bound" would
+    fail correct code.
+    """
     source = """
 import shutil
 import tempfile
@@ -376,12 +455,39 @@ class Owner:
 
     def __exit__(self, *_exc):
         shutil.rmtree(self.root, ignore_errors=True)
+
+
+def annotated():
+    root: Path = Path(tempfile.mkdtemp())
+    try:
+        yield root
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
 """
 
     offenders, sites = _sites_without_removal(source, 'control.py')
 
-    assert sites == 3
+    assert sites == 4
     assert offenders == []
+
+
+def test_the_unconfigure_hook_drains_the_registry(monkeypatch, outside_repo_dir: Path):
+    """The drain is wired: ``pytest_unconfigure`` is what removes a registered root.
+
+    Without this control the whole teardown chain can be deleted — the sweep credits
+    ``_system_temp.create`` from source SHAPE, and the drain control calls
+    ``release_all`` directly — and every test still passes while the leak returns.
+    The registry is swapped so the hook drains only this control's root; the real
+    registry keeps its contents and its ``atexit`` handlers.
+    """
+    import conftest
+
+    root = _system_temp.create(prefix='wiring-')
+    monkeypatch.setattr(_system_temp, '_REGISTERED', [root])
+
+    conftest.pytest_unconfigure(None)
+
+    assert not root.exists(), 'pytest_unconfigure must drain the registered system temp roots'
 
 
 def test_release_all_drains_the_registry(monkeypatch, outside_repo_dir: Path):
