@@ -511,9 +511,9 @@ def test_migrate_bot_lists_is_self_disarming_on_second_run():
 # states plus the matched negative control
 # =============================================================================
 #
-# The four states mirror the shape the ``migrate_bot_lists`` suite above already
-# establishes for this file: every configured token valid, one token unknown, an
-# empty list, and an absent step.
+# The four states below are this verb's own input cross-product: every configured
+# token valid, one token unknown, an empty list, and an absent step. (The
+# ``migrate_bot_lists`` suite above covers five states of a different verb.)
 #
 # The load-bearing addition is the CONTROL. Asserting only that a valid list
 # produced no unknown tokens would pass just as happily for a check that examined

@@ -360,9 +360,10 @@ def _concern_sections_are_clean(body: str, bot_kind: str) -> bool:
     ``clean_section_verdicts`` entry; otherwise the body holds a concern and the
     contentless drop is vetoed.
 
-    Fail-closed in both directions: a body with no declared concern heading is clean
-    (there is no section to judge), while a body whose section carries no declared clean
-    wording — or whose boundaries cannot be read — is NOT clean. An empty
+    Fail-closed in both directions: a body with no declared concern heading and no
+    unreadable comment is clean (there is no section to judge), while a body whose
+    section carries no declared clean wording — or whose comments cannot be closed, making
+    the boundaries unreadable — is NOT clean. An empty
     ``clean_section_verdicts`` therefore files every block under a declared heading until
     the clean wording is declared.
     """
