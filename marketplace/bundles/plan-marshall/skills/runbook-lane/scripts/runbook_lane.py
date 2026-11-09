@@ -2294,7 +2294,6 @@ _REVIEW_BODY_SECTIONS = (
     ('nitpicks', 'nitpick'),
     ('follow-ups', 'followup'),
     ('followups', 'followup'),
-    ('additional comments', 'additional'),
 )
 
 #: The ``<summary>`` titles a reviewer posts that COUNT their block while the block
@@ -2302,12 +2301,13 @@ _REVIEW_BODY_SECTIONS = (
 #: findings. Matched as a case-insensitive PREFIX of the normalised title, like the
 #: section table.
 #:
-#: Every entry is grounded: ``review info``, ``run configuration``, ``commits`` and
-#: ``files selected for processing`` are OBSERVED in the review body of
-#: ``cuioss/plan-marshall#1940`` (review ``PRR_kwDOQ3xasM8AAAABWsFY6g``); ``review
-#: details`` is the block the fixtures and the inline bodies render; ``files ignored
-#: due to path filters`` is the sibling of the observed file list. A counted title
-#: that is none of these is refused rather than declared away.
+#: Every entry is grounded: ``review info``, ``run configuration``, ``commits``,
+#: ``files selected for processing`` and ``additional comments`` are named by the
+#: spec's HYPOTHESIS as counted titles that are NOT findings, OBSERVED in the review
+#: body of ``cuioss/plan-marshall#1940`` (review ``PRR_kwDOQ3xasM8AAAABWsFY6g``);
+#: ``review details`` is the block the fixtures and the inline bodies render; ``files
+#: ignored due to path filters`` is the spec-named sibling of the observed file list.
+#: A counted title that is none of these is refused rather than declared away.
 _NON_FINDING_SECTION_LABELS = (
     'files selected for processing',
     'files ignored due to path filters',
@@ -2315,6 +2315,7 @@ _NON_FINDING_SECTION_LABELS = (
     'review info',
     'run configuration',
     'commits',
+    'additional comments',
 )
 
 #: The markers that make a resolved thread's last BOT-authored comment an answer that
@@ -2524,23 +2525,22 @@ def _count_section_findings(span: str, declared: int | None) -> int:
     The declared count wins: it is the reviewer's own statement about the block, and
     reading it is what keeps one disposition from clearing several findings. Without
     one, the section's own rows state it — one ``<!-- cr-comment:v1:`` marker per
-    finding. Failing both, the nested per-file ``<summary>file: n</summary>`` blocks
-    are summed, the rendering a section uses when it lists each file's findings
-    separately. A block carrying none of these, but prose of its own, states one
-    finding; an empty block states none.
+    finding — and its nested per-file blocks state it as ``file: n`` or ``file (n)``.
+    The two are taken at their larger value, because a disagreement between them is a
+    block that under-states its findings, and an under-count clears several with one
+    disposition. A block carrying neither, but prose of its own, states one finding; an
+    empty block states none.
     """
     if declared is not None:
         return declared
     rows = len(_ROW_MARKER_RE.findall(span))
-    if rows:
-        return rows
     nested = 0
     for match in _SUMMARY_RE.finditer(span):
         counted = _declared_count(match.group('title'))
         if counted is not None:
             nested += counted
-    if nested:
-        return nested
+    if rows or nested:
+        return max(rows, nested)
     return 1 if re.sub(r'<[^>]+>', ' ', span).strip() else 0
 
 

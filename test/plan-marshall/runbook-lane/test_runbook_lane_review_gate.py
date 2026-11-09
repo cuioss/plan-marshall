@@ -372,13 +372,13 @@ def test_a_captured_counted_non_finding_title_is_not_a_finding() -> None:
 
 
 def test_a_captured_body_with_counted_non_finding_sections_reads_one_nitpick() -> None:
-    """OBSERVED #1940: `Review info`, `Files selected for processing: N` beside one nitpick.
+    """CONSTRUCTED body from OBSERVED #1940 titles beside one nitpick.
 
     The titles are the ones the captured review body carries (review
     ``PRR_kwDOQ3xasM8AAAABWsFY6g`` on ``cuioss/plan-marshall#1940``: `Review info`,
     `Run configuration`, `Commits`, `Files selected for processing: 19`), so the
     counted titles the reviewer really posts do not turn a readable review into a
-    false block.
+    false block. The prose and nesting are shortened; the titles are verbatim.
     """
     body = (
         '<!-- coderabbit-ai-generated:v1 -->\n'
@@ -442,15 +442,35 @@ def test_a_decorated_unreadable_section_is_still_undecidable() -> None:
     assert 'unreadable review-body section' in verdict['detail']
 
 
-def test_an_additional_comments_section_counts_its_findings() -> None:
-    """A counted `Additional comments (N)` is findings, never a false block."""
-    body = '<details>\n<summary>Additional comments (2)</summary>\nfirst\nsecond\n</details>\n'
+def test_a_counted_additional_comments_section_is_not_a_finding() -> None:
+    """The spec's HYPOTHESIS names it as a counted title that is NOT findings."""
+    body = '<details>\n<summary>🔇 Additional comments (2)</summary>\nverification notes\n</details>\n'
 
     verdict = _verdict(_read(_review_body(body)))
 
-    assert verdict['reason'] == 'body_findings_undisposed', verdict
-    assert verdict['review_body_findings_total'] == 2
-    assert [row['id'] for row in verdict['undisposed']] == ['additional-1', 'additional-2']
+    assert verdict['merge_allowed'] is True, verdict
+    assert verdict['review_body_findings_total'] == 0
+
+
+@pytest.mark.parametrize(
+    'title',
+    [
+        '📒 Files selected for processing: 19',
+        '🙈 Files ignored due to path filters (4)',
+        '📝 Review details',
+        'ℹ️ Review info (2)',
+        '⚙️ Run configuration: 3',
+        '🔀 Commits (5)',
+    ],
+)
+def test_a_counted_declared_non_finding_title_is_not_a_finding(title: str) -> None:
+    """Every declared non-finding label is exercised as a counted title, not as prose."""
+    body = f'<details>\n<summary>{title}</summary>\n* `a.py`\n</details>\n'
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['merge_allowed'] is True, verdict
+    assert verdict['review_body_findings_total'] == 0
 
 
 def test_a_bare_location_suffix_is_not_read_as_a_count() -> None:
