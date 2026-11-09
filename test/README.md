@@ -55,7 +55,7 @@ It is the single shared surface, on `sys.path` for every test, and it owns:
 | `create_marshal_json(...)` / `create_run_config(...)` | Stage `marshal.json` / `run-configuration.json` fixtures, from a named preset or a full config. |
 | `create_raw_project_data(...)` | Stage the module-facts companion. |
 | `plan_context` / `PlanContext` / `BuildContext` | Pre-wired plan and build environments. |
-| `create_temp_file` / `create_temp_dir` / `load_fixture` | Small file helpers. |
+| `create_temp_file` / `load_fixture` | Small file helpers. |
 | The autouse isolation fixtures | See below — they apply whether or not you ask. |
 
 ### What it deliberately does not own
