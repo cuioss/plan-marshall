@@ -58,8 +58,8 @@ derive, for rows still live.
   three-layer leaf read it with the lane's 10 claims passed one by one; the orchestrator re-read the major's code and the landing-state
   classification it rests on, the test that hides it, the commit verb's order of effects and the history wording. The lane's review
   history, CI and merge-queue claims were not re-read. The message is `complete: false`, `missing_keys: total_tokens` only (out of
-  scope). No verb or flag was added, so no executor regeneration is owed; a harness sync is. **Reported to the operator and not
-  staged.** The lane reports 3 of 3 deliverables. D1 is sound: the commit verb records the row only in `6-finalize` through the shared
+  scope). No verb or flag was added, so no executor regeneration is owed; a harness sync is. **The major is staged as
+  PLAN-LB-131 (2026-11-09).** The lane reports 3 of 3 deliverables. D1 is sound: the commit verb records the row only in `6-finalize` through the shared
   ledger core, the refusal names every unrecorded SHA on one line, and the guard is as strict as before.
   - **Layer 3 major (re-read):** the foreign-PR gate takes the foreign checkout's branch when nothing is declared
     (`foreign_pr_gate.py:258-263`). After cleanup that checkout sits on `main`, the landing-state verb keeps only PRs whose head is the
@@ -76,7 +76,7 @@ derive, for rows still live.
   three-layer leaf read it with the lane's 9 claims passed one by one; the orchestrator re-read the major's code, the two refuted lane
   claims, the required-key tuple and the marker vocabulary. The lane's review history, CI and merge-queue claims were not re-read. The
   message is `complete: false`, `missing_keys: total_tokens`. A new verb was added (`review-gate`): **an executor regeneration is owed**
-  in every project that runs the lane, with the harness sync. **Reported to the operator and not staged.** The lane reports 5 of 5
+  in every project that runs the lane, with the harness sync. **The major is staged as PLAN-LB-129 (2026-11-09).** The lane reports 5 of 5
   deliverables. D3 and the Sonar field of D2 (the operator ruling of 2026-11-07) are shipped as specified.
   - **Layer 3 major (re-read):** the resolved-thread check tests only the LAST comment and only when a bot wrote it
     (`runbook_lane.py:2617-2630`), so a thread `[bot opener, lane "fixed in abc", bot "This still applies", lane "done"]` reads handled
@@ -102,7 +102,7 @@ derive, for rows still live.
   three-layer leaf read it with the lane's 11 claims passed one by one; the orchestrator re-read both majors, the veto data, the
   fixture docstring, the skip-notice control and the previous roster seed at `bbe421f15`. The lane's review history, CI and merge-queue
   claims were not re-read. CodeRabbit never reviewed this PR (107 files against a cap of 100) and the operator accepted the gap in the
-  lane. No verb or flag was added, so no executor regeneration is owed. **Reported to the operator and not staged.** The lane reports 4
+  lane. No verb or flag was added, so no executor regeneration is owed. **The two majors are staged as PLAN-LB-128 (2026-11-09).** The lane reports 4
   of 4 deliverables. PLAN-LB-41 D1 and D5 describe the retired bot's code-review packs and comment shape and retire with this merge.
   - **Layer 3 major (re-read), D4:** `migrate_bot_lists` strips the retired name from a roster in memory and returns `noop` when no
     legacy `enabled_bots` key exists (`upgrade.py:446-454`); the command saves only when the state is not `noop` (`:532`). A consumer
@@ -186,7 +186,7 @@ derive, for rows still live.
 - **PLAN-LB-124** (shipped #1938, 2026-11-08, runbook lane, `deepseek-v4.1-flash/high`) — see `landings/PLAN-LB-124.md`. Merge commit
   `19da7ed84`, a squash commit with one parent `3839835cc` (the PLAN-LB-115 merge). One three-layer leaf read it with the lane's 11
   claims passed one by one; the orchestrator re-read both majors' code and the minors it grades. The message is `complete: false`,
-  `missing_keys: total_tokens`. **Reported to the operator and not staged.** The lane reports 8 of 8 deliverables (above the guard on the
+  `missing_keys: total_tokens`. **The major is staged as PLAN-LB-130 (2026-11-09).** The lane reports 8 of 8 deliverables (above the guard on the
   operator's word); none of the six shared build files was edited. The executor template changed (D2), so an executor regeneration is
   owed.
   - **Layer 3 major (L3-1):** moving the scope check first reads the tokens after the canonical as scope for every tool. The npm
@@ -1224,6 +1224,24 @@ derive, for rows still live.
 
 ## Decisions
 
+- 2026-11-09 — **The five reported majors are staged as fix plans and the parked plans are regrouped (operator word: "Fix and regroup
+  the plans").** Thirteen plans, PLAN-LB-128 to PLAN-LB-140, all runbook-lane rows with explicit Expected Surface sections that the
+  corpus reads as declarative and admitting. Fix plans: 128 (the PLAN-LB-127 majors: the unsaved retired-bot strip and the free-text
+  Merge Risk concern), 129 (the PLAN-LB-116 `review-gate` thread rule, the undeclared section count, placeholder evidence), 130 (the
+  PLAN-LB-124 multi-token scope reading keyed on the build tool, plus the remedy hint and the skipped-test credit), 131 (the
+  PLAN-LB-126 default-branch rule, the deleted-ref landing read, the wording). Regrouped: 132 (from PLAN-LB-46 D3, D4 and the live
+  parts of D6), 133 (from PLAN-LB-75 and the `review_support` documentation of PLAN-LB-41), 134 and 135 (the two halves of
+  PLAN-LB-83), 136 and 140 (PLAN-LB-51 D2 and D3, and its D1), 137 (PLAN-LB-89), 138 (PLAN-LB-69 D4 and the folded authoring rules,
+  PLAN-LB-84 D6), 139 (PLAN-LB-41 D3). The old rows are `superseded` (41, 46, 51, 69, 75, 83, 84, 89) and PLAN-LB-87 is `retired`;
+  their spec files stay as the record. Dropped with reason, each recorded in the successor spec: PLAN-LB-46 D5 (no observable for a
+  path-filter skip), D6's per-PR decline record and anchor-less diagnostic (no verdict changes while Sourcery is optional);
+  PLAN-LB-75 D4's head-bound override (sticky on purpose, `_criteria_snapshot.py` L1895-1898); PLAN-LB-69 D1 to D3 (the three-layer
+  analysis replaced the two-leaf audit) and D5 (both lanes read the store-checkout copy); PLAN-LB-84 D1 to D5 and PLAN-LB-87 (runtime
+  stamp and recording measurement, outside the focus rule); PLAN-LB-41 D1, D4 and D5 (closed by the PLAN-LB-127 deletions, or the
+  code is not located). The regrouping followed the proposal of 2026-11-08 except that the Antigravity plan is two (136, 140), the
+  OpenCode permission and bridge plans are 134 and 135, and PLAN-LB-41's scanner fix is its own plan (139). Sequencing is the
+  emit gate's: 128 before 132 (`github_pr.py`), 134 and 135 and 136 share `opencode_runtime.py`, 129 and 137 and 138 share
+  `runbook_lane.py` / `runbook-lane/SKILL.md` / `test_runbook_lane.py`. Reversible by the operator word.
 - 2026-11-08 — **The PLAN-LB-125 Kotlin identity gap is removed, not fixed (operator word: "Kotlin you can remove directly").** The
   HIGH Open Defect for the idiomatic Kotlin test shapes (backticked names, expression bodies) is deleted from Open Defects and the
   PLAN-LB-125 landing entry says so. No fix plan is staged. The Java-side minors of the same landing (`inner` and one-line class headers,
@@ -2077,7 +2095,7 @@ derive, for rows still live.
 ## Open Defects
 
 - **HIGH — the foreign-PR gate blocks an already merged foreign change when the foreign tree sits on `main` and nothing is declared
-  (PLAN-LB-126 landing, 2026-11-08; REPORTED TO THE OPERATOR, NOT STAGED; a fix plan only on the operator's word).** The checkout arm
+  (PLAN-LB-126 landing, 2026-11-08; STAGED as PLAN-LB-131 on the operator's word of 2026-11-09).** The checkout arm
   returns the branch the foreign tree is on, `main` included (`foreign_pr_gate.py:258-263`); `landing-state` counts only PRs whose
   head is the branch tip, so a pushed `main` reads `pushed_no_pr` (`ci_base.py:926-958`, `_github_pr.py:1621-1673`); the gate is
   `blocked` and says to open a PR. Declaring `foreign_branch` instead gives `branch_disagreement` and `error`, so after cleanup the
@@ -2087,20 +2105,20 @@ derive, for rows still live.
   branch (an undeclared `main` becomes an `unresolved` row), plus a fixture for the post-cleanup state. Detail:
   `landings/PLAN-LB-126.md` L3-1, L1-1, L2-2.
 - **HIGH — the retired-bot roster strip is never saved, so a consumer config keeps the name and every merge blocks (PLAN-LB-127
-  landing, 2026-11-08; REPORTED TO THE OPERATOR, NOT STAGED; a fix plan only on the operator's word).** `migrate_bot_lists` strips
+  landing, 2026-11-08; STAGED as PLAN-LB-128 D1 on the operator's word of 2026-11-09).** `migrate_bot_lists` strips
   `cuioss-review-bot` in memory and returns `noop` for a config with no legacy `enabled_bots`; `cmd_migrate_bot_lists` saves only when
   the state is not `noop` (`upgrade.py:446-454,532`; both re-read). The previous standard seed was `cuioss-review-bot,coderabbit`, so
   every config seeded or back-filled before the merge has it, and the name classifies `unregistered_kind`, which blocks like `absent`.
   Not this repository. The tests cover only the pure function. Qualifies under the stop rule (a gate falsely blocks in normal use).
   Detail: `landings/PLAN-LB-127.md` L3-1.
-- **HIGH — the CodeRabbit summary rule still drops the live concern shape (PLAN-LB-127 landing, 2026-11-08; REPORTED TO THE
-  OPERATOR, NOT STAGED).** A summary with the marker, `## Walkthrough` and a free-text Merge Risk concern, none of the four section
+- **HIGH — the CodeRabbit summary rule still drops the live concern shape (PLAN-LB-127 landing, 2026-11-08; STAGED as
+  PLAN-LB-128 D2 on the operator's word of 2026-11-09).** A summary with the marker, `## Walkthrough` and a free-text Merge Risk concern, none of the four section
   titles, is dropped as noise (`github_pr.py:332-344,552-554`, re-read), and the bot resolves `participated_but_empty`. The shipped
   positive test is an assembled body; the docs say a straying summary is filed. Whether the same concern is also posted through a
   formal review is not shown by reading, so this qualifies under the stop rule only if it is not. Related minor: `No actionable
   comments were generated` is dropped before the concern check. Detail: `landings/PLAN-LB-127.md` L3-2, L1-1.
-- **HIGH — `review-gate` ignores a bot's restated concern when the lane replied last (PLAN-LB-116 landing, 2026-11-08; REPORTED TO THE
-  OPERATOR, NOT STAGED).** `_thread_concern_remains` tests only the last comment of a resolved thread and only when a bot wrote it
+- **HIGH — `review-gate` ignores a bot's restated concern when the lane replied last (PLAN-LB-116 landing, 2026-11-08; STAGED as
+  PLAN-LB-129 on the operator's word of 2026-11-09).** `_thread_concern_remains` tests only the last comment of a resolved thread and only when a bot wrote it
   (`runbook_lane.py:2617-2630`, re-read), so `[bot opener, lane "fixed in abc", bot "This still applies", lane "done"]` reads handled
   and `merge_allowed` is true. The spec says the last BOT comment. Detail: `landings/PLAN-LB-116.md` L3-1. Same file, fold candidates:
   the silent zero for a prose-only body, an un-keyworded counted title and an `issue_comment`; the marker vocabulary; the placeholder
@@ -2112,7 +2130,7 @@ derive, for rows still live.
   layer 1). The merge state and the deliverable count were read from the PR and the diff instead. Retire when the finalize steps publish
   the four numbers.
 - **HIGH — the push gate reads the goal tokens of a multi-token build payload as scope and refutes a whole-tree change (PLAN-LB-124
-  landing, 2026-11-08; REPORTED TO THE OPERATOR, NOT STAGED; a fix plan only on the operator's word).** `_row_refusal` now judges scope
+  landing, 2026-11-08; STAGED as PLAN-LB-130 on the operator's word of 2026-11-09).** `_row_refusal` now judges scope
   before the canonical, and `parse_row_scope` takes every non-flag token after the first as scope. The npm discoverer's rows
   (`run test`, `run lint`, `run build`) read as canonical `run` with scope `(test)`, so `_scope_adequate` is false for a whole-tree
   change and the row is `build_scope_narrow`, a refutation, where it used to be an unmapped canonical, an inability that passed
