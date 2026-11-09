@@ -386,12 +386,12 @@ def test_the_pre_walk_errors_carry_no_exclusion_fields():
 
 
 def test_a_foreign_change_on_a_branch_the_plan_id_does_not_name_is_clear():
-    """The red-at-HEAD fixture: the change is on a branch, and the plan id is not it.
+    """The change is on a branch, and the plan id is not it.
 
     The landing resolver answers PER BRANCH, and it answers ``pushed_no_pr`` for
-    the plan's own ``feature/p`` — the branch the gate assumed at HEAD. So the
-    verdict distinguishes "read the wrong branch" (blocked) from "read the
-    foreign branch" (clear) rather than passing on either.
+    the plan's own ``feature/p``. So the verdict distinguishes "read the wrong
+    branch" (blocked) from "read the foreign branch" (clear) rather than passing
+    on either.
     """
     deliverables = [_deliverable(1, foreign=True, paths=['/foreign/repo/a.py'], branch='docs/workflow-dsl')]
     result = _run(

@@ -874,9 +874,9 @@ def _phase_end_marker_refusal(plan_id: str, status: dict[str, Any]) -> dict[str,
         return None
 
     # EVERY unrecorded SHA is named in `message`, each with its own append
-    # invocation. The payload has always carried the whole set in
-    # `unrecorded_commits`, but a message that quoted only the first invocation
-    # left the operator repairing one commit and retrying into the same refusal.
+    # invocation. The payload carries the whole set in `unrecorded_commits`, and
+    # the message names every SHA with its own invocation so one pass repairs
+    # them all.
     #
     # ONE line, deliberately: this payload crosses a TOON boundary, and a
     # multi-line plain string is not a TOON value — its second and later lines

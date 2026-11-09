@@ -71,14 +71,19 @@ plan's own branch is neither of them:
   ``foreign_branch`` key of its ``**Metadata:**`` block; and
 * the branch the foreign checkout itself has checked out at ``repo_root``.
 
-A declaration wins over the checkout when the checkout reports no branch (a
-detached HEAD); when BOTH are readable and disagree, the repository is an
-``unresolved[]`` row rather than a guess, because the two say different things
-about where the change is. With neither readable — no declaration and no
-readable checkout branch — the repository is likewise ``unresolved[]``. There is
-deliberately no fall-back to ``feature/{plan_id}``: the change may live on any
-branch (a documentation branch, a plain ``main``), so assuming the plan's own
-name reads ``error`` for a merged foreign PR and blocks the archive for nothing.
+The default branch is never a change's branch. A repository with no declaration
+whose checkout sits on its default branch is an ``unresolved[]`` row with reason
+``branch_is_default``, and a declaration wins over a checkout on the default
+branch — after branch cleanup the tree sits there, so the checkout says nothing
+about where the change is. A declaration contradicted by a checkout on some OTHER
+branch is a ``branch_disagreement`` row, and so is a set of deliverables
+declaring different branches for one repository. A repository with no declaration
+and no readable checkout branch is ``branch_unreadable``; one whose default branch
+cannot be read and which declares nothing is ``default_branch_unreadable``.
+There is deliberately no fall-back to ``feature/{plan_id}``: the change may live
+on any branch (a documentation branch, a release branch), so assuming the plan's
+own name reads ``error`` for a merged foreign PR and blocks the archive for
+nothing.
 
 An ``error`` outcome stops the archive exactly as ``blocked`` does; the two
 differ only in why. The gate CLEARS only when it has POSITIVELY read a landing
