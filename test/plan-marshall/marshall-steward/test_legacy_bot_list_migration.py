@@ -591,15 +591,20 @@ def test_a_degraded_retired_bot_tombstone_is_reported(monkeypatch: pytest.Monkey
     """A strip that cannot fire because the tombstone degraded to empty is reported.
 
     The ``ImportError`` fallback sets ``RETIRED_BOT_KINDS = ()``, which would make the
-    strip silently do nothing. The report carries ``retired_kinds_unavailable`` so that
-    state is visible rather than read as "no retired kind was present".
+    strip silently do nothing. The test monkeypatches BOTH the empty tombstone and the
+    fallback flag, feeds a roster that DOES name a retired kind, and asserts the name
+    survives (so the strip really could not fire) while the report says so.
     """
     monkeypatch.setattr(upgrade, '_RETIRED_KINDS_FALLBACK', True)
+    monkeypatch.setattr(upgrade, '_RETIRED_BOT_KINDS', ())
+    params = {'required_bots': 'cuioss-review-bot,coderabbit'}
 
-    report = upgrade.migrate_bot_lists({'required_bots': 'coderabbit'})
+    report = upgrade.migrate_bot_lists(params)
 
     assert report['state'] == 'noop'
     assert report['retired_kinds_unavailable'] is True
+    assert params['required_bots'] == 'cuioss-review-bot,coderabbit'
+    assert report['removed_retired'] == []
 
 
 def test_standard_roster_is_single_sourced_from_config_defaults():

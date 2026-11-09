@@ -181,7 +181,10 @@ def test_coderabbit_declares_the_summary_rule_as_a_conditional_drop():
     # The concern-section pair is the second veto: the heading whose text is judged, and
     # the observed literals that mark that text clean.
     assert bot_registry.concern_section_headings('coderabbit') == ['Merge Risk:']
-    assert bot_registry.clean_section_verdicts('coderabbit') == ['No actionable merge-blocking risk remains.']
+    assert bot_registry.clean_section_verdicts('coderabbit') == [
+        'No actionable merge-blocking risk remains.',
+        'No merge-blocking risk was found.',
+    ]
     # These lists are the ONLY place the summary wording may sit: an entry that stayed
     # in the unconditional drops would make the veto unreachable for any body carrying it.
     for marker in (

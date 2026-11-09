@@ -473,6 +473,30 @@ class TestSummaryConcernIsFiled:
         assert result['count_stored'] == 0, result
         assert result['count_skipped_noise'] == 1, result
 
+    def test_the_second_observed_clean_verdict_wording_stays_noise(self, plan_context):
+        """The #1946 no-risk wording is declared too, so its clean block still drops.
+
+        CodeRabbit publishes more than one clean wording. A block carrying the second
+        observed verdict — and a residual note in a following sentence — is clean.
+        """
+        plan_id = 'gh-summary-merge-risk-second-clean-wording'
+        plan_context.plan_dir_for(plan_id)
+        body = (
+            f'{CODERABBIT_SUMMARY_MARKER}\n'
+            '## Walkthrough\n\n'
+            '<details><summary><strong>Merge Risk:</strong></summary>\n'
+            'No merge-blocking risk was found. A reworded skip notice may be filed as noise, '
+            'which is a documented tradeoff.\n'
+            '</details>'
+        )
+        comment = _bot_comment('IC-merge-risk-second-clean-wording', body)
+
+        result = _fetch_without_provider_reads([comment], _StoreArgs(741, plan_id))
+
+        assert result['status'] == 'success'
+        assert result['count_stored'] == 0, result
+        assert result['count_skipped_noise'] == 1, result
+
     def test_an_empty_clean_verdict_list_files_every_merge_risk_block(self, plan_context, monkeypatch):
         """FAIL CLOSED: a declared concern heading with no clean verdict files the block.
 
