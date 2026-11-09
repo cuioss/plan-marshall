@@ -493,7 +493,9 @@ whose configuration still names the withdrawn bot loses the name even though it 
 legacy key left. A strip that emptied `required_bots` re-seeds `coderabbit` and records
 `reseeded_required: true`, because a project is never left with no required reviewer. An
 operator answer already recorded in the new keys WINS — the migration removes only the
-stale legacy key and never downgrades `bot_lists_provenance` from `answered`. See the
+stale legacy key and keeps `bot_lists_provenance: answered`, except when the strip
+emptied that answered `required_bots`: the value it replaces no longer exists, so the
+re-seed records `migrated`. See the
 `marshall-steward` Canonical invocations (`upgrade migrate-bot-lists`) for the verb shape
 and `upgrade.py`'s `migrate_bot_lists` docstring for the five exhaustive input states.
 

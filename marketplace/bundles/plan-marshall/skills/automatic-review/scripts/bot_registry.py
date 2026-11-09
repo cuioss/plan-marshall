@@ -12,6 +12,7 @@ comment, its escalated trigger comment, its trigger semantics, its completion
 check-run name, its skip-label-honoring flag, its ignore patterns, its footer
 markers, its acknowledgment patterns, its refusal patterns, its no-unreviewed-commit
 patterns, its contentless-review markers and headings, its actionable-content markers,
+its concern-section headings and clean-section verdicts,
 its participation-evidence publish shapes and the content literals each of those
 shapes must carry to count, its severity map, its rate-limit class, and its
 rate-limit ETA patterns) instead of hard-coding three bots across several code
@@ -62,6 +63,10 @@ Data-block shape (one per ``standards/{bot_kind}.md``)::
       - "## Code Review Guide"
     actionable_content_markers:
       - "<details>"
+    concern_section_headings:         # the TEXT under one of these decides clean vs concern
+      - "Merge Risk:"
+    clean_section_verdicts:           # the literals that mark that section clean; empty = fail closed
+      - "No actionable merge-blocking risk remains."
     rate_limit_eta_patterns:
       - "wait ([0-9]+ minutes)"
     severity_map:
@@ -75,6 +80,7 @@ scalars, lists (``ignore_patterns``, ``footer_patterns``,
 ``refusal_patterns``, ``refusal_size_patterns``, ``no_unreviewed_commit_patterns``,
 ``refusal_size_cap_patterns``, ``contentless_review_markers``,
 ``contentless_review_headings``, ``actionable_content_markers``,
+``concern_section_headings``, ``clean_section_verdicts``,
 ``participation_evidence``,
 ``rate_limit_eta_patterns``), and two nested maps
 (``participation_evidence_markers``, ``severity_map``) — parsed by a small

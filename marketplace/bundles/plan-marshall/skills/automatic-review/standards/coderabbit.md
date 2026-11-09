@@ -177,8 +177,8 @@ does not reach it and drops as noise instead.
 unconditional drop on either would swallow a concern the same body carries — the defect above, one
 marker over. A comment that is nothing BUT that block already fails the conditional drop's own test
 (no walkthrough heading, no in-progress notice), so it is filed as well. The same holds for the
-command-help echo (`@coderabbitai help`): it used to be an unconditional drop, and it is now filed,
-because it is a line of the summary's own tips block and dropping on it would take the concern with
+command-help echo (`@coderabbitai help`): it is filed, because it is a line of the summary's own tips
+block and dropping on it would take the concern with
 it. Both are the fail-closed direction the pre-filter is built on: an operator sees an unusual
 CodeRabbit body once and triages it, rather than a concern disappearing unread.
 

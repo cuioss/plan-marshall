@@ -1086,18 +1086,21 @@ the same reason: it labels a refusal's CONDITION and is likewise a subset of `re
 
 | Marker surface | Match semantics | Outcome |
 |----------------|-----------------|---------|
-| `ignore_patterns` | **Any** entry present in the body. | **Unconditional drop.** The comment is a routine section of a successful review (a no-op review line, a learnings-only notice) and is never a finding, whatever else the body carries. A marker that a *review summary* also carries belongs in the conditional row below instead: an unconditional drop on it once lost every concern a summary raised in the same body. |
+| `ignore_patterns` | **Any** entry present in the body. | **A drop, vetoed by the same bot's `actionable_content_markers` and concern section.** The comment is a routine section of a successful review (a no-op review line, a learnings-only notice) and is dropped as noise — unless it also carries an actionable marker or a declared concern section whose text states a concern, in which case the finding is kept. A marker that a *review summary* also carries belongs in the conditional row below instead: an unconditional drop on it lost every concern a summary raised in the same body. |
 | `footer_patterns` | **Any** entry present on a LINE. | **A strip, then the ordinary test.** Everything from the first marker line to the end of the body is removed before the `ignore_patterns` and contentless tests — a footer is a terminal block, so a footer spread over one line or several leaves no markup behind, and a review body carrying real findings is filed with its signal intact; a body left with nothing but footer is dropped as noise. A footer never causes a drop by itself. |
 | `refusal_patterns` | **Any** entry present in the body. | **A branch, never a drop.** The comment is the bot declining to review; it is excluded from findings AND from `participated_bots[]`, counted under `count_skipped_refusal`, and surfaced in `refused_bots[]` (see the table above). A bot that states one ceiling in several wordings — CodeRabbit's file-count skip says `Too many files!` on its automatic-review notice and `files exceed the limit of` on its commanded-review reply — needs each wording declared: the whole point of this arm is that the notice is READ, so a wording nobody enumerated leaves the bot looking like it reviewed. |
-| `contentless_review_markers` + `contentless_review_headings` + `actionable_content_markers` | **Every** `contentless_review_markers` entry present, **any one** `contentless_review_headings` entry present when the bot declares any, **and** no `actionable_content_markers` entry present. | **A conditional drop.** The comment is a real review that found nothing, so it is dropped as noise (`count_skipped_noise`) — but only when the body is *fully* clean. A single actionable marker, one missing required marker, or none of the declared headings leaves the comment in place and it is filed as a finding in full. |
+| `contentless_review_markers` + `contentless_review_headings` + `actionable_content_markers` + `concern_section_headings` / `clean_section_verdicts` | **Every** `contentless_review_markers` entry present, **any one** `contentless_review_headings` entry present when the bot declares any, **no** `actionable_content_markers` entry present, **and** every declared `concern_section_headings` section carrying a `clean_section_verdicts` literal. | **A conditional drop.** The comment is a real review that found nothing, so it is dropped as noise (`count_skipped_noise`) — but only when the body is *fully* clean. A single actionable marker, one missing required marker, none of the declared headings, or a concern section whose text states a concern leaves the comment in place and it is filed as a finding in full. An empty `clean_section_verdicts` beside a declared heading files every section under it (fail closed). |
 
 **This is where a review summary belongs.** A summary that carries a concern in its own body — the
-nitpick, outside-diff and follow-up sections a bot renders there instead of as inline comments —
-carries exactly the same walkthrough, marketing and tips boilerplate as a summary that found nothing.
+nitpick, outside-diff and follow-up sections a bot renders there instead of as inline comments, or a
+free-text statement under its `concern_section_headings` entry — carries exactly the same walkthrough,
+marketing and tips boilerplate as a summary that found nothing.
 No unconditional marker can separate the two, so the summary's boilerplate is the conditional row's
 job: the summary marker is the conjunction anchor, the headings name the states one persistent summary
-comment is published in, and the concern section is an actionable marker that vetoes the drop. The
-matched controls are the summary that carries no concern (still noise) and the in-progress state of the
+comment is published in, an actionable section or a concern section without a declared
+`clean_section_verdicts` literal vetoes the drop. The
+matched controls are the summary that carries no concern (still noise), the summary whose concern
+section carries the observed clean verdict (still noise) and the in-progress state of the
 same comment (still noise); the case the rule exists for is the summary that carries nothing BUT a
 concern, which is filed. CodeRabbit is the bot that declares it.
 

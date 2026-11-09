@@ -174,7 +174,10 @@ _RESPONDABLE_RESOLUTIONS = frozenset({'fixed', 'suppressed', 'accepted', 'taken_
 #      lines, stripped before the signal test) and ``ignore_patterns`` from the
 #      registry (``automatic-review/standards/{bot_kind}.md``). The ignore entries
 #      are literal whole-comment markers (a no-op review line, a learnings notice, …)
-#      that only apply to that bot's own comments. They are
+#      that only apply to that bot's own comments. The drop is vetoed by the same
+#      bot's ``actionable_content_markers`` and by a declared concern section whose
+#      text carries no declared clean verdict, so a clean-review verdict that
+#      co-occurs with a finding keeps it. They are
 #      sourced from the registry at runtime, so adding/adjusting a bot's noise
 #      drops is a pure standards-doc edit — no change here.
 #
@@ -182,8 +185,10 @@ _RESPONDABLE_RESOLUTIONS = frozenset({'fixed', 'suppressed', 'accepted', 'taken_
 #      and ``actionable_content_markers`` from the same registry. Unlike layer 2
 #      this one is CONDITIONAL on the whole body: it drops a comment only when
 #      EVERY ``contentless_review_markers`` entry is present, ANY ONE declared
-#      ``contentless_review_headings`` entry is present, AND no
-#      ``actionable_content_markers`` entry is. It exists for a bot whose review
+#      ``contentless_review_headings`` entry is present, no
+#      ``actionable_content_markers`` entry is, AND every declared
+#      ``concern_section_headings`` section carries a ``clean_section_verdicts``
+#      literal. It exists for a bot whose review
 #      comments each carry both their findings and their clean-result assertions,
 #      so no unconditional whole-body marker can express "this review found
 #      nothing" without also dropping the reviews that found something. Empty
@@ -231,12 +236,13 @@ _BLOCKQUOTE_LINE = re.compile(r'^[ \t]*>.*$', re.MULTILINE)
 # ``<!-- final_review_risk_start --> … <!-- final_review_risk_end -->`` and names the
 # level in another comment, so the comments are removed BEFORE a concern section is
 # delimited: otherwise the block's own machine markers would truncate the very text
-# the clean-verdict test must read. An unclosed comment is left in place, which can
-# only make a body LESS likely to read as contentless.
+# the clean-verdict test must read. An UNCLOSED comment cannot be removed, so the
+# section boundary is unknowable and the caller treats the body as NOT clean (fail
+# closed) rather than risk reading a verdict out of text that was never a section.
 _HTML_COMMENT = re.compile(r'<!--[\s\S]*?-->')
-# The boundaries that end a concern section: the next markdown heading, or the next
-# sibling ``<details>`` block.
-_SECTION_BOUNDARY = re.compile(r'(?m)^#{1,6}[ \t]|<details\b', re.IGNORECASE)
+# The boundaries that end a concern section: the next markdown heading, the next
+# sibling ``<details>`` block, or the close of the block the heading sits in.
+_SECTION_BOUNDARY = re.compile(r'(?m)^#{1,6}[ \t]|<details\b|</details\s*>', re.IGNORECASE)
 
 
 # ============================================================================
@@ -315,22 +321,33 @@ def cmd_fetch_comments(args):
 # ============================================================================
 
 
-def _section_text_after_heading(body: str, heading: str) -> str | None:
-    """Return the text under ``heading``, or ``None`` when the body carries no such heading.
+def _section_texts_after_heading(body: str, heading: str) -> list[str] | None:
+    """Return every section under each occurrence of ``heading`` (``None`` = unreadable).
 
     HTML comments are removed first (see :data:`_HTML_COMMENT`), so a bot's own machine
-    markers inside the section do not truncate it. The section ends at the next markdown
-    heading or the next ``<details>`` block, whichever comes first; a heading with no
-    following boundary runs to the end of the body.
+    markers inside the section do not truncate it. Each section ends at the next markdown
+    heading, the next ``<details>`` block, or the close of the block it sits in; a heading
+    with no following boundary runs to the end of the body.
+
+    ``None`` means an HTML comment could not be closed, so the section boundaries are
+    unknowable. The caller treats that as NOT clean, the fail-closed direction: an
+    unreadable section is never allowed to prove itself clean.
     """
     text = _HTML_COMMENT.sub(' ', body)
-    index = text.find(heading)
-    if index < 0:
+    if '<!--' in text:
         return None
-    start = index + len(heading)
-    boundary = _SECTION_BOUNDARY.search(text, start)
-    end = boundary.start() if boundary else len(text)
-    return text[start:end]
+    sections: list[str] = []
+    start = 0
+    while True:
+        index = text.find(heading, start)
+        if index < 0:
+            break
+        section_start = index + len(heading)
+        boundary = _SECTION_BOUNDARY.search(text, section_start)
+        end = boundary.start() if boundary else len(text)
+        sections.append(text[section_start:end])
+        start = end
+    return sections
 
 
 def _concern_sections_are_clean(body: str, bot_kind: str) -> bool:
@@ -338,25 +355,28 @@ def _concern_sections_are_clean(body: str, bot_kind: str) -> bool:
 
     The content-aware layer's second veto, and the one that closes a free-text concern:
     a summary states its Merge Risk paragraph as prose, so no section-title marker can
-    express it. For each ``concern_section_headings`` entry present in ``body``, the text
-    under that heading must contain at least one ``clean_section_verdicts`` entry;
-    otherwise the body holds a concern and the contentless drop is vetoed.
+    express it. For EVERY occurrence of each ``concern_section_headings`` entry present
+    in ``body``, the text under that heading must contain at least one
+    ``clean_section_verdicts`` entry; otherwise the body holds a concern and the
+    contentless drop is vetoed.
 
     Fail-closed in both directions: a body with no declared concern heading is clean
     (there is no section to judge), while a body whose section carries no declared clean
-    wording is NOT clean — an empty ``clean_section_verdicts`` therefore files every
-    block under a declared heading until the clean wording is declared.
+    wording — or whose boundaries cannot be read — is NOT clean. An empty
+    ``clean_section_verdicts`` therefore files every block under a declared heading until
+    the clean wording is declared.
     """
     headings = [h.strip() for h in bot_registry.concern_section_headings(bot_kind) if h.strip()]
     if not headings:
         return True
     verdicts = [v.strip() for v in bot_registry.clean_section_verdicts(bot_kind) if v.strip()]
     for heading in headings:
-        section = _section_text_after_heading(body, heading)
-        if section is None:
-            continue
-        if not any(verdict in section for verdict in verdicts):
+        sections = _section_texts_after_heading(body, heading)
+        if sections is None:
             return False
+        for section in sections:
+            if not any(verdict in section for verdict in verdicts):
+                return False
     return True
 
 
@@ -615,13 +635,14 @@ def _is_obvious_noise(body: str, bot_kind: str | None = None) -> bool:
         if not signal.strip():
             return True
         if any(marker in signal for marker in bot_registry.ignore_patterns(bot_kind)):
-            # The same bot's actionable-content markers veto the whole-comment ignore
-            # drop: a clean-review verdict that co-occurs with a nitpick/concern section
-            # must keep its findings. The verdict cannot veto itself — the marker
-            # vocabulary is case-sensitive and the verdict reads "No actionable
+            # The same bot's actionable-content markers and a declared concern section
+            # VETO the whole-comment ignore drop: a clean-review verdict that co-occurs
+            # with a nitpick/concern section, or with a Merge Risk paragraph that states
+            # a concern, must keep that finding. The verdict cannot veto itself — the
+            # marker vocabulary is case-sensitive and the verdict reads "No actionable
             # comments", not "Actionable comments".
             actionables = [m.strip() for m in bot_registry.actionable_content_markers(bot_kind) if m.strip()]
-            if not any(marker in signal for marker in actionables):
+            if not any(marker in signal for marker in actionables) and _concern_sections_are_clean(signal, bot_kind):
                 return True
         return _is_contentless_boilerplate(signal, bot_kind)
     return False

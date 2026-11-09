@@ -449,8 +449,12 @@ registry answers to classifies `unregistered_kind` and would block that consumer
 what it removed in `removed_retired`. (Its sibling Stage-2 sub-step `reconcile-marshal-json` seeds the
 same standard roster through `sync-defaults --backfill-bot-roster` when the block was never answered —
 both lists otherwise have one default, EMPTY.) When the operator has ALREADY answered either new key,
-their answer WINS — only the stale legacy key is removed and both values are reported. The verb is
-idempotent and self-disarming: once the legacy key is gone it is a no-op success, so re-running
+their answer WINS — only the stale legacy key is removed and both values are reported — with one
+exception: a strip that EMPTIES `required_bots` (an answer naming only the retired kind) re-seeds
+`coderabbit`, records provenance `migrated` and reports `reseeded_required`, because a project is
+never left with no required reviewer. The verb is
+idempotent and self-disarming: once the legacy key is gone and no retired kind remains it is a no-op
+success, while a roster that still names a retired kind is saved as `retired_stripped`, so re-running
 `upgrade` is always safe.
 
 When the wizard asks the question above on a project that was just migrated, **pre-fill the migrated
@@ -1042,7 +1046,10 @@ python3 .plan/execute-script.py plan-marshall:marshall-steward:upgrade migrate-b
 
 Takes no arguments and operates on the live `marshal.json`. Driven as the
 `migrate-bot-lists` sub-step of upgrade Stage 2; idempotent and self-disarming,
-so a re-run after the legacy `enabled_bots` key is gone is a no-op success.
+so a re-run after the legacy `enabled_bots` key is gone and no retired kind remains
+is a no-op success. A roster that still names a retired kind is saved as
+`state: retired_stripped`, and a strip that emptied `required_bots` re-seeds
+`coderabbit` and reports `reseeded_required`.
 
 ### upgrade — validate-bot-lists
 

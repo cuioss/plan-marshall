@@ -471,6 +471,46 @@ class TestSummaryConcernIsFiled:
         assert result['count_stored'] == 0, result
         assert result['count_skipped_noise'] == 1, result
 
+    def test_an_empty_clean_verdict_list_files_every_merge_risk_block(self, plan_context, monkeypatch):
+        """FAIL CLOSED: a declared concern heading with no clean verdict files the block.
+
+        Until a bot declares its clean wording, every block under the heading is a
+        potential concern, so the same observed clean body must be filed rather than
+        dropped. Without this the fail-closed default is only an accessor assertion.
+        """
+        plan_id = 'gh-summary-merge-risk-empty-verdicts'
+        plan_context.plan_dir_for(plan_id)
+        bodies = {case_id: body for case_id, body, _p in coderabbit_summary_merge_risk_bodies()}
+        comment = _bot_comment('IC-merge-risk-empty-verdicts', bodies['summary-merge-risk-clean'])
+        monkeypatch.setattr(github_pr.bot_registry, 'clean_section_verdicts', lambda _kind: [])
+
+        result = _fetch_without_provider_reads([comment], _StoreArgs(736, plan_id))
+
+        assert result['status'] == 'success'
+        assert result['count_stored'] == 1, result
+        assert result['count_skipped_noise'] == 0, result
+
+    def test_a_clean_verdict_outside_the_merge_risk_block_does_not_clean_it(self, plan_context):
+        """The section stops at the block's own close, so later prose cannot clean it.
+
+        A concern block followed by a sentence carrying the clean verdict elsewhere in the
+        body must still be filed: the verdict belongs to the section only when it sits
+        INSIDE that section, which is why the closing ``</details>`` is a boundary.
+        """
+        plan_id = 'gh-summary-merge-risk-verdict-outside'
+        plan_context.plan_dir_for(plan_id)
+        concern = {case_id: body for case_id, body, _p in coderabbit_summary_merge_risk_bodies()}[
+            'summary-merge-risk-concern'
+        ]
+        body = f'{concern}\n\nNo actionable merge-blocking risk remains.'
+        comment = _bot_comment('IC-merge-risk-verdict-outside', body)
+
+        result = _fetch_without_provider_reads([comment], _StoreArgs(737, plan_id))
+
+        assert result['status'] == 'success'
+        assert result['count_stored'] == 1, result
+        assert result['count_skipped_noise'] == 0, result
+
     def test_the_clean_verdict_does_not_swallow_a_nitpick_section(self, plan_context):
         """A clean-review verdict co-occurring with a concern section keeps the concern.
 
@@ -495,7 +535,25 @@ class TestSummaryConcernIsFiled:
         assert result['count_stored'] == 1, result
         assert result['count_skipped_noise'] == 0, result
 
-    def test_the_file_limit_summary_notice_is_a_counted_refusal(self, plan_context):
+    def test_the_clean_verdict_does_not_swallow_a_merge_risk_concern(self, plan_context):
+        """The ignore drop is vetoed by a concern section too, not only by actionables.
+
+        A body carrying the clean-review verdict AND a Merge Risk paragraph that states a
+        concern must be filed: the verdict is not permission to drop the concern.
+        """
+        plan_id = 'gh-summary-clean-verdict-plus-merge-risk'
+        plan_context.plan_dir_for(plan_id)
+        concern = {case_id: body for case_id, body, _p in coderabbit_summary_merge_risk_bodies()}[
+            'summary-merge-risk-concern'
+        ]
+        body = f'{concern}\n\nNo actionable comments were generated in the recent review.'
+        comment = _bot_comment('IC-clean-verdict-merge-risk', body)
+
+        result = _fetch_without_provider_reads([comment], _StoreArgs(738, plan_id))
+
+        assert result['status'] == 'success'
+        assert result['count_stored'] == 1, result
+        assert result['count_skipped_noise'] == 0, result
         """A marker-bearing skip notice that states a registered refusal stays a refusal.
 
         ``## Review skipped`` is a declared contentless heading, but the file-count notice

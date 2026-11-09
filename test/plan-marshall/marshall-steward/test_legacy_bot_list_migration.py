@@ -3,7 +3,7 @@
 """End-to-end landing suite for the retired ``enabled_bots`` auto-map.
 
 Cross-cutting counterpart to ``test_upgrade.py``, which owns the pure
-:func:`migrate_bot_lists` function's four input states. This suite pins the
+:func:`migrate_bot_lists` function's five input states. This suite pins the
 LANDING — that a project which only ever configured the legacy single list
 lands on the standard roster without hand repair after the migration runs,
 and that re-running the upgrade never disturbs a settled value.
@@ -513,6 +513,21 @@ class TestLiveConfigVerb:
         persisted = _step_params(json.loads(marshal.read_text(encoding='utf-8')))
         assert persisted['required_bots'] == 'coderabbit'
         assert persisted['bot_lists_provenance'] == 'migrated'
+
+
+def test_a_degraded_retired_bot_tombstone_is_reported(monkeypatch: pytest.MonkeyPatch):
+    """A strip that cannot fire because the tombstone degraded to empty is reported.
+
+    The ``ImportError`` fallback sets ``RETIRED_BOT_KINDS = ()``, which would make the
+    strip silently do nothing. The report carries ``retired_kinds_unavailable`` so that
+    state is visible rather than read as "no retired kind was present".
+    """
+    monkeypatch.setattr(upgrade, '_RETIRED_KINDS_FALLBACK', True)
+
+    report = upgrade.migrate_bot_lists({'required_bots': 'coderabbit'})
+
+    assert report['state'] == 'noop'
+    assert report['retired_kinds_unavailable'] is True
 
 
 def test_standard_roster_is_single_sourced_from_config_defaults():
