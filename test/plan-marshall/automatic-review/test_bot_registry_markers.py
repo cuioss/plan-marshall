@@ -84,18 +84,21 @@ def test_contentless_review_markers_per_bot():
     assert bot_registry.contentless_review_markers('sourcery') == []
 
 
-def test_contentless_review_headings_name_both_summary_states():
+def test_contentless_review_headings_name_each_published_state():
     """CodeRabbit declares one heading per state its one summary comment is published in.
 
     The heading list is an ALTERNATION — the body must carry any one entry — so the
     persistent summary comment can be dropped both while a review runs and once it
-    finished. Exact equality, so a dropped heading (an in-progress summary filed as a
-    finding) or a heading moved back into the conjunction (no body could ever satisfy it)
-    turns this red at the data boundary.
+    finished, and a marker-bearing skip notice (a draft / ignored-path / label skip under
+    ``## Review skipped``) drops as noise rather than filing a false positive. Exact
+    equality, so a dropped heading (an in-progress summary filed as a finding) or a
+    heading moved back into the conjunction (no body could ever satisfy it) turns this red
+    at the data boundary.
     """
     assert bot_registry.contentless_review_headings('coderabbit') == [
         '## Walkthrough',
         'Currently processing new changes',
+        '## Review skipped',
     ]
     assert bot_registry.contentless_review_headings('sourcery') == []
 

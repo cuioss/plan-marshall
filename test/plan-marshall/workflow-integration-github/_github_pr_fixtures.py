@@ -518,6 +518,91 @@ def coderabbit_summary_bodies() -> tuple[tuple[str, str, str], ...]:
     )
 
 
+#: The Merge Risk block CodeRabbit renders in a summary that found nothing to flag,
+#: OBSERVED VERBATIM (newlines collapsed by the CI abstraction) on ``cuioss/plan-marshall#1942``
+#: (``IC_kwDOQ3xasM8AAAABkOyUGA``). The no-risk fact is the closing sentence, not the risk
+#: level: the block is labelled ``Minimal`` here, while the concern-bearing block below is
+#: labelled ``Low`` and still carries a concern.
+CODERABBIT_SUMMARY_MERGE_RISK_CLEAN = (
+    '<details> <summary><strong>Merge Risk:</strong> <strong><picture><img '
+    'src="https://storage.googleapis.com/coderabbit_public_assets/review-comment-icons-v1/'
+    'risk-unassessed-16.svg" width="16" height="16" align="absmiddle" alt=""></picture> Minimal</strong>'
+    ' · previous review <code>8eeec</code></summary> <dl> <dd> <br>  '
+    '<!-- final_review_risk_start --> '
+    '<!-- final_review_risk_label **Merge Risk:** **⚪ Minimal** · up to `8eeec` --> '
+    '<!-- final_review_risk_coverage:{"sourceCommitId":"8eeec321a6b299e3eabc42646e5d66bc8a4ef242",'
+    '"coveredCommitId":"8eeec321a6b299e3eabc42646e5d66bc8a4ef242","kind":"reviewed"} -->  '
+    'Finalize commits now get ledger rows, and the foreign PR gate classifies the declared or '
+    'checked-out branch. The gate still returns an error when a declared branch disagrees with the '
+    'checkout, which the PR documents as intended and lists as a known limitation. '
+    'No actionable merge-blocking risk remains. '
+    '<!-- final_review_risk_end -->  </dd> </dl> </details>'
+)
+
+#: The Merge Risk block CodeRabbit renders in a summary that carries its concern as FREE TEXT,
+#: OBSERVED VERBATIM (newlines collapsed by the CI abstraction) on ``cuioss/plan-marshall#1931``
+#: (``IC_kwDOQ3xasM8AAAABj8Aypw``). It states no section title the actionable-section veto can
+#: see, which is exactly why the block's text is judged against the declared clean verdict.
+CODERABBIT_SUMMARY_MERGE_RISK_CONCERN = (
+    '<details> <summary><strong>Merge Risk:</strong> <strong><picture><img '
+    'src="https://storage.googleapis.com/coderabbit_public_assets/review-comment-icons-v1/'
+    'risk-low-16.svg" width="16" height="16" align="absmiddle" alt=""></picture> Low</strong>'
+    ' · previous review <code>f9af8</code></summary> <dl> <dd> <br>  '
+    '<!-- final_review_risk_start --> '
+    '<!-- final_review_risk_label **Merge Risk:** **🔵 Low** · up to `f9af8` --> '
+    '<!-- final_review_risk_coverage:{"sourceCommitId":"f9af868ed29daaab1bf27c26135de47dc4914caa",'
+    '"coveredCommitId":"f9af868ed29daaab1bf27c26135de47dc4914caa","kind":"reviewed"} -->  '
+    'The changes are mostly documentation and checker fixes. The remaining issue is a contract test '
+    'that could pass after the never-downgrade rule loses its verdict list; fix it in this PR or as '
+    'a follow-up. '
+    '<!-- final_review_risk_end -->  </dd> </dl> </details>'
+)
+
+
+def coderabbit_summary_with_merge_risk(merge_risk_block: str) -> str:
+    """Return a summary body whose Merge Risk block is the OBSERVED ``merge_risk_block``.
+
+    The surrounding shape (summary marker, ``## Walkthrough`` and the tips block) is the
+    shape :func:`coderabbit_summary_plain_walkthrough` establishes; the Merge Risk block is
+    the captured live one, inserted verbatim. The two callers differ only in that block —
+    the clean-verdict wording versus the concern statement — so the file/drop decision is
+    attributable to the block's own text and nothing else.
+    """
+    return (
+        f'{CODERABBIT_SUMMARY_MARKER}\n'
+        '## Walkthrough\n\n'
+        'The change gates participation credit on a per-shape content marker.\n\n'
+        f'{merge_risk_block}\n\n'
+        f'{CODERABBIT_SUMMARY_TIPS_BLOCK}'
+    )
+
+
+def coderabbit_summary_merge_risk_bodies() -> tuple[tuple[str, str, str], ...]:
+    """Return ``(case id, body, provenance)`` for the clean and concern Merge Risk bodies.
+
+    Both bodies carry the SAME surrounding summary shape; the only difference is the
+    captured Merge Risk block. Provenance is :data:`ACKNOWLEDGMENT_OBSERVED` because the
+    block text is the live wording, read off the CI abstraction and named with its comment
+    id in the two constants above.
+    """
+    return guard_non_empty(
+        (
+            (
+                'summary-merge-risk-clean',
+                coderabbit_summary_with_merge_risk(CODERABBIT_SUMMARY_MERGE_RISK_CLEAN),
+                ACKNOWLEDGMENT_OBSERVED,
+            ),
+            (
+                'summary-merge-risk-concern',
+                coderabbit_summary_with_merge_risk(CODERABBIT_SUMMARY_MERGE_RISK_CONCERN),
+                ACKNOWLEDGMENT_OBSERVED,
+            ),
+        ),
+        'coderabbit_summary_merge_risk_bodies',
+        'the two observed Merge Risk summary bodies declared in _github_pr_fixtures',
+    )
+
+
 #: The file-count skip notice as CodeRabbit posts it in answer to a COMMANDED review,
 #: OBSERVED verbatim on ``cuioss/plan-marshall#1753`` (the reply to ``@coderabbitai review``
 #: published ``2026-10-12T09:15:22Z``). It names the cause without the "Too many files!"

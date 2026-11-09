@@ -17,15 +17,15 @@ a fenced code block that plugin-doctor treats as an example, not an executable d
 read `bot_kind`, `author_login`, `trigger_comment`, `escalated_trigger_comment`, `quota_limited`, `completion_check_name`, `honors_skip_label`,
 `participation_evidence`, `participation_evidence_markers`, `participation_requires_update`, `ignore_patterns`,
 `acknowledgment_patterns`, `review_body_summary_patterns`, `refusal_patterns`, `no_unreviewed_commit_patterns`, `contentless_review_markers`,
-`contentless_review_headings`, `actionable_content_markers`, `rate_limit_class`, `rate_limit_eta_patterns`, and `severity_map` from
+`contentless_review_headings`, `actionable_content_markers`, `concern_section_headings`, `clean_section_verdicts`, `rate_limit_class`, `rate_limit_eta_patterns`, and `severity_map` from
 it; the prose sections that follow carry the rationale.
 
-CodeRabbit DOES declare the content-aware trio, and the summary rule is the reason: its summary
+CodeRabbit DOES declare the content-aware fields, and the summary rule is the reason: its summary
 comment carries the walkthrough, the merge-risk paragraph and the tips block whether or not it also
 carries a concern, so no single unconditional marker can say "this summary found nothing" without
 also dropping the summaries that found something. The rule — the summary marker as the conjunction's
-anchor, the two published headings as the alternation, the concern sections as the veto — is stated
-once, in § "Producer stage" below.
+anchor, the declared headings as the alternation, the actionable sections and the Merge Risk block's
+text as the vetoes — is stated once, in § "Producer stage" below.
 
 CodeRabbit DOES declare `review_body_summary_patterns`, and it is the only registered bot that does.
 Its `review_body` comes in two shapes — the consolidated review, and the
@@ -68,14 +68,19 @@ ignore_patterns:
   - "✏️ Learnings added"                                                      # learnings-only reply
 contentless_review_markers:                                                   # the CONJUNCTION anchor: boilerplate every summary carries
   - "<!-- This is an auto-generated comment: summarize by coderabbit.ai -->"  # the summary comment's own marker — every review summary opens with it
-contentless_review_headings:                                                  # ANY ONE of these must also be present: the two states one summary comment is published in
+contentless_review_headings:                                                  # ANY ONE of these must also be present: the states one summary comment is published in
   - "## Walkthrough"                                                          # the finished summary's walkthrough heading
   - "Currently processing new changes"                                        # the in-progress notice the same comment carries while a review runs
+  - "## Review skipped"                                                       # a marker-bearing draft / ignored-path / label skip notice — dropped as noise, so participation reads absent (fail closed for a required bot). The registered file-count refusals are classified BEFORE this filter and stay counted refusals
 actionable_content_markers:                                                   # any ONE of these vetoes the drop: sections a summary carries ONLY when it holds a concern
   - "Actionable comments"                                                     # the section a review body opens with when it has findings; inside a marker-bearing summary it is the same signal, and the veto can only fire there
   - "Nitpick comments"                                                        # the nitpick section a summary renders instead of an inline comment
   - "Outside-diff comments"                                                   # the section for a concern the diff does not reach
   - "Follow-ups"                                                              # the section for a concern that outlives this diff
+concern_section_headings:                                                     # the TEXT under each heading decides clean vs concern: a summary states its free-text concern here, so no section-title marker can express it
+  - "Merge Risk:"                                                             # the "<strong>Merge Risk:</strong>" summary line, OBSERVED on cuioss/plan-marshall#1931 (IC_kwDOQ3xasM8AAAABj8Aypw) and #1942 (IC_kwDOQ3xasM8AAAABkOyUGA). The risk LEVEL is not the verdict: #1931 carries a concern under "Low" and #1942 is clean under "Minimal"
+clean_section_verdicts:                                                       # a concern section is clean ONLY when its text carries one of these OBSERVED literals; empty = fail closed (every block under the heading is filed)
+  - "No actionable merge-blocking risk remains."                              # OBSERVED on #1942 (IC_kwDOQ3xasM8AAAABkOyUGA); #1931's block (IC_kwDOQ3xasM8AAAABj8Aypw) ends in a concern statement instead, so it files
 acknowledgment_patterns:                                                      # command replies that confirm a command was RECEIVED — never the answer to it, never a finding
   - "Review triggered"                                                        # the reply to `@coderabbitai review` while the commanded review is running
   - "Review finished"                                                         # the same reply once that review has ended — it reports that a review ran, and carries none of it
@@ -141,19 +146,32 @@ CodeRabbit is a first-class bot in plan-marshall — this rule refines, not intr
 
 `ignore_patterns` above are whole-comment drops — CodeRabbit comments that carry no per-line
 finding whatever else the body says: a no-op review (`No actionable comments were generated`) and a
-learnings-only reply. Do **not** ignore inline review comments that carry a `cr-indicator-types`
-marker — those are the signal.
+learnings-only reply. The drop is itself vetoed by the same bot's `actionable_content_markers`, so a
+clean-review verdict that co-occurs with a nitpick, outside-diff or follow-up section keeps that
+section: the verdict cannot veto itself, because the markers are case-sensitive and the verdict reads
+"No actionable comments", not "Actionable comments". Do **not** ignore inline review comments that
+carry a `cr-indicator-types` marker — those are the signal.
 
 **The summary comment is NOT one of those drops.** It carries the walkthrough, the merge-risk
 paragraph and the tips block on every review, including the reviews that also raise a concern in the
 same body (an actionable, nitpick, outside-diff or follow-up section rendered in the summary instead
-of as an inline comment). Dropping it on the walkthrough or the summary marker therefore lost those concerns
-whole, and the bot resolved `participated_but_empty` beside a summary that had filed nothing. It is
-now the conditional drop the content-aware layer expresses: the summary marker is required, one of
-the two headings it is published under must be present, and any concern section vetoes the drop.
-Because that layer is keyed on the body, a summary that strays from the declared clean shape is
-filed — fail-closed toward filing, with the plain walkthrough, both in-progress states and the
-clean-review verdict as the matched controls that must keep filing nothing.
+of as an inline comment). Dropping it on the walkthrough or the summary marker loses those concerns,
+and the bot resolves `participated_but_empty` beside a summary that filed nothing. It is therefore
+the conditional drop the content-aware layer expresses: the summary marker is required, one of the
+declared headings it is published under must be present, and any actionable section vetoes the drop.
+A second veto covers the FREE-TEXT concern: the text under the declared `concern_section_headings`
+entry (the `Merge Risk:` line) is clean only when it carries a declared
+`clean_section_verdicts` literal, so a Merge Risk paragraph that states a concern files the summary.
+The layer is keyed on the body, so a summary that strays from the declared clean shape is filed —
+fail-closed toward filing, with the plain walkthrough, both in-progress states, the observed clean
+Merge Risk wording and the clean-review verdict as the matched controls that keep filing nothing.
+
+A marker-bearing skip notice (a draft, ignored-path or label skip under `## Review skipped`) carries
+no review content, so `## Review skipped` is a declared heading and the notice drops as noise;
+participation therefore reads absent, which is fail closed for a required bot. The registered
+file-count refusals are classified before the noise filter and stay counted refusals. The residual:
+the enumerative refusal arm runs AFTER the noise filter, so a reworded refusal under that heading
+does not reach it and drops as noise instead.
 
 **The tips block and the marketing lines are not drops either.** They ride the summary comment, so an
 unconditional drop on either would swallow a concern the same body carries — the defect above, one

@@ -31,6 +31,7 @@ from _github_pr_fixtures import (
     ACKNOWLEDGMENT_BOT_LOGIN,
     CODERABBIT_ACKNOWLEDGMENT_COUNT,
     CODERABBIT_ACKNOWLEDGMENTS,
+    CODERABBIT_FILE_LIMIT_SUMMARY_NOTICE,
     CODERABBIT_FULL_REVIEW_ACKNOWLEDGMENTS,
     CODERABBIT_GENUINE_SHORT_REVIEW_COMMENT,
     CODERABBIT_NO_UNREVIEWED_COMMIT_REPLIES,
@@ -39,6 +40,7 @@ from _github_pr_fixtures import (
     HUMAN_COMMENT_QUOTING_AN_ACKNOWLEDGMENT,
     coderabbit_in_progress_summaries,
     coderabbit_summary_bodies,
+    coderabbit_summary_merge_risk_bodies,
 )
 from _resolve_project_dir_fixtures import worktree_query_result
 
@@ -431,6 +433,111 @@ class TestSummaryConcernIsFiled:
         assert result['count_stored'] == 0, result
         assert result['count_skipped_noise'] == 0, result
         assert result['count_skipped_refusal'] == 1, result
+
+    def test_the_observed_concern_merge_risk_block_is_filed(self, plan_context):
+        """A concern stated ONLY as Merge Risk prose reaches the store.
+
+        The body carries the summary marker, ``## Walkthrough``, the captured #1931 block
+        and the tips block, and none of the four actionable section titles: before the
+        text-under-the-heading veto it was dropped as contentless boilerplate.
+        """
+        plan_id = 'gh-summary-merge-risk-concern'
+        plan_context.plan_dir_for(plan_id)
+        bodies = {case_id: body for case_id, body, _p in coderabbit_summary_merge_risk_bodies()}
+        comment = _bot_comment('IC-merge-risk-concern', bodies['summary-merge-risk-concern'])
+
+        result = _fetch_without_provider_reads([comment], _StoreArgs(731, plan_id))
+
+        assert result['status'] == 'success'
+        assert result['count_stored'] == 1, result
+        assert result['count_skipped_noise'] == 0, result
+        assert result['count_skipped_refusal'] == 0, result
+
+    def test_the_observed_clean_merge_risk_block_stays_noise(self, plan_context):
+        """MATCHED CONTROL: the same shape with the captured clean wording files nothing.
+
+        The #1942 block carries the declared clean verdict, so it stays the conditional
+        drop. Its risk level is ``Minimal`` and the concern block's is ``Low`` — the level
+        is not the discriminator, the verdict sentence is.
+        """
+        plan_id = 'gh-summary-merge-risk-clean'
+        plan_context.plan_dir_for(plan_id)
+        bodies = {case_id: body for case_id, body, _p in coderabbit_summary_merge_risk_bodies()}
+        comment = _bot_comment('IC-merge-risk-clean', bodies['summary-merge-risk-clean'])
+
+        result = _fetch_without_provider_reads([comment], _StoreArgs(732, plan_id))
+
+        assert result['status'] == 'success'
+        assert result['count_stored'] == 0, result
+        assert result['count_skipped_noise'] == 1, result
+
+    def test_the_clean_verdict_does_not_swallow_a_nitpick_section(self, plan_context):
+        """A clean-review verdict co-occurring with a concern section keeps the concern.
+
+        The ``No actionable comments were generated`` ignore drop is vetoed by the same
+        bot's actionable markers, so the nitpick section is filed instead of being taken
+        with the verdict.
+        """
+        plan_id = 'gh-summary-clean-verdict-plus-nitpick'
+        plan_context.plan_dir_for(plan_id)
+        body = (
+            f'{CODERABBIT_SUMMARY_MARKER}\n'
+            '## Walkthrough\n\n'
+            'The change gates participation credit on a per-shape content marker.\n\n'
+            f'{_CODERABBIT_CLEAN_VERDICT}\n\n'
+            f'{CODERABBIT_SUMMARY_CONCERN_SECTION}'
+        )
+        comment = _bot_comment('IC-clean-verdict-nitpick', body)
+
+        result = _fetch_without_provider_reads([comment], _StoreArgs(733, plan_id))
+
+        assert result['status'] == 'success'
+        assert result['count_stored'] == 1, result
+        assert result['count_skipped_noise'] == 0, result
+
+    def test_the_file_limit_summary_notice_is_a_counted_refusal(self, plan_context):
+        """A marker-bearing skip notice that states a registered refusal stays a refusal.
+
+        ``## Review skipped`` is a declared contentless heading, but the file-count notice
+        is classified by the refusal arm that runs BEFORE the noise filter, so it is counted
+        as a refusal and never silently dropped.
+        """
+        plan_id = 'gh-summary-file-limit-refusal'
+        plan_context.plan_dir_for(plan_id)
+        comment = _bot_comment('IC-file-limit-summary', CODERABBIT_FILE_LIMIT_SUMMARY_NOTICE)
+
+        result = _fetch_without_provider_reads([comment], _StoreArgs(734, plan_id))
+
+        assert result['status'] == 'success'
+        assert result['count_stored'] == 0, result
+        assert result['count_skipped_noise'] == 0, result
+        assert result['count_skipped_refusal'] == 1, result
+
+    def test_a_marker_bearing_skip_notice_drops_as_noise(self, plan_context):
+        """CONSTRUCTED: a draft skip under ``## Review skipped`` carries no review content.
+
+        The live wording of a draft, ignored-path or label skip is not shown by reading, so
+        the body is constructed. ``## Review skipped`` is a declared contentless heading, so
+        the notice drops as noise and participation reads absent — still fail closed for a
+        required bot.
+        """
+        plan_id = 'gh-summary-skip-notice-marker-bearing'
+        plan_context.plan_dir_for(plan_id)
+        body = (
+            f'{CODERABBIT_SUMMARY_MARKER}\n'
+            '> [!NOTE]\n'
+            '> ## Review skipped\n'
+            '>\n'
+            '> This PR is still a draft. CodeRabbit reviews it once it is marked ready for review.\n'
+        )
+        comment = _bot_comment('IC-constructed-draft-skip', body)
+
+        result = _fetch_without_provider_reads([comment], _StoreArgs(735, plan_id))
+
+        assert result['status'] == 'success'
+        assert result['count_stored'] == 0, result
+        assert result['count_skipped_noise'] == 1, result
+        assert result['count_skipped_refusal'] == 0, result
 
     def test_a_finished_summary_that_also_carries_a_rate_limit_block_is_a_refusal(self, plan_context):
         """PINNED SHAPE: a readable coverage marker does not outrank the refusal branch here.
