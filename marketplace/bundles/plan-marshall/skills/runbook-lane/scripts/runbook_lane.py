@@ -2294,6 +2294,7 @@ _REVIEW_BODY_SECTIONS = (
     ('nitpicks', 'nitpick'),
     ('follow-ups', 'followup'),
     ('followups', 'followup'),
+    ('additional comments', 'additional'),
 )
 
 #: The ``<summary>`` titles a reviewer posts that COUNT their block while the block
@@ -2301,29 +2302,22 @@ _REVIEW_BODY_SECTIONS = (
 #: findings. Matched as a case-insensitive PREFIX of the normalised title, like the
 #: section table.
 #:
-#: OBSERVED on ``cuioss/plan-marshall#1940``: ``Files selected for processing: 19``
-#: is a counted block that holds file paths. A parser that treats every counted
-#: title as a findings section turns a readable review into a false block, which is
-#: exactly what the declared-count rule must not do.
+#: Every entry is grounded: ``review info``, ``run configuration``, ``commits`` and
+#: ``files selected for processing`` are OBSERVED in the review body of
+#: ``cuioss/plan-marshall#1940`` (review ``PRR_kwDOQ3xasM8AAAABWsFY6g``); ``review
+#: details`` is the block the fixtures and the inline bodies render; ``files ignored
+#: due to path filters`` is the sibling of the observed file list. A counted title
+#: that is none of these is refused rather than declared away.
 _NON_FINDING_SECTION_LABELS = (
     'files selected for processing',
     'files ignored due to path filters',
     'review details',
     'review info',
-    'recent review info',
     'run configuration',
     'commits',
-    'walkthrough',
-    'merge risk',
-    'pre-merge checks',
-    'full details',
-    'share',
-    'included review availability',
-    'action not completed',
-    'action performed',
 )
 
-#: The markers that make a resolved thread's last reviewer comment an answer that
+#: The markers that make a resolved thread's last BOT-authored comment an answer that
 #: the concern REMAINS. A reviewer that closes a thread with an acknowledgement
 #: ("Addressed in commit …", "verified", "fixed") matches none of these, so the
 #: thread counts as handled; one that restates THIS thread's defect matches, so a
@@ -2346,8 +2340,14 @@ _CONCERN_REMAINS_MARKERS = (
 _SUMMARY_RE = re.compile(r'<summary>(?P<title>.*?)</summary>', re.IGNORECASE | re.DOTALL)
 #: The count a reviewer declares at the end of a ``<summary>`` title, in either
 #: OBSERVED spelling: a parenthesised ``(N)`` (``Nitpick comments (2)``) or a
-#: trailing ``: N`` (``Nitpick comments: 1``, and the per-file ``path: 1``).
-_COUNT_SUFFIX_RE = re.compile(r'(?:\((?P<paren>\d+)\)|:\s*(?P<colon>\d+))\s*$')
+#: trailing ``: N`` (``Nitpick comments: 1``, and the per-file ``path: 1``). The
+#: colon form needs whitespace after it, so a bare location (``src/a.py:12``) is not
+#: a count.
+_COUNT_SUFFIX_RE = re.compile(r'(?:\((?P<paren>\d+)\)|:\s+(?P<colon>\d+))\s*$')
+
+#: What a count read does not need: markup and decoration AROUND the declared count.
+#: The colon and the parentheses survive, because both spellings are counts.
+_COUNT_TITLE_NOISE_RE = re.compile(r'[^a-z0-9\- ():]+')
 
 #: The per-row finding marker the reviewer puts in a section's rows, OBSERVED on
 #: ``cuioss/plan-marshall#1940`` (``<!-- cr-comment:v1:…``). A section that declares
@@ -2464,27 +2464,33 @@ def _disposition_evidence_is_real(evidence: str) -> bool:
 
 
 def _normalise_section_title(title: str) -> str:
-    """Return a ``<summary>`` title reduced to lowercase words.
+    """Return a ``<summary>`` title reduced to lowercase words for LABEL matching.
 
-    A reviewer decorates its headings with emoji, bold markers and punctuation.
-    Everything that is not a letter, a digit, a hyphen, a space or a parenthesised
-    group is dropped, so ``🧹 Nitpick comments (2)`` and ``**Nitpick comments
-    (2)**`` reduce to the same ``nitpick comments (2)`` the label table is written
-    against. The parentheses survive on purpose: the ``(N)`` count is read off the
-    normalised title, and stripping the group would erase it.
+    A reviewer decorates its headings with markup, emoji, bold markers and
+    punctuation. The markup is dropped first (a ``<picture>``/``<strong>`` wrapper
+    carries no words of the heading), then everything that is not a letter, a digit,
+    a hyphen, a space or a parenthesised group is dropped, so ``🧹 Nitpick comments
+    (2)`` and ``**Nitpick comments (2)**`` reduce to the same ``nitpick comments
+    (2)`` the label table is written against. The parentheses survive on purpose:
+    they let a normalised title keep the shape it declares, though the COUNT itself is
+    read off the raw title by ``_declared_count`` — normalisation drops the colon
+    spelling the reviewer uses.
     """
-    return ' '.join(re.sub(r'[^a-z0-9\- ()]+', ' ', title.lower()).split())
+    text = re.sub(r'<[^>]+>', ' ', title)
+    return ' '.join(re.sub(r'[^a-z0-9\- ()]+', ' ', text.lower()).split())
 
 
 def _declared_count(title: str) -> int | None:
     """Return the count a ``<summary>`` title declares, or ``None``.
 
-    The count is read off the RAW title with its markup removed, because the colon
-    spelling does not survive ``_normalise_section_title`` — and it is the spelling
-    the reviewer really posts (OBSERVED: ``Nitpick comments: 1`` on #1940). Both
-    spellings name the same statement about the block.
+    The count is read off the RAW title, because the colon spelling does not survive
+    ``_normalise_section_title`` — and it is the spelling the reviewer really posts
+    (OBSERVED: ``Nitpick comments: 1`` on #1940). Markup and decoration AROUND the
+    count are dropped first, so ``**Nitpick comments (3)**`` and ``Nitpick comments:
+    3 🧹`` still declare three; both spellings name the same statement about the block.
     """
-    plain = ' '.join(re.sub(r'<[^>]+>', ' ', title).split())
+    text = re.sub(r'<[^>]+>', ' ', title)
+    plain = ' '.join(_COUNT_TITLE_NOISE_RE.sub(' ', text.lower()).split())
     declared = _COUNT_SUFFIX_RE.search(plain)
     if declared is None:
         return None
@@ -2815,8 +2821,9 @@ def _review_gate_verdict(
     - an unresolved thread is ``unresolved_review_threads``;
     - a body finding with no disposition naming a commit or a stated reason is
       ``body_findings_undisposed``;
-    - a resolved thread whose last reviewer comment states that the concern
-      remains is ``thread_concern_remains`` — resolution is not silence;
+    - a resolved thread whose last BOT-authored comment states that the concern
+      remains is ``thread_concern_remains`` — resolution is not silence, and a lane
+      reply below the bot's restatement never discharges it;
     - otherwise ``all_handled``.
     """
     base: dict[str, Any] = {'status': 'success', 'operation': 'review-gate', 'pr_number': pr_number}

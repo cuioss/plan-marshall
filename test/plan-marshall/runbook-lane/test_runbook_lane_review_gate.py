@@ -372,10 +372,13 @@ def test_a_captured_counted_non_finding_title_is_not_a_finding() -> None:
 
 
 def test_a_captured_body_with_counted_non_finding_sections_reads_one_nitpick() -> None:
-    """OBSERVED #1940: `Review info` and `Files selected for processing: N` beside one nitpick.
+    """OBSERVED #1940: `Review info`, `Files selected for processing: N` beside one nitpick.
 
-    The declared non-finding labels come from this body, so the counted titles the
-    reviewer really posts do not turn a readable review into a false block.
+    The titles are the ones the captured review body carries (review
+    ``PRR_kwDOQ3xasM8AAAABWsFY6g`` on ``cuioss/plan-marshall#1940``: `Review info`,
+    `Run configuration`, `Commits`, `Files selected for processing: 19`), so the
+    counted titles the reviewer really posts do not turn a readable review into a
+    false block.
     """
     body = (
         '<!-- coderabbit-ai-generated:v1 -->\n'
@@ -399,6 +402,79 @@ def test_a_captured_body_with_counted_non_finding_sections_reads_one_nitpick() -
     # nitpick — the counted non-finding block mints nothing and blocks nothing.
     assert verdict['review_body_findings_total'] == 2
     assert [row['id'] for row in verdict['undisposed']] == ['nitpick-1', 'inline-1']
+
+
+@pytest.mark.parametrize('title', ['**Nitpick comments (3)**', '🧹 Nitpick comments: 3'])
+def test_a_decorated_section_title_still_declares_its_count(title: str) -> None:
+    """Decoration around the count does not hide it: bold markers and emoji are noise."""
+    body = f'<details>\n<summary>{title}</summary>\nfirst\nsecond\nthird\n</details>\n'
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['review_body_findings_total'] == 3
+
+
+def test_a_markup_wrapped_section_title_still_counts_its_declared_findings() -> None:
+    """OBSERVED #1940: the summary wraps its heading in a `<picture>` icon."""
+    body = (
+        '<details>\n'
+        '<summary><picture><img src="https://example.invalid/brush-cleaning.svg" alt=""></picture> '
+        'Nitpick comments: 2</summary><blockquote>\n'
+        'first\n<!-- cr-comment:v1:aaaaaaaaaaaaaaaaaaaaaaaa -->\n'
+        'second\n<!-- cr-comment:v1:bbbbbbbbbbbbbbbbbbbbbbbb -->\n'
+        '</blockquote></details>\n'
+    )
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['review_body_findings_total'] == 2
+    assert [row['id'] for row in verdict['undisposed']] == ['nitpick-1', 'nitpick-2']
+
+
+def test_a_decorated_unreadable_section_is_still_undecidable() -> None:
+    """Bold markers must not hide a counted section the parser cannot place."""
+    body = '<details>\n<summary>**Lint comments (2)**</summary>\nuse the helper\n</details>\n'
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['merge_allowed'] is False
+    assert verdict['reason'] == 'undecidable_read'
+    assert 'unreadable review-body section' in verdict['detail']
+
+
+def test_an_additional_comments_section_counts_its_findings() -> None:
+    """A counted `Additional comments (N)` is findings, never a false block."""
+    body = '<details>\n<summary>Additional comments (2)</summary>\nfirst\nsecond\n</details>\n'
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['reason'] == 'body_findings_undisposed', verdict
+    assert verdict['review_body_findings_total'] == 2
+    assert [row['id'] for row in verdict['undisposed']] == ['additional-1', 'additional-2']
+
+
+def test_a_bare_location_suffix_is_not_read_as_a_count() -> None:
+    """`src/a.py:12` is a location, not a twelve-finding declaration."""
+    body = (
+        '<details>\n<summary>🧹 Nitpick comments</summary><blockquote>\n'
+        '<details>\n<summary>src/a.py:12</summary>\nrename the helper\n</details>\n'
+        '</blockquote></details>\n'
+    )
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['review_body_findings_total'] == 1
+
+
+def test_a_top_level_per_file_summary_is_undecidable() -> None:
+    """An observed per-file grouping with no recognised section above it cannot be placed."""
+    body = '<details><summary>src/a.py (3)</summary> rename the helper </details>\n'
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['merge_allowed'] is False
+    assert verdict['reason'] == 'undecidable_read'
+    assert 'unreadable review-body section' in verdict['detail']
 
 
 def test_a_disposition_that_does_not_name_its_evidence_is_refused() -> None:

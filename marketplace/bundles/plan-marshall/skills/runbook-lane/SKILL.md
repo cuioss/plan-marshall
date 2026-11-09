@@ -191,7 +191,7 @@ finding.
 progress line, with no `finding: ` prefix: `reviewer` is the bot kind the registry reports for that
 reviewer's login (not the login a human reader sees), or a human reviewer's lower-cased login;
 `section` and `id` are the parser's own vocabulary (`nitpick`, `followup`, `outside-diff`, `duplicate`,
-`inline`; ids `{section}-{n}`), which the verb reports in its `undisposed` rows so the lane never
+`inline`, `additional`; ids `{section}-{n}`), which the verb reports in its `undisposed` rows so the lane never
 guesses them.
 
 It answers `merge_allowed: false` with a named `reason` while any of these holds: an unresolved
@@ -860,7 +860,7 @@ qualifying review.
 
 **An unresolved review thread or an unhandled review-body finding on the merge head blocks the
 standing authorization.** A reviewer's thread that is still open, or a finding from any review-body
-section — inline, duplicate, outside-diff, nitpick or follow-up — that the run neither fixed nor
+section — inline, duplicate, outside-diff, nitpick, follow-up or additional — that the run neither fixed nor
 answered, means a finding is not handled, so the second condition fails however
 strong the review credit is.
 
