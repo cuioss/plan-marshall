@@ -536,13 +536,11 @@ def _feature_branch_repo(tmp_path: Path) -> None:
 def test_a_finalize_commit_then_a_loop_back_and_a_step_10a_commit_admit_the_boundary(
     tmp_path: Path, monkeypatch
 ) -> None:
-    """The refused loop-back, reproduced and closed: both commits carry a row.
+    """A loop-back with both commits carrying a row: the boundary admits it.
 
-    The scenario the guard used to refuse: a finalize commit (item 5f(b)) lands,
-    the review loop-backs to `5-execute`, and a Step 10a fix commit follows. At
-    HEAD the finalize commit has no row, so the boundary refuses with
-    `phase_end_markers_missing` and the plan can never re-enter `6-finalize`.
-    The two writers together cover the branch, so the boundary admits it.
+    A finalize commit (item 5f(b)) lands, the review loop-backs to `5-execute`,
+    and a Step 10a fix commit follows. Both writers cover the branch, so the
+    boundary admits it rather than refusing with `phase_end_markers_missing`.
     """
     monkeypatch.setenv('PLAN_BASE_DIR', str(_base_dir(tmp_path)))
     _feature_branch_repo(tmp_path)

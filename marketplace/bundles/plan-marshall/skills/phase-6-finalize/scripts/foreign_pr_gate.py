@@ -71,14 +71,19 @@ plan's own branch is neither of them:
   ``foreign_branch`` key of its ``**Metadata:**`` block; and
 * the branch the foreign checkout itself has checked out at ``repo_root``.
 
-A declaration wins over the checkout when the checkout reports no branch (a
-detached HEAD); when BOTH are readable and disagree, the repository is an
-``unresolved[]`` row rather than a guess, because the two say different things
-about where the change is. With neither readable — no declaration and no
-readable checkout branch — the repository is likewise ``unresolved[]``. There is
-deliberately no fall-back to ``feature/{plan_id}``: the change may live on any
-branch (a documentation branch, a plain ``main``), so assuming the plan's own
-name reads ``error`` for a merged foreign PR and blocks the archive for nothing.
+The default branch is never a change's branch. A repository with no declaration
+whose checkout sits on its default branch is an ``unresolved[]`` row with reason
+``branch_is_default``, and a declaration wins over a checkout on the default
+branch — after branch cleanup the tree sits there, so the checkout says nothing
+about where the change is. A declaration contradicted by a checkout on some OTHER
+branch is a ``branch_disagreement`` row, and so is a set of deliverables
+declaring different branches for one repository. A repository with no declaration
+and no readable checkout branch is ``branch_unreadable``; one whose default branch
+cannot be read and which declares nothing is ``default_branch_unreadable``.
+There is deliberately no fall-back to ``feature/{plan_id}``: the change may live
+on any branch (a documentation branch, a release branch), so assuming the plan's
+own name reads ``error`` for a merged foreign PR and blocks the archive for
+nothing.
 
 An ``error`` outcome stops the archive exactly as ``blocked`` does; the two
 differ only in why. The gate CLEARS only when it has POSITIVELY read a landing
@@ -92,8 +97,9 @@ executor proxy::
       plan-marshall:phase-6-finalize:foreign_pr_gate check --plan-id {plan_id}
 
 Subprocess seams (``_list_deliverables``, ``_resolve_repo_root``,
-``_resolve_landing_state``) are split out so the orchestration body is testable
-without a live solution outline, a live foreign checkout, or a live CI provider.
+``_resolve_landing_state``, ``_current_branch``, ``_default_branch``) are split
+out so the orchestration body is testable without a live solution outline, a live
+foreign checkout, or a live CI provider.
 """
 
 from __future__ import annotations
@@ -181,6 +187,51 @@ def _resolve_repo_root(path: str) -> str | None:
     return root or None
 
 
+def _default_branch(repo_root: str) -> str | None:
+    """Return the repository's default branch, or ``None`` when it cannot be read.
+
+    Two reads, in order: the local remote-tracking symbolic ref
+    ``refs/remotes/origin/HEAD`` (with ``origin/`` stripped), and — when that ref
+    is absent, which is the case for a tree that was never fetched — the remote's
+    own answer to ``git ls-remote --symref origin HEAD``.
+
+    ``None`` is the honest answer for a tree that is not a checkout, has no
+    ``origin`` remote, and cannot reach one. The caller fails closed on it rather
+    than guessing a default branch name. The checkout's DEFAULT branch is never a
+    change's branch — a foreign tree sits on it after branch cleanup — so the
+    gate must know it to tell "the checkout says nothing" from "the checkout
+    says a different branch". A read that exceeds the bound is the same answer:
+    an unreachable remote must not stall the archive.
+    """
+
+    def _run(argv: list[str]) -> subprocess.CompletedProcess[str] | None:
+        try:
+            return subprocess.run(argv, capture_output=True, text=True, check=False, timeout=60)
+        except subprocess.TimeoutExpired:
+            return None
+
+    completed = _run(['git', '-C', repo_root, 'symbolic-ref', '--short', 'refs/remotes/origin/HEAD'])
+    if completed is not None and completed.returncode == 0:
+        ref = completed.stdout.strip()
+        if ref.startswith('origin/'):
+            ref = ref[len('origin/') :]
+        if ref:
+            return ref
+    completed = _run(['git', '-C', repo_root, 'ls-remote', '--symref', 'origin', 'HEAD'])
+    if completed is None or completed.returncode != 0:
+        return None
+    # `ref: refs/heads/main\tHEAD` — the symbolic ref is named first, and the
+    # token it points at last, so a line is only read when both are present.
+    for line in completed.stdout.splitlines():
+        parts = line.split()
+        if len(parts) >= 2 and parts[0] == 'ref:' and parts[-1] == 'HEAD':
+            ref = parts[1]
+            if ref.startswith('refs/heads/'):
+                ref = ref[len('refs/heads/') :]
+            return ref or None
+    return None
+
+
 def _current_branch(repo_root: str) -> str | None:
     """Return the branch the foreign checkout has checked out, or ``None``.
 
@@ -225,6 +276,7 @@ def _branch_for_repo(
     deliverable_numbers: list[int],
     declared_branches: dict[int, str],
     read_branch,
+    read_default_branch,
 ) -> tuple[str | None, str]:
     """Return ``(branch, reason)`` for one foreign repository.
 
@@ -233,12 +285,19 @@ def _branch_for_repo(
 
     * the deliverables naming this repository declare DIFFERENT branches — the
       gate has no basis to prefer one;
-    * a declaration and the checkout's own branch are both readable and differ;
+    * a declaration and the checkout's own branch are both readable, differ, and
+      the checkout is on a NON-default branch;
+    * the default branch cannot be read and nothing is declared;
+    * nothing is declared and the checkout sits on the repository's default
+      branch — a default branch is never a change's branch;
     * nothing is declared and the checkout reports no branch.
 
     A declaration alone is enough (the checkout may sit on a detached HEAD), and
-    a readable checkout branch alone is enough. The plan's own branch is never a
-    candidate — see the module docstring.
+    a declaration WINS over a checkout on the default branch: after branch
+    cleanup the foreign tree sits on its default branch, which says nothing about
+    where the change is. A readable checkout branch alone is enough only when it
+    is not the default branch. The plan's own branch is never a candidate — see
+    the module docstring.
     """
     declared = sorted({declared_branches[number] for number in deliverable_numbers if declared_branches.get(number)})
     if len(declared) > 1:
@@ -247,14 +306,43 @@ def _branch_for_repo(
             + ', '.join(repr(branch) for branch in declared)
         )
     checkout = read_branch(repo_root)
+    resolved_default: list[str | None] = []
+
+    def read_default() -> str | None:
+        # Read once, and only when a decision needs it: a declaration the checkout
+        # agrees with, and a checkout with no branch, both settle the answer
+        # without asking the repository for its default branch at all.
+        if not resolved_default:
+            resolved_default.append(read_default_branch(repo_root))
+        return resolved_default[0]
+
     if declared:
         declared_branch = declared[0]
         if checkout is not None and checkout != declared_branch:
+            # A checkout on the default branch says nothing about the change, so
+            # it is not a disagreement. Only a checkout on some OTHER branch
+            # contradicts the declaration.
+            default = read_default()
+            if default is not None and checkout == default:
+                return declared_branch, ''
             return None, (
                 f'branch_disagreement: the deliverable declares {declared_branch!r} but the '
                 f'foreign checkout at {repo_root} is on {checkout!r}'
             )
         return declared_branch, ''
+    default = read_default()
+    if default is None:
+        return None, (
+            'default_branch_unreadable: no branch is declared for this repository and its default '
+            'branch could not be read (not a git checkout, no origin remote, or the remote is '
+            'unreachable), so a checkout on it could not be told apart from a change branch'
+        )
+    if checkout is not None and checkout == default:
+        return None, (
+            f'branch_is_default: the foreign checkout at {repo_root} is on its default branch '
+            f"{default!r}, which is never a change's branch; declare foreign_branch: <change branch> "
+            f"in the deliverable's **Metadata:** block"
+        )
     if checkout is None:
         return None, (
             'branch_unreadable: no branch is declared for this repository and its checkout reports no '
@@ -414,6 +502,7 @@ def check(
     root_resolver=None,
     landing_resolver=None,
     branch_resolver=None,
+    default_branch_resolver=None,
 ) -> dict:
     """Evaluate the pre-archive foreign-PR landing gate for ``plan_id``.
 
@@ -429,6 +518,8 @@ def check(
             the repository. Signature: ``(repo_root, branch) -> dict``.
         branch_resolver: Optional test seam in place of :func:`_current_branch`.
             Signature: ``(repo_root) -> str | None``.
+        default_branch_resolver: Optional test seam in place of
+            :func:`_default_branch`. Signature: ``(repo_root) -> str | None``.
 
     Returns:
         The gate result dict (see the module docstring for the shape and the
@@ -437,6 +528,7 @@ def check(
     load = deliverables_loader or _list_deliverables
     resolve_root = root_resolver or _resolve_repo_root
     read_branch = branch_resolver or _current_branch
+    read_default_branch = default_branch_resolver or _default_branch
     resolve_landing = landing_resolver or _resolve_landing_state
 
     # The project root is the substrate the foreign classification rests on. When
@@ -508,7 +600,9 @@ def check(
         # read: an unreadable or conflicting branch is not a landing verdict, so
         # it is an `unresolved[]` row and the gate stays closed. There is no
         # fall-back to the plan's own branch name.
-        branch, branch_reason = _branch_for_repo(root, deliverable_numbers, population.declared_branches, read_branch)
+        branch, branch_reason = _branch_for_repo(
+            root, deliverable_numbers, population.declared_branches, read_branch, read_default_branch
+        )
         if branch is None:
             unresolved.append({'path': root, 'reason': branch_reason})
             continue
