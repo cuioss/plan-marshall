@@ -2296,11 +2296,32 @@ _REVIEW_BODY_SECTIONS = (
     ('followups', 'followup'),
 )
 
-#: The keywords that mark a ``<summary>`` title as one of the reviewer's FINDING
-#: sections. Used only by the fail-closed arm: a counted title carrying one of
-#: these but matching no declared label is a section this parser cannot read, and
-#: an unreadable section is an undecidable read rather than an empty one.
-_SECTION_KEYWORDS = ('comment', 'follow-up', 'followup', 'nitpick', 'outside')
+#: The ``<summary>`` titles a reviewer posts that COUNT their block while the block
+#: is not a findings section — the boilerplate a reviewer renders beside its
+#: findings. Matched as a case-insensitive PREFIX of the normalised title, like the
+#: section table.
+#:
+#: OBSERVED on ``cuioss/plan-marshall#1940``: ``Files selected for processing: 19``
+#: is a counted block that holds file paths. A parser that treats every counted
+#: title as a findings section turns a readable review into a false block, which is
+#: exactly what the declared-count rule must not do.
+_NON_FINDING_SECTION_LABELS = (
+    'files selected for processing',
+    'files ignored due to path filters',
+    'review details',
+    'review info',
+    'recent review info',
+    'run configuration',
+    'commits',
+    'walkthrough',
+    'merge risk',
+    'pre-merge checks',
+    'full details',
+    'share',
+    'included review availability',
+    'action not completed',
+    'action performed',
+)
 
 #: The markers that make a resolved thread's last reviewer comment an answer that
 #: the concern REMAINS. A reviewer that closes a thread with an acknowledgement
@@ -2323,7 +2344,15 @@ _CONCERN_REMAINS_MARKERS = (
 )
 
 _SUMMARY_RE = re.compile(r'<summary>(?P<title>.*?)</summary>', re.IGNORECASE | re.DOTALL)
-_TRAILING_COUNT_RE = re.compile(r'\((?P<count>\d+)\)\s*$')
+#: The count a reviewer declares at the end of a ``<summary>`` title, in either
+#: OBSERVED spelling: a parenthesised ``(N)`` (``Nitpick comments (2)``) or a
+#: trailing ``: N`` (``Nitpick comments: 1``, and the per-file ``path: 1``).
+_COUNT_SUFFIX_RE = re.compile(r'(?:\((?P<paren>\d+)\)|:\s*(?P<colon>\d+))\s*$')
+
+#: The per-row finding marker the reviewer puts in a section's rows, OBSERVED on
+#: ``cuioss/plan-marshall#1940`` (``<!-- cr-comment:v1:…``). A section that declares
+#: no count states its findings one per marker, so the markers are its count.
+_ROW_MARKER_RE = re.compile(r'<!--\s*cr-comment:v1:')
 
 #: A ``<details>`` open or close tag, used to find the container a ``<summary>``
 #: sits in.
@@ -2422,38 +2451,63 @@ def _normalise_section_title(title: str) -> str:
     return ' '.join(re.sub(r'[^a-z0-9\- ()]+', ' ', title.lower()).split())
 
 
+def _declared_count(title: str) -> int | None:
+    """Return the count a ``<summary>`` title declares, or ``None``.
+
+    The count is read off the RAW title with its markup removed, because the colon
+    spelling does not survive ``_normalise_section_title`` — and it is the spelling
+    the reviewer really posts (OBSERVED: ``Nitpick comments: 1`` on #1940). Both
+    spellings name the same statement about the block.
+    """
+    plain = ' '.join(re.sub(r'<[^>]+>', ' ', title).split())
+    declared = _COUNT_SUFFIX_RE.search(plain)
+    if declared is None:
+        return None
+    return int(declared.group('paren') or declared.group('colon'))
+
+
+def _is_non_finding_title(title: str) -> bool:
+    """Whether a counted title is a declared non-finding block (a file list, review info)."""
+    normalised = _normalise_section_title(title)
+    return any(normalised.startswith(label) for label in _NON_FINDING_SECTION_LABELS)
+
+
 def _section_for_title(title: str) -> tuple[str | None, int | None]:
     """Return ``(canonical section, declared count)`` for one ``<summary>`` title.
 
     ``(None, None)`` when the title is not a finding section at all (a
     walkthrough, a "Review details" block, the AI-prompt block). The count is the
-    ``(N)`` the reviewer declares, or ``None`` when it declares none — the caller
-    then counts the nested per-file blocks.
+    one the reviewer declares — ``(N)`` or ``: N`` — or ``None`` when it declares
+    none; the caller then counts the section's row markers or nested per-file blocks.
     """
     normalised = _normalise_section_title(title)
     for label, section in sorted(_REVIEW_BODY_SECTIONS, key=lambda row: -len(row[0])):
         if normalised.startswith(label):
-            declared = _TRAILING_COUNT_RE.search(normalised)
-            return section, (int(declared.group('count')) if declared else None)
+            return section, _declared_count(title)
     return None, None
 
 
 def _count_section_findings(span: str, declared: int | None) -> int:
     """Return the number of findings the reviewer declares inside one section.
 
-    The declared ``(N)`` wins: it is the reviewer's own statement about the block.
-    Without one, the nested per-file ``<summary>file (n)</summary>`` blocks are
-    summed — the rendering a section uses when it lists each file's findings
-    separately. A block carrying neither, but carrying prose of its own, states
-    one finding; an empty block states none.
+    The declared count wins: it is the reviewer's own statement about the block, and
+    reading it is what keeps one disposition from clearing several findings. Without
+    one, the section's own rows state it — one ``<!-- cr-comment:v1:`` marker per
+    finding. Failing both, the nested per-file ``<summary>file: n</summary>`` blocks
+    are summed, the rendering a section uses when it lists each file's findings
+    separately. A block carrying none of these, but prose of its own, states one
+    finding; an empty block states none.
     """
     if declared is not None:
         return declared
+    rows = len(_ROW_MARKER_RE.findall(span))
+    if rows:
+        return rows
     nested = 0
     for match in _SUMMARY_RE.finditer(span):
-        counted = _TRAILING_COUNT_RE.search(_normalise_section_title(match.group('title')))
+        counted = _declared_count(match.group('title'))
         if counted is not None:
-            nested += int(counted.group('count'))
+            nested += counted
     if nested:
         return nested
     return 1 if re.sub(r'<[^>]+>', ' ', span).strip() else 0
@@ -2478,10 +2532,10 @@ def _body_findings(
     ``review_body_summary_patterns`` literal) is read as the ``inline`` section
     when no inline section block is present — one declaration, one reading.
 
-    A ``<summary>`` title that COUNTS a finding block but matches no declared
-    label is the undecidable answer: the parser cannot tell what it contains, and
-    reporting it as no findings would be the "cannot read means pass" failure
-    this gate exists to close.
+    A ``<summary>`` title that COUNTS its block while matching neither a declared
+    finding section nor a declared non-finding label is the undecidable answer: the
+    parser cannot tell what it contains, and reporting it as no findings would be
+    the "cannot read means pass" failure this gate exists to close.
     """
     counters = counters if counters is not None else {}
     matches = list(_SUMMARY_RE.finditer(body))
@@ -2515,8 +2569,8 @@ def _body_findings(
             continue
         section = section_at[index]
         if section is None:
-            normalised = _normalise_section_title(match.group('title'))
-            if _TRAILING_COUNT_RE.search(normalised) and any(keyword in normalised for keyword in _SECTION_KEYWORDS):
+            counted = _declared_count(match.group('title'))
+            if counted is not None and not _is_non_finding_title(match.group('title')):
                 return [], f'unreadable review-body section: {match.group("title").strip()!r}'
             continue
         declared = _section_for_title(match.group('title'))[1]

@@ -56,6 +56,35 @@ _OUTSIDE_DIFF_BODY = (
     '</blockquote></details>\n'
 )
 
+#: OBSERVED shapes from CodeRabbit's review bodies on ``cuioss/plan-marshall#1940``
+#: (review ``PRR_kwDOQ3xasM8AAAABWsFY6g`` and the later ones): the section title is
+#: the colon spelling ``Nitpick comments: 1``, and each row carries a
+#: ``<!-- cr-comment:v1:…`` marker. The body below is CONSTRUCTED from those shapes:
+#: the titles and markers are the observed ones, the prose is shortened.
+_COLON_COUNTED_NITPICK_BODY = (
+    '**Actionable comments posted: 0**\n\n'
+    '<details>\n<summary>🧹 Nitpick comments: 3</summary><blockquote>\n'
+    '<dl>\n'
+    '<dd>rename the helper\n<!-- cr-comment:v1:1111111111111111111111 --></dd>\n'
+    '<dd>drop the unused import\n<!-- cr-comment:v1:2222222222222222222222 --></dd>\n'
+    '<dd>guard the backoff cap\n<!-- cr-comment:v1:3333333333333333333333 --></dd>\n'
+    '</dl>\n'
+    '</blockquote></details>\n'
+)
+
+#: The same section with NO declared count, carrying only the three observed row
+#: markers — the shape the row-marker reader exists for.
+_MARKER_ONLY_NITPICK_BODY = (
+    '**Actionable comments posted: 0**\n\n'
+    '<details>\n<summary>🧹 Nitpick comments</summary><blockquote>\n'
+    '<dl>\n'
+    '<dd>rename the helper\n<!-- cr-comment:v1:1111111111111111111111 --></dd>\n'
+    '<dd>drop the unused import\n<!-- cr-comment:v1:2222222222222222222222 --></dd>\n'
+    '<dd>guard the backoff cap\n<!-- cr-comment:v1:3333333333333333333333 --></dd>\n'
+    '</dl>\n'
+    '</blockquote></details>\n'
+)
+
 
 def _inline(
     *,
@@ -285,6 +314,93 @@ def test_an_unreadable_review_body_section_refuses_the_merge() -> None:
     assert 'unreadable review-body section' in verdict['detail']
 
 
+def test_a_colon_counted_section_counts_its_declared_findings() -> None:
+    """OBSERVED #1940: the title is `Nitpick comments: 3`, not `Nitpick comments (3)`."""
+    verdict = _verdict(_read(_review_body(_COLON_COUNTED_NITPICK_BODY)))
+
+    assert verdict['review_body_findings_total'] == 3
+    assert [row['id'] for row in verdict['undisposed']] == ['nitpick-1', 'nitpick-2', 'nitpick-3']
+
+
+def test_one_disposition_does_not_clear_a_colon_counted_section_of_three() -> None:
+    """The defect the colon spelling caused: one disposition cleared three findings."""
+    verdict = _verdict(
+        _read(_review_body(_COLON_COUNTED_NITPICK_BODY)),
+        'coderabbit nitpick nitpick-1 — a1b2c3d',
+    )
+
+    assert verdict['merge_allowed'] is False
+    assert verdict['reason'] == 'body_findings_undisposed'
+    assert verdict['review_body_findings_total'] == 3
+    assert verdict['review_body_findings_handled'] == 1
+    assert [row['id'] for row in verdict['undisposed']] == ['nitpick-2', 'nitpick-3']
+
+
+def test_an_undeclared_section_counts_its_row_markers() -> None:
+    """OBSERVED #1940: each row carries a `<!-- cr-comment:v1:` marker."""
+    verdict = _verdict(_read(_review_body(_MARKER_ONLY_NITPICK_BODY)))
+
+    assert verdict['review_body_findings_total'] == 3
+    assert [row['id'] for row in verdict['undisposed']] == ['nitpick-1', 'nitpick-2', 'nitpick-3']
+
+
+@pytest.mark.parametrize('title', ['🔎 Potential issues: 2', '🔎 Potential issues (2)'])
+def test_a_counted_title_that_is_neither_a_section_nor_a_label_is_undecidable(title: str) -> None:
+    """A counted title the parser cannot place is a stop, never "no findings"."""
+    body = f'<details>\n<summary>{title}</summary>\nuse the helper\n</details>\n'
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['merge_allowed'] is False
+    assert verdict['reason'] == 'undecidable_read'
+    assert 'unreadable review-body section' in verdict['detail']
+
+
+def test_a_captured_counted_non_finding_title_is_not_a_finding() -> None:
+    """OBSERVED #1940: `Files selected for processing: 19` is counted and holds no finding."""
+    body = (
+        '<details>\n'
+        '<summary>📒 Files selected for processing: 19</summary>\n'
+        '* `marketplace/bundles/plan-marshall/skills/runbook-lane/scripts/runbook_lane.py`\n'
+        '</details>\n'
+    )
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['merge_allowed'] is True, verdict
+    assert verdict['review_body_findings_total'] == 0
+
+
+def test_a_captured_body_with_counted_non_finding_sections_reads_one_nitpick() -> None:
+    """OBSERVED #1940: `Review info` and `Files selected for processing: N` beside one nitpick.
+
+    The declared non-finding labels come from this body, so the counted titles the
+    reviewer really posts do not turn a readable review into a false block.
+    """
+    body = (
+        '<!-- coderabbit-ai-generated:v1 -->\n'
+        '**Actionable comments posted: 1**\n\n'
+        '<h6>\n<details>\n<summary>ℹ️ Review info</summary>\n<dl><dd>run configuration</dd></dl>\n</details>\n\n'
+        '<details>\n<summary>📒 Files selected for processing: 19</summary>\n'
+        '<dl><dd>* `marketplace/bundles/plan-marshall/skills/runbook-lane/scripts/runbook_lane.py`</dd></dl>\n'
+        '</details>\n</h6>\n\n'
+        '<details>\n<summary>🧹 Nitpick comments: 1</summary><blockquote>\n'
+        '<dl><dd>\n<details>\n'
+        '<summary>marketplace/bundles/plan-marshall/skills/runbook-lane/scripts/runbook_lane.py: 1</summary>\n'
+        '<blockquote><dl><dd>rename the helper\n<!-- cr-comment:v1:aaaaaaaaaaaaaaaaaaaaaaaa --></dd></dl></blockquote>\n'
+        '</details>\n</dd></dl>\n'
+        '</blockquote></details>\n'
+    )
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['reason'] == 'body_findings_undisposed', verdict
+    # One inline count from the status line ("Actionable comments posted: 1") and one
+    # nitpick — the counted non-finding block mints nothing and blocks nothing.
+    assert verdict['review_body_findings_total'] == 2
+    assert [row['id'] for row in verdict['undisposed']] == ['nitpick-1', 'inline-1']
+
+
 def test_a_disposition_that_does_not_name_its_evidence_is_refused() -> None:
     verdict = _verdict(_read(_review_body(_OUTSIDE_DIFF_BODY)), 'coderabbit outside-diff outside-diff-1 —')
 
@@ -345,8 +461,15 @@ def test_two_review_bodies_do_not_share_finding_ids() -> None:
 
 
 def test_a_flattened_body_does_not_mint_a_phantom_inline_count() -> None:
-    """The CI read flattens a body to one line; a count is read off the literal only."""
-    flattened = '**Actionable comments posted:** <details><summary>src/a.py (3)</summary> rename the helper </details>'
+    """The CI read flattens a body to one line; a count is read off the literal only.
+
+    The counted block is a declared non-finding label, so the one-line shape proves
+    the status literal mints no inline count without turning the body undecidable.
+    """
+    flattened = (
+        '**Actionable comments posted:** '
+        '<details><summary>📒 Files selected for processing: 3</summary> rename the helper </details>'
+    )
 
     verdict = _verdict(_read(_review_body(flattened)))
 

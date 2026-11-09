@@ -180,8 +180,12 @@ python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane review-g
 Decides the merge gate's review condition (section 7) from the surfaces read on the head. It reads
 through the CI abstraction (never `gh`): the unresolved review threads with their `path:line`, and
 the body of every reviewer's review, whose `inline`, `duplicate`, `outside-diff`, `nitpick` and
-`followup` sections are parsed into individually identified findings. Each `--disposition` is one
-progress-file line, repeated once per finding.
+`followup` sections are parsed into individually identified findings. A section contributes the
+count its title declares (`(N)` or `: N`); with none declared, its per-row `cr-comment` markers
+count, then its nested per-file blocks, then the block reads as one finding. A counted title that
+matches neither a section nor a declared non-finding label (a file list, a review-info block) is an
+undecidable read, never zero. Each `--disposition` is one progress-file line, repeated once per
+finding.
 
 **The `--disposition` value is `{reviewer} {section} {id} — {sha|reason}`**, exactly the tail of the
 progress line, with no `finding: ` prefix: `reviewer` is the bot kind the registry reports for that
