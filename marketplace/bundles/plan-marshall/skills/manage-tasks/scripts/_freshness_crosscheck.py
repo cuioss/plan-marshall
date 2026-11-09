@@ -177,8 +177,10 @@ executor argv, stamped on every build-class dispatch as
 ``' '.join(script_args)``), ``command_args`` (the single ``--command-args``
 element), ``command`` (the line the wrapper reported running) and ``outcome``
 (the wrapper's whole stdout TOON). The gate reads ``notation`` for attribution,
-``command_args`` when present for the payload boundary, and ``args`` for
-coverage.
+``command_args`` when present for the payload boundary, ``args`` for coverage, and
+``notation`` AGAIN to decide what the payload's positionals are — module names for
+the pyproject tool, goals for the ones whose positionals are goals (see
+:func:`parse_row_scope`).
 
 ``args`` is the coverage source rather than ``command`` because it is OUR argv
 shape, uniform across every build tool: the canonical and its scope always follow
@@ -440,6 +442,13 @@ _PYPROJECT_NOTATION = 'plan-marshall:build-pyproject:pyproject_build'
 #: Reading a goal as a module would refute every whole-tree change of a project
 #: built by one of these tools, which is the false red :func:`parse_row_scope`
 #: exists to avoid.
+#:
+#: ⛔ A Gradle SUBMODULE row is the exception the dropping must not swallow: its
+#: discoverer prefixes every task with the subproject path
+#: (``:core:test :core:jacocoTestReport``), so those positionals name a real
+#: blast radius. Dropping them would read a one-subproject run as whole-tree — the
+#: false green this dimension exists to close — so :func:`parse_row_scope` reports
+#: such a row unreadable instead.
 _GOAL_POSITIONAL_NOTATIONS: frozenset[str] = frozenset(
     {
         'plan-marshall:build-maven:maven',
@@ -521,9 +530,11 @@ class RowScope:
 
     Attributes:
         canonical: The canonical command token that followed ``--command-args``.
-        scope_tokens: The remaining non-flag tokens — the module / directory
-            scope. EMPTY means whole-tree, which is why an unreadable row must
-            never be represented as a ``RowScope`` with no tokens: see
+        scope_tokens: The module / directory scope the row names: for a notation
+            whose positionals are modules, the remaining non-flag tokens; for the
+            goal-positional tools only the value of a known scope-bearing flag.
+            EMPTY means whole-tree, which is why an unreadable row must never be
+            represented as a ``RowScope`` with no tokens: see
             :func:`parse_row_scope`, which returns ``None`` for that case.
     """
 
@@ -718,7 +729,10 @@ def parse_row_scope(entry: dict[str, Any]) -> RowScope | None:
     * an npm, Maven or Gradle row (:data:`_GOAL_POSITIONAL_NOTATIONS`) carries the
       tool's own goals, tasks or script names, never module names: its remaining
       positionals are dropped and contribute no scope, exactly as
-      ``_build_examined.examined_analyses`` reads only the first token;
+      ``_build_examined.examined_analyses`` reads only the first token. The one
+      exception is a Gradle submodule row, whose ``:module:``-prefixed task list
+      DOES name one subproject: its project paths are not recoverable here, so
+      such a row is unreadable rather than widened to whole-tree;
     * any other notation — absent or unknown — is read only when it carries ONE
       positional token; two or more return ``None``, because the reader cannot
       tell a module from a goal and either guess would manufacture a coverage
@@ -807,7 +821,14 @@ def parse_row_scope(entry: dict[str, Any]) -> RowScope | None:
         # The remaining positionals are the tool's own goals, tasks or script
         # names. They narrow nothing, so they are dropped rather than read as a
         # module scope: ``run test`` is a whole-tree run, and only the tool's own
-        # scope flag can narrow it.
+        # scope flag can narrow it. The one exception is a Gradle submodule row:
+        # its discoverer embeds the module in EVERY task
+        # (``:core:test :core:jacocoTestReport``), so those positionals DO name a
+        # blast radius, and dropping them would assert whole-tree over a run that
+        # built one subproject. Its project paths are not recoverable here, so
+        # the row is unreadable rather than widened.
+        if any(token.startswith(':') for token in payload[1:]):
+            return None
         payload = payload[:1]
     elif notation != _PYPROJECT_NOTATION and len(payload) > 1:
         return None

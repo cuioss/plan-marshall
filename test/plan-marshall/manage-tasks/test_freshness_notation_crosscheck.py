@@ -1112,6 +1112,50 @@ def test_the_scope_flag_registry_names_the_flags_each_build_tool_carries() -> No
     assert crosscheck._SCOPE_NEUTRAL_FLAGS == frozenset({'-am', '--also-make'})
 
 
+def test_the_executor_run_flag_registry_names_the_flags_the_run_subparser_declares() -> None:
+    """The hint's flag set is explicit, so a flag cannot become "executor" by accident.
+
+    Only the ``run`` subparser's own flags explain a legacy row's unreadability.
+    Asserting the exact set keeps a build-tool flag (``-k``, ``-Ppre-commit``) from
+    being read as one — which would tell the operator to move a flag the executor
+    does not own — and keeps the set from silently growing into a hole.
+    """
+    assert crosscheck._EXECUTOR_RUN_FLAGS == {
+        '--timeout': 1,
+        '--mode': 1,
+        '--format': 1,
+        '--execution-mode': 1,
+        '--project-dir': 1,
+        '--plan-id': 1,
+        '--working-dir': 1,
+        '--env': 1,
+    }
+
+
+def test_a_gradle_submodule_multi_task_row_is_unreadable_not_whole_tree(monkeypatch) -> None:
+    """The submodule task list names ONE subproject, so dropping it would over-claim.
+
+    ``_gradle_cmd_discover`` prefixes every task with the subproject path, so
+    ``:core:test :core:jacocoTestReport`` is a coverage run of ``core`` alone.
+    Read as goals-only it would look whole-tree and credit a whole-tree change the
+    run never performed; the reader cannot recover Gradle's project paths, so the
+    row is an inability — which still refuses a change that needs the whole tree.
+    """
+    _stub_expected(monkeypatch, {_GRADLE})
+    row = _build_entry(
+        notation=_GRADLE,
+        args=_args_for(':core:test :core:jacocoTestReport'),
+        outcome=_outcome_for(120),
+    )
+
+    assert crosscheck.parse_row_scope(row) is None
+
+    outcome = crosscheck.cross_check_candidates([row], '/nonexistent-project-dir', _required())
+
+    assert outcome['contributing'] == []
+    assert outcome['joint_reason'] == crosscheck.REASON_SCOPE_UNREADABLE_WHOLE_TREE
+
+
 def test_a_resolved_maven_module_row_is_read_as_a_narrow_scope() -> None:
     """A resolver-shaped Maven module row is scoped, not whole-tree.
 
