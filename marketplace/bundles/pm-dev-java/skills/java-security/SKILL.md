@@ -81,6 +81,10 @@ The conceptual *why* behind every rule in this skill's standards lives in the ce
 | Mapping a finding to a recognized risk category | [`owasp-top-ten.md`](../../../plan-marshall/skills/persona-security-expert/standards/owasp-top-ten.md) |
 | Threat-modeling a Java service | [`threat-modeling-stride.md`](../../../plan-marshall/skills/persona-security-expert/standards/threat-modeling-stride.md) |
 
+## Java Form — Neutralise Before Logging
+
+The cross-cutting rule — which characters to neutralise and which the regex class misses — is owned by [`secure-logging.md`](../../../plan-marshall/skills/persona-security-expert/standards/secure-logging.md) § "Log Injection". The Java form — the escaping `neutralise` helper, the masking step it pairs with, and the structured-JSON caveat — lives in [`standards/java-security-patterns.md`](standards/java-security-patterns.md) § "Masking Pattern". Neither is restated here: this skill carries the pointer, the standard carries the code.
+
 ## Related Skills
 
 - `plan-marshall:persona-security-expert` — Cross-cutting security review identity and authoritative home for OWASP Top 10, STRIDE, secrets, secure logging, trust boundaries, authn/authz, and secure-design principles

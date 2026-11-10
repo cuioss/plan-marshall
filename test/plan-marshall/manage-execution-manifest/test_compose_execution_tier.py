@@ -185,11 +185,12 @@ class TestStampReflectsALiveResolvedCeilingVerdict:
         """The producer chain yields exactly the four fields the composer consumes.
 
         The derived fields are asserted against the MEASURED-vs-UNMEASURED
-        contract, not against the ceiling alone: ``exceeds_bash_ceiling`` is a
-        pure ceiling comparison, while ``execution_tier`` is ``per_task`` only
-        when the key is measured AND the stamp fits. Re-deriving both from the
-        same ``(stamp, measured)`` pair the production lookup returned is what
-        keeps this case from re-pinning the floor-driven derivation.
+        contract, not against the ceiling alone: ``exceeds_bash_ceiling`` states a
+        MEASURED stamp's relation to the ceiling, while ``execution_tier`` is
+        ``per_task`` only when the key is measured AND the stamp fits. Re-deriving
+        both from the same ``(stamp, measured)`` pair the production lookup
+        returned is what keeps this case from re-pinning the floor-driven
+        derivation.
         """
         bash_timeout, measured = self._production_lookup()
         fields = _arch_build._compute_execution_tier_fields(bash_timeout, measured)
@@ -202,7 +203,10 @@ class TestStampReflectsALiveResolvedCeilingVerdict:
         }
         assert isinstance(fields['bash_timeout_seconds'], int)
         assert fields['execution_tier'] in ('per_task', 'orchestrator')
-        expected_exceeds = fields['bash_timeout_seconds'] > _arch_build.HARNESS_BASH_CEILING_SECONDS
+        # `exceeds_bash_ceiling` states a MEASURED stamp's relation to the ceiling:
+        # an unmeasured command has no observed duration, so it never claims an
+        # overflow whatever its floor-derived stamp says.
+        expected_exceeds = measured and fields['bash_timeout_seconds'] > _arch_build.HARNESS_BASH_CEILING_SECONDS
         assert fields['exceeds_bash_ceiling'] is expected_exceeds
         assert fields['execution_tier'] == ('per_task' if (measured and not expected_exceeds) else 'orchestrator')
 
@@ -226,14 +230,17 @@ class TestStampReflectsALiveResolvedCeilingVerdict:
         assert above_ceiling['exceeds_bash_ceiling'] is True
         assert above_ceiling['execution_tier'] == 'orchestrator'
 
-    def test_unmeasured_is_orchestrator_on_both_sides_of_the_ceiling(self):
-        """The fail-closed branch is ceiling-insensitive — that is the whole point.
+    def test_unmeasured_never_claims_a_ceiling_overflow(self):
+        """An unmeasured command reports no overflow, on either side of the ceiling.
 
-        Complements the boundary case above: with ``measured=False`` the tier is
-        ``orchestrator`` at AND below the ceiling, while ``exceeds_bash_ceiling``
-        keeps reporting the literal comparison. This is the one branch where the
-        two fields deliberately decouple, and pinning it here is what stops a
-        future refactor from re-coupling them.
+        The stamp of an unmeasured key comes from the engine's declared floor plus
+        the outer buffer, so on a target whose ceiling sits below that floor every
+        unmeasured command's stamp lands above it. Reporting `exceeds_bash_ceiling`
+        there asserted an overflow nobody observed, and the manifest's chain-tail
+        deferral — keyed on exactly that flag — then deferred an unmeasured
+        command, which the unmeasured arm must never do. The flag states a
+        MEASURED stamp's relation to the ceiling, so it stays `False` while the
+        fail-closed TIER keeps routing the command away from the leaf.
         """
         ceiling = _arch_build.HARNESS_BASH_CEILING_SECONDS
 
@@ -243,9 +250,17 @@ class TestStampReflectsALiveResolvedCeilingVerdict:
         assert below['exceeds_bash_ceiling'] is False
         assert below['execution_tier'] == 'orchestrator'
         assert below['hint'] == _arch_build._HINT_UNMEASURED
-        assert above['exceeds_bash_ceiling'] is True
+        assert above['exceeds_bash_ceiling'] is False
         assert above['execution_tier'] == 'orchestrator'
-        assert above['hint'] == _arch_build._HINT_ORCHESTRATOR
+        assert above['hint'] == _arch_build._HINT_UNMEASURED
+
+    def test_a_measured_stamp_above_the_ceiling_is_the_only_overflow_claim(self):
+        """The overflow claim remains reachable — on the measured branch only."""
+        fields = _arch_build._compute_execution_tier_fields(_arch_build.HARNESS_BASH_CEILING_SECONDS + 1, True)
+
+        assert fields['exceeds_bash_ceiling'] is True
+        assert fields['execution_tier'] == 'orchestrator'
+        assert fields['hint'] == _arch_build._HINT_ORCHESTRATOR
 
     def test_above_ceiling_resolve_is_never_stamped_per_task(self, monkeypatch):
         """THE regression: an orchestrator-tier resolve stamps orchestrator, never per_task."""

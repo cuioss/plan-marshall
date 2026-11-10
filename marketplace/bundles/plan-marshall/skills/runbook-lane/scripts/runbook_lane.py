@@ -16,8 +16,10 @@ Verb surface::
     runbook_lane build-routing --worktree PATH
     runbook_lane build-classify --paths P1,P2 [--project-dir DIR]
     runbook_lane sonar-gate --state STATE [--count-status STATUS] [--open-count N]
-                             [--open-keys K1,K2] [--dismissed-keys K1,K2]
+                             [--open-keys K1,K2] [--operator-selected-keys K1,K2]
     runbook_lane sonar-facts --state STATE [--count-status STATUS] [--open-count N] [--rules R1,R2]
+                             [--gate-status STATUS]
+    runbook_lane review-gate --pr-number N [--project-dir DIR] [--disposition TEXT ...]
 
 ``--spec`` must name a staged spec, i.e. a file below
 ``.plan/orchestrator/{slug}/plans/``. Anything else is refused: the lane exists
@@ -79,10 +81,28 @@ _SONAR_CONFIG_KEY = 'workflow-integration-sonar'
 _SONAR_STATES = ('configured', 'not_configured')
 _SONAR_COUNT_STATUSES = ('confirmed', 'undecidable', 'unconfigured')
 
-#: The landing's optional Sonar facts, on the per-step typed-fact channel the
-#: lifecycle's ``sonar-roundtrip`` step already uses, so one measurement rides one
-#: channel.
+#: The landing's required Sonar count key. One spelling for one measurement: the
+#: schema, the gate's read and this renderer all name the same field, so a
+#: landing cannot carry the figure under a second name the check does not require.
+_SONAR_OPEN_ISSUES_FACT = 'sonar_open_new_issues'
+
+#: The landing's OPTIONAL Sonar rules fact, on the per-step typed-fact channel the
+#: lifecycle's ``sonar-roundtrip`` step already uses.
 _SONAR_FACT_STEP = 'sonar-roundtrip'
+
+#: The landing's OPTIONAL quality-gate fact. A Sonar quality gate can fail on a
+#: new-code METRIC (coverage, duplication, maintainability) that is neither an
+#: open finding nor an unreviewed hotspot, so such a failure is not a finding for
+#: the open-findings rule — but it is reported, because a landing that says the
+#: merge head was clean and stays silent about a failing gate would be stating
+#: half the read.
+_SONAR_QUALITY_GATE_FACT = f'step.{_SONAR_FACT_STEP}.quality_gate_status'
+
+#: The four states the quality-gate read can answer with. ``not_computed`` is a
+#: provider answer (no new-code analysis for the head), distinct from ``unknown``
+#: (the read itself failed) — the same answered-absence / failed-read split the
+#: count facts use.
+SONAR_GATE_STATUSES = ('ok', 'error', 'not_computed', 'unknown')
 
 #: The provider's own CE-readiness default, used when the active target imposes no
 #: Bash ceiling (the seam answers ``no-op``).
@@ -914,7 +934,7 @@ def _resolve_sonar(marshal: dict[str, Any]) -> dict[str, Any]:
 
     Returns ``{'state': 'configured', 'project_key': ...}`` for a project that
     analyses its pull requests with Sonar, and ``{'state': 'not_configured'}``
-    for one that does not — the state in which the lane skips the open-issue read
+    for one that does not — the state in which the lane skips the open-finding read
     and nothing blocks. Read from ``credentials_config.{provider}``, the
     non-secret block ``manage-providers credentials edit --extra`` writes, so the
     resolve stays offline: no REST call, no credential-file read.
@@ -924,7 +944,7 @@ def _resolve_sonar(marshal: dict[str, Any]) -> dict[str, Any]:
     and a provider block that carries no usable ``project_key`` is
     ``sonar_config_incomplete`` — never a silent ``not_configured``. A corrupt or
     half-written Sonar block must not drain as "this project does not use Sonar",
-    which is the one state in which the open-issue read is skipped.
+    which is the one state in which the open-finding read is skipped.
     """
     credentials = marshal.get('credentials_config')
     if credentials is None:
@@ -1856,30 +1876,66 @@ def cmd_build_classify(args: argparse.Namespace) -> dict[str, Any]:
     return result
 
 
+def _operator_selection_records(progress_file: Path) -> set[str] | None:
+    """Return the finding keys the progress file records as OPERATOR-selected.
+
+    The lane writes one line per selection, ``operator-selected: {key}: {reason}``
+    (section 6 step 4). Reading them back is what turns "the lane passed a key" into
+    "the run recorded the operator's answer naming that key": a key the lane types
+    into ``--operator-selected-keys`` without that record is refused. The record is
+    still lane-written, so this makes a violation VISIBLE in the audit trail rather
+    than impossible; the spec's own dismissal rule is an operator answer, and this is
+    the strongest witness a plan-less lane has.
+
+    ``None`` when the file cannot be read — a caller that named no file makes no
+    cross-check, and a caller that named one it cannot read gets the strict answer
+    (no key is recorded) rather than a silent pass.
+    """
+    try:
+        text = progress_file.read_text(encoding='utf-8')
+    except OSError:
+        return set()
+    recorded: set[str] = set()
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith(_OPERATOR_SELECTION_PREFIX):
+            continue
+        tail = stripped[len(_OPERATOR_SELECTION_PREFIX) :].strip()
+        key = tail.split(':', 1)[0].strip()
+        if key:
+            recorded.add(key)
+    return recorded
+
+
 def _sonar_gate_verdict(
     state: str,
     count_status: str | None,
     open_count: int | None,
     open_keys: list[str],
-    dismissed_keys: list[str],
+    selected_keys: list[str],
+    recorded_keys: set[str] | None = None,
+    hotspot_keys: list[str] | None = None,
 ) -> dict[str, Any]:
     """Decide whether the Sonar read admits the merge (section 7's condition).
 
-    The verdict is a pure function of the read and the run's recorded dismissals,
+    The verdict is a pure function of the read and of the OPERATOR'S selection,
     so the lane's merge condition is a decision a script makes rather than a
     judgement a reader re-derives:
 
     - ``not_configured`` — the project does not analyse with Sonar, so there is
-      no open-issue condition to satisfy.
+      no open-finding condition to satisfy.
     - ``undecidable`` — the read never settled. This is a BLOCKER, never a ``0``:
-      no count and no key set were observed, so "no open issues" is unknowable.
+      no count and no key set were observed, so "no open findings" is unknowable.
     - ``unconfigured`` — resolve said ``configured`` and the read could not
       authenticate. Also a blocker: the credentials the project claims are not
       usable, which is a defect nobody would otherwise see.
-    - ``confirmed`` — admitted when the count is ``0``, or when every open issue
-      the read enumerated is covered by a recorded dismissal. A count with no
-      enumerated key set cannot be verified key by key, so it is refused rather
-      than passed on the count alone.
+    - ``confirmed`` — admitted when the count is ``0``, or when every open key
+      the read enumerated is one the OPERATOR selected for dismissal. The lane
+      never records a dismissal itself: a finding stays open unless the operator
+      named its key, so a gate that accepted the lane's own list would let the
+      run dismiss its own findings. A count with no enumerated key set cannot be
+      verified key by key, so it is refused rather than passed on the count
+      alone.
     """
     if state == 'not_configured':
         return {
@@ -1942,24 +1998,51 @@ def _sonar_gate_verdict(
             'reason': 'open_issue_keys_missing',
             'open_issue_count': count,
         }
-    dismissed = set(dismissed_keys)
-    undismissed = [key for key in open_keys if key not in dismissed]
-    if undismissed:
+    selected = set(selected_keys)
+    unselected = [key for key in open_keys if key not in selected]
+    if unselected:
         return {
             'status': 'success',
             'operation': 'sonar-gate',
             'merge_allowed': False,
-            'reason': 'open_issues_undismissed',
+            'reason': 'open_issues_not_operator_selected',
             'open_issue_count': count,
-            'undismissed_keys': undismissed,
+            'unselected_keys': unselected,
         }
+    undismissable = [key for key in (hotspot_keys or []) if key in selected]
+    if undismissable:
+        # A security hotspot has no transition verb, so a "dismissal" of one would
+        # be recorded and never transmitted. The lane's rule is that a hotspot is
+        # FIXED or reported as a blocker, and this is the gate saying so.
+        return {
+            'status': 'success',
+            'operation': 'sonar-gate',
+            'merge_allowed': False,
+            'reason': 'hotspot_not_dismissable',
+            'open_issue_count': count,
+            'hotspot_keys': undismissable,
+        }
+    if recorded_keys is not None:
+        unrecorded = [key for key in open_keys if key not in recorded_keys]
+        if unrecorded:
+            # The keys are supplied, but the run never recorded the operator's
+            # answer naming them. The gate cannot tell a selection from a list the
+            # lane invented, so it admits only what the progress file witnesses.
+            return {
+                'status': 'success',
+                'operation': 'sonar-gate',
+                'merge_allowed': False,
+                'reason': 'selection_not_recorded',
+                'open_issue_count': count,
+                'unrecorded_keys': unrecorded,
+            }
     return {
         'status': 'success',
         'operation': 'sonar-gate',
         'merge_allowed': True,
-        'reason': 'all_open_issues_dismissed',
+        'reason': 'all_open_issues_operator_selected',
         'open_issue_count': count,
-        'dismissed_count': len(dismissed),
+        'selected_count': len(selected),
     }
 
 
@@ -1974,15 +2057,39 @@ def cmd_sonar_gate(args: argparse.Namespace) -> dict[str, Any]:
             'error': 'invalid_sonar_state',
             'message': f'--state must be one of {", ".join(_SONAR_STATES)}; got {state!r}',
         }
+    if getattr(args, 'dismissed_keys', None) is not None:
+        # The tombstone for the retired surface: a lane-recorded dismissal is no
+        # longer an input at all, and refusing it by name says WHY rather than
+        # letting argparse report an unknown flag.
+        return {
+            'status': 'error',
+            'error': 'lane_dismissal_not_accepted',
+            'message': (
+                "a dismissal needs the operator's selection: pass the keys the operator named with "
+                '--operator-selected-keys, never a list the lane recorded itself'
+            ),
+        }
     if state == 'not_configured':
         # A read state supplied beside `not_configured` is a contradiction: a
         # project with no Sonar has no read to report. Refuse it rather than let a
-        # stale count ride an "allowed" verdict.
-        if count_status is not None or open_count is not None:
+        # stale count ride an "allowed" verdict. Every read flag is checked, not
+        # only the two count flags: `--open-keys` and `--operator-selected-keys`
+        # describe the same read, so dropping one silently would report
+        # `merge_allowed: true` for a project whose findings nobody looked at.
+        if (
+            count_status is not None
+            or open_count is not None
+            or getattr(args, 'open_keys', None) is not None
+            or getattr(args, 'operator_selected_keys', None) is not None
+            or getattr(args, 'hotspot_keys', None) is not None
+        ):
             return {
                 'status': 'error',
                 'error': 'state_contradicts_read',
-                'message': 'a not_configured state carries no read; drop --count-status and --open-count',
+                'message': (
+                    'a not_configured state carries no read; drop --count-status, --open-count, '
+                    '--open-keys, --operator-selected-keys and --hotspot-keys'
+                ),
             }
         return _sonar_gate_verdict(state, None, None, [], [])
     if count_status not in _SONAR_COUNT_STATUSES:
@@ -1994,29 +2101,80 @@ def cmd_sonar_gate(args: argparse.Namespace) -> dict[str, Any]:
                 f'when --state configured; got {count_status!r}'
             ),
         }
+    if getattr(args, 'operator_selected_keys', None) and not getattr(args, 'progress_file', None):
+        # A selection with no record behind it is exactly the self-attested
+        # dismissal this gate exists to remove. The flag alone is the lane's word;
+        # the progress file is the witness, so it is not optional when a key is
+        # claimed.
+        return {
+            'status': 'error',
+            'error': 'progress_file_required',
+            'message': (
+                '--operator-selected-keys needs --progress-file: the key must be recorded as an '
+                'operator-selected line in the run, or the gate cannot tell a selection from a list '
+                'the lane invented'
+            ),
+        }
+    if (
+        count_status == 'confirmed'
+        and isinstance(open_count, int)
+        and open_count > 0
+        and _split_csv(getattr(args, 'operator_selected_keys', None))
+        and getattr(args, 'hotspot_keys', None) is None
+    ):
+        # Without the hotspot set the gate cannot tell a selected hotspot from a
+        # selected issue, so omitting the flag would let a hotspot through. An
+        # EMPTY value is the answer for a read that found none — required means
+        # stated, not non-empty.
+        return {
+            'status': 'error',
+            'error': 'hotspot_keys_required',
+            'message': (
+                "--hotspot-keys is required when selecting open findings: pass the read's hotspot "
+                'keys, or an explicit empty value when it reported none'
+            ),
+        }
     return _sonar_gate_verdict(
         state,
         count_status,
         open_count,
         _split_csv(getattr(args, 'open_keys', None)),
-        _split_csv(getattr(args, 'dismissed_keys', None)),
+        _split_csv(getattr(args, 'operator_selected_keys', None)),
+        _progress_selection(getattr(args, 'progress_file', None)),
+        _split_csv(getattr(args, 'hotspot_keys', None)),
     )
 
 
-def cmd_sonar_facts(args: argparse.Namespace) -> dict[str, Any]:
-    """Render the landing's optional Sonar facts from the read taken at the merge head.
+def _progress_selection(value: str | None) -> set[str] | None:
+    """Resolve ``--progress-file`` to the recorded operator selections, or ``None``.
 
-    Two facts on the per-step typed-fact channel the lifecycle's
-    ``sonar-roundtrip`` step already uses — one measurement, one channel:
-    ``step.sonar-roundtrip.open_issue_count`` and
-    ``step.sonar-roundtrip.open_issue_rules``.
+    ``None`` means the caller named no file, so no cross-check is made. A file that
+    was named is READ; one that cannot be read answers the empty set, which refuses
+    every selection rather than waving it through.
+    """
+    if not value:
+        return None
+    return _operator_selection_records(Path(value))
+
+
+def cmd_sonar_facts(args: argparse.Namespace) -> dict[str, Any]:
+    """Render the landing's Sonar facts from the read taken at the merge head.
+
+    The COUNT is the landing's required ``sonar_open_new_issues`` key — one
+    spelling for one measurement, so the gate, the facts and the schema cannot
+    drift apart — and the RULES it left open ride the OPTIONAL per-step channel
+    (``step.sonar-roundtrip.open_issue_rules``) beside it.
 
     The two sentinels are the point of the verb. A confirmed read carries the
     MEASURED count. An ``undecidable`` read carries ``unknown`` — a failed read
     asserts that nothing was observed and never collapses into ``0``, which is a
     claim the run did not earn. A project without Sonar carries ``n/a``, the
-    answered absence. Both facts are OPTIONAL in the landing, so the required key
-    set is untouched and no earlier landing becomes incomplete.
+    answered absence, which is a legal value for the required count.
+
+    ``--rules`` is required above zero because a count with no rule beside it
+    renders as "3 open findings, no rule left open" — a figure whose other half is
+    missing. A security hotspot carries no rule, so a read whose only open findings
+    are hotspots passes the literal ``hotspot`` and the fact states exactly that.
     """
     state = getattr(args, 'state', None)
     if state not in _SONAR_STATES:
@@ -2030,15 +2188,22 @@ def cmd_sonar_facts(args: argparse.Namespace) -> dict[str, Any]:
         # Symmetric with the gate: a read supplied beside `not_configured` is a
         # contradiction, and rendering `n/a` over it would hide that the caller
         # read one project's issues and reported another project's state.
-        if any(getattr(args, name, None) is not None for name in ('count_status', 'open_count', 'rules')):
+        if any(
+            getattr(args, name, None) is not None for name in ('count_status', 'open_count', 'rules', 'gate_status')
+        ):
             return {
                 'status': 'error',
                 'error': 'state_contradicts_read',
-                'message': 'a not_configured state carries no read; drop --count-status, --open-count and --rules',
+                'message': (
+                    'a not_configured state carries no read; drop --count-status, --open-count, '
+                    '--rules and --gate-status'
+                ),
             }
         count, rules = 'n/a', 'n/a'
+        gate_status = None
     else:
         count_status = getattr(args, 'count_status', None)
+        gate_status = getattr(args, 'gate_status', None)
         if count_status not in _SONAR_COUNT_STATUSES:
             return {
                 'status': 'error',
@@ -2047,6 +2212,12 @@ def cmd_sonar_facts(args: argparse.Namespace) -> dict[str, Any]:
                     f'--count-status must be one of {", ".join(_SONAR_COUNT_STATUSES)} when --state configured; '
                     f'got {count_status!r}'
                 ),
+            }
+        if gate_status is not None and gate_status not in SONAR_GATE_STATUSES:
+            return {
+                'status': 'error',
+                'error': 'invalid_gate_status',
+                'message': (f'--gate-status must be one of {", ".join(SONAR_GATE_STATUSES)}; got {gate_status!r}'),
             }
         if count_status in ('undecidable', 'unconfigured'):
             # Both are failed reads: nothing was observed, so the figure is
@@ -2081,16 +2252,695 @@ def cmd_sonar_facts(args: argparse.Namespace) -> dict[str, Any]:
                     'message': 'a confirmed count of zero carries no rule left open',
                 }
 
+    fact_lines = [f'{_SONAR_OPEN_ISSUES_FACT}={count}', f'step.{_SONAR_FACT_STEP}.open_issue_rules={rules}']
+    # The quality-gate fact is OPTIONAL and rides only when the caller read one:
+    # a line asserting a state nothing observed would be worse than its absence.
+    if gate_status is not None:
+        fact_lines.append(f'{_SONAR_QUALITY_GATE_FACT}={gate_status}')
+
     return {
         'status': 'success',
         'operation': 'sonar-facts',
         'open_issue_count': count,
         'open_issue_rules': rules,
-        'fact_lines': [
-            f'step.{_SONAR_FACT_STEP}.open_issue_count={count}',
-            f'step.{_SONAR_FACT_STEP}.open_issue_rules={rules}',
-        ],
+        'quality_gate_status': gate_status if gate_status is not None else 'not_read',
+        'fact_lines': fact_lines,
     }
+
+
+# =============================================================================
+# review-gate — the review half of the merge gate
+# =============================================================================
+
+#: The review-body sections the gate reads out of a reviewer's review body.
+#:
+#: Each row is ``(label prefix, canonical section)``, and the label is matched as
+#: a case-insensitive PREFIX of the ``<summary>`` title the reviewer's own markup
+#: puts above the block. The trailing decoration a reviewer adds — a leading
+#: emoji, a ``(N)`` count — is stripped before the match, so one label covers
+#: every rendering of that heading.
+#:
+#: ``inline`` is listed beside the three body-only sections on purpose: the
+#: reviewer states its inline findings in the body as a count line even though
+#: they also arrive as threads, and a finding it declares belongs in the
+#: disposition ledger whichever surface carries it.
+_REVIEW_BODY_SECTIONS = (
+    ('actionable comments', 'inline'),
+    ('inline comments', 'inline'),
+    ('duplicate comments', 'duplicate'),
+    ('outside diff range comments', 'outside-diff'),
+    ('outside-diff comments', 'outside-diff'),
+    ('nitpick comments', 'nitpick'),
+    ('nitpicks', 'nitpick'),
+    ('follow-ups', 'followup'),
+    ('followups', 'followup'),
+    ('additional comments', 'additional'),
+)
+
+#: The ``<summary>`` titles a reviewer posts that COUNT their block while the block
+#: is not a findings section — the boilerplate a reviewer renders beside its
+#: findings. Matched as a case-insensitive PREFIX of the normalised title, like the
+#: section table.
+#:
+#: Every entry is grounded: ``review info``, ``run configuration``, ``commits`` and
+#: ``files selected for processing`` are OBSERVED as titles in the review body of
+#: ``cuioss/plan-marshall#1940`` (review ``PRR_kwDOQ3xasM8AAAABWsFY6g``) — the file
+#: list is the one that carries a declared count there (``: 19``), and the other
+#: three carry none; ``review details`` is the block the automatic-review fixtures
+#: render; ``files ignored due to path filters`` is the spec-named sibling of
+#: the observed file list. A counted title that is none of these is refused rather
+#: than declared away — and ``Additional comments (N)`` is deliberately NOT here: the
+#: capture does not carry it, the spec names the shape, and a counted title that
+#: cannot be shown to be boilerplate is COUNTED as findings so a block is never a
+#: false pass.
+_NON_FINDING_SECTION_LABELS = (
+    'files selected for processing',
+    'files ignored due to path filters',
+    'review details',
+    'review info',
+    'run configuration',
+    'commits',
+)
+
+#: The markers that make a resolved thread's last BOT-authored comment an answer that
+#: the concern REMAINS. A reviewer that closes a thread with an acknowledgement
+#: ("Addressed in commit …", "verified", "fixed") matches none of these, so the
+#: thread counts as handled; one that restates THIS thread's defect matches, so a
+#: thread resolved to silence it is refused.
+#:
+#: Every marker names the thread's own defect in the present tense. A generic
+#: "a separate concern remains" is deliberately NOT one: a reviewer that confirms a
+#: fix and opens a NEW concern elsewhere in the same breath would otherwise leave a
+#: resolved thread refused forever, and the new concern has its own thread.
+_CONCERN_REMAINS_MARKERS = (
+    'still applies',
+    'still present',
+    'still an issue',
+    'still unresolved',
+    'still not addressed',
+    'not addressed',
+    'remains unresolved',
+)
+
+_SUMMARY_RE = re.compile(r'<summary>(?P<title>.*?)</summary>', re.IGNORECASE | re.DOTALL)
+#: The count a reviewer declares at the end of a ``<summary>`` title, in either
+#: OBSERVED spelling: a parenthesised ``(N)`` (``Nitpick comments (2)``) or a
+#: trailing ``: N`` (``Nitpick comments: 1``, and the per-file ``path: 1``). The
+#: colon form needs whitespace after it, so a bare location (``src/a.py:12``) is not
+#: a count.
+_COUNT_SUFFIX_RE = re.compile(r'(?:\((?P<paren>\d+)\)|:\s+(?P<colon>\d+))\s*$')
+
+#: What a count read does not need: markup and decoration AROUND the declared count.
+#: The colon and the parentheses survive, because both spellings are counts.
+_COUNT_TITLE_NOISE_RE = re.compile(r'[^a-z0-9\- ():]+')
+
+#: The per-row finding marker the reviewer puts in a section's rows, OBSERVED on
+#: ``cuioss/plan-marshall#1940`` (``<!-- cr-comment:v1:…``). A section that declares
+#: no count states its findings one per marker, so the markers are its count.
+_ROW_MARKER_RE = re.compile(r'<!--\s*cr-comment:v1:')
+
+#: A ``<details>`` open or close tag, used to find the container a ``<summary>``
+#: sits in.
+_DETAILS_TOKEN_RE = re.compile(r'</?details\b[^>]*>', re.IGNORECASE)
+
+
+def _enclosing_sections(
+    body: str,
+    matches: list[re.Match[str]],
+    section_at: dict[int, str | None],
+) -> dict[int, int | None]:
+    """Map each ``<summary>`` to the recognised SECTION summary that encloses it.
+
+    THE nesting rule this parser depends on: a reviewer nests a per-FILE grouping
+    inside a section block, so ``<details><summary>Nitpick comments (2)</summary>
+    … <details><summary>src/comments.py (2)</summary>`` has one section summary and
+    one file summary inside it. A summary nested inside a RECOGNISED section is
+    content — a file path that happens to contain ``comment`` or ``nitpick`` must
+    not read as an unreadable heading.
+
+    Depth alone is not the rule, because a reviewer may wrap a whole body in one
+    outer block: every real section then sits one level deeper, and a bare depth
+    test would drop its findings silently — the "cannot read means pass" failure
+    this gate exists to close. Nesting inside an UNRECOGNISED block is therefore
+    not containment: such a summary stays a section candidate at any depth.
+    """
+    containers: dict[int, int | None] = {}
+    stack: list[int | None] = []
+    events: list[tuple[int, str, int | None]] = [
+        (match.start(), 'summary', index) for index, match in enumerate(matches)
+    ]
+    events.extend(
+        (token.start(), 'close' if token.group(0).startswith('</') else 'open', None)
+        for token in _DETAILS_TOKEN_RE.finditer(body)
+    )
+    # A close sorts before an open at the same offset, so an empty block cannot
+    # leave its opener on the stack.
+    events.sort(key=lambda event: (event[0], 0 if event[1] == 'close' else 1))
+    for _position, kind, index in events:
+        if kind == 'open':
+            stack.append(None)
+        elif kind == 'close':
+            if stack:
+                stack.pop()
+        elif index is not None:
+            # The nearest RECOGNISED section, not merely the nearest open block: an
+            # unrecognised per-file group can sit between a section and a deeper
+            # summary, and that deeper summary is still the section's content.
+            containers[index] = next(
+                (holder for holder in reversed(stack) if holder is not None and section_at.get(holder) is not None),
+                None,
+            )
+            if stack and stack[-1] is None:
+                stack[-1] = index
+    return containers
+
+
+#: The depth at or above which a ``<summary>`` is a reviewer's SECTION heading. A
+#: section block opens one ``<details>``, so its summary sits at depth 1; a deeper
+#: summary is the per-file grouping inside a section, and is content.
+_SECTION_DEPTH = 1
+
+#: The CI notation this verb reads through. The lane never calls ``gh``: the
+#: review surfaces come from the CI abstraction, whose provider module owns the
+#: ``gh`` invocation.
+_CI_NOTATION = 'plan-marshall:tools-integration-ci:ci'
+
+#: The record kinds the review-surface read publishes. A record of any OTHER kind
+#: is a surface this verb cannot read, so it stops the gate rather than being
+#: filtered away as "no findings".
+_RECORD_KINDS = ('inline', 'review_body', 'issue_comment')
+
+#: The progress line that records the OPERATOR's dismissal selection, and the
+#: separator after which the key sits. Read back by ``sonar-gate --progress-file``
+#: so a supplied selection is checked against the run's own record.
+_OPERATOR_SELECTION_PREFIX = 'operator-selected:'
+
+#: The reviewer-neutral evidence field of one disposition line, and the progress
+#: template's own separator.
+_DISPOSITION_SEPARATOR = '—'
+_DISPOSITION_RE = re.compile(
+    r'^(?P<reviewer>\S+)\s+(?P<section>\S+)\s+(?P<id>\S+)\s*' + _DISPOSITION_SEPARATOR + r'\s*(?P<evidence>\S.*)$'
+)
+
+#: The evidence values that name neither a commit nor a reason — the shape a line has
+#: when nothing was decided. Compared as one punctuation-stripped, case-folded token, so
+#: ``TBD.``, ``N/A`` and ``—`` reduce to ``tbd``, ``na`` and the empty entry.
+_DISPOSITION_PLACEHOLDER_EVIDENCE = frozenset({'', 'tbd', 'todo', 'na', 'none', 'later', 'wip', 'pending'})
+
+#: A hex commit id is evidence on its own, with no other token needed.
+_COMMIT_SHA_RE = re.compile(r'[0-9a-f]{7,40}')
+
+#: Everything a placeholder comparison does not need: punctuation, markup and symbols.
+_PLACEHOLDER_PUNCTUATION_RE = re.compile(r'[^a-z0-9]+')
+
+
+def _disposition_evidence_is_real(evidence: str) -> bool:
+    """Whether a disposition's evidence names a commit or a stated reason.
+
+    A hex commit id is evidence on its own. Any other text is a stated reason unless it
+    reduces to a placeholder once case and punctuation are stripped — a placeholder is
+    what a line says when nothing was decided, so counting it as disposed is the pass
+    this gate exists to remove.
+    """
+    token = _PLACEHOLDER_PUNCTUATION_RE.sub('', evidence.strip().lower())
+    if _COMMIT_SHA_RE.fullmatch(token):
+        return True
+    return token not in _DISPOSITION_PLACEHOLDER_EVIDENCE
+
+
+def _normalise_section_title(title: str) -> str:
+    """Return a ``<summary>`` title reduced to lowercase words for LABEL matching.
+
+    A reviewer decorates its headings with markup, emoji, bold markers and
+    punctuation. The markup is dropped first (a ``<picture>``/``<strong>`` wrapper
+    carries no words of the heading), then everything that is not a letter, a digit,
+    a hyphen, a space or a parenthesised group is dropped, so ``🧹 Nitpick comments
+    (2)`` and ``**Nitpick comments (2)**`` reduce to the same ``nitpick comments
+    (2)`` the label table is written against. The parentheses survive on purpose:
+    they let a normalised title keep the shape it declares, though the COUNT itself is
+    read off the raw title by ``_declared_count`` — normalisation drops the colon
+    spelling the reviewer uses.
+    """
+    text = re.sub(r'<[^>]+>', ' ', title)
+    return ' '.join(re.sub(r'[^a-z0-9\- ()]+', ' ', text.lower()).split())
+
+
+def _declared_count(title: str) -> int | None:
+    """Return the count a ``<summary>`` title declares, or ``None``.
+
+    The count is read off the RAW title, because the colon spelling does not survive
+    ``_normalise_section_title`` — and it is the spelling the reviewer really posts
+    (OBSERVED: ``Nitpick comments: 1`` on #1940). Markup and decoration AROUND the
+    count are dropped first, so ``**Nitpick comments (3)**`` and ``Nitpick comments:
+    3 🧹`` still declare three; both spellings name the same statement about the block.
+    """
+    text = re.sub(r'<[^>]+>', ' ', title)
+    plain = ' '.join(_COUNT_TITLE_NOISE_RE.sub(' ', text.lower()).split())
+    declared = _COUNT_SUFFIX_RE.search(plain)
+    if declared is None:
+        return None
+    return int(declared.group('paren') or declared.group('colon'))
+
+
+def _is_non_finding_title(title: str) -> bool:
+    """Whether a counted title is a declared non-finding block (a file list, review info)."""
+    normalised = _normalise_section_title(title)
+    return any(normalised.startswith(label) for label in _NON_FINDING_SECTION_LABELS)
+
+
+def _section_for_title(title: str) -> tuple[str | None, int | None]:
+    """Return ``(canonical section, declared count)`` for one ``<summary>`` title.
+
+    ``(None, None)`` when the title is not a finding section at all (a
+    walkthrough, a "Review details" block, the AI-prompt block). The count is the
+    one the reviewer declares — ``(N)`` or ``: N`` — or ``None`` when it declares
+    none; the caller then counts the section's row markers or nested per-file blocks.
+    """
+    normalised = _normalise_section_title(title)
+    for label, section in sorted(_REVIEW_BODY_SECTIONS, key=lambda row: -len(row[0])):
+        if normalised.startswith(label):
+            return section, _declared_count(title)
+    return None, None
+
+
+def _count_section_findings(span: str, declared: int | None) -> int:
+    """Return the number of findings the reviewer declares inside one section.
+
+    The declared count wins: it is the reviewer's own statement about the block, and
+    reading it is what keeps one disposition from clearing several findings. Without
+    one, the section's own rows state it — one ``<!-- cr-comment:v1:`` marker per
+    finding — and its nested per-file blocks state it as ``file: n`` or ``file (n)``.
+    The two are taken at their larger value, because a disagreement between them is a
+    block that under-states its findings, and an under-count clears several with one
+    disposition. A block carrying neither, but prose of its own, states one finding; an
+    empty block states none.
+    """
+    if declared is not None:
+        return declared
+    rows = len(_ROW_MARKER_RE.findall(span))
+    nested = 0
+    for match in _SUMMARY_RE.finditer(span):
+        counted = _declared_count(match.group('title'))
+        if counted is not None:
+            nested += counted
+    if rows or nested:
+        return max(rows, nested)
+    return 1 if re.sub(r'<[^>]+>', ' ', span).strip() else 0
+
+
+def _body_findings(
+    reviewer: str,
+    body: str,
+    bot_kind: str,
+    counters: dict[str, int] | None = None,
+) -> tuple[list[dict[str, str]], str | None]:
+    """Parse one review body into its findings, or name the section it cannot read.
+
+    Every recognised section contributes ``{section}-{n}`` findings under
+    ``reviewer``. ``counters`` carries the per-(reviewer, section) numbering
+    ACROSS this reviewer's bodies, so two review bodies do not both mint
+    ``nitpick-1``: a disposition naming ``nitpick-1`` then discharges exactly one
+    finding rather than one per body, which is what a stale finding riding a
+    fresh sha looks like.
+
+    An inline count the reviewer states only as its status line (the registry's
+    ``review_body_summary_patterns`` literal) is read as the ``inline`` section
+    when no inline section block is present — one declaration, one reading.
+
+    A ``<summary>`` title that COUNTS its block while matching neither a declared
+    finding section nor a declared non-finding label is the undecidable answer: the
+    parser cannot tell what it contains, and reporting it as no findings would be
+    the "cannot read means pass" failure this gate exists to close.
+    """
+    counters = counters if counters is not None else {}
+    matches = list(_SUMMARY_RE.finditer(body))
+    starts = list(enumerate(matches))
+    section_at = {index: _section_for_title(match.group('title'))[0] for index, match in starts}
+    containers = _enclosing_sections(body, matches, section_at)
+
+    def _is_content(index: int) -> bool:
+        """Whether this summary is a per-file grouping inside a RECOGNISED section."""
+        parent = containers.get(index)
+        return parent is not None and section_at.get(parent) is not None
+
+    def _is_section(index: int) -> bool:
+        """Whether this summary is a section heading."""
+        return not _is_content(index) and section_at[index] is not None
+
+    findings: list[dict[str, str]] = []
+    seen_inline = False
+    span_end_of: dict[int, int] = {}
+    for position, (index, _match) in enumerate(starts):
+        if not _is_section(index):
+            continue
+        span_end_of[index] = next(
+            (later.start() for later_index, later in starts[position + 1 :] if _is_section(later_index)),
+            len(body),
+        )
+    for index, match in starts:
+        if _is_content(index):
+            # A per-file grouping inside a section, not a heading: its content is
+            # counted by the section that encloses it.
+            continue
+        section = section_at[index]
+        if section is None:
+            counted = _declared_count(match.group('title'))
+            if counted is not None and not _is_non_finding_title(match.group('title')):
+                return [], f'unreadable review-body section: {match.group("title").strip()!r}'
+            continue
+        declared = _section_for_title(match.group('title'))[1]
+        if section == 'inline':
+            seen_inline = True
+        count = _count_section_findings(body[match.end() : span_end_of[index]], declared)
+        findings.extend(_numbered_findings(reviewer, section, count, counters))
+
+    if not seen_inline:
+        findings.extend(_inline_status_findings(reviewer, body, bot_kind, counters))
+    return findings, None
+
+
+def _numbered_findings(
+    reviewer: str,
+    section: str,
+    count: int,
+    counters: dict[str, int],
+) -> list[dict[str, str]]:
+    """Mint ``count`` findings for one section, continuing this reviewer's numbering."""
+    rows = []
+    for _ in range(count):
+        counters[section] = counters.get(section, 0) + 1
+        rows.append({'reviewer': reviewer, 'section': section, 'id': f'{section}-{counters[section]}'})
+    return rows
+
+
+def _inline_status_findings(
+    reviewer: str,
+    body: str,
+    bot_kind: str,
+    counters: dict[str, int],
+) -> list[dict[str, str]]:
+    """Read the reviewer's inline count off its declared status line, if any.
+
+    The literal comes from the registry (``review_body_summary_patterns``), never
+    from this module: the bot standard remains the one place the phrase lives.
+
+    The number is matched IMMEDIATELY after the literal, never as the first
+    digit run anywhere in the rest of the body: the CI read the lane uses is the display
+    path, which flattens a body to one line, so a "first digit in the tail" read
+    would turn any later ``(N)`` into a phantom inline count. Matching forward
+    from the literal is the same read on a flattened and on a structured body.
+    """
+    if not bot_kind:
+        return []
+    import bot_registry
+
+    for pattern in bot_registry.review_body_summary_patterns(bot_kind):
+        index = body.find(pattern)
+        if index < 0:
+            continue
+        declared = re.match(r'\s*(\d+)', body[index + len(pattern) :])
+        if declared is None:
+            continue
+        return _numbered_findings(reviewer, 'inline', int(declared.group(1)), counters)
+    return []
+
+
+def _bot_of(comment: dict[str, Any]) -> str:
+    """Return the registered bot a comment is attributed to (``''`` for anyone else)."""
+    import bot_registry
+
+    return bot_registry.bot_kind_for_login(comment.get('author'))
+
+
+def _reviewer_of(comment: dict[str, Any]) -> str:
+    """Return the reviewer identity a comment is attributed to (``''`` when nameless).
+
+    A registered bot resolves to its ``bot_kind``, so the disposition ledger names
+    the reviewer the same way the reviewer's own standard does. Anyone else is a
+    HUMAN reviewer, and is named by its login: the gate covers every reviewer's
+    review body, not only the registered bots' — a human's sectioned review is a
+    finding source like any other, and silently dropping it would be the pass this
+    verb exists to remove.
+    """
+    import bot_registry
+
+    kind = bot_registry.bot_kind_for_login(comment.get('author'))
+    if kind:
+        return kind
+    return str(comment.get('author') or '').strip().lower()
+
+
+def _threads(comments: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    """Group the inline comments by thread id, in the order the provider returned them."""
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for comment in comments:
+        if comment.get('kind') != 'inline':
+            continue
+        thread_id = str(comment.get('thread_id') or '')
+        if not thread_id:
+            continue
+        grouped.setdefault(thread_id, []).append(comment)
+    return grouped
+
+
+def _thread_concern_remains(thread: list[dict[str, Any]]) -> bool:
+    """Whether a RESOLVED thread's last BOT comment says the concern remains.
+
+    The last BOT-authored comment is the finding's last word: a reviewer that
+    restates the defect and is then answered by the lane (or a human) still has an
+    open concern, and a lane reply can itself carry the marker vocabulary, so the
+    comments after the bot's are never tested. A later bot comment WITHOUT a marker
+    (the bot's own acknowledgement, "Addressed in commit …") is the discharge; a
+    thread with no bot comment at all carries no reviewer concern.
+    """
+    last = next((comment for comment in reversed(thread) if _bot_of(comment)), None)
+    if last is None:
+        return False
+    body = str(last.get('body') or '').lower()
+    return any(marker in body for marker in _CONCERN_REMAINS_MARKERS)
+
+
+def _review_thread_rows(threads: dict[str, list[dict[str, Any]]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Split the threads into ``(unresolved, concern-remains)`` rows carrying ``path:line``."""
+    unresolved: list[dict[str, Any]] = []
+    remains: list[dict[str, Any]] = []
+    for thread_id, thread in threads.items():
+        opening = thread[0]
+        row = {
+            'thread_id': thread_id,
+            'path': str(opening.get('path') or ''),
+            'line': opening.get('line') or 0,
+            'location': f'{opening.get("path") or "?"}:{opening.get("line") or 0}',
+        }
+        if not all(bool(comment.get('resolved')) for comment in thread):
+            unresolved.append(row)
+        elif _thread_concern_remains(thread):
+            remains.append(row)
+    return unresolved, remains
+
+
+def _parse_dispositions(values: list[str]) -> tuple[list[dict[str, str]], list[str]]:
+    """Parse the ``--disposition`` values into rows, naming any that do not parse.
+
+    One row per progress line, in the progress template's own wording:
+    ``finding: {reviewer} {section} {id} — {sha|reason}``. The evidence token is
+    what makes the disposition a disposition: a line with none, or with a placeholder
+    (``TBD``, ``-``, ``n/a``, …), answers nothing about the finding, so it is refused
+    by name rather than counted.
+    """
+    rows: list[dict[str, str]] = []
+    refused: list[str] = []
+    for value in values:
+        match = _DISPOSITION_RE.match(value.strip())
+        if match is None or not _disposition_evidence_is_real(match.group('evidence')):
+            refused.append(value)
+            continue
+        rows.append({key: match.group(key) for key in ('reviewer', 'section', 'id', 'evidence')})
+    return rows, refused
+
+
+def _read_review_surfaces(pr_number: int, project_dir: Path) -> dict[str, Any]:
+    """Read a pull request's review surfaces through the CI abstraction.
+
+    The ONE seam this verb's provider read goes through, so the wiring can be
+    asserted without a live provider. The call is the executor's ``ci pr comments``
+    invocation: the lane never spells ``gh``, and the provider module owns both the
+    GraphQL query and its pagination.
+    """
+    import subprocess
+    import sys
+
+    from file_ops import get_executor_path
+    from toon_parser import parse_toon
+
+    try:
+        argv = [
+            sys.executable,
+            str(get_executor_path()),
+            _CI_NOTATION,
+            'pr',
+            'comments',
+            '--pr-number',
+            str(pr_number),
+        ]
+        completed = subprocess.run(
+            argv,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=300,
+            cwd=str(project_dir),
+        )
+    except (RuntimeError, OSError, subprocess.SubprocessError) as exc:
+        # ``get_executor_path`` raises RuntimeError when it cannot anchor the
+        # executor, and an unresolvable executor is a failed read like any other —
+        # never a traceback, which is the one shape the lane cannot classify.
+        return {'status': 'error', 'error': f'the CI read could not run: {exc}'}
+    if completed.returncode != 0:
+        return {
+            'status': 'error',
+            'error': f'the CI read exited {completed.returncode}: {completed.stderr.strip() or "no stderr"}',
+        }
+    if not (completed.stdout or '').strip():
+        return {'status': 'error', 'error': 'the CI read produced no output'}
+    try:
+        return parse_toon(completed.stdout)
+    except Exception as exc:
+        return {'status': 'error', 'error': f'the CI read output was not parseable as TOON: {exc}'}
+
+
+def _review_gate_verdict(
+    pr_number: int,
+    read: dict[str, Any],
+    dispositions: list[dict[str, str]],
+    refused: list[str],
+) -> dict[str, Any]:
+    """Decide whether the review surfaces admit the merge (section 7's condition).
+
+    The verdict is a pure function of the read and of the run's recorded
+    dispositions, so the merge condition is a decision a script makes:
+
+    - an unreadable or truncated read is ``undecidable_read`` — a stop, never a
+      pass, because "no findings" is unknowable from a surface nobody read whole;
+    - an unresolved thread is ``unresolved_review_threads``;
+    - a body finding with no disposition naming a commit or a stated reason is
+      ``body_findings_undisposed``;
+    - a resolved thread whose last BOT-authored comment states that the concern
+      remains is ``thread_concern_remains`` — resolution is not silence, and a lane
+      reply below the bot's restatement never discharges it;
+    - otherwise ``all_handled``.
+    """
+    base: dict[str, Any] = {'status': 'success', 'operation': 'review-gate', 'pr_number': pr_number}
+    if refused:
+        return {
+            **base,
+            'merge_allowed': False,
+            'reason': 'disposition_unparsable',
+            'refused': refused,
+        }
+    if read.get('status') != 'success':
+        return {
+            **base,
+            'merge_allowed': False,
+            'reason': 'undecidable_read',
+            'detail': str(read.get('error') or 'the review surface read failed'),
+        }
+    if 'complete' not in read:
+        # A read that publishes no coverage signal cannot be shown whole. It is a
+        # separate reason from a truncation, because the remedy differs: nothing is
+        # wrong with the pull request, the PROVIDER does not report coverage (the
+        # GitLab read publishes none today), so the gate cannot decide the merge on
+        # it at all.
+        return {
+            **base,
+            'merge_allowed': False,
+            'reason': 'coverage_unavailable',
+            'provider': str(read.get('provider') or 'unknown'),
+            'detail': 'the provider reported no coverage signal for this read, so the surface cannot be shown whole',
+        }
+    if read.get('complete') is not True:
+        return {
+            **base,
+            'merge_allowed': False,
+            'reason': 'undecidable_read',
+            'detail': 'the review surface read was truncated: not every connection was drained',
+        }
+
+    comments = [comment for comment in (read.get('comments') or []) if isinstance(comment, dict)]
+    unrecognised = sorted({str(comment.get('kind')) for comment in comments} - set(_RECORD_KINDS))
+    if unrecognised:
+        # A record shape this verb does not know is a surface it cannot read. The
+        # alternative — filtering to the shapes it knows and reporting the rest as
+        # no findings — is the "cannot read means pass" failure once more, and it is
+        # silent: a provider that renamed ``kind`` would drain as a clean merge.
+        return {
+            **base,
+            'merge_allowed': False,
+            'reason': 'undecidable_read',
+            'detail': f'unrecognised review-surface record kind(s): {", ".join(unrecognised)}',
+        }
+    threads = _threads(comments)
+    unresolved, remains = _review_thread_rows(threads)
+
+    findings: list[dict[str, str]] = []
+    counters: dict[str, dict[str, int]] = {}
+    for comment in comments:
+        if comment.get('kind') != 'review_body':
+            continue
+        reviewer = _reviewer_of(comment)
+        if not reviewer:
+            # A review body with no attributable author cannot be disposed by name,
+            # so its findings would vanish — the pass this verb exists to remove.
+            return {
+                **base,
+                'merge_allowed': False,
+                'reason': 'undecidable_read',
+                'detail': 'a review body carries no attributable author',
+            }
+        body_findings, undecidable = _body_findings(
+            reviewer,
+            str(comment.get('body') or ''),
+            _bot_of(comment),
+            counters.setdefault(reviewer, {}),
+        )
+        if undecidable is not None:
+            return {**base, 'merge_allowed': False, 'reason': 'undecidable_read', 'detail': undecidable}
+        findings.extend(body_findings)
+
+    disposed = {(row['reviewer'], row['section'], row['id']) for row in dispositions}
+    undisposed = [
+        finding for finding in findings if (finding['reviewer'], finding['section'], finding['id']) not in disposed
+    ]
+
+    verdict: dict[str, Any] = {
+        **base,
+        'unresolved_review_threads': len(unresolved),
+        'review_body_findings_total': len(findings),
+        'review_body_findings_handled': len(findings) - len(undisposed),
+        'unresolved_threads': unresolved,
+    }
+    if unresolved:
+        return {**verdict, 'merge_allowed': False, 'reason': 'unresolved_review_threads'}
+    if undisposed:
+        return {**verdict, 'merge_allowed': False, 'reason': 'body_findings_undisposed', 'undisposed': undisposed}
+    if remains:
+        return {**verdict, 'merge_allowed': False, 'reason': 'thread_concern_remains', 'threads': remains}
+    return {**verdict, 'merge_allowed': True, 'reason': 'all_handled'}
+
+
+def cmd_review_gate(args: argparse.Namespace) -> dict[str, Any]:
+    """Report whether the pull request's review surfaces admit the merge."""
+    pr_number = getattr(args, 'pr_number', None)
+    if not isinstance(pr_number, int) or pr_number <= 0:
+        return {
+            'status': 'error',
+            'error': 'invalid_pr_number',
+            'message': f'--pr-number must be a positive integer; got {pr_number!r}',
+        }
+    project_dir = Path(getattr(args, 'project_dir', None) or '.')
+    dispositions, refused = _parse_dispositions(list(getattr(args, 'disposition', None) or []))
+    read = _read_review_surfaces(pr_number, project_dir)
+    return _review_gate_verdict(pr_number, read, dispositions, refused)
 
 
 def cmd_resolve(args: argparse.Namespace) -> dict[str, Any]:
@@ -2168,6 +3018,13 @@ def cmd_resolve(args: argparse.Namespace) -> dict[str, Any]:
         'python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator inbox write '
         f'--slug {slug} --sender-type plan --sender-id {sender_id} --kind landing --payload-file {landing_file}'
     )
+    # The READ half of the same channel: the orchestrator delivers a plan's mail to
+    # ``inbox/to/{plan_id}/``, so the lane reads its own mailbox through the verb
+    # that resolves that address — never by opening a path under the epic tree.
+    inbox_read_command = (
+        'python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator inbox read '
+        f'--slug {slug} --plan-id {plan_id}'
+    )
 
     resolved: dict[str, Any] = {
         'status': 'success',
@@ -2181,6 +3038,7 @@ def cmd_resolve(args: argparse.Namespace) -> dict[str, Any]:
         'landing_file': landing_file,
         'sender_id': sender_id,
         'inbox_write_command': inbox_write_command,
+        'inbox_read_command': inbox_read_command,
         'build': build,
         'build_timeout_seconds': build_timeout_seconds,
         'base_branch': base_branch,
@@ -2323,10 +3181,28 @@ def main() -> int:
         help='Comma-separated issue keys the read enumerated',
     )
     gate_parser.add_argument(
+        '--operator-selected-keys',
+        dest='operator_selected_keys',
+        default=None,
+        help='Comma-separated finding keys the OPERATOR selected for dismissal',
+    )
+    gate_parser.add_argument(
+        '--progress-file',
+        dest='progress_file',
+        default=None,
+        help='The run progress file; a selected key must be recorded there as an operator selection',
+    )
+    gate_parser.add_argument(
+        '--hotspot-keys',
+        dest='hotspot_keys',
+        default=None,
+        help='Comma-separated SECURITY HOTSPOT keys among the open ones; a hotspot is never dismissable',
+    )
+    gate_parser.add_argument(
         '--dismissed-keys',
         dest='dismissed_keys',
         default=None,
-        help='Comma-separated issue keys this run dismissed with a stated reason',
+        help='Retired: a lane-recorded dismissal is refused (lane_dismissal_not_accepted)',
     )
 
     facts_parser = subparsers.add_parser(
@@ -2356,6 +3232,26 @@ def main() -> int:
         '--rules',
         default=None,
         help='Comma-separated rules of the issues left open at the merge head',
+    )
+    facts_parser.add_argument(
+        '--gate-status',
+        dest='gate_status',
+        default=None,
+        help='The new-code quality-gate status read at the merge head: ok, error, not_computed or unknown',
+    )
+
+    review_parser = subparsers.add_parser(
+        'review-gate',
+        help='Decide whether the pull request review surfaces admit the merge',
+        allow_abbrev=False,
+    )
+    review_parser.add_argument('--pr-number', dest='pr_number', type=int, required=True, help='Pull request number')
+    review_parser.add_argument('--project-dir', default='.', help='Project root (default: current directory)')
+    review_parser.add_argument(
+        '--disposition',
+        action='append',
+        default=None,
+        help=('One progress-file disposition line, repeatable: "{reviewer} {section} {id} — {sha|reason}"'),
     )
 
     args = parser.parse_args()
@@ -2392,6 +3288,13 @@ def main() -> int:
         return 0
     if args.command == 'sonar-facts':
         data = cmd_sonar_facts(args)
+        if data.get('status') == 'error':
+            output_toon_error(data['error'], data.get('message', data['error']))
+            return 0
+        output_toon(data)
+        return 0
+    if args.command == 'review-gate':
+        data = cmd_review_gate(args)
         if data.get('status') == 'error':
             output_toon_error(data['error'], data.get('message', data['error']))
             return 0

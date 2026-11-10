@@ -10,8 +10,9 @@ namespaced (the usual ``http://maven.apache.org/POM/4.0.0`` declaration) and
 namespace-less POMs. No Maven binary is required.
 """
 
-import tempfile
 from pathlib import Path
+
+import _system_temp
 
 from conftest import load_script_module
 
@@ -23,8 +24,13 @@ _parse_pom_xml = _maven_cmd_discover._parse_pom_xml
 
 
 def _write_pom(content: str) -> Path:
-    """Write ``content`` to a ``pom.xml`` in a fresh tmp dir and return the path."""
-    tmpdir = Path(tempfile.mkdtemp())
+    """Write ``content`` to a ``pom.xml`` in a fresh tmp dir and return the path.
+
+    The directory comes from :func:`_system_temp.create`, so its removal is
+    registered: before that, every call here leaked one system temp directory per
+    parsed POM.
+    """
+    tmpdir = _system_temp.create(prefix='pom-parse-')
     pom = tmpdir / 'pom.xml'
     pom.write_text(content)
     return pom
@@ -164,25 +170,28 @@ def test_parse_pom_xml_no_profiles_yields_empty_list():
 
 
 def test_parse_pom_xml_malformed_returns_defaults():
-    """A malformed POM degrades to packaging='jar' with empty/None fields."""
+    """A malformed POM degrades to packaging='jar' AND names the stop."""
     pom = _write_pom('<project><artifactId>broken')  # unclosed tags
     result = _parse_pom_xml(pom)
     assert result['packaging'] == 'jar'
     assert result['artifact_id'] is None
     assert result['profile_ids'] == []
+    assert result['error'] == 'pom_unreadable'
 
 
 def test_parse_pom_xml_malformed_exact_shape():
-    """The malformed-POM default carries every key, dependencies as an empty list."""
+    """The malformed-POM default carries every key plus the named ``error``."""
     result = _parse_pom_xml(_write_pom('<project><artifactId>broken'))
     assert result == {
         'packaging': 'jar',
         'artifact_id': None,
         'group_id': None,
+        'modules': [],
         'profile_ids': [],
         'description': None,
         'parent': None,
         'dependencies': [],
+        'error': 'pom_unreadable',
     }
 
 
@@ -192,15 +201,17 @@ def test_parse_pom_xml_malformed_exact_shape():
 
 
 def test_parse_pom_xml_exact_shape_namespaced():
-    """The full parse result for a namespaced POM, including the dependencies key."""
+    """The full parse result for a namespaced POM, including the modules key."""
     assert _parse_pom_xml(_write_pom(_NS_POM)) == {
         'packaging': 'war',
         'artifact_id': 'my-app',
         'group_id': 'com.example',
+        'modules': [],
         'profile_ids': ['coverage', 'integration-tests'],
         'description': 'My example application',
         'parent': None,
         'dependencies': [],
+        'error': None,
     }
 
 
@@ -210,11 +221,54 @@ def test_parse_pom_xml_exact_shape_parent_fallback():
         'packaging': 'jar',
         'artifact_id': 'child-mod',
         'group_id': 'com.parent',
+        'modules': [],
         'profile_ids': [],
         'description': None,
         'parent': 'com.parent:parent-pom',
         'dependencies': [],
+        'error': None,
     }
+
+
+#: Reactor shape: top-level modules, a profile that needs an explicit ``-P``,
+#: and a default-active profile.
+_MODULES_POM = """<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.example</groupId>
+  <artifactId>reactor-parent</artifactId>
+  <version>1.0.0</version>
+  <packaging>pom</packaging>
+  <modules>
+    <module>core</module>
+    <module>tools/cli</module>
+  </modules>
+  <profiles>
+    <profile>
+      <id>opt-in</id>
+      <modules>
+        <module>experimental</module>
+      </modules>
+    </profile>
+    <profile>
+      <id>always</id>
+      <activation>
+        <activeByDefault>true</activeByDefault>
+      </activation>
+      <modules>
+        <module>shared</module>
+      </modules>
+    </profile>
+  </profiles>
+</project>
+"""
+
+
+def test_parse_pom_xml_reads_the_modules_a_default_build_includes():
+    """Top-level modules plus a default-active profile's, never an opt-in one's."""
+    result = _parse_pom_xml(_write_pom(_MODULES_POM))
+
+    assert result['modules'] == ['core', 'tools/cli', 'shared']
 
 
 # =============================================================================

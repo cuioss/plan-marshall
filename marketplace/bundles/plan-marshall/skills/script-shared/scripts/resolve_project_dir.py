@@ -136,6 +136,48 @@ def resolve_project_dir(
     return cwd_checkout_root()
 
 
+def resolve_carried_project_dir(resolved_project_dir: str, project_dir: str | None, *, default: str = '.') -> str:
+    """Return the tree a routing process already resolved for this dispatch.
+
+    The counterpart of :func:`resolve_project_dir`'s ``--plan-id`` branch, and the
+    reason that branch is not taken when the carry is present. The routing process
+    resolves the plan's tree, submits the build, and the daemon re-runs the same
+    argv from THAT tree. Re-resolving ``--plan-id`` there is what fails in the
+    finalize move-back window: ``integrate_into_main`` has already moved the plan
+    directory back to main while the worktree directory still exists, so the child
+    stands in a tree whose plan record is gone and the strict
+    ``manage-status get-worktree-path`` gate refuses a resolution that had already
+    succeeded one process up.
+
+    The carry travels BESIDE ``--plan-id``, never in its place: the plan id still
+    has to reach the child's ``kind=build`` ledger row and its build-slot
+    accounting. The two routing sources therefore stay mutually exclusive — this
+    helper refuses an explicit ``--project-dir`` alongside the carry, because two
+    trees cannot both be authoritative — while ``--plan-id`` itself remains legal
+    and is simply not consulted for the tree.
+
+    Args:
+        resolved_project_dir: The absolute tree the routing process resolved.
+        project_dir: The ``--project-dir`` value the caller supplied, if any.
+        default: The sentinel the parser uses for "``--project-dir`` not
+            supplied"; the same convention :func:`resolve_project_dir` takes.
+
+    Returns:
+        The carried tree as an absolute path.
+
+    Raises:
+        MutuallyExclusiveArgsError: when ``--project-dir`` was ALSO explicitly
+            supplied.
+    """
+    if project_dir is not None and project_dir != default:
+        raise MutuallyExclusiveArgsError(
+            'Both --resolved-project-dir and --project-dir were supplied. '
+            '--resolved-project-dir is the routed child carry; --project-dir is the explicit override. '
+            'Pick one.'
+        )
+    return os.path.abspath(resolved_project_dir)
+
+
 def add_plan_id_arg(parser, *, help_text: str | None = None) -> None:
     """Attach the standard ``--plan-id`` argument to a parser.
 
@@ -211,19 +253,36 @@ def extract_plan_id(argv: list[str]) -> tuple[str | None, list[str]]:
     return plan_id, out
 
 
-def emit_mutually_exclusive_error(plan_id: str | None, project_dir: str | None) -> dict:
+def emit_mutually_exclusive_error(plan_id: str | None, project_dir: str | None, *, message: str | None = None) -> dict:
     """Build the canonical TOON-friendly error payload for the both-supplied case.
 
     Centralised so every consumer emits the same shape regardless of
     whether it speaks TOON, JSON, or a mixed format. Callers are
     responsible for serialising and printing.
+
+    ``message`` exists for the ONE other mutual-exclusion conflict this module
+    raises — the routed carry beside an explicit ``--project-dir`` (see
+    :func:`resolve_carried_project_dir`). Its reason names a different flag pair,
+    so the canonical ``--plan-id`` wording would tell the operator to drop the
+    wrong flag; the caller passes the raise's own message instead. The error code
+    stays ``mutually_exclusive_args``: the class of the fault is the same.
+
+    Args:
+        plan_id: The plan id the dispatch named, if any.
+        project_dir: The explicit ``--project-dir`` value, if any.
+        message: Override for the canonical wording; ``None`` keeps it.
+
+    Returns:
+        The error payload for the both-supplied case.
     """
     # The values are echoed back to make debugging easier without
     # disclosing anything sensitive (plan ids are not secrets).
     return {
         'status': 'error',
         'error': 'mutually_exclusive_args',
-        'message': (
+        'message': message
+        if message is not None
+        else (
             '--plan-id and --project-dir are mutually exclusive. '
             'Pick one: --plan-id auto-resolves via manage-status; --project-dir is the explicit override.'
         ),
@@ -238,6 +297,38 @@ def emit_worktree_error(plan_id: str, exc: WorktreeResolutionError) -> dict:
         'status': 'error',
         'error': 'worktree_resolution_failed',
         'message': str(exc),
+        'plan_id': plan_id,
+    }
+
+
+def emit_carried_tree_outside_job_error(resolved_project_dir: str, plan_id: str | None) -> dict:
+    """Refuse a routed tree carry that arrived outside a marshalld job child.
+
+    The carry is the routing seam's contract with the child it submits, and the
+    daemon marks that child with ``MARSHALLD_JOB``. The marker is an ambient fact,
+    not a credential: what it buys is that the ORDINARY caller — a hand-written
+    dispatch, a replayed argv — cannot silently acquire the carry's behaviour,
+    because it would have to set the marker deliberately. Without the refusal the
+    flag would turn a documented-internal carry into a way to run a build in an
+    arbitrary tree while attributing it to a plan, bypassing the resolution gate
+    ``--plan-id`` exists to enforce.
+
+    Args:
+        resolved_project_dir: The carried tree value, echoed for diagnosis.
+        plan_id: The plan id the dispatch named, if any.
+
+    Returns:
+        The refusal payload.
+    """
+    return {
+        'status': 'error',
+        'error': 'carried_tree_outside_daemon_job',
+        'message': (
+            '--resolved-project-dir is the routed daemon child carry. It is honoured only when this '
+            'process carries the daemon job marker (MARSHALLD_JOB), and it does not. '
+            'Use --plan-id or --project-dir.'
+        ),
+        'resolved_project_dir': resolved_project_dir,
         'plan_id': plan_id,
     }
 
@@ -261,9 +352,11 @@ __all__ = [
     'MutuallyExclusiveArgsError',
     'WorktreeResolutionError',
     'add_plan_id_arg',
+    'emit_carried_tree_outside_job_error',
     'emit_mutually_exclusive_error',
     'emit_worktree_error',
     'extract_plan_id',
+    'resolve_carried_project_dir',
     'resolve_from_args',
     'resolve_project_dir',
 ]

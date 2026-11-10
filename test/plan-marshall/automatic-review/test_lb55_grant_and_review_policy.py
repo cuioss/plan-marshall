@@ -44,7 +44,7 @@ def _grant(plan_id: str, **overrides) -> dict | None:
         'kind': 'barrier-ask-override',
         'head': HEAD,
         'gap_class': 'review-barrier-gap',
-        'granted_over': '2 unhandled, unproven_bots=cuioss-review-bot',
+        'granted_over': '2 unhandled, unproven_bots=coderabbit',
         'reason': 'accepted the gap',
         'operator_answer': None,
         'override_label': None,

@@ -1004,6 +1004,12 @@ def _read_frontmatter_fields(doc_path: Path, keys: tuple[str, ...]) -> dict[str,
     wins over a ``metadata:``-nested one of the same name; other indented blocks
     (e.g. a per-parameter ``configurable:`` mapping) are still skipped.
 
+    An unreadable document — or one carrying no frontmatter block — yields ``{}``,
+    exactly like a readable document that declares none of ``keys``. A caller that
+    must tell "declares nothing" from "could not be read" asks
+    :func:`read_frontmatter_fields_checked`, which is the same parser returning
+    the reason.
+
     Args:
         doc_path: Path to the doc whose ``---``-fenced frontmatter is read.
         keys: The frontmatter keys to extract (each read at the top level or from
@@ -1013,16 +1019,40 @@ def _read_frontmatter_fields(doc_path: Path, keys: tuple[str, ...]) -> dict[str,
         A dict mapping each present key to its coerced scalar value, or to a
         ``list`` when the key is declared as a block sequence.
     """
+    fields, _unreadable_reason = read_frontmatter_fields_checked(doc_path, keys)
+    return fields
+
+
+def read_frontmatter_fields_checked(doc_path: Path, keys: tuple[str, ...]) -> tuple[dict[str, Any], str | None]:
+    """Read the named frontmatter fields, and say why when the document could not be read.
+
+    The distinguishing companion to :func:`_read_frontmatter_fields`: same parser,
+    same key semantics, but the caller learns whether an empty answer means "the
+    document declares none of these keys" or "the document could not be read at
+    all". That difference is load-bearing wherever an absent declaration is itself
+    a decision — a head-dependence fact read as "the document declares none" and
+    one read as "the document could not be read" are opposite answers.
+
+    Args:
+        doc_path: Path to the doc whose ``---``-fenced frontmatter is read.
+        keys: The frontmatter keys to extract.
+
+    Returns:
+        ``(fields, None)`` when the document was read — ``fields`` is empty when it
+        declares none of ``keys`` — or ``({}, reason)`` when it could not be read:
+        an ``OSError``/``UnicodeDecodeError`` on the read, or a document with no
+        ``---``-fenced frontmatter block at all.
+    """
     from configurable_contract import _coerce_scalar, _extract_frontmatter_lines
 
     try:
         text = doc_path.read_text(encoding='utf-8')
-    except (OSError, UnicodeDecodeError):
-        return {}
+    except (OSError, UnicodeDecodeError) as exc:
+        return {}, f'{doc_path} could not be read ({exc})'
 
     fm_lines = _extract_frontmatter_lines(text)
     if fm_lines is None:
-        return {}
+        return {}, f'{doc_path} carries no frontmatter block'
 
     fields: dict[str, Any] = {}
     metadata_fields: dict[str, Any] = {}
@@ -1119,7 +1149,7 @@ def _read_frontmatter_fields(doc_path: Path, keys: tuple[str, ...]) -> dict[str,
         if isinstance(list_value, str):
             fields[list_key] = [item.strip() for item in list_value.split(',') if item.strip()]
 
-    return fields
+    return fields, None
 
 
 def _build_implementor_record(doc_path: Path, source: str, name_override: str | None = None) -> dict[str, Any]:

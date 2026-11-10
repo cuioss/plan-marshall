@@ -101,8 +101,7 @@ class DirectCommandResult(TypedDict, total=False):
             no log file could be created), with ``wrapper`` and ``project_dir``
             beside it where the producer knows them. A wrapper-not-found fault
             carries all three, because the class alone cannot say whether a wrapper
-            was missing, which one was looked for, or where — the distinction six
-            landings could not make from ``execution_failed``. A log-file fault
+            was missing, which one was looked for, or where. A log-file fault
             carries the reason only.
         routed_tests_run: Present ONLY on a daemon-routed green result, carrying
             the executed-test count the INNER build wrapper measured and
@@ -163,7 +162,8 @@ class DirectCommandResult(TypedDict, total=False):
     routed_tests_run: int  # Daemon-routed green build: the INNER wrapper's count
     routed_errors: list  # Daemon-routed failing build: the INNER wrapper's errors[]
     job_id: str  # Daemon-routed running hand-back: the daemon job to re-attach to
-    job_status: str  # Daemon-routed running hand-back: always 'running' on this shape
+    job_status: str  # Daemon-routed running hand-back: the daemon's own live status ('running' or 'queued')
+    queued_seconds: int  # How long the build waited for its directory/slot (routed or in-process)
     # Written BACK by the renderer (cmd_run_common) once it has measured the
     # executed-test count, so the routing seam's ledger row can name the
     # population on the in-process route too. Absent means unmeasured, never zero.
@@ -264,6 +264,38 @@ ERROR_WRAPPER_NOT_FOUND = 'wrapper_not_found'
 ERROR_LOG_FILE_FAILED = 'log_file_failed'
 """Failed to create log file for build output."""
 
+ERROR_WORKTREE_RESOLUTION_FAILED = 'worktree_resolution_failed'
+"""The build process could not resolve the plan's working tree before running.
+
+Emitted by ``resolve_project_dir.emit_worktree_error`` and printed by ``build_main``
+with exit 2. No build tool ran, so this is a ROUTING fault rather than a build
+result — a routed dispatch must hand it to its caller under this name.
+"""
+
+ERROR_MUTUALLY_EXCLUSIVE_ARGS = 'mutually_exclusive_args'
+"""The dispatch named both ``--plan-id`` and ``--project-dir``.
+
+Emitted by ``resolve_project_dir.emit_mutually_exclusive_error`` with exit 2. Like
+``worktree_resolution_failed`` it precedes any build tool.
+"""
+
+ERROR_INVALID_INVOCATION = 'invalid_invocation'
+"""The executor refused the dispatch before spawning the script (exit 2).
+
+Its ``reason`` carries the rejection class (``unknown_flag``,
+``missing_required_flag``, an unregistered verb). A routed child reports that
+refusal as itself instead of as a red build.
+
+A surface that predates a flag the build CLI declares refuses that flag as
+``unknown_flag`` even though the script file it describes is unchanged — the flag
+lives in a module every build script imports. That refusal is structured (this
+identifier), so it reaches the caller under its own name; the build does not run,
+and regenerating that project's executor is what makes the flag dispatchable. A
+surface old enough that validation is skipped entirely rejects the flag in the
+script's own argparse instead, with no TOON body on stdout — an unclassified
+residual that is not this identifier.
+"""
+
 LAUNCH_FAULT_ERRORS = frozenset({ERROR_EXECUTION_FAILED, ERROR_LOG_FILE_FAILED})
 """The error classes that mean the build never launched, so no verdict exists.
 
@@ -276,6 +308,68 @@ reason is what separates a missing wrapper from a daemon fault.
 (the wrapper-not-found path reports ``execution_failed`` with the reason, the
 wrapper and the directory), so including it would only invite a second,
 divergent spelling of the same fault.
+"""
+
+ERROR_CARRIED_TREE_OUTSIDE_JOB = 'carried_tree_outside_daemon_job'
+"""A routed tree carry arrived outside a marshalld job child (exit 2).
+
+Emitted by ``resolve_project_dir.emit_carried_tree_outside_job_error`` from
+``build_main``, before any resolution or build tool. It belongs to the same class as
+the other pre-tool refusals: the dispatch was stopped, no build verdict exists.
+"""
+
+ERROR_QUEUE_SATURATED = 'queue_saturated'
+"""No machine-global build slot was admitted, so the build never ran.
+
+Emitted by ``_build_execute_factory._emit_queue_timeout``. A daemon child reaches it
+too: the child runs its build in-process (the re-entrancy guard keeps it off the
+daemon), acquires a slot like any other in-process build, and reports exhaustion
+through this emitter. No tool ran, so it is a pre-tool fault and not a red build.
+"""
+
+ERROR_BUILD_QUEUE_UNAVAILABLE = 'build_queue_unavailable'
+"""The machine-global build queue could not be consulted, so no slot was taken.
+
+Emitted by ``_build_execute_factory._emit_build_queue_unavailable`` when the queue
+itself answers ``status: error`` instead of an admission. The acquire is not
+best-effort — a queue that cannot be read is a hard failure — but it is also not a
+build: no tool ran, so the caller receives this name with the reason the acquire
+reported, and never a ``build_failed`` beside a synthetic error row.
+"""
+
+ERROR_DIRECTORY_LOCK_UNAVAILABLE = 'directory_lock_unavailable'
+"""The per-directory build lock could not be consulted, so the build did not start.
+
+Emitted by ``_build_execute_factory._emit_directory_lock_unavailable``. Every
+in-process build takes this lock — plan-less ones included — so a lock backend that
+will not answer makes the build unrunnable before any tool is chosen. Same class as
+:data:`ERROR_BUILD_QUEUE_UNAVAILABLE`: a limiter that refused to answer, not a
+build that ran and failed.
+"""
+
+PRE_TOOL_FAULT_ERRORS = frozenset(
+    {
+        ERROR_WORKTREE_RESOLUTION_FAILED,
+        ERROR_MUTUALLY_EXCLUSIVE_ARGS,
+        ERROR_INVALID_INVOCATION,
+        ERROR_CARRIED_TREE_OUTSIDE_JOB,
+        ERROR_QUEUE_SATURATED,
+        ERROR_BUILD_QUEUE_UNAVAILABLE,
+        ERROR_DIRECTORY_LOCK_UNAVAILABLE,
+    }
+)
+"""The error classes a build process emits from its OWN pre-tool emitters.
+
+Distinct from :data:`LAUNCH_FAULT_ERRORS`, which is the tool-LAUNCH layer (the
+wrapper could not start the command): these are the ROUTING and DISPATCH layer,
+where the process refused before any build tool was chosen. A routed dispatch that
+carries one of these to its caller as a generic ``build_failed`` reports a routing
+fault as a red build — the exact misattribution that hid a moved-back plan behind
+a synthetic "no structured errors were parsed" row.
+
+A member is reported as ITSELF, with its own reason and exit code, and never
+through the build-failure path: ``build_failed`` keeps that path, because it means
+the tool DID run and failed.
 """
 
 

@@ -1,0 +1,11 @@
+{
+  "id": "PLAN-LB-127",
+  "slug": "coderabbit-registry-summary-concerns-and-file-limit",
+  "workstream": "WS-03",
+  "status": "shipped",
+  "lane": "runbook",
+  "plan_marshall_plan_id": "rb-lb-127-coderabbit-registry-summary-concerns-and-file-limit",
+  "pr": "1941",
+  "landing": "landings/PLAN-LB-127.md",
+  "seq": 124
+}

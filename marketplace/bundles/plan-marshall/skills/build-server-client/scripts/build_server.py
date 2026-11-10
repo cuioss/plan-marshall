@@ -123,6 +123,11 @@ _PASSTHROUGH_STATUS_FIELDS = (
     # detail in `reason`; without it here the wait path silently drops the only
     # field saying WHY the job was refused.
     'reason',
+    # A job that is admitted-but-not-started is reported as `queued` with what it
+    # waits on and for how long. Without these two the client-facing TOON says
+    # `queued` and withholds the only facts that make the wait actionable.
+    'waiting_on',
+    'queued_seconds',
 )
 
 
@@ -512,6 +517,10 @@ def run_submit(args: Namespace) -> dict[str, Any]:
         'job_status': STATUS_QUEUED,
         'job_id': job_id,
         'attached': attached,
+        # The job running in the same directory, empty when there is none. A
+        # caller that is about to wait learns here what it is behind, rather than
+        # one `queued` wait later.
+        'queued_behind': response.get('queued_behind', ''),
     }
 
 

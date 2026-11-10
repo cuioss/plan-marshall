@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-from _manage_config_build_map_seed_fixtures import Path, subprocess, tempfile
+import _system_temp
+from _manage_config_build_map_seed_fixtures import Path, subprocess
 
 
 def _make_tracked_project_root(rel_paths: list[str]) -> Path:
@@ -11,8 +12,10 @@ def _make_tracked_project_root(rel_paths: list[str]) -> Path:
     pattern matches no tracked file. This builds a throwaway git repo carrying a
     file for each supplied repo-relative path so the stub routes survive the
     tree-presence filter.
+
+    The tree comes from :func:`_system_temp.create`, so its removal is registered.
     """
-    root = Path(tempfile.mkdtemp(prefix='build-map-seed-tree-'))
+    root = _system_temp.create(prefix='build-map-seed-tree-')
     subprocess.run(['git', '-C', str(root), 'init', '-q'], check=True)
     subprocess.run(['git', '-C', str(root), 'config', 'user.email', 't@t'], check=True)
     subprocess.run(['git', '-C', str(root), 'config', 'user.name', 'T'], check=True)

@@ -9,7 +9,6 @@ Covers the three concerns of the post-merge re-review registry:
        comment per strategy and returns the comment-post time:
          coderabbit: posts ``@coderabbitai review``.
          sourcery:   posts ``@sourcery-ai review``.
-         cuioss-review-bot:   posts ``/review``.
     3. Two-signal completion matching — ``await_fresh_review`` is satisfied by
        EITHER ``_match_review`` (a review authored by the awaited bot — its
        ``user`` login resolves to the awaited ``bot_kind`` — whose reviewed-commit
@@ -278,7 +277,7 @@ def _simulate_store(monkeypatch, observation) -> dict:
     return reads
 
 
-_PR_AGENT_LOGIN = 'cuioss-review-bot'
+_BOT_KIND_LOGIN = 'sourcery-ai'
 _TRIGGER = '2026-01-01T00:02:00Z'
 
 
@@ -287,7 +286,7 @@ def _await_with_comments(
     comments,
     *,
     reviews=None,
-    bot_kind='cuioss-review-bot',
+    bot_kind='sourcery',
     head_sha='headsha',
     in_progress_reader=None,
 ):
@@ -500,8 +499,8 @@ def test_await_prefers_the_review_signal_when_both_are_present(monkeypatch):
     """
     result = _await_with_comments(
         monkeypatch,
-        [_comment(_PR_AGENT_LOGIN, created_at='2026-01-01T00:05:00Z')],
-        reviews=[_review('headsha', '2026-01-01T00:06:00Z', user=_review_login('cuioss-review-bot'))],
+        [_comment(_BOT_KIND_LOGIN, created_at='2026-01-01T00:05:00Z')],
+        reviews=[_review('headsha', '2026-01-01T00:06:00Z', user=_review_login('sourcery'))],
     )
 
     assert result['matched'] is True
@@ -523,7 +522,7 @@ def test_await_records_a_url_embedded_sha_as_a_verified_review(monkeypatch):
     result = _await_with_comments(
         monkeypatch,
         [],
-        reviews=[_review(_HEAD_SHA_URL, '2026-01-01T00:05:00Z', user=_review_login('cuioss-review-bot'))],
+        reviews=[_review(_HEAD_SHA_URL, '2026-01-01T00:05:00Z', user=_review_login('sourcery'))],
         head_sha=_HEAD_SHA,
     )
 
@@ -544,7 +543,7 @@ def test_await_does_not_verify_a_review_naming_a_different_commit(monkeypatch):
     result = _await_with_comments(
         monkeypatch,
         [],
-        reviews=[_review(_OTHER_SHA_URL, '2026-01-01T00:05:00Z', user=_review_login('cuioss-review-bot'))],
+        reviews=[_review(_OTHER_SHA_URL, '2026-01-01T00:05:00Z', user=_review_login('sourcery'))],
         head_sha=_HEAD_SHA,
     )
 
@@ -564,7 +563,7 @@ def test_await_verifies_a_comment_whose_body_names_the_awaited_commit(monkeypatc
         monkeypatch,
         [
             _comment(
-                _PR_AGENT_LOGIN,
+                _BOT_KIND_LOGIN,
                 created_at='2026-01-01T00:05:00Z',
                 body=_guide_body(_OBSERVED_REVIEW_BOT_SHA),
             )
@@ -591,7 +590,7 @@ def test_await_does_not_verify_a_comment_naming_a_different_commit(monkeypatch):
     """
     result = _await_with_comments(
         monkeypatch,
-        [_comment(_PR_AGENT_LOGIN, created_at='2026-01-01T00:05:00Z', body=_guide_body(_OTHER_SHA))],
+        [_comment(_BOT_KIND_LOGIN, created_at='2026-01-01T00:05:00Z', body=_guide_body(_OTHER_SHA))],
         head_sha=_OBSERVED_REVIEW_BOT_SHA,
     )
 
@@ -610,7 +609,7 @@ def test_await_does_not_verify_a_comment_naming_no_commit_at_all(monkeypatch):
     """
     result = _await_with_comments(
         monkeypatch,
-        [_comment(_PR_AGENT_LOGIN, created_at='2026-01-01T00:05:00Z', body='## PR Reviewer Guide 🔍')],
+        [_comment(_BOT_KIND_LOGIN, created_at='2026-01-01T00:05:00Z', body='## PR Reviewer Guide 🔍')],
         head_sha=_OBSERVED_REVIEW_BOT_SHA,
     )
 
@@ -650,7 +649,7 @@ def test_await_verifies_the_code_review_guide_naming_the_awaited_commit(monkeypa
         monkeypatch,
         [
             _comment(
-                _PR_AGENT_LOGIN,
+                _BOT_KIND_LOGIN,
                 created_at=_CODE_REVIEW_CREATED,
                 updated_at='2026-01-01T00:05:00Z',
                 body=_code_review_guide_body(_OBSERVED_REVIEW_BOT_SHA),
@@ -680,13 +679,13 @@ def test_await_selects_whichever_guide_names_the_head_in_either_order(security_f
     HEAD, whichever the provider lists first.
     """
     security = _comment(
-        _PR_AGENT_LOGIN,
+        _BOT_KIND_LOGIN,
         created_at=_SECURITY_CREATED,
         updated_at='2026-01-01T00:05:00Z',
         body=_guide_body(_OTHER_SHA),
     )
     code_review = _comment(
-        _PR_AGENT_LOGIN,
+        _BOT_KIND_LOGIN,
         created_at=_CODE_REVIEW_CREATED,
         updated_at='2026-01-01T00:06:00Z',
         body=_code_review_guide_body(_OBSERVED_REVIEW_BOT_SHA),
@@ -709,13 +708,13 @@ def test_an_untouched_guide_never_answers_for_the_other(monkeypatch):
     reports the decline; it never borrows the untouched Guide's reference.
     """
     security = _comment(
-        _PR_AGENT_LOGIN,
+        _BOT_KIND_LOGIN,
         created_at=_SECURITY_CREATED,
         updated_at='2026-01-01T00:05:00Z',
         body=_guide_body(_OTHER_SHA),
     )
     stale_code_review = _comment(
-        _PR_AGENT_LOGIN,
+        _BOT_KIND_LOGIN,
         created_at=_CODE_REVIEW_CREATED,
         updated_at='2026-01-01T00:01:30Z',
         body=_code_review_guide_body(_OBSERVED_REVIEW_BOT_SHA),
@@ -734,13 +733,13 @@ def test_two_untouched_guides_do_not_end_the_wait(monkeypatch):
         monkeypatch,
         [
             _comment(
-                _PR_AGENT_LOGIN,
+                _BOT_KIND_LOGIN,
                 created_at=_SECURITY_CREATED,
                 updated_at='2026-01-01T00:01:10Z',
                 body=_guide_body(_OBSERVED_REVIEW_BOT_SHA),
             ),
             _comment(
-                _PR_AGENT_LOGIN,
+                _BOT_KIND_LOGIN,
                 created_at=_CODE_REVIEW_CREATED,
                 updated_at='2026-01-01T00:01:30Z',
                 body=_code_review_guide_body(_OBSERVED_REVIEW_BOT_SHA),
@@ -1011,34 +1010,6 @@ def test_cmd_re_review_coderabbit_posts_then_awaits(monkeypatch):
     assert post_calls['args'] == [(42, '@coderabbitai review')]
 
 
-def test_cmd_re_review_pr_agent_posts_then_awaits(monkeypatch):
-    """cuioss-review-bot: posts /review, then awaits a fresh review for HEAD."""
-    _noop_sleep(monkeypatch)
-    post_calls = {'args': []}
-
-    def fake_post(pr_number, body):
-        post_calls['args'].append((pr_number, body))
-        return {'status': 'success'}
-
-    monkeypatch.setattr(github_re_review._github, 'post_pr_comment', fake_post)
-    monkeypatch.setattr(github_re_review, '_now_iso', lambda: '2026-01-01T00:00:00+00:00')
-    monkeypatch.setattr(
-        github_re_review._github,
-        'fetch_pr_reviews_with_commits',
-        lambda pr_number: {
-            'status': 'success',
-            'reviews': [_review('headsha', '2026-01-01T00:05:00Z', user=_review_login('cuioss-review-bot'))],
-        },
-    )
-
-    result = github_re_review.cmd_re_review(_re_review_args(bot_kind='cuioss-review-bot'))
-
-    assert result['status'] == 'success'
-    assert result['matched'] is True
-    assert result['bot_kind'] == 'cuioss-review-bot'
-    assert post_calls['args'] == [(42, '/review')]
-
-
 def test_cmd_re_review_threads_bot_kind_into_await(monkeypatch):
     """The resolved ``bot_kind`` MUST reach ``await_fresh_review``.
 
@@ -1059,10 +1030,10 @@ def test_cmd_re_review_threads_bot_kind_into_await(monkeypatch):
     )
     monkeypatch.setattr(github_re_review._ReReviewStrategy, 'await_fresh_review', fake_await)
 
-    result = github_re_review.cmd_re_review(_re_review_args(bot_kind='cuioss-review-bot'))
+    result = github_re_review.cmd_re_review(_re_review_args(bot_kind='sourcery'))
 
     assert result['status'] == 'success'
-    assert captured['bot_kind'] == 'cuioss-review-bot'
+    assert captured['bot_kind'] == 'sourcery'
 
 
 def test_cmd_re_review_sourcery_posts_then_awaits(monkeypatch):

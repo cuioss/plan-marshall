@@ -125,7 +125,7 @@ assert _UNREGISTERED_TOKEN not in _REGISTERED_BOTS, (
 # retires a publish shape breaks these tests loudly instead of silently.
 CODERABBIT_EVIDENCE = {'coderabbit': 'inline'}
 SOURCERY_EVIDENCE = {'sourcery': 'review_body'}
-PR_AGENT_EVIDENCE = {'cuioss-review-bot': 'issue_comment'}
+
 
 #: The publish-shape vocabulary DERIVED from the live registry: the union of every
 #: registered bot's declared ``participation_evidence``, sorted so the pairing order
@@ -307,7 +307,7 @@ class TestBareListFlags:
             '--plan-id',
             plan_id,
             '--required-bots',
-            'coderabbit,cuioss-review-bot',
+            'coderabbit,retired-bot',
             '--optional-bots',
             '--participated-bots',
             '--in-progress-bots',
@@ -319,7 +319,7 @@ class TestBareListFlags:
         assert 'participation_complete: false' in result.stdout
         assert 'unproven_bots[2]' in result.stdout
         assert 'coderabbit,absent' in result.stdout
-        assert 'cuioss-review-bot,absent' in result.stdout
+        assert 'retired-bot,unregistered_kind' in result.stdout
 
     @pytest.mark.parametrize(('flag', 'dest'), _LIST_FLAGS)
     def test_each_flag_bare_followed_by_another_flag(self, monkeypatch, flag, dest):
@@ -443,7 +443,7 @@ class TestDeficitSignal:
     """
 
     def _required(self, count, reviewed=True):
-        return {'bot_kind': 'cuioss-review-bot', 'reviewed': reviewed, 'finding_count': count}
+        return {'bot_kind': 'retired-bot', 'reviewed': reviewed, 'finding_count': count}
 
     def _baseline(self, count, reviewed=True, bot='coderabbit'):
         return {'bot_kind': bot, 'reviewed': reviewed, 'finding_count': count}
@@ -451,20 +451,20 @@ class TestDeficitSignal:
     def test_row_a_deficit_four_to_zero(self):
         # Row A: a baseline reviewer produced 4 findings; the required reviewer
         # reviewed and produced 0. 4 : 0 is a deficit.
-        result = rc.assess_deficit([self._required(0), self._baseline(4)], required_bots=['cuioss-review-bot'])
+        result = rc.assess_deficit([self._required(0), self._baseline(4)], required_bots=['retired-bot'])
         assert result['verdict'] == rc.DEFICIT_DEFICIT
-        assert result['deficit_reviewers'] == [{'bot_kind': 'cuioss-review-bot', 'findings': 0, 'deficit': 4}]
+        assert result['deficit_reviewers'] == [{'bot_kind': 'retired-bot', 'findings': 0, 'deficit': 4}]
         assert result['baseline_max'] == 4
 
     def test_row_b_deficit_two_to_zero(self):
-        result = rc.assess_deficit([self._required(0), self._baseline(2)], required_bots=['cuioss-review-bot'])
+        result = rc.assess_deficit([self._required(0), self._baseline(2)], required_bots=['retired-bot'])
         assert result['verdict'] == rc.DEFICIT_DEFICIT
 
     def test_row_e_clean_zero_to_zero_with_a_real_baseline(self):
         # Row E — the necessary counter-example. A baseline reviewer REVIEWED and
         # found nothing; the required reviewer found nothing. 0 : 0 against a real
         # baseline is CLEAN, never a deficit. The detector MUST NOT fire here.
-        result = rc.assess_deficit([self._required(0), self._baseline(0)], required_bots=['cuioss-review-bot'])
+        result = rc.assess_deficit([self._required(0), self._baseline(0)], required_bots=['retired-bot'])
         assert result['verdict'] == rc.DEFICIT_CLEAN
         assert result['deficit_reviewers'] == []
 
@@ -478,7 +478,7 @@ class TestDeficitSignal:
                 self._baseline(0, reviewed=False, bot='coderabbit'),
                 self._baseline(0, reviewed=False, bot='sourcery'),
             ],
-            required_bots=['cuioss-review-bot'],
+            required_bots=['retired-bot'],
         )
         assert result['verdict'] == rc.DEFICIT_UNASSESSABLE
         assert result['verdict'] != rc.DEFICIT_CLEAN
@@ -495,8 +495,8 @@ class TestDeficitSignal:
 
         def verdict(baseline):
             return rc.assess_deficit(
-                [{'bot_kind': 'cuioss-review-bot', 'reviewed': True, 'finding_count': 0}, *baseline],
-                required_bots=['cuioss-review-bot'],
+                [{'bot_kind': 'retired-bot', 'reviewed': True, 'finding_count': 0}, *baseline],
+                required_bots=['retired-bot'],
             )['verdict']
 
         # required_count is 0 in every call below; only the baseline varies.
@@ -508,12 +508,12 @@ class TestDeficitSignal:
         # A 1-finding gap is a deficit at the default threshold; raising the
         # threshold above the gap makes the same shape clean.
         rows = [self._required(1), self._baseline(2)]
-        assert rc.assess_deficit(rows, ['cuioss-review-bot'])['verdict'] == rc.DEFICIT_DEFICIT
-        assert rc.assess_deficit(rows, ['cuioss-review-bot'], min_deficit=2)['verdict'] == rc.DEFICIT_CLEAN
+        assert rc.assess_deficit(rows, ['retired-bot'])['verdict'] == rc.DEFICIT_DEFICIT
+        assert rc.assess_deficit(rows, ['retired-bot'], min_deficit=2)['verdict'] == rc.DEFICIT_CLEAN
 
     def test_signal_never_gates_the_merge(self):
         """Every deficit envelope declares itself non-gating — the cold-read requirement."""
-        result = rc.assess_deficit([self._required(0), self._baseline(4)], required_bots=['cuioss-review-bot'])
+        result = rc.assess_deficit([self._required(0), self._baseline(4)], required_bots=['retired-bot'])
         assert result['gates_merge'] is False
         assert result['proves'] == 'reviewer_quality_only'
 
@@ -530,14 +530,14 @@ class TestDeficitSignal:
 
         result = rc.check_deficit(
             plan_id,
-            ['cuioss-review-bot'],
+            ['sourcery'],
             optional_bots=['coderabbit'],
-            participated_bots=rc.parse_participation('cuioss-review-bot:issue_comment,coderabbit:inline'),
+            participated_bots=rc.parse_participation('sourcery:review_body,coderabbit:inline'),
         )
 
         assert result['verdict'] == rc.DEFICIT_DEFICIT
         assert result['baseline_max'] == 4
-        assert {'bot_kind': 'cuioss-review-bot', 'findings': 0, 'deficit': 4} in result['deficit_reviewers']
+        assert {'bot_kind': 'sourcery', 'findings': 0, 'deficit': 4} in result['deficit_reviewers']
 
     def test_deficit_cli_declares_non_gating(self, plan_context):
         """The CLI TOON carries ``gates_merge: false`` so a cold read sees it is no gate."""
@@ -549,7 +549,7 @@ class TestDeficitSignal:
             '--plan-id',
             plan_id,
             '--required-bots',
-            'cuioss-review-bot',
+            'retired-bot',
             '--optional-bots',
             'coderabbit,sourcery',
             '--refused-bots',

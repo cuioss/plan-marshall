@@ -104,6 +104,10 @@ _SAMPLE_FACT_VALUES: dict[str, str] = {
     'model': 'deepseek-v4.1-flash',
     'effort': 'high',
     'plugin_version': '0.1.1919',
+    'unresolved_review_threads': '0',
+    'review_body_findings_total': '4',
+    'review_body_findings_handled': '4',
+    'sonar_open_new_issues': 'n/a',
 }
 
 
@@ -182,6 +186,65 @@ class TestSeenToFailOnPreFixLanding:
         assert 'schema' in LANDING_REQUIRED_KEYS
         assert 'total_tokens' in LANDING_REQUIRED_KEYS
         assert 'steps' in LANDING_REQUIRED_KEYS
+
+
+# =============================================================================
+# The review-and-Sonar numbers are REQUIRED, one fixture per field
+# =============================================================================
+#
+# A landing that said "all handled" carried nothing checkable behind it: no thread
+# count, no body-finding count, no Sonar number. Those four measurements are now
+# required, and each is pinned on its own — a check that rejected the block as a
+# whole would leave one field's absence invisible.
+
+_REVIEW_AND_SONAR_KEYS = (
+    'unresolved_review_threads',
+    'review_body_findings_total',
+    'review_body_findings_handled',
+    'sonar_open_new_issues',
+)
+
+
+class TestReviewAndSonarNumbers:
+    @pytest.mark.parametrize('key', _REVIEW_AND_SONAR_KEYS)
+    def test_a_landing_missing_the_key_is_incomplete(self, key):
+        complete, missing = check_landing_completeness(_facts_landing(**{key: ''}))
+
+        assert complete is False
+        assert missing == [key]
+
+    @pytest.mark.parametrize('key', _REVIEW_AND_SONAR_KEYS)
+    def test_the_landing_check_verb_rejects_a_landing_missing_the_key(self, plan_context, tmp_path, key):
+        _scaffold(plan_context)
+        message = _write_landing(plan_context, tmp_path, _facts_landing(**{key: ''}), f'missing-{key}.md')
+
+        result = _landing_check(plan_context, message)
+
+        assert result.returncode == 0
+        assert 'complete: false' in result.stdout
+        assert key in result.stdout, f'the verb did not name the missing key {key}'
+
+    def test_a_landing_carrying_all_four_passes_the_verb(self, plan_context, tmp_path):
+        _scaffold(plan_context)
+        message = _write_landing(plan_context, tmp_path, _facts_landing(), 'all-four.md')
+
+        result = _landing_check(plan_context, message)
+
+        assert result.returncode == 0
+        assert 'complete: true' in result.stdout
+
+    def test_a_degraded_review_number_is_a_gap(self):
+        """The three review numbers are counts a landed plan always has."""
+        for key in _REVIEW_AND_SONAR_KEYS[:3]:
+            assert check_landing_completeness(_facts_landing(**{key: 'n/a'})) == (False, [key]), key
+
+    def test_the_sonar_number_takes_n_a_for_an_answered_absence_and_unknown_for_a_failed_read(self):
+        """The one new key with two legitimate states, and they are not the same claim."""
+        assert check_landing_completeness(_facts_landing(sonar_open_new_issues='n/a')) == (True, [])
+        assert check_landing_completeness(_facts_landing(sonar_open_new_issues='unknown')) == (
+            False,
+            ['sonar_open_new_issues'],
+        )
 
 
 # =============================================================================

@@ -24,7 +24,7 @@ The exit-code contract for every `python3 .plan/execute-script.py` call in this 
 | Script | Purpose |
 |--------|---------|
 | `maven.py` | CLI dispatcher |
-| `_maven_execute.py` | Execution config via factory (uses shared `default_command_key_fn`) |
+| `_maven_execute.py` | Execution config via factory (uses shared `default_command_key_fn`); carries the run-path `-Dtest` selector-miss guard |
 | `_maven_cmd_discover.py` | Module discovery via pom.xml + Maven metadata commands |
 | `_maven_cmd_parse.py` | Log parsing with JVM base patterns + Maven-specific extensions |
 | `_maven_cmd_rewrite_log.py` | Additive OpenRewrite #118 log-parse consumption (Signal B) via the `rewrite-log-parse` domain verb, fail-closed |
@@ -37,10 +37,10 @@ See `build-api-reference.md` for the full subcommand API and availability matrix
 
 ### Maven-Specific Behavior
 
-- **run**: `--command-args` takes Maven goals/options, e.g., `"verify -Ppre-commit -pl my-module"`
+- **run**: `--command-args` takes Maven goals/options, e.g., `"verify -Ppre-commit -pl my-module"`. Two truth checks run on the in-process result: a selector that matched nothing — a `-Dtest` on the command line, or one set through `.mvn/maven.config`, `MAVEN_OPTS` or a profile that only the log names — is `indeterminate` with `test_selector_matched_nothing`, and a leading `test` or `package` run that executed no test — a zero summary, a measured summary whose whole population was skipped, or no summary at all for a leading `test` whose reports show no executed test — is `indeterminate` with `test_run_executed_nothing`. A test run whose log cannot be read is `test_log_unreadable`. The no-executed-test refusal covers those three shapes only. Four other shapes keep their green, because none of them claims a test ran: a leading `package` run that prints no summary at all is a compile-and-package run; a `test` run whose Surefire output says `No tests to run.` matched no test class; a `test` run whose log carries the requested-skip marker `Tests are skipped.` was told to skip (a `-DskipTests` set through `.mvn/maven.config` or `MAVEN_OPTS`, which the arguments this guard is handed do not show); and a report whose population it cannot read proves nothing either way.
 - **parse**: Additional `no-openrewrite` mode filters OpenRewrite markers
 - **coverage-report**: Searches `target/site/jacoco/jacoco.xml`, `target/jacoco/report.xml`, `target/site/jacoco-aggregate/jacoco.xml`
-- **discover**: Subprocess-free — parses each `pom.xml` with stdlib XML for coordinates, packaging, declared profile ids, and the dependencies declared in the module's own POM, and walks the filesystem for sources/tests. A module whose own POM depends on another module of the same reactor with `<type>test-jar</type>` or a non-empty `<classifier>` records the artifact in `metadata.reactor_test_artifacts` and gets the `package`-phase test ladder (`module-tests` = `package -pl {module} -am`, `test-compile` = the same with `-DskipTests`); see [`standards/maven-impl.md`](standards/maven-impl.md) § "Test ladder for reactor test artifacts". Resolved coordinates, inherited profiles, and the resolved dependency tree are filled lazily, one module at a time, by `enrich_maven_module` (which runs `dependency:tree`, `help:all-profiles`) only when a consumer — the dependency graph or the resolver's profile-canonical path — needs them.
+- **discover**: Subprocess-free — parses each `pom.xml` with stdlib XML for coordinates, packaging, the reactor's `<modules>` (plus a profile's, when the profile is `activeByDefault`), declared profile ids, and the dependencies declared in the module's own POM, and walks the filesystem for sources/tests. A module whose own POM depends on another module of the same reactor with `<type>test-jar</type>` or a non-empty `<classifier>` records the artifact in `metadata.reactor_test_artifacts` and gets the `package`-phase test ladder (`module-tests` = `package -pl {module} -am`, `test-compile` = the same with `-DskipTests`); see [`standards/maven-impl.md`](standards/maven-impl.md) § "Test ladder for reactor test artifacts". A root `pom` aggregator gets the whole-reactor `module-tests` = `test` and `test-compile` = `test-compile` when the reactor IT builds — its own `<modules>`, followed through nested aggregators — holds a module with tests, because the architecture's default scope resolves that module and `mvn test` there runs those modules' tests; a tested POM the root does not list is not built there and grants nothing. See [`standards/maven-impl.md`](standards/maven-impl.md) § "Test canonicals of a reactor root". Resolved coordinates, inherited profiles, and the resolved dependency tree are filled lazily, one module at a time, by `enrich_maven_module` (which runs `dependency:tree`, `help:all-profiles`) only when a consumer — the dependency graph or the resolver's profile-canonical path — needs them.
 
 ### Producer-Side Finding Storage (`run --plan-id`)
 
@@ -54,9 +54,10 @@ When `run` is invoked with `--plan-id <P>`, every parsed issue from a failed bui
 
 Severity is mapped from `Issue.severity` (`error` → `error`, `warning` → `warning`). The finding's `module` carries `maven`, `rule` carries the parser category.
 
-Two kinds of `[ERROR]` / `[WARNING]` line are not issues, so they never become findings:
+Three kinds of `[ERROR]` / `[WARNING]` line are not issues, so they never become findings:
 
-- **Maven's failure epilogue** — the fixed advice printed after a failed build (the `-e` / `-X` re-run advice, the "For more information" and `[Help N]` link lines, the resume advice and its `mvn … -rf :module` / `mvn [args] -r` command), Surefire's report pointers (both the `Please refer to …` and the `See …` wording, for test results and for dump files), and Maven 4's `[ERROR]`-level reactor-summary rows and `BUILD FAILURE` banner. Each line is matched in full, so a reworded line is filed again rather than a genuine diagnostic being dropped; `Failed to execute goal …` and compiler `file:[line,col]` messages stay issues on every Maven version.
+- **Maven's failure epilogue** — the fixed advice printed after a failed build (the `-e` / `-X` re-run advice, the "For more information" and `[Help N]` link lines, the resume advice and its `mvn … -rf :module` / `mvn [args] -r` command), Surefire's report pointers (both the `Please refer to …` and the `See …` wording, for test results and for dump files), Maven 4's `[ERROR]`-level reactor-summary rows and `BUILD FAILURE` banner, and the section banners that head a block whose rows carry the diagnostics — Surefire's `Failures:` / `Errors:` and the compiler plugin's `COMPILATION ERROR :`. Each line is matched in full, so a reworded line is filed again rather than a genuine diagnostic being dropped; `Failed to execute goal …` and compiler `file:[line,col]` messages stay issues on every Maven version.
+- **Javac's continuation fields** — the `symbol:` and `location:` lines under a compiler error are attached to that error as its `detail` rather than filed as issues of their own: they carry the name the error refers to, so dropping them would lose the diagnostic. A continuation field with no compiler error before it is filed like any other line (fail-visible).
 - **Passing test-count lines** — a `Tests run:` line (summary or per-class) whose `Failures` and `Errors` are both 0, such as `[WARNING] Tests run: 27, Failures: 0, Errors: 0, Skipped: 1`. A count line with failures or errors is still filed.
 
 > For the producer→store→consumer→gate flow including the producer-mismatch fidelity contract, see [`ref-workflow-architecture/standards/findings-pipeline.md`](../ref-workflow-architecture/standards/findings-pipeline.md). This SKILL.md owns the per-tool issue→finding-type routing only.
@@ -76,9 +77,21 @@ The consumption is **fail-closed** (ADR-009) — it never reports a vacuous "cle
 
 The existing Maven parse pipeline, the `openrewrite_info` categorization, and the tree-scan marker signal (`marker-detect`) are unchanged by this additive consumer.
 
+### Test selectors (`-Dtest`)
+
+The selector grammar, stated once here for the whole corpus: **Classes are separated by commas, and a method goes after `#`** — `-Dtest=AwaitsTest,CoreTest#runs`. A `+` between classes joins them into one pattern, and one pattern matches nothing, so `-Dtest=Awaits+Core` selects no test at all. `Class#a+b` is Surefire's method list: it runs methods `a` and `b` of `Class`, and it is valid syntax — the `+` separator means "method" only after the `#`.
+
+A selector that matches nothing is a wrong command, not a test result. `run` reports it as `test_selector_matched_nothing` — an `indeterminate` result naming the selector — whether the runner fails the build with `No tests matching pattern … were executed` or `-Dsurefire.failIfNoSpecifiedTests=false` turns the same miss into an exit-0 summary of zero executed tests.
+
+**Recorded limit — a suppressed miss inside a reactor is not detectable.** With `-Dsurefire.failIfNoSpecifiedTests=false`, a module whose scan is empty returns through the runner's own no-tests path: it prints no `No tests matching pattern` line, and when another module collected tests the aggregate count is non-zero. Such a run reports `success`, and no signal in the log distinguishes it from one whose selector matched everywhere. The same limit applies to Failsafe's `-Dit.test` under a `verify` run: `-Dtest` and `-Dit.test` are both recognised as selectors, so a miss the runner NAMES is caught, but a miss it suppresses to exit 0 inside a reactor that collected unit tests stays invisible. Detection therefore needs the default setting (a failing build, where the runner names the pattern) or a single-module run (where the aggregate is zero and the zero-test check reports `test_run_executed_nothing`). Stating the limit is deliberate: the alternative would be to guess a miss from a run that says nothing about one.
+
 ## Module Discovery
 
-Reads `pom.xml` `<modules>` declarations from the parent POM.
+Reads `pom.xml` `<modules>` declarations from the parent POM, and Maven 4.1's `<subprojects>` spelling of the same list. A module entry naming a POM file (`child/pom.xml`, `child/pom-alt.xml`) resolves to the directory holding it.
+
+Two under-grants are recorded rather than guessed at: an entry using a property (`${module.dir}/pom.xml`) cannot be resolved without Maven, and a `pom.xml` under `build/` or `target/` is not crawled at all (the shared descriptor walk prunes those trees). In both cases the root keeps no test canonical for that module and the gate records DEGRADED instead of running it — the fail-closed direction.
+
+**A daemon not reconciled to the current code does not run these guards.** The run-path truth checks (the zero-test guard, the selector-miss guard) live in the build skill the daemon child re-runs, so a daemon whose checkout predates a guard keeps running the older code: the reason is recorded here so a stale daemon is diagnosed rather than mistaken for a guard that did not fire.
 
 ### Profile Processing Pipeline
 

@@ -2,10 +2,10 @@
   "id": "PLAN-LB-110",
   "slug": "maven-consumer-test-truth",
   "workstream": "WS-02",
-  "status": "staged",
+  "status": "shipped",
   "lane": "runbook",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "plan_marshall_plan_id": "lb-110-maven-consumer-test-truth",
+  "pr": "1921",
+  "landing": "landings/PLAN-LB-110.md",
   "seq": 110
 }

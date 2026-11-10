@@ -130,8 +130,8 @@ class TestCommentsStageReviewedShaAndBotKind:
     ``reviewed_commit_sha`` is the PR HEAD SHA fetched once for the whole batch
     (so re-review matching can tell whether HEAD has advanced past the reviewed
     commit), and ``bot_kind`` is derived from each comment's author login via the
-    registry's ``bot_kind_for_author`` (coderabbitai -> coderabbit,
-    cuioss-review-bot -> cuioss-review-bot; a human author leaves ``bot_kind`` unset).
+    registry's ``bot_kind_for_author`` (``sourcery-ai`` -> ``sourcery``,
+    ``coderabbitai`` -> ``coderabbit``; a human author leaves ``bot_kind`` unset).
     """
 
     def test_reviewed_commit_sha_stamped_from_pr_head(self, plan_context):
@@ -178,7 +178,6 @@ class TestCommentsStageReviewedShaAndBotKind:
         ('author', 'expected_bot_kind'),
         [
             pytest.param('coderabbitai', 'coderabbit', id='coderabbit'),
-            pytest.param('cuioss-review-bot', 'cuioss-review-bot', id='cuioss-review-bot'),
             pytest.param('sourcery-ai', 'sourcery', id='sourcery'),
         ],
     )

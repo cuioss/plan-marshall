@@ -24,6 +24,19 @@ from marketplace.targets.component_targets import (
 )
 from marketplace.targets.opencode.target import OpenCodeTarget
 
+
+class _TreelessTarget(OpenCodeTarget):
+    """A registered target whose output is not a component tree."""
+
+    @property
+    def name(self) -> str:
+        return 'treeless-demo'
+
+    @property
+    def emits_bundle_tree(self) -> bool:
+        return False
+
+
 # The fixture's components, as data: stem -> the scope its frontmatter declares
 # (``None`` = no declaration = every target). The fixture WRITES from this table
 # and the registry sweep READS its expectation from it, so the two cannot drift
@@ -352,10 +365,11 @@ def test_validate_only_mode_rejects_an_invalid_skill_declaration(marketplace: Pa
         ClaudeTarget().generate(marketplace, None)
 
 
-def test_generation_fails_when_no_named_target_emits_a_component_tree(marketplace: Path, tmp_path: Path):
+def test_generation_fails_when_no_named_target_emits_a_component_tree(marketplace: Path, tmp_path: Path, monkeypatch):
     """A registry-valid list that still ships the component nowhere is refused."""
+    monkeypatch.setitem(TARGET_REGISTRY, 'treeless-demo', _TreelessTarget)
     treeless = sorted(set(TARGET_REGISTRY) - component_tree_target_names())
-    assert treeless, 'fixture assumes at least one registered non-component-tree target'
+    assert treeless == ['treeless-demo'], treeless
     _write(
         marketplace / 'demo' / 'commands' / 'nowhere.md',
         f'---\nname: nowhere\ndescription: d\ntargets: [{", ".join(treeless)}]\n---\n\n# Body\n',

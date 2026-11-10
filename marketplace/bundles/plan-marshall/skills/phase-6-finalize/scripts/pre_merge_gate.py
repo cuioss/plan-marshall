@@ -2,17 +2,12 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Pre-merge findings gate that owns the merge dispatch for ``default:branch-cleanup``.
 
-The pre-merge blocking-findings gate used to be an instruction: run
-``phase_handshake findings-check``, parse its ``status``, and only then issue the
-merge verb. Neither merge verb required that call, so a skipped or misread check
-still merged — and the later archive refusal then stranded a plan whose change
-was already on the base branch.
-
-This script turns the instruction into a mechanism. It is the ONLY merge-shaped
-dispatch ``branch-cleanup`` issues: it evaluates the blocking-findings invariant
-for phase ``6-finalize`` and issues the routed merge verb only when that
-evaluation proved the store clean. The merge is therefore unreachable without
-the check having run and passed.
+This gate evaluates the blocking-findings invariant itself before it issues the merge
+verb, and it is the only merge-shaped dispatch ``branch-cleanup`` issues: it evaluates
+the invariant for phase ``6-finalize`` and issues the routed merge verb only when that
+evaluation proved the store clean. A step body that skipped or misread an instruction
+therefore cannot reach the merge through this step, and the later archive refusal
+cannot strand a plan whose change is already on the base branch.
 
 * **One verdict vocabulary.** The verdict comes from
   ``_handshake_commands.cmd_findings_check`` called in-process — the very handler
@@ -94,7 +89,7 @@ import subprocess
 import sys
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 from _handshake_commands import cmd_findings_check
 from file_ops import get_executor_path
@@ -122,6 +117,7 @@ _CI_NOTATION = 'plan-marshall:tools-integration-ci:ci'
 _MANAGE_STATUS_NOTATION = 'plan-marshall:manage-status:manage-status'
 _MANIFEST_NOTATION = 'plan-marshall:manage-execution-manifest:manage-execution-manifest'
 _COMPLETENESS_NOTATION = 'plan-marshall:automatic-review:review_completeness'
+_VERDICT_CURRENCY_NOTATION = 'plan-marshall:phase-6-finalize:verdict_currency'
 
 #: The phase whose step records carry gate heads.
 HEAD_BINDING_PHASE = '6-finalize'
@@ -190,11 +186,30 @@ MERGE_CONSEQUENCE_WITH_ASKING = 'A confirmation question follows: the PR is merg
 
 FindingsCheck = Callable[[str], dict[str, Any]]
 MergeRunner = Callable[[list[str]], dict[str, Any]]
-StatusReader = Callable[[str], dict[str, Any] | None]
+
+
+class StatusRead(NamedTuple):
+    """A plan-status read: the payload, plus why it could not be read when it could not.
+
+    ``payload`` is ``None`` for an unreadable or absent document. ``reason`` names
+    the fault that produced that answer — an unimportable resolver, a raising read,
+    or a document that is not a mapping — so a gate that admits on the unknown says
+    WHICH unknown it admitted on rather than reporting an empty admission. A reader
+    that has no fault to name (a test seam, the ordinary unreadable-plan case)
+    leaves it ``None``.
+    """
+
+    payload: dict[str, Any] | None
+    reason: str | None
+
+
+StatusReader = Callable[[str], 'StatusRead | dict[str, Any] | None']
 HeadReader = Callable[[str], str | None]
 ParticipationCheck = Callable[[str, int, str], dict[str, Any]]
 AuthorizationCheck = Callable[[str, str], dict[str, Any]]
 MarkDoneRunner = Callable[[list[str]], dict[str, Any]]
+HeadDependenceReader = Callable[[str], tuple[bool, str | None]]
+ClassifierRunner = Callable[[str, str, str], dict[str, Any]]
 
 
 # ---------------------------------------------------------------------------
@@ -211,41 +226,49 @@ def _check_findings(plan_id: str) -> dict[str, Any]:
     return cmd_findings_check(argparse.Namespace(plan_id=plan_id, phase=FINDINGS_PHASE))
 
 
-def _read_plan_status(plan_id: str) -> dict[str, Any] | None:
-    """Return the plan's status payload, or ``None`` when it cannot be read.
+def _read_plan_status(plan_id: str) -> StatusRead:
+    """Return the plan's status payload, plus the fault when it cannot be read.
 
-    Goes through the executor (``manage-status read``) — the plan-context resolution
-    is that skill's own, so a plan whose directory moved into its worktree is still
-    found. ``None`` is the declared unknown, never an empty plan.
+    Reads through manage-status' own resolver — ``_status_core.resolve_plan_status``,
+    the function behind ``manage-status read`` — and NOT through that verb's TOON
+    rendering. TOON splits a line at its FIRST colon, so a namespaced step key
+    (``project:finalize-step-plugin-doctor:``) arrives as ``{'project':
+    'finalize-step-plugin-doctor: …'}``: the scalar is skipped and the record is
+    never judged, and a declared head-dependent step is missed at merge. The
+    resolver hands back the JSON document with every key intact, and the
+    plan-context resolution (including the sibling-worktree read) is still that
+    skill's own.
+
+    A read that cannot run at all — an unimportable resolver, a raise, or a
+    resolution that is not a mapping — answers ``payload: None`` WITH the fault
+    named, so the merge evidence records which unknown it admitted on rather than
+    reporting an empty admission.
     """
     try:
-        executor = get_executor_path()
-    except RuntimeError:
-        # ``get_executor_path`` raises when no plan root resolves; an unresolvable
-        # executor is the declared unknown here, never a crash inside the gate.
-        return None
-    if executor is None:
-        return None
+        from _status_core import resolve_plan_status
+    except Exception as exc:  # an unimportable resolver is the declared unknown
+        return StatusRead(None, f'the plan-status resolver is not importable ({exc})')
     try:
-        completed = subprocess.run(
-            [sys.executable, str(executor), _MANAGE_STATUS_NOTATION, 'read', '--plan-id', plan_id],
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=60,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return None
-    if not (completed.stdout or '').strip():
-        return None
-    try:
-        parsed = parse_toon(completed.stdout)
-    except Exception:
-        return None
-    if parsed.get('status') != 'success':
-        return None
-    plan = parsed.get('plan')
-    return plan if isinstance(plan, dict) else None
+        resolution = resolve_plan_status(plan_id, any_checkout=True)
+    except Exception as exc:  # any read/resolution failure is the declared unknown
+        return StatusRead(None, f'the plan-status read raised ({exc})')
+    status = resolution.status
+    if not isinstance(status, dict):
+        return StatusRead(None, 'the plan-status read returned no document')
+    return StatusRead(status, None)
+
+
+def _status_read(reader: StatusReader, plan_id: str) -> StatusRead:
+    """Normalize a status-read seam's answer to a :class:`StatusRead`.
+
+    The seam accepts the tuple for a caller that must report a fault, and a bare
+    payload or ``None`` for every existing caller. A bare ``None`` carries no
+    fault: it is the seam's own "nothing to say" answer, never a masked read error.
+    """
+    read = reader(plan_id)
+    if isinstance(read, StatusRead):
+        return read
+    return StatusRead(read if isinstance(read, dict) else None, None)
 
 
 def _resolve_local_head(project_dir: str) -> str | None:
@@ -268,40 +291,251 @@ def _resolve_local_head(project_dir: str) -> str | None:
     return out.splitlines()[0].strip() if completed.returncode == 0 and out else None
 
 
+def _is_full_sha(value: Any) -> bool:
+    """Return True only for a full lowercase hex commit id (40 or 64 chars).
+
+    The predicate is ``_cmd_loop_back._FULL_SHA_RE`` — the very regex
+    ``loop-back close`` uses to accept a waiver head — so the writer's notion of a
+    well-formed waiver and the reader's cannot drift apart.
+
+    An abbreviated SHA is not a tree identity a reader can compare, so a shorter
+    value is malformed here, not a lenient match.
+    """
+    if not isinstance(value, str):
+        return False
+    try:
+        from _cmd_loop_back import _FULL_SHA_RE
+    except Exception:  # a broken import makes the waiver VOID, never a crash
+        return False
+
+    return _FULL_SHA_RE.match(value) is not None
+
+
+def _valid_waiver_head(record: dict[str, Any]) -> str | None:
+    """Return the full SHA a well-formed ``refire_waiver`` names, or ``None``.
+
+    ``None`` is VOID, never "no waiver needed": an absent key, a value that is not
+    a dict, a missing/non-string ``head`` and an abbreviated SHA are all void, and
+    the caller then judges the record exactly as if no waiver existed.
+    """
+    waiver = _refire_waiver(record)
+    if waiver is None:
+        return None
+    head = waiver.get('head')
+    return head if _is_full_sha(head) else None
+
+
+def _refire_waiver(record: dict[str, Any]) -> dict[str, Any] | None:
+    """Return ``record``'s re-fire waiver, reading the key from its owner.
+
+    The key literal belongs to :mod:`_cmd_mark_step` (the module that defines it and
+    the sibling ``write_refire_waiver``); importing it there rather than spelling it
+    again is what keeps the writer and this reader naming one key. A broken import
+    makes the waiver VOID, which is the fail-closed answer.
+    """
+    try:
+        from _cmd_mark_step import REFIRE_WAIVER_KEY
+    except Exception:
+        return None
+
+    waiver = record.get(REFIRE_WAIVER_KEY)
+    return waiver if isinstance(waiver, dict) else None
+
+
+#: The fallback reason for a stale record whose step the discovery does not return.
+#: Distinct from an underivable declaration and from "declares no head-dependence":
+#: the first two take the fail-closed field-presence fallback, the third is listed
+#: as never consulted.
+POPULATION_ABSENT_REASON = 'step not found in the discovered population'
+
+
+def _head_dependence(step: str) -> tuple[bool, str | None]:
+    """Read a step's declared ``head_dependent`` fact through manage-status' path.
+
+    Deliberately delegates to ``_cmd_mark_step``'s discovery rather than parsing
+    ``standards/``/``workflow/`` frontmatter here: the declaration is one fact with
+    one reader, and a second parser would eventually disagree with the one
+    ``mark-step-done`` enforces.
+
+    Returns ``(is_head_dependent, unresolved_reason)``, where a non-``None`` reason
+    is the gate's fail-closed field-presence fallback. ``mark-step-done`` resolves a
+    step that is absent from the finalize-step population to "not head-dependent"
+    — correct for a phase-5 step, which legitimately matches no finalize-step
+    implementor — so this reader asks the same discovery the distinguishing
+    question: an absent step yields :data:`POPULATION_ABSENT_REASON`, and an
+    unreadable declared document yields the read fault. Neither is "undeclared".
+
+    The step key is canonicalized first. The discovery compares
+    ``canonicalize_step_key(discovered_name)`` against its argument, and a legacy
+    ``default:``-prefixed record key would otherwise resolve to "not found" — which
+    would file the record as never-consulted instead of judging it.
+    """
+    return _head_dependence_probe()(step)
+
+
+def _finalize_step_population() -> tuple[list[dict[str, Any]] | None, str | None]:
+    """Discover the finalize-step implementor population once, through its owner.
+
+    The scan lives in ``_cmd_mark_step`` beside the derivation it feeds, so the gate
+    and ``mark-step-done`` cannot disagree about the population. This name is the
+    gate's own seam onto it: the population is read once per merge (see
+    :func:`_head_dependence_probe`) rather than once per stale record, so a caller
+    that needs to observe that count has one place to look.
+    """
+    import _cmd_mark_step
+
+    return _cmd_mark_step._finalize_step_population()
+
+
+def _head_dependence_probe() -> HeadDependenceReader:
+    """Build the default declaration reader, discovering the population ONCE.
+
+    The population scan walks every bundle, plugin-cache root and project-local
+    skill root, and the merge gate runs while the cross-plan merge mutex is held.
+    Deriving it per stale record would multiply that cost by the record count, so
+    the scan runs here and the returned closure answers every step from it.
+
+    A failure to discover at all — an unimportable module, a raising scan, an empty
+    population — becomes a constant answer carrying that reason, so every stale
+    record takes the fail-closed fallback and the payload names one cause rather
+    than repeating a per-step derivation that never ran.
+    """
+    try:
+        import _cmd_mark_step
+        from _step_key_canonical import canonicalize_step_key
+
+        records, population_reason = _finalize_step_population()
+    except Exception as exc:  # any derivation fault is the declared fallback, never a crash
+        raised = f'the head-dependence derivation raised ({exc})'
+        return lambda _step: (False, raised)
+
+    if records is None:
+        failure = population_reason or 'the finalize-step population could not be discovered'
+        return lambda _step: (False, failure)
+
+    def _read(step: str) -> tuple[bool, str | None]:
+        try:
+            found, declared, derivation_reason = _cmd_mark_step._derive_head_dependence_from(
+                canonicalize_step_key(step), records
+            )
+        except Exception as exc:  # any derivation fault is the declared fallback, never a crash
+            return False, f'the head-dependence derivation raised ({exc})'
+        if derivation_reason is not None:
+            return False, derivation_reason
+        if not found:
+            return False, POPULATION_ABSENT_REASON
+        return declared, None
+
+    return _read
+
+
+def _classify_verdict_currency(step: str, project_dir: str, recorded_sha: str, head: str) -> dict[str, Any]:
+    """Ask ``verdict_currency classify`` whether a stale record still stands.
+
+    The candidate HEAD is passed as ``--live-head`` because the gate already
+    resolved it once: a second resolution inside the verb could read a tree the
+    gate is not merging.
+    """
+    return _run_verb(
+        _VERDICT_CURRENCY_NOTATION,
+        [
+            'classify',
+            '--step',
+            step,
+            '--worktree-path',
+            project_dir,
+            '--head-at-completion',
+            recorded_sha,
+            '--live-head',
+            head,
+        ],
+        silent_error='verdict_currency_unreadable',
+        unparseable_error='verdict_currency_unreadable',
+    )
+
+
 def _head_binding_refusal(
     plan_id: str,
     project_dir: str,
     *,
     status_reader: StatusReader | None = None,
     head_reader: HeadReader | None = None,
-) -> dict[str, Any] | None:
+    head_dependence_reader: HeadDependenceReader | None = None,
+    classifier: ClassifierRunner | None = None,
+) -> tuple[dict[str, Any] | None, dict[str, Any]]:
     """Refuse a merge candidate that any head-dependent gate record did not see.
 
-    MEMBERSHIP IS DERIVED FROM THE RECORD, not listed here: a finalize step is
-    head-dependent exactly when it persisted ``head_at_completion`` (the ext-point
-    contract makes that field mandatory for such a step and meaningless for the
-    others), so the field's PRESENCE is the population. A record with no SHA was
-    never anchored to a tree and is not consulted — the dispatcher's own re-entry
-    check owns that verdict.
+    MEMBERSHIP IS THE DECLARED FACT, exactly as in the dispatcher's re-entry
+    table: a step is head-dependent when its own authoritative doc declares
+    ``head_dependent: true``. The declaration is read through
+    ``mark-step-done``'s discovery path, so the gate and the dispatcher cannot
+    disagree about which steps are head-dependent. A step that declares none but
+    carries a SHA on its record is never refused — the dispatcher never re-fires
+    it, so "re-run those steps" could never clear it — and its stamp is listed in
+    ``unconsulted_stamps`` instead. Where the declaration cannot be derived the
+    gate falls back to field presence (fail-closed) and names the fallback in
+    ``head_dependence_fallback``; an underivable declaration never widens what is
+    admitted.
+
+    A stale declared record is admitted in exactly the two ways the dispatcher
+    SKIPs it: a ``refire_waiver`` whose ``head`` is the candidate's own (full-SHA
+    equality, the dispatcher's waiver row) and, with no waiver for this HEAD, a
+    ``verdict_currency classify`` answer of ``preserved``. Every other stale
+    declared record is refused, so the offending set is the steps the dispatcher
+    would re-fire, LESS the two it re-fires on a different condition:
+
+    * a declared record with ``outcome == done`` and no ``head_at_completion`` —
+      the dispatcher re-fires it (nothing anchors the verdict), while the gate has
+      no SHA to compare and so records nothing at all;
+    * a declared record with a ``failed`` or ``loop_back`` outcome whose
+      ``head_at_completion`` equals the candidate — the dispatcher retries those
+      regardless of HEAD, while the gate sees a consulted head and admits it.
+
+    Both are cases where the gate is the weaker of the two, and naming them keeps
+    the remedy text honest: "re-run those steps" clears the refusal, but it is not
+    the set the dispatcher would re-run.
 
     Three unknown answers pass rather than refuse, and none is a claim that the
-    binding is sound: an unreadable plan status, an unreadable local HEAD, and a
-    record set that carries no head at all. Each is named in the payload of a
-    refusal only when an actual mismatch exists.
+    binding is sound: an unreadable plan status (its fault is named in
+    ``status_read_fault``), an unreadable local HEAD, and a record set that carries
+    no head at all.
 
-    The PLAN-LB-26 case this closes: gates stamped ``3db65fc05`` while the PR head
-    merged was ``74e6bfda``. Nothing compared them, so the merge shipped a tree no
-    gate had seen.
+    Returns ``(refusal, evidence)``. ``refusal`` is ``None`` when the candidate is
+    admitted; ``evidence`` always carries ``waived_steps``,
+    ``unconsulted_stamps`` and ``head_dependence_fallback`` so the dispatched
+    payload can name what passed on a waiver, what was never consulted, and which
+    declarations could not be derived.
     """
-    status = (status_reader or _read_plan_status)(plan_id)
     head = (head_reader or _resolve_local_head)(project_dir)
+    status_read = _status_read(status_reader or _read_plan_status, plan_id)
+    status = status_read.payload
+    waived: list[dict[str, str]] = []
+    unconsulted: list[dict[str, str]] = []
+    fallbacks: list[dict[str, str]] = []
+    evidence: dict[str, Any] = {
+        'waived_steps': waived,
+        'unconsulted_stamps': unconsulted,
+        'head_dependence_fallback': fallbacks,
+    }
+    if status_read.reason is not None:
+        # The gate admits on an unknown here; naming the fault is what keeps that
+        # admission legible as one rather than reporting an empty success.
+        evidence['status_read_fault'] = status_read.reason
     if not head or not isinstance(status, dict):
-        return None
+        return None, evidence
     metadata = status.get('metadata')
     steps = metadata.get('phase_steps') if isinstance(metadata, dict) else None
     phase_steps = steps.get(HEAD_BINDING_PHASE) if isinstance(steps, dict) else None
     if not isinstance(phase_steps, dict):
-        return None
+        return None, evidence
+    # Built LAZILY: the population scan walks every bundle and skill root, and a
+    # merge whose records all sit at the candidate needs no declaration at all.
+    # Paying the scan up front made every ordinary merge pay for a check that
+    # never ran.
+    derive = head_dependence_reader
+    classify = classifier or (
+        lambda step, directory, recorded: _classify_verdict_currency(step, directory, recorded, head)
+    )
     offending: list[dict[str, str]] = []
     for step_id in sorted(phase_steps):
         record = phase_steps[step_id]
@@ -311,11 +545,38 @@ def _head_binding_refusal(
         if not recorded:
             continue
         recorded_sha = str(recorded).strip()
-        if recorded_sha != head:
-            offending.append({'step': step_id, 'recorded_head': recorded_sha, 'head': head})
+        if recorded_sha == head:
+            # Cleared against the candidate: it was consulted and needs no
+            # declaration, waiver or classifier.
+            continue
+        if derive is None:
+            derive = _head_dependence_probe()
+        declared, derivation_reason = derive(step_id)
+        if derivation_reason is not None:
+            fallbacks.append({'step': step_id, 'reason': derivation_reason})
+            declared = True
+        if not declared:
+            unconsulted.append({'step': step_id, 'recorded_head': recorded_sha})
+            continue
+        if record.get('outcome') == 'done':
+            waiver_head = _valid_waiver_head(record)
+            if waiver_head == head:
+                waiver = _refire_waiver(record) or {}
+                waived.append(
+                    {
+                        'step': step_id,
+                        'waiver_head': waiver_head,
+                        'basis': str(waiver.get('basis') or ''),
+                    }
+                )
+                continue
+            verdict = classify(step_id, project_dir, recorded_sha)
+            if verdict.get('status') == 'success' and verdict.get('verdict') == 'preserved':
+                continue
+        offending.append({'step': step_id, 'recorded_head': recorded_sha, 'head': head})
     if not offending:
-        return None
-    return {
+        return None, evidence
+    payload: dict[str, Any] = {
         'status': 'error',
         'error': MERGE_HEAD_NOT_GATED,
         'plan_id': plan_id,
@@ -326,10 +587,17 @@ def _head_binding_refusal(
         'message': (
             'The merge candidate is not the HEAD the head-dependent gates validated '
             f'({", ".join(item["step"] for item in offending)}). Re-run those steps on '
-            'the current tree. A merge authorization does NOT cover this gap: it '
+            'the current tree. An operator re-fire waiver is honoured only at the head it '
+            'names: record it with `loop-back close --waive-refire` at the candidate head, '
+            'then re-run this merge. A merge authorization does NOT cover this gap: it '
             'authorizes a review or CI gap, never a tree the gates never examined.'
         ),
     }
+    if unconsulted:
+        payload['unconsulted_stamps'] = unconsulted
+    if fallbacks:
+        payload['head_dependence_fallback'] = fallbacks
+    return payload, evidence
 
 
 #: The bound on every NON-merge verb this module runs. Generous for a provider fetch and
@@ -908,6 +1176,14 @@ def _participation_refusal(plan_id: str, head: str | None, verdict: dict[str, An
     also states ``authorizable``: a KNOWN gap with named bots is where a HEAD-bound
     authorization can apply, and an UNKNOWN is not — the remedy for that one is to make
     the participation state readable, never to rule past it.
+
+    A gap that IS authorizable advertises the labels the remedy accepts, in
+    ``override_options``. They are :data:`BARRIER_OVERRIDE_LABELS` itself — the one
+    constant ``merge-authorization grant`` validates against — never a copy, so the
+    operator prompt built from this payload cannot drift from the check that will
+    judge the answer. The import is deferred to the authorizable branch (and guarded)
+    so a fault in that module can neither fail the module load nor break a refusal
+    that never uses the labels.
     """
     unproven = verdict['unproven_bots']
     detail = verdict.get('detail') or 'no reason was reported'
@@ -940,6 +1216,19 @@ def _participation_refusal(plan_id: str, head: str | None, verdict: dict[str, An
         ),
     }
     authorization = verdict.get('authorization')
+    if authorizable:
+        # The operator prompt's option labels ARE this tuple: ``merge-authorization
+        # grant`` accepts exactly these, so publishing them here is what lets a prompt
+        # be built from the gate's own verdict instead of from prose that can drift.
+        # Guarded: a fault in the label source must not break a refusal that is still
+        # correct without them — but it must be NAMED, because a prompt built without
+        # the labels is a different (and silently degraded) refusal.
+        try:
+            from _cmd_merge_authorization import BARRIER_OVERRIDE_LABELS
+        except Exception as exc:
+            payload['override_options_unavailable'] = f'the override-label source could not be imported ({exc})'
+        else:
+            payload['override_options'] = list(BARRIER_OVERRIDE_LABELS)
     if isinstance(authorization, dict):
         payload['authorization'] = {
             'gap_class': REVIEW_BARRIER_GAP_CLASS,
@@ -1107,14 +1396,74 @@ def _mark_step_done(argv: list[str]) -> dict[str, Any]:
     )
 
 
-def _fact_map(facts: list[str]) -> dict[str, str]:
-    """Parse ``KEY=VALUE`` fact tokens into a map, refusing a malformed one."""
+#: The finalize step whose record ``record-merge`` writes, and therefore whose
+#: ``records_facts`` declaration its ``--fact`` keys must satisfy.
+_MERGE_RECORD_STEP = f'default:{MERGE_STEP_ID}'
+
+_RECORDS_FACTS_KEY = 'records_facts'
+
+
+def _declared_fact_keys(step: str = _MERGE_RECORD_STEP) -> tuple[set[str] | None, str | None]:
+    """Return the fact keys ``step`` declares in its ``records_facts`` frontmatter.
+
+    Reads the SAME population and frontmatter reader the head-dependence
+    derivation uses, so there is no second parser to drift from the dispatcher's.
+
+    Args:
+        step: The step key whose declaration is wanted.
+
+    Returns:
+        ``(keys, None)`` on a successful read, or ``(None, reason)`` when the
+        declaration could not be read.
+    """
+    try:
+        import extension_discovery
+        from _step_key_canonical import canonicalize_step_key
+    except Exception as exc:  # an unimportable reader is a failed read, never a crash
+        return None, f'the finalize-step population is not importable ({exc})'
+    try:
+        records, population_reason = _finalize_step_population()
+    except Exception as exc:  # the population read itself can raise through its own imports
+        return None, f'the finalize-step population could not be discovered ({exc})'
+    if records is None:
+        return None, population_reason or 'the finalize-step population could not be discovered'
+    wanted = canonicalize_step_key(step)
+    for record in records:
+        if canonicalize_step_key(str(record.get('name', ''))) != wanted:
+            continue
+        doc_path = Path(str(record.get('path', '')))
+        try:
+            fields, unreadable = extension_discovery.read_frontmatter_fields_checked(doc_path, (_RECORDS_FACTS_KEY,))
+        except Exception as exc:  # an unreadable declaration is a failed read, not a crash
+            return None, f'{doc_path} could not be inspected ({exc})'
+        if unreadable is not None:
+            return None, unreadable
+        declared = fields.get(_RECORDS_FACTS_KEY) or []
+        if not isinstance(declared, (list, tuple)):
+            return None, f'{doc_path} declares records_facts as {type(declared).__name__}, not a list'
+        return {str(key) for key in declared}, None
+    return None, f'{step} is not in the finalize-step population'
+
+
+def _fact_map(facts: list[str], *, declared_keys: set[str] | None = None) -> dict[str, str]:
+    """Parse ``KEY=VALUE`` fact tokens into a map, refusing a malformed or undeclared one.
+
+    ``declared_keys`` is the step's own ``records_facts`` declaration. A key
+    outside it is refused rather than written: the record would carry a fact no
+    reader of that step knows, which is indistinguishable from a typo.
+    """
     parsed: dict[str, str] = {}
     for fact in facts:
         key, separator, value = str(fact).partition('=')
         if not separator or not key.strip():
             raise ValueError(f'--fact expects KEY=VALUE, got {fact!r}')
-        parsed[key.strip()] = value.strip()
+        name = key.strip()
+        if declared_keys is not None and name not in declared_keys:
+            raise ValueError(
+                f'--fact {name}=... is not a key {_MERGE_RECORD_STEP} declares in records_facts '
+                f'({", ".join(sorted(declared_keys))})'
+            )
+        parsed[name] = value.strip()
     return parsed
 
 
@@ -1154,8 +1503,14 @@ def record_merge(
             'message': message,
         }
 
+    declared_keys, declaration_reason = _declared_fact_keys()
+    if declared_keys is None:
+        return _refuse(
+            'facts_declaration_unreadable',
+            f'the fact declaration could not be read, so no fact can be checked against it: {declaration_reason}',
+        )
     try:
-        recorded = _fact_map(facts)
+        recorded = _fact_map(facts, declared_keys=declared_keys)
     except ValueError as exc:
         return _refuse('facts_malformed', str(exc))
 
@@ -1199,8 +1554,8 @@ def record_merge(
             'path cannot have performed',
         )
     if action is None and merge_mechanism == 'pr_safe_merge':
-        # The mirror case, and the one that used to render a FALSE clause: a direct merge
-        # always reached the rebase (the default path and the ``queue_wait: forbidden``
+        # The mirror case, and the one that would render a FALSE clause: a direct merge
+        # always reaches the rebase (the default path and the ``queue_wait: forbidden``
         # reroute alike), so an absent action would claim "rebase deferred to queue" on a
         # path that never enqueued. Refuse rather than narrate a rebase that did not
         # happen.
@@ -1213,6 +1568,14 @@ def record_merge(
         return _refuse(
             'upstream_count_required_with_action',
             'a recorded rebase action must carry the upstream_commit_count read from the same payload',
+        )
+    if action is None and 'upstream_commit_count' in recorded:
+        # The mirror of the rule above: a count names a rebase, and a record with no
+        # action performed none — the merge-queue route in particular never rebases.
+        return _refuse(
+            'upstream_count_without_action',
+            'upstream_commit_count names a rebase this record did not perform; record it only '
+            'alongside the action fact',
         )
 
     try:
@@ -1327,6 +1690,8 @@ def merge(
     head_reader: HeadReader | None = None,
     participation_check: ParticipationCheck | None = None,
     authorization_check: AuthorizationCheck | None = None,
+    head_dependence_reader: HeadDependenceReader | None = None,
+    classifier: ClassifierRunner | None = None,
 ) -> dict[str, Any]:
     """Issue the routed merge verb only when every pre-merge invariant is proven.
 
@@ -1348,11 +1713,20 @@ def merge(
         authorization_check: Optional seam in place of
             :func:`_read_merge_authorization`. Signature:
             ``(plan_id, head) -> dict``.
+        head_dependence_reader: Optional seam in place of
+            :func:`_head_dependence`. Signature:
+            ``(step) -> (is_head_dependent, unresolved_reason)``.
+        classifier: Optional seam in place of
+            :func:`_classify_verdict_currency`. Signature:
+            ``(step, project_dir, recorded_sha) -> dict``.
 
     Returns:
         The refusal payload plus ``dispatched: false``, or the routed verb's
         payload plus ``findings_gate: clean``, ``participation_gate`` (``complete``
-        or ``authorized``) and ``dispatched: true``.
+        or ``authorized``) and ``dispatched: true``. An admitted head binding also
+        names what it did not validate: ``waived_steps`` (honoured at this
+        candidate), ``unconsulted_stamps`` (undeclared records, never refused) and
+        ``head_dependence_fallback`` (declarations that could not be derived).
     """
     refusal = _invocation_refusal(
         plan_id,
@@ -1379,11 +1753,13 @@ def merge(
     # checked against a different tree than the one bound is exactly the unbound
     # consent the HEAD binding exists to remove.
     head = (head_reader or _resolve_local_head)(project_dir)
-    head_refusal = _head_binding_refusal(
+    head_refusal, head_evidence = _head_binding_refusal(
         plan_id,
         project_dir,
         status_reader=status_reader,
         head_reader=lambda _project_dir: head,
+        head_dependence_reader=head_dependence_reader,
+        classifier=classifier,
     )
     if head_refusal is not None:
         return head_refusal
@@ -1432,6 +1808,16 @@ def merge(
         result['merge_authorization_kind'] = participation['authorization_kind']
         result['merge_authorization_gap'] = REVIEW_BARRIER_GAP_CLASS
         result['unproven_bots'] = participation['unproven_bots']
+    # The head binding ADMITTED this candidate; name what it did not validate, so
+    # a waived step is distinguishable from a validated one at the record site.
+    if head_evidence['waived_steps']:
+        result['waived_steps'] = head_evidence['waived_steps']
+    if head_evidence['unconsulted_stamps']:
+        result['unconsulted_stamps'] = head_evidence['unconsulted_stamps']
+    if head_evidence['head_dependence_fallback']:
+        result['head_dependence_fallback'] = head_evidence['head_dependence_fallback']
+    if head_evidence.get('status_read_fault'):
+        result['status_read_fault'] = head_evidence['status_read_fault']
     return result
 
 

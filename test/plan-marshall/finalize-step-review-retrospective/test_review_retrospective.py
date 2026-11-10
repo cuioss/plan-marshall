@@ -633,11 +633,11 @@ def test_coderabbit_full_review_shape():
     assert _kind_count(result, 'coderabbitai', 'issue_comment') == 1
 
 
-def test_multi_reviewer_coderabbit_vs_sourcery_vs_pr_agent():
-    # Comparative shape across all three live reviewers, each with a structurally
-    # different layer mix: CodeRabbit (inline-heavy + a META status summary),
-    # Sourcery (a substantive Overall-Comments review_body), and PR-Agent (its one
-    # persistent issue_comment). Confirms per-reviewer isolation.
+def test_multi_reviewer_coderabbit_vs_sourcery_vs_persistent_comment():
+    # Comparative shape across three reviewers, each with a structurally different
+    # layer mix: CodeRabbit (inline-heavy + a META status summary), Sourcery (a
+    # substantive Overall-Comments review_body), and a persistent-issue_comment
+    # reviewer. Confirms per-reviewer isolation.
     records = [
         {'author': 'coderabbitai', 'kind': 'inline', 'resolution': 'fixed'},
         {'author': 'coderabbitai', 'kind': 'inline', 'resolution': 'accepted'},
@@ -654,7 +654,7 @@ def test_multi_reviewer_coderabbit_vs_sourcery_vs_pr_agent():
             'resolution': 'fixed',
         },
         {
-            'author': 'cuioss-review-bot',
+            'author': 'retired-bot',
             'kind': 'issue_comment',
             'title': 'PR Reviewer Guide',
             'resolution': 'accepted',
@@ -683,17 +683,16 @@ def test_multi_reviewer_coderabbit_vs_sourcery_vs_pr_agent():
     assert sourcery['positives_count'] == 1
     assert sourcery['pct_resolved_as_fixed'] == 100.0
 
-    # PR-Agent posts no inline comments — its findings live in persistent
-    # issue_comments (one per review pass), which the aggregator buckets as META. This
-    # case carries the security Guide only. That record's accepted
-    # disposition is an acknowledgement, so it scores in NEITHER quality bucket,
-    # and because the record is META it contributes nothing to the resolved
-    # actionable denominator either. The reviewer is therefore reported as
-    # unmeasured (`pct is None`) rather than as 100% false-positive / 0.0%
-    # resolved-as-fixed — the exact pair of confident wrong numbers a clean-PR
-    # Guide used to produce. It remains visible in the comparison through
-    # raw_total and meta_count.
-    pr_agent = _reviewer(result, 'cuioss-review-bot')
+    # A persistent-comment reviewer posts no inline comments — its findings live in
+    # one issue_comment per review pass, which the aggregator buckets as META. This
+    # case carries that comment only. Its accepted disposition is an acknowledgement,
+    # so it scores in NEITHER quality bucket, and because the record is META it
+    # contributes nothing to the resolved actionable denominator either. The reviewer
+    # is therefore reported as unmeasured (`pct is None`) rather than as 100%
+    # false-positive / 0.0% resolved-as-fixed — the exact pair of confident wrong
+    # numbers a clean single-comment review used to produce. It remains visible in
+    # the comparison through raw_total and meta_count.
+    pr_agent = _reviewer(result, 'retired-bot')
     assert pr_agent['raw_total'] == 1
     assert pr_agent['actionable_count'] == 0
     assert pr_agent['meta_count'] == 1
@@ -704,19 +703,19 @@ def test_multi_reviewer_coderabbit_vs_sourcery_vs_pr_agent():
     assert pr_agent['pct_resolved_as_fixed'] is None
 
 
-def test_pr_agent_two_guides_aggregate_under_one_reviewer_row():
-    # PR-Agent's two passes each publish a persistent issue_comment — the security
-    # Guide and the code-review Guide — under the SAME author. They are one reviewer,
-    # so the aggregator reports one row carrying both records, both META.
+def test_two_persistent_comments_aggregate_under_one_reviewer_row():
+    # Two passes each publish a persistent issue_comment under the SAME author. They
+    # are one reviewer, so the aggregator reports one row carrying both records, both
+    # META.
     records = [
         {
-            'author': 'cuioss-review-bot',
+            'author': 'retired-bot',
             'kind': 'issue_comment',
             'title': 'PR Reviewer Guide',
             'resolution': 'accepted',
         },
         {
-            'author': 'cuioss-review-bot',
+            'author': 'retired-bot',
             'kind': 'issue_comment',
             'title': 'PR Code Review Guide',
             'resolution': 'accepted',
@@ -726,7 +725,7 @@ def test_pr_agent_two_guides_aggregate_under_one_reviewer_row():
     result = rr.aggregate(records)
 
     assert result['reviewer_count'] == 1
-    pr_agent = _reviewer(result, 'cuioss-review-bot')
+    pr_agent = _reviewer(result, 'retired-bot')
     assert pr_agent['raw_total'] == 2
     assert pr_agent['actionable_count'] == 0
     assert pr_agent['meta_count'] == 2
@@ -761,10 +760,10 @@ def test_enabled_reviewer_with_no_findings_gets_an_unmeasurable_row():
     """
     result = rr.aggregate(
         [{'author': 'coderabbitai', 'kind': 'inline'}],
-        enabled_reviewers=['coderabbitai', 'sourcery-ai', 'cuioss-review-bot'],
+        enabled_reviewers=['coderabbitai', 'sourcery-ai', 'retired-bot'],
     )
     authors = [r['author'] for r in result['reviewers']]
-    assert authors == ['coderabbitai', 'cuioss-review-bot', 'sourcery-ai']
+    assert authors == ['coderabbitai', 'retired-bot', 'sourcery-ai']
 
     silent = _reviewer(result, 'sourcery-ai')
     assert silent['participation'] == 'unmeasurable'
@@ -803,10 +802,10 @@ def test_observed_author_outside_the_roster_still_gets_a_row():
 
 def test_reviewer_count_spans_the_enabled_roster():
     # Zero findings, three enabled reviewers → three unmeasurable rows, not zero.
-    result = rr.aggregate([], enabled_reviewers=['coderabbitai', 'sourcery-ai', 'cuioss-review-bot'])
+    result = rr.aggregate([], enabled_reviewers=['coderabbitai', 'sourcery-ai', 'retired-bot'])
     assert result['reviewer_count'] == 3
     assert all(r['participation'] == 'unmeasurable' for r in result['reviewers'])
-    assert result['enabled_reviewers'] == ['coderabbitai', 'cuioss-review-bot', 'sourcery-ai']
+    assert result['enabled_reviewers'] == ['coderabbitai', 'retired-bot', 'sourcery-ai']
 
 
 def test_empty_roster_preserves_observed_only_behaviour():
@@ -834,23 +833,23 @@ def test_comparison_measured_when_findings_exist():
     # Any finding means there was content to compare — the normal path.
     result = rr.aggregate(
         [{'author': 'coderabbitai', 'kind': 'inline'}],
-        enabled_reviewers=['coderabbitai', 'sourcery-ai', 'cuioss-review-bot'],
+        enabled_reviewers=['coderabbitai', 'sourcery-ai', 'retired-bot'],
         reviewed_reviewers=['coderabbitai'],
     )
     assert result['comparison'] == 'measured'
 
 
 def test_comparison_clean_when_a_reviewer_reviewed_and_found_nothing():
-    # Zero findings, but cuioss-review-bot is positively substantiated as having reviewed
+    # Zero findings, but retired-bot is positively substantiated as having reviewed
     # (participated_but_empty maps into the reviewed-at-all set). Reviewers ran and
     # found nothing — a legitimate no-op, graded `clean`, NOT indeterminate.
     result = rr.aggregate(
         [],
-        enabled_reviewers=['coderabbitai', 'sourcery-ai', 'cuioss-review-bot'],
-        reviewed_reviewers=['cuioss-review-bot'],
+        enabled_reviewers=['coderabbitai', 'sourcery-ai', 'retired-bot'],
+        reviewed_reviewers=['retired-bot'],
     )
     assert result['comparison'] == 'clean'
-    assert result['reviewed_reviewers'] == ['cuioss-review-bot']
+    assert result['reviewed_reviewers'] == ['retired-bot']
 
 
 def test_comparison_indeterminate_when_no_reviewer_produced_content():
@@ -863,7 +862,7 @@ def test_comparison_indeterminate_when_no_reviewer_produced_content():
     """
     result = rr.aggregate(
         [],
-        enabled_reviewers=['coderabbitai', 'sourcery-ai', 'cuioss-review-bot'],
+        enabled_reviewers=['coderabbitai', 'sourcery-ai', 'retired-bot'],
         reviewed_reviewers=[],
     )
     assert result['comparison'] == 'indeterminate'
@@ -885,7 +884,7 @@ def test_comparison_fails_closed_to_indeterminate_without_the_reviewed_signal():
     assume clean — an unsubstantiated review is never credited, so the fail-closed
     default is `indeterminate`.
     """
-    result = rr.aggregate([], enabled_reviewers=['coderabbitai', 'cuioss-review-bot'])
+    result = rr.aggregate([], enabled_reviewers=['coderabbitai', 'retired-bot'])
     assert result['comparison'] == 'indeterminate'
     assert result['reviewed_reviewers'] == []
 
@@ -901,9 +900,9 @@ def test_comparison_clean_vs_indeterminate_discriminate_on_identical_zero_store(
     assertions at once, which is what makes this test discriminating rather than
     decorative.
     """
-    roster = ['coderabbitai', 'sourcery-ai', 'cuioss-review-bot']
+    roster = ['coderabbitai', 'sourcery-ai', 'retired-bot']
 
-    reviewed_clean = rr.aggregate([], enabled_reviewers=roster, reviewed_reviewers=['cuioss-review-bot'])
+    reviewed_clean = rr.aggregate([], enabled_reviewers=roster, reviewed_reviewers=['retired-bot'])
     nobody_reviewed = rr.aggregate([], enabled_reviewers=roster, reviewed_reviewers=[])
 
     # Same roster, same (empty) store, same all-unmeasurable rows...
@@ -954,7 +953,7 @@ def test_comparison_clean_requires_an_ENABLED_reviewer_not_any_reviewer():
     assert rr._grade_comparison(0, {'a'}, {'external'}) == 'indeterminate'
     result = rr.aggregate(
         [],
-        enabled_reviewers=['cuioss-review-bot'],
+        enabled_reviewers=['retired-bot'],
         reviewed_reviewers=['a-human-not-on-the-roster'],
     )
     assert result['comparison'] == 'indeterminate'

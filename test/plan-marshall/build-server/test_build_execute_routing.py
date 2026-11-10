@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for the D5 build-execute routing seam and the shared machine-global slot.
+"""Tests for the build-execute routing seam and the shared machine-global slot.
 
 Two production surfaces are exercised:
 
@@ -34,6 +34,7 @@ import json
 import sys
 from contextlib import contextmanager
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import _build_execute_factory as factory
@@ -152,19 +153,17 @@ def _clear_reentrancy(monkeypatch):
 def isolated_queue(tmp_path, monkeypatch) -> dict:
     """Isolate the machine-global build-queue file and its main-anchored side effects.
 
-    The queue file resolves under an isolated ``PLAN_MARSHALL_HOME``, and only two
-    things are still pinned or stubbed: the ``project_root`` stamp (so holder
-    liveness resolves under the fixture's own checkout) and the [LOCK] event log
-    (so no emission reaches the developer's main-anchored log). A real acquire
-    therefore touches ONLY the isolated queue file.
+    The queue file resolves under an isolated ``PLAN_MARSHALL_HOME``, and two
+    further things are pinned: the ``project_root`` stamp (so holder liveness
+    resolves under the fixture's own checkout) and the [LOCK] event log (so no
+    emission reaches the developer's main-anchored log). A real acquire therefore
+    touches ONLY the isolated queue file.
 
-    The adaptive reap threshold needs no stub at all any more: it is a top-level
-    ``upper_limit_seconds`` field of the isolated queue file itself, so seeding it
-    at the floor below pins the reaper's threshold in the shape ``build_queue``
-    actually reads. The two run-config helpers this fixture used to monkeypatch
-    onto ``bq`` no longer exist on the module, and ``monkeypatch.setattr``
-    defaults to ``raising=True`` — so leaving them would have errored every slot
-    test using this fixture rather than merely over-stubbing.
+    The adaptive reap threshold is a top-level ``upper_limit_seconds`` field of the
+    isolated queue file itself, so seeding it at the floor below pins the reaper's
+    threshold in the shape ``build_queue`` reads. The fixture stubs no helper on the
+    module under test: a name that module does not define would raise, because
+    ``monkeypatch.setattr`` defaults to ``raising=True``.
     """
     home = tmp_path / 'home'
     home.mkdir()
@@ -398,6 +397,66 @@ def test_route_wait_reissues_on_running(use_fake_client):
     assert len(client.wait_calls) == 2  # re-issued once on the running return
 
 
+def test_route_wait_treats_queued_as_non_terminal(use_fake_client):
+    """A ``queued`` wait payload keeps the loop waiting — it is not a verdict.
+
+    The routed client treats ``queued`` and ``running`` alike as non-terminal: a
+    payload outside that live set is the only thing that reaches
+    ``_daemon_result_to_direct``. A ``queued`` status read as terminal lands on that
+    function's "terminal job_status this client does not recognise" leg and reports
+    ``indeterminate`` for a build that had not even started. The two scripted waits
+    are the whole claim: the first is ``queued`` (must NOT stop the loop) and the
+    second is terminal (must be the result).
+    """
+    client = use_fake_client(
+        preflight={'status': 'success', 'preflight': 'ready'},
+        submit={'status': 'success', 'job_id': 'JOB-Q'},
+        waits=[
+            {'status': 'success', 'job_status': 'queued', 'waiting_on': 'JOB-A', 'queued_seconds': 3},
+            {'status': 'success', 'job_status': 'success', 'duration_seconds': 1, 'log_file': 'l', 'queued_seconds': 9},
+        ],
+    )
+
+    result, reason = factory._route_to_daemon(_config(), '/tree', 'plan-x')
+
+    assert reason == ''
+    assert result is not None
+    assert len(client.wait_calls) == 2, 'a queued return must be followed by another wait'
+    assert result['status'] == 'success'
+    assert result.get('error') != 'indeterminate'
+    # The wait the build paid travels on the terminal result.
+    assert result['queued_seconds'] == 9
+
+
+def test_route_hand_back_carries_queued_seconds_when_the_bound_expires(use_fake_client, monkeypatch):
+    """A job still ``queued`` at the bound returns a hand-back, never
+    ``indeterminate`` — and the hand-back says how long it has waited.
+
+    The clock is scripted rather than shortened to a tiny bound: the expiry has to
+    fall after the first wait, and a real 50 ms bound made that a race with how long
+    the wait itself took. The ticks are route entry, the loop's remaining-time read,
+    and the post-wait read that trips the bound.
+    """
+    ticks = iter([1000.0, 1000.0, 1000.06])
+    monkeypatch.setattr(factory.time, 'monotonic', lambda: next(ticks, 1000.06))
+    monkeypatch.setattr(factory, '_DAEMON_WAIT_BOUND_SECONDS', 0.05)
+    client = use_fake_client(
+        preflight={'status': 'success', 'preflight': 'ready'},
+        submit={'status': 'success', 'job_id': 'JOB-S'},
+        waits=[{'status': 'success', 'job_status': 'queued', 'waiting_on': 'JOB-B', 'queued_seconds': 12}],
+    )
+
+    result, reason = factory._route_to_daemon(_config(), '/tree', 'plan-x')
+
+    assert reason == ''
+    assert result is not None
+    assert client.wait_calls, 'the loop really waited before the bound expired'
+    assert result['status'] == 'running', 'a still-queued job is a live hand-back, not a verdict'
+    assert result['job_id'] == 'JOB-S'
+    assert result['job_status'] == 'queued', 'the hand-back reports what the daemon last said, not "running"'
+    assert result['queued_seconds'] == 12
+
+
 def test_route_refused_falls_back(use_fake_client):
     client = use_fake_client(
         preflight={'status': 'success', 'preflight': 'ready'},
@@ -457,11 +516,10 @@ def test_daemon_result_timeout_maps_to_timeout():
 def test_daemon_result_killed_maps_to_killed_not_error():
     """A daemon-classified kill keeps its OWN status through the client mapping.
 
-    Mapping it to ``error`` — as this leg historically did, marking the kill
-    only in a secondary ``error`` field — lost the distinction at the renderer:
-    ``cmd_run_common`` rebuilds its payload from ``status`` alone, so the
-    daemon's correctly-classified kill reached every consuming gate as a build
-    failure, complete with a synthesised ``errors[]`` row.
+    Mapping it to ``error``, marking the kill only in a secondary ``error`` field,
+    loses the distinction at the renderer: ``cmd_run_common`` rebuilds its payload
+    from ``status`` alone, so the daemon's correctly-classified kill reaches every
+    consuming gate as a build failure, complete with a synthesised ``errors[]`` row.
     """
     result = factory._daemon_result_to_direct(
         {'job_status': 'killed', 'exit_code': -9, 'duration_seconds': 1, 'log_file': 'd.log'}, 'cmd'
@@ -626,6 +684,165 @@ def test_cmd_run_falls_back_under_a_slot_when_not_routed(monkeypatch):
     assert rc == 0
     assert entered['slot'] is True  # not routed ⇒ in-process under a fallback slot
     assert entered['plan_id'] == 'plan-x'
+
+
+def test_cmd_run_takes_the_directory_lock_before_the_slot(monkeypatch):
+    """The lock order is directory first, then slot — one order, everywhere.
+
+    Within a build process that order is what keeps the two limiters from
+    interleaving: a build holding a slot never waits on a directory, because it had
+    to take the directory first. (The daemon/child pair leaves one bounded window —
+    the daemon spends a slot at admission and the child takes the directory a moment
+    later — which is bounded by whichever budget expires first, not removed by this
+    order.)
+    """
+    order: list[str] = []
+    monkeypatch.setattr(factory, '_route_to_daemon', lambda *a, **k: (None, 'disabled'))
+    monkeypatch.setattr(
+        factory,
+        'execute_direct_base',
+        lambda **kw: {'status': 'success', 'exit_code': 0, 'duration_seconds': 1, 'log_file': 'l', 'command': 'c'},
+    )
+
+    @contextmanager
+    def _directory_lock(directory, **_kwargs):
+        order.append('directory')
+        yield SimpleNamespace(waited_seconds=0.0)
+
+    @contextmanager
+    def _slot(plan_id, *, routed=False):
+        order.append('slot')
+        yield
+
+    monkeypatch.setattr(factory, 'directory_lock', _directory_lock)
+    monkeypatch.setattr(factory, 'build_queue_slot', _slot)
+    monkeypatch.setattr(factory, 'cmd_run_common', lambda **kw: 0)
+
+    _, cmd_run = factory.create_execute_handlers(_config(), parse_log_fn=lambda *a: None)
+    rc = cmd_run(_run_args())
+
+    assert rc == 0
+    assert order == ['directory', 'slot']
+
+
+def test_cmd_run_reports_directory_busy_and_never_spawns_the_build(monkeypatch, capsys):
+    """A directory that stays busy yields the named ``directory_busy`` error.
+
+    The build never runs: the refusal happens before ``execute_direct`` is
+    reached, which is the difference between waiting/refusing and running
+    concurrently.
+    """
+    spawned: list[bool] = []
+    monkeypatch.setattr(factory, '_route_to_daemon', lambda *a, **k: (None, 'disabled'))
+
+    @contextmanager
+    def _busy(directory, **_kwargs):
+        raise factory.DirectoryBusy(
+            directory=directory,
+            holder={'plan_id': 'other-plan', 'command': 'module-tests', 'pid': 4242, 'acquired_at': 0.0},
+            waited_seconds=600.0,
+        )
+        yield  # pragma: no cover
+
+    monkeypatch.setattr(factory, 'directory_lock', _busy)
+    monkeypatch.setattr(factory, 'execute_direct_base', lambda **kw: spawned.append(True))
+
+    _, cmd_run = factory.create_execute_handlers(_config(), parse_log_fn=lambda *a: None)
+    rc = cmd_run(_run_args())
+
+    assert rc == 1
+    assert spawned == [], 'the build must not run while its directory is held'
+    out = capsys.readouterr().out
+    assert factory.ERROR_DIRECTORY_BUSY in out
+    assert 'other-plan' in out
+    assert '4242' in out
+
+
+def test_cmd_run_emits_queued_seconds_on_the_rendered_result(monkeypatch, capsys):
+    """The wait must survive the EMIT boundary, not only the intermediate result.
+
+    ``cmd_run_common`` rebuilds the payload per branch, so a field carried only on
+    the routing seam's dict is dropped before the operator ever sees it. This
+    asserts the rendered TOON, which is what the agent-facing contract means by
+    "the result carries queued_seconds".
+    """
+    canned = {
+        'status': 'success',
+        'exit_code': 0,
+        'duration_seconds': 1,
+        'log_file': 'l',
+        'command': 'c',
+        'queued_seconds': 7,
+    }
+    monkeypatch.setattr(factory, '_route_to_daemon', lambda *a, **k: (canned, ''))
+
+    _, cmd_run = factory.create_execute_handlers(_config(), parse_log_fn=lambda *a: None)
+    rc = cmd_run(_run_args())
+
+    assert rc == 0
+    assert 'queued_seconds: 7' in capsys.readouterr().out
+
+
+def test_cmd_run_reports_the_directory_wait_it_paid(monkeypatch, capsys):
+    """An in-process build serialised behind another reports its wait.
+
+    The lease is the only place that number exists on this path, so a wrapper that
+    discards it would leave the second build looking merely slow.
+    """
+    monkeypatch.setattr(factory, '_route_to_daemon', lambda *a, **k: (None, 'disabled'))
+    monkeypatch.setattr(
+        factory,
+        'execute_direct_base',
+        lambda **kw: {'status': 'success', 'exit_code': 0, 'duration_seconds': 1, 'log_file': 'l', 'command': 'c'},
+    )
+
+    @contextmanager
+    def _lease(directory, **_kwargs):
+        yield SimpleNamespace(waited_seconds=12.4)
+
+    @contextmanager
+    def _slot(plan_id, *, routed=False):
+        yield
+
+    monkeypatch.setattr(factory, 'directory_lock', _lease)
+    monkeypatch.setattr(factory, 'build_queue_slot', _slot)
+
+    _, cmd_run = factory.create_execute_handlers(_config(), parse_log_fn=lambda *a: None)
+    rc = cmd_run(_run_args())
+
+    assert rc == 0
+    assert 'queued_seconds: 12' in capsys.readouterr().out
+
+
+def test_cmd_run_omits_queued_seconds_when_there_was_no_wait(monkeypatch, capsys):
+    """A sub-second acquisition is not a wait, and says nothing.
+
+    The lease is a float, so ``> 0`` would be true for the microseconds a free
+    directory takes — and ``int()`` would then print ``queued_seconds: 0`` on every
+    in-process build, erasing the very distinction the field exists to make.
+    """
+    monkeypatch.setattr(factory, '_route_to_daemon', lambda *a, **k: (None, 'disabled'))
+    monkeypatch.setattr(
+        factory,
+        'execute_direct_base',
+        lambda **kw: {'status': 'success', 'exit_code': 0, 'duration_seconds': 1, 'log_file': 'l', 'command': 'c'},
+    )
+
+    @contextmanager
+    def _lease(directory, **_kwargs):
+        yield SimpleNamespace(waited_seconds=0.4)
+
+    @contextmanager
+    def _slot(plan_id, *, routed=False):
+        yield
+
+    monkeypatch.setattr(factory, 'directory_lock', _lease)
+    monkeypatch.setattr(factory, 'build_queue_slot', _slot)
+
+    _, cmd_run = factory.create_execute_handlers(_config(), parse_log_fn=lambda *a: None)
+    assert cmd_run(_run_args()) == 0
+
+    assert 'queued_seconds' not in capsys.readouterr().out
 
 
 def test_routed_build_for_a_plan_submits_and_records_that_plan(use_fake_client, monkeypatch, tmp_path):
@@ -802,3 +1019,936 @@ def test_cmd_run_records_requested_and_resolved_mode(monkeypatch, capsys):
     _, cmd_run = factory.create_execute_handlers(_config(), parse_log_fn=lambda *a: None)
     cmd_run(_run_args(execution_mode='daemon'))
     assert 'requested=daemon, resolved=fail-loud' in capsys.readouterr().err
+
+
+# =============================================================================
+# A routed build whose plan record is not in the child's tree
+# =============================================================================
+#
+# The move-back window: ``integrate_into_main`` has moved the plan directory back
+# to the main checkout, and the worktree directory still exists. A build routed
+# with ``--plan-id`` in that window resolves fine in the ROUTING process (its cwd
+# is main, which holds the plan record, and the record names the still-existing
+# worktree) — and then the daemon child re-runs the same argv from the worktree,
+# where the plan directory is absent. The child refuses with its own
+# ``worktree_resolution_failed`` body and exit 2 unless the routing process hands
+# it the tree it already resolved.
+#
+# The fixture below stages exactly that layout. The one thing it models rather
+# than executes is the process hop inside ``file_ops._run_get_worktree_path``:
+# the real verb shells out to ``manage-status get-worktree-path``, whose STRICT
+# gate reads the plan record from the CURRENT checkout only. The model reads the
+# same on-disk layout through the same ``derive_worktree_state``, so the hop's
+# strictness is what is reproduced, not re-invented.
+
+_MOVED_BACK_PLAN = 'plan-moved-back'
+
+_MOVED_BACK_REASON = 'status.json not found for the moved-back plan'
+"""The reason the child states; asserted at the routed layer, not only at the reader."""
+
+#: The routed child's tree carry, spelled here because an executor's recorded
+#: surface is what refuses it: the flag name is the whole fixture's premise.
+_CARRY_FLAG = '--resolved-project-dir'
+
+
+def _stage_moved_back_plan(plan_root: Path, worktree: Path) -> Path:
+    """Stage the plan record on ``plan_root`` with ``worktree`` persisted in it."""
+    plan_dir = plan_root / '.plan' / 'local' / 'plans' / _MOVED_BACK_PLAN
+    plan_dir.mkdir(parents=True)
+    (plan_dir / 'status.json').write_text(
+        json.dumps(
+            {
+                'plan_id': _MOVED_BACK_PLAN,
+                'metadata': {
+                    'use_worktree': 'true',
+                    'worktree_path': str(worktree),
+                    'worktree_branch': f'feature/{_MOVED_BACK_PLAN}',
+                },
+            }
+        ),
+        encoding='utf-8',
+    )
+    return plan_dir
+
+
+def _strict_gate_reader():
+    """``get-worktree-path``'s STRICT gate, read from the CURRENT checkout."""
+    import file_ops
+
+    def _strict_gate(plan_id: str):
+        record = Path.cwd() / '.plan' / 'local' / 'plans' / plan_id / 'status.json'
+        if not record.is_file():
+            raise file_ops.WorktreeResolutionError(
+                'manage-status get-worktree-path returned non-success: '
+                f"error='file_not_found' message='status.json not found for {plan_id!r}'"
+            )
+        metadata = json.loads(record.read_text(encoding='utf-8')).get('metadata') or {}
+        return file_ops.derive_worktree_state(metadata)
+
+    return _strict_gate
+
+
+def _stale_executor_refusal(argv: list[str]) -> dict | None:
+    """The body a surface-predating executor emits for ``argv``, or ``None``.
+
+    The executor validates an invocation against the surface it recorded when it was
+    generated, and refuses an undeclared flag before spawning the script with a
+    ``status: error`` / ``error: invalid_invocation`` body whose ``reason`` is
+    ``unknown_flag``. A surface generated before the carry flag existed therefore
+    refuses it — the shape this helper reproduces from the argv the routing seam
+    would submit. A build whose argv carries no carry runs.
+
+    Args:
+        argv: The routed argv tail the daemon child would be re-run with.
+
+    Returns:
+        The refusal body, or ``None`` when the executor would spawn the script.
+    """
+    if _CARRY_FLAG not in argv:
+        return None
+    return {
+        'status': 'error',
+        'error': 'invalid_invocation',
+        'notation': 'plan-marshall:build-pyproject:pyproject_build',
+        'reason': 'unknown_flag',
+        'rejected': _CARRY_FLAG,
+        'accepted': '--command-args, --timeout, --mode, --format, --plan-id, --project-dir',
+        'message': f'`{_CARRY_FLAG}` is not declared for `pyproject_build run`',
+    }
+
+
+def _job_log(tmp_path: Path, body: dict, name: str = 'job.log') -> str:
+    """Write a child body as a job log, with the canonical TOON serializer."""
+    from toon_parser import serialize_toon
+
+    log = tmp_path / name
+    log.write_text(serialize_toon(body), encoding='utf-8')
+    return str(log)
+
+
+@pytest.fixture
+def moved_back_window(monkeypatch, tmp_path) -> dict:
+    """The daemon child's view of the window: cwd in the worktree, plan record on main."""
+    import file_ops
+
+    main = tmp_path / 'main'
+    worktree = tmp_path / 'worktree'
+    worktree.mkdir(parents=True)
+    _stage_moved_back_plan(main, worktree)
+    monkeypatch.chdir(worktree)
+    monkeypatch.setattr(file_ops, '_query_worktree_path', _strict_gate_reader())
+    return {'main': main, 'worktree': worktree}
+
+
+@pytest.fixture
+def plan_bound_tree(monkeypatch, tmp_path) -> dict:
+    """The steady state: one tree holds the plan record and runs every process.
+
+    The routing process and the daemon child share it, so the child re-resolves the
+    same record to the same path and needs no tree handed over.
+    """
+    import file_ops
+
+    tree = tmp_path / 'worktree'
+    tree.mkdir(parents=True)
+    _stage_moved_back_plan(tree, tree)
+    monkeypatch.chdir(tree)
+    monkeypatch.setattr(file_ops, '_query_worktree_path', _strict_gate_reader())
+    return {'tree': tree}
+
+
+def _child_fault_job_log(tmp_path, plan_id: str = _MOVED_BACK_PLAN) -> str:
+    """Write the job log the child produces, from the child's OWN error emitter."""
+    import resolve_project_dir as routing
+    from _build_format import format_toon
+
+    exc = routing.WorktreeResolutionError(_MOVED_BACK_REASON)
+    body = format_toon(routing.emit_worktree_error(plan_id, exc))
+    log = tmp_path / 'moved-back-job.log'
+    log.write_text(f'[EXEC] python3 .plan/execute-script.py … run --plan-id {plan_id}\n{body}', encoding='utf-8')
+    return str(log)
+
+
+class TestMovedBackPlanRoutedBuild:
+    """A routed build in the move-back window: the child is handed the tree it cannot resolve."""
+
+    def test_the_child_cannot_resolve_the_plan_from_its_own_tree(self, moved_back_window):
+        """The child re-resolves ``--plan-id`` from a tree without the plan.
+
+        The strict gate is NOT weakened here — this remains the child's answer. The
+        routed re-run is fixed by handing the child the tree, never by relaxing the
+        gate.
+        """
+        import resolve_project_dir as routing
+
+        with pytest.raises(routing.WorktreeResolutionError):
+            routing.resolve_project_dir(_MOVED_BACK_PLAN, '.', default='.')
+
+    def test_the_routing_process_resolves_the_still_existing_worktree(self, moved_back_window, monkeypatch):
+        """From MAIN the same flag resolves — the asymmetry is what strands the child."""
+        monkeypatch.chdir(moved_back_window['main'])
+        import resolve_project_dir as routing
+
+        assert routing.resolve_project_dir(_MOVED_BACK_PLAN, '.', default='.') == str(
+            moved_back_window['worktree'].resolve()
+        )
+
+    def test_the_direct_build_reports_the_same_fault_as_itself(self, moved_back_window, monkeypatch, capsys):
+        """The in-process (direct) leg already answers as itself, with exit 2.
+
+        This is the CONTRAST the routed leg has to match, and it is why the defect
+        is routing-specific: the same tree, the same flag, the same missing plan
+        record — only the non-routed path is honest about it.
+        """
+        import _build_cli  # the module owning build_main is the subject here
+        from _build_cli import add_run_subparser, build_main
+
+        def _register(subparsers):
+            parser = add_run_subparser(subparsers, command_args_help='Test')
+            parser.set_defaults(func=lambda _args: 0)
+
+        monkeypatch.setattr(
+            sys,
+            'argv',
+            ['pyproject_build.py', 'run', '--command-args', 'verify core', '--plan-id', _MOVED_BACK_PLAN],
+        )
+
+        rc = build_main('Python build', [_register])
+
+        emitted = capsys.readouterr().out
+        assert rc == 2
+        assert 'error: worktree_resolution_failed' in emitted
+
+    def test_the_routed_result_reaches_the_caller_as_the_child_reported_it(self, tmp_path, capsys):
+        """The child's routing fault arrives under its own name and code."""
+        from _build_shared import cmd_run_common
+
+        log_file = _child_fault_job_log(tmp_path)
+        result = factory._daemon_result_to_direct(
+            {
+                'job_status': 'failure',
+                'exit_code': 2,
+                'duration_seconds': 1,
+                'log_file': log_file,
+            },
+            f'python3 .plan/execute-script.py … run --plan-id {_MOVED_BACK_PLAN}',
+        )
+
+        assert result['error'] == 'worktree_resolution_failed', (
+            'the child reported a routing fault before any tool ran; the routed result must carry it as itself'
+        )
+        assert result['exit_code'] == 2
+
+        cmd_run_common(result, lambda _log: ([], None, 'FAILURE'), 'python')
+        emitted = capsys.readouterr().out
+        assert 'worktree_resolution_failed' in emitted
+        assert _MOVED_BACK_REASON in emitted, "the child's own reason text travels, not just a `reason:` label"
+        assert 'exit_code: 2' in emitted, 'the routed path answers the code the direct path answers'
+        assert 'no structured errors were parsed' not in emitted, (
+            'a routing fault is not a build failure, so no synthetic build_failure row may be published'
+        )
+
+    def test_the_routed_child_carries_the_tree_the_routing_process_resolved(
+        self, moved_back_window, use_fake_client, monkeypatch
+    ):
+        """The re-run command carries the resolved tree, and keeps the plan id.
+
+        The plan id has to survive for BOTH attributions the child makes: the
+        executor's ``kind=build`` ledger row (which reads ``--plan-id`` off the
+        dispatch) and the machine-global build slot the child acquires. That is why
+        the tree travels beside it rather than replacing it.
+        """
+        worktree = str(moved_back_window['worktree'].resolve())
+        monkeypatch.chdir(moved_back_window['main'])
+        monkeypatch.setattr(
+            sys,
+            'argv',
+            ['pyproject_build.py', 'run', '--command-args', 'verify core', '--plan-id', _MOVED_BACK_PLAN],
+        )
+        client = use_fake_client(
+            preflight={'status': 'success', 'preflight': 'ready'},
+            submit={'status': 'success', 'job_id': 'JOB-7'},
+            waits=[{'status': 'success', 'job_status': 'success', 'duration_seconds': 1, 'log_file': 'x.log'}],
+        )
+
+        result, reason = factory._route_to_daemon(_config(tool_name='python'), worktree, _MOVED_BACK_PLAN)
+
+        assert reason == ''
+        assert result is not None and result['status'] == 'success', 'the result is the build own result'
+        submitted = json.loads(client.submit_calls[0].command)
+        carried = submitted[4:]
+        assert carried[:3] == ['--command-args', 'verify core', '--plan-id']
+        assert carried[3] == _MOVED_BACK_PLAN
+        assert carried[4] == '--resolved-project-dir'
+        assert carried[5] == worktree, 'the child is handed the tree the routing process already resolved'
+        from plan_logging import extract_plan_id
+
+        assert extract_plan_id(submitted) == _MOVED_BACK_PLAN, 'the child ledger row keeps the plan id'
+
+    def test_the_childs_entry_point_runs_the_build_in_the_carried_tree(self, moved_back_window, monkeypatch):
+        """The child's own entry point runs the build there, and its result is the build's.
+
+        The window's failure is the child's re-resolution, so the proof that the
+        carry closes it is the child's entry point succeeding: the handler runs
+        against the carried tree, and the value the entry point returns is the
+        handler's own.
+        """
+        import _build_cli
+
+        monkeypatch.setenv(MARSHALLD_JOB_ENV, '1')
+        worktree = str(moved_back_window['worktree'].resolve())
+        seen: list[str] = []
+
+        def capture_run(args):
+            seen.append(args.project_dir)
+            return 7
+
+        def register(subparsers):
+            parser = _build_cli.add_run_subparser(subparsers, command_args_help='Test')
+            parser.set_defaults(func=capture_run)
+
+        monkeypatch.setattr(
+            sys,
+            'argv',
+            [
+                'pyproject_build.py',
+                'run',
+                '--command-args',
+                'verify core',
+                '--plan-id',
+                _MOVED_BACK_PLAN,
+                _CARRY_FLAG,
+                worktree,
+            ],
+        )
+
+        rc = _build_cli.build_main('Python build', [register])
+
+        assert rc == 7, 'the entry point returns the build own result'
+        assert seen == [worktree], 'the build ran against the tree the routing process resolved'
+
+
+class TestStaleExecutorCarry:
+    """A routed plan build is handed the tree only when its child cannot resolve it.
+
+    An executor whose recorded surface predates the carry flag refuses that flag
+    outright, and a routed result has no in-process fallback — so appending it where
+    the child does not need it turns a healthy routed build into a refusal. The
+    child's own tree holding the plan record is what decides.
+    """
+
+    def test_outside_the_window_a_stale_executor_runs_the_build(self, plan_bound_tree, use_fake_client, monkeypatch):
+        """The tree resolves the plan itself, so no carry is appended and the build runs."""
+        tree = str(plan_bound_tree['tree'].resolve())
+        monkeypatch.setattr(
+            sys,
+            'argv',
+            ['pyproject_build.py', 'run', '--command-args', 'verify core', '--plan-id', _MOVED_BACK_PLAN],
+        )
+        client = use_fake_client(
+            preflight={'status': 'success', 'preflight': 'ready'},
+            submit={'status': 'success', 'job_id': 'JOB-8'},
+            waits=[{'status': 'success', 'job_status': 'success', 'duration_seconds': 2, 'log_file': 'x.log'}],
+        )
+
+        result, reason = factory._route_to_daemon(_config(tool_name='python'), tree, _MOVED_BACK_PLAN)
+
+        submitted = json.loads(client.submit_calls[0].command)
+        assert _stale_executor_refusal(submitted[4:]) is None, (
+            'a surface-predating executor refuses the carry, so a tree that resolves the plan itself must not be handed it'
+        )
+        assert reason == ''
+        assert result is not None and result['status'] == 'success', 'the result is the build own result'
+
+    def test_inside_the_window_the_carry_is_still_appended(self, moved_back_window, use_fake_client, monkeypatch):
+        """A tree without the record cannot resolve the plan, so the carry travels."""
+        worktree = str(moved_back_window['worktree'].resolve())
+        monkeypatch.setattr(
+            sys,
+            'argv',
+            ['pyproject_build.py', 'run', '--command-args', 'verify core', '--plan-id', _MOVED_BACK_PLAN],
+        )
+        client = use_fake_client(
+            preflight={'status': 'success', 'preflight': 'ready'},
+            submit={'status': 'success', 'job_id': 'JOB-9'},
+            waits=[{'status': 'success', 'job_status': 'success', 'duration_seconds': 1, 'log_file': 'x.log'}],
+        )
+
+        factory._route_to_daemon(_config(tool_name='python'), worktree, _MOVED_BACK_PLAN)
+
+        submitted = json.loads(client.submit_calls[0].command)
+        assert submitted[4 + 4 : 4 + 6] == [_CARRY_FLAG, worktree], (
+            'the window child is stranded without the tree the routing process resolved'
+        )
+
+    def test_inside_the_window_the_refusal_reaches_the_caller_as_itself(self, tmp_path, capsys):
+        """The same stale executor's refusal is reported as itself, not as a red build.
+
+        A routed result has no in-process fallback, so a child that refuses the
+        dispatch must reach the caller under the name and code the child used.
+        """
+        from _build_shared import cmd_run_common
+
+        body = _stale_executor_refusal(
+            ['run', '--command-args', 'verify core', '--plan-id', _MOVED_BACK_PLAN, _CARRY_FLAG, '/tree']
+        )
+        assert body is not None
+        log_file = _job_log(tmp_path, body)
+
+        result = factory._daemon_result_to_direct(
+            {'job_status': 'failure', 'exit_code': 2, 'duration_seconds': 1, 'log_file': log_file},
+            f'python3 .plan/execute-script.py ... run --plan-id {_MOVED_BACK_PLAN}',
+        )
+
+        assert result['error'] == 'invalid_invocation'
+        assert result['reason'] == 'unknown_flag'
+        assert result['exit_code'] == 2
+
+        cmd_run_common(result, lambda _log: ([], None, 'FAILURE'), 'python')
+        emitted = capsys.readouterr().out
+        assert 'invalid_invocation' in emitted
+        assert 'no structured errors were parsed' not in emitted, 'a refusal is not a build failure'
+
+
+class TestPreToolFaultPassThrough:
+    """A pre-tool refusal travels as itself, and a real failure still does not."""
+
+    def test_a_build_that_ran_and_failed_keeps_build_failed_and_its_rows(self, tmp_path, capsys):
+        """Matched control: the pass-through must not swallow a genuine failure.
+
+        The discriminator is the child's own error NAME, never its exit code: a build
+        that ran and failed reports ``build_failed`` with its parsed rows, and that
+        path — including the synthetic row when nothing parsed — is untouched.
+        """
+        from _build_shared import cmd_run_common
+
+        log = tmp_path / 'ran-and-failed.log'
+        log.write_text(
+            'status: error\nexit_code: 1\nerror: build_failed\n'
+            'errors[1]{file,line,message,category}:\n'
+            '  test/a.py,3,"assert 0",test_failure\n',
+            encoding='utf-8',
+        )
+        result = factory._daemon_result_to_direct(
+            {'job_status': 'failure', 'exit_code': 1, 'duration_seconds': 2, 'log_file': str(log)},
+            'cmd',
+        )
+
+        assert result['error'] == 'build_failed'
+
+        cmd_run_common(result, lambda _log: ([], None, 'FAILURE'), 'python')
+        emitted = capsys.readouterr().out
+        assert 'build_failed' in emitted
+        assert 'test/a.py' in emitted, 'the inner wrapper per-test rows still travel'
+
+    def test_the_reader_separates_a_pre_tool_fault_from_a_build_failure(self, tmp_path):
+        """The reader's own discriminator: the error name, read off the child's body."""
+        import _build_server_protocol as proto
+
+        pre_tool = tmp_path / 'pre.log'
+        pre_tool.write_text('status: error\nerror: mutually_exclusive_args\nmessage: pick one\n', encoding='utf-8')
+        verdict = proto.read_log_verdict(str(pre_tool))
+
+        assert verdict is not None
+        assert verdict.fault is None, 'a routing refusal is not a launch fault'
+        assert verdict.child_fault is not None
+        assert verdict.child_fault.error == 'mutually_exclusive_args'
+        assert verdict.child_fault.message == 'pick one', 'the resolution emitters state their detail in message'
+        assert verdict.child_fault.reason is None, 'a body that states no reason keeps none'
+
+        failed = tmp_path / 'failed.log'
+        failed.write_text('status: error\nerror: build_failed\n', encoding='utf-8')
+        failed_verdict = proto.read_log_verdict(str(failed))
+
+        assert failed_verdict is not None
+        assert failed_verdict.child_fault is None, 'a build that ran keeps the build-failure path'
+
+    def test_a_json_formatted_refusal_is_read_as_a_verdict(self, tmp_path):
+        """``--format json`` is a caller request, so the reader must understand it.
+
+        A routed child asked for JSON writes its refusal as a JSON object, not as
+        column-0 TOON keys. Without the JSON fallback the reader found no verdict and
+        the whole job became ``build_failed`` with the synthetic row — the same
+        collapse, one output format over. The log also holds progress output before
+        the result, so the reader must find the LAST object rather than the first.
+        """
+        import json
+
+        import _build_server_protocol as proto
+
+        log = tmp_path / 'json-job.log'
+        refusal = {
+            'status': 'error',
+            'error': 'queue_saturated',
+            'message': 'no slot was admitted; retry later',
+            'max_retries': 3,
+            'plan_id': 'p',
+        }
+        log.write_text(
+            '[EXEC] python3 .plan/execute-script.py … run --format json\n' + json.dumps(refusal, indent=2) + '\n',
+            encoding='utf-8',
+        )
+
+        verdict = proto.read_log_verdict(str(log))
+
+        assert verdict is not None
+        assert verdict.status == 'error'
+        assert verdict.child_fault is not None
+        assert verdict.child_fault.error == 'queue_saturated'
+        assert verdict.child_fault.message == 'no slot was admitted; retry later'
+        assert verdict.child_fault.reason is None
+
+    def test_a_json_timeout_keeps_its_applied_bound(self, tmp_path):
+        """A JSON non-finish must name the bound the inner wrapper applied.
+
+        The bound is what tells a reader whose number fired — a learned bound is
+        corrected by one more measured run, an explicit one by raising it. The TOON
+        path reads the triple; a JSON-formatted result must not lose it.
+        """
+        import json
+
+        import _build_server_protocol as proto
+
+        log = tmp_path / 'json-timeout.log'
+        log.write_text(
+            json.dumps(
+                {
+                    'status': 'timeout',
+                    'error': 'timeout',
+                    'exit_code': -1,
+                    'timeout_used_seconds': 900,
+                    'timeout_source': 'learned',
+                    'command_key': 'python:module_tests',
+                }
+            ),
+            encoding='utf-8',
+        )
+
+        verdict = proto.read_log_verdict(str(log))
+
+        assert verdict is not None
+        assert verdict.status == 'timeout'
+        assert verdict.timeout_used_seconds == 900
+        assert verdict.timeout_source == 'learned'
+        assert verdict.command_key == 'python:module_tests'
+
+    def test_a_trailing_json_object_cannot_discard_the_verdict(self, tmp_path):
+        """The result is the last object WITH A STATUS, not the last object.
+
+        A trailing ``{}`` or a footer object after the result would otherwise erase
+        the verdict and send the whole job back to ``build_failed`` — the collapse
+        this fallback exists to prevent.
+        """
+        import json
+
+        import _build_server_protocol as proto
+
+        log = tmp_path / 'json-trailing.log'
+        log.write_text(
+            json.dumps({'status': 'error', 'error': 'queue_saturated', 'message': 'retry later'})
+            + '\n'
+            + json.dumps({})
+            + '\n',
+            encoding='utf-8',
+        )
+
+        verdict = proto.read_log_verdict(str(log))
+
+        assert verdict is not None
+        assert verdict.child_fault is not None
+        assert verdict.child_fault.error == 'queue_saturated'
+
+    def test_a_json_failure_keeps_its_rows_and_the_build_failure_path(self, tmp_path):
+        """Matched control: JSON parsing must not turn a real failure into a refusal."""
+        import json
+
+        import _build_server_protocol as proto
+
+        log = tmp_path / 'json-failure.log'
+        log.write_text(
+            json.dumps(
+                {
+                    'status': 'error',
+                    'error': 'build_failed',
+                    'exit_code': 1,
+                    'tests_run': 12,
+                    'errors': [{'file': 'test/a.py', 'line': 4, 'message': 'boom', 'category': 'test_failure'}],
+                },
+                indent=2,
+            ),
+            encoding='utf-8',
+        )
+
+        verdict = proto.read_log_verdict(str(log))
+
+        assert verdict is not None
+        assert verdict.status == 'error'
+        assert verdict.child_fault is None and verdict.fault is None
+        assert verdict.tests_run == 12
+        assert [row['file'] for row in verdict.errors] == ['test/a.py']
+
+    def test_a_log_that_states_no_verdict_in_either_format_is_none(self, tmp_path):
+        """No TOON status and no JSON object: nothing was established, so nothing is claimed."""
+        import _build_server_protocol as proto
+
+        log = tmp_path / 'noise.log'
+        log.write_text('usage: unrecognized arguments: --resolved-project-dir\n', encoding='utf-8')
+
+        assert proto.read_log_verdict(str(log)) is None
+
+    def test_a_slot_refusal_is_a_pre_tool_fault_and_keeps_its_message(self, tmp_path, capsys):
+        """A child that never got a build slot is a refusal, not a red build.
+
+        The log is the producer's own emitted body, not a hand-written shape, so a
+        field the emitter stops writing fails here instead of being papered over by
+        the fixture. The producer states ``message`` and no ``reason``, and the
+        reader must keep those names rather than substituting one for the other.
+        """
+        import _build_server_protocol as proto
+
+        exc = slot_mod.BuildQueueTimeout('plan-x', 3)
+        assert factory._emit_queue_timeout('python', 'verify core', 'toon', exc) == 1
+        log = tmp_path / 'queue.log'
+        log.write_text(capsys.readouterr().out, encoding='utf-8')
+
+        verdict = proto.read_log_verdict(str(log))
+
+        assert verdict is not None and verdict.child_fault is not None
+        assert verdict.child_fault.error == 'queue_saturated'
+        assert verdict.child_fault.message == str(exc)
+        assert verdict.child_fault.reason is None, 'the producer states no reason, so none may be invented'
+
+    def test_a_slot_refusal_keeps_the_producers_field_names_across_the_hop(self, tmp_path, capsys):
+        """The routed result carries the child's ``message`` as ``message``.
+
+        A body with only a ``message`` that arrives as ``reason`` leaves a consumer
+        reading ``message`` empty on the routed route while the direct route fills
+        it — the same fault, two shapes.
+        """
+        exc = slot_mod.BuildQueueTimeout('plan-x', 3)
+        assert factory._emit_queue_timeout('python', 'verify core', 'toon', exc) == 1
+        log = tmp_path / 'queue.log'
+        log.write_text(capsys.readouterr().out, encoding='utf-8')
+
+        result = factory._daemon_result_to_direct(
+            {'job_status': 'failure', 'exit_code': 1, 'duration_seconds': 3, 'log_file': str(log)},
+            'cmd',
+        )
+
+        assert result['error'] == 'queue_saturated'
+        assert result['message'] == str(exc)
+        assert 'reason' not in result, 'the child stated no reason, so the routed result carries none'
+
+    def test_an_errors_table_from_another_block_is_not_carried(self, tmp_path):
+        """A table belongs to the block that carried it, like every other key.
+
+        A verdict block that states no ``errors[]`` table reports no rows, rather
+        than inheriting the rows of whatever wrote earlier to the same log.
+        """
+        import _build_server_protocol as proto
+
+        log = tmp_path / 'two-table-blocks.log'
+        log.write_text(
+            'status: error\nerror: build_failed\n'
+            'errors[1]{file,line,message,category}:\n'
+            '  test/earlier.py,1,"earlier failure",test_failure\n'
+            'status: error\nerror: worktree_resolution_failed\nmessage: the record left this tree\n',
+            encoding='utf-8',
+        )
+
+        verdict = proto.read_log_verdict(str(log))
+
+        assert verdict is not None and verdict.child_fault is not None
+        assert verdict.errors == (), "the earlier block's rows are not this verdict's rows"
+
+    def test_a_key_from_another_block_cannot_supply_the_verdict(self, tmp_path):
+        """Each key is read from the block that holds the verdict.
+
+        A log is a file, so it can hold an earlier body beside the result. Reading
+        ``reason`` last-wins across the whole file would attach that writer's reason
+        to a refusal whose own block stated only ``message``.
+        """
+        import _build_server_protocol as proto
+
+        log = tmp_path / 'two-blocks.log'
+        log.write_text(
+            'status: error\nreason: earlier-writer\n'
+            'status: error\nerror: worktree_resolution_failed\nmessage: the record left this tree\n',
+            encoding='utf-8',
+        )
+
+        verdict = proto.read_log_verdict(str(log))
+
+        assert verdict is not None and verdict.child_fault is not None
+        assert verdict.child_fault.message == 'the record left this tree'
+        assert verdict.child_fault.reason is None, 'that reason belongs to the earlier block'
+
+    def test_a_body_that_states_both_fields_keeps_them_apart(self, tmp_path):
+        """A child that states a reason AND a message keeps the two distinct.
+
+        The executor's ``unknown_flag`` refusal puts the rejection class in
+        ``reason`` and the actionable correction in ``message``; a reader that
+        collapses either into the other loses one of them.
+        """
+        import _build_server_protocol as proto
+
+        correction = '`--resolved-project-dir` is not declared for `pyproject_build run`'
+        log = _job_log(
+            tmp_path,
+            {
+                'status': 'error',
+                'error': 'invalid_invocation',
+                'reason': 'unknown_flag',
+                'message': correction,
+            },
+        )
+
+        verdict = proto.read_log_verdict(log)
+
+        assert verdict is not None and verdict.child_fault is not None
+        assert verdict.child_fault.reason == 'unknown_flag'
+        assert verdict.child_fault.message == correction
+
+    def test_a_table_ahead_of_the_first_status_is_dropped_at_the_next_one(self, tmp_path):
+        """A pre-status table belongs to the block that first status opens, once.
+
+        That block owns it, so a later block that states no table of its own must
+        report no rows rather than inheriting it.
+        """
+        import _build_server_protocol as proto
+
+        log = tmp_path / 'pre-status-table.log'
+        log.write_text(
+            'errors[1]{file,line,message,category}:\n'
+            '  test/earlier.py,1,"earlier failure",test_failure\n'
+            'status: running\n'
+            'status: error\nexit_code: 1\nerror: build_failed\n',
+            encoding='utf-8',
+        )
+
+        verdict = proto.read_log_verdict(str(log))
+
+        assert verdict is not None
+        assert verdict.status == 'error'
+        assert verdict.errors == (), "the first block's table is not this block's"
+
+    def test_the_emitted_identifiers_are_the_ones_the_lane_classifies(self):
+        """Every pre-tool emitter's identifier is a member of the classifier set.
+
+        A fault identifier spelled differently at the producer and in the reader's set
+        would silently fall back to ``build_failed``, so the agreement is asserted
+        rather than assumed, one producer at a time. The executor's refusal literal
+        lives in the generator template, so that producer is tied to the set through
+        the template's own text.
+        """
+        import resolve_project_dir as routing
+        from _build_result import (
+            ERROR_BUILD_QUEUE_UNAVAILABLE,
+            ERROR_DIRECTORY_LOCK_UNAVAILABLE,
+            ERROR_INVALID_INVOCATION,
+            ERROR_QUEUE_SATURATED,
+            PRE_TOOL_FAULT_ERRORS,
+        )
+
+        assert routing.emit_worktree_error('p', routing.WorktreeResolutionError('x'))['error'] in (
+            PRE_TOOL_FAULT_ERRORS
+        )
+        assert routing.emit_mutually_exclusive_error('p', 'q')['error'] in PRE_TOOL_FAULT_ERRORS
+        assert routing.emit_carried_tree_outside_job_error('/tree', 'p')['error'] in PRE_TOOL_FAULT_ERRORS
+        assert ERROR_INVALID_INVOCATION in PRE_TOOL_FAULT_ERRORS
+        assert ERROR_QUEUE_SATURATED in PRE_TOOL_FAULT_ERRORS
+        # The factory RE-USES those constants rather than spelling the identifiers
+        # again, so the limiter faults it emits are classified by construction.
+        assert factory.ERROR_QUEUE_SATURATED is ERROR_QUEUE_SATURATED
+        assert factory.ERROR_BUILD_QUEUE_UNAVAILABLE is ERROR_BUILD_QUEUE_UNAVAILABLE
+        assert factory.ERROR_DIRECTORY_LOCK_UNAVAILABLE is ERROR_DIRECTORY_LOCK_UNAVAILABLE
+
+        template = (
+            Path(__file__).parents[3]
+            / 'marketplace/bundles/plan-marshall/skills/tools-script-executor/templates/execute-script.py.template'
+        )
+        assert template.is_file(), f'the executor template moved; this drift guard must follow it: {template}'
+        assert f'error: {ERROR_INVALID_INVOCATION}' in template.read_text(encoding='utf-8')
+
+
+class TestCarriedTreeRefusalDiagnostics:
+    """The carried-tree refusal's own facts reach a TOON consumer.
+
+    The formatter's extra-field list is a WHITELIST and the refusal is printed
+    through it, so a field missing from that list is dropped from TOON output while
+    the JSON path still carries it. Both fields are the diagnosis: which tree the
+    carry pointed at, and which plan it would have been attributed to.
+    """
+
+    def test_the_refusal_names_the_tree_and_the_plan_it_would_attribute(self, monkeypatch, capsys):
+        import _build_cli
+
+        monkeypatch.delenv(MARSHALLD_JOB_ENV, raising=False)
+
+        def register(subparsers):
+            parser = _build_cli.add_run_subparser(subparsers, command_args_help='Test')
+            parser.set_defaults(func=lambda _args: 0)
+
+        carried_tree = '/routed/tree/plan-x'
+        monkeypatch.setattr(
+            sys,
+            'argv',
+            ['pyproject_build.py', 'run', '--command-args', 'verify', '--plan-id', 'plan-x', _CARRY_FLAG, carried_tree],
+        )
+
+        rc = _build_cli.build_main('Python build', [register])
+
+        emitted = capsys.readouterr().out
+        assert rc == 2
+        assert 'error: carried_tree_outside_daemon_job' in emitted
+        assert 'resolved_project_dir' in emitted, 'the refused tree is half the diagnosis'
+        assert carried_tree in emitted
+        assert 'plan_id' in emitted, 'the plan it would have been attributed to is the other half'
+        assert 'plan-x' in emitted
+
+
+class TestIndeterminateReasonCarry:
+    """A child's ``indeterminate`` verdict keeps the REASON it stated.
+
+    The wire maps ``indeterminate`` onto ``failure``, so ``failure`` is the shape a
+    routed ``indeterminate`` arrives in. Rebuilding it as a generic ``build_failed``
+    would discard the producer's named reason and take the build-failure path —
+    fabricating the failure the producer's own status exists to deny.
+    """
+
+    def test_an_indeterminate_child_verdict_keeps_its_own_reason(self, tmp_path):
+        """The child's ``message:`` line IS the reason the caller must receive."""
+        log = tmp_path / 'indeterminate.log'
+        reason = "test_selector_matched_nothing: 'Awaits#runs' matched no test, so the run executed nothing"
+        log.write_text(f'status: indeterminate\nexit_code: 0\nmessage: "{reason}"\n', encoding='utf-8')
+
+        result = factory._daemon_result_to_direct(
+            {'job_status': 'failure', 'exit_code': 0, 'duration_seconds': 4, 'log_file': str(log)},
+            'cmd',
+        )
+
+        assert result['status'] == 'indeterminate'
+        assert result['message'] == reason
+
+    def test_a_verdict_that_states_no_reason_still_gets_the_generic_sentence(self, tmp_path):
+        """Matched control: the carry must not invent a reason the log never stated."""
+        log = tmp_path / 'no-reason.log'
+        log.write_text('status: quiesced\nexit_code: 0\n', encoding='utf-8')
+
+        result = factory._daemon_result_to_direct(
+            {'job_status': 'failure', 'exit_code': 0, 'duration_seconds': 4, 'log_file': str(log)},
+            'cmd',
+        )
+
+        assert result['status'] == 'indeterminate'
+        assert 'quiesced' in result['message']
+        assert 'outside the build-result vocabulary' in result['message']
+
+    def test_a_real_failure_stays_a_build_failure(self, tmp_path):
+        """Matched control: only a non-``error`` verdict is re-rendered as itself."""
+        log = tmp_path / 'failed.log'
+        log.write_text(
+            'status: error\nexit_code: 1\nerror: build_failed\n'
+            'errors[1]{file,line,message,category}:\n'
+            '  test/a.py,3,"assert 0",test_failure\n',
+            encoding='utf-8',
+        )
+
+        result = factory._daemon_result_to_direct(
+            {'job_status': 'failure', 'exit_code': 1, 'duration_seconds': 4, 'log_file': str(log)},
+            'cmd',
+        )
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'build_failed'
+
+    def test_a_timeout_child_reaches_the_caller_as_a_timeout(self, tmp_path):
+        """A routed ``timeout`` keeps its own status and the bound that fired.
+
+        The supervisor translates the wrapper's own ``timeout`` verdict onto the wire
+        row of the same name, so the caller sees a non-finish with its applied bound
+        rather than a red build.
+        """
+        log = tmp_path / 'timeout.log'
+        log.write_text(
+            'status: timeout\nexit_code: -1\ntimeout_used_seconds: 300\ntimeout_source: explicit\n',
+            encoding='utf-8',
+        )
+
+        result = factory._daemon_result_to_direct(
+            {
+                'job_status': 'timeout',
+                'exit_code': -1,
+                'duration_seconds': 300,
+                'log_file': str(log),
+                'timeout_used_seconds': 300,
+                'timeout_source': 'explicit',
+            },
+            'cmd',
+        )
+
+        assert result['status'] == 'timeout'
+        assert result['timeout_used_seconds'] == 300
+
+    def test_a_killed_child_reaches_the_caller_as_a_kill(self, tmp_path):
+        """A routed ``killed`` keeps its own status, its exit code and its instruction."""
+        log = tmp_path / 'killed.log'
+        log.write_text('status: killed\nexit_code: -9\n', encoding='utf-8')
+
+        result = factory._daemon_result_to_direct(
+            {'job_status': 'killed', 'exit_code': -9, 'duration_seconds': 12, 'log_file': str(log)},
+            'cmd',
+        )
+
+        assert result['status'] == 'killed'
+        assert result['exit_code'] == -9
+        assert 'do not blind-retry' in result['message']
+
+    def test_the_selector_reason_survives_both_wire_legs(self, tmp_path):
+        """The child's own reason reaches the caller whichever wire row it arrived on.
+
+        The wire flattens an ``indeterminate`` child verdict onto ``failure``, while
+        the success cross-check reads the same verdict off a ``success`` row. Both
+        legs answer with the producer's own message, so a selector miss is not lost
+        to which row the daemon chose.
+        """
+        reason = "test_selector_matched_nothing: 'Awaits#runs' matched no test, so the run executed nothing"
+        log = tmp_path / 'selector.log'
+        log.write_text(f'status: indeterminate\nexit_code: 0\nmessage: "{reason}"\n', encoding='utf-8')
+
+        from_failure = factory._daemon_result_to_direct(
+            {'job_status': 'failure', 'exit_code': 0, 'duration_seconds': 4, 'log_file': str(log)},
+            'cmd',
+        )
+        from_success = factory._daemon_result_to_direct(
+            {'job_status': 'success', 'exit_code': 0, 'duration_seconds': 4, 'log_file': str(log)},
+            'cmd',
+        )
+
+        assert from_failure['status'] == 'indeterminate'
+        assert from_failure['message'] == reason
+        assert from_success['status'] == 'indeterminate'
+        assert from_success['message'] == reason
+
+    def test_a_multiline_log_message_is_collapsed_before_rendering(self, tmp_path):
+        """A log message that carries real newlines must not break the envelope.
+
+        The JSON log path decodes ``\\n`` escapes into real newlines, and the
+        result formatter does not re-escape them inside an ordinary string
+        value, so the carried message is collapsed to one line.
+        """
+        import json
+
+        log = tmp_path / 'multiline.log'
+        log.write_text(
+            json.dumps({'status': 'indeterminate', 'exit_code': 0, 'message': 'first line\nsecond line'}),
+            encoding='utf-8',
+        )
+
+        result = factory._daemon_result_to_direct(
+            {'job_status': 'failure', 'exit_code': 0, 'duration_seconds': 4, 'log_file': str(log)},
+            'cmd',
+        )
+
+        assert result['status'] == 'indeterminate'
+        assert result['message'] == 'first line second line'

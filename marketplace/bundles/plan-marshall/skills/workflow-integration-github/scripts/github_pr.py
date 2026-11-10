@@ -126,6 +126,8 @@ from _github_pr import (
     refusal_condition,
     refusal_layers,
     refusal_size_cap,
+    review_coverage_is_finished,
+    review_coverage_verdict,
 )
 from ci_base import extract_routing_args, register_subcommands, set_default_cwd
 from github_re_review import bot_kind_for_author, is_acknowledgment_comment, is_registered_trigger_comment
@@ -168,10 +170,14 @@ _RESPONDABLE_RESOLUTIONS = frozenset({'fixed', 'suppressed', 'accepted', 'taken_
 #      baseline. Its ``code_change`` / ``explain`` categories are retained as
 #      historical documentation and are NOT consulted by this script.
 #
-#   2. PER-BOT layer — each enabled bot's ``ignore_patterns`` from the registry
-#      (``automatic-review/standards/{bot_kind}.md``). These are literal
-#      whole-comment markers (a walkthrough heading, a marketing footer, a no-op
-#      review line, …) that only apply to that bot's own comments. They are
+#   2. PER-BOT layer — each enabled bot's ``footer_patterns`` (branding / feedback
+#      lines, stripped before the signal test) and ``ignore_patterns`` from the
+#      registry (``automatic-review/standards/{bot_kind}.md``). The ignore entries
+#      are literal whole-comment markers (a no-op review line, a learnings notice, …)
+#      that only apply to that bot's own comments. The drop is vetoed by the same
+#      bot's ``actionable_content_markers`` and by a declared concern section whose
+#      text carries no declared clean verdict, so a clean-review verdict that
+#      co-occurs with a finding keeps it. They are
 #      sourced from the registry at runtime, so adding/adjusting a bot's noise
 #      drops is a pure standards-doc edit — no change here.
 #
@@ -179,8 +185,10 @@ _RESPONDABLE_RESOLUTIONS = frozenset({'fixed', 'suppressed', 'accepted', 'taken_
 #      and ``actionable_content_markers`` from the same registry. Unlike layer 2
 #      this one is CONDITIONAL on the whole body: it drops a comment only when
 #      EVERY ``contentless_review_markers`` entry is present, ANY ONE declared
-#      ``contentless_review_headings`` entry is present, AND no
-#      ``actionable_content_markers`` entry is. It exists for a bot whose review
+#      ``contentless_review_headings`` entry is present, no
+#      ``actionable_content_markers`` entry is, AND every declared
+#      ``concern_section_headings`` section carries a ``clean_section_verdicts``
+#      literal. It exists for a bot whose review
 #      comments each carry both their findings and their clean-result assertions,
 #      so no unconditional whole-body marker can express "this review found
 #      nothing" without also dropping the reviews that found something. Empty
@@ -224,6 +232,17 @@ _FENCED_BLOCK = re.compile(r'(`{3,}|~{3,})[\s\S]*?\1')
 # repeatedly so nested blocks peel from the inside out.
 _INNERMOST_DETAILS_BLOCK = re.compile(r'<details\b[^>]*>(?:(?!<details\b)[\s\S])*?</details\s*>', re.IGNORECASE)
 _BLOCKQUOTE_LINE = re.compile(r'^[ \t]*>.*$', re.MULTILINE)
+# A closed HTML comment. CodeRabbit wraps its Merge Risk paragraph in
+# ``<!-- final_review_risk_start --> … <!-- final_review_risk_end -->`` and names the
+# level in another comment, so the comments are removed BEFORE a concern section is
+# delimited: otherwise the block's own machine markers would truncate the very text
+# the clean-verdict test must read. An UNCLOSED comment cannot be removed, so the
+# section boundary is unknowable and the caller treats the body as NOT clean (fail
+# closed) rather than risk reading a verdict out of text that was never a section.
+_HTML_COMMENT = re.compile(r'<!--[\s\S]*?-->')
+# The boundaries that end a concern section: the next markdown heading, the next
+# sibling ``<details>`` block, or the close of the block the heading sits in.
+_SECTION_BOUNDARY = re.compile(r'(?m)^#{1,6}[ \t]|<details\b|</details\s*>', re.IGNORECASE)
 
 
 # ============================================================================
@@ -302,6 +321,66 @@ def cmd_fetch_comments(args):
 # ============================================================================
 
 
+def _section_texts_after_heading(body: str, heading: str) -> list[str] | None:
+    """Return every section under each occurrence of ``heading`` (``None`` = unreadable).
+
+    HTML comments are removed first (see :data:`_HTML_COMMENT`), so a bot's own machine
+    markers inside the section do not truncate it. Each section ends at the next markdown
+    heading, the next ``<details>`` block, or the close of the block it sits in; a heading
+    with no following boundary runs to the end of the body.
+
+    ``None`` means an HTML comment could not be closed, so the section boundaries are
+    unknowable. The caller treats that as NOT clean, the fail-closed direction: an
+    unreadable section is never allowed to prove itself clean.
+    """
+    text = _HTML_COMMENT.sub(' ', body)
+    if '<!--' in text:
+        return None
+    sections: list[str] = []
+    start = 0
+    while True:
+        index = text.find(heading, start)
+        if index < 0:
+            break
+        section_start = index + len(heading)
+        boundary = _SECTION_BOUNDARY.search(text, section_start)
+        end = boundary.start() if boundary else len(text)
+        sections.append(text[section_start:end])
+        start = end
+    return sections
+
+
+def _concern_sections_are_clean(body: str, bot_kind: str) -> bool:
+    """True when every declared concern section carries a declared clean verdict.
+
+    The content-aware layer's second veto, and the one that closes a free-text concern:
+    a summary states its Merge Risk paragraph as prose, so no section-title marker can
+    express it. For EVERY occurrence of each ``concern_section_headings`` entry present
+    in ``body``, the text under that heading must contain at least one
+    ``clean_section_verdicts`` entry; otherwise the body holds a concern and the
+    contentless drop is vetoed.
+
+    Fail-closed in both directions: a body with no declared concern heading and no
+    unreadable comment is clean (there is no section to judge), while a body whose
+    section carries no declared clean wording — or whose comments cannot be closed, making
+    the boundaries unreadable — is NOT clean. An empty
+    ``clean_section_verdicts`` therefore files every block under a declared heading until
+    the clean wording is declared.
+    """
+    headings = [h.strip() for h in bot_registry.concern_section_headings(bot_kind) if h.strip()]
+    if not headings:
+        return True
+    verdicts = [v.strip() for v in bot_registry.clean_section_verdicts(bot_kind) if v.strip()]
+    for heading in headings:
+        sections = _section_texts_after_heading(body, heading)
+        if sections is None:
+            return False
+        for section in sections:
+            if not any(verdict in section for verdict in verdicts):
+                return False
+    return True
+
+
 def _is_contentless_boilerplate(body: str, bot_kind: str | None) -> bool:
     """True if ``body`` is ``bot_kind``'s review boilerplate carrying no content.
 
@@ -314,6 +393,10 @@ def _is_contentless_boilerplate(body: str, bot_kind: str | None) -> bool:
     bot's persistent review comments. All three lists are literal substrings, stripped
     before matching so an incidentally-indented registry value still matches the
     raw body (the project's normalize-both-sides-of-a-registry-comparison rule).
+
+    A second veto covers a concern stated as PROSE under a declared
+    ``concern_section_headings`` entry — the free-text shape no section-title marker
+    can express — through :func:`_concern_sections_are_clean`.
 
     An empty ``contentless_review_markers`` short-circuits to ``False`` — the
     fail-closed default, and the state every bot that has not declared a clean
@@ -329,15 +412,18 @@ def _is_contentless_boilerplate(body: str, bot_kind: str | None) -> bool:
     if not all(marker in body for marker in required):
         return False
     # The heading ALTERNATION: a bot publishing one clean shape under several
-    # persistent review comments (PR-Agent's security and code-review Guides) names
-    # each heading here, and the body must carry ANY ONE of them. An empty list
+    # persistent review states of the SAME comment (CodeRabbit's finished walkthrough
+    # and its in-progress notice) names each heading here, and the body must carry ANY
+    # ONE of them. An empty list
     # adds no condition, so the conjunction above stays the whole test for every
     # bot that has not declared the field.
     headings = [h.strip() for h in bot_registry.contentless_review_headings(kind) if h.strip()]
     if headings and not any(heading in body for heading in headings):
         return False
     disqualifying = [m.strip() for m in bot_registry.actionable_content_markers(kind) if m.strip()]
-    return not any(marker in body for marker in disqualifying)
+    if any(marker in body for marker in disqualifying):
+        return False
+    return _concern_sections_are_clean(body, kind)
 
 
 def _is_participation_evidence(comment: dict, bot_kind: str) -> bool:
@@ -347,13 +433,13 @@ def _is_participation_evidence(comment: dict, bot_kind: str) -> bool:
 
     1. SHAPE — the comment's ``kind`` is one of the publish shapes the bot declares
        in ``participation_evidence``.
-    2. CONTENT — when the bot declares a ``participation_evidence_markers`` entry for
-       THAT shape, the body carries the declared literal. A shape a bot publishes
-       both before its review completes and after it finishes credits only the
-       artifact carrying the marker, so a pre-review walkthrough in a declared shape
-       is not evidence. An undeclared shape is FAIL-OPEN and credits on the shape
-       alone, exactly as before the gate existed (see
-       ``bot_registry.participation_evidence_marker``).
+    2. CONTENT — when the bot declares ``participation_evidence_markers`` entries for
+       THAT shape, the body carries at least one of the declared literals. A shape a
+       bot publishes both before its review completes and after it finishes credits
+       only the artifact carrying a finished-review literal, so a pre-review
+       walkthrough in a declared shape is not evidence. An undeclared shape is
+       FAIL-OPEN and credits on the shape alone, exactly as before the gate existed
+       (see ``bot_registry.participation_evidence_markers_for``).
 
     This is the admissibility question only. The refusal exclusion and the
     ``participation_requires_update`` currency test stay at the call site, because
@@ -365,8 +451,11 @@ def _is_participation_evidence(comment: dict, bot_kind: str) -> bool:
     kind = comment.get('kind') or 'inline'
     if kind not in bot_registry.participation_evidence(bot_kind):
         return False
-    marker = bot_registry.participation_evidence_marker(bot_kind, kind)
-    return not marker or marker in str(comment.get('body') or '')
+    markers = bot_registry.participation_evidence_markers_for(bot_kind, kind)
+    if not markers:
+        return True
+    body = str(comment.get('body') or '')
+    return any(marker in body for marker in markers)
 
 
 def _own_prose(body: str) -> str:
@@ -416,6 +505,34 @@ def _is_whole_comment_acknowledgment(body: str) -> bool:
     return any(p.fullmatch(prose) for p in _COMPILED_IGNORE)
 
 
+def _strip_footer_markers(body: str, bot_kind: str | None) -> str:
+    """Remove ``bot_kind``'s declared FOOTER block from ``body`` before the signal test.
+
+    A footer marker is a branding / feedback-prompt line a bot appends to a SUCCESSFUL
+    review, never a section that replaces it. The footer is a BLOCK, not a line: the
+    marker line carries the start of the prose and several further lines follow it (a
+    sponsorship sentence, the feedback prompt), so stripping only the marker LINE left
+    the rest behind as if it were review signal. Everything from the first marker line
+    to the end of the body is removed — a footer is terminal — which handles a footer
+    spread over one line or several and leaves a body that is nothing but footer empty.
+
+    That is what keeps a review body carrying real findings AND the footer from being
+    dropped wholesale, while a body that is nothing but footer still reduces to nothing
+    and is dropped as noise. A bot declaring no footer markers gets its body back
+    unchanged, so every other bot's filtering is exactly as it was.
+    """
+    if not bot_kind:
+        return body
+    markers = bot_registry.footer_patterns(bot_kind)
+    if not markers:
+        return body
+    lines = body.splitlines()
+    for index, line in enumerate(lines):
+        if any(marker in line for marker in markers):
+            return '\n'.join(lines[:index])
+    return body
+
+
 def _is_obvious_noise(body: str, bot_kind: str | None = None) -> bool:
     """Pre-filter: True if the comment body is shared or per-bot noise.
 
@@ -426,15 +543,20 @@ def _is_obvious_noise(body: str, bot_kind: str | None = None) -> bool:
        :func:`_is_whole_comment_acknowledgment` to the commenter's own bare prose
        only, and only when a pattern covers the whole of it within the length bound.
     2. PER-BOT — when ``bot_kind`` is a known reviewer bot, that bot's registry
-       ``ignore_patterns`` (literal whole-comment markers) matched as
-       case-sensitive substrings against the raw body. These markers are exact
-       fragments the bot emits on a *successful* review (a walkthrough heading, a
-       marketing footer, a no-op review line), so only that bot's own comments are
-       dropped.
+       ``footer_patterns`` are stripped first (whole LINES removed: branding or a
+       feedback prompt never decides a drop by itself), then its ``ignore_patterns``
+       (literal whole-comment markers) are matched as case-sensitive substrings
+       against the remaining body. These markers are exact fragments the bot emits
+       on a *successful* review (a no-op review line, a learnings notice), so only
+       that bot's own comments are dropped. The same bot's
+       ``actionable_content_markers`` VETO that drop: a clean-review verdict that
+       co-occurs with a nitpick/concern section keeps its findings.
     3. CONTENTLESS BOILERPLATE — ``_is_contentless_boilerplate``: that same bot's
        registry ``contentless_review_markers`` (ALL required) plus any one declared
        ``contentless_review_headings`` entry, vetoed by any
-       ``actionable_content_markers`` entry. Layer 2 cannot express this case: for
+       ``actionable_content_markers`` entry and by a declared concern section whose
+       text carries no declared ``clean_section_verdicts`` wording. Layer 2 cannot
+       express this case: for
        a bot whose review comment carries both its findings and its clean-result
        assertions, an unconditional whole-body marker would drop the reviews that
        found something too.
@@ -507,9 +629,23 @@ def _is_obvious_noise(body: str, bot_kind: str | None = None) -> bool:
         # trigger above, never review feedback.
         if is_acknowledgment_comment(body, bot_kind):
             return True
-        if any(marker in body for marker in bot_registry.ignore_patterns(bot_kind)):
+        # Footer markers are stripped BEFORE the signal test: a footer line on an
+        # otherwise substantive review is branding, not a reason to discard the
+        # review, while a body left with nothing but footer is still noise.
+        signal = _strip_footer_markers(body, bot_kind)
+        if not signal.strip():
             return True
-        return _is_contentless_boilerplate(body, bot_kind)
+        if any(marker in signal for marker in bot_registry.ignore_patterns(bot_kind)):
+            # The same bot's actionable-content markers and a declared concern section
+            # VETO the whole-comment ignore drop: a clean-review verdict that co-occurs
+            # with a nitpick/concern section, or with a Merge Risk paragraph that states
+            # a concern, must keep that finding. The verdict cannot veto itself — the
+            # marker vocabulary is case-sensitive and the verdict reads "No actionable
+            # comments", not "Actionable comments".
+            actionables = [m.strip() for m in bot_registry.actionable_content_markers(bot_kind) if m.strip()]
+            if not any(marker in signal for marker in actionables) and _concern_sections_are_clean(signal, bot_kind):
+                return True
+        return _is_contentless_boilerplate(signal, bot_kind)
     return False
 
 
@@ -1004,7 +1140,7 @@ def _stored_pr_comment_hashes(findings: list[dict]) -> dict[tuple[str, str], str
 # plan has credited, the ``(bot_kind, comment_id)`` key with the merge-candidate SHA
 # AND the comment's ``updated_at`` at the fetch that last credited it. It is the SOLE
 # source the currency test reads, so a comment stored as a finding and a comment
-# dropped as noise (PR-Agent's contentless Guide) are treated identically — the
+# dropped as noise (a clean summary with no concern) are treated identically — the
 # ledger records the credit regardless of whether the comment produced a finding.
 #
 # Recording BOTH the SHA and the ``updated_at`` is load-bearing. Anchoring on the SHA
@@ -1523,6 +1659,33 @@ def _reported_commit_matches_candidate(comment: dict, merge_candidate_sha: str) 
     return bool(candidate) and bool(reported) and reported == candidate
 
 
+def _evidence_named_verdict(comment: dict, merge_candidate_sha: str) -> bool | None:
+    """What a comment's OWN evidence says about which commit it reviewed.
+
+    Three shapes name a commit, in precedence order:
+
+    1. a review-coverage marker in the body — the bot's structured claim, whose
+       ``kind`` also says whether the review finished (``review_coverage_verdict``);
+    2. the provider's reported ``commit_id`` on the record — the commit a per-review
+       artifact was submitted against;
+    3. a full commit id written into the body (``named_commit_currency``).
+
+    ``None`` means the evidence names no commit at all, which is the ONLY state in
+    which the ledger arms decide. A named commit, by contrast, is a claim: ``False``
+    from any of the three never falls through to an arm that would credit an edit.
+    """
+    if not (merge_candidate_sha or '').strip():
+        return None
+    body = str(comment.get('body') or '')
+    coverage = review_coverage_verdict(body, merge_candidate_sha)
+    if coverage is not None:
+        return coverage
+    reported = str(comment.get('commit_id') or '').strip()
+    if reported:
+        return reported.lower() == merge_candidate_sha.strip().lower()
+    return named_commit_currency(body, merge_candidate_sha)
+
+
 def cmd_fetch_findings(args):
     """Producer-side FIND verb: fetch + pre-filter + file one finding per surviving comment.
 
@@ -1692,12 +1855,14 @@ def cmd_fetch_findings(args):
     against ``created_at``, an edit at one commit credits that commit only, not every
     later HEAD.
 
-    One arm outranks the ledger: a comment of such a bot that NAMES a commit — a full
-    commit id, bare or inside a permalink (``_github_pr.named_commit_currency``) — is
-    current only when that commit is the merge candidate, and stale when it names
-    another, whatever its timestamps or edit history say. A comment naming no commit,
-    and every comment on a fetch whose merge candidate could not be read, is decided
-    by the ledger exactly as described above.
+    One arm outranks the ledger: a comment of such a bot whose OWN EVIDENCE names a
+    commit is decided by that commit, whatever its timestamps or edit history say.
+    ``_evidence_named_verdict`` ranks three shapes: a review-coverage marker in the
+    body (``_github_pr.review_coverage_verdict``, whose ``kind`` also decides whether
+    the review finished), the provider's reported ``commit_id``, and a full commit id
+    written into the body (``_github_pr.named_commit_currency``). A comment whose
+    evidence names no commit, and every comment on a fetch whose merge candidate could
+    not be read, is decided by the ledger exactly as described above.
 
     ``stale_participation_bots``: where that currency-test failure now GOES, instead
     of being discarded. Same ``{bot_kind, evidence_kind}`` record shape as
@@ -2025,7 +2190,17 @@ def cmd_fetch_findings(args):
         # one of the bot's declared publish shapes. Without this exclusion a bot
         # that posted nothing but "review limit reached" would be credited as a
         # proven participant and satisfy the quorum on zero review coverage.
-        if _is_refusal_notice(str(_comment.get('body') or ''), _bot_kind):
+        #
+        # A READABLE coverage marker outranks the skip: CodeRabbit keeps its
+        # "Review limit reached" block in the summary comment AFTER a review
+        # finishes (observed on PR 1912), so a marker-bearing summary is a finished
+        # review whose own text also carries a later limit notice. Skipping the whole
+        # comment as a refusal throws the marker away and hands the bot's finished
+        # review to the same summarizer that never sees it. The marker names the
+        # commit it covered, so it can only credit that head; a marker naming another
+        # head is decided stale by the named-commit arm below.
+        _body = str(_comment.get('body') or '')
+        if _is_refusal_notice(_body, _bot_kind) and not review_coverage_is_finished(_body):
             continue
         # Admissibility — the declared publish SHAPE, plus the declared content marker
         # when the bot gates that shape on one. Evaluated BEFORE the currency test, so a
@@ -2035,17 +2210,36 @@ def cmd_fetch_findings(args):
         if not _is_participation_evidence(_comment, _bot_kind):
             continue
         _kind = _comment.get('kind') or 'inline'
-        # The NAMED-COMMIT arm, read before the ledger arms and outranking them. A
-        # comment that names a commit is about THAT commit: current when it is the
-        # merge candidate, stale when it is another, whatever the comment's timestamps
-        # or edit history say. Without it a fresh edit credited a comment whose own
-        # text names the previous HEAD. ``None`` is no verdict — the comment names no
-        # commit, or the merge candidate could not be read — and the ledger arms then
-        # decide exactly as before, including their fail-closed read of an unreadable
-        # head.
-        _named_verdict = (
-            named_commit_currency(str(_comment.get('body') or ''), reviewed_commit_sha) if _requires_update else None
-        )
+        # THE INLINE RULE, decided before every other arm. An inline comment is
+        # credited only when the provider PLACES it (or the review it belongs to) at
+        # the merge candidate, and a reply posted into an existing thread is never
+        # participation evidence: it is the bot answering the thread's author, and it
+        # post-dates the push without reviewing it. The provider reports both, so the
+        # decision reads fields. The ledger arms never apply to inline comments: a
+        # reply is not a review artifact at all, and an unplaced comment has no commit
+        # to anchor a review of — which is exactly what produced the #515 false green.
+        #
+        # The rule is BOT-AGNOSTIC by design: it governs every bot that declares
+        # ``inline`` evidence. Tightening the rule here does not alter which bots
+        # publish inline evidence.
+        if _kind == 'inline':
+            if _comment.get('thread_reply') or _comment.get('reply_to_id'):
+                # Never evidence. The record still names the bot as a publisher this
+                # fetch, so it is reported stale rather than vanished: the remedy is a
+                # re-review, which is exactly what a stale publish calls for.
+                _named_verdict = False
+            else:
+                _named_verdict = _reported_commit_matches_candidate(_comment, reviewed_commit_sha)
+        else:
+            # The NAMED-COMMIT arm, read before the ledger arms and outranking them. A
+            # comment whose own evidence names a commit is about THAT commit: current
+            # when it is the merge candidate, stale when it is another, whatever the
+            # comment's timestamps or edit history say. Without it a fresh edit credited
+            # a comment whose own text names the previous HEAD. ``None`` is no verdict —
+            # the evidence names no commit, or the merge candidate could not be read —
+            # and the ledger arms then decide exactly as before, including their
+            # fail-closed read of an unreadable head.
+            _named_verdict = _evidence_named_verdict(_comment, reviewed_commit_sha) if _requires_update else None
         if _named_verdict is None:
             # A REFUSAL changes what a comment can prove. The bot is saying, in this
             # fetch, that it will not review the merge candidate; credited evidence that
@@ -2238,9 +2432,8 @@ def cmd_fetch_findings(args):
 
         author = comment.get('author') or 'unknown'
 
-        # Derive bot_kind from the comment author login (coderabbitai ->
-        # coderabbit, cuioss-review-bot -> cuioss-review-bot, whose login and kind
-        # are deliberately the SAME name); a human author resolves to
+        # Derive bot_kind from the comment author login (``coderabbitai`` ->
+        # ``coderabbit``, ``sourcery-ai`` -> ``sourcery``); a human author resolves to
         # None. Computed BEFORE the noise pre-filter (so per-bot ignore patterns
         # apply) AND before the dedup check (so the cross-iteration guard can key
         # on (bot_kind, comment_id)).
@@ -2355,7 +2548,7 @@ def cmd_fetch_findings(args):
 
         # Pre-filter 4: obvious noise — the shared acknowledgment/automation
         # regexes plus, for a known reviewer bot, that bot's per-registry literal
-        # ignore markers (walkthrough headings, marketing footers, no-op reviews).
+        # ignore markers (a no-op review line, a learnings notice, a marketing footer).
         if _is_obvious_noise(body, bot_kind):
             skipped_noise += 1
             continue
@@ -3690,7 +3883,7 @@ Examples:
                         'default': '',
                         'help': (
                             'Comma-joined bot_kinds whose participation is REQUIRED (e.g. '
-                            '"coderabbit,cuioss-review-bot"). A required bot\'s silence is a failure and gates the '
+                            '"coderabbit"). A required bot\'s silence is a failure and gates the '
                             'review-completeness quorum. This list classifies, it does NOT admit: a comment '
                             'from a bot outside both lists is still ingested and its bot is reported in '
                             'unclassified_bots. May be supplied bare (no value), which reads as the empty '

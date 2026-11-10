@@ -99,6 +99,7 @@ def _build_entry(
     plan_id: str | None = 'crosscheck-test',
     timestamp_iso: str = '2026-06-11T12:00:00Z',
     args: str | None = 'run',
+    command_args: str | None = None,
     outcome: dict | None = None,
 ) -> dict:
     """Construct a ``kind=build`` ledger row.
@@ -112,6 +113,11 @@ def _build_entry(
     row as unreadable and reports ``undetermined`` — which is exactly why the
     notation cases below are unaffected by that second dimension. A scope case
     passes a realistic argv through :func:`_args_for`.
+
+    ``command_args`` models the field the executor records from the ONE argv
+    element ``--command-args`` receives. ``None`` reproduces a row written by an
+    executor that predates that field, which is the shape the reader must keep
+    reading from the joined ``args``.
 
     ``outcome`` is the wrapper's stdout TOON, omitted by default. The scope
     dimension reads ``tests_run`` / ``tests_population`` from it, and its ABSENCE
@@ -130,6 +136,8 @@ def _build_entry(
         entry['notation'] = notation
     if status is not None:
         entry['status'] = status
+    if command_args is not None:
+        entry['command_args'] = command_args
     if outcome is not None:
         entry['outcome'] = outcome
     return entry

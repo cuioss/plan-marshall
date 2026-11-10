@@ -916,15 +916,17 @@ FOR each step_id in manifest.phase_6.steps:
          **Signal 3 — script-failure clusters (three marker classes)**:
 
             python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-              read --plan-id {plan_id} --type work
+              signal-scan --plan-id {plan_id}
 
-         Scan the returned log lines for THREE marker classes and bucket each by the distinct failing script notation (the `bundle:skill:script` token in the line):
+         The verb is the DETERMINISTIC scanner for this signal — read `signal_3_count` from its result rather than re-deriving the count. It buckets three marker classes by the distinct failing script notation (the `bundle:skill:script` token in the line):
 
-         - **`[FAILED]`** lines — explicit failure markers.
-         - **`[ERROR] ... script_failure`** lines — the canonical per-call non-zero-exit marker emitted by the phase Error Handling sections (argparse rejections, internal errors, "Unknown notation" failures). These never carry a `[FAILED]` token.
-         - **`voluntary_checkpoint → error`** reclassifications — the dispatch-boundary no-progress reclassification (B7); the failing notation is the dispatched workflow/agent whose dispatch was reclassified.
+         - **`[FAILED]`** lines — explicit failure markers, from the WORK log.
+         - **`[ERROR] ... script_failure`** lines — the canonical per-call non-zero-exit marker emitted by the phase Error Handling sections (argparse rejections, internal errors, "Unknown notation" failures). These never carry a `[FAILED]` token. Also from the WORK log.
+         - **B7 no-progress reclassifications** — the DISPATCH-BOUNDARY no-progress reclassification, scanned in the DECISION log, which is where the orchestrator writes it. The marker string is stated once, in `manage-logging/scripts/_signal_scan.py` (`NO_PROGRESS_MARKER`), and the writer in [`plan-marshall/workflow/execution.md`](../plan-marshall/workflow/execution.md) § "B7 — voluntary_checkpoint no-progress reclassification" emits that same string. The scanner reads it from the DECISION log because that is the log the B7 writer writes to; the WORK log carries no copy of it.
 
-         `signal_3_count` is the number of distinct notations across the UNION of all three marker classes (a notation that fails under more than one class counts once). The motivating case: a long build lost across the dispatch boundary, logged as `[ERROR] script_failure` plus a `voluntary_checkpoint → error` reclassification but never a `[FAILED]` line. This marker set is kept consistent with the retrospective analyzer's failure-marker set so the Signal-Gate count and the retrospective's script-failure cluster count stay aligned.
+         `signal_3_count` is the number of distinct notations across the UNION of all three marker classes (a notation that fails under more than one class counts once); a marker line with no parseable notation is reported as `unattributable_count` and never counted, because a count cannot name a notation it could not read. The motivating case: a long build lost across the dispatch boundary, logged as `[ERROR] script_failure` plus a `voluntary_checkpoint → error` reclassification but never a `[FAILED]` line.
+
+         ⛔ **A prescribed build hand-back is NOT lesson-bearing and never enters the count.** A phase-5 return carrying `termination_cause: verification_handback` (the leaf handed an orchestrator-tier build back exactly as the workflow prescribes) is not a failure of any kind; `signal-scan` reports its row count as `verification_handback_rows` and excludes every one from `signal_3_count`, including a re-attach that writes two consecutive hand-back rows for the same task. The B7 marker is owned by `manage-logging/scripts/_signal_scan.py` and has no second copy: the retrospective's script-failure analysis reads the plan's `script-execution.log` AND `work.log`, so it neither restates the marker nor competes for the same rows.
 
       b. Three-zero short-circuit:
 
@@ -1358,8 +1360,12 @@ FOR each step_id in manifest.phase_6.steps:
 
           The Commit Changes flow commits through the gate-bearing `git-workflow commit`
           verb and relays `step: {step_id}` as its `--step`; that step identity is what
-          sanctions a phase-6 settle-band source commit. A raw `git commit` here would be
-          refused by the enforcement guard in `6-finalize` on both harnesses.
+          sanctions a phase-6 settle-band source commit. The same verb records the commit
+          in the change-ledger — a `6-finalize` commit leaves its own `kind=change` row —
+          so the next `5-execute` boundary admits it; the one statement of who writes the
+          row is [`workflow-integration-git` SKILL.md](../workflow-integration-git/SKILL.md)
+          § Commit Changes. A raw `git commit` here would be refused by the enforcement
+          guard in `6-finalize` on both harnesses — and would leave no row.
 
           **Re-stamp `head_at_completion` (mandatory for a head-dependent step)**: the instrumentation commit advances the feature-branch HEAD past the SHA the step recorded on its terminal `mark-step-done` call (the step captured `git rev-parse HEAD` BEFORE its edits were committed, because the dispatcher — not the step — owns the commit). For a `mutates_source: true` step that is ALSO head-dependent (resolve the step's own `head_dependent` fact — see § "Special case — HEAD-dependent steps"; do not consult an inline list), leaving the stale pre-commit SHA on the record makes the item-1 re-entry check observe `head_at_completion != live HEAD` and RE-FIRE the step on every resume — defeating the SKIP optimization. After the commit succeeds, resolve the new HEAD (`{new_commit_sha}`) and re-stamp the step's record so a converged-tree re-entry SKIPs correctly:
 
@@ -1941,7 +1947,7 @@ FOR each step_id in manifest.phase_6.steps:
 
           **(4a) On every return, before anything is routed — commit the triage's own edits, push, stamp the inline fixes, respond again.** The triage applies its inline edits (a SUPPRESS annotation, or the one edit of an inline fix) in the worktree and commits nothing. The triage is not a manifest step, so item 5f never sees those edits; this hook commits them, whatever `status` the triage returned and on either `loop_back_target`:
 
-          - Check the worktree and, when it is dirty, commit exactly as item 5f (a)-(b) does for a mutating step — `git -C {worktree_path} status --porcelain`, then `Skill: plan-marshall:workflow-integration-git` with `push: false` and the message `fix(review): apply inline review dispositions` — and resolve the new HEAD as `{inline_commit_sha}` with `git -C {worktree_path} rev-parse HEAD`. Emit the item 5f (d) freshness reconciliation record for it. A clean worktree means the triage edited nothing: skip the rest of (4a) and go to (4b).
+          - Check the worktree and, when it is dirty, commit exactly as item 5f (a)-(b) does for a mutating step — `git -C {worktree_path} status --porcelain`, then `Skill: plan-marshall:workflow-integration-git` with `push: false` and the message `fix(review): apply inline review dispositions` and **no** `step` (the triage is not a manifest step; the verb records its commit anyway — item 5f (b)) — and resolve the new HEAD as `{inline_commit_sha}` with `git -C {worktree_path} rev-parse HEAD`. Emit the item 5f (d) freshness reconciliation record for it. A clean worktree means the triage edited nothing: skip the rest of (4a) and go to (4b).
           - Re-invoke the `push` step, as item 5f § "Post-PR re-push" does, so the commit is on the pull request.
           - Stamp each inline fix this firing resolved: every `fixed` `pr-comment` finding with no `fix_task_number` and no `fix_commit_sha`, except the ones (0) left unstamped and logged in this same firing — which commit holds their edit is not known to this firing. An inline fix (0) stamped with its evidence commit carries a `fix_commit_sha` and is not selected here:
 

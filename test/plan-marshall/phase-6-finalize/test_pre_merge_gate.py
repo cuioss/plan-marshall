@@ -2,13 +2,12 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the pre-merge findings gate that owns the branch-cleanup merge dispatch.
 
-The merge verb used to be reachable without the blocking-findings check having
-run: the check was an instruction the step body could skip or misread. The
-entry point closes that by being the only route to the merge verb. The load-
-bearing property under test is therefore NEGATIVE — on a pending actionable
-finding, and on an unevaluable count, the injected merge runner is NEVER invoked —
-with the positive control that a clean store reaches it exactly once, with the
-routed verb's arguments unchanged, on both routes.
+The merge verb is reachable only through this entry point, so the blocking-findings
+check cannot be skipped or misread by a step body. The load-bearing property under
+test is therefore NEGATIVE — on a pending actionable finding, and on an unevaluable
+count, the injected merge runner is NEVER invoked — with the positive control that a
+clean store reaches it exactly once, with the routed verb's arguments unchanged, on
+both routes.
 """
 
 import re
@@ -1064,6 +1063,48 @@ def test_a_clean_merge_step_record_never_carries_the_gap():
 
 
 @pytest.mark.parametrize(
+    'fact',
+    [
+        'head_binding_unconsulted=finalize-step-sync-baseline',
+        'head_binding_fallback=functional-review',
+        'head_binding_status_read_fault=the plan-status read raised (status store unreadable)',
+    ],
+    ids=['unconsulted-stamp', 'derivation-fallback', 'status-read-fault'],
+)
+def test_record_merge_carries_what_the_head_binding_did_not_validate(fact):
+    """A merge that passed on an unconsulted stamp, a fallback or an unread status leaves a trace.
+
+    The head binding names all three classes on the dispatched payload; without a
+    fact for each, a merge that passed without validating them is
+    indistinguishable at the record site from one every gate validated.
+    """
+    written: list[list[str]] = []
+
+    result = gate.record_merge(
+        _PLAN_ID,
+        facts=[*_MERGE_FACTS_CLEAN, fact],
+        mark_done_runner=lambda argv: written.append(list(argv)) or {'status': 'success'},
+    )
+
+    assert result['status'] == 'success', result
+    assert fact in written[0]
+
+
+def test_the_head_binding_facts_are_declared_by_the_step_record_contract():
+    """All three keys belong to the step's ``records_facts`` union, not only its wiring."""
+    from extension_discovery import _read_frontmatter_fields
+
+    fields = _read_frontmatter_fields(_BRANCH_CLEANUP, ('records_facts',))
+    declared = set(fields.get('records_facts') or [])
+
+    assert {
+        'head_binding_unconsulted',
+        'head_binding_fallback',
+        'head_binding_status_read_fault',
+    } <= declared, sorted(declared)
+
+
+@pytest.mark.parametrize(
     ('action', 'merge_mechanism', 'expected'),
     [
         ('noop', 'pr_safe_merge', 'already current with base, merged directly, cleanup complete'),
@@ -1610,3 +1651,117 @@ def test_the_consequence_knob_flag_admits_only_the_two_declared_values():
         parser.parse_args(['consequence-text', '--final-merge-without-asking', 'maybe'])
 
     assert exc.value.code == 2
+
+
+# --------------------------------------------------------------------------- #
+# The operator prompt is built from the labels the grant accepts
+# --------------------------------------------------------------------------- #
+#
+# The barrier's prompt must name its override options from the same constant
+# ``merge-authorization grant`` validates against: a prose list drifts from the
+# constant and an operator answer copied from the prompt is then refused. The gate
+# publishes the constant's labels in its participation refusal, and the documents
+# tell the agent to take them verbatim. These two cases pin both halves.
+
+_PHASE_6_SKILL = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-6-finalize' / 'SKILL.md'
+
+#: A grant's two operator flags carry the override label. The escaped variant is the
+#: one embedded inside the structural-refusal decision-log message.
+_OVERRIDE_LABEL_VALUE = re.compile(r'--(?:operator-answer|override-label)\s+\\?"([^"\\]+)\\?"')
+
+#: An option label a prompt DECLARES. Drift between this and the label the grant is
+#: called with is the defect the doc-sync guard exists to catch.
+_DECLARED_OPTION_LABEL = re.compile(r'^\s*- label: "([^"]+)"', re.MULTILINE)
+
+
+def _override_labels_named(path):
+    """Every override label ``path`` passes to the grant, in either quote form."""
+    return set(_OVERRIDE_LABEL_VALUE.findall(path.read_text(encoding='utf-8')))
+
+
+def _option_labels_declared_in(path):
+    """Every option label ``path`` declares in an ``AskUserQuestion`` prompt block."""
+    return set(_DECLARED_OPTION_LABEL.findall(path.read_text(encoding='utf-8')))
+
+
+def test_the_participation_refusal_publishes_the_labels_the_grant_accepts():
+    """(a) The refusal carries the constant's labels so a prompt can be built from it."""
+    from _cmd_merge_authorization import BARRIER_OVERRIDE_LABELS
+
+    runner = _Runner()
+
+    result = _merge(_CLEAN_VERDICT, runner, participation=_PARTICIPATION_ABSENT)
+
+    assert runner.calls == []
+    assert result['error'] == gate.MERGE_PARTICIPATION_UNPROVEN
+    assert result['authorizable'] is True
+    assert result['override_options'] == list(BARRIER_OVERRIDE_LABELS)
+
+
+def test_an_unimportable_override_label_source_is_named_in_the_refusal(monkeypatch):
+    """A fault in the label source degrades the prompt, so the refusal says so.
+
+    Swallowing it would leave a refusal whose ``override_options`` is simply absent —
+    indistinguishable from a participation gap that needs no ask at all.
+    """
+    monkeypatch.setitem(sys.modules, '_cmd_merge_authorization', None)
+    runner = _Runner()
+
+    result = _merge(_CLEAN_VERDICT, runner, participation=_PARTICIPATION_ABSENT)
+
+    assert result['error'] == gate.MERGE_PARTICIPATION_UNPROVEN
+    assert 'override_options' not in result
+    assert 'could not be imported' in result['override_options_unavailable']
+
+
+def test_an_unreadable_status_names_the_fault_in_the_evidence(monkeypatch):
+    """The gate admits on an unreadable status, and the admission names the unknown.
+
+    A silent ``None`` from the in-process read is an empty admit: a plan whose
+    status cannot be read would merge with nothing saying the head binding was never
+    consulted.
+    """
+    import _status_core
+
+    def _raising(_plan_id, any_checkout=False):
+        raise RuntimeError('status store unreadable')
+
+    monkeypatch.setattr(_status_core, 'resolve_plan_status', _raising)
+    runner = _Runner()
+
+    result = _merge(_CLEAN_VERDICT, runner, status_reader=None)
+
+    assert result['dispatched'] is True
+    assert 'status store unreadable' in result['status_read_fault']
+
+
+def test_every_override_label_the_documents_name_is_one_the_grant_accepts():
+    """(b) Every named override label is a constant member AND a declared option.
+
+    Two drift directions are caught, which is why the declared-label population is
+    part of the assertion:
+
+    * the grant constant drops or renames a label the documents still pass —
+      ``named - accepted``;
+    * a prompt's ``label:`` line is paraphrased while the grant invocation keeps the
+      old spelling (or the other way round) — ``named - declared``. A guard that
+      read only the grant invocations would stay green through exactly that edit.
+    """
+    from _cmd_merge_authorization import BARRIER_OVERRIDE_LABELS
+
+    accepted = set(BARRIER_OVERRIDE_LABELS)
+    declared = _option_labels_declared_in(_BRANCH_CLEANUP) | _option_labels_declared_in(_PHASE_6_SKILL)
+
+    for path in (_BRANCH_CLEANUP, _PHASE_6_SKILL):
+        named = _override_labels_named(path)
+        assert named, f'{path.name} names no override label — the guard would pass vacuously'
+        drifted = sorted(named - accepted)
+        assert not drifted, (
+            f'{path.name} names override label(s) the grant refuses: {drifted}. '
+            f'The grant accepts exactly: {sorted(accepted)}'
+        )
+        undeclared = sorted(named - declared)
+        assert not undeclared, (
+            f'{path.name} passes override label(s) no prompt declares: {undeclared}. '
+            f'The prompt label and the grant value have drifted apart; declared: {sorted(declared)}'
+        )

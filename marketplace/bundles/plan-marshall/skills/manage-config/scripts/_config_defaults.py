@@ -447,8 +447,8 @@ DEFAULT_PLAN_COVERAGE = {'thoroughness': 'inherit', 'scope': 'inherit'}
 # Plan-wide per-field byte cap for quarantined `raw_input.{field}` free-text in the
 # findings ledger (`plan.finding_raw_input_max_bytes` in marshal.json). Every
 # producer files untrusted free-text under the `raw_input.{field}` quarantine
-# sub-namespace; the ledger caps each field at this many bytes and appends a
-# `[truncated]` marker on overflow. 65536 (64 KiB) is corpus-grounded — across 399
+# sub-namespace; the ledger caps each field at this many bytes, keeping the head and
+# tail and eliding the middle on overflow. 65536 (64 KiB) is corpus-grounded — across 399
 # PR-comment findings p50 ≈ 2 KB, p99 ≈ 21 KB, max ≈ 68 KB — so 64 KiB retains the
 # full body for effectively every real finding while bounding a hostile oversized
 # payload. The seed is byte-identical to `manage-findings`'
@@ -869,8 +869,16 @@ DEAD_REMOVED_STEP_ORIGIN = 'dead_step'
 # ``migrate-bot-lists`` seed, ``_cmd_sync_defaults`` for the post-merge
 # back-fill). A second copy as a literal is a defect: if one copy changes,
 # the two writers seed different rosters with no sync between them.
-STANDARD_REQUIRED_BOTS = 'cuioss-review-bot,coderabbit'
+STANDARD_REQUIRED_BOTS = 'coderabbit'
 STANDARD_OPTIONAL_BOTS = 'sourcery'
+
+# Bot kinds withdrawn from the shipped registry. A consumer configuration may still
+# name one in its roster (a ``marshal.json`` written while the bot existed), and an
+# unknown kind classifies ``unregistered_kind`` — unproven and BLOCKING, so a leftover
+# name would hold that consumer's merge forever. The roster writers strip every name in
+# this tuple instead, which is why it is the ONE place a retired kind is spelled:
+# recognition needs no tombstone, only the migration does.
+RETIRED_BOT_KINDS = ('cuioss-review-bot',)
 
 # The three-valued reviewer-roster provenance vocabulary (single source for both
 # writers — the ``migrate-bot-lists`` migration and the ``sync-defaults``
@@ -1547,7 +1555,7 @@ def get_default_config() -> dict:
             'open_in_ide': DEFAULT_OPEN_IN_IDE,
             'coverage': copy.deepcopy(DEFAULT_PLAN_COVERAGE),
             # Per-field byte cap for quarantined raw_input free-text in the
-            # findings ledger (64 KiB; `[truncated]` marker on overflow).
+            # findings ledger (64 KiB; head+tail kept, middle elided on overflow).
             'finding_raw_input_max_bytes': DEFAULT_FINDING_RAW_INPUT_MAX_BYTES,
             'phase-1-init': copy.deepcopy(DEFAULT_PLAN_INIT),
             'phase-2-refine': copy.deepcopy(DEFAULT_PLAN_REFINE),

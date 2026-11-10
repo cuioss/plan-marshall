@@ -40,6 +40,7 @@ from _build_result import (
     ERROR_EXECUTION_FAILED,
     ERROR_LOG_FILE_FAILED,
     LAUNCH_FAULT_ERRORS,
+    PRE_TOOL_FAULT_ERRORS,
     STATUS_INDETERMINATE,
     STATUS_KILLED,
     STATUS_RUNNING,
@@ -372,10 +373,11 @@ def _store_build_findings(
             detail_lines.append('')
             detail_lines.append('--- stack trace ---')
             detail_lines.append(issue.stack_trace)
-        # The representative per-signature failure block (deliverable 9) carries
-        # the *why* of a failure — round-trip it into the finding store so a
-        # triage reader gets the traceback/assertion body without a raw-log
-        # re-read. Present only for parsers that populate it (pyproject today).
+        # The representative detail block carries the *why* of an issue —
+        # round-trip it into the finding store so a triage reader gets it without
+        # a raw-log re-read. Populated by the parsers that capture one: the
+        # pyproject one (a per-signature traceback/assertion body) and the Maven
+        # one (a compiler error's ``symbol:`` / ``location:`` continuation lines).
         if issue.detail:
             detail_lines.append('')
             detail_lines.append('--- failure detail ---')
@@ -471,8 +473,8 @@ def _reconcile_pending_build_findings(
     its green says nothing about that dimension and clears nothing in it. A run
     whose population could not be determined at all clears nothing whatsoever.
     ``test-failure`` keeps the stronger, pre-existing requirement of a MEASURED
-    non-zero executed-test count, and an unknown count no longer masquerades as a
-    zero that merely happens to refuse.
+    non-zero executed-test count, and an unknown count is never read as a zero that
+    merely happens to refuse.
 
     The population the decision was made on is stamped into every resolution
     detail via :func:`_build_examined.population_label`, so a reader of a resolved
@@ -551,10 +553,9 @@ def _cap_errors_with_truncation(errors: list[Issue], cap: int = _ERRORS_EMIT_CAP
     ``len(errors) - len(shown)`` so ``len(shown) + truncated`` always reconstructs
     the true total — count-vs-shown can never silently disagree.
 
-    Because this cap lives in the SHARED helper, the reconciliation benefits
-    Maven/Gradle/npm as well as pyproject: their parsers still emit terse
-    per-failure messages until the follow-on, but the cap and the ``truncated``
-    marker are now correct for every build tool.
+    Because this cap lives in the SHARED helper, the reconciliation applies to
+    Maven/Gradle/npm as well as pyproject: the cap and the ``truncated`` marker are
+    correct for every build tool, whatever its parser's per-failure message style.
     """
     total = len(errors)
     deduped: list[Issue] = []
@@ -708,7 +709,10 @@ def cmd_run_common(
     **Only a genuine failure reaches the build-failure path.** The two
     NON-FINISHES (``timeout``, ``killed``) and the undetermined outcome
     (``indeterminate``) each get their own branch, and none of them stores
-    findings or synthesises an ``errors[]`` row. That asymmetry is the point: the
+    findings or synthesises an ``errors[]`` row. A PRE-TOOL refusal — the build
+    process stopped before any tool ran, so the result names a member of
+    ``PRE_TOOL_FAULT_ERRORS`` — is re-emitted as itself for the same reason. That
+    asymmetry is the point: the
     build-failure path below asserts the build ran and failed — it stores every
     parsed issue as a finding and, when the parser found none, manufactures a
     synthetic ``build_failure`` row so ``status`` and ``errors[]`` cannot
@@ -742,9 +746,30 @@ def cmd_run_common(
             default, never a silent full-entitlement one.
 
     Returns:
-        Exit code (0 for success, 1 for failure).
+        The process exit code. The build's status is modelled in the emitted
+        payload, so ``0`` is the answer for ``success``, for the ``killed`` /
+        ``timeout`` / ``indeterminate`` / ``running`` non-finishes, and for a build
+        that ran and failed. The two exceptions are the faults that produced no
+        build verdict at all: ``1`` for a LAUNCH fault, and the CHILD's own
+        positive code for a PRE-TOOL refusal — so the direct and routed routes
+        answer the same number (exit ``2`` for ``worktree_resolution_failed``),
+        falling back to ``1`` when the child stated a non-positive one.
     """
-    formatter = format_json if output_format == 'json' else format_toon
+    base_formatter = format_json if output_format == 'json' else format_toon
+
+    # ``queued_seconds`` is produced by the routing seam (how long the build
+    # waited behind another build of its directory), and every branch below
+    # REBUILDS the emitted payload from the fields it names. Wrapping the
+    # formatter is what carries that one field through every branch — hand-back,
+    # success, failure, timeout, killed, indeterminate — instead of adding it to
+    # each payload construction, where a new branch would silently drop it and the
+    # operator would lose the only signal that the build was serialised rather
+    # than slow.
+    def formatter(output: dict[str, Any]) -> str:
+        queued = result.get('queued_seconds')
+        if isinstance(queued, int) and not isinstance(queued, bool) and queued >= 0:
+            output = {**output, 'queued_seconds': queued}
+        return base_formatter(output)
 
     log_file = result['log_file']
     command_str = result['command']
@@ -777,6 +802,30 @@ def cmd_run_common(
         print(formatter(err_output))
         return 1
 
+    # Handle a PRE-TOOL refusal — the build process stopped before any tool ran.
+    #
+    # This branch precedes the build-failure path for the same reason the launch-
+    # fault branch above does: the failure path asserts that the build ran and
+    # failed, stores findings from a log that holds no per-test rows, and (with
+    # none parsed) manufactures one synthetic ``build_failure`` row. Reporting a
+    # routing fault — a plan tree that would not resolve, two routing flags at
+    # once, an executor that refused the dispatch — through that path turns a
+    # routing fault into a red build with a fabricated failure row. The result
+    # already carries the child's own name, reason and exit code, so they are
+    # re-emitted verbatim and the process exits with the child's own code.
+    if result['status'] == 'error' and str(result.get('error') or '') in PRE_TOOL_FAULT_ERRORS:
+        fault_extra = {name: result[name] for name in ('reason', 'message', 'project_dir') if result.get(name)}
+        fault_output = error_result(
+            error=str(result['error']),
+            exit_code=int(result['exit_code']),
+            duration_seconds=result['duration_seconds'],
+            log_file=log_file,
+            command=command_str,
+            **fault_extra,
+        )
+        print(formatter(fault_output))
+        return int(result['exit_code']) if int(result['exit_code']) > 0 else 1
+
     # Handle a KILL — a stop our own bound did not cause.
     #
     # This branch precedes the timeout branch deliberately: a kill and a timeout
@@ -785,9 +834,8 @@ def cmd_run_common(
     # terminated, so a kill must be routed out before it can be read as one.
     # The result carries the kill's own diagnostic fields (`error: killed` and
     # the shared no-blind-retry `message`), and BOTH are propagated onto the
-    # emitted payload rather than reconstructed — an earlier shape built a fresh
-    # `error_result` here and silently dropped them, so the discriminator the
-    # daemon had already computed never reached any consumer.
+    # emitted payload rather than reconstructed — a reconstruction drops them and
+    # the discriminator the daemon had already computed never reaches a consumer.
     if result['status'] == STATUS_KILLED:
         killed_extra = _non_finish_evidence(log_file, command_str, parser_fn, parser_needs_command, 'Killed')
         # The bound that did NOT fire is still diagnostic: it says how much
@@ -841,7 +889,10 @@ def cmd_run_common(
             'log_file': log_file,
             'command': command_str,
             'job_id': result.get('job_id', ''),
-            'job_status': STATUS_RUNNING,
+            # The observed daemon status when the producer carried one — `queued`
+            # for a job that had not started when the bound expired — else
+            # `running`.
+            'job_status': result.get('job_status') or STATUS_RUNNING,
         }
         print(formatter(running_output))
         return 0  # Status modeled in output, not exit code
@@ -927,7 +978,7 @@ def cmd_run_common(
             # clear — the types whose analysis it actually performed. A run that
             # examined nothing, or whose population is unknown, clears nothing
             # (see _reconcile_pending_build_findings). A plan-less build owns no
-            # finding store and reconciles nothing, exactly as before.
+            # finding store and reconciles nothing.
             if names_real_plan(plan_id):
                 try:
                     _reconcile_pending_build_findings(
@@ -1009,7 +1060,7 @@ def cmd_run_common(
         # lint-issue) is appended to the per-type finding store before any
         # mode-specific warning filtering is applied. Producer-side mismatch
         # (parsed != stored) is surfaced as a Q-Gate finding. A plan-less build
-        # owns no finding store and stores nothing, exactly as before.
+        # owns no finding store and stores nothing.
         if names_real_plan(plan_id):
             count_seen, count_stored, store_failures = _store_build_findings(
                 plan_id=plan_id,

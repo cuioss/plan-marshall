@@ -22,6 +22,8 @@ from typing import Any
 from _criteria_snapshot import (
     AUTHORED_KEY,
     AUTHORSHIP_SCHEMA,
+    CRITERION_UNPARSED,
+    PARSER_EXTENDED,
     REQUEST_MISSING,
     SPEC_MISSING,
     SUPERSEDED,
@@ -226,8 +228,8 @@ def missing_evidence(evidence_root: Path, evidence: list[str], plan_id: str) -> 
     """Return every cited path, or cited test name, absent from ``evidence_root``.
 
     A path that does not exist AT THE GRADED HEAD is a citation of something the
-    change never had; a ``path::name`` whose name appears nowhere in the file is
-    the PLAN-LB-40 fabrication — a cited test that exists nowhere. A dotted name
+    change never had; a ``path::name`` whose name appears nowhere in the file is a
+    fabricated citation — a cited test that exists nowhere. A dotted name
     is checked segment by segment, so a class-scoped citation counts when the
     file holds its class and its method.
 
@@ -455,15 +457,35 @@ def _grade_row(
 
 
 def grade_frozen_criteria(grading: Grading, drift: list[dict[str, Any]]) -> int:
-    """Grade the frozen-criteria drift as blocking findings; return the count.
+    """Grade the frozen-criteria drift, and return the number of rows it read.
 
-    One finding per criterion the current outline no longer carries verbatim, one
-    per frozen deliverable that vanished, and one per spec deliverable whose own
-    Done-when no outline criterion covers. A criterion the snapshot froze and an
-    operator decision authorized is not in ``drift`` at all, so it is a pass.
+    One BLOCKING finding per criterion the current outline no longer carries
+    verbatim, one per frozen deliverable that vanished, and one per spec deliverable
+    whose own Done-when no outline criterion covers. A criterion the snapshot froze
+    and an operator decision authorized is not in ``drift`` at all, so it is a pass.
+
+    One kind is ADVISORY, never blocking: ``parser_extended`` — a frozen criterion
+    that is a prefix of the criterion the current parser reads in full, admitted only
+    for a snapshot whose marker names an earlier parser generation. It is reported as
+    `criterion_parser_extended` for visibility and left out of the blocking set;
+    retiring it is a re-freeze, which needs its own authorization.
     """
     for row in drift:
         kind = row.get('kind')
+        number = row.get('deliverable')
+        if kind == PARSER_EXTENDED:
+            # A wrapped bullet the current parser reads in full. Visible, never
+            # blocking: nothing about the outline changed, and the operation that
+            # would retire it is a re-freeze, which needs its own authorization.
+            grading.add(
+                'criterion_parser_extended',
+                f'D{number}',
+                f'{row.get("criterion")} -> {row.get("current")}',
+                False,
+                None,
+                f'deliverable {number}',
+            )
+            continue
         if kind in (SPEC_MISSING, REQUEST_MISSING):
             grading.add(
                 kind,
@@ -474,7 +496,16 @@ def grade_frozen_criteria(grading: Grading, drift: list[dict[str, Any]]) -> int:
                 'request or spec Done-when',
             )
             continue
-        number = row.get('deliverable')
+        if kind == CRITERION_UNPARSED:
+            grading.add(
+                'criterion_unparsed',
+                f'D{number}',
+                str(row.get('criterion')),
+                True,
+                FIX_KIND_IMPLEMENTATION,
+                f'deliverable {number}',
+            )
+            continue
         if kind == 'rewritten':
             graded_kind, title = 'criterion_rewritten', f'{row.get("criterion")} -> {row.get("current")}'
         else:

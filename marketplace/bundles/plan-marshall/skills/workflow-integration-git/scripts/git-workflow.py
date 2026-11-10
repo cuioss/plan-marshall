@@ -1004,6 +1004,78 @@ def cmd_push(args):
     }
 
 
+#: The ``deliverable_id`` a ``6-finalize`` commit that names no step carries.
+#: A fixed prefix rather than a serial, a message-derived value or the plan id:
+#: a reader that maps a ``kind=change`` id onto an outline deliverable keys on
+#: TRAILING DIGITS (``_review_support_validate.deliverable_number``), and this
+#: prefix ends in none, so a finalize commit is never read as deliverable work.
+_FINALIZE_COMMIT_DELIVERABLE_ID = 'finalize-commit'
+
+
+def _commit_changed_paths(worktree: Path, commit_sha: str) -> list[str] | None:
+    """The git-sourced path list of one commit, or ``None`` when git cannot list it.
+
+    ``changed_paths`` is the one field the ledger contract forbids a caller to
+    compute: it MUST come from ``git diff-tree`` against the just-produced
+    commit. ``--root`` makes a repository's first commit enumerate like any
+    other, and NUL separation keeps quoted and space-padded paths verbatim.
+    """
+    rc, out, _err = _run_git_nul_verbatim(
+        ['-C', str(worktree), 'diff-tree', '--no-commit-id', '--name-only', '-r', '--root', '-z', commit_sha]
+    )
+    if rc != 0:
+        return None
+    return [part for part in out.split('\0') if part]
+
+
+def _record_finalize_change(worktree: Path, commit_sha: str, step: str | None) -> dict[str, Any]:
+    """Append the ``kind=change`` ledger row a ``6-finalize`` commit owes.
+
+    Phase 5 is not the only commit owner: finalize makes its own commits —
+    dispatcher item 5f(b), the unified-triage inline fix at 7c(4a), and the
+    architecture refresh — and the ``5-execute`` boundary refuses unless EVERY
+    branch commit carries a row. This verb is the ONE path all of them go
+    through, and the only place holding the new SHA, the staged paths and the
+    plan's phase together, so it owns the row for a finalize commit.
+
+    It records ONLY in ``6-finalize``, which is what keeps phase-5 Step 10a's
+    row single: at the ``5-execute`` boundary — the settle-band recovery
+    included — ``current_phase`` is still ``5-execute``, so the settlement owns
+    its own row and no commit ever gets two.
+
+    ``deliverable_id`` is the composed manifest step id when the caller names one
+    (item 5f(b) relays its ``{step_id}``) and
+    :data:`_FINALIZE_COMMIT_DELIVERABLE_ID` otherwise, so the id is never
+    mistakable for an outline deliverable.
+
+    A failure here does NOT fail the commit — the commit already exists and
+    rolling it back is not this verb's business. The row is reported missing
+    instead, so the boundary's ``bookkeeping_gap`` refusal (the fail-closed
+    direction) is what surfaces it.
+    """
+    changed_paths = _commit_changed_paths(worktree, commit_sha)
+    if changed_paths is None:
+        return {'recorded': False, 'error': 'changed_paths_unreadable'}
+    deliverable_id = step or _FINALIZE_COMMIT_DELIVERABLE_ID
+    try:
+        from _ledger_core import append_entry, change_record
+        from worktree_sha import compute_worktree_sha
+    except ImportError as exc:  # pragma: no cover — the executor maps both modules
+        return {'recorded': False, 'deliverable_id': deliverable_id, 'error': f'ledger_unavailable: {exc}'}
+    try:
+        append_entry(
+            change_record(
+                deliverable_id=deliverable_id,
+                worktree_sha=compute_worktree_sha(worktree),
+                commit_sha=commit_sha,
+                changed_paths=changed_paths,
+            )
+        )
+    except OSError as exc:
+        return {'recorded': False, 'deliverable_id': deliverable_id, 'error': f'ledger_write_failed: {exc}'}
+    return {'recorded': True, 'deliverable_id': deliverable_id}
+
+
 def cmd_commit(args):
     """Handle the commit subcommand — the single gate-bearing commit path.
 
@@ -1019,6 +1091,12 @@ def cmd_commit(args):
     always passes. The phase comes from the plan's own ``current_phase`` — never
     a caller-settable ``--phase``. On allow it performs the
     commit (``-F`` message file or ``-m`` message) and, with ``--push``, pushes.
+
+    A committed ``6-finalize`` commit also leaves its own ``kind=change`` ledger
+    row through :func:`_record_finalize_change`, so the ``5-execute`` boundary
+    admits the branch whichever phase made each commit. The result reports the
+    outcome as ``ledger_recorded`` (with ``ledger_deliverable_id`` and, when it
+    failed, ``ledger_error``); the commit itself stands either way.
     """
     worktree, err = _resolve_analyze_diff_path(args)
     if err is not None:
@@ -1072,6 +1150,15 @@ def cmd_commit(args):
     rc, head, _err = _run_git_nul_verbatim(['-C', str(worktree), 'rev-parse', 'HEAD'])
     commit_hash = head.strip() if rc == 0 else None
 
+    # A finalize commit owes its own ledger row, recorded BEFORE the push: the
+    # commit exists whether or not the push is admitted by the head gate, and a
+    # commit with no row is exactly what the 5-execute boundary refuses. The
+    # phase test keeps phase-5's Step 10a row single (see
+    # `_record_finalize_change`), so no commit is ever recorded twice.
+    ledger: dict[str, Any] = {}
+    if commit_hash and phase == _SOURCE_COMMIT_GATE_PHASE:
+        ledger = _record_finalize_change(worktree, commit_hash, step)
+
     pushed = False
     if getattr(args, 'push', False):
         if not commit_hash:
@@ -1110,7 +1197,7 @@ def cmd_commit(args):
             return make_error(f'git push failed: {push_err or f"exit {rc}"}', code=ErrorCode.FETCH_FAILURE)
         pushed = True
 
-    return {
+    result: dict[str, Any] = {
         'status': 'success',
         'allowed': True,
         'reason': verdict.get('reason'),
@@ -1120,6 +1207,13 @@ def cmd_commit(args):
         'files_changed': len(staged),
         'pushed': pushed,
     }
+    if phase == _SOURCE_COMMIT_GATE_PHASE:
+        result['ledger_recorded'] = bool(ledger.get('recorded'))
+        if 'deliverable_id' in ledger:
+            result['ledger_deliverable_id'] = ledger['deliverable_id']
+        if 'error' in ledger:
+            result['ledger_error'] = ledger['error']
+    return result
 
 
 def analyze_diff(diff_content: str) -> dict:

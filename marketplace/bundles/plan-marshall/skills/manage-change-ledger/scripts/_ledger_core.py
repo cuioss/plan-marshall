@@ -12,9 +12,11 @@ maps ``kind=change`` rows of rewritten commits onto their rewritten
 counterparts. The ledger is the unified ``worktree_sha``-stamped record of
 working-tree transitions; it subsumes the former "build-registry" idea entirely
 (there is NO separate ``builds.jsonl``).
-Both writers — the executor dispatch-boundary ``kind=build`` writer and the
-phase-5 ``kind=change`` writer — and both readers — the ``query`` verb and the
-``pre-commit-verify-freshness`` gate — go through this core so entries are
+Both ``kind`` writers — the executor dispatch-boundary ``kind=build`` writer and
+the two ``kind=change`` commit owners (the phase-5 Step 10a settlement and the
+``workflow-integration-git`` ``commit`` verb's ``6-finalize`` row) — and both
+readers — the ``query`` verb and the ``pre-commit-verify-freshness`` gate — go
+through this core so entries are
 shaped identically and parsed identically. The rewrite-remap writes through the
 same :func:`append_entry`, so it is never a second write path.
 
@@ -144,6 +146,7 @@ def build_record(
     worktree_sha: str | None,
     log_file: str | None,
     command: str | None = None,
+    command_args: str | None = None,
     duration_seconds: float | None = None,
     outcome: dict[str, Any] | None = None,
     timestamp_iso: str | None = None,
@@ -182,14 +185,24 @@ def build_record(
     "what did the operator ask for" reads ``args`` and one that needs "what
     actually ran" reads ``command``.
 
-    ``command``, ``duration_seconds`` and ``outcome`` are all sourced from the
-    wrapper's stdout TOON and are therefore OPTIONAL: they default to ``None``
-    and stay ``None`` when the payload is absent or unparseable (a killed or
-    crashed build), and for a hand-appended row that legitimately has no
-    resolved command, no measured duration and no wrapper payload. ``outcome``
-    is the wrapper's whole stdout TOON as a dict, retained verbatim so a
-    reader gets the wrapper's own report (log file path, per-error rows)
-    without re-reading the build log.
+    ``command_args`` is the VALUE the executor's ``--command-args`` received.
+    It exists because ``args`` joins the argv WITHOUT quoting, so a flag after
+    the payload cannot be placed inside or outside the payload's own quoting —
+    an executor flag (``--timeout 900``) and a build flag (``-k foo``) are
+    indistinguishable there. The executor holds the argv as a ``list[str]``
+    before it joins, so the payload is one element and can be recorded as one.
+    A flag INSIDE this value stays ambiguous and is therefore still unreadable
+    to the freshness reader.
+
+    ``command``, ``command_args``, ``duration_seconds`` and ``outcome`` are all
+    OPTIONAL: they default to ``None`` and stay ``None`` when the source is
+    absent — a killed or crashed build for the payload-sourced fields, a
+    dispatch with no ``--command-args`` for ``command_args``, and a
+    hand-appended row for any of them. ``command_args`` is sourced from the
+    executor argv layer, not the wrapper payload, which is why it is the one
+    field here that no wrapper can supply. ``outcome`` is the wrapper's whole
+    stdout TOON as a dict, retained verbatim so a reader gets the wrapper's own
+    report (log file path, per-error rows) without re-reading the build log.
 
     **Secrets discipline — a DELIBERATE divergence from the build-server audit
     log, not an oversight.** ``build_server._audit_log`` refuses to record the
@@ -209,7 +222,8 @@ def build_record(
     the ``build_results_days`` retention target, while the ledger is append-only
     with no cleanup target, so the excerpt outlives the log it came from. Do NOT
     widen this record with a field sourced from anywhere other than the wrapper
-    payload, and do NOT copy this exemption into a store that leaves the
+    payload or the executor argv layer it already records (``args``,
+    ``command_args``), and do NOT copy this exemption into a store that leaves the
     machine.
     """
     return {
@@ -217,6 +231,7 @@ def build_record(
         'notation': notation,
         'plan_id': plan_id,
         'args': args,
+        'command_args': command_args,
         'command': command,
         'duration_seconds': duration_seconds,
         'outcome': outcome,
@@ -238,8 +253,10 @@ def change_record(
 ) -> dict[str, Any]:
     """Construct a ``kind=change`` ledger record.
 
-    Written by the phase-5 execute loop after each deliverable completes and
-    commits. ``commit_sha`` and ``changed_paths`` are git-sourced by the caller
+    Written by whichever commit owner made the commit: the phase-5 execute loop
+    after each deliverable completes and commits, or the
+    ``workflow-integration-git`` ``commit`` verb for a ``6-finalize`` commit.
+    ``commit_sha`` and ``changed_paths`` are git-sourced by the caller
     (from ``git diff-tree`` against the just-produced commit) — this constructor
     stores the caller-supplied list VERBATIM; it does NOT compute or re-derive
     changed paths. Self-computed / ``affected_files``-snapshotted paths are

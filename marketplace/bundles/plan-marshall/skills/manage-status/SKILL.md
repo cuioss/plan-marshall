@@ -501,6 +501,7 @@ A step can fire more than once — the ordinary shape for a phase-6-finalize ste
 A head-dependent step whose `done` record sits at an older HEAD is re-fired when HEAD advances. `refire_waiver` is the operator's recorded decision that the step is NOT re-fired at one specific HEAD.
 
 - `head` — the HEAD the waiver holds for, as a full commit SHA. A reader honours the waiver only while the live HEAD equals it; at any other HEAD the waiver is void and the step re-fires as it would with no waiver at all.
+- The readers are the phase-6-finalize dispatcher's re-entry table (which skips the step) and [`pre_merge_gate merge`](../phase-6-finalize/scripts/pre_merge_gate.py) (whose head binding does not count the step as ungated at its waiver head), and both apply that same equality. No other script reads the key: [`test_refire_waiver_readers.py`](../../../../../test/plan-marshall/manage-status/test_refire_waiver_readers.py) enumerates every script under the bundles that names it, so a third reader fails there until it is classified.
 - `basis` — why the re-fire was waived: the step that was closed and the operator's rationale.
 - The waiver is a **sibling** key. The record's `outcome`, `head_at_completion`, `facts` and firing history are left exactly as they were: the step stays `done` at the anchor it actually completed at, and the waiver says only that its staleness at `head` was accepted. It is never recorded as a `skipped` outcome — the `phase_steps_complete` handshake counts `skipped` on a required step as incomplete, and overwriting the anchor would claim the step ran against a tree it never saw.
 - It is written only by `loop-back close`, and only onto a step that already holds a `done` record. A step with any other outcome, or with no record, is refused.
@@ -744,7 +745,7 @@ plan_id: my-feature
 kind: barrier-ask-override
 head: 76c7200b6
 gap_class: review-barrier-gap
-granted_over: 2 unhandled, unproven_bots=cuioss-review-bot
+granted_over: 2 unhandled, unproven_bots=coderabbit
 reason: operator accepted the gap
 granted_at: "2026-01-15T14:30:00Z"
 ```
@@ -800,7 +801,7 @@ admissible_kinds[0]:
 inadmissible_kinds[1]:
   - pre-merge-consent
 records[2]{kind,head,verdict,gap_class,admissible,granted_over,reason,granted_at}:
-  barrier-ask-override,d4f1a02c9,lapsed,review-barrier-gap,false,2 unhandled unproven_bots=cuioss-review-bot,operator accepted the gap,2026-01-15T14:30:00Z
+  barrier-ask-override,d4f1a02c9,lapsed,review-barrier-gap,false,2 unhandled unproven_bots=coderabbit,operator accepted the gap,2026-01-15T14:30:00Z
   pre-merge-consent,76c7200b6,valid,merge-action,false,operator confirmed merge of PR #42 at this HEAD,operator selected 'Yes merge',2026-01-15T14:41:00Z
 ```
 
@@ -1329,9 +1330,12 @@ per offending phase.
 
 **5-execute end-marker post-condition.** Completing `5-execute` additionally
 requires every branch commit since the branch diverged from its base
-to carry a `kind=change` change-ledger row (the Step 10a settlement
-bookkeeping). The clean-tree guard only reads *uncommitted* state, so a
-committed-but-unrecorded deliverable commit is the silent skip it cannot see —
+to carry a `kind=change` change-ledger row, whichever phase made it — the
+phase-5 Step 10a settlement records a deliverable commit and the gate-bearing
+`git-workflow commit` verb records a finalize commit's own (see
+[`../workflow-integration-git/SKILL.md`](../workflow-integration-git/SKILL.md)
+§ Commit Changes). The clean-tree guard only reads *uncommitted* state, so a
+committed-but-unrecorded branch commit is the silent skip it cannot see —
 this gate closes it. **It applies to every plan**, not only the isolated-worktree
 ones: a main-checkout plan makes the same per-deliverable commits against the same
 ledger, and its checkout is the one that owns its plan directory. The divergence
@@ -1355,8 +1359,8 @@ wrapper. The single source of truth is `_phase_end_marker_refusal` in
 pass-through conditions are stated there and not restated here.
 
 **`set-phase` into `6-finalize` runs the same gate.** `set-phase` is the second
-door into finalize; a path that reaches it without the 5-execute settlement
-bookkeeping must be refused exactly as `transition` refuses it, or the weaker verb
+door into finalize; a path that reaches it without the `kind=change` rows the
+boundary requires must be refused exactly as `transition` refuses it, or the weaker verb
 is the bypass. The refusal payload is `_phase_end_marker_refusal`'s own and
 nothing is written.
 
@@ -1375,7 +1379,7 @@ No refusal advances the plan: `current_phase` is unchanged and the payload carri
 | `error: missing_exempt_reason` | 0 | `--allow-bare-transition` was passed without a `--bare-reason`. |
 | `error: blocking_findings_present` | 0 | Completing `6-finalize` while an actionable finding is still pending. |
 | `error: open_done_when_criteria` | 0 | Completing `6-finalize` while the plan's frozen criteria snapshot still holds a Done-when criterion the functional review has not graded `met`. An empty findings queue beside an unmet criterion is not a clean exit; a plan with no snapshot carries no frozen clauses and is unaffected. Carries `open_count` and `open_criteria[]`. |
-| `error: phase_end_markers_missing` | 1 | Completing `5-execute` while the end-marker store cannot prove recording — either the change-ledger marker store could not be read at all (no `unrecorded_commits` key: nothing was enumerated), or the store holds zero `kind=change` rows while worktree-branch commits exist (the Step 10a bookkeeping never ran). |
+| `error: phase_end_markers_missing` | 1 | Completing `5-execute` while the end-marker store cannot prove recording — either the change-ledger marker store could not be read at all (no `unrecorded_commits` key: nothing was enumerated), or the store holds zero `kind=change` rows while worktree-branch commits exist (no row writer ever ran). |
 | `error: execute_commits_unrecorded` | 1 | Completing `5-execute` after both sides were read and named worktree-branch commits carry no `kind=change` ledger row, enumerated in `unrecorded_commits` with `recorded_count` / `branch_commit_count`. |
 | `error: phase_boundary_unstamped` | 1 | Advancing past a phase whose metrics boundary is half-stamped — the phase carries a `start_time` and no `end_time` in `work/metrics.toon`. `boundaries[]` names each offending phase and the marker it lacks. |
 
@@ -2245,6 +2249,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status self-t
 | `invalid_rounds` | 0 | `loop-back grant`: `--rounds` is below one. Nothing is written. Exit code is 0. |
 | `blank_rationale` | 0 | `loop-back close`: `--rationale` is empty or whitespace only. An operator close must be traceable to a stated reason, so nothing is written. Exit code is 0. |
 | `invalid_head` | 0 | `loop-back close`: `--head` is not a full commit SHA. An abbreviation is refused because the re-fire waiver is honoured by equality against the live HEAD. Nothing is written. Exit code is 0. |
+| `close_head_not_validated` | 0 | `loop-back close`: `--head` differs from the head the step's last record was completed at (`validated_head`). A close at a later head would record the step done at a tree the review never examined, so it is refused; re-run the review at the closing head, then close. Nothing is written. Exit code is 0. |
 | `step_not_waivable` | 0 | `loop-back close`: a `--waive-refire` step is the step being closed, or holds no `done` record. The offending steps are listed as `not_waivable`. Nothing is written. Exit code is 0. |
 | `finding_not_pending` | 0 | `loop-back close`: an `--accept` hash id names no pending finding of the `6-finalize` Q-Gate store. The offending ids are listed as `not_pending`. Nothing is written. Exit code is 0. |
 | `findings_store_unavailable` / `findings_store_unreadable` | 0 | `loop-back close`: the findings store module could not be imported, or the `6-finalize` Q-Gate store could not be read (`store_error` carries the store's own code). Nothing is written. Exit code is 0. |

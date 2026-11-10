@@ -24,7 +24,7 @@ import sys
 import tempfile
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 from typing import Any, Literal, overload
 from unittest import mock
 
@@ -318,6 +318,12 @@ _TEST_HELPER_DIRS = [
 for _helper_dir in _TEST_HELPER_DIRS:
     if _helper_dir not in sys.path:
         sys.path.insert(0, _helper_dir)
+
+# The registered-teardown helper every long-lived system temp root in the test
+# tree goes through (see ``test/_shared/_system_temp.py``). Bound here, before any
+# test module imports it, so the drain below and the creating module share one
+# registry object.
+import _system_temp  # noqa: E402
 
 # Shared isolation fixtures live directly in this root conftest rather than
 # in bundle-scoped ``_fixtures.py`` modules: the production modules they
@@ -998,16 +1004,6 @@ def create_temp_file(content: str, suffix: str = '.md', dir: str | Path | None =
     return Path(path)
 
 
-def create_temp_dir() -> Path:
-    """
-    Create a temporary directory.
-
-    Returns:
-        Path to created directory (caller must delete with shutil.rmtree)
-    """
-    return Path(tempfile.mkdtemp())
-
-
 # =============================================================================
 # Pytest Fixtures
 # =============================================================================
@@ -1320,7 +1316,6 @@ def pytest_report_header(config):
 _SKIP_CLASSES: frozenset[str] = frozenset(
     {
         'absent-dependency',
-        'in-suite-policy',
         'platform-absent',
     }
 )
@@ -1345,9 +1340,8 @@ _SKIP_CLASSES: frozenset[str] = frozenset(
 #: gate exists to catch. A skip that belongs here is added deliberately, with its
 #: reason, in the same change that introduces it.
 #:
-#: Three classes are represented, and only three are legitimate. They are named
+#: Two classes are represented, and only two are legitimate. They are named
 #: in :data:`_SKIP_CLASSES` so this closure is derived rather than asserted:
-#:
 #: ``absent-dependency``
 #:     An external tool the suite does not require. ``pyright-langserver`` is the
 #:     only one: it is a real language server, deliberately NOT in
@@ -1358,14 +1352,6 @@ _SKIP_CLASSES: frozenset[str] = frozenset(
 #:     and one in ``test_lsp_harvest_search_path.py``. A dependency proposal for
 #:     it is recorded with the plan rather than made here, because installing it
 #:     changes what every run costs.
-#:
-#: ``in-suite-policy``
-#:     The skip is a verdict about the suite's own DATA, not about the
-#:     environment: a parametrized case whose parameter carries nothing to assert.
-#:     It cannot be fixed by installing anything, and it legitimately varies as
-#:     the data changes — so it is listed per case, and a second bot acquiring a
-#:     declared refusal phrasing removes its entry rather than silently widening
-#:     an existing one.
 #:
 #: ``platform-absent``
 #:     A capability the running OS does not provide and no installation can add,
@@ -1434,16 +1420,6 @@ _SKIP_EXCEPTIONS: dict[str, tuple[str, str]] = {
     'test/pm-plugin-development/plan-marshall-plugin/test_lsp_harvest_search_path.py::test_a_real_cross_bundle_import_becomes_a_named_module_edge': (
         'absent-dependency',
         'pyright-langserver not installed',
-    ),
-    # --- in-suite-policy: a parametrized case with no data to assert ---
-    # The reason is the guard's own text, verbatim: the gate compares it against
-    # what pytest records, so an explanatory gloss appended here would never match
-    # and would read as a changed cause. Why this case has nothing to assert is
-    # documented under ``in-suite-policy`` above, where prose belongs.
-    'test/plan-marshall/workflow-integration-github/test_refusal_recovery_arming_detection.py'
-    '::TestRefusalIsNeverABareTimeout::test_a_bots_declared_refusal_is_recognized_as_DATA[cuioss-review-bot]': (
-        'in-suite-policy',
-        'cuioss-review-bot declares no observed refusal phrasing',
     ),
     # --- platform-absent: no /proc outside Linux ---
     # Fires on macOS and not in CI, so this entry is inert on the platform that
@@ -1623,6 +1599,30 @@ def pytest_sessionfinish(session, exitstatus):
             reporter.write_line(f'  {nodeid}', red=True)
             reporter.write_line(f'      approved reason: {approved_reason}', red=True)
             reporter.write_line(f'      recorded reason: {recorded_reason}', red=True)
+
+
+def pytest_unconfigure(config):
+    """Remove every registered system temp root this pytest process created.
+
+    This is the one lifecycle hook the registered-teardown contract needs. It
+    runs in EVERY pytest process — the controller and each xdist worker: the
+    verify-first measurement for this contract ran a ``-n 2`` probe whose
+    atexit-registered and hook-registered directories were both observed gone
+    after the run, and ``pytest_unconfigure`` was the hook that removed its own.
+
+    The hook rather than only the per-root ``atexit`` handler, because
+    ``pytest_unconfigure`` runs at the end of the session, before interpreter
+    shutdown: a session that fails, errors out of collection or leaves fixtures
+    un-finalised still drains here, while a KILLED worker skips both and is out
+    of scope for in-process teardown (the janitor rule the plan records as owed).
+
+    Without it, a suite run from inside a plan worktree leaves one
+    ``guard-node-*`` directory per relocated harness behind (the guard's scratch
+    root cannot live under ``.plan/local/worktrees/``) plus one
+    ``executor-mappings-*`` per worker; that accumulation exhausted the system
+    temp inode pool.
+    """
+    _system_temp.release_all()
 
 
 _ENTRY_CWD_KEY = pytest.StashKey[str]()
@@ -2015,8 +2015,8 @@ def _no_daemon_routing(*_args, **_kwargs):
     return (None, 'no_notation')
 
 
-def _routing_namespaces(test_module) -> list[dict]:
-    """Return every globals dict a live ``cmd_run`` resolves the seam from.
+def _seam_namespaces(test_module, seam_name: str, module_names: tuple[str, ...]) -> list[dict]:
+    """Return every globals dict a live seam call resolves ``seam_name`` from.
 
     Patching by MODULE OBJECT is not sufficient here, and the reason is
     load-order dependent — which makes getting it wrong a FLAKY green rather
@@ -2033,14 +2033,14 @@ def _routing_namespaces(test_module) -> list[dict]:
        to the loader, not to any one caller, so the explanation stays true when a
        caller is renamed or a second one appears.
     2. ``cmd_run`` is a CLOSURE created by ``create_execute_handlers``, so it
-       resolves ``_route_to_daemon`` from ``cmd_run.__globals__`` — the dict of
-       whichever factory copy produced it, not from whatever ``sys.modules``
-       currently maps the name to.
+       resolves its seams from ``cmd_run.__globals__`` — the dict of whichever
+       factory copy produced it, not from whatever ``sys.modules`` currently maps
+       the name to.
 
     Targeting the ``__globals__`` DICT rather than the module object therefore
     reaches the exact binding the closure reads, regardless of how many copies
     exist or which one a given test happens to hold. Scanning is confined to the
-    canonical ``sys.modules`` entry plus the test module's own globals, so the
+    canonical ``sys.modules`` entries plus the test module's own globals, so the
     cost stays proportional to one module's namespace rather than to the whole
     import graph.
     """
@@ -2055,16 +2055,26 @@ def _routing_namespaces(test_module) -> list[dict]:
         # else that answers ``__globals__`` — or any object whose attribute access
         # is synthetic, as a mock's is — would report the seam name as present and
         # be handed to ``monkeypatch.setitem``, patching a binding no closure reads.
-        if isinstance(candidate, dict) and _ROUTING_SEAM_NAME in candidate:
+        if isinstance(candidate, dict) and seam_name in candidate:
             namespaces[id(candidate)] = candidate
 
-    canonical = sys.modules.get('_build_execute_factory')
-    if canonical is not None:
-        _consider(canonical)
+    for module_name in module_names:
+        canonical = sys.modules.get(module_name)
+        if canonical is not None:
+            _consider(canonical)
     if test_module is not None:
         for value in list(vars(test_module).values()):
             _consider(value)
     return list(namespaces.values())
+
+
+def _routing_namespaces(test_module) -> list[dict]:
+    """Return every globals dict a live ``cmd_run`` resolves the ROUTING seam from.
+
+    A thin binding of :func:`_seam_namespaces` to ``_route_to_daemon``: the
+    mechanism (and why a module-object patch is insufficient) is stated there.
+    """
+    return _seam_namespaces(test_module, _ROUTING_SEAM_NAME, ('_build_execute_factory',))
 
 
 @pytest.fixture(autouse=True)
@@ -2127,6 +2137,60 @@ def _neutralize_daemon_routing(request, monkeypatch):
 
     for namespace in _routing_namespaces(getattr(request, 'module', None)):
         monkeypatch.setitem(namespace, _ROUTING_SEAM_NAME, _no_daemon_routing)
+
+    yield
+
+
+#: The seam name ``cmd_run`` resolves at call time for the per-directory lock.
+_DIRECTORY_LOCK_SEAM_NAME = 'directory_lock'
+
+
+def _noop_directory_lock(*_args, **_kwargs):
+    """Stand-in for ``directory_lock``: a lease that never blocks and never writes.
+
+    Yields the same ``DirectoryLease`` shape the real context manager yields, so a
+    test that reads ``waited_seconds`` keeps working, but touches no shared store.
+    """
+    import contextlib
+
+    @contextlib.contextmanager
+    def _lease():
+        yield SimpleNamespace(waited_seconds=0.0)
+
+    return _lease()
+
+
+@pytest.fixture(autouse=True)
+def _neutralize_directory_lock(request, monkeypatch):
+    """Default the per-directory build lock to a no-op.
+
+    WHY THIS EXISTS. ``cmd_run`` now takes a PER-DIRECTORY lock around every
+    in-process build, and that lock lives in the machine-global
+    ``build-queue.json`` — outside the per-test sandboxes, because it is shared
+    across checkouts by design. A test that drives ``cmd_run`` without an isolated
+    home would therefore write the developer's real queue file, contend with a
+    live build on the host, and could block for the whole wait bound: a test that
+    passes on a quiet machine and hangs on a busy one is not evidence, and a test
+    that reads live state is a bug by operator ruling.
+
+    Neutralization is inherited BY CONSTRUCTION, exactly as
+    ``_neutralize_daemon_routing`` above: a test that genuinely wants the real
+    lock says so with ``@pytest.mark.real_directory_lock``. The lock's own
+    serialisation, FIFO ordering and boundary behaviour are owned by
+    ``test/plan-marshall/script-shared/test_build_queue_slot.py``, whose real-lock
+    tests carry that marker.
+    """
+    if request.node.get_closest_marker('real_directory_lock'):
+        yield
+        return
+
+    import _build_execute_factory
+    import _build_queue_slot
+
+    for namespace in _seam_namespaces(
+        getattr(request, 'module', None), _DIRECTORY_LOCK_SEAM_NAME, ('_build_execute_factory', '_build_queue_slot')
+    ):
+        monkeypatch.setitem(namespace, _DIRECTORY_LOCK_SEAM_NAME, _noop_directory_lock)
 
     yield
 

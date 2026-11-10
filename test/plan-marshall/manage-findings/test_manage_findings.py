@@ -307,7 +307,7 @@ def test_qgate_same_title_same_discriminator_merges(plan_context):
 
 
 def test_raw_input_bytecap_truncation(plan_context):
-    """raw_input free-text over the byte cap is truncated with a [truncated] marker."""
+    """raw_input free-text over the byte cap keeps its head and tail around an elision."""
     pid = 'rawinput-cap'
     big = 'x' * 200
     result = cmd_add(
@@ -326,8 +326,10 @@ def test_raw_input_bytecap_truncation(plan_context):
     record = query['findings'][0]
     assert 'raw_input' in record
     body = record['raw_input']['body']
-    assert body.endswith('[truncated]')
-    assert body[: -len('[truncated]')] == 'x' * 50
+    assert 'elided' in body
+    assert '198 characters elided' in body
+    assert body.startswith('x') and body.endswith('x')
+    assert len(body.encode('utf-8')) <= 50
 
 
 def test_raw_input_under_cap_stored_verbatim(plan_context):

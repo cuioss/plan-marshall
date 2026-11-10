@@ -120,10 +120,15 @@ Outcomes:
                      ``build_indeterminate`` (see ``_stale_reason`` below), plus
                      ``notation_unrelated`` / ``notation_absent`` /
                      ``build_scope_narrow`` /
+                      ``build_scope_unreadable_for_whole_tree_change`` /
                      ``no_row_both_attributable_and_adequate`` from the
                      cross-check. A cross-check refusal also carries
                      ``missing_analyses``: the required analyses no citable row
-                     performed at an adequate scope, which is what to run.
+                     performed at an adequate scope, which is what to run. It is
+                     empty on three routes — an underivable requirement, an
+                     unimportable analysis vocabulary, and the
+                     whole-tree-unreadable one, where the refusal rests on a scope
+                     nobody could read rather than on an analysis nobody ran.
 - ``undecidable``  — no positive freshness proof can be established. Two
                      sub-reasons: ``no_registry`` (the ledger file is absent or
                      empty) and ``head_unresolvable`` (the working-tree sha
@@ -147,6 +152,7 @@ from _freshness_crosscheck import (
     cross_check_candidates,
     freshness_inputs_for_composition,
     parse_row_scope,
+    row_scope_remedy_hint,
 )
 from _ledger_core import (
     KIND_BUILD,
@@ -509,7 +515,12 @@ def _verdict_for_candidates(
             )
         else:
             uncovered = ''
-            remedy = 'Re-run a build whose canonical and scope cover this change. '
+            # A row written before ``command_args`` existed cannot place a flag
+            # that follows the payload, and "re-run a build" would rewrite the
+            # same shape. Name the remedy that actually makes the row readable;
+            # only a row with no such hint falls back to the generic advice.
+            hints = [hint for hint in (row_scope_remedy_hint(entry) for _, entry in candidates) if hint]
+            remedy = ''.join(dict.fromkeys(hints)) or 'Re-run a build whose canonical and scope cover this change. '
         return {
             'status': 'stale',
             'plan_id': plan_id,

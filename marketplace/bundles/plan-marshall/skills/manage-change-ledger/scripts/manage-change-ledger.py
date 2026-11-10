@@ -430,7 +430,7 @@ Examples:
                         'dest': 'kind',
                         'required': True,
                         'choices': [KIND_BUILD, KIND_CHANGE, KIND_JOB],
-                        'help': 'Entry discriminator: build (executor), change (phase-5), or job (client submit)',
+                        'help': 'Entry discriminator: build (executor), change (a commit owner), or job (client submit)',
                     },
                     {
                         'flags': ['--worktree-root'],

@@ -469,7 +469,7 @@ class _QueueDouble:
         self.acquire_calls: list[str] = []
         self.release_calls: list[tuple[str, str]] = []
 
-    def acquire(self, plan_id: str) -> dict:
+    def acquire(self, plan_id: str, token: str | None = None) -> dict:
         self.acquire_calls.append(plan_id)
         if not self._acquire_responses:
             return {'status': 'error', 'error': 'no scripted acquire response'}

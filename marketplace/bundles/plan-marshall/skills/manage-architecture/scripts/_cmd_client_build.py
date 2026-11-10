@@ -41,9 +41,12 @@ from toon_parser import parse_toon
 #   ``execute_direct_base`` enforces at build time — so the stamp can never
 #   report a bound below what the real run will measure against.
 # * ``exceeds_bash_ceiling`` (bool) —
-#   ``bash_timeout_seconds > HARNESS_BASH_CEILING_SECONDS``. It keeps its
-#   literal ceiling meaning and nothing else: it answers "is the stamped bound
-#   passable on a Bash call?", not "which tier runs this command".
+#   ``measured AND bash_timeout_seconds > HARNESS_BASH_CEILING_SECONDS``. It
+#   answers "is a MEASURED stamped bound passable on a Bash call?", not "which
+#   tier runs this command". Gating it on ``measured`` is what keeps it from
+#   claiming a ceiling overflow on a stamp nobody has observed: an unmeasured
+#   command's stamp is a floor plus a buffer, and a floor above the ceiling says
+#   nothing about this command's own duration.
 # * ``execution_tier`` — driven by the MEASUREMENT, not by the floor:
 #   ``"per_task"`` only when the command's run-config key has actually been
 #   measured AND the stamp is within the ceiling; ``"orchestrator"`` otherwise.
@@ -55,11 +58,11 @@ from toon_parser import parse_toon
 # * ``hint`` — short pinned recognition phrase for the LLM, selected from the
 #   ``(execution_tier, exceeds_bash_ceiling)`` PAIR so all three reachable
 #   states carry an accurate string:
-#     - ceiling exceeded, orchestrator ->
+#     - measured and above the ceiling, orchestrator ->
 #       ``"Exceeds Bash ceiling; orchestrator-tier only"`` (``_HINT_ORCHESTRATOR``)
-#     - within ceiling, measured, per_task ->
+#     - measured, within the ceiling, per_task ->
 #       ``"Bash timeout=<seconds*1000>ms"`` (``_HINT_PER_TASK_TEMPLATE``)
-#     - within ceiling, unmeasured, orchestrator ->
+#     - unmeasured (whatever its floor-driven stamp), orchestrator ->
 #       ``"Unmeasured; orchestrator-tier until first measurement"``
 #       (``_HINT_UNMEASURED``)
 #
@@ -388,8 +391,10 @@ def _compute_execution_tier_fields(bash_timeout_seconds: int, measured: bool) ->
     The tier follows the MEASUREMENT: ``per_task`` only when the command has
     been measured AND the stamp is within the harness ceiling; ``orchestrator``
     otherwise, so an unmeasured command fails closed uniformly across all four
-    engines. ``exceeds_bash_ceiling`` keeps its literal ceiling meaning and is
-    NOT forced true on that fail-closed branch.
+    engines. ``exceeds_bash_ceiling`` is the ceiling's own answer about a
+    MEASURED stamp and is false on that fail-closed branch — an unmeasured
+    command has no observed duration to compare against the ceiling, and its
+    stamp is a declared floor plus a buffer rather than a measurement.
 
     The hint is selected from the ``(execution_tier, exceeds_bash_ceiling)``
     PAIR rather than from ``exceeds_bash_ceiling`` alone — selecting on either
@@ -397,7 +402,9 @@ def _compute_execution_tier_fields(bash_timeout_seconds: int, measured: bool) ->
     that contradicts its own tier. Hint strings are pinned recognition tokens
     consumers match on; see module docstring.
     """
-    exceeds = HARNESS_BASH_CEILING_SECONDS is not None and bash_timeout_seconds > HARNESS_BASH_CEILING_SECONDS
+    exceeds = (
+        measured and HARNESS_BASH_CEILING_SECONDS is not None and bash_timeout_seconds > HARNESS_BASH_CEILING_SECONDS
+    )
     tier = 'per_task' if (measured and not exceeds) else 'orchestrator'
     if exceeds:
         hint = _HINT_ORCHESTRATOR
@@ -467,7 +474,7 @@ def _narrow_default_stamp(tool_name: str) -> int | None:
     return get_bash_timeout(config.min_timeout)
 
 
-def _bounded_tier_fields(bash_timeout_seconds: int, bound_source: str) -> dict[str, Any]:
+def _bounded_tier_fields(bash_timeout_seconds: int, bound_source: str, *, measured: bool) -> dict[str, Any]:
     """Return the tier quartet for a stamp whose bound is known, plus its source.
 
     A bounded stamp is routed exactly like a measured one - ``per_task`` when it
@@ -475,8 +482,31 @@ def _bounded_tier_fields(bash_timeout_seconds: int, bound_source: str) -> dict[s
     question left once the bound itself is established. ``bound_source`` records
     HOW it was established, so a bound taken from the module or from the default
     never poses as a measurement of the unit.
+
+    ``measured`` says whether the stamp IS a measurement of the unit. A
+    ``module_bound`` stamp is the parent module's measurement, so ``measured`` is
+    true. A ``narrow_default`` stamp is the tool's declared floor plus a buffer:
+    nobody has observed the unit, so ``measured`` is false and the quartet must
+    NOT report ``exceeds_bash_ceiling`` true even when that floor-driven stamp
+    sits above the harness ceiling - ``exceeds_bash_ceiling`` answers only "was a
+    MEASURED bound seen over the ceiling?", and a default above the ceiling says
+    nothing about this command's duration. The tier still follows the ceiling:
+    a default within it runs ``per_task`` (the floor is the timeout the run
+    executes under anyway), and one above it fails closed to ``orchestrator``.
     """
-    return {**_compute_execution_tier_fields(bash_timeout_seconds, True), 'bound_source': bound_source}
+    within_ceiling = _within_bash_ceiling(bash_timeout_seconds)
+    if measured:
+        return {**_compute_execution_tier_fields(bash_timeout_seconds, True), 'bound_source': bound_source}
+    tier = 'per_task' if within_ceiling else 'orchestrator'
+    hint = _HINT_PER_TASK_TEMPLATE.format(ms=bash_timeout_seconds * 1000) if tier == 'per_task' else _HINT_UNMEASURED
+    return {
+        'bash_timeout_seconds': bash_timeout_seconds,
+        # An unmeasured bound never claims a measured ceiling overflow.
+        'exceeds_bash_ceiling': False,
+        'execution_tier': tier,
+        'hint': hint,
+        'bound_source': bound_source,
+    }
 
 
 def _within_bash_ceiling(bash_timeout_seconds: int) -> bool:
@@ -523,9 +553,11 @@ def _compute_narrow_unit_tier_fields(
     if parent_lookup is not None:
         parent_stamp, parent_measured = parent_lookup
         if parent_measured and _within_bash_ceiling(parent_stamp):
-            return _bounded_tier_fields(parent_stamp, BOUND_SOURCE_MODULE)
+            # The parent module's stamp IS a measurement; the unit inherits it.
+            return _bounded_tier_fields(parent_stamp, BOUND_SOURCE_MODULE, measured=True)
 
     default_stamp = _narrow_default_stamp(tool_name)
     if default_stamp is None:
         return None
-    return _bounded_tier_fields(default_stamp, BOUND_SOURCE_NARROW_DEFAULT)
+    # The stated default is a declared floor, never a measurement of the unit.
+    return _bounded_tier_fields(default_stamp, BOUND_SOURCE_NARROW_DEFAULT, measured=False)

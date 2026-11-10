@@ -61,6 +61,7 @@ from _plan_parsing import (
     split_deliverable_blocks,
 )
 from file_ops import atomic_write_bytes, atomic_write_file, base_path, cwd_checkout_root
+from markdown_fence import fence_marker as _fence_marker
 
 #: Plan-relative path of the frozen snapshot artifact.
 SNAPSHOT_FILE = 'work/criteria-snapshot.json'
@@ -68,8 +69,40 @@ SNAPSHOT_FILE = 'work/criteria-snapshot.json'
 SCHEMA = 'criteria-snapshot/1'
 REQUEST_FILE = 'request.md'
 
-#: The success-criteria bullet block inside one outline deliverable body.
-_SUCCESS_CRITERIA_RE = re.compile(r'\*\*Success Criteria:\*\*\s*((?:- [^\n]+\n?)+)', re.IGNORECASE)
+#: The success-criteria block marker. The block runs from it to the next bold
+#: field heading (or the end of the deliverable body) and is parsed by
+#: :func:`parse_success_criteria`, not by a line regex: a wrapped continuation and
+#: an indented sub-bullet belong to the bullet above them, and a `*` bullet is a
+#: criterion too.
+_SUCCESS_CRITERIA_MARKER_RE = re.compile(r'\*\*Success Criteria:\*\*[^\n]*\n?', re.IGNORECASE)
+#: A bold-field heading. The retired-parser replay uses this indented-tolerant form
+#: to mirror the retired rule; the live parser uses the column-0 form below.
+_SUCCESS_BLOCK_END_RE = re.compile(r'^\s*\*\*[A-Za-z][^*\n]*:\*\*')
+#: The same heading at column 0 — the only form the live parser treats as the end
+#: of the block.
+_SUCCESS_BLOCK_END_COLUMN_RE = re.compile(r'^\*\*[A-Za-z][^*\n]*:\*\*')
+
+
+def _legacy_fence_marker(line: str) -> tuple[str, int, str] | None:
+    """Return the PREVIOUS parser generation's fence marker for ``line``, or ``None``.
+
+    That generation ignored indentation entirely and did not restrict a backtick
+    info string, so a parser-2 replay must use this rule rather than the current
+    CommonMark one: otherwise a four-space-indented fence that parser 2 skipped is
+    read into the replay and an unchanged criterion looks rewritten.
+    """
+    stripped = line.strip()
+    if not stripped or stripped[0] not in '`~':
+        return None
+    character = stripped[0]
+    length = len(stripped) - len(stripped.lstrip(character))
+    if length < 3:
+        return None
+    return character, length, stripped[length:]
+
+
+#: One bullet, at any indent; the indentation decides top-level vs sub-bullet.
+_BULLET_RE = re.compile(r'^[-*][ \t]+(.*)$')
 #: A numbered bold deliverable heading in a request-named spec document.
 _SPEC_DELIVERABLE_RE = re.compile(r'^(\d+)\.\s+\*\*(.+?)\*\*', re.MULTILINE)
 #: The Done-when sentence of a spec deliverable, in any of the three spellings.
@@ -90,8 +123,29 @@ _MD_PATH_RE = re.compile(r'(?:^|\s)([\w./-]+\.md)(?=[\s,.;:)]|$)', re.MULTILINE)
 
 DELETED = 'deleted'
 REWRITTEN = 'rewritten'
+#: A frozen criterion that is a PREFIX of the newly parsed one: the parser now
+#: reads a wrapped bullet in full. It is a named state, not drift — the criterion
+#: was not rewritten, the reader got better. Reported so the operator sees it, and
+#: never blocking.
+PARSER_EXTENDED = 'parser_extended'
+#: The snapshot field that records WHICH parser froze the criteria. A snapshot
+#: written by the current parser carries it; an older snapshot does not. That is
+#: the discriminator ``parser_extended`` needs: a prefix-extension of a frozen
+#: criterion is a migration only when the freeze predates this parser. Without it,
+#: an author's continuation-line append to a criterion the current parser froze is
+#: hidden as advisory.
+PARSER_KEY = 'parser'
+#: The parser generation that froze the criteria. Bumped when the parser OUTPUT
+#: changes for an unchanged outline, so a snapshot frozen by the older output is
+#: classified as a migration (`parser_extended`, advisory) instead of author drift.
+#: 3: a fenced block under a criterion is kept in the criterion instead of skipped.
+CURRENT_PARSER = 3
 #: The functional verdict that retires a deliverable: its criteria are not open.
 SUPERSEDED = 'superseded'
+CRITERION_UNPARSED = 'criterion_unparsed'
+#: The named state an unterminated fenced block leaves in ``unparsed``. It is a
+#: coalesced marker (not the raw line) so a gate reads a state rather than text.
+UNTERMINATED_FENCE = 'unterminated fenced block'
 #: A spec deliverable's own Done-when that no outline criterion covers.
 SPEC_MISSING = 'spec_criterion_missing'
 #: The request's own Done-when that no outline criterion covers.
@@ -114,13 +168,29 @@ SNAPSHOT_FROZEN_KEY = 'snapshot_frozen'
 #: reader here and the protected-key guard in ``manage-status`` derive the name
 #: from this one definition.
 OVERRIDE_HEADS_KEY = 'functional_review_override_heads'
+#: The status-record metadata list of accepted test removals. The two writers are
+#: ``snapshot-criteria`` (which seeds it from the outline's ``Tests to remove``
+#: declarations) and ``loop-back close --accept`` on a ``weakened_test`` finding
+#: (which records the identities that finding removed). An identity entry is
+#: ``{identity, assertions_removed}`` — the D1 test identity plus the number of
+#: removed assertions; a row that carries no identity gets a path-level entry
+#: instead, naming the row KIND it covers (``{path, kind, acceptance_kind,
+#: assertions_removed}``) and, for a filter row, the PAIRED ``(test, marker)`` it
+#: covers (``{path, kind: test_filtered, pairs}``). The legacy display fields
+#: ``markers`` / ``marked_tests`` may ride along, but they are not the pairing. A
+#: generic ``metadata --set`` must refuse it, so it joins the protected set below.
+ACCEPTED_TEST_REMOVALS_KEY = 'accepted_test_removals'
 #: The status-record metadata keys whose only writers commit through their own
 #: guarded read-modify-write. ``_status_core.write_status`` must carry them
 #: forward from the live document, and a generic ``metadata --set`` must refuse
 #: them. The MEMBERSHIP is defined here once, so the carry set and the protected
 #: set cannot drift into covering different keys as a third owner-written key is
 #: added.
-PROTECTED_STATUS_METADATA_KEYS: tuple[str, ...] = (INTEGRITY_KEY, OVERRIDE_HEADS_KEY)
+PROTECTED_STATUS_METADATA_KEYS: tuple[str, ...] = (
+    INTEGRITY_KEY,
+    OVERRIDE_HEADS_KEY,
+    ACCEPTED_TEST_REMOVALS_KEY,
+)
 
 #: The key INSIDE the integrity block that carries the identity of the re-freeze
 #: authorization this process set. A withdrawal is conditioned on it, so a failed
@@ -237,6 +307,194 @@ def _merge_integrity(plan_id: str, merge: Callable[[dict[str, Any]], None]) -> b
     except OSError:
         return False
     return True
+
+
+def _merge_metadata(plan_id: str, merge: Callable[[dict[str, Any]], None]) -> bool:
+    """Merge into the status record's top-level ``metadata`` inside the writers' guard.
+
+    The same guarded read-modify-write ``_merge_integrity`` uses, one level up: the
+    accepted-removal set is a sibling of the ``criteria_integrity`` block, not a
+    member of it. ``_status_core.write_status`` carries the protected keys forward
+    from the document it reads inside the guard, so a stale snapshot cannot restore
+    an older list over this merge.
+
+    Returns ``False`` for an absent/unreadable record, a guard timeout and a failed
+    commit — never read as "recorded".
+    """
+    path = base_path('plans', plan_id, STATUS_FILE)
+    try:
+        with held_guard(path.with_name(f'{path.name}{_GUARD_SUFFIX}')):
+            status = _status_doc(plan_id)
+            if status is None:
+                return False
+            metadata = status.get('metadata')
+            if not isinstance(metadata, dict):
+                metadata = {}
+                status['metadata'] = metadata
+            merge(metadata)
+            try:
+                atomic_write_file(path, json.dumps(status, indent=2, sort_keys=True) + '\n')
+            except OSError:
+                return False
+    except OSError:
+        return False
+    return True
+
+
+def accepted_test_removals(plan_id: str) -> list[dict[str, Any]]:
+    """Return the accepted-removal set recorded in the plan's status record.
+
+    One source, one freeze: ``snapshot-criteria`` seeds the set from the outline's
+    ``**Tests to remove:**`` declarations at outline approval, and ``loop-back
+    close --accept`` appends the identities an accepted ``weakened_test`` finding
+    removed. Reading the live outline as well would let a declaration added after
+    the freeze take effect with no operator decision — a second, unguarded
+    acceptance route — so it is deliberately not read.
+
+    Each entry names a test identity (``{identity, assertions_removed}``) or, for a
+    row that carries none, an explicit path-level key that also names the row KIND
+    (``{path, kind, acceptance_kind, assertions_removed}``, or ``{path, kind:
+    test_filtered, pairs}`` — the paired ``{test, marker}`` set).
+    ``assertions_removed`` is ``None`` for a declaration that names no count, which
+    accepts the identity for a REMOVAL only — never for a drop of a surviving test.
+    Deduplicated by the entry's own key.
+    """
+    entries: list[dict[str, Any]] = []
+    seen: set[tuple[Any, ...]] = set()
+    metadata = (_status_doc(plan_id) or {}).get('metadata')
+    recorded = metadata.get(ACCEPTED_TEST_REMOVALS_KEY) if isinstance(metadata, dict) else None
+    for entry in recorded if isinstance(recorded, list) else []:
+        if not isinstance(entry, dict):
+            continue
+        normalized = _normalized_removal_entry(entry)
+        if normalized is None:
+            continue
+        key = _removal_key(normalized)
+        if key in seen:
+            continue
+        seen.add(key)
+        entries.append(normalized)
+    return entries
+
+
+def _pair_key(entry: dict[str, Any]) -> tuple[tuple[str, str], ...]:
+    """The ``(test, marker)`` pairs an entry carries, sorted, as a hashable key."""
+    pairs = entry.get('pairs')
+    if not isinstance(pairs, list):
+        return ()
+    return tuple(
+        sorted(
+            (pair['test'], pair['marker'])
+            for pair in pairs
+            if isinstance(pair, dict) and isinstance(pair.get('test'), str) and isinstance(pair.get('marker'), str)
+        )
+    )
+
+
+def _removal_key(entry: dict[str, Any]) -> tuple[Any, ...]:
+    """The accepted-set key: everything the entry NAMES, not just its identity.
+
+    A filter acceptance names the PAIRED ``(test, marker)`` it covers; a path-level
+    acceptance names the row KIND it covers (mixed residual / file total / set
+    total) beside its count. Two entries that differ in ANY of those are different
+    acceptances, so the key must carry them — a key that omits them makes a second
+    close collide with the first. ``markers`` / ``marked_tests`` stay in the key as
+    the display form an older entry may carry; they are not the pairing.
+    """
+    return (
+        entry.get('identity'),
+        entry.get('path'),
+        entry.get('kind'),
+        entry.get('acceptance_kind'),
+        _pair_key(entry),
+        tuple(sorted(entry.get('markers') or [])),
+        tuple(sorted(entry.get('marked_tests') or [])),
+        entry.get('assertions_removed'),
+    )
+
+
+def _normalized_removal_entry(entry: dict[str, Any]) -> dict[str, Any] | None:
+    """One accepted-removal entry, normalized, or ``None`` when it names nothing."""
+    identity = entry.get('identity')
+    path = entry.get('path')
+    has_identity = isinstance(identity, str) and bool(identity)
+    has_path = isinstance(path, str) and bool(path)
+    if not has_identity and not has_path:
+        return None
+    count = entry.get('assertions_removed')
+    normalized: dict[str, Any] = {
+        'assertions_removed': count if isinstance(count, int) and not isinstance(count, bool) else None
+    }
+    if has_identity:
+        normalized['identity'] = identity
+    if has_path:
+        normalized['path'] = path
+    kind = entry.get('kind')
+    if isinstance(kind, str) and kind:
+        normalized['kind'] = kind
+    acceptance_kind = entry.get('acceptance_kind')
+    if isinstance(acceptance_kind, str) and acceptance_kind:
+        normalized['acceptance_kind'] = acceptance_kind
+    markers = entry.get('markers')
+    if isinstance(markers, list):
+        normalized['markers'] = [marker for marker in markers if isinstance(marker, str)]
+    marked_tests = entry.get('marked_tests')
+    if isinstance(marked_tests, list):
+        normalized['marked_tests'] = [identity for identity in marked_tests if isinstance(identity, str)]
+    pairs = entry.get('pairs')
+    if isinstance(pairs, list):
+        normalized_pairs = [
+            {'test': pair['test'], 'marker': pair['marker']}
+            for pair in pairs
+            if isinstance(pair, dict) and isinstance(pair.get('test'), str) and isinstance(pair.get('marker'), str)
+        ]
+        if normalized_pairs:
+            normalized['pairs'] = normalized_pairs
+    return normalized
+
+
+def record_accepted_removals(plan_id: str, entries: list[dict[str, Any]]) -> bool:
+    """Union ``entries`` into the plan's accepted-removal set; return success.
+
+    The one writer shape both owning verbs call: ``snapshot-criteria`` seeds it
+    from the outline's declarations, and ``loop-back close --accept`` appends the
+    identities a ``weakened_test`` finding removed. The merge is a union keyed by
+    :func:`_removal_key`, so re-seeding a re-freeze neither duplicates an entry nor
+    drops one an operator accepted, while a second close that names a DIFFERENT
+    marker set or row kind is a new entry.
+
+    Success means every requested entry is in the set afterwards — appended now or
+    already present. An entry that normalizes to nothing was neither appended nor
+    present, so it makes the call fail rather than reporting a silent success.
+    """
+    wanted: list[dict[str, Any]] = []
+    unnamed = 0
+    for entry in entries:
+        if not isinstance(entry, dict):
+            unnamed += 1
+            continue
+        normalized = _normalized_removal_entry(entry)
+        if normalized is None:
+            unnamed += 1
+            continue
+        wanted.append(normalized)
+    if unnamed:
+        return False
+    if not wanted:
+        return True
+
+    def _apply(metadata: dict[str, Any]) -> None:
+        current = metadata.get(ACCEPTED_TEST_REMOVALS_KEY)
+        values = list(current) if isinstance(current, list) else []
+        existing = {_removal_key(value) for value in values if isinstance(value, dict)}
+        for entry in wanted:
+            key = _removal_key(entry)
+            if key not in existing:
+                values.append(entry)
+                existing.add(key)
+        metadata[ACCEPTED_TEST_REMOVALS_KEY] = values
+
+    return _merge_metadata(plan_id, _apply)
 
 
 def record_integrity(plan_id: str, *, drop: tuple[str, ...] = (), **fields: Any) -> bool:
@@ -650,6 +908,84 @@ def snapshot_path(plan_id: str) -> Path:
     return base_path('plans', plan_id, SNAPSHOT_FILE)
 
 
+def parse_success_criteria(body: str, *, keep_fences: bool = True) -> tuple[list[str], list[str]]:
+    """Parse a deliverable body's ``**Success Criteria:**`` block.
+
+    Returns ``(criteria, unparsed)``. Every top-level bullet is one criterion —
+    ``-`` and ``*`` both — together with its continuation lines and nested
+    sub-bullets. A continuation is a line indented under the bullet, a nested
+    bullet (contributes its text, not its marker), or a lazy continuation line
+    directly following the bullet. A blank line between bullets is allowed.
+
+    A line inside the block that is neither a bullet nor part of one — a paragraph
+    after a blank line — is returned in ``unparsed`` and never dropped: a criterion
+    the parser could not read must be visible, or the review grades part of a
+    deliverable without saying so. An indented bold field under a criterion is a
+    continuation of that criterion, not the end of the block; only a column-0
+    bold-field heading ends it. A fenced code block is KEPT in the criterion it sits
+    under, so a ``- `` line inside it is not read as a criterion and an edit to the
+    example is an edit to the criterion; an unterminated fence is reported in
+    ``unparsed`` as a named state.
+
+    ``keep_fences=False`` replays the PREVIOUS generation (fences skipped), so a
+    snapshot frozen by it can be told from an author's edit when a parser upgrade
+    changes the output for an unchanged outline.
+    """
+    marker = _SUCCESS_CRITERIA_MARKER_RE.search(body)
+    if marker is None:
+        return [], []
+    criteria: list[list[str]] = []
+    unparsed: list[str] = []
+    current: list[str] | None = None
+    after_blank = False
+    in_fence: tuple[str, int] | None = None
+    for line in body[marker.end() :].splitlines():
+        stripped = line.strip()
+        fence = _fence_marker(line) if keep_fences else _legacy_fence_marker(line)
+        if in_fence is not None:
+            if keep_fences:
+                if current is not None:
+                    current.append(stripped)
+                else:
+                    unparsed.append(stripped)
+            if fence is not None and fence[0] == in_fence[0] and fence[1] >= in_fence[1] and not fence[2].strip():
+                in_fence = None
+            continue
+        if fence is not None:
+            if keep_fences:
+                if current is not None:
+                    current.append(stripped)
+                else:
+                    unparsed.append(stripped)
+            in_fence = (fence[0], fence[1])
+            continue
+        if not stripped:
+            after_blank = True
+            continue
+        if _SUCCESS_BLOCK_END_COLUMN_RE.match(line):
+            break
+        indented = line[: len(line) - len(line.lstrip())] != ''
+        bullet = _BULLET_RE.match(stripped)
+        if not indented and bullet:
+            current = [bullet.group(1).strip()]
+            criteria.append(current)
+        elif indented:
+            if current is not None:
+                current.append((bullet.group(1) if bullet else stripped).strip())
+            else:
+                unparsed.append(stripped)
+        elif current is not None and not after_blank:
+            current.append(stripped)
+        else:
+            unparsed.append(stripped)
+        after_blank = False
+    if in_fence is not None:
+        # An unterminated fence would otherwise swallow every later criterion
+        # silently. Name it so the reader sees what the parser could not read.
+        unparsed.append(UNTERMINATED_FENCE)
+    return [normalize_criterion(' '.join(parts)) for parts in criteria if parts], unparsed
+
+
 def outline_deliverables(plan_id: str) -> list[dict[str, Any]] | None:
     """Return the outline deliverables, each with its ordered ``success_criteria``.
 
@@ -657,6 +993,11 @@ def outline_deliverables(plan_id: str) -> list[dict[str, Any]] | None:
     reads an absent outline as an outline with no deliverables. This is the one
     success-criteria parser in the tree; ``phase-6-finalize``'s attribution
     module delegates here rather than keeping a second copy that could drift.
+
+    Each deliverable also carries ``unparsed_criteria`` — the lines inside its
+    success-criteria block that were neither a bullet nor part of one — so a
+    caller can report what the parser could not read instead of treating it as
+    absent.
     """
     path = base_path('plans', plan_id, 'solution_outline.md')
     if not path.is_file():
@@ -665,10 +1006,51 @@ def outline_deliverables(plan_id: str) -> list[dict[str, Any]] | None:
     bodies = {block['number']: block['content'] for block in split_deliverable_blocks(section)}
     deliverables = extract_deliverables(section)
     for deliverable in deliverables:
-        match = _SUCCESS_CRITERIA_RE.search(str(bodies.get(deliverable['number'], '')))
-        bullets = match.group(1).splitlines() if match else []
-        deliverable['success_criteria'] = [line[2:].strip() for line in bullets if line.startswith('- ')]
+        body = str(bodies.get(deliverable['number'], ''))
+        criteria, unparsed = parse_success_criteria(body)
+        deliverable['success_criteria'] = criteria
+        deliverable['unparsed_criteria'] = unparsed
+        # The PREVIOUS generation's reading of the same body: a snapshot frozen by
+        # it can be told from an author's edit when this generation's output differs
+        # for an unchanged outline.
+        deliverable['generation_2_criteria'] = parse_success_criteria(body, keep_fences=False)[0]
+        deliverable['retired_criteria'] = _retired_criteria(body)
     return deliverables
+
+
+def _retired_criteria(body: str) -> list[str]:
+    """The criteria the RETIRED parser would have produced for this body.
+
+    The retired rule kept only the first unbroken run of ``- `` lines, first line
+    only, starting immediately after the marker (blank lines allowed). It is
+    replayed here so the migration state can be told from an author's edit: a frozen
+    criterion is ``parser_extended`` only when this rule would still have produced
+    it. Prose before the first bullet stops the replay with nothing, exactly as the
+    retired rule matched nothing there; a ``*`` bullet or a blank line inside the
+    run stops it too.
+    """
+    marker = _SUCCESS_CRITERIA_MARKER_RE.search(body)
+    if marker is None:
+        return []
+    retired: list[str] = []
+    for line in body[marker.end() :].splitlines():
+        stripped = line.strip()
+        # The retired rule kept only a contiguous run of ``- `` lines: a fence line
+        # is not one, so the run ends there (skipping it would let a later criterion
+        # pass the retired-parser check).
+        if _fence_marker(line) is not None:
+            break
+        if not stripped:
+            if retired:
+                break
+            continue
+        if _SUCCESS_BLOCK_END_RE.match(line):
+            break
+        if line.startswith('- '):
+            retired.append(normalize_criterion(line[2:]))
+            continue
+        break
+    return retired
 
 
 def _request_text(plan_id: str) -> str:
@@ -781,6 +1163,7 @@ def build_snapshot(plan_id: str) -> dict[str, Any]:
     return {
         'schema': SCHEMA,
         'plan_id': plan_id,
+        PARSER_KEY: CURRENT_PARSER,
         'deliverables': [
             {
                 'number': deliverable['number'],
@@ -951,7 +1334,24 @@ def _write_snapshot_locked(plan_id: str) -> dict[str, Any]:
                 'snapshot was kept' + ('' if rolled_back else ' (the partial snapshot could not be removed)')
             ),
         }
-    return {
+    # Seed the accepted-removal set from the outline's declared removals. The
+    # declaration is an authoring-time decision, so freezing the criteria freezes
+    # it too; a re-freeze unions rather than replaces, so an entry an operator
+    # accepted is never dropped.
+    declared: list[dict[str, Any]] = []
+    live = outline_deliverables(plan_id) or []
+    for deliverable in live:
+        declared.extend(deliverable.get('declared_test_removals') or [])
+    removals_recorded = record_accepted_removals(plan_id, declared)
+    per_deliverable = [
+        {
+            'number': deliverable['number'],
+            'criterion_count': len(deliverable.get('success_criteria') or []),
+            'unparsed': list(deliverable.get('unparsed_criteria') or []),
+        }
+        for deliverable in live
+    ]
+    payload: dict[str, Any] = {
         'status': 'success',
         'plan_id': plan_id,
         'file': SNAPSHOT_FILE,
@@ -960,7 +1360,22 @@ def _write_snapshot_locked(plan_id: str) -> dict[str, Any]:
         'request_done_when_count': len(snapshot['request']['done_when']),
         'spec_deliverable_count': len(snapshot['spec']['deliverables']) if snapshot['spec'] else 0,
         'preserved_authorizations': len(snapshot['authorized_changes']),
+        'deliverables': per_deliverable,
+        'unparsed': [line for row in per_deliverable for line in row['unparsed']],
+        'declared_test_removals': len(declared),
+        'accepted_removals_recorded': removals_recorded,
     }
+    if declared and not removals_recorded:
+        # The freeze itself is valid — the digest is recorded and the criteria are
+        # frozen — but the declared removals never reached the accepted set, so
+        # every later validate would raise them. Name it instead of leaving only a
+        # false flag a caller can overlook; re-running snapshot-criteria (with the
+        # re-freeze authorization) retries the write.
+        payload['accepted_removals_error'] = (
+            'the declared test removals could not be recorded in the plan status record; '
+            'they will be raised as weakened_test findings until a re-freeze records them'
+        )
+    return payload
 
 
 def _authorization(snapshot: dict[str, Any], number: Any, criterion: str) -> bool:
@@ -983,12 +1398,22 @@ def criteria_drift(plan_id: str, current: list[dict[str, Any]] | None = None) ->
       outline (a dropped clause), or the whole deliverable is gone.
     * ``rewritten`` — the frozen position is occupied by different text (the
       clause was narrowed or reworded in place).
+    * ``parser_extended`` — a frozen criterion whose text is exactly what an EARLIER
+      parser generation would have produced from the same outline body (a wrapped
+      bullet the v1 parser truncated, or a fence-skipped reading a parser-2 snapshot
+      froze). It is admitted only for a snapshot whose marker names that earlier
+      generation; a snapshot the current generation froze reports the same difference
+      as ``rewritten``. An author's append is not a parser output, so it is never
+      admitted.
     * ``spec_criterion_missing`` — a spec deliverable's own frozen Done-when that
-      NO current outline criterion covers. This is the PLAN-LB-42 failure: four
+      NO current outline criterion covers. The failure it prevents: four
       spec deliverables merged into one outline deliverable, three generic
       criteria graded, and the dropped clause's Done-when never graded at all.
       Because each spec clause is frozen as its own row, a merge cannot remove it
       from the record, and the row below is what makes its absence a finding.
+    * ``criterion_unparsed`` — a named line the success-criteria parser could not
+      place (today: an unterminated fenced block). It is reported rather than left
+      in the freeze payload for nobody to consume.
 
     A criterion an operator decision authorizes the change of is not reported.
     An absent snapshot reports nothing — there is nothing to compare against.
@@ -1014,6 +1439,39 @@ def criteria_drift(plan_id: str, current: list[dict[str, Any]] | None = None) ->
                 continue
             if criterion in live:
                 continue
+            # Migration: the frozen criterion equals what the PREVIOUS parser
+            # generation would have produced from this same outline body, while the
+            # current generation reads something else. That is a parser upgrade, not
+            # an author's change — and it is admitted for the generation that actually
+            # froze the snapshot, so a parser-2 append to a single-line criterion is
+            # still `rewritten` (the gen-2 replay of the CURRENT body carries the
+            # append, so the frozen text is not a gen-2 output).
+            gen2 = [normalize_criterion(text) for text in (live_row or {}).get('generation_2_criteria') or []]
+            retired = [normalize_criterion(text) for text in (live_row or {}).get('retired_criteria') or []]
+            marker = snapshot.get(PARSER_KEY)
+            migrated = False
+            if marker == 2:
+                migrated = criterion in gen2
+            elif not isinstance(marker, int) or marker < 2:
+                extended_v1 = next(
+                    (
+                        candidate
+                        for candidate in live
+                        if candidate.startswith(criterion) and len(candidate) > len(criterion)
+                    ),
+                    None,
+                )
+                migrated = extended_v1 is not None and criterion in retired
+            if migrated:
+                drift.append(
+                    {
+                        'deliverable': number,
+                        'kind': PARSER_EXTENDED,
+                        'criterion': criterion,
+                        'current': live[index] if index < len(live) else '',
+                    }
+                )
+                continue
             kind = REWRITTEN if index < len(live) else DELETED
             drift.append(
                 {
@@ -1025,7 +1483,25 @@ def criteria_drift(plan_id: str, current: list[dict[str, Any]] | None = None) ->
             )
     drift.extend(_spec_clause_drift(snapshot, by_number))
     drift.extend(_request_clause_drift(snapshot, by_number))
+    drift.extend(_unparsed_clause_drift(by_number))
     return drift
+
+
+def _unparsed_clause_drift(by_number: dict[Any, dict[str, Any]]) -> list[dict[str, Any]]:
+    """One row per unterminated fenced block the parser could not close.
+
+    The named ``unterminated fenced block`` state is a criterion the parser could not
+    read, so the gate reports it rather than leaving it in the freeze payload for
+    nobody to consume. Ordinary free text the parser does not place stays visible in
+    that payload's ``unparsed`` list; only the unterminated fence is a gate state.
+    """
+    rows: list[dict[str, Any]] = []
+    for number, row in by_number.items():
+        for line in row.get('unparsed_criteria') or []:
+            text = normalize_criterion(line)
+            if text == UNTERMINATED_FENCE:
+                rows.append({'deliverable': number, 'kind': CRITERION_UNPARSED, 'criterion': text, 'current': ''})
+    return rows
 
 
 def _covered_by_outline(clause: str, outline: list[str]) -> bool:
@@ -1291,6 +1767,64 @@ def _commit_authorization(
 
 #: The plan-relative path of the functional review's verdict file.
 FUNCTIONAL_VERDICT_FILE = 'work/functional-review-verdict.json'
+#: The composed phase-6 manifest the dispatcher writes; the drop decision reads it.
+EXECUTION_FILE = 'execution.toon'
+#: The finalize step id whose absence means the review was dropped.
+FUNCTIONAL_REVIEW_STEP = 'functional-review'
+
+
+def _phase_6_manifest_steps(plan_id: str) -> set[str] | None:
+    """The composed phase-6 step ids, or ``None`` when the manifest is unreadable."""
+    path = base_path('plans', plan_id, EXECUTION_FILE)
+    try:
+        if not path.is_file():
+            return None
+        from toon_parser import parse_toon
+
+        data = parse_toon(path.read_text(encoding='utf-8'))
+    except Exception:
+        return None
+    if not isinstance(data, dict):
+        return None
+    phase_6 = data.get('phase_6')
+    if not isinstance(phase_6, dict):
+        return None
+    steps = phase_6.get('steps')
+    if not isinstance(steps, list):
+        return None
+    return {str(step) for step in steps if isinstance(step, str) and step}
+
+
+def functional_review_drop_reason(plan_id: str) -> str | None:
+    """Why the manifest dropped the functional review, or ``None`` when it did not.
+
+    The ONE reader both the finalize triage source and the finalize completion gate
+    use. It reads the composed phase-6 manifest (``execution.toon``): a manifest
+    that schedules the review, or cannot be read, drops nothing. A manifest that
+    does not schedule it is a drop, and the reason is the recorded one, the settled
+    surgical scope, or the generic not-scheduled sentence.
+
+    This module may not import ``manage-status`` (the layering rule in the module
+    docstring), so the decision lives here and ``manage-status`` delegates to it
+    rather than keeping a second copy.
+    """
+    steps = _phase_6_manifest_steps(plan_id)
+    if steps is None:
+        return None
+    scheduled = any(step == FUNCTIONAL_REVIEW_STEP or step.endswith(f':{FUNCTIONAL_REVIEW_STEP}') for step in steps)
+    if scheduled:
+        return None
+    metadata: dict[str, Any] = {}
+    document = _status_doc(plan_id)
+    if isinstance(document, dict) and isinstance(document.get('metadata'), dict):
+        metadata = document['metadata']
+    recorded = metadata.get('functional_review_drop_reason')
+    if isinstance(recorded, str) and recorded.strip():
+        return recorded.strip()
+    scope = metadata.get('scope_estimate')
+    if isinstance(scope, str) and scope.strip().lower() in ('surgical', 'single_module', 'micro', 'single-module'):
+        return 'surgical scope' if scope.strip().lower() == 'surgical' else f'{scope.strip()} scope'
+    return 'not scheduled in the phase-6 manifest'
 
 
 def open_criteria(plan_id: str, verdict_file: Path | None = None) -> dict[str, Any]:
@@ -1300,8 +1834,12 @@ def open_criteria(plan_id: str, verdict_file: Path | None = None) -> dict[str, A
     completion gate: a plan whose criteria snapshot still holds an unmet clause
     has open work even when the findings store is empty.
 
-    ``source`` is ``snapshot`` when a snapshot exists and ``none`` when it does
-    not (the legacy shape — no frozen criteria, so nothing is reported open).
+    ``source`` is ``snapshot`` when a snapshot exists and nothing exempts it,
+    ``review_dropped`` when the manifest dropped the functional review (its frozen
+    rows are not outstanding work), and ``none`` when no snapshot exists (the
+    legacy shape — no frozen criteria, so nothing is reported open). The
+    ``frozen_deleted`` / ``frozen_tampered`` and ``review_closed`` sources are the
+    other answers.
 
     A criterion counts as ``met`` only under three conditions, all of which the
     validator would also enforce and none of which this reader may skip, because
@@ -1314,15 +1852,19 @@ def open_criteria(plan_id: str, verdict_file: Path | None = None) -> dict[str, A
       text. Position alone is never a match: a paraphrased row without its id
       leaves the criterion ungraded and open.
 
-    Anything else is open, which is the fail-closed direction. Four deliberate
+    Anything else is open, which is the fail-closed direction. Five deliberate
     states additionally close criteria rather than reading them as open work:
 
     * an operator decision authorizes the exact change (``authorized_changes``);
     * the deliverable's verdict is ``superseded``;
     * the operator closed the review past its round cap (:func:`_review_closed_reason`);
+    * the manifest dropped the functional review (:func:`functional_review_drop_reason`)
+      — the completion gate exempts exactly this case, and ``source: review_dropped``
+      says so to the triage source;
     * ``state`` reports a snapshot the status record froze but which is now deleted
       or edited — the snapshot's own absence is the open criterion, and every check
-      refuses rather than falling back to the legacy path.
+      refuses rather than falling back to the legacy path. This state is reported
+      open REGARDLESS of a dropped review, because the freeze is independent of it.
     """
     state = snapshot_state(plan_id)
     if state in ('deleted', 'tampered'):
@@ -1342,6 +1884,14 @@ def open_criteria(plan_id: str, verdict_file: Path | None = None) -> dict[str, A
     snapshot = read_snapshot(plan_id)
     if snapshot is None:
         return {'source': 'none', 'open_count': 0, 'open': []}
+    # A dropped functional review has no verdict to grade the criteria, so its
+    # frozen rows are not outstanding work. The SAME reader decides it for the
+    # completion gate, and a deleted/tampered snapshot was already refused above —
+    # turning this absence into "not applicable" would let deleting the snapshot
+    # disable the check the freeze exists for.
+    drop_reason = functional_review_drop_reason(plan_id)
+    if drop_reason is not None:
+        return {'source': 'review_dropped', 'drop_reason': drop_reason, 'open_count': 0, 'open': []}
     # The operator's round-cap override closes the review FOR THE COMPLETION GATE:
     # its criteria are not outstanding work. Head-specificity (rubric § 8) governs
     # the REVIEW LOOP, which re-fires a delta round on a later head; the gate's job

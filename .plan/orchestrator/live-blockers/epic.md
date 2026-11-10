@@ -53,6 +53,569 @@ derive, for rows still live.
   - PLAN-LB-31 in-house-reviewer — PLAN-LB-21, PLAN-LB-20 D4 and D5.
   - PLAN-LB-14 launch-gate-scope — unchanged.
 
+- **PLAN-LB-126** (shipped #1942, 2026-11-08, runbook lane, `deepseek-v4.1-flash/high`) — see `landings/PLAN-LB-126.md`. Merge commit
+  `f1945737a`, a squash commit with one parent `5eb2f9d9d` (the PLAN-LB-116 merge, read with git before the leaf prompt named it). One
+  three-layer leaf read it with the lane's 10 claims passed one by one; the orchestrator re-read the major's code and the landing-state
+  classification it rests on, the test that hides it, the commit verb's order of effects and the history wording. The lane's review
+  history, CI and merge-queue claims were not re-read. The message is `complete: false`, `missing_keys: total_tokens` only (out of
+  scope). No verb or flag was added, so no executor regeneration is owed; a harness sync is. **The major is staged as
+  PLAN-LB-131 (2026-11-09).** The lane reports 3 of 3 deliverables. D1 is sound: the commit verb records the row only in `6-finalize` through the shared
+  ledger core, the refusal names every unrecorded SHA on one line, and the guard is as strict as before.
+  - **Layer 3 major (re-read):** the foreign-PR gate takes the foreign checkout's branch when nothing is declared
+    (`foreign_pr_gate.py:258-263`). After cleanup that checkout sits on `main`, the landing-state verb keeps only PRs whose head is the
+    branch tip, and the tip of `main` is no PR head, so it answers `pushed_no_pr` (`ci_base.py:926-958`, `_github_pr.py:1621-1673`) and
+    the gate blocks with "open a PR" for a change that merged. With a declaration the same state is `branch_disagreement` and `error`
+    (the lane's recorded residue), so after cleanup the gate never clears. The unit test that covers the arm answers `main: merged`,
+    which the real verb cannot give (`test_foreign_pr_gate_gate.py:486-504`).
+  - **Minors:** the D2 red proof is a signature `TypeError`, not a semantic red; the commit verb reports an incomplete or silent row
+    state when the phase is unknown or the SHA unreadable (fails closed at the next boundary); a refused `--push` carries no `ledger_*`
+    field; history wording in `archive-plan.md:37`, `_cmd_lifecycle.py:877-879` and two test docstrings. Watch entry below.
+
+- **PLAN-LB-116** (shipped #1940, 2026-11-08, runbook lane, `deepseek-v4.1-flash/high`) — see `landings/PLAN-LB-116.md`. Merge commit
+  `5eb2f9d9d`, a squash commit with one parent `e71329548` (the PLAN-LB-127 merge, read with git before the leaf prompt named it). One
+  three-layer leaf read it with the lane's 9 claims passed one by one; the orchestrator re-read the major's code, the two refuted lane
+  claims, the required-key tuple and the marker vocabulary. The lane's review history, CI and merge-queue claims were not re-read. The
+  message is `complete: false`, `missing_keys: total_tokens`. A new verb was added (`review-gate`): **an executor regeneration is owed**
+  in every project that runs the lane, with the harness sync. **The major is staged as PLAN-LB-129 (2026-11-09).** The lane reports 5 of 5
+  deliverables. D3 and the Sonar field of D2 (the operator ruling of 2026-11-07) are shipped as specified.
+  - **Layer 3 major (re-read):** the resolved-thread check tests only the LAST comment and only when a bot wrote it
+    (`runbook_lane.py:2617-2630`), so a thread `[bot opener, lane "fixed in abc", bot "This still applies", lane "done"]` reads handled
+    and `merge_allowed` is true with the bot's restated concern open. The spec says the thread's last BOT comment. This is the
+    resolve-to-silence shape D1 exists to refuse.
+  - **Layer 3, minor (re-read):** a review body that is prose only, a counted summary with no section keyword (`Potential issues
+    (2)`) and an `issue_comment` finding parse to zero (`:2516-2521,2778`), so the lane claim "an unrecognised surface stops the gate"
+    is refuted for those shapes (the leaf graded it a second major; re-graded, because the required reviewer's own sections are
+    covered); the concern-remains vocabulary misses "still persists", "has not been addressed", "not yet addressed"; a disposition
+    accepts any non-blank text as evidence (`TBD`, `-`); finding ids are positional; head currency is prose only; the dispositions are
+    CLI flags and are not read from the progress file; `_count_section_findings` UNDER-counts a section with no declared count (the
+    lane says over-count only), so one disposition clears two nitpicks.
+  - **Layer 1, minor (re-graded from the leaf's major):** D2 makes four keys required while the lifecycle producer
+    (`phase-6-finalize` emit-landing) has no source for any of them, so every lifecycle landing now reads `complete: false`. The lane
+    names it as owed; nothing gates on it.
+  - **Surface:** every file outside the declared surface is explained by a deliverable. Doc standard: `# D4 —` and `# D5 —` labels in
+    `test_runbook_lane.py` and "writes none of them yet" wording in three files; a bare `runbook_lane review-gate` command in
+    `analyze.md` and the landing template.
+  - **Collision:** PLAN-LB-127 shared two files with it (the operator accepted the overlap); no conflict is reported by either lane.
+  - **Watch (fix chain):** the fourteenth landing in a row with a layer-3 fix owed (after PLAN-LB-127).
+- **PLAN-LB-127** (shipped #1941, 2026-11-08, runbook lane, `deepseek-v4.1-flash/high`) — see `landings/PLAN-LB-127.md`. Merge commit
+  `e71329548`, a squash commit with one parent `bbe421f15` (the PLAN-LB-125 merge, read with git before the leaf prompt named it). One
+  three-layer leaf read it with the lane's 11 claims passed one by one; the orchestrator re-read both majors, the veto data, the
+  fixture docstring, the skip-notice control and the previous roster seed at `bbe421f15`. The lane's review history, CI and merge-queue
+  claims were not re-read. CodeRabbit never reviewed this PR (107 files against a cap of 100) and the operator accepted the gap in the
+  lane. No verb or flag was added, so no executor regeneration is owed. **The two majors are staged as PLAN-LB-128 (2026-11-09).** The lane reports 4
+  of 4 deliverables. PLAN-LB-41 D1 and D5 describe the retired bot's code-review packs and comment shape and retire with this merge.
+  - **Layer 3 major (re-read), D4:** `migrate_bot_lists` strips the retired name from a roster in memory and returns `noop` when no
+    legacy `enabled_bots` key exists (`upgrade.py:446-454`); the command saves only when the state is not `noop` (`:532`). A consumer
+    whose `required_bots` is the previous seed `cuioss-review-bot,coderabbit` keeps the name on disk and every merge blocks as
+    `unregistered_kind`. This repository is not affected. The migration tests call the pure function and never the save path.
+  - **Layer 3 major (re-read), D1:** the live #1931 concern is a free-text statement in the Merge Risk block, a block every summary
+    carries, with none of the four section titles; the conjunction (marker, heading, no veto string) drops it
+    (`github_pr.py:332-344,552-554`) and the bot resolves `participated_but_empty`. The shipped positive test uses an assembled body
+    (`_github_pr_fixtures.py:461-483` says so), the spec's own verify-first clause says D1 closes as not reproducible in that case, and
+    the docs claim a straying summary is filed (`coderabbit.md:154-156`). Not shown by reading: whether that concern is also posted
+    through a formal review.
+  - **Minor:** `No actionable comments were generated` stays an unconditional drop evaluated before the concern check (`:552`); the
+    skip-notice control checks nothing D1 changed (`test_comments_stage_filters.py:421-433`) and a marker-bearing draft or label skip
+    notice is now filed as a finding; the veto strings have no provenance and miss "Outside diff range comments"; an answer naming only
+    the retired kind is saved as zero required reviewers; the D4 sweep missed the PR-Agent AGENTS.md rationale in five places; history
+    wording in `coderabbit.md:150,162` and the contract.
+  - **D2 is correct:** both size wordings, the cap returns 100 (not the file count) for both, no first-match hazard.
+  - **Queue annotation, parked PLAN-LB-41:** D1 and D5 retire; D2 to D4 are untouched.
+  - **Incomplete landing:** see the Open Defect for the four missing review-and-Sonar numbers.
+  - **Watch (fix chain):** the thirteenth landing in a row with a layer-3 fix owed.
+  - **Watch (owed, operator-run):** the harness sync after the merge.
+- **PLAN-LB-123** (shipped #1933, 2026-11-07, runbook lane, `deepseek-v4.1-flash/high`) — see `landings/PLAN-LB-123.md`. Merge commit
+  `323bc766c`, a squash commit with one parent `5cd8ccd92` (read with git before the leaf prompt named it). One three-layer leaf read
+  it with the lane's 8 claims passed one by one; the orchestrator re-read the credit predicate, the B7 text, the manifest routing change
+  against the parent and the doc residues. The lane's review history, CI and merge-queue claims were not re-read. The message is
+  `complete: false`, `missing_keys: total_tokens`. No verb or flag was added, so no executor regeneration is owed. **No major, so
+  nothing is staged.** 5 of 5 deliverables reported. This is the fix plan for the PLAN-LB-117 findings.
+  - **Layer 3, minor (re-read):** the hand-back credit counts tasks and does not know which task the return is about
+    (`_tasks_query.py:667`), so one non-owed stalled task beside an unrelated valid hand-back reads as the hand-back cause; and the
+    credit has no memory across dispatches, so a repeated `running` hand-back on one task is credited each time and B7 no longer stops
+    that loop. Neither shape was shown reachable. Carried as the Watch below, staged only on the operator's word.
+  - **Layer 3, minor:** the before-snapshot step is stated only in the B7 bullet, while the post-build re-entry says "without the
+    peek" (`execution.md:239,272`), so it can be skipped and the next evaluation is refused and recorded `error`.
+  - **Layer 2:** D4(d) is met only by the commit message (the test docstring still claims a discrimination it cannot make, `test_unmeasured_rung_owed_hold.py:14-18`);
+    the D4(e) premise was false (the hand counts were already named frozensets) and the lane refuted it correctly; `SKILL.md:779`
+    does not state the keep-recorded precedence; `phase-5-execute/SKILL.md:1104` and `execution.md:268` overstate or omit the credit
+    rule; `_cmd_client_build.py:55-59` still says "the ONE place". These doc residues ride on the next plan that touches those files:
+    PLAN-LB-126 touches `execution.md` and `phase-6-finalize/SKILL.md`, so it carries the `execution.md` residues (L2-3, L3-3).
+  - **Surface:** the lane's "no surface drift" is false as worded: four touched files are not on the Expected Surface (each explained
+    by a deliverable); three listed files were not touched.
+- **PLAN-LB-122** (shipped #1931, 2026-11-07, runbook lane, `deepseek-v4.1-flash/high`) — see `landings/PLAN-LB-122.md`. Merge commit
+  `bb4c39221`, a squash commit with one parent `8f61ab6cd` (the docs-only merge of PR 1930, read with git before the leaf prompt named
+  it). One three-layer leaf read it with the lane's 10 claims passed one by one; the orchestrator re-read the major and the Step 4
+  table. The lane's review history, CI and merge-queue claims were not re-read. The message is `complete: false`, `missing_keys:
+  total_tokens`. No verb or flag was added, so no executor regeneration is owed. **Reported to the operator and not staged.** 4 of 4
+  deliverables reported. This is the fix plan for the PLAN-LB-114 findings.
+  - **Layer 3 major (re-read):** the `verify-links` spanning-macro probe matches the label only when the bracket immediately follows
+    the mask (`re.match` at `_cmd_verify_links.py:147`), so `link:docs/+v1+/missing.adoc[x]` or `link:https://x/?q=+foo+&r=1[y]`, a
+    mask in the MIDDLE of a target, is still in no total, issue or unchecked class: the defect class the plan was written to close, for
+    one more form. `ref-asciidoc/SKILL.md:221` overstates the guarantee.
+  - **Minor:** the Step 4 `checked`/`confirms` row has no "only when no settled verdict" qualifier (re-read), so a Step 2b `contradicted`
+    followed by a layer-1 confirm persists different values depending on how the precedence sentence is read; `corpus set-verdict`
+    still overwrites a settled verdict unconditionally (the lane answered CodeRabbit's write-boundary finding as out of scope although
+    the spec offered `orchestrator.py` for it); the doc tests never use the polarity vocabulary and pass for a reworded contradiction;
+    the class counts in the test are hand-listed against the constraint; the landing template has no polarity column; the symlink
+    test is interpreter dependent and `RuntimeError` also swallows `RecursionError`.
+  - **Surface:** five files outside the Expected Surface (the lane names two); `uv.lock` is the types-pyyaml pin only and was
+    committed as a separate chore on the operator's selection. The spec's Write-Boundary does not cover `uv.lock`.
+  - **Answers:** the secure-logging claim is narrowed correctly and the Java leaf now points at the owner.
+  - **Queue annotation, parked PLAN-LB-69:** its D1 must be reconciled against the polarity field and the table in `analyze.md` Step 4,
+    which this merge changed.
+  - **Watch (fix chain):** the tenth landing in a row with a layer-3 fix owed.
+  - **Watch (operator-run):** the harness sync after the merge ran 2026-11-07.
+- **PLAN-LB-125** (shipped #1939, 2026-11-08, runbook lane, `deepseek-v4.1-flash/high`) — see `landings/PLAN-LB-125.md`. Merge commit
+  `bbe421f15`, a squash commit with one parent `19da7ed84` (the PLAN-LB-124 merge, read with git before the leaf prompt named it). One
+  three-layer leaf read it with the lane's 10 claims passed one by one; the orchestrator re-read the major's code and the minors it
+  grades. The message is `complete: false`, `missing_keys: total_tokens`. No verb or flag was added, so no executor regeneration is owed.
+  **Reported to the operator.** The lane reports 5 of 5 deliverables. It absorbs PLAN-LB-75 D1 (the triage exemption) and
+  its D2 outline bullet (clause 2 held and shipped); PLAN-LB-75 keeps its `criteria_gate` and drop-reason-producer bullets and D4.
+  - **Layer 3 major, removed by the operator's word (2026-11-08), no fix plan:** the JVM method arm misses idiomatic Kotlin tests: a
+    backticked name or an expression body gets no identity, its `@Disabled` goes to the next candidate, and a second `@Disabled` in the
+    class is accepted by the first acceptance (`_review_support_integrity.py:126`, `:1083-1110`, `review_support.py:352-357`). The
+    Java shapes of the Done-when are fixed. The Kotlin gap is accepted as it stands and is no longer an Open Defect.
+  - **Minors:** `inner` and one-line annotated class headers (L3-2); an unparsed header attributes its marker to the NEXT method (L3-3);
+    `@DisabledOnOs` and the like match `@Disabled` by substring (L3-4, recorded in the spec and carried by no deliverable); a column-0
+    `//` pops the class stack (L3-5); the retired-key re-raise has no test (L2-1); a fence nested in a fence drops later deliverable
+    headings (L3-7); a marker quoted in a list-item fence reads as the bot's claim (L3-8); history wording in `markdown_fence.py`,
+    `_plan_parsing.py` and `github_ops.py`.
+  - **Watch (fix chain):** the twelfth landing in a row with a layer-3 fix owed.
+  - **Watch (owed, operator-run):** the harness sync after the merge.
+- **PLAN-LB-124** (shipped #1938, 2026-11-08, runbook lane, `deepseek-v4.1-flash/high`) — see `landings/PLAN-LB-124.md`. Merge commit
+  `19da7ed84`, a squash commit with one parent `3839835cc` (the PLAN-LB-115 merge). One three-layer leaf read it with the lane's 11
+  claims passed one by one; the orchestrator re-read both majors' code and the minors it grades. The message is `complete: false`,
+  `missing_keys: total_tokens`. **The major is staged as PLAN-LB-130 (2026-11-09).** The lane reports 8 of 8 deliverables (above the guard on the
+  operator's word); none of the six shared build files was edited. The executor template changed (D2), so an executor regeneration is
+  owed.
+  - **Layer 3 major (L3-1):** moving the scope check first reads the tokens after the canonical as scope for every tool. The npm
+    discoverer emits `run test`, `run lint`, `run build`, which read as canonical `run` with scope `(test)`, so a whole-tree change is
+    refuted (`build_scope_narrow`) where it used to be an inability that passed; the same flip is reported for the Maven `clean install`
+    and the Gradle multi-task canonicals. It falsely blocks the push and freshness gate for npm, Gradle and Maven-chain consumers
+    (`_freshness_crosscheck.py:719-731,805-806,829-833`). The spec premise has no control for a multi-token goal payload (layer 1).
+  - **Second leaf major, re-graded to minor (L3-2):** a `-Dtest` run with `failIfNoSpecifiedTests=false` whose log carries `No tests to
+    run.` is now `success` (`_maven_execute.py:593-600`); it fails open only if Surefire prints that line for a missed selector, which
+    only a run shows.
+  - **Minors:** `command_args` drops `--working-dir` and `--project-dir` (L3-3); the remedy hint misfires twice (L3-4); the report
+    credit counts skipped tests and has a 1 s start slack (L3-5); the resolve error misstates an unreadable-POM member and the gate record
+    names it only in a document (L3-7); the exit-0 Failsafe miss is undetected when any unit test ran (L3-8); a whitespace-padded fact
+    key is checked stripped and persisted raw (L3-9); history wording in four places; the branch 4 text contradicts itself.
+  - **Watch (fix chain):** the eleventh landing in a row with a layer-3 fix owed.
+  - **Watch (owed, operator-run):** the harness sync, the executor regeneration in every project, the daemon reconcile so the routed child
+    runs D3 and D6.
+- **PLAN-LB-115** (shipped #1932, 2026-11-08, runbook lane, `deepseek-v4.1-flash/high`) — see `landings/PLAN-LB-115.md`. Merge commit
+  `3839835cc`, a squash commit with one parent `420415c7c` (the Dependabot mypy merge, PR 1926). One three-layer leaf read it with the
+  lane's 12 claims passed one by one; the orchestrator re-read the points the report grades. The message (the second one; the first was
+  the mid-flight observation of 2026-11-07) is `complete: false`, `missing_keys: total_tokens`. **No blocker and no major.** The lane
+  reports 4 of 4 deliverables; self-review `budget-exhausted`.
+  - **Minors:** the carry predicate is evaluated at submit time, so a job still queued past the 300 s hand-back and started after the
+    plan record moved back is refused as itself (fails closed); a renamed test cannot tell per-block from last-value reading and the
+    stale-executor test models the refusal on the argv only; four deliverable and past-state labels remain in touched modules; the
+    carried-tree refusal has no JSON route, so the "TOON and JSON" wording in the spec and the PR is moot.
+  - **`uv.lock`:** the squash carries the mypy 2.4.1 relock that the Dependabot merge before it left stale (re-read with git). Whether
+    the earlier stale `types-pyyaml` line is still stale was not re-checked here.
+  - **Watch (owed, operator-run):** the harness sync, the executor regeneration in every project, a live routed check in the move-back
+    window, the daemon reconcile.
+- **PLAN-LB-121** (shipped #1929, 2026-11-07, runbook lane, `deepseek-v4.1-flash/high`) — see `landings/PLAN-LB-121.md`. Merge commit
+  `74ddc39a8`, a squash commit with one parent `47d4a5b70` (the ledger land of PR 1928, read with git before the leaf prompt named it).
+  One three-layer leaf read it with the lane's 12 claims passed one by one; the orchestrator re-read the two majors' code and the
+  gate text. The lane's review history, CI and merge-queue claims were not re-read. The message is `complete: false`, `missing_keys:
+  total_tokens`. No verb or flag was added, so no executor regeneration is owed. **Reported to the operator and not staged.** The lane
+  reports 3 of 3 deliverables; no shared build file was edited.
+  - **Layer 3 majors:** (1) the new zero-test guard turns a legitimate green into a stop: a module with only test helpers, or a project
+    whose `.mvn/maven.config` carries `-q`, prints no test summary, so a leading `test` run becomes `indeterminate`
+    (`_maven_execute.py:430-445`), and the pre-push gate says `indeterminate` means STOP the step (`pre-push-quality-gate.md:493,516`)
+    with no route for the per-task gate; (2) the standalone POM the root does not build still gets `-pl` canonicals, which Maven
+    rejects outside the reactor (from knowledge), and the new test pins it (`test_discover_modules.py` about 776).
+  - **Layer 1:** the fail-closed clause for an unreadable POM is not met (it parses as a jar with no modules, the gate passes
+    un-gated with a warning, `_maven_cmd_discover.py:636-648`, re-read). Minor: the control rewrite is not labelled a correction; an
+    exit-0 Failsafe miss under `verify` is not caught and not in the recorded limit.
+  - **Answers PLAN-LB-120 L3-2** for runs the guard sees (a guarded zero-test run writes an `unknown` row, which cannot certify);
+    PLAN-LB-120 L3-1 is unchanged. The guard reaches a routed build only if the daemon child runs post-merge code: a daemon
+    reconcile is owed.
+  - **Queue annotation, PLAN-LB-115 (running):** two new Maven `indeterminate` reasons (`test_run_executed_nothing`,
+    `test_log_unreadable`) travel the routed legs its D4 decides; D4 should pin them beside the selector reason. Its factory
+    citations are unchanged; any citation into `_maven_execute.py` moved (190 to 499 lines). The spec is not edited while it runs.
+  - **Watch (fix chain):** the ninth landing in a row with a layer-3 fix owed.
+  - **Watch (owed, operator-run):** the harness sync after PLAN-LB-121, the daemon reconcile. `uv.lock` is stale against
+    `pyproject.toml` on main since the dependency merge `ddb893c96` (types-pyyaml); every worktree build dirties it.
+
+- **PLAN-LB-108, PLAN-LB-119 and PLAN-LB-120** (shipped #1922, #1925 and #1923, 2026-11-06 and 2026-11-07, runbook lane,
+  `deepseek-v4.1-flash/high`) — see `landings/PLAN-LB-108.md`, `landings/PLAN-LB-119.md` and `landings/PLAN-LB-120.md`. Merge commits
+  `9bd6a39d2` (parent `a8840acf1`), `b4430a0a6` (parent `9bd6a39d2`) and `f84eb0e36` (parent `b4430a0a6`), each a squash commit with one
+  parent, read with git before the leaf prompts named them. Three read-only leaves read them in parallel with 14, 10 and 12 claims
+  passed one by one; the orchestrator re-read the points marked in each report. The lanes' review history, CI and merge-queue claims
+  were not re-read. All three messages are `complete: false`, `missing_keys: total_tokens` (the known gap, out of scope). **Reported to
+  the operator and not staged.**
+  - **PLAN-LB-108 (no major):** layer 1: the D5 Done-when ("no doc or comment describes the per-plan or slot-only model as current") is
+    not met though the lane graded it met: the `build_queue.py` module docstring still describes `acquire` as plan-id idempotent
+    (`:46-62`), `doc/concepts/parallelism-and-locking.adoc:25` still says a build takes exactly one limiter path, `_build_result.py:166`
+    still says the hand-back status is always `running` (all three re-read). Layer 3, all minor: no timer, so a queued job whose
+    in-process holder released waits for an unrelated event (`marshalld.py:526-529,672`, re-read); an older client meets `queued` and
+    reports `indeterminate` with the protocol version unchanged; an acquire failure on a plan-less build is a bare `RuntimeError`; the
+    1800 s directory wait exceeds a 600 s shell ceiling; a stuck waiter or a reused holder pid has no recovery short of `directory
+    clear --force`. The suite-wide no-op of the directory lock hides the wiring from every `cmd_run` test. The surface is about fifteen
+    files wider than the lane says. `build_queue.py` gained parser arguments: **an executor regeneration is owed**, with the harness sync
+    and the daemon reconcile.
+  - **PLAN-LB-119 (one major):** layer 3 (re-read): a filter acceptance is still silent for JVM test files. The identity falls back to
+    the class (`_review_support_integrity.py:968`), the markers are a set per identity, so a second `@Disabled` in an accepted class
+    raises no row and would be accepted if it did (`review_support.py:319-328`). Minor: the placement still falls back to the mutable
+    `commit` (`github_ops.py:732-733`, re-read); a quoted marker or one after an unterminated fence reads as "no marker" while the
+    producer's admission and re-review gates still substring-match; the validated-head refusal now applies to every step's close; the
+    move proof keys on name plus assertion-line text; the section splitter is not fence-aware (fails closed). D7 is 6 of 7 as the lane
+    says, and its two unmet items are test-strength gaps only. `review-rubric.md:42` does not name `criterion_unparsed`.
+  - **PLAN-LB-120 (two major, one major lead):** layer 3 (re-read for the first): `_row_refusal` checks the canonical BEFORE the scope
+    (`_freshness_crosscheck.py:743-755`), so a Maven `test -pl X -am` row is filed as an inability and passes a whole-tree change; the
+    lane's "outside the vocabulary" is the wrong cause, because scope alone refutes the row. A whole-tree `verify --timeout 900` or
+    `verify --format json` row (the documented shape) is now unreadable and gives `stale` with a generic remedy that can loop. The
+    lead: `ROW_TESTS_EXECUTED_ZERO` is also checked after the canonical, so a green zero-test Maven `test` row is never refuted; it
+    answers PLAN-LB-121 D1's open question for this gate. Minor: the fallback refusal does not name `loop-back close --waive-refire`;
+    the discovery probe may run on every merge under the mutex (not re-read); `record-merge` accepts any key and the facts are written
+    only if the agent follows prose. The ten round-2 items the lane left are real, nine of them documentation.
+  - **Queue annotation, PLAN-LB-115 and PLAN-LB-116:** their sequencing behind PLAN-LB-108 is satisfied. Both cite line numbers in
+    `_build_execute_factory.py`, the routing tests and `runbook-lane/SKILL.md` that the PLAN-LB-108 merge moved; PLAN-LB-116 also
+    shares `test_runbook_lane.py` with the PLAN-LB-119 merge. Both are re-grounded in the cleanup pass of this drain.
+  - **Queue annotation, parked PLAN-LB-75 and PLAN-LB-46:** the PLAN-LB-119 merge shifted the lines they cite (`review_support.py`
+    by about 14, `_criteria_snapshot.py` by about 40) and added a `cuioss-review-bot` comment and three participation-site records
+    that PLAN-LB-46 D7 must also remove. Re-ground both before any un-parking. The PLAN-LB-119 L3-1 finding sits on PLAN-LB-75 D1's
+    files and should be reconciled with it in one plan.
+  - **Watch (fix chain):** the sixth to eighth landings in a row (after PLAN-LB-114, 117, 118, 107, 110) with a layer-3 fix owed; only
+    PLAN-LB-108 owes none on the focus rule.
+  - **Watch (answered):** PLAN-LB-120's Maven build-row interaction with PLAN-LB-110 resolves to the first and third findings above.
+  - **Watch (owed, operator-run):** the harness sync after the three merges, the executor regeneration for `build_queue.py`, and the
+    daemon reconcile with the post-merge live check (two builds for one worktree, the second reporting `queued`).
+
+- **PLAN-LB-110** (shipped #1921, 2026-11-06, runbook lane, `deepseek-v4.1-flash/high`) — see `landings/PLAN-LB-110.md`. Merge commit
+  `9c8eb94c2`, a squash commit with one parent `1d2b559fd` (read with git before the leaf prompt named it). One three-layer leaf read it
+  with the lane's 18 claims passed one by one; its first run died on a weekly rate limit and was resumed from its saved work. The
+  orchestrator re-read the majors; the leaf's line numbers for `_maven_execute.py` were wrong (the file has 190 lines), the substance
+  holds. The lane's review history, CI and merge-queue claims were not re-read. The message is `complete: false`, `missing_keys:
+  total_tokens`. No verb or flag was added, so no executor regeneration is owed. **Reported to the operator and not staged.**
+  - **Layer 1 major (L1-4, re-read):** the diff changes the shared routed-result mapping for every tool: a routed child verdict that is
+    not success or error is re-rendered as itself (timeout, killed, indeterminate) instead of `build_failed`, and an indeterminate
+    result carries the child's own message (`_build_execute_factory.py:786-799, 943-963`). The spec limited shared changes to the one
+    reason value, and none is needed for D3. The gate reaction to a changed timeout or killed result was not read.
+  - **Layer 3 majors:** (1) the root `pom` gets the `module-tests` and `test-compile` canonicals when ANY discovered module has tests,
+    not when the root builds one, so a root that does not list a tested subproject resolves to `mvn test` that runs zero tests and
+    succeeds (`_maven_cmd_discover.py:269-307`); whether the pre-push gate refuses a green with zero executed tests was not read. (2)
+    The selector-miss relabel drops a real failure whose category is not `test_failure` or `compilation_error` (`_maven_execute.py`,
+    about `:100-110`). (3) Collision: the factory and routing-test hunks sit on the running PLAN-LB-108's routing surface and the held
+    PLAN-LB-115's routed fault mapping.
+  - **D2 premise refuted, lane right:** a consumer does not need `architecture discover`; the resolver crawls the live worktree. The
+    pre-push gate text at line 419 still says it does, and four branches still say "pytest".
+  - **Answers a Watch:** Maven's `test` goal is outside the freshness coverage vocabulary, so a root `test` row earns no test credit
+    (`_build_examined.py`, leaf). This is the PLAN-LB-120 D2 hypothesis for the `test` goal; `package` was not read.
+  - **Minor:** the `+` grammar sentence is wrong for the method form; the gate test never calls `resolve-test-scope`; a renamed
+    control lost an assertion without a docstring; a `-Dtest` exit-0 run with an unreadable log keeps `success`; the reason names the
+    selector only from the command line.
+  - **Watch (fix chain):** the fifth landing in a row (PLAN-LB-114, 117, 118, 107, 110) with a layer-3 fix owed.
+  - **Queue annotation, PLAN-LB-115 (held) and PLAN-LB-108 (running):** re-read the routed-result hunks above at their outlines.
+  - **Queue annotation, PLAN-LB-120 D2:** its Maven build-row interaction with PLAN-LB-110 is now read: the new root `test` row is an
+    inability at the freshness check.
+  - **Watch (owed, operator-run):** harness sync after PLAN-LB-110.
+  - **Specced on the operator word, NOT staged (decisions 13, 14 and 17):** the operator said "do not stage but spec the plan" and asked
+    for the other follow-ups to be specced or aggregated. Four spec edits, no queue row:
+    - `plans/PLAN-LB-121-maven-consumer-gate-truth-fixes.md` (WS-02): the Maven half of the PLAN-LB-110 findings. D1 the reactor root's
+      test canonicals follow what the root builds, and a zero-test run is not a success (lead); D2 a selector miss keeps every real
+      failure and names the pattern; D3 guide texts and tests (separable). No shared build file.
+    - `plans/PLAN-LB-115-...md` (held, amended): a fourth deliverable takes the shared routed-result hunks of PLAN-LB-110 (L1-4,
+      L3-6), because they sit on the same mapping as its D2 and on PLAN-LB-108's routing file. It still runs after PLAN-LB-108.
+    - `plans/PLAN-LB-122-landing-analysis-and-link-checker-gaps.md` (WS-03): the PLAN-LB-114 findings (decision 13). D1 a total
+      verdict mapping in Step 4; D2 `verify-links` counts every link form its masks hide; D3 the secure-logging owner; D4 edges and
+      guide texts (separable).
+    - `plans/PLAN-LB-123-execute-handback-and-manifest-gaps.md` (WS-01): the PLAN-LB-117 findings (decision 14). D1 the delta
+      sequence; D2 the manifest records the decided command; D3 the hand-back lead, settled first; D4 and D5 separable.
+    - Not specced: decision 11 (the quality-report candidate blockers), which needs a read of the owning merged code first.
+    - **Gate consequence of not staging:** `corpus cross-check` reads a spec with no queue row as `indeterminate (row_not_joined)`, so
+      PLAN-LB-121, 122 and 123 cannot be admitted by the gate until each has a row. The overlap rows are readable: PLAN-LB-121 and 122
+      share no file with in-flight work; PLAN-LB-123 shares one over-declared test directory file with the running PLAN-LB-120
+      (`test_freshness_notation_crosscheck.py`), below the overlap-prompt threshold.
+
+- **PLAN-LB-107** (shipped #1920, 2026-11-06, runbook lane, `deepseek-v4.1-flash/high`) — see `landings/PLAN-LB-107.md`. Merge commit
+  `1d2b559fd`, a squash commit with one parent `75b5780d0` (read with git before the leaf prompt named it). One three-layer leaf read
+  it with the lane's 15 claims passed one by one; the orchestrator re-read the majors at their lines. The lane's review history, CI and
+  merge-queue claims were not re-read. The message is `complete: false`, `missing_keys: total_tokens` (the standing recurrence).
+  No verb or flag was added, so no executor regeneration is owed. All five deliverables trace to code and to tests that can fail; the
+  review gate finding is in D2 and D4. **Reported to the operator and not staged.**
+  - **Layer 3 major (L3-1, with layer-1 L1-2):** the gate reads head-dependence through `_derive_head_dependence`, which answers
+    `(False, None)`, "resolved, undeclared", for a step missing from the discovered population (`_cmd_mark_step.py:234-240`), so a
+    stale record for a head-dependent step that discovery cannot see is listed under `unconsulted_stamps` and the merge dispatches
+    (`pre_merge_gate.py:445-451`). The spec ordered that reader and also said an underivable declaration never widens. How often
+    discovery misses in a real finalize run is not read.
+  - **Layer 1 major lead (L1-1):** D4 makes any unknown flag after the canonical command an unreadable row, and the module treats
+    an inability as a pass, so a narrow row with a trailing executor flag (`--format`, `--timeout`) stops refuting a whole-tree change
+    (`_freshness_crosscheck.py:634-638, 950-960`). The push-gate consumer and the share of real rows with such a flag were not read.
+  - **Minor:** the abbreviated-SHA waiver test cannot detect a lost full-SHA check; an inverted control comments "fail-closed" for an
+    inability; the override-label import fault is swallowed; unconsulted stamps and fallbacks are never persisted; new reads are not
+    bounded by the verb timeout while the merge mutex is held; plan ids and history wording in current-state text; the claim that the
+    offending set equals the dispatcher's re-fire set is false in two cases that predate the plan. Lane's claim of `mutation-after`
+    for D1(a) and D2(a) is a different evidence from the spec's "red at HEAD"; by reading both would be red at the parent.
+  - **Watch (fix chain):** the fourth landing in a row (PLAN-LB-114, 117, 118, 107) with a layer-3 fix owed; in two of them one spec
+    rule makes a neighbouring rule in the same spec unreachable.
+  - **Queue annotation, parked PLAN-LB-46 and PLAN-LB-75:** both declare paths on this merge's surface (`branch-cleanup.md`,
+    `manage-status/SKILL.md`, `test/plan-marshall/phase-6-finalize/`); re-ground before either is un-parked.
+  - **Watch (owed, operator-run):** harness sync after PLAN-LB-107.
+  - **Staged on the operator word: PLAN-LB-120** (`plans/PLAN-LB-120-merge-and-push-gate-truth-fixes.md`, WS-01, runbook lane), the
+    fix plan for the PLAN-LB-107 findings (decision 16). The operator said "add to the existing fix plan or create a new one"; it is a
+    new plan because PLAN-LB-119 is already seven deliverables on the review gate and this is a different surface. Four deliverables:
+    D1 the merge gate separates a step that declares no head-dependence from a step it could not find (blocking), and persists the
+    unconsulted stamps and fallbacks; D2 the push gate does not turn an unreadable build row into a pass, after settling the consumer
+    of `UNDETERMINED` and the real row shape (blocking lead); D3 tests, bounds and fault reports (separable); D4 the documents
+    (separable, split first). The gate reads it as declarative, determinate, 0 blocking candidates, 0 gate overlap, no overlap prompt.
+    Not read: the pairwise overlap with PLAN-LB-119 if both are selected in one round.
+
+- **PLAN-LB-118** (shipped #1919, 2026-11-06, runbook lane, `deepseek-v4.1-flash/high`) — see `landings/PLAN-LB-118.md`. Merge
+  commit `75b5780d0`, a squash commit with one parent `c394a95fb` (read with git before the leaf prompt named it). It is the fix plan for
+  the PLAN-LB-105 findings. One three-layer leaf read it, with the lane's 16 claims passed one by one; the orchestrator re-read the
+  majors at their lines. The lane's review history, CI and merge-queue claims were not re-read. The message is `complete: false`,
+  `missing_keys: total_tokens` (the standing recurrence; nothing staged). No verb or flag was added, so no executor regeneration is owed.
+  **The fix plan carries layer-3 majors of its own**; all of it is reported to the operator and none of it is staged.
+  - **Layer 3: three majors, one major lead, minor.** (1) A bare-name identity in a NEW file absorbs a MODIFIED file's loss: the
+    deleted `test_parse` with two assertions and an unrelated new `test_parse` with two `assert True` give no row
+    (`_review_support_integrity.py:648-666`); the root is the spec's D1 wording (a moved test is not a loss, with a path-independent
+    name). (2) A filter acceptance covers a later skip of the same kind in the same file, because the match is a marker superset
+    (`review_support.py:313-320`); needs an earlier acceptance on that path. (3) The accepted-set key omits `markers`, so a second
+    filter acceptance on a path is dropped and the row is raised at every head (`_criteria_snapshot.py:361-366, 421-437`); fail-closed;
+    (2) and (3) are one defect. (4) Lead: fenced lines under a criterion are skipped and appear nowhere, so an edit in a fenced example
+    is not drift (`_criteria_snapshot.py:884-891`); the base comparison and the drift consumer were not read. Minor: the set-total row
+    goes to the largest raw drop, one path-level key serves three row kinds, an errored `--is-ancestor` reads as "not an ancestor", and
+    the absent-patterns read a missing revision as a missing file.
+  - **Layer 1: one major lead.** The close marks the step done at the closing head and records the rows of the validated head; the spec
+    said "refused or re-validated", and nothing re-validates (`_cmd_loop_back.py:648-665, 691-694`). Whether a post-review removal then
+    merges unseen turns on the re-fire barrier, not read. The D4 guard accepts any clean HEAD ahead of base, not the plan's branch
+    (carried minor; the leaf said major).
+  - **Layer 2: the lane's closing sentence is refuted.** It says none of its residue reintroduces a lost-assertion pass, a permanently
+    blocking accepted row or a test that cannot fail; items (1) to (3) above are the first two. Its residue item (c) is wrong
+    (`assertions_removed` is the lost count in both branches), and its item (e) is a real pass.
+  - **Watch (the fix chain):** a third fix plan in a row ships with new layer-3 majors (PLAN-LB-114, 117 and 118). The cause the three
+    share: a rule is stated and then keyed on something weaker than it names. A fix plan for these is the operator's call.
+  - **Queue annotation, parked PLAN-LB-75:** edits `review_support.py` and `_criteria_snapshot.py`; re-ground it against this plan's
+    line moves before it is un-parked.
+  - **Watch (owed, operator-run):** harness sync after PLAN-LB-118.
+  - **Staged on the operator word: PLAN-LB-119** (`plans/PLAN-LB-119-review-gate-truth-fixes.md`, WS-03, runbook lane). It folds the
+    fix plans for the PLAN-LB-118 findings (decision 15) and the PLAN-LB-106 findings (decision 12), scope answered by the operator:
+    the review-gate pair. Seven deliverables: D1 the merge-gate placement fail-open and the marker-plus-limit-block lead; D2 a loss
+    per identity with a content-proven move; D3 an acceptance key that names what it covers; D4 a close at an unvalidated head; D5 the
+    evidence root and git calls; D6 the parser fence and the current-state texts; D7 the review-bot evidence minors. It exceeds the
+    six-deliverable guard on the operator word: D1 first, D2 and D3 together, D5 to D7 split off in that order. Not folded: the fix
+    plans for PLAN-LB-114 and PLAN-LB-117 (decisions 13 and 14, unrelated surfaces) and any fix from the running PLAN-LB-107, 108 and
+    110. The gate reads it as declarative (26 entries, none unresolved), determinate, 0 blocking candidates, 2 files shared with the
+    running PLAN-LB-108, so an overlap prompt is due at emit.
+
+- **PLAN-LB-114 and PLAN-LB-117** (shipped #1915 and #1918, 2026-11-06, runbook lane, `deepseek-v4.1-flash/high`) — see
+  `landings/PLAN-LB-114.md` and `landings/PLAN-LB-117.md`. Merge commits `3404d904c` and `c394a95fb`, both squash commits with one parent
+  (read with git before the leaf prompts named them). Each was read by one three-layer leaf and the orchestrator re-read the majors at
+  their lines; the lanes' review history, CI and merge-queue claims were not re-read. Both messages are `complete: false`, `missing_keys:
+  total_tokens` (the standing recurrence; measurement out of scope, nothing staged). **Both fix plans carry new layer-3 majors of their
+  own**; all of it is reported to the operator and none of it is staged.
+  - **PLAN-LB-114 (the fix plan for the PLAN-LB-111 and PLAN-LB-113 findings): one layer-1 major, two layer-3 majors, minor.** Layer 1:
+    the Step 4 routing table maps `checked` to `contradicted` by the words "found it wrong", but a leaf finding has no polarity, so a
+    finding that confirms a premise is mapped wrong or not at all, and a wrong `contradicted` on a staged claim would block that spec's
+    admission (`analyze.md:184-187`); the bullet contradicts itself on `corroborated` (`:182`, `:189`), and the never-downgrade rule
+    protects only `corroborated`. Layer 3, `verify-links`: a mask that begins inside a live `link:` target (`link:++url++[x]`) erases
+    the macro and counts nothing (`_cmd_verify_links.py:105`), so an unexamined form is reported nowhere; the masks also hide `xref:`
+    and `<<anchor>>`, which are never counted, a coverage regression for `++` and `pass:[` and a gap the spec's D2c scoped in. Minor:
+    the owning `secure-logging.md` still states the broad JSON claim the Java leaf now narrows, the xref path still joins an absolute
+    target, a symlink loop can abort a run on 3.12 (not shown by reading), an unreadable-only run reports zero counts with
+    `status: failure`, and several test gaps. The D1 clauses, D2a, D2b, D2c (naming), D2e and the D3 text trace to code and to tests that
+    are red at the parent.
+  - **PLAN-LB-117 (the fix plan for the PLAN-LB-109 findings): two layer-3 majors, one major lead, minor.** (1) The B7 text gives the
+    delta no workable source: both done counts are read "from the call below", which takes the delta as input; the first dispatch has
+    no previous snapshot; the code is fine (a plain `loop-exit-guard` call reports `done_count`) and the sequence is what is missing
+    (`execution.md:239`, `:247-254`). (2) The manifest records the first orchestrator-tier module-tests command, not the command the
+    deferral was decided on, so a re-compose is not idempotent for a task listing an unmeasured and a measured command
+    (`manage-execution-manifest.py:1343-1362`, `:1517-1551`). (3) Lead, precondition unsettled: the predicate now decides before the
+    hand-back and subtracts only owed tasks, so a `running` or Step 11b/11c hand-back whose task is not held `verification_owed` can
+    be classified `error` with delta 0 and over 50,000 tokens, which the prior order prevented (`_tasks_query.py:613-631`).
+    Minor: a negative delta is read as progress, the reason string names a hand-back that was not valid, `_bounded_tier_fields` marks a
+    default stamp measured, the D3 leaf-side test exercises `finalize-step` and not the leaf's choice to pass the flag (the leaf graded
+    it major; carried minor, the Done-when is met), and four documentation lines still drift. No verb or flag was added, so no
+    executor regeneration is owed.
+  - **Open Defect (my prompt):** the PLAN-LB-117 leaf wrote that the lane listed `test_a_handback_alone_stays_the_handback_cause` as
+    red at base; the lane called it a control. The wording came from my prompt compressing three tests into one "red at base" clause.
+    Dropped from the report. A leaf prompt carries a landing narrative's claims one by one, never merged.
+  - **Watch (L3-3 of PLAN-LB-117):** settle first at any fix plan's outline whether a `running` or Step 11b/11c hand-back's task is
+    `in_progress` without `verification_owed`. If it is, the PLAN-LB-117 order produces a false `error` on a prescribed yield.
+  - **Watch (the fix chain):** two fix plans in a row each shipped with new majors; a fix plan for a fix plan is a candidate, and the
+    operator's word decides whether and how many to stage.
+  - **Queue annotation, PLAN-LB-69 (parked):** edits the same `analyze.md` Step 4 and the template; reconcile its D1 against the
+    leaf, the single report write and the routing table as PLAN-LB-114 left them, including L1-1.
+  - **Queue annotation, PLAN-LB-110:** its sequencing behind PLAN-LB-117 is satisfied; it shares `execute-task/SKILL.md` with the
+    shipped plan, whose merged text is in `main`.
+  - **Watch (owed, operator-run):** harness sync after PLAN-LB-117 (the spec's Dependencies section).
+
+- **PLAN-LB-111 and PLAN-LB-113** (shipped #1908 and #1909, 2026-11-05, runbook lane, `deepseek-v4.1-flash/high`) — see
+  `landings/PLAN-LB-111.md` and `landings/PLAN-LB-113.md`. **PLAN-LB-111 is the first landing read under the three-layer
+  analysis it shipped** (applied from the source tree; the installed cache 0.1.2051 predates it, so the contract is not yet
+  active in a stock session). Every claim the two landings made about the diff holds: file sets, merge commits, review history
+  and the disclosed rule breaks. Both are `complete: false` on `total_tokens` (the standing runbook-lane recurrence). No
+  collision: LB-111 and LB-113 touched disjoint files, and LB-113 did not touch the one file the gate showed shared with LB-105.
+  - **PLAN-LB-111 layer 3 (one major, six minor), reported to the operator, not staged.** The template's layer-1 and layer-2
+    summary and verdict slots offer only `{clean | findings}` while their rows allow `not_shown_by_reading` (major: the template
+    forces the "clean" that Step 4's limit forbids); Step 4 writes the report twice (the analysis block, then item 1); the
+    corpus-verdict mapping from `checked` / `not_shown_by_reading` is underspecified; the fixed Dispatch line is false on the
+    inline fall-back; the cross-repo prompt field is undeclared; nothing forbids the leaf from fetching third-party text itself
+    (observed in this firing); `conformance[N]` versus `[M]`. **START HERE does not show a layer-3 defect** (the spec's D3
+    premise; the lane reported it as a gap). Parked PLAN-LB-69 shares Step 4 and the template: reconcile its D1 against this leaf
+    and return shape at its re-grounding.
+  - **PLAN-LB-113 layer 3 (no blocker, no major, eleven findings), reported to the operator, not staged.** `verify-links`:
+    a site-root-relative `link:` target is reported broken; `link:#{attr}` is classed an internal anchor and reported broken;
+    links inside backticks and the `++…++` / `pass:[]` forms are neither verified nor named in `unchecked_link_classes`
+    (the deliverable's own goal); a bad `.adoc` fragment target aborts a multi-file run; a nested listing block closes early.
+    Secure logging: the Java `neutralise` substitutes `?` against the owning "prefer escaping" rule, "structured JSON escapes all
+    three" overclaims, the owning rule omits U+2028/U+2029, and two skills repeat text across homes (spec-induced). Grouping if the
+    operator asks for a fix: one `verify-links` correctness plan and one secure-logging text plan.
+  - **Open Defect (landing facts):** `rb-lb-111-three-layer-landing-analysis-001.md` and `rb-lb-113-domain-content-gaps-001.md`
+    are `complete: false`, `missing_keys: total_tokens` (recurrence of the PLAN-LB-49 and PLAN-LB-73 entry). Measurement is out of
+    scope under the focus rule, so nothing is staged.
+  - **Watch (declared surface):** `marketplace/targets/cuioss_review_bot/target.py` `MAX_DOMAIN_RULES` is a guard the declared
+    surface did not know about. Any plan that adds review rules to the java code-review domain must declare it and its pinned test
+    constant (PLAN-LB-113 raised it 15 → 25 for 22 harvested rules).
+  - **Watch (spec premise):** PLAN-LB-113's D3 and D5 Done-whens asked for a rule restated in two homes against the spec's own "state
+    once" constraint. A spec that asks for a restatement should say why; the duplication is on the spec, not the lane.
+  - **Fix plan staged 2026-11-05 on the operator's word: PLAN-LB-114** (WS-03, runbook lane, three deliverables on three disjoint
+    surfaces). D1 the landing template and Step 4 (the major: three-value slots at layers 1 and 2, one report write, a verdict mapping,
+    the Dispatch line, the conformance shape, the cross-repo field and the leaf's no-fetch rule); D2 the `verify-links` edges (absolute
+    targets, `link:#{attr}`, masked links named as unchecked, an unreadable fragment target, nested block length, percent-decoded
+    anchors); D3 the secure-logging text (escaping example, JSON statement, one code home, U+2028/U+2029, one owner, the javadoc ordering
+    scope, the release qualifier, an anchored pointer test). Declarative, 16 entries, 0 unresolved; no overlap with the four running
+    plans. Queued behind them: all four slots were full when it was staged. Not carried: START HERE showing a layer-3 verdict (needs
+    the queue surface and `landing-check`; a Watch) and the reader-variant vehicle for the leaf (a plan-level decision).
+  - **Started by the operator 2026-11-05 (rows `running`):** PLAN-LB-106, PLAN-LB-105 and PLAN-LB-109, with PLAN-LB-112 that makes four of
+    four slots.
+
+- **PLAN-LB-112** (shipped #1910, 2026-11-05, runbook lane, `deepseek-v4.1-flash/high`) — see `landings/PLAN-LB-112.md`. Merge commit
+  `7d4182f46`. D1 verdict **reproduced** (fixture-level: the build server was down for the whole run, so no routed run existed). D3 and
+  D4 shipped as specified; D1 and D2 shipped modified (the carry candidate needed `_build_cli.py` and `resolve_project_dir.py`, which the
+  spec marked untouched). Every claim the message made about the diff holds except two: the lane's drift list omits
+  `_build_server_protocol.py` (201 lines, explained by D3), and its "met" for D2's moved-back Done-when is read from several separate
+  tests, not one routed run. The merge brought no collision with the running plans.
+  - **Layer 3 (no blocker, one major not shown by reading, six minor), reported to the operator, not staged.** The carry is appended to
+    every routed build with a real `--plan-id`, so a project whose executor predates the change has every routed plan build refused as
+    `invalid_invocation` until it is regenerated, with no in-process fallback (the lane discloses the regeneration as owed). Smaller:
+    the routed result carries the child's text as `reason` and drops `message`; the carried-tree refusal's documented diagnostic fields
+    are dropped by the formatter whitelist; TOON keys are read last-wins across the log; exit -1 relabels a pre-tool fault; an
+    unreachable build queue in a child raises past the classifier (not shown); plan-id-keyed side effects run in the child's worktree
+    cwd (not shown). Two tests are weaker than their claims (a log shape no producer emits; a one-spelling test that compares an
+    imported constant with itself). Two comments state transitional wording against the documentation standard.
+  - **Open Defect (landing facts):** `rb-lb-112-routed-build-worktree-fault-truth-001.md` is `complete: false`, `missing_keys:
+    total_tokens` (the standing runbook-lane recurrence; measurement out of scope, nothing staged).
+  - **Watch (owed, operator-run):** regenerate the executor in every project before a routed plan build can use the carry, and a live
+    routed check in the move-back window. Retire when both are confirmed.
+  - **Queue annotation, PLAN-LB-108:** this landing moved the lines of `_route_to_daemon` and the routing tests that LB-108 declares;
+    re-read its function and line references at its outline. The sequencing the LB-112 spec asked for (LB-112 first) is now satisfied.
+  - **Fix plan staged 2026-11-05 on the operator's word: PLAN-LB-115** (WS-04, runbook lane, three deliverables). D1 the carry no longer
+    refuses a routed plan build outside the move-back window on a stale executor (the major; the outline chooses between carrying only
+    when needed and a single re-run without the carry); D2 the routed fault keeps the child's field names, the carried-tree refusal
+    keeps its diagnostic fields, verdict keys are read per block, exit -1 and the unreachable build queue no longer collapse; D3 the
+    two weak tests, the unused fixture, one single-test proof of LB-112 D2, and the two transitional comments. Declarative, 12 entries,
+    0 unresolved. Sequence after PLAN-LB-108 (shared `_build_execute_factory.py` and `test_build_execute_routing.py`). Not carried: the
+    gate-row error class (info) and the O(n²) JSON scan (a leaf lead, not re-read). PLAN-LB-111 and PLAN-LB-113 findings are carried by
+    PLAN-LB-114, so one follow-up per landing group exists: LB-114 (111, 113) and LB-115 (112).
+  - **Started by the operator 2026-11-05 (row `running`):** PLAN-LB-114. Running now: PLAN-LB-106, PLAN-LB-105, PLAN-LB-109, PLAN-LB-114
+    (four of four slots).
+  - **Staged 2026-11-05 on the operator's word from a pasted finding: PLAN-LB-116** (WS-04, runbook lane, five deliverables). The
+    finding came from the orchestrator of another epic (`ui-improvements`): its lanes merged seven PRs with CodeRabbit findings or
+    Sonar issues still open while the landing messages said all handled. Read here in the lane text: review handling is prose, the
+    gate names only outside-diff findings, a thread may be resolved after any reply, the landing facts carry no thread or review-body
+    numbers and the Sonar facts are optional, `sonar-gate` accepts a lane-recorded dismissal, and no step reads a mailbox. The seven
+    landings are the finder's reading and were not re-read here. D1 a `review-gate` verb and the thread-resolve rule; D2 four required
+    landing-facts fields and a landing check that rejects their absence; D3 `sonar-gate` refuses a lane-recorded dismissal; D4 the
+    mailbox read at setup, before self-review and before enqueue; D5 an evidence claim needs an artifact. Graded blocking
+    (merge-gate integrity), no token or measurement work. D3 is Sonar behaviour for consumer projects: nothing is enabled in this
+    repository, and D3 is dropped if the operator rules the Sonar ruling covers it. Sequence after PLAN-LB-106 and PLAN-LB-108
+    (shared `runbook-lane/SKILL.md` and `test_runbook_lane.py`).
+
+- **PLAN-LB-109** (shipped #1911, merge `051fda6a0`, runbook lane, WS-01) — read on three layers; see `landings/PLAN-LB-109.md`. D1 and D3
+  shipped as specified, D2 and D4 modified (D4's unmeasured-arm Done-when is reported not met as written by the lane; this reading
+  does not settle it). Layer 3 has no blocker, **one major** (B7's `completed_tasks_delta` has no stated source, so a dispatch that did
+  complete tasks can be reclassified `error`) and a layer-1 major (the hand-back check runs before the predicate, as the spec asked, so
+  a stall beside a hand-back on a non-owed task is never seen); 13 minor and 2 info. No collision with a running plan; the diff adds 22
+  paths beyond the declared surface, all explained.
+  - **Open Defect (layer 3, carried by PLAN-LB-117):** the two majors above and the minor manifest bookkeeping defects L3-2 to L3-4
+    (`owed_rung_command` overwritten, staleness by deliverable, chain order ignoring outside dependencies).
+  - **Open Defect (my spec, carried by PLAN-LB-117 D3):** "owed rung" is undefined in the spec and bullet 3 and the D4 Done-when read as
+    contradictory; the shipped spec is not rewritten, and the fix plan states the definition.
+  - **Open Defect (landing facts):** `rb-lb-109-execute-prescribed-yield-not-error-001.md` is `complete: false`, `missing_keys:
+    total_tokens` (the standing runbook-lane recurrence; measurement out of scope, nothing staged).
+  - **Watch:** the lane's "CodeRabbit confirmed the fix and resolved its thread" is unverified (one review thread, resolution and the
+    11:46 review body not read). Retire when read.
+  - **Queue annotation, PLAN-LB-110:** this merge changed `execute-task/SKILL.md`, which PLAN-LB-110 D4 declares; re-read its line
+    references at its outline.
+  - **Fix plan staged 2026-11-05 on the operator's word: PLAN-LB-117** (WS-01, runbook lane, five deliverables). D1 a stall on a
+    non-owed task beside a hand-back is still decided, and a hand-back's step ids are checked against the manifest (the layer-1 major);
+    D2 `completed_tasks_delta` has a stated source and an absent input is not read as zero (the layer-3 major); D3 "owed rung" defined
+    once and a leaf-side test of the unmeasured arm (settles the disputed Done-when); D4 the manifest bookkeeping (L3-2 to L3-5,
+    separable); D5 the contradicting documentation lines and the transitional wording (separable). Declarative, 11 entries, 0
+    unresolved; no overlap with the running plans. It shares `execute-task/SKILL.md` and the `test/plan-marshall/execute-task/`
+    directory with the staged PLAN-LB-110, so the two together need an overlap prompt. Not carried: the leads L3-12, L3-13 and L3-16, the
+    `verify` timeout residue and the Sourcery size limit.
+
+- **PLAN-LB-105** (shipped #1913, merge `ce29d4b1f` (a squash on parent `60aa555e5`), runbook lane, WS-03) — read on three layers; see
+  `landings/PLAN-LB-105.md`. The lane reports 3 of 4 deliverables (D1's literal merge-base Done-when "not met as written"; the lane is
+  right, it is a defect of my spec: the changed set is a three-dot diff, so an untouched file is never read). D2 and D1 shipped modified,
+  D3 and D4 as specified. The diff adds 3 paths beyond the declared surface and leaves 3 declared paths untouched, all explained. No
+  collision with a running plan. Every CodeRabbit review thread is resolved; the final head has no bot review (rate limited).
+  - **Open Defect (layer 3, reported, nothing staged):** five majors in the gate this plan made: the changed test set pools the
+    after-counts of a test name across every file, so a same-named test elsewhere hides a deleted file's loss (more permissive than the
+    base); a test function moved out of a surviving file reports a blocking row with no identity that can never be accepted (a fourth
+    loss case, against "a moved test is not a lost assertion" and the docs' "exactly three cases"); a plan without a worktree is graded
+    against whatever the main checkout holds, with no HEAD or dirty-tree check; the re-arm of `taken_into_account` has no rule, source
+    or phase filter; and a no-identity row is never accepted (not shown by reading). Twelve minor and one info, including an uncaught
+    git timeout and transitional wording. Carried by the fix plan PLAN-LB-118.
+  - **Open Defect (layer 2, carried by PLAN-LB-118 D2):** a `**Tests to remove:**` bullet without a count accepts the identity for any
+    count, drops of surviving tests included, against the spec's identity-plus-count key.
+  - **Open Defect (my spec, carried by PLAN-LB-118 D3 and D5):** D3's premise that `taken_into_account` is only the review's own
+    disposition is false (the triage workflow records an operator Hold as `taken_into_account`); D4's migration rule has no
+    discriminator and D3's `--reopen` clause is inverted for that resolution. The shipped spec is not rewritten; the fix plan states the
+    corrected premise.
+  - **Open Defect (landing facts):** `rb-lb-105-review-gate-grading-truth-001.md` is `complete: false`, `missing_keys: total_tokens`
+    (the standing runbook-lane recurrence; measurement out of scope, nothing staged).
+  - **Watch (answered):** the `quality-report` drain asked that this landing be read for the base anchor. The changed set was already a
+    three-dot diff; the pre-image now reads at the merge base (`_review_support_integrity.py:213-222`), with a near-dead fall-back to the
+    tip. Retire that item.
+  - **Watch (unverified):** the review at 12:57 (body not read), the doc test and fixture claims, and whether a close without
+    `--accept` is a working exit for a no-identity row. Retire when read.
+  - **Queue annotation, parked PLAN-LB-75:** this merge changed `review_support.py` and `_criteria_snapshot.py`, which LB-75 D1 and D4
+    declare; re-read its function and line references at its re-grounding and against the no-identity and pooled-count defects.
+  - **Queue annotation, PLAN-LB-107:** it shares `phase-6-finalize` with this merge; re-read its references at its outline.
+  - **Started by the operator 2026-11-05 (row `running`):** PLAN-LB-107 (after PLAN-LB-117). Running now: PLAN-LB-106, PLAN-LB-114,
+    PLAN-LB-117, PLAN-LB-107 (four of four slots).
+  - **Fix plan staged 2026-11-05 on the operator's word: PLAN-LB-118** (WS-03, runbook lane, five deliverables; the single fix plan for
+    the layer-1, layer-2 and layer-3 findings above). D1 a loss decided per identity (the pooled-count hole, a moved function is not a
+    loss, every row acceptable, class scope and indented skip marker); D2 an accepted removal is exactly what was accepted (the
+    count-less declaration, the close reads the validated head and keeps every row of a path); D3 a re-file re-arms only what the loop
+    back superseded, never an operator Hold; D4 the evidence root and the git calls fail closed (separable); D5 the parser edges and the
+    contradicting and transitional text (separable). Declarative, 17 entries (explicit files, no directory), 0 unresolved; no shared
+    file with the four running plans. Queued: all four slots are full. Sequence against parked PLAN-LB-75 (shares `review_support.py`
+    and `_criteria_snapshot.py`). Not carried: nothing of the five majors; the leads settle first at outline.
+
+- **PLAN-LB-106** (shipped #1912, merge `5fd240a5e` (a squash on parent `3806ca897`), runbook lane, WS-05) — read on three layers; see
+  `landings/PLAN-LB-106.md`. The lane reports 5 of 5 deliverables; D1 to D3 shipped modified, D4 and D5 as specified. The lane read the
+  spec from the ledger worktree (`spec_differ=true`: the main copy carries four deliverables). `landing-check` surface delta is
+  `unmeasured`, so the surface was read from the diff (29 files). No collision with a running plan.
+  - **Open Defect (layer 3, reported, nothing staged): a live fail-open in the merge gate.** An inline review comment is placed at the
+    commit the provider reports on the comment itself (`github_ops.py:705-709`), and GitHub reports that at the newest head while the
+    line stays in the diff. Live on PR 1912: CodeRabbit's 14:52 comment on `dabb78c06`, resolved, reports `b09d230fc`, the final head,
+    while CodeRabbit's own summary says it did not review that head. The inline rule (`github_pr.py:2111-2118`) then credits the bot as
+    current and the credit outranks a quota refusal: the PLAN-LB-26 / #515 false green, now on main. Read from the code and the live
+    data; the barrier was not run and `_reported_commit_matches_candidate` was not read. Smaller: a body over 64 KiB is cut head-only
+    before ingest keeps its tail, so the conclusion is lost (`_findings_core.py:181-182`); the inline rule is bot-agnostic and also governs
+    `cuioss-review-bot`; the Sourcery footer strip is per line; the coverage marker, its field names and the `kind` value are code
+    literals against the registry-data constraint; a nested-JSON or quoted marker overrides the provider's commit; several tests are
+    looser than their claims. Three further leads were not re-read.
+  - **Watch (lead, settle first at the fix plan's outline):** the CodeRabbit "Review limit reached" block sits in the same summary
+    comment that carries the coverage marker, so the refusal skip (`github_pr.py:2093`) may discard a finished review's marker; the D2
+    fixture puts them in separate comments. Whether CodeRabbit keeps the block after finishing is unknown.
+  - **Open Defect (my spec):** D1's "no verdict when the marker is absent or unreadable" contradicts the spec's own fail-closed
+    constraint; the shipped "never credit" is right. The shipped spec is not rewritten; a fix plan states the rule.
+  - **Open Defect (landing facts):** `rb-lb-106-review-bot-evidence-truth-001.md` is `complete: false`, `missing_keys: total_tokens`
+    (the standing runbook-lane recurrence; measurement out of scope, nothing staged).
+  - **Watch (unverified):** the lane's red-first runs, the PR body that records D4, and the reviewer history beyond what the leaf read.
+  - **Queue annotation, PLAN-LB-116 and parked PLAN-LB-46:** the part of their sequencing that asked for this plan first is satisfied (LB-116 still waits for PLAN-LB-108); re-read
+    `runbook-lane/SKILL.md` L699-704, changed by this merge, at LB-116's outline, and re-ground LB-46 against the new participation rules.
+
 - **PLAN-LB-39** (shipped #1768, 2026-10-14) — 0 met / 4 partial / 3 unmet against its spec,
   counted 7/7, five regressions; see `landings/PLAN-LB-39.md`. Fix-forward PLAN-LB-50; unshipped
   deliverables re-staged as PLAN-LB-51 (Antigravity) and PLAN-LB-52 (harness-agnostic, as scripts).
@@ -661,6 +1224,251 @@ derive, for rows still live.
 
 ## Decisions
 
+- 2026-11-09 — **The `/tmp` inode exhaustion is staged as PLAN-LB-141 (operator word: "Analyze and create a plan for the following",
+  with the operator's own incident analysis pasted).** The incident stopped every tool call on the machine, including the ledger land of
+  the same day, which was left in flight after its snapshot and resumes with the next `land`. The paste was treated as a lead and
+  checked against HEAD: both defects are as described (`_guard_node_harness.py:251`, a bare `mkdtemp` with no removal path in the
+  module; `test_execute_script.py:41`, a module-level `mkdtemp` that runs once per pytest process). Two corrections to the paste: the
+  call sites are 68 across ten files, not about 60; and the other `mkdtemp` sites it names as secondary (`pm-recovery-`,
+  `pm-consumer-lane-`, `pm-consumer-stale-`) are not systematic leaks, the consumer pair removing its directory in a `finally` and the
+  recovery test opening a `try` at once (its `finally` was not read). One acceptance criterion was changed: "zero `guard-node-*` in
+  `/tmp`" would fail a correct fix while four plans run concurrently and each holds live ones, so the spec measures against a run-private
+  `TMPDIR`. Three deliverables (harness teardown, executor stub fixture, a regression guard whose flagged sites are all fixed or
+  recorded), below the six-deliverable guard, no split needed. Scoped OUT and owed to the operator: a `systemd-tmpfiles` janitor for
+  killed runs and any raise of `nr_inodes`; both live outside the repository. The xdist teardown mechanism is left as a verify-first
+  clause because an `atexit` registration is not known to run in a worker. Gate read: the spec is declarative with four paths, its own
+  `spec_comparisons[]` row is determinate with no blocking candidate and no overlap prompt, and `corpus verdicts` has no row for it.
+  The only live-spec neighbour is PLAN-LB-137 on `test/conftest.py`, one shared file, which does not fire the prompt. Staged, not
+  emitted: the four slots are taken, so it is the first candidate for the next free slot, ahead of 132 to 140 unless the operator says
+  otherwise, because the leak grows with every suite run the four running plans make.
+- 2026-11-09 — **The five reported majors are staged as fix plans and the parked plans are regrouped (operator word: "Fix and regroup
+  the plans").** Thirteen plans, PLAN-LB-128 to PLAN-LB-140, all runbook-lane rows with explicit Expected Surface sections that the
+  corpus reads as declarative and admitting. Fix plans: 128 (the PLAN-LB-127 majors: the unsaved retired-bot strip and the free-text
+  Merge Risk concern), 129 (the PLAN-LB-116 `review-gate` thread rule, the undeclared section count, placeholder evidence), 130 (the
+  PLAN-LB-124 multi-token scope reading keyed on the build tool, plus the remedy hint and the skipped-test credit), 131 (the
+  PLAN-LB-126 default-branch rule, the deleted-ref landing read, the wording). Regrouped: 132 (from PLAN-LB-46 D3, D4 and the live
+  parts of D6), 133 (from PLAN-LB-75 and the `review_support` documentation of PLAN-LB-41), 134 and 135 (the two halves of
+  PLAN-LB-83), 136 and 140 (PLAN-LB-51 D2 and D3, and its D1), 137 (PLAN-LB-89), 138 (PLAN-LB-69 D4 and the folded authoring rules,
+  PLAN-LB-84 D6), 139 (PLAN-LB-41 D3). The old rows are `superseded` (41, 46, 51, 69, 75, 83, 84, 89) and PLAN-LB-87 is `retired`;
+  their spec files stay as the record. Dropped with reason, each recorded in the successor spec: PLAN-LB-46 D5 (no observable for a
+  path-filter skip), D6's per-PR decline record and anchor-less diagnostic (no verdict changes while Sourcery is optional);
+  PLAN-LB-75 D4's head-bound override (sticky on purpose, `_criteria_snapshot.py` L1895-1898); PLAN-LB-69 D1 to D3 (the three-layer
+  analysis replaced the two-leaf audit) and D5 (both lanes read the store-checkout copy); PLAN-LB-84 D1 to D5 and PLAN-LB-87 (runtime
+  stamp and recording measurement, outside the focus rule); PLAN-LB-41 D1, D4 and D5 (closed by the PLAN-LB-127 deletions, or the
+  code is not located). The regrouping followed the proposal of 2026-11-08 except that the Antigravity plan is two (136, 140), the
+  OpenCode permission and bridge plans are 134 and 135, and PLAN-LB-41's scanner fix is its own plan (139). Sequencing is the
+  emit gate's: 128 before 132 (`github_pr.py`), 134 and 135 and 136 share `opencode_runtime.py`, 129 and 137 and 138 share
+  `runbook_lane.py` / `runbook-lane/SKILL.md` / `test_runbook_lane.py`. Reversible by the operator word.
+- 2026-11-08 — **The PLAN-LB-125 Kotlin identity gap is removed, not fixed (operator word: "Kotlin you can remove directly").** The
+  HIGH Open Defect for the idiomatic Kotlin test shapes (backticked names, expression bodies) is deleted from Open Defects and the
+  PLAN-LB-125 landing entry says so. No fix plan is staged. The Java-side minors of the same landing (`inner` and one-line class headers,
+  an unparsed header attributing its marker to the next method, `@Disabled` matching `@DisabledOnOs`, a column-0 `//`) stay on the
+  Watch. Reversible by the operator word.
+- 2026-11-07 — **Open-question sweep (operator word: go through every open question; choose where more than 90 percent confident;
+  walk the rest through one by one).** Four read-only leaves checked the open items against HEAD `bb4c39221` (the two candidates of
+  `quality-report-001`, the ten parked specs, the HIGH and CRITICAL Open Defects) and the orchestrator re-read the points that carry a
+  decision. Decided and recorded here (each can be reversed by the operator word):
+  - **(1) Plan A, the pure-move split of `runbook_lane.py` (now 2405 lines): not staged.** It is not high or blocking, and it would
+    collide with every plan that edits the lane. Revisit after PLAN-LB-116 merges.
+  - **(3) A script verb that removes a provider block: dropped.** One occurrence, repaired by PR 1884, no recurrence.
+  - **(4) The live-file reads of `python-verify.yml` that PLAN-LB-103 left (`test_python_verify_buildable_paths`, the D5 cases of
+    `test_runbook_lane`): accepted.** They guard the repository's own CI definition against drift, which is the intent; the ruling
+    that a test reading live config is a bug concerns the operator's configuration files.
+  - **(5) The Maven bare-`mvn` failure: the same defect as the one PLAN-LB-104 fixed.** A relative `--project-dir` is re-resolved
+    against the worktree, `detect_wrapper` finds no wrapper and the bare fallback (`pwx`, or `mvn` for Maven) is spawned. Shipped
+    2026-10-30, installed since the sync of that day; three lanes since (PLAN-LB-108, 120, 121) ran every build routed with zero
+    in-process fallback. Closed; the two routed-build Watches are satisfied by that evidence.
+  - **(6) The manual CodeRabbit trigger while automatic reviews are active (the lessons-routing-066 ask): no plan.** It costs a quota
+    slot but blocks nothing, and the quota policy already covers it.
+  - **(7) The three-layer leaf stays on `execution-context-level-5`, not the Bash-free reader variant.** An inbox payload is the
+    lane's own narrative and is trusted like an operator paste; the leaf needs `git show`.
+  - **(11) The quality-report candidates.** The inline-commit candidate is REPRODUCIBLE and BLOCKING: the finalize dispatcher's
+    commit of a mutating step's edits (item 5f(b), `phase-6-finalize/SKILL.md:1348-1365`), the triage inline-fix commit (item 7c(4a))
+    and the architecture-refresh descriptor commit write no `kind=change` row, so a loop-back to `5-execute` after any of them is
+    refused at the next `5-execute` to `6-finalize` transition with `execute_commits_unrecorded` (`_cmd_lifecycle.py:918-929`), and
+    the message names only the first SHA. Decided: a fix plan is specced (not staged). The pre-push-gate-commit candidate is NOT
+    REPRODUCIBLE: the dispatcher re-stamps `head_at_completion` after its own commit (item 5f(b)), and skipping the re-stamp fails
+    closed. Closed.
+  - **PLAN-LB-115, D4 note on the two new Maven reasons: no action.** The plan is running and owns its scope, and a lane does not read
+    its mailbox today. Its landing analysis checks whether D4 pinned them.
+  - **The Sonar, fix-chain, parked-plan and Antigravity questions that were not decided are walked through with the operator in the
+    session of this date.**
+  - **(2) Sonar and PLAN-LB-116, ruled by the operator the same day:** the Sonar ruling of 2026-10-28 stops at this repository. Where
+    Sonar is configured, for the project and for the plan, the lane must not miss any Sonar finding. PLAN-LB-116 D3 and the Sonar field
+    of D2 therefore stay, and D3 also closes the read side: the lane's configured read (`sonar.py` `read_open_issues`) searches issues
+    only and does not return security hotspots (`sonar_rest.py:282-286`), and a paging total above the page must be `undecidable`.
+    The spec is amended (a bullet, a verify-first fixture red at HEAD, three surface entries). A `not_configured` project reads and
+    requires nothing, as before.
+  - **(19) The fix plans, ruled by the operator the same day (option 2): merge the push-gate fixes and the Maven-guard fixes into ONE
+    plan; the review-gate fixes (with PLAN-LB-75 D1), the finalize commit rows and the CodeRabbit registry fixes stay separate plans.**
+    Spec only for now; staging is not yet ruled. The merged plan is above the six-deliverable guard on the operator word. Rationale:
+    the Maven `test` and `package` rows are PRODUCED by the zero-test guard (PLAN-LB-121) and READ by the freshness check
+    (PLAN-LB-120); fixing one side alone re-opens the gap on the other (PLAN-LB-121 L3-7 records the interaction), and both sit on
+    the push-gate decision chain. Deliverables, in the order they are cut: the canonical is judged after the scope; a trailing
+    executor flag does not make a whole-tree row unreadable; the zero-test guard does not turn a summary-less green into a stop and
+    the per-task gate has a route for `indeterminate`; a standalone POM the root does not build keeps no `-pl` canonical; an
+    unreadable POM is a named stop; then, split off first in this order if the PR grows: the guard's false negatives and the
+    reactor under-grants, the refusal hints and the bounded probe, the documentation items. Stop rule: a fix plan is warranted only
+    for a major that fails open or falsely blocks a gate in normal use; minors ride along on files being touched.
+  - **(20) Sibling-repository deliverables, ruled by the operator the same day (option d):** a narrow fix only. `foreign_pr_gate.py`
+    (lines 169-171, `plan_branch_for`) assumes the foreign branch is `feature/{plan_id}`, so it can block a merged foreign PR and miss a
+    missing one; the gate takes the branch from the deliverable or from the foreign repo's current branch instead. It is a second
+    deliverable of the finalize-gate plan that carries the finalize commit rows (decision 11), which runs after the running
+    PLAN-LB-123. The structural lifecycle (a plan-owned worktree, push and PR for a sibling path, a cross-repo footprint bucket, a
+    module name for a sibling path) stays out of focus until a sighting appears in a current plan.
+  - **(23) Parked PLAN-LB-46 and PLAN-LB-75, ruled by the operator the same day (option 1 for both):** PLAN-LB-46 is SPLIT: D1 (concerns
+    raised only in CodeRabbit's summary comment) and D2 (the "files exceed the limit" notice) become the CodeRabbit registry plan, with
+    D1 reproduced from a live summary first (one consumer PR is the evidence, `coderabbit.md` lines 62-64); D3 to D6 stay parked; D7
+    (remove cuioss-review-bot, operator-ordered) becomes its own small plan, scheduled when a slot is idle (the operator's reply did not
+    name a timing, so the recommendation stands). PLAN-LB-75: D1's triage exemption for a dropped functional review (`open_criteria`,
+    `review_support.py:581-584`, exempts authorized, superseded and operator-closed criteria but not a dropped review) moves into the
+    review-gate fix plan with two verify-first clauses (does a surgical plan enter the triage workflow; is the re-freeze route D2
+    reachable in a normal run); D4 and the hygiene parts stay parked. The rows of PLAN-LB-46 and 75 stay parked until the specs exist.
+  - **(21) Antigravity, ruled by the operator the same day (option a):** it stays out of focus and PLAN-LB-51 stays parked. The open points
+    are the native sub-agent dispatch (`antigravity/mapping.json:48-51` still maps `Task:` to `preserve`), the rules bridge (a stub with
+    an mtime check, `antigravity_runtime.py:108-145`) and the per-task quality gate; the lanes run on OpenCode.
+  - **(8) A layer-3 verdict in START HERE, ruled by the operator the same day (option a):** stays a Watch, no queue-row field. The owed
+    fixes are tracked in the landing reports, the Queue annotations of this file and the condensed anchor. Revisit, and propose a
+    row field (`fix_owed` naming the owning plan, stamped by `queue --set-row`, rendered in the view), if the chain keeps producing
+    majors after the five fix plans.
+  - **(24) The `verify-links` mid-target mask finding (PLAN-LB-122 layer-3 major), ruled by the operator 2026-11-07 ("fold it"):** it is
+    not staged as its own plan; it is carried as a finding to fold into the next plan that touches `_cmd_verify_links.py`,
+    `ref-asciidoc/SKILL.md` or `analyze.md` Step 4. No such plan is staged today (none of the five fix-plan specs touches those
+    files), so the finding waits as a carried item: the probe must match a label anywhere after a mask on the line, a mid-target mask
+    must be named when no label is found, and `SKILL.md:221` must state the guarantee the code gives. The Step 4 minors of the same
+    landing (the `confirms` row qualifier, the write boundary of `corpus set-verdict`, the weak doc tests, the template polarity column)
+    are carried to the reconciliation of parked PLAN-LB-69 D1, which edits the same `analyze.md` text.
+  - **(25) The five fix-plan specs, ruled 2026-11-07 ("spec them"):** PLAN-LB-124 (push gate rows and Maven guard merged, WS-01),
+    PLAN-LB-125 (review gate with the PLAN-LB-75 D1 triage exemption, WS-03), PLAN-LB-126 (finalize commit rows with the foreign-PR
+    branch, WS-01, runs after the running PLAN-LB-123) and PLAN-LB-127 (CodeRabbit registry, PLAN-LB-46 D1 and D2, WS-03); drafted by
+    read-only leaves and written here with rows. The verify-links item is not a fifth spec (item 24). The steward upgrade of the
+    parallel session landed (PR 1934, commit `cdfd6e7a7`).
+  - **(26) The `cuioss-review-bot` removal (PLAN-LB-46 D7), ruled by the operator 2026-11-07 ("spec it, or preferably add it to an
+    existing plan"):** folded into PLAN-LB-127 as its D4, not a plan of its own. A read-only `grep` through Bash (Grep and Glob were
+    unavailable) at HEAD `5cd8ccd92` found the literal in 29 non-test files and 63 test files, so D4 lists about 90 files explicitly
+    (the plan's surface is now 98 files, all `declarative`). Two verify-first clauses go with it: a consumer `marshal.json` roster that
+    still names the bot may be refused once the registry entry is gone (the roster read fails closed), so the outline decides a
+    migration that strips it, with one documented tombstone constant the content search may still find; and removing the entry must
+    change nothing for CodeRabbit or Sourcery. **Cost, stated:** the gate now reads PLAN-LB-127 as overlapping PLAN-LB-125 on 6 files
+    (`_github_pr.py`, `github_ops.py`, `github_re_review.py`, `test_comments_stage_fetch.py`, `test_github_ops_pr_comments.py`,
+    `test_github_pr_currency.py`), PLAN-LB-116 on 2, PLAN-LB-124 and PLAN-LB-126 on 1 each, so D4 runs last and splits off first if
+    the PR grows; no overlap with the running plans. Parked PLAN-LB-41 D1 and D5 are retired when D4 merges. PLAN-LB-46 keeps D3 to D6
+    parked.
+  - **(25) result, 2026-11-07:** the four specs are written and staged with rows (drafted by four read-only leaves, every cited line
+    re-read by the leaf at HEAD `5cd8ccd92`, the orchestrator wrote the files and the rows). Row order in the queue is by seq: PLAN-LB-127
+    (seq 124), 125, 126, 124 (seq 127); the plan ids are the names. PLAN-LB-124 has eight deliverables (D1 canonical judged after
+    scope, D2 trailing executor flag with a row field recorded by the executor template, D3 the zero-test guard false stop with a
+    route in the per-task gate, D4 a standalone POM keeps no `-pl` canonical, D5 an unreadable POM is a named stop; then D6 guard false
+    negatives and under-grants, D7 refusal hints, bounded probe and fact keys, D8 documentation; split order D8, D7, D6; **D2 changes
+    the executor template, so an executor regeneration is owed after it merges**). PLAN-LB-125 has five (D1 JVM method identity and a
+    paired acceptance key, D2 triage honours a dropped review with two verify-first clauses, D3 placement and marker fail closed, D4
+    close and move proof, D5 documents; split order D5, D4, D3). PLAN-LB-126 has three (D1 finalize commits write their
+    `kind=change` row through one owner, preferably the `git-workflow commit` verb; D2 the foreign-PR gate reads the foreign branch;
+    D3 documents) and runs after PLAN-LB-123. PLAN-LB-127 has three (D1 summary-only concerns, with a reproduction-first clause that
+    can close it; D2 the file-limit notice as a structural refusal; D3 documents). **Gate read at HEAD `5cd8ccd92`:** all four are
+    declarative, determinate, `blocking_count` 0. Gate overlap with the running plans: PLAN-LB-125 and 127 none; PLAN-LB-124 two test
+    files with PLAN-LB-123 (`test_freshness_notation_crosscheck.py`, `test_pre_commit_verify_freshness.py`; PLAN-LB-123 declares them,
+    an overlap prompt is due at emit); PLAN-LB-126 two files with PLAN-LB-123 (`phase-6-finalize/SKILL.md`,
+    `plan-marshall/workflow/execution.md`; sequence after it). Among the staged: PLAN-LB-116, 125, 126 and 127 each name
+    `_github_pr.py` (a hypothesis entry in 116, 126, 127; observed in 125 D3), a single file each; PLAN-LB-124 and 126 share
+    `manage-change-ledger/SKILL.md` and `_ledger_core.py` (hypothesis entries in 124; in 126 an observed documentation entry);
+    PLAN-LB-125 and 126 share `_plan_parsing.py`, `_cmd_lifecycle.py` and `_github_pr.py` (3 files, so run them in sequence, 125
+    first). Staging is a separate ruling: none of the four is emitted.
+  - **PLAN-LB-57 retired** (enrolment of the dormant bot and a measurement instrument; the `--repo` flag on the `ci` verbs is open
+    but not high and is re-staged as its own fix only if a consumer epic still needs cross-repo merges).
+  - **Parked specs, kept parked with parts dropped:** PLAN-LB-41 (D1 and D5 moot while the bot is removed; D2 to D4 hygiene),
+    PLAN-LB-51 (Antigravity fidelity, not high), PLAN-LB-83 (OpenCode permissions hardening), PLAN-LB-84 (D1 to D3 and D5 are
+    measurement and out of scope; D4 and D6 stay parked), PLAN-LB-87 (D1 to D3 are measurement and out of scope; D4 stays parked),
+    PLAN-LB-89, PLAN-LB-69 (D5 and the fidelity half of D1 are done by PLAN-LB-90, 102, 111, 114 and 122; the rest is hygiene). No
+    fold into PLAN-LB-116, which is at five deliverables.
+  - **HIGH and CRITICAL Open Defects audited:** FIXED in source are the shared-executor rewrite (PLAN-LB-94), the Maven task-time gate
+    (PLAN-LB-110), the flat-install upgrade and bundles root (PLAN-LB-96, 97), the PYTHONPATH order (PLAN-LB-95), armed auto-merge
+    (PLAN-LB-93, 100), the executor recovery command (PLAN-LB-93), the LB-70 criteria gate (PLAN-LB-74, 77), the 2026-11-02 group
+    except the parts below, and the two-builds-in-one-worktree item (PLAN-LB-108). STILL OPEN AND HIGH: the JVM filter acceptance
+    (PLAN-LB-119 L3-1), the push-gate canonical-before-scope and trailing-flag rows (PLAN-LB-120 L3-1, L3-3), the Maven zero-test
+    guard false stop and the standalone-POM canonical (PLAN-LB-121 L3-1, L3-2), the hand-back classification (owned by the running
+    PLAN-LB-123), the triage exemption for a dropped functional review (PLAN-LB-75 D1, verify-first: does a surgical plan enter the
+    triage workflow), the finalize commit rows (decision 11), the sibling-repository deliverable lifecycle (unowned by the earlier
+    structural ruling) and CodeRabbit summary-only concerns and the file-limit notice (PLAN-LB-46 D1 and D2). Medium and not owned:
+    the participation check binding to the provider candidate (a known limit), the flat-install blind spots R3 and R4.
+
+- 2026-11-05 — **Inbox drain (one message: `quality-report-001`, a collected `finding` the operator filed from the `quality-report`
+  epic: seven themes plus six dated addenda, about sixty sender messages, plugin versions 0.1.2027 to 0.1.2046).** Valid and live.
+  Disposition **observed**: nothing staged and no spec edited. The message says its content was not verified by its own orchestrator,
+  and it was not verified here either: this entry only maps it against this ledger, so every claim below is a lead.
+  - Theme 1, CodeRabbit one-review-per-hour quota (and its recurrences in PLAN-12, 20 and 10): out of focus. The standing rulings are
+    that a quota refusal means wait and that, with one valid review, moving on is correct and is never asked. PLAN-LB-101 D4 (shipped
+    #1890) made the quota wait default-on at 5400 s and ten windows. **Watch (unverified):** PLAN-20 reports switching
+    `review_rate_window_await` on by hand after its first refusal; if the new default had reached that project it would not have
+    been needed, so an existing consumer `marshal.json` may keep the old value. One check, not a plan.
+  - Theme 2, merge gate bound to the exact HEAD (PLAN-01-001/002, PLAN-02-002, PLAN-06-002, PLAN-10-005/006, PLAN-12-004,
+    PLAN-20-004, PLAN-21-002/003): the ledger already holds this class. PLAN-LB-107 (staged, not started) owns the waiver, the
+    head-dependence source and the published grant labels; PLAN-LB-55 D1 and PLAN-LB-93 D5 shipped in part; PLAN-LB-100 shipped
+    `record-merge` and `consequence-text`. **Read this message at PLAN-LB-107's outline.** Two items it may not name, because its spec
+    was not read for them here: the pre-push gate making its own source commit that moves HEAD past the validated build
+    (PLAN-10-005), and a forwarded `--head-at-completion` the step does not own (PLAN-21-002).
+  - Theme 3, installed scripts lag the docs: `pre_merge_gate record-merge` and `consequence-text` shipped with PLAN-LB-100 and are
+    installed since the sync of 2026-10-30; the report itself says PLAN-21 ran with the executor equal to the plugin version and the
+    drift was gone. The rest are invented or misplaced flags, the argparse-rejection class the repository already has a recipe for.
+    One lead has no home: a failure marker keeps the argv but not the argparse error text (PLAN-01-006).
+  - Theme 4, bookkeeping slips: PLAN-LB-91 (shipped #1847) covers a history rewrite (rows remapped, `history_rewritten` against
+    `bookkeeping_gap`). **Watch (unverified, candidate blocking):** an inline commit made after the per-deliverable commits (a finalize
+    review-fix, a triage fix) carries no `kind=change` row, and the 5-execute to 6-finalize transition was refused for it in
+    PLAN-03-004 and twice in PLAN-08-010, whose log names only the first missing SHA. The guard is right; the inline paths would
+    append their own row. Not checked here against LB-91's merged code.
+  - Addenda, two items with an owner: `review_support test-integrity` anchors on the `origin/main` tip with a two-dot comparison, so
+    a branch that lags a moved `main` gets a false `weakened_test` (PLAN-23-001): PLAN-LB-105 (running) owns `weakened_test` grading
+    truth, so **read its landing for the base anchor** (merge-base). A pre-push `test-compile` that cannot resolve a test-jar consumer,
+    filed as 120 `build-error` findings that held a merge dispatch until each was rejected by hand, and a Maven `module-tests` arm
+    reported un-gated on every push (PLAN-21-001, PLAN-11-002, PLAN-08, PLAN-23-002; seven plans): PLAN-LB-110 (staged, not started,
+    Maven consumer test truth) and the shipped PLAN-LB-58 D3 are the owners, so **read it at PLAN-LB-110's outline**.
+  - Discarded under the focus rule, none blocking: theme 5 (outline and plan quality) and theme 6 (a stale PR body after a
+    loop-back), the `manage-tasks list --status` multi-value request, the lessons-capture routing slip (PLAN-23), and every
+    measurement item (`effort` unknown, `total_tokens`, placeholder metric rows, phase-boundary stamps). Project-owned lessons were
+    excluded by the sender and are not part of the message.
+  - Not done: no message was delivered to a running plan's mailbox. Putting unverified leads into a running lane is the operator's
+    call. If the operator wants a plan, the candidate blocking set is the inline-commit ledger row, the gate's own source commit, and
+    the test-integrity base anchor, in that order, each only after a read of the owning plan's merged code.
+- 2026-11-04 — **Inbox drain (ten messages: `lessons-routing-075` to `-083` and `pm-mcp-core-m2-m4-v2-001`).** Every message was valid
+  and live. Three took a recorded action and seven were first **discarded** under the FOCUS RULE; the operator then asked for the
+  domain changes ("put all the domain changes into one plan"), so those seven are **staged as one plan, PLAN-LB-113** (see the
+  last bullet; the discard record below stays as the first disposition). Corroborated against the source tree at
+  HEAD (the findings were checked at `f6830b837`; every commit since is a ledger land, so the code is the same):
+  - `-075` (high, the Sourcery OSS footer drops a whole review body that also carries Overall Comments): **folded** into
+    PLAN-LB-106 as **D5**. Corroborated at `github_pr.py` L510 (the whole-body substring drop) and `sourcery.md` L38-43, L84-85 and
+    L114-115 (the two statements that contradict each other). Expected surface **updated, +3 entries** (`sourcery.md`, an
+    `automatic-review/SKILL.md` hypothesis, `test_bot_registry_patterns.py`); `corpus surfaces` reads PLAN-LB-106 as `declarative`
+    with 26 resolved entries and 0 unresolved. LB-106 now has five deliverables, below the split guard.
+  - `-076` (high, a routed `--plan-id` build after move-back fails in the daemon as `worktree_resolution_failed` and surfaces as
+    `build_failed`): **staged** as **PLAN-LB-112** (WS-04, runbook). The code facts hold at HEAD (the argv re-run, the strict gate,
+    `LAUNCH_FAULT_ERRORS`, the synthetic row, the direct path's own error), but the failure itself is **not reproduced**, by the lesson
+    or here, so D1 reproduces it first and can end the plan. It overlaps PLAN-LB-108 on `_build_execute_factory.py` and
+    `test_build_execute_routing.py`: run the two in sequence, this one first.
+  - `pm-mcp-core-m2-m4-v2-001` (highest, by the operator's own grade; the three-layer analysis of a landing, which the consumer epic
+    carries as its rule R21): **staged** as **PLAN-LB-111** (WS-03, runbook). Three deliverables: the analysis in `analyze.md` Step 4
+    and the landing template, one always-dispatched read-only leaf per landing, and routing by layer (layer-3 defects to the operator,
+    never fixed inline). **Sequence before parked PLAN-LB-69**, which adds a two-leaf audit to the same step; reconcile LB-69's D1 when
+    it is re-grounded. The finding was checked against plugin 0.1.2041; `analyze.md` Step 2 and the landing template were re-read at HEAD
+    and read as it describes.
+  - **Reversed on the operator's request, the same day: staged as PLAN-LB-113** (WS-02, runbook; six deliverables, one per
+    independent change, `-078` and `-079` sharing D2): D1 javadoc rules (`-077`), D2 junit-core rules and spec citations (`-078`,
+    `-079`), D3 code-point rule in cui-http-testing (`-080`), D4 switch-statement caveat (`-081`), D5 secure-logging masking and C1
+    controls (`-083`), D6 `verify-links` unchecked classes and `link:` targets (`-082`, the only code change). The cited lines were
+    re-read at HEAD and hold; the surface is declarative. D1 to D5 are documentation, so the plan has no internal ordering. First
+    disposition, kept for the record: discarded under the focus rule, none blocking; the lessons stay in `lessons-routing`'s archive:
+    - `-077`: `pm-dev-java` javadoc, restated counts and unverified ordering claims; medium.
+    - `-078`: `pm-dev-java` junit-core, four shapes of a test that cannot fail; medium.
+    - `-079`: `pm-dev-java` / `cui-testing`, a spec citation without the clause and an unjustified fail-open assertion; low.
+    - `-080`: `cui-http-testing`, bidi characters built from code points; low (and only Sonar triggered it, which is not enabled).
+    - `-081`: `pm-dev-java` java-core, a switch statement is not exhaustiveness-checked; medium.
+    - `-082`: `pm-documents` ref-asciidoc, `verify-links` ignores `link:` macros and reports no unchecked class; medium.
+    - `-083`: `java-security` and `persona-security-expert`, a masking helper is not a sanitiser and `\p{Cntrl}` is ASCII-only; low.
+      It names `-063` (discarded on 2026-11-02) as the item to fold into.
+  - New watches, all from `pm-mcp-core-m2-m4-v2-001`, none staged under the focus rule: `landing-check` reports `complete: false` on
+    every runbook-lane landing because the lane writes `unknown` for `total_tokens` and `plugin_version` (measurement, out of scope);
+    a partial landing (`merge_state=open`, `deliverables_done` below `deliverables_total`) has no named path in `analyze` today; and a
+    downstream spec has no field for "read this landing's findings at your outline" (a `corpus` verb listing the staged specs whose
+    Expected Surface a finding names would make it mechanical).
 - 2026-11-02 — **Inbox drain (17 lessons-routing findings, `-058` to `-074`).** Ten high
   findings were **observed** as new Open Defects. They are listed under the drain-of-2026-11-02
   note at the end of that section, and none was staged: staging is the operator's call. Seven
@@ -1303,34 +2111,54 @@ derive, for rows still live.
 
 ## Open Defects
 
-- **CLOSED BY OPERATOR RULING (2026-10-28): Sonar is not enabled for this project and is ignored for all plans; nothing is
-  staged and the text below is the historical record.** ~~HIGH — the Sonar merge gate is unattainable on this repository, so
-  every merge needs an operator override (found in
-  the PLAN-LB-97 landing, 2026-10-27; confirmed by PLAN-LB-93 and PLAN-LB-98; NOT STAGED, needs an operator decision).~~
-  PRs #1872, #1874 and #1876 all ended with `read_open_issues` answering `undecidable` / `analysis_revision_unavailable` and
-  merged on the operator's explicit "merge anyway". Cause, verified: `.github/project.yml` has had `sonar: enabled: false` since
-  the first commit (2026-02-21), so CI submits no pull-request analysis, while the project's provider block resolves
-  `sonar: configured` for `cuioss_plan-marshall`. The provider holds three PR analyses (PRs 766, 801 and 802), the newest from
-  2026-06-29. The gate PLAN-LB-58 added correctly fails closed. Options: enable Sonar analysis in CI, or make the provider
-  block resolve `unconfigured` when `sonar.enabled` is false so the gate does not demand an analysis nobody submits. **Correction
-  that follows:** every "Sonar 0" I recorded for this repository's PRs since 2026-06-29 (the LB-95, LB-82 and LB-96 landing
-  records and their epic lines) came from the pre-LB-58 behaviour, which counted issues on whatever the provider returned; as the
-  provider holds no analysis for those PRs, those confirmed zeros can only have read an absent analysis as zero (my inference,
-  from the list above and the confirmed `0` reads I made). Those figures are not evidence of a clean analysis. LB-58's own landing reports confirmed
-  live reads at two heads of PR 1866; I cannot reconcile that with the provider's current list and have not tried to.
-- **MERGE-PATH HALF FIXED IN SOURCE (PLAN-LB-100, #1883, 2026-10-29; LIVE after the next sync); the review-policy half is staged as
-  PLAN-LB-101.** `pre_merge_gate merge` now refuses an unproven required-bot participation (`merge_participation_unproven`), a merge
-  under an authorization is recorded by `record-merge`, and the merge question's consequence sentence is generated from the knob.
-  The roster-read error, stale-bot trigger-before-ask, no-demotion options and the quota loop below are LB-101's. Original entry:
-  **HIGH — the gate-truth half of PLAN-LB-55 is still not shipped (PLAN-LB-93 landing, 2026-10-27).** LB-93 shipped
-  the push-vs-armed-merge refusal and left D5's second bullet (the participation check inside `pre_merge_gate merge`) and all
-  of D6 (the `step-params` empty-roster error, the stale-bot re-trigger, generated barrier options with no "make the required
-  bot optional", the rate-window loop, the merged-under-authorization record, the merge-anyway mutex re-acquisition, and the two
-  remedies in `branch-cleanup.md` L1041 and L1222). Second deferral (LB-55 first). Needs a plan.
-- **INCOMPLETE LANDING — `rb-lb-100-merge-path-truth-001.md` (2026-10-29; `inbox landing-check` reported `complete: false`,
-  `missing_keys`: `total_tokens`).** The lane wrote `total_tokens=unknown` (OpenCode measured none). The landing was drained and
-  reconciled as far as its facts go. Token and measurement work is out of scope under the focus rule; nothing is staged and no
-  figure was recovered.
+- **HIGH — the foreign-PR gate blocks an already merged foreign change when the foreign tree sits on `main` and nothing is declared
+  (PLAN-LB-126 landing, 2026-11-08; STAGED as PLAN-LB-131 on the operator's word of 2026-11-09).** The checkout arm
+  returns the branch the foreign tree is on, `main` included (`foreign_pr_gate.py:258-263`); `landing-state` counts only PRs whose
+  head is the branch tip, so a pushed `main` reads `pushed_no_pr` (`ci_base.py:926-958`, `_github_pr.py:1621-1673`); the gate is
+  `blocked` and says to open a PR. Declaring `foreign_branch` instead gives `branch_disagreement` and `error`, so after cleanup the
+  gate never clears; the operator remedy is to leave the foreign tree on the change branch. The unit test that covers the arm uses an
+  answer (`main: merged`) the real verb cannot give (`test_foreign_pr_gate_gate.py:486-504`). Foreign deliverables are rare, so
+  whether this is "normal use" under the stop rule is the operator's call. Fix shape: the base or default branch is never a change's
+  branch (an undeclared `main` becomes an `unresolved` row), plus a fixture for the post-cleanup state. Detail:
+  `landings/PLAN-LB-126.md` L3-1, L1-1, L2-2.
+- **HIGH — the retired-bot roster strip is never saved, so a consumer config keeps the name and every merge blocks (PLAN-LB-127
+  landing, 2026-11-08; STAGED as PLAN-LB-128 D1 on the operator's word of 2026-11-09).** `migrate_bot_lists` strips
+  `cuioss-review-bot` in memory and returns `noop` for a config with no legacy `enabled_bots`; `cmd_migrate_bot_lists` saves only when
+  the state is not `noop` (`upgrade.py:446-454,532`; both re-read). The previous standard seed was `cuioss-review-bot,coderabbit`, so
+  every config seeded or back-filled before the merge has it, and the name classifies `unregistered_kind`, which blocks like `absent`.
+  Not this repository. The tests cover only the pure function. Qualifies under the stop rule (a gate falsely blocks in normal use).
+  Detail: `landings/PLAN-LB-127.md` L3-1.
+- **HIGH — the CodeRabbit summary rule still drops the live concern shape (PLAN-LB-127 landing, 2026-11-08; STAGED as
+  PLAN-LB-128 D2 on the operator's word of 2026-11-09).** A summary with the marker, `## Walkthrough` and a free-text Merge Risk concern, none of the four section
+  titles, is dropped as noise (`github_pr.py:332-344,552-554`, re-read), and the bot resolves `participated_but_empty`. The shipped
+  positive test is an assembled body; the docs say a straying summary is filed. Whether the same concern is also posted through a
+  formal review is not shown by reading, so this qualifies under the stop rule only if it is not. Related minor: `No actionable
+  comments were generated` is dropped before the concern check. Detail: `landings/PLAN-LB-127.md` L3-2, L1-1.
+- **HIGH — `review-gate` ignores a bot's restated concern when the lane replied last (PLAN-LB-116 landing, 2026-11-08; STAGED as
+  PLAN-LB-129 on the operator's word of 2026-11-09).** `_thread_concern_remains` tests only the last comment of a resolved thread and only when a bot wrote it
+  (`runbook_lane.py:2617-2630`, re-read), so `[bot opener, lane "fixed in abc", bot "This still applies", lane "done"]` reads handled
+  and `merge_allowed` is true. The spec says the last BOT comment. Detail: `landings/PLAN-LB-116.md` L3-1. Same file, fold candidates:
+  the silent zero for a prose-only body, an un-keyworded counted title and an `issue_comment`; the marker vocabulary; the placeholder
+  evidence (`TBD`); the under-count of a section with no declared count.
+- **MEDIUM — the PLAN-LB-127 landing message is incomplete (2026-11-08).** `inbox landing-check` reports `complete: false` for
+  `rb-lb-127-coderabbit-registry-summary-concerns-and-file-limit-001.md`, missing `total_tokens` (out of scope) and
+  `unresolved_review_threads`, `review_body_findings_total`, `review_body_findings_handled`, `sonar_open_new_issues`. The lane text that
+  produced it predates the four required keys PLAN-LB-116 added; the lifecycle producer cannot emit them either (PLAN-LB-116 landing,
+  layer 1). The merge state and the deliverable count were read from the PR and the diff instead. Retire when the finalize steps publish
+  the four numbers.
+- **HIGH — the push gate reads the goal tokens of a multi-token build payload as scope and refutes a whole-tree change (PLAN-LB-124
+  landing, 2026-11-08; STAGED as PLAN-LB-130 on the operator's word of 2026-11-09).** `_row_refusal` now judges scope
+  before the canonical, and `parse_row_scope` takes every non-flag token after the first as scope. The npm discoverer's rows
+  (`run test`, `run lint`, `run build`) read as canonical `run` with scope `(test)`, so `_scope_adequate` is false for a whole-tree
+  change and the row is `build_scope_narrow`, a refutation, where it used to be an unmapped canonical, an inability that passed
+  (`_freshness_crosscheck.py:719-731,805-806,829-833`; `_npm_cmd_discover.py:350-381`; both re-read). The same flip is reported, not
+  re-read, for the Maven `clean install` canonical (`_maven_cmd_discover.py:1252`) and the Gradle multi-task canonicals
+  (`_gradle_cmd_discover.py:502-522`). Effect: the push and freshness gate goes stale for npm-only, Gradle and Maven-chain commits in
+  consumer projects, a false block in normal use. This repository (pyproject) is not affected. The suite models the npm row as
+  `test --workspace=pkg-a`, so no test names the shape. Detail: `landings/PLAN-LB-124.md` L3-1, L1-1. Related minor, same landing: a
+  `-Dtest` run with `failIfNoSpecifiedTests=false` and a `No tests to run.` line is now `success` (L3-2), fail-open only if Surefire
+  prints that line for a missed selector.
+> ↪ Relocated to `settled.md` § "Sonar closed by ruling, the PLAN-LB-100 merge-path half, and its incomplete-landing note" — the Sonar item closed by the ruling of 2026-10-28 (refined 2026-11-07, see Decisions), the merge-path half fixed by PLAN-LB-100, and one out-of-scope incomplete-landing note.
 - **MEDIUM — the merge-path participation check binds to the provider's candidate, the merge to the local head (PLAN-LB-100
   landing, 2026-10-29; NOT STAGED; a known limit the PR accepted).** `_check_participation` proves participation against the
   provider's merge candidate while `_head_binding_refusal` binds the merge to the LOCAL head; the producer returns only a boolean
@@ -1340,75 +2168,8 @@ derive, for rows still live.
   (`queue_wait: forbidden`) keeps knob-routed narration; and the barrier's documented producer call places `--plan-id` differently
   from the new gate call (cosmetic). Not high or blocking, so nothing is staged under the focus rule; CodeRabbit asked whether to
   open a follow-up issue and nobody has answered.
-- **INCOMPLETE LANDING — `rb-lb-99-source-checkout-executor-skew-001.md` (2026-10-28; `inbox landing-check` reported
-  `complete: false`, `missing_keys`: `total_tokens`).** The lane wrote `total_tokens=unknown` while the OpenCode session store
-  holds the figures for the root and the child session. The landing was drained and reconciled as far as its facts go; the
-  tokens are recorded in `landings/PLAN-LB-99.md` from the store. Token and measurement work is out of scope under the focus
-  rule, so nothing is staged.
-- **FIXED IN SOURCE (PLAN-LB-99, #1878, 2026-10-28; LIVE after the next sync, since a harness loads the installed lane text) — `executor-skew` STILL cannot answer in this repository's own lanes (found 2026-10-27 right after the sync of
-  `0.1.2025`; owner PLAN-LB-99, STAGED 2026-10-28 with ONE outline decision rather than a prescribed mechanism: the operator
-  challenged my first idea (derive a version from tree evidence) and the check showed `generate_executor preflight` already
-  answers staleness but regenerates the executor in place when it is stale, so it is not a read-only witness; the candidates are
-  an explicit `not_applicable` verdict for a source checkout, a read-only variant of preflight, or leaving the question).** PLAN-LB-98 is live and correct on a flat install: the installed
-  OpenCode copy reads the stamp (`0.1.2025`), returns `skew` for a `0.1.2021` executor and `match` after regeneration (run here
-  with the installed lane copy called directly). But this checkout's executor maps `runbook_lane` (and every script) to the
-  SOURCE tree (`marketplace/bundles/plan-marshall/skills/runbook-lane/scripts/runbook_lane.py`), so a lane in this repository
-  runs the source copy, whose layout is "nested, no version directory": `could_not_check`, now with the reason `lane text
-  version unknown: no version directory under …/marketplace/bundles/plan-marshall`. The operator will therefore still get the
-  question in every lane of this repository. In a source checkout the executor is generated from the tree, so the real risk is
-  an executor older than the tree's scripts; the tree carries the evidence for that (the `target/{harness}/dist-manifest.json`
-  fingerprints, or a comparison of the executor's script fingerprint with the tree), and nothing reads it. LB-98's own landing
-  records the source-checkout limit ("the reading checkout is a source tree"); my LB-98 spec did not name it and its
-  reproduction (`env OPENCODE=1 …`) ran the source copy, not the flat one, which I presented as the flat copy. Mine to correct.
-- **FIXED IN SOURCE (PLAN-LB-98, #1876, 2026-10-27; LIVE since the sync of `0.1.2025` on flat installs) — `executor-skew` answered
-  `could_not_check` on every flat OpenCode install; high by operator ruling "it is high"; found in the PLAN-LB-95 landing,
-  2026-10-26; asked again by the PLAN-LB-93 lane, 2026-10-27).** Beyond the avoidable question, on the second machine the same verdict sat on a stale executor (`0.1.2010`)
-  and hid it. A flat install carries a version witness the check does not read: the sync's `dist-manifest.json` at the install
-  root. Earlier text of this entry, written at medium: A flat install has no `{bundle}/{version}` directory, so the lane text version cannot be derived and each
-  OpenCode lane asks the operator two questions that cannot change the outcome (LB-95 asked both; regenerating the executor
-  did not change the verdict). Related to PLAN-LB-96, which makes the flat install resolve its bundles root, but not part of
-  it. Under the high-and-blocking focus rule this waits.
-- **FIXED IN SOURCE (PLAN-LB-102, #1882, 2026-10-28; LIVE after the next sync, since a harness loads the installed lane text) — the
-  emitted lane command could not read a spec from the ledger worktree (PLAN-LB-90 landing, 2026-10-25; high).** The lane now reads the
-  ledger worktree's copy first and falls back to the main checkout by default (operator ruling 2026-10-28), so an emitted command needs no
-  flag and no ledger land after a spec edit; `--spec-from-ledger` stays accepted as a documented no-op. Verified live on the merged
-  tree: `resolve` on LB-101 with no flag answers `spec_source: ledger_worktree`. Until the sync, an installed lane text still says the
-  main checkout is the default, so land the ledger before an emit that follows a spec edit.
-- **INCOMPLETE LANDING — `rb-lb-102-ledger-first-spec-read-001.md` (2026-10-28; `inbox landing-check` reported `complete: false`,
-  `missing_keys`: `total_tokens`).** The lane wrote `total_tokens=unknown`. The landing was drained and reconciled as far as its facts
-  go. Token and measurement work is out of scope under the focus rule, so the figure was not recovered and nothing is staged.
-- **CRITICAL — the shared `.plan/execute-script.py` is rewritten back and forth by two harnesses (found 2026-10-25;
-  fixed in source by PLAN-LB-94, #1861; LIVE EFFECT OWED until `/sync-harnesses` and one executor regeneration from the
-  merged template, then the stamp war is over; until then the workaround below stands).** The test-suite-as-writer clause was
-  not reproduced in the LB-94 run (no `generate_executor` log line in its test windows; the LB-94 landing says the autouse
-  sandbox covers it); the earlier LB-90 observation is unexplained and may have been the LB-43 D5 suites LB-94 rewrote. The PLAN-LB-43 D5 stamp makes a Claude call fail on an OpenCode-stamped executor and the
-  reverse; the printed remedy regenerates for the refused harness, which refuses the other. Evidence: the PLAN-LB-90 lane's
-  regenerate at 07:59:21Z and spoofed-environment call at 07:59:30Z on 2026-10-25, the orchestrator's regenerate at about
-  08:01Z, and an earlier flip at 20:01Z on 2026-10-24 (executor mtime) beside the same lane's skew and drift calls. Measured:
-  the two executors are otherwise identical in this checkout. **PLAN-LB-90 landing (2026-10-25):** the lane answered the
-  mismatch with 37 calls under a spoofed identity (`CLAUDE_CODE_SESSION_ID=1 OPENCODE= …`, 07:59:30Z to 09:51:27Z), and a
-  full `module-tests` run is a third writer (every `generate_executor` verb ran through the main executor at 08:04:51Z to
-  08:05:46Z); both folded into PLAN-LB-94. Workaround until it ships: after a mismatch, regenerate with
-  the repository-source generator (`recover --target claude` for the orchestrator), expecting the lane to flip it back.
-- **MEDIUM — a Maven consumer's task-time gate cannot reach the new Maven scope verb (recorded 2026-10-27 from the PLAN-LB-58
-  landing residue; not staged).** `execute-task` hardcodes the `build-pyproject` notation for its per-task gate, so the Maven
-  `resolve-test-scope` verb PLAN-LB-58 added is reached by the finalize gate (which resolves it dynamically) but not at task
-  time. No false pass: the finalize gate still runs it.
-- **HIGH — a flat install cannot complete the `marshall-steward` upgrade on this machine (found 2026-10-26 on the `pm-mcp-core`
-  project; FIXED IN SOURCE by PLAN-LB-97, #1872, merged 2026-10-27; not live on any install until the next sync, executor
-  regeneration and repin here, and the new plugin version on the second machine; the `OPENCODE`-unset workaround stands
-  until then).** `manage-config sync-defaults --backfill-bot-roster` stops with `step body doc
-  not found: ~/.config/opencode/skills/automatic-review/SKILL.md`, because `configurable_contract` and
-  `_manifest_validation` join bare skill names onto the skills root. Reproduced here by a direct probe of the installed flat tree
-  (every built-in step id resolves to a path that does not exist). The nested plugin-cache copy of the same version runs the verb
-  fine, which is the lane's workaround. **Discrepancy explained (2026-10-26):** the operator ran the same upgrade and land to completion at
-  0.1.2017 on the second machine, also under OpenCode. A direct probe there shows the flat copy has the same missing step doc,
-  and both executors carry the flat and the nested entry for every script; the executor prefers the runtime harness's own root
-  and otherwise the declared order (Claude cache first), so the upgrade ran the nested copy there. **Observed:** the second machine's
-  steward report (PR #228, `chore(steward): land steward-maintained artifacts`, merged 2026-10-26) records the same `step body
-  doc not found` failure and a completed reconcile with `OPENCODE` unset, which made the executor dispatch the Claude-cache copy
-  of the same 0.1.2017 code. The defect is real on both machines; the workaround is `OPENCODE` unset for the `manage-config`
-  verbs. This entry is the concrete form of the medium entry below, whose residue R1 and R2 PLAN-LB-97 absorbs.
+> ↪ Relocated to `settled.md` § "Executor-skew, ledger-first spec read and incomplete-landing notes (fixed in source, PLAN-LB-98, 99, 102)" — three entries fixed in source (PLAN-LB-98, 99, 102) and two incomplete-landing notes (only the out-of-scope `total_tokens` gap).
+> ↪ Relocated to `settled.md` § "Executor and flat-install Open Defects fixed in source (PLAN-LB-94, 95, 96, 97, 110)" — the shared-executor rewrite (PLAN-LB-94), the Maven task-time gate (PLAN-LB-110 D4) and the flat-install upgrade (PLAN-LB-97) are fixed in source.
 - **MEDIUM — a flat install still has blind spots (recorded 2026-10-26 from the PLAN-LB-96 landing residue; not staged;
   R1 and R2 FIXED IN SOURCE by PLAN-LB-97, #1872; R3 and R4 remain; PLAN-LB-97 residue added: lookups that never raise
   (`_manifest_validation`, `extension_discovery`, `prepare_execute`) still print only the nested path on a miss, and the
@@ -1421,30 +2182,7 @@ derive, for rows still live.
   `marketplace_paths` the directory containing `marketplace/bundles`). Whether `quality-gate` and `verify` resolve on a real flat
   install is not shown by any test; one runbook lane on the second machine after the install decides whether R1 and R2 earn a
   plan.
-- **CRITICAL — a flat OpenCode install cannot resolve its bundles root (found 2026-10-26 on the operator's second machine;
-  owner PLAN-LB-96, FIXED IN SOURCE by #1868, merged 2026-10-26; not live until the harness sync here and the new plugin
-  version installed on the second machine; the hand-made shim and `PM_MARKETPLACE_ROOT` workarounds below become unnecessary
-  once it is).** `resolve_bundles_root` accepts only the marketplace and versioned-cache shapes, so six
-  import-time call sites (`_cmd_client_build`, `_config_core`, `_manifest_validation`, `plugin_discover`, `_doctor_shared`,
-  `_cmd_extension`) raise `could not locate a 'plan-marshall' bundle` and `runbook_lane resolve` never starts. Reproduced against
-  the generated tree; masked here by a hand-made bundle-identity shim in `~/.config/opencode/skills/plan-marshall/`. Behind it,
-  extension discovery finds no bundle in a flat tree (`architecture modules` empty, no `quality-gate` or `verify`): the
-  discovery loops treat each directory as a bundle and the OpenCode and Antigravity emitters do not deploy `implements:`.
-  Workaround on the affected machine: create `~/.config/opencode/skills/plan-marshall/.claude-plugin/plugin.json` (name
-  `plan-marshall`, a version, a description) and export `PM_MARKETPLACE_ROOT` at a plan-marshall checkout (untested); both
-  hide the defect. The operator chose to wait for the plan to land.
-- **CRITICAL — the generated executor puts every cached plugin version on PYTHONPATH, oldest first (found 2026-10-25 on the
-  operator's second machine; regression of PLAN-LB-94 D3, #1861; FIXED IN SOURCE by PLAN-LB-95, #1865, merged 2026-10-26; not
-  live until the harness sync and an executor regeneration, and on the second machine until the new plugin version is
-  installed there).** `_same_root_script_dirs`
-  (`execute-script.py.template` L588-621) globs the whole install root and sorts the result as strings, so a script from
-  `0.1.2010` imports its helpers from the oldest cached version that has them: `marshall-steward` on a not yet enrolled
-  project stopped at Step 4 with `ImportError: cannot import name 'STANDING_RULES_BRIDGE_MARKER' from 'antigravity_runtime'`
-  (loaded from `0.1.1916`, eight versions cached). Scripts that need no newer helper run old helper code silently. Reproduced
-  here: 15 cached versions, 1065 directories, `platform-runtime` `0.1.1969` at index 38, `0.1.2010` at index 808. This checkout
-  and the PLAN-LB-94 lane did not see it because a developer checkout resolves scripts to the tree, and every PLAN-LB-94
-  fixture held one version per bundle. Affects every consumer project and every harness install with more than one cached
-  version. Workaround on the affected machine until it ships: delete the old cache version directories, leaving the newest.
+> ↪ Relocated to `settled.md` § "Executor and flat-install Open Defects fixed in source (PLAN-LB-94, 95, 96, 97, 110)" — the flat OpenCode bundles root (PLAN-LB-96) and the PYTHONPATH order (PLAN-LB-95) are fixed in source.
 - **The `test-compile` freshness backstop fails green builds on a fast runner (PLAN-LB-43 landing, 2026-10-24; medium; not
   staged).** `build.py` L540-580 fails `verify` closed when mypy exits 0 faster than a plausibility bound (here 1801 files in
   8.2 s, 205-220 files/s against a 200 files/s limit). It failed `verify / verify` three times on PR #1851 (twice on the PR
@@ -1455,35 +2193,7 @@ derive, for rows still live.
   re-run: four failures across two PRs, all cleared by a re-run. **Owner: PLAN-LB-93 D3 (operator, 2026-10-25).** Read for the
   spec: mypy always runs `--no-incremental`, so a cache cannot answer, and the 200 files/s ceiling was calibrated on 417 files
   at 71 files/s.
-- **The merge-path part of this item was fixed in source by PLAN-LB-100 (#1883, 2026-10-29); the rest is PLAN-LB-101.** The
-  `pre_merge_gate merge` participation check and the merged-under-authorization record exist now; the roster, trigger, option and
-  loop items below are unchanged and are LB-101's. **The gate-truth half of PLAN-LB-55 is unshipped, and it sits in the lifecycle lane only (PLAN-LB-55 landing, 2026-10-25;
-  medium; not staged).** An armed auto-merge is not bound to its head; `pre_merge_gate merge` does not run the required-bot
-  participation check; the roster-read error, stale-bot trigger-before-ask, generated barrier option set, `merge_lock`
-  recovery loop, merged-under-authorization record and mutex re-acquire are unimplemented, so `coderabbit.md`'s policy is
-  documented and not enforced. The runbook lane's skill names neither `pre_merge_gate` nor the barrier, so a runbook run
-  would not have used these gates; its merge rests on § 7 of the lane text. **Owner: PLAN-LB-93 D5-D6 (operator, 2026-10-25,
-  asked for regardless of the lane).** The spec adds one constraint from the same day's ruling: the participation check must
-  admit a quota-limited required reviewer that has a qualifying review. It also records that `branch-cleanup.md` L1041 still
-  tells the operator to "move [a required bot] to optional" for a `declined` or `refused_hard` state.
-- **The recovery command an executor refusal prints cannot start in the OpenCode install (found 2026-10-25; high; owner
-  PLAN-LB-93, staged).** `executor_target_mismatch` prints `python3 {plugin_root}/plan-marshall-tools-script-executor/scripts/generate_executor.py recover …`; run
-  as printed it exits 1 with `ModuleNotFoundError: argparse_surface` (before and after a sync of all harnesses). The
-  bootstrap resolves `{skills}/{lib}/scripts` and the flat install names the directories `plan-marshall-{lib}`. The same
-  loop is in four sibling entry scripts (not run). Workaround used: the same script from the repository source.
-  The cause of the executor's re-stamp for another harness was not established.
-- **RETIRED 2026-10-23: the PLAN-LB-88 landing carries `open_issue_count=0` from five reads the run took itself
-  (`landings/PLAN-LB-88.md`).** **The Sonar read the lane now requires has never been taken on a real pull request (PLAN-LB-85 landing,
-  2026-10-23; high; owner: the next runbook run, and an operator step).** `lb-85-lane-sonar-issues` shipped the
-  verbs and could not run them on its own PR: the main checkout's executor predates the change, the worktree has none,
-  and the only route that writes a worktree executor is a direct `generate_executor.py` call, which the guard refused
-  (R5, `guard.log` 16:35:56Z). The landing carries `step.sonar-roundtrip.open_issue_count=unknown`. Until a run reads
-  a PR with the merged lane text, the gate's verdicts on a real analysis are unobserved; `resolve` on the merged tree
-  reports `sonar: configured`, project `cuioss_plan-marshall`. **2026-10-23: the executor was regenerated and the
-  orchestrator took the read for the merged PR** (`sonar read_open_issues --project cuioss_plan-marshall --pr 1839`):
-  `count_status: confirmed`, `open_issue_count: 0`, no rules. So #1839 had no open Sonar issue, the verb works against
-  the live service, and the landing's `unknown` was a missed measurement, not a hidden finding. Still open until a runbook
-  landing carries the measured count itself (the lane's own read step, not the orchestrator's).
+> ↪ Relocated to `settled.md` § "Open Defects fixed, retired or out of scope in October (merge path, recovery command, Sonar read, measurement, R5 walk)" — the merge-path half is fixed (PLAN-LB-100, 101, 93), the recovery command is fixed (PLAN-LB-93), and the Sonar-read entry is retired 2026-10-23 (PLAN-LB-88).
 - **A plan whose own lane text calls a verb it introduces cannot run it, and the guard refuses the bootstrap
   (PLAN-LB-85 landing, 2026-10-23; raised to high by the operator on 2026-10-23; owner now PLAN-LB-92, the next plan).**
   Either the guard admits the generator verb, or worktree creation generates the per-tree executor. The build-server
@@ -1500,33 +2210,7 @@ derive, for rows still live.
   text now names the one bootstrap route (the registered generator, run from the worktree) and treats a zero-executor
   worktree as a blocker rather than hunting a path. The retire condition is unchanged and still unmet on its second
   clause: a worktree still cannot run a verb *its own plan* adds.
-- **OUT OF SCOPE since 2026-10-23 (measurement; see Decisions) — `plugin_version` is recorded as `0.1` beside `executor_version` `0.1.1986` (PLAN-LB-85 landing, 2026-10-23;
-  medium; lead, owner PLAN-LB-84 once confirmed).** The landing copied what its stamp source reported;
-  `platform_runtime runtime-info` run here (Claude) also returns `bundle_version: "0.1"`, while PLAN-LB-49's landing
-  carried `0.1.1983`. **Cause found (2026-10-23):** `read_bundle_version` (`runtime_info.py:455`) returns the `version` of the bundle manifest
-  it runs from, and the source manifest says `"0.1"`; only installed copies are stamped by the sync (the Claude cache holds
-  `0.1.1986` to `0.1.1989`). So the value is `0.1` whenever the executor resolves the script to the main checkout, not a
-  truncation bug. Open: which copy a runbook run executes. Original note: confirm under OpenCode first: if `runtime-info` truncates the bundle version, PLAN-LB-84's
-  `plugin_version` bullet (source-manifest version) must cover it and its test must pin a three-part value. Retire when
-  a runbook landing's `plugin_version` equals the installed bundle version.
-- **OUT OF SCOPE since 2026-10-23 (token usage; see Decisions) — the runbook landing's `complete: false` on `total_tokens` is now the only missing key (PLAN-LB-85 landing,
-  2026-10-23; recurrence of the PLAN-LB-86 D2 contract collision, not a new defect).** `effort` and `plugin_version`
-  are supplied under the post-sync lane text, so PLAN-LB-78 D3's fix reached the run. `surface_delta` measured:
-  `expansion_detected` (2 added, 3 missing). The store holds the total the lane wrote as `unknown` (2,099,576 input+output,
-  $1.0042): the fourth runbook landing to hide a measurable figure.
-- **RETIRED 2026-10-23 (PLAN-LB-88 shipped #1840; the cross-product rows are in the PR's tests and CI is green; residual
-  boundaries accepted, see `landings/PLAN-LB-88.md`).** **The R5 enforcement merged by PLAN-LB-79 is still walkable, and the hook it made binding refuses a command
-  the repository prescribes (PLAN-LB-79 landing, 2026-10-22; high; fix-forward PLAN-LB-88).** By code reading,
-  not executed: the spliced-string walk splits on `; & | newline` only, so a grouping keyword, `-o pipefail` before
-  `-c`, a here-string, a script file or `fish`/`csh`/`tcsh` hide the interpreter, and a `cd` inside the string is
-  never applied, so `zsh -c "cd /tmp/x; python3 .plan/execute-script.py …"` is admitted on both harnesses; the
-  missing-table fail-closed branch checks raw tokens and misses a spliced interpreter; the hook's R4 refuses
-  every `./pw`, `./pw generate` included (CLAUDE.md prescribes it); the `git grep` decision the spec asked for was
-  never made. The merged hook is also not installed on Claude here (no cached hook references the new table,
-  `.claude/settings.local.json` has no `claude_pretooluse` entry); `.opencode/plugin/guard.js` is live for OpenCode
-  sessions in this checkout. The self-review found one of these and rated it MEDIUM. Third completion in a chain
-  (LB-65, LB-68, LB-79): PLAN-LB-88 D1 asks for a generated cross-product so the next wrapper is covered by
-  construction. Retire when PLAN-LB-88 ships and its cross-product rows are green on both harnesses.
+> ↪ Relocated to `settled.md` § "Open Defects fixed, retired or out of scope in October (merge path, recovery command, Sonar read, measurement, R5 walk)" — two entries out of scope since 2026-10-23 (measurement) and the R5 walk entry retired with PLAN-LB-88.
 - **A second runbook landing's rule-check self-report is contradicted by its transcript (PLAN-LB-79 landing,
   2026-10-22; medium; owners PLAN-LB-73 D4, PLAN-LB-69 D3, PLAN-LB-89).** The Watch on the PLAN-LB-78 instance named
   this trigger. PLAN-LB-79 reported three refusals "for this run's sessions" (one belongs to the PLAN-LB-49 run) and
@@ -1609,21 +2293,7 @@ derive, for rows still live.
   workflow, `worktree_unresolved` hides every plan without a worktree, per-function matching misses
   class methods and delete-and-compensate moves, and `triage.md` and `review-rubric.md` contradict the
   code.
-- **RETIRED 2026-10-23 (the PLAN-LB-73 landing, #1843: §7's question step now re-reads `ci pr comments`,
-  `ci pr reviews` and the marker-bearing summary comment in the same step and again before the enqueue, and a
-  late review of the current head invalidates the answer).** **A merge-gate question stated that a head had not
-  been reviewed 64 seconds after its review landed (PLAN-LB-70 run; operator authorization obtained on a false
-  premise).** Folded into PLAN-LB-73 D1. The operator's selection is treated as no authorization for that merge.
-- **RETIRED 2026-10-23 (the PLAN-LB-73 landing, #1843: §7 now counts a reviewer's marker-bearing summary comment
-  — `final_review_risk_coverage` with `sourceCommitId` / `coveredCommitId` / `kind=reviewed` — as a qualifying
-  review for a quota-limited reviewer, and keeps the current-head rule for the others). The retirement is
-  demonstrated on this very landing: PLAN-LB-73's standing authorization rests on exactly such a summary
-  marker on `39701dea8`.** **The runbook lane's §7 "qualifying review" cannot be satisfied by a clean CodeRabbit
-  review (PLAN-LB-72 landing, 2026-10-19; low; fix-forward PLAN-LB-73 D1).** §7 excluded a summary comment,
-  while CodeRabbit publishes a clean review only as a marker-bearing summary comment. The standing
-  authorization therefore keyed on reviews that had findings, and `ci pr reviews` was empty on #1819
-  although both bots reviewed the merge head. The run asked the operator a question the contract does
-  not define (91 minutes). The main condition ("reviewed the current head") held.
+> ↪ Relocated to `settled.md` § "Open Defects retired or fixed in source in October (PLAN-LB-44, 71, 73 and the superseded OpenCode config entry)" — two entries retired 2026-10-23 by the PLAN-LB-73 landing (#1843).
 - **Done-whens unmeetable by construction (PLAN-LB-72 landing; orchestrator-side).** A preservation or
   coverage clause carried "fails at {sha}", so the run reported two Done-whens "not met as written".
   Folded into PLAN-LB-69 D4 as an authoring rule ("fails at" for new behaviour, "holds at" otherwise).
@@ -1659,15 +2329,7 @@ derive, for rows still live.
   executor was regenerated or recovered the subcommand in between — and it is **not** an open defect.
   The genuine half of the observation stands and is what PLAN-LB-92 owns: a runbook worktree carries no
   executor at all, which is why every one of this run's builds answered `executor_absent_from_worktree`.
-- **FIXED IN SOURCE 2026-10-19 (PLAN-LB-71 D1, #1817; deployed after the sync above).** The runbook
-  lane's skill-existence check fails closed in a flat install (PLAN-LB-67 landing,
-  2026-10-18; high). `runbook_lane.py:167-202` resolves a bare name and
-  a persona with its bundle dropped against the lane's own `skills/` directory. The OpenCode install
-  names skills `plan-marshall-{skill}`, so every name misses and a spec with `Skills:` lines stops
-  on `named_skill_not_found`. Until PLAN-LB-71 D1 lands, do not sync the OpenCode install and then
-  emit a spec carrying those lines. The `total_tokens=unknown` gap of this landing recurs on the
-  PLAN-LB-49 entry (third OpenCode runbook landing with `unknown`); `landing-check` reports the
-  landing `complete: false` on that one key.
+> ↪ Relocated to `settled.md` § "Open Defects retired or fixed in source in October (PLAN-LB-44, 71, 73 and the superseded OpenCode config entry)" — fixed in source 2026-10-19 by PLAN-LB-71 D1 (#1817).
 - **Report integrity of the PLAN-LB-67 landing.** About nine claims were contradicted: personas and
   domain skills "applied" with none loaded, "no shell file operation again" (two), "base branch
   merged rather than rebased", fail-first for all six deliverables (D5 and D6 were tested after the
@@ -1788,28 +2450,7 @@ derive, for rows still live.
   actionable and security items, or at least report a dropped summary that carried them; a
   summary-only security fixture pins it. Not owned by any staged plan; nearest PLAN-LB-31 or
   the `-017` remainder. — `lessons-routing-027.md`.
-- **RETIRED 2026-10-23 (the PLAN-LB-44 landing, #1848: `verification-feedback` accepts the single `ci-verify`
-  producer from one shared constant, the taxonomy row travels as a finding subtype, a failing check is classed by
-  what it ran — closed policy list, build default, Sonar-marker deferral — and each finding is keyed on its own
-  check's run with a log pointer or a named `log_unavailable_reason`).** **Red CI has no triage route.** `verification-feedback.md` accepts only `build-runner, sonar,
-  pr-comment, plugin-doctor, pr-state, finalize-feedback` (lines 30, 59 at `47d21e1bf`), while
-  `ci_verify.py` emits `ci-verify-missing/-build/-policy/-timeout/-cancelled`; every red-CI
-  dispatch is refused `unknown_producer`. Five plans (PLAN-LB-25 and four pm-mcp-core plans);
-  also a CI check is classed by name tokens, not by what it runs. Lesson `2026-10-11-16-001`.
-  Owned by PLAN-LB-44 (staged; the label "not owned" was stale, corrected 2026-10-15).
-  Recurred on API-Sheriff #466 (`lessons-routing-043`, which names the landed PLAN-LB-24); accept-set
-  unchanged at `d17ac5bef` (`verification-feedback.md` L30, L63-72).
-  — `lessons-routing-019.md`, `lb-25-phase-and-merge-gates-001`.
-  Recurrences: PLAN-13 (`ci-verify-policy` refused `unknown_producer`, re-dispatched as
-  `finalize-feedback`); lesson `2026-10-11-07-001` (plan-06) — a SonarCloud gate failure inside
-  the `build / sonar-build` Maven job filed 5 `ci_policy_failure` findings instead of deferring
-  to sonar-roundtrip. — `lessons-routing-028.md` (153, 189). Recurred on PLAN-LB-42 (2026-10-14
-  18:31): a CI-wait lapse was dispatched as `ci-verify-timeout` and refused `unknown producer`; all
-  four `ci_timeout` findings were titled "verify failed" while verify was still running
-  (`plan-lb-42-outline-qgate-integrity-001`). Recurred on PLAN-LB-49 (2026-10-22): the bounded CI wait lapsed at
-  head `a8252f57` and two duplicate "[ci_timeout] verify / verify failed" findings were filed, both resolved
-  "Superseded: CI completed green" (`artifacts/findings/triage.jsonl:1-2`). The duplicate filing is itself a smell.
-  Folded under PLAN-LB-44 (staged) with no surface added. — `lb-49-opencode-measurement-001.md`.
+> ↪ Relocated to `settled.md` § "Open Defects retired or fixed in source in October (PLAN-LB-44, 71, 73 and the superseded OpenCode config entry)" — retired 2026-10-23 by the PLAN-LB-44 landing (#1848).
 - **The guard has no rule for shell file operations or ad-hoc scripts** (2026-10-15, PLAN-LB-42
   landing). Under OpenCode with the deny rules active, R1 (compound shell) and R4 (raw pytest)
   refused all 8 attempts. `ls` (2), `python3 -m py_compile` (3) and a `.plan/temp/*.py` ad-hoc
@@ -2081,22 +2722,7 @@ derive, for rows still live.
 
 > ↪ Relocated to `settled.md` § "Open Defects closed by PLAN-LB-33 and PLAN-LB-38" — closed by #1745 and #1752; the entries themselves said to remove them at the next cleanup, and their two open follow-ups stay as their own Open Defects.
 
-- **Superseded 2026-10-14 — see § Non-Claude-Code Failures "OpenCode 2: no deny rule applies".**
-  The new keys are OpenCode 2's own schema; the live defect is rule order and the guard's tool
-  name. Owned by PLAN-LB-48 (shipped #1830, 2026-10-21; its residue is PLAN-LB-83). Original entry kept
-  below as the record.
-  **The root `opencode.json` is in a shape nothing in this repository reads.** PLAN-LB-29's
-  merge commit rewrote it: `permission.bash`, a map of command pattern to
-  `allow`/`ask`/`deny`, became a `permissions` array of `{action, resource, effect}`
-  objects, `agent` became `agents`, `skills.paths` became a bare list, and the file grew
-  from about 650 to about 2730 lines. `opencode_runtime.py` still reads `permission` and
-  the OpenCode emitter still writes `agent`. No deliverable asked for it and the diff holds
-  no producer for it. If OpenCode ignores the new keys, the deny rules for `gh`, `rm`,
-  `git restore`, `git stash` and the rest do not apply in an OpenCode session of this
-  repository. OpenCode's own schema was not checked here. Not owned by any staged plan.
-  Next step: compare the file with the OpenCode configuration schema, and regenerate it
-  from the emitter if the old shape is the valid one. — source: `git show 35b5589b5 --
-  opencode.json`, read 2026-10-09; read-only review of the commit.
+> ↪ Relocated to `settled.md` § "Open Defects retired or fixed in source in October (PLAN-LB-44, 71, 73 and the superseded OpenCode config entry)" — superseded 2026-10-14; the live defect was owned by PLAN-LB-48 (shipped), residue PLAN-LB-83.
 - **`sync.py --repin` can repin bundles the run did not sync.** It passes the one synced
   version as the target for every registry bundle, so `--bundles X --repin` also moves any
   other bundle that has a directory of that version. — source: read-only review of
@@ -2264,21 +2890,7 @@ entry says otherwise, it was not re-verified at HEAD beyond the ground truth the
   across files. Two more problems are reported: the acceptance is keyed to the head, and the
   `qgate add` fold and the review path deduplicate differently. Parked PLAN-LB-75 D3 touches the
   same file but does not cover this. — source: inbox `lessons-routing-064.md`.
-- **HIGH — the success-criteria parser keeps only an unbroken run of `- ` lines, so every
-  criterion after a wrapped or nested line drops out of the frozen snapshot unreported (2026-11-02;
-  not staged).** Cited ground truth: `_criteria_snapshot.py:72` `_SUCCESS_CRITERIA_RE`, the single
-  parser `outline_deliverables` uses. Because `criteria_drift` and `open_criteria` compare against
-  the snapshot, a dropped criterion is never graded and never reported. API-Sheriff #467 and #513
-  (`unknown_criterion_id`). The parked PLAN-LB-75 surface includes this file. — source: inbox
-  `lessons-routing-065.md`.
-- **HIGH — CodeRabbit participation is read from the wrong signals (2026-11-02; not staged).**
-  Per-line thread replies at the new HEAD count as a review of that head; `coderabbit.md:50`
-  requires no marker for `inline`. A finished review in the new summary format
-  (`coveredCommitId == head`, `kind: reviewed`) is never credited, because only `runbook-lane`
-  reads `coveredCommitId`. Since PLAN-LB-100, every such clean review needs `barrier-ask-override`.
-  API-Sheriff #515 and #537. This is related to, but not covered by, the "Participation credit
-  ignores an in-progress review" entry and parked PLAN-LB-46. — source: inbox
-  `lessons-routing-066.md`.
+> ↪ Relocated to `settled.md` § "Open Defects of 2026-11-02 closed by PLAN-LB-105 to 110 and 119" — the criteria parser (PLAN-LB-105 D4, 118, 119 D6) and the CodeRabbit participation signals (PLAN-LB-106, 119 D1) are fixed.
 - **HIGH (operator ruling) — review-bot findings are lost before triage (2026-11-02; not
   staged).** (1) Bodies are cut at 8000 characters, a literal located in `untrusted-ingestion`
   `validate_struct.py`. The cut drops CodeRabbit's conclusion, which comes after its analysis,
@@ -2291,31 +2903,13 @@ entry says otherwise, it was not re-verified at HEAD beyond the ground truth the
   from API-Sheriff on 2026-10-30, which is after #1866. The open question is whether the gate
   derives whole-tree from the row's real scope or from its label. — source: inbox
   `lessons-routing-068.md`.
-- **HIGH (operator ruling) — the build daemon runs two builds in one worktree at once (2026-11-02;
-  not staged).** The machine-global `max_slots` does not serialise jobs that share a
-  `project_dir`, so a shared `target/` produces false ClassNotFound and Quarkus start failures
-  (API-Sheriff PLAN-V02-10 and V02-14). Cited content search: no script keys any exclusion on
-  the worktree. Exposure is wider since PLAN-LB-104 made routing the lane default. This relates
-  to the Watch on the build server coalescing results (folded into PLAN-LB-78 D2 as a prose
-  rule). — source: inbox `lessons-routing-069.md`.
+> ↪ Relocated to `settled.md` § "Open Defects of 2026-11-02 closed by PLAN-LB-105 to 110 and 119" — the build daemon now runs one build per directory (PLAN-LB-108).
 - **HIGH (operator ruling) — the phase-5 no-progress rule records a prescribed yield as `error`
   (2026-11-02; not staged).** API-Sheriff plan-24 #430 and plan-25 #408. Each reclassification
   also feeds the script-failure signal that triggers lessons capture. A related problem: a module
   whose test build always exceeds the per-task limit is not detected at planning time. — source:
   inbox `lessons-routing-059.md`.
-- **HIGH (operator ruling) — a waiver accepted by a step record is refused by the merge gate
-  (2026-11-02; not staged; recurs after PLAN-LB-55 and PLAN-LB-101).** `loop-back close
-  --waive-refire` records `refire_waiver`, then `pre_merge_gate merge` refuses with
-  `merge_candidate_not_gated` naming the same steps. Cited content search at `c431a8193`: no
-  `pre_merge_gate` source reads `refire_waiver`. Further asks: derive the skip rule and the
-  head-dependence from one source, and build the operator prompt from the barrier's own labels.
-  Sightings: TokenSheriff PLAN-01/02/06, and API-Sheriff `-078` and #527. — source: inbox
-  `lessons-routing-060.md` (revision 1).
-- **HIGH (operator ruling) — the Maven log parser files a `test-failure` for a passing Surefire
-  summary with `Skipped` above zero (2026-11-02; not staged).** API-Sheriff plan-25 #408, twice.
-  The accepted-false-positive tuple reached `preference_min_recurrence`. A related medium item:
-  `-Dtest=A+B` matches nothing. This sits next to the "PLAN-LB-28's test ladder" entry (epilogue
-  lines still filed). — source: inbox `lessons-routing-061.md`.
+> ↪ Relocated to `settled.md` § "Open Defects of 2026-11-02 closed by PLAN-LB-105 to 110 and 119" — the merge-gate waiver (PLAN-LB-107, 120) and the Maven log parser (PLAN-LB-110, 121) are fixed.
 - **HIGH (inherited) — consumer-repo recurrences on the finalize and outline path, plus one new
   item (2026-11-02; not staged).** API-Sheriff (Maven):
   - (1) The deep-lane outline writes no assessments, a recurrence of the entry of that name
@@ -2340,63 +2934,47 @@ Defects ("Antigravity: critical …"), owned by PLAN-LB-39.
 OpenCode on this machine is **2.x** (2.0.25 from 2026-10-08, 2.0.28 from 2026-10-13). Several
 entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
 
-- **Retired 2026-10-15 — "OpenCode 2: no deny rule applies and the guard plugin blocks nothing".**
-  Hot-fixed in PR #1772 (`9011a19bf`); the last plan running on the unfixed files, PLAN-LB-39,
-  landed (#1768). Remaining: the persisted "always allow" approvals in `opencode.db` (operator);
-  the producers that would re-introduce the OpenCode 1 shape are PLAN-LB-48. Whether the deny
-  rules now refuse in practice is graded at the PLAN-LB-40 / PLAN-LB-42 landings (Watches).
-
-- **Retired 2026-10-21 — "OpenCode harness is not detected under OpenCode 2".** PLAN-LB-48 D4 (#1830)
-  removed the `OPENCODE_PID` probe and detection rests on `OPENCODE`; the PLAN-LB-48 run's own
-  `runbook_lane resolve` reported `harness: opencode` and its landing carried `harness=opencode`. Original
-  entry kept below as the record.
-
-- **OpenCode harness is not detected under OpenCode 2** (2026-10-15, PLAN-LB-39 landing):
-  `script-shared/scripts/target_context.py:167` checks `OPENCODE` / `OPENCODE_PID`; with neither
-  resolvable the worktree falls back to `claude`, so the new harness stamp would record a wrong
-  `claude` with `transcripts=full` rather than `unknown`. PLAN-LB-39's own landing reads
-  `harness=unknown` although its decision log names "target opencode". Owned by PLAN-LB-48 D4.
-
-- **OpenCode: no token measurement exists at all, so every OpenCode landing reports
-  `total_tokens=0`.** **Retired 2026-10-22 by PLAN-LB-49 (#1833, `3baf825e4`); residue open.** An OpenCode landing
-  now carries a measured `total_tokens`, from a reader over `opencode.db`. Residue, owned by PLAN-LB-86: the figure is a
-  mixed population (63% of input plus output), `subagent_tool_uses` is a fabricated `0`, reasoning and cost are dropped,
-  and a re-entered phase is measured as one window. Verified at `501aeb313`: `platform-runtime/scripts/opencode_runtime.py`
-  implements every token path as a deliberate no-op — `session_capture` (`:399-411`, "OpenCode
-  does not expose a platform-provided session id to the shell; tracked upstream at issue
-  #9292"), `metrics_capture` (`:1109`, no-op "on EVERY input", so even an explicit
-  `--total-tokens` is not stored), `metrics_normalized_tokens` (`:1153`, `transcript_not_found`).
-  The design premise — "OpenCode exposes no session transcript" — is wrong: OpenCode persists
-  every session, with per-session token and cost totals, in `~/.local/share/opencode/opencode.db`
-  (`session_v2`). PLAN-LB-26's analysis read it read-only: main session 42.58M input / 165K
-  output / 310M cache-read ($4.93), resumed session 2.14M / 25.6K ($0.31), 77 sub-agent sessions.
-  The missing piece is only the session id in the shell; the plan's worktree path and its time
-  window (or `OPENCODE_PID`, which `target_context` already reads) are candidate keys for finding
-  the session in the database — not verified. Two separate defects meet here: no source is read
-  (this entry), and an unmeasured total is written as `0` rather than `unknown` (the zero-token
-  Open Defect, PLAN-LB-39 D5). Seen on PLAN-LB-26 and pm-mcp-core PLAN-44. **Resolved premise
-  (2026-10-14):** OpenCode 2.0.28 sets `OPENCODE_SESSION_ID` in every shell subprocess (and no
-  `OPENCODE_PID`); the DB links sub-agents through `session_v2.parent_id`. PLAN-LB-26 corrected:
-  main tree 75 sessions, 52.53M input, $7.16; resumed tree 4 sessions, 2.50M input, $0.37 (74 + 3
-  sub-agents, not 77 under one session). Owned by PLAN-LB-49, which also makes the dispatch audit
-  count OpenCode sub-agent sessions. Recurred on PLAN-LB-31: `total_tokens=0` against 28.7M input /
-  $4.09 over 55 sessions; the root passed `record-dispatch-boundary --total-tokens 0` literally.
+> ↪ Relocated to `settled.md` § "Non-Claude-Code Failures: retired and out-of-scope entries" — two entries retired by PLAN-LB-48 and the earlier hot-fix, the superseded original, and the token-measurement entry (retired by PLAN-LB-49, measurement out of scope).
 
 ## Watches
 
-- **The lane's Sonar question recurred in PLAN-LB-100 (2026-10-29), now with its cause found: stale configuration, not the lane
-  (recorded, not staged).** The LB-100 run asked the same question and was told to merge. `runbook_lane resolve` decides `configured`
-  from `credentials_config.workflow-integration-sonar` in the tracked `.plan/marshal.json` (organization `cuioss`, project key
-  `cuioss_plan-marshall`), and `default:sonar-roundtrip` was `lane: full` there. The operator confirmed the config is stale. The
-  `sonar-roundtrip` lane is now `off`, the provider block is removed from `credentials_config` (left as an empty object), and the
-  global token is removed. **FIXED (PR 1884, merge `9e731121c`, 2026-10-29):** `runbook_lane resolve` now reports
-  `sonar: not_configured` and no longer carries a project key, so LB-101's lane has no Sonar question to ask. The block was removed by
-  a direct edit of `.plan/marshal.json`, the operator's approval, because no script verb removes a provider block (`credentials
-  remove` deletes the secret and leaves the block; a small plan could add that verb). CodeRabbit could not review that PR at all:
-  its path filter excludes `.plan/**`, so it posted a skipped notice, and the merge went ahead on green CI plus Sourcery's approval.
-  The PR ran two full verify builds, one on the PR and one in the merge group (about 30 minutes each), because
-  `.plan/marshal.json` is on the workflow's forced-build list. A lane change (treat `sonar-roundtrip: off` as not configured) stays
-  optional and rides the lane refactor decision.
+- **The minors of the PLAN-LB-126 landing (2026-11-08; recorded, not staged).** None fails open or falsely blocks a gate in normal use;
+  they ride the next plan that touches the same file. The D2 red proof is a signature `TypeError` and the branch semantics were shown
+  red only by mutation; `cmd_commit` reports no `ledger_*` key when the phase is `unknown` or unset and only `ledger_recorded:false`
+  when the SHA is unreadable, and catches only `OSError` after the commit (whether another exception can escape is not shown by
+  reading); a refused `--push` carries no `ledger_*` field although the row exists; `_current_branch` returns `None` for a detached HEAD
+  and for any git failure alike; the refusal message grows about 250 characters per unrecorded SHA with no truncation; a `--step` id
+  ending in digits would be read as a deliverable number; `foreign_branch` is named only in the deliverable template; a foreign branch
+  deleted locally after its merge cannot be tip-resolved; whether the worktree ledger and the main-checkout ledger are one file for a
+  commit made from a third cwd is not shown by reading; history wording in `archive-plan.md:37`, `_cmd_lifecycle.py:877-879` and two
+  test docstrings. Retire an item when a plan fixes it.
+- **The minors of the PLAN-LB-116 and 127 landings (2026-11-08; recorded, not staged).** Only the one PLAN-LB-116 and two PLAN-LB-127
+  majors fail open or falsely block a gate, and they are Open Defects. The rest ride the next plan that touches the same file.
+  PLAN-LB-116: the minor shapes under its major (silent zero, vocabulary, placeholder evidence, positional ids, prose-only head
+  currency, dispositions not read from the progress file, the count under-read), a hotspot partition trusted from the lane, a dead
+  `_SECTION_DEPTH`, doc-standard labels and wording, a bare `review-gate` command in two documents, the lifecycle producer that cannot
+  emit the four new numbers. PLAN-LB-127: the unconditional `No actionable comments were generated` drop, the vacuous skip-notice
+  control and the untested marker-bearing skip notice, the veto strings without provenance, zero required reviewers after a strip of an
+  answer naming only the retired kind, the AGENTS.md rationale that still cites the PR-Agent reviewer, history wording, and whether the
+  deleted contentless-guide modules carried drop-path currency coverage that no CodeRabbit test replaces. Retire an item when a plan
+  fixes it.
+- **The minors of the PLAN-LB-115, 124 and 125 landings (2026-11-08; recorded, not staged).** None fails open or falsely blocks a gate
+  in normal use, so the stop rule stages nothing; they ride the next plan that touches the same file. PLAN-LB-115: the carry predicate
+  is read at submit time, a renamed protocol test cannot fail on its name, four deliverable labels remain in touched modules. PLAN-LB-124:
+  `command_args` drops `--working-dir`/`--project-dir`; the legacy remedy hint misfires; the report credit counts skipped tests; the
+  resolve error misstates an unreadable-POM member; a padded fact key is persisted raw; the exit-0 Failsafe miss when unit tests ran; the
+  branch 4 text contradicts itself; history wording. PLAN-LB-125: see the PLAN-LB-125 entry above. Retire an item when a plan fixes it
+  or a run shows it matters. Detail: the three landing reports' Layer 3 tables.
+- **The B7 hand-back credit is a count, not a task match (PLAN-LB-123 landing, 2026-11-07; recorded, not staged).** One in-progress
+  task is credited to a valid hand-back when no owed task is in flight (`_tasks_query.py:667`). Two shapes follow, neither shown
+  reachable: (1) one non-owed stalled task beside an unrelated valid hand-back reads as `verification_handback`, not `error`; (2) a
+  build that keeps outliving the wrapper bound repeats dispatch, `running` hand-back, re-attach and re-dispatch on one not-owed task,
+  and B7 does not stop it because the credit has no memory and a re-attach closes only owed tasks (the lane's own residue C6). Both
+  fail toward one more dispatch, not toward a false pass of a gate. Retire it when a run shows the shape (then stage a fix plan:
+  carry the handed-back task id to the predicate) or when the leaf contract carries it. The reach questions to settle first are in
+  `landings/PLAN-LB-123.md` § Residue and Watches.
+
+> ↪ Relocated to `settled.md` § "The lane's Sonar question in PLAN-LB-100: stale configuration, fixed by PR 1884" — fixed by PR 1884 on 2026-10-29.
 - **A concurrent edit in the shared main checkout blocked a lane's last cleanup step (PLAN-LB-100, 2026-10-29; recorded, not
   staged).** `switch-and-pull` refused because `.plan/marshal.json` carried an unstaged edit the lane did not make; the lane asked, was
   told the checkout was cleared, re-checked, and the sanctioned retry succeeded. The edit was this orchestrator session's own
@@ -2407,10 +2985,7 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
   and committed at once. Cause not established: it fits the LB-100 lane's cleanup step, and I cannot rule out another session or
   an editor. Nothing was lost; the safe habit is to check the branch before every git step and to commit an edit in the same
   breath as making it.
-- **A second routed-build failure from a worktree, with a trigger the lane did not name (PLAN-LB-100, 2026-10-29).** The first routed
-  `quality-gate` with `--project-dir {worktree}` failed `execution_failed` (the worktree's `pwx` exited -1 with an empty log) and
-  every later build ran in-process. The landing does not say whether the path was absolute. Unconfirmed as the known relative-path
-  trigger; treat it as a recurrence of the routed-build Watch below until shown otherwise.
+> ↪ Relocated to `settled.md` § "Routed-build failures from a worktree: the relative project directory (fixed by PLAN-LB-104, closed 2026-11-07)" — a recurrence of the same trigger.
 - **Two lane behaviours recurred in the PLAN-LB-102 landing (2026-10-28; recorded, not staged).** (1) The lane's merge gate still asks the
   operator a Sonar question (`undecidable` Sonar read, "merge despite undecidable Sonar" selected), although the 2026-10-28 ruling says
   such a result is expected and never raised as a question. The cause is the lane, not the provider block: `runbook_lane resolve`
@@ -2432,32 +3007,7 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
 - **A lane can rewrite the shared main executor (PLAN-LB-97, 2026-10-27).** It regenerated `.plan/execute-script.py` from a
   scratch worktree and a concurrent lane found the executor broken. The guard covers tracked-file edits in the main checkout
   (PLAN-LB-93 D4), not the untracked executor. One occurrence, now explained; stage a rule if it recurs.
-- **STAGED as PLAN-LB-104 on 2026-10-29 (operator: the build server is the lane's default; trigger CONFIRMED first-hand).** The daemon
-  journal holds a matched pair of jobs, same worktree, executor and daemon: relative `--project-dir` died `execution_failed` (`pwx`,
-  exit -1, 0 s), absolute ran `./pw module-tests` green. Cause: `_route_to_daemon` submits `*sys.argv[1:]` unchanged and the daemon
-  runs it with the worktree as cwd, so the relative path is re-resolved against the worktree; `detect_wrapper` then finds no `pw` and
-  the bare fallback (`pwx`, or `mvn` for Maven) is spawned. The lane text and `resolve` both emit the relative form. LB-100 then ran
-  every later build in-process on its own initiative. **SHIPPED 2026-10-30 (#1893, B, `landings/PLAN-LB-104.md`): the fix is in
-  source, and installed since the sync of 2026-10-30, so the two Watches below ("known trigger" and "still fall back after LB-92") stay open
-  until one routed build with the relative form from the main checkout confirms it (D1's live-record clause, which could not be
-  produced before the merge and can be now: the main executor runs the source tree).** The Maven report from another project is unconfirmed (spec's Verify-first
-  clause; the lane did not read that journal).
-- **Routed-build failure from a worktree has a known trigger (PLAN-LB-97, 2026-10-27).** The lane ran 72 routed builds with no
-  degradation once `--project-dir` was ABSOLUTE; a relative path resolved against the daemon's cwd and fell back to a system
-  `pwx` that is not installed. PLAN-LB-53 said the same. The five lanes that fell back (LB-55, LB-53, LB-82, LB-96, LB-58)
-  most likely passed a relative path or hit this; the runbook-lane text could say "absolute" once. Recorded, not staged.
-
-- **Routed builds from a lane worktree still fall back to in-process after PLAN-LB-92 (2026-10-25).** Both landings that ran
-  after #1850 (PLAN-LB-55, PLAN-LB-53) report routed builds failing at setup: LB-55 "`pwx` unresolvable from the worktree
-  (exit -1)", then every build `in_process_fallback`; LB-53 that a RELATIVE `--project-dir` resolves against the daemon's cwd
-  and falls back to `pwx` (absolute values work), plus two whole-tree builds hitting the daemon's supervisory bound. Landing
-  statements, not re-run here. Also both report `test_harness_shape_guards.py` whole-tree scanners passing in CI and standalone
-  but exceeding 300 s under 32 k-test local load. None blocks a run (the fallback works); recorded to see whether a third
-  run repeats it before anything is staged. **A fifth run repeats it (PLAN-LB-58, 2026-10-26; routed builds answered `exit_code -1` with an empty inner log).**
-  **A fourth run repeats it (PLAN-LB-96, 2026-10-26; the daemon's inner `pwx` call from a cwd with no `pyproject.toml`).**
-  **A third run repeats it (PLAN-LB-82, 2026-10-26):** the routed leg could not
-  resolve the worktree's `./pw` (`pwx`, `exit_code -1`) and every build ran `--execution-mode in_process`; the same
-  command from the main checkout succeeded. Operator decides whether it earns a plan.
+> ↪ Relocated to `settled.md` § "Routed-build failures from a worktree: the relative project directory (fixed by PLAN-LB-104, closed 2026-11-07)" — three Watches on one trigger, fixed by PLAN-LB-104 and closed by the decision of 2026-11-07.
 - **Runs write tracked files into the MAIN checkout before they switch to their worktree (2026-10-24).** From the session
   store: PLAN-LB-43 made 12 edits (8 to `extension_api.py`, 2 to `extension-api/SKILL.md`, the new test) at 15:35-15:38Z on the
   first day; PLAN-LB-55 edited a tracked test file twice and created an untracked draft at 08:34Z; PLAN-LB-85 edited `sonar.py` 14
@@ -2466,67 +3016,11 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
   refuse an Edit/Write tool call by path. Retire when two consecutive runs touch nothing outside their worktree; the candidate
   fix is a path rule for the edit tools in the guard: **now PLAN-LB-93 D4 (operator, 2026-10-25)**, bound narrowly because a
   developer session and a `use_worktree: false` plan legitimately edit the main checkout. Retire when D4 ships.
-- **RETIRED 2026-10-25 by operator ruling (see Decisions): the standing authorization applies to a last head that changed
-  logic, and no ask is owed.** The history below is kept as the record of four instances.
-  **PLAN-LB-88's last head carries unreviewed new logic in the guard (2026-10-23).** `c5a041315` fixes two MAJOR CodeRabbit
-  findings (attached redirection operators bypassed the floor and R2) by changing both tokenizers; CodeRabbit refused the
-  re-trigger on quota and the PR merged under the standing authorization. CI and the run's own rows cover it; no reviewer
-  read it. By the 2026-10-23 rulings the next such case is retried and put to the operator if the quota blocks it. Retire
-  when a later review of `main` covers the tokenizer change, or when the next guard change is reviewed.
-  **Second instance (PLAN-LB-80, 2026-10-24):** `5ad090512` fixed a CodeRabbit major finding (the flattening sweep applied one
-  domain's owner to another domain's bare skill) by changing resolver logic; the re-trigger was refused on quota and the PR
-  merged on the standing authorization without a question. The run followed the lane text as merged (`runbook-lane/SKILL.md`
-  § 7, standing authorization conditions 1-4: a qualifying review, every finding handled, one re-trigger after the last push
-  with the refusal recorded, every other gate green), which has no ask step. The 2026-10-23 ruling says both "keep it as it is"
-  and "the plan should try to re-review but ask me if it is not working (quota)"; the lane text implements the first and not
-  the second. Open point for the operator: does the ask apply when the last head changed logic after the qualifying review, or
-  to every refused re-trigger? Two instances in two days (LB-88, LB-80), both CI-green with the fix covered by mutation records.
-  **Third and fourth instances (2026-10-24/25):** PLAN-LB-55 merged `90dc80a16` after `5e3d1c299` changed the grant-provenance
-  logic past the qualifying review of `b17446e45`; PLAN-LB-53 merged `ac06d4bd3` after it fixed three findings by changing logic
-  past the review of `9982e91e8` (the re-trigger was refused; no review of that head exists). Both followed the lane text as
-  written, with no question. One datapoint on what the unreviewed logic held: CodeRabbit reviewed LB-55's merged head two
-  minutes AFTER the merge and raised two Minor outside-diff comments and two nitpicks, nothing major. Four instances in two
-  days; the open question for the operator stands.
-- **Model comparison round (operator, 2026-10-19).** The next four runs after the four in flight
-  stay on `deepseek-v4.1-flash`; the round after that runs on Muse, through the same runbook lane,
-  so the two can be compared. DeepSeek so far under the runbook lane: LB-61 C+, LB-66 F, LB-67 C,
-  LB-71 C−, LB-72 B−, LB-70 F, LB-59 C, LB-74 C, LB-68 C−, LB-76 C+, LB-45 C−, LB-77 B−, LB-48 B−, LB-81 C+, LB-78 B−, LB-79 C+ ($1.76, 5 sessions, 19 h 40 min, `deepseek-v4.1-flash/high` throughout, no switch; code
-  graded on its work, report graded down for the undisclosed shell and clone conduct), LB-55 C+ (3 sessions, 14 h 17 min, `deepseek-v4.1-flash/high`; half the spec delivered and
-reported as such, lane text re-read after both restarts, four restarts claimed against two in the store, two tracked-file edits in the main checkout and one sub-agent guard refusal unreported,
-merged head unreviewed at merge), LB-53 B (4 sessions, 16 h 56 min, `deepseek-v4.1-flash/high`; both deliverables on their Done-when clauses, clean main checkout, exact guard, question and self-review
-attribution, lane text re-read after all three restarts, two restarts reported against three, shell read-class calls not disclosed, last head unreviewed with changed logic), LB-90 B (2 sessions, 17 h 32 min, `deepseek-v4.1-flash/high`; all three deliverables test-first, exact question, sub-agent and guard counts, clean main checkout, 37 executor calls under a spoofed harness identity beyond the operator's answer, last head unreviewed), LB-95 B+ (5 sessions, 11 h 14 min, `deepseek-v4.1-flash/high`; all four deliverables delivered, all six tests then present failing at the base and the seventh mutation-checked, exact question (3), sub-agent (4) and guard (1) counts, clean main checkout, no spoofed identity, required reviewer reviewed the merged head, read-class shell calls 32 against about two dozen, one label contradicting its own failing log), LB-98 B+ (5 sessions, 5 h 37 min, `deepseek-v4.1-flash/high`; all three deliverables delivered with ten red tests in the cited job log, the fail-open case caught by the lane, exact question (3), sub-agent (4), guard (3 of 3) and read-class shell (8 of 8) counts, no restart, no main-checkout edit, CodeRabbit reviewed the merged head, a revert-after run labelled test-first, Sonar merged on the operator's override), LB-93 C+ (1 session and no self-review sub-agent, 5 h 25 min, `deepseek-v4.1-flash/high`; four of six deliverables delivered and verified, D5 half, D6 not started, the self-review skipped and reported as a rule break, exact question (3) and guard (1 of 1) counts, read-class shell calls understated, no restart, no main-checkout edit, honest account of its own state), LB-97 B (4 sessions, 15 h 41 min, `deepseek-v4.1-flash/high`; all four deliverables delivered with honest `mutation-after` evidence and cited job logs that exist and show what is claimed, exact question (5), sub-agent (3) and guard (3) counts, no spoofed identity, six real CodeRabbit findings fixed, 18 main-checkout operations at the start, the shared main executor regenerated from a scratch worktree and broken for a concurrent lane, one unreported restart, Sonar never decidable and merged on the operator's override), LB-58 B (5 sessions, 26 h 16 min including an operator pause, `deepseek-v4.1-flash/high`; all four deliverables delivered, evidence logs for D1, D2 and D4 matching exactly, D3's named population tests absent from the cited failing run, one clause unmet where my spec named a SHA the lane does not share, exact question (3) and sub-agent (4) counts, guard refusals 4 against 1 reported, read-class shell calls 3 against 1, clean main checkout, no spoofed identity, two real self-inflicted defects found by CodeRabbit and fixed, the "rebase" instruction handled honestly), LB-96 B+ (4 sessions, 8 h 02 min, `deepseek-v4.1-flash/high`; three of four deliverables as written and the fourth reported as unmet where my spec was wrong, all seven cited logs matching, exact guard (5), question (2) and sub-agent (3) counts, clean main checkout after one disclosed and reverted main-checkout edit, no spoofed identity, CodeRabbit reviewed the second-to-last head and re-triggered after the last push, read-class shell calls understated, residue honestly listed), LB-82 B (6 sessions, 14 h 39 min, `deepseek-v4.1-flash/high`; all four deliverables delivered, `mutation-after` for D1 to D3 and test-first for D4 with the four failing logs matching the PR body, exact question (4), sub-agent (5), read-class shell (4) and guard (0) counts, clean main checkout, no spoofed identity, honest self-report of its shell deviations, reviewer state at the final head misreported and one Minor thread merged open), LB-94 B (4 sessions, 8 h 02 min, `deepseek-v4.1-flash/high`; all five deliverables delivered `mutation-after`, exact question and sub-agent counts, clean main checkout, honest D5 and self-review state, no spoofed identity, guard refusals 3 against 1 reported, read-class shell calls 7 against 2, last head unreviewed), LB-43 B− (2 sessions in the store, 25 h, `deepseek-v4.1-flash/high`; lane text re-read after
-  all three restarts, twelve undisclosed main-checkout edits, three restarts and one guard refusal unreported), LB-80 B (4 sessions, 22 h 14 min, `deepseek-v4.1-flash/high`; lane text re-read after both
-  restarts, own Sonar reads, persona and domain skills never loaded, one restart under-reported), LB-86 B− (5 sessions, 18 h, `deepseek-v4.1-flash/high`; guard attribution exact,
-  lane text not re-read after a restart, killed sub-agent unreported, product out of scope), LB-88 B (4 sessions, 16 h 47 min, `deepseek-v4.1-flash/high`
-  throughout; all four deliverables, guard attribution exact, lane text not re-read after a restart, last head unreviewed
-  new logic), LB-85 B ($1.00, 4 sessions, 8 h 37 min,
-  `deepseek-v4.1-flash/high` throughout; the report matched the store on attribution, restart handling and questions;
-  `total_tokens` hidden, `ls` under-counted). Note the
-  caveat that the lane skill itself changed between runs (PLAN-LB-67, PLAN-LB-71 and PLAN-LB-72
-  landed), so record the lane version each run loaded: **LB-59 and LB-74 both loaded the
-  PLAN-LB-71 text**, not PLAN-LB-72's, because the OpenCode install was not re-synced. Retire when
-  the Muse round has been graded and the comparison is written up.
-- **DeepSeek Flash runs, eighth grade (2026-10-20).** PLAN-LB-68 (`landings/PLAN-LB-68.md`, 4 sessions,
-  $2.44, 37h14m of which 30.6 h waiting): **C−**; 1 met / 2 partial of 3 deliverables, claimed 3/3. It
-  loaded the PLAN-LB-66 lane text once and never re-read it across two restarts and three lane changes, so
-  §7 (standing review authorization) was not in its text and the CodeRabbit gap became an operator question;
-  it then merged on a head (`208b60f8c`) the operator's selection (`239895d32`) did not name. Credit: red
-  evidence honestly reconstructed against base, most rule breaks disclosed, a steward defect really fixed on
-  OpenCode. Debit: shipped enforcement still bypassable (PLAN-LB-79), `self-review: clear` over an open
-  round 3, four re-triggers under the 90-minute floor, the most expensive run so far. Grades so far: LB-61
-  C+, LB-66 F, LB-67 C, LB-71 C−, LB-72 B−, LB-70 F, LB-59 C, LB-74 C, LB-68 C−. LB-45 is the last of the
-  four in flight to grade, and it too started before the harness sync.
-- **RETIRED 2026-10-23 with PLAN-LB-88 (#1840).** **The R5/R6 enforcement shipped by PLAN-LB-65 and PLAN-LB-68 is still bypassable, owned by PLAN-LB-79
-  (2026-10-20).** A path-qualified `env`, option clusters, unlisted wrappers and shells, the relative
-  executor from another directory, a planted script under a broad deployed root, the unbound consumer lane
-  run, a Claude root session that skips the gated checks, and R6 `--git-dir` forms are admitted by code
-  reading (not yet executed); two were spot-checked in `guard.js`. Until PLAN-LB-79 lands, treat the guard as
-  a tripwire for honest mistakes, not as a boundary against a deliberate side door. Retire with PLAN-LB-79.
-  **2026-10-22: PLAN-LB-79 landed (#1835) and this Watch is NOT retired.** It closed the forms named here
-  (path-qualified wrappers, option clusters, the listed wrappers, the relative executor from a foreign directory,
-  the deployed roots, the consumer lane, the Claude root-session gate, R6 `--git-dir`), and the splice walk behind
-  those fixes still admits a grouping keyword, an option before `-c`, a here-string and a `cd` inside the string
-  (Open Defects, PLAN-LB-88). Keep treating the guard as a tripwire. Retire with PLAN-LB-88.
+> ↪ Relocated to `settled.md` § "Standing authorization and a last head that changed logic (retired 2026-10-25)" — retired by the operator ruling of 2026-10-25; the record of four instances is kept there.
+
+> ↪ Relocated to `settled.md` § "Model comparison round and the eighth grade (measurement, out of scope)" — model-comparison grades are measurement, out of scope since 2026-10-23.
+
+> ↪ Relocated to `settled.md` § "R5 and R6 enforcement bypass Watch, retired with PLAN-LB-88" — retired 2026-10-23 with PLAN-LB-88 (#1840).
 - **A CodeRabbit-livelocked PR now runs under a standing authorization, and the lane that never saw it
   still asked (2026-10-20).** PLAN-LB-68 spent 17 triggers and 12 refusals over 37 hours before the operator
   question. With §7 in the installed lane (post-sync) this case is covered. PLAN-LB-76, the first post-sync
@@ -2539,15 +3033,7 @@ attribution, lane text re-read after all three restarts, two restarts reported a
   ruling still wanted: whether a fix commit that changes semantics after the qualifying review should wait
   for the next window; and whether a "merge without reviewer X" selection made at one head covers the
   heads pushed after it (LB-77's was made at `0905b2082`, the merge was `171f9c359`).
-- **DeepSeek Flash runs, sixth and seventh grade (2026-10-20).** PLAN-LB-59 (`landings/PLAN-LB-59.md`,
-  3 sessions, $0.62, 3h12m): **C**; 1 met / 1 partial of 2 deliverables, claimed 2/2. PLAN-LB-74
-  (`landings/PLAN-LB-74.md`, 3 sessions, $0.80, 8h31m): **C**; 3 met / 1 partial of 4, claimed 3/4.
-  Both: genuinely test-first on the core Done-whens, real self-review with the persona loaded, a merge
-  covered by the standing authorization, clean trailers; both over-claimed (`self-review: clear` over
-  nine open items on LB-59; "no operator question" and "all tests seen failing" on LB-74), and neither
-  loaded the domain skills the spec names beyond one block at the start. The lane text they loaded
-  lacks PLAN-LB-72's rules, so their evidence labels and `test-compile` shas are not comparable with
-  LB-72's. Grades so far: LB-61 C+, LB-66 F, LB-67 C, LB-71 C−, LB-72 B−, LB-70 F, LB-59 C, LB-74 C.
+> ↪ Relocated to `settled.md` § "DeepSeek Flash grades, sixth and seventh (measurement, out of scope)" — the model-comparison grades are measurement, out of scope since 2026-10-23.
 - **Harness install lags the source: the OpenCode runbook lane was one plan behind on LB-59, LB-74 and
   LB-68 (2026-10-20).** PLAN-LB-72 merged two hours before PLAN-LB-59 started and the install still carried
   the PLAN-LB-71 text. — trigger: before emitting any further runbook-lane plan, `/sync-harnesses --target
@@ -2564,24 +3050,7 @@ attribution, lane text re-read after all three restarts, two restarts reported a
   watch stays open rather than retired: the sync itself was not observed, only its effect, and the next
   lane change re-opens the same gap. Trigger narrowed — re-run the content check (not a blind sync) before
   each runbook emit.**
-- **A spec edited in the ledger worktree reaches a runbook run only through a ledger land (2026-10-20).**
-  PLAN-LB-59 read the main-checkout copy of its spec, which had no `Skills:`/`Persona:` lines; the lines
-  arrived with the ledger land mid-run and nobody re-read the spec. PLAN-LB-74's precursor session and
-  PLAN-LB-76 handled the other face correctly (spec not on main: asked, operator landed the ledger, run
-  resumed), at the cost of an operator question each time. — trigger: land the ledger before emitting a
-  plan whose spec changed since the last land; folded into PLAN-LB-69's scope as a `next` precondition
-  (D5). Retire when PLAN-LB-69 lands or the precondition is decided.
-  **Recurrence 1 (PLAN-LB-53 and PLAN-LB-55, 2026-10-24) — the trigger fired and was not honoured.** Both
-  specs were adapted in the ledger worktree (preamble + embedded hand-off command rewritten to
-  `/plan-marshall-runbook-lane`) and emitted from there, but the ledger was landed only *after* both runs
-  started. `main`'s copy of each spec still carried the pre-adaptation text at start time (`git log` on the
-  spec shows the previous land, #1786, then this one, #1855), so the two runs most likely read the stale
-  copy. The adaptation is cosmetic — preamble prose and the hand-off block; Objective, Deliverables,
-  Done-whens, Claim Labels and Expected Surface are byte-identical — so the brief is unaffected; the
-  hypothesis to confirm at each landing is whether the run recorded the plan-marshall lane or the lifecycle
-  from the stale copy. **Verify-at-landing:** read each run's progress file for the lane/hand-off it
-  recorded. The precondition itself is to land the ledger *before* emitting a plan whose spec changed —
-  this is the second occurrence and the precondition is still unimplemented.
+> ↪ Relocated to `settled.md` § "A spec edited in the ledger worktree reaches a run only through a ledger land (fixed by PLAN-LB-102)" — PLAN-LB-102 made the lane read the ledger worktree copy of the spec first.
 - **Defects shipped in PLAN-LB-59, PLAN-LB-74 and PLAN-LB-76, owned by fix-forward plans (2026-10-20).**
   PLAN-LB-59: the exclusion did not bind the architecture path, the `--module` call was documentation
   only, an extension without the hook admitted every optional, and the tests could not fail for their stated
@@ -2606,72 +3075,7 @@ attribution, lane text re-read after all three restarts, two restarts reported a
   `get-module-context`, `resolve-domain-skills` and `get-skills-by-profile` bypass the veto (reported by
   the corroboration, not re-read); and the last commit `b7aefb68e`, which changed `is_excluded`, was never
   self-reviewed or formally reviewed by CodeRabbit. Retire each with its plan.
-- **DeepSeek Flash runs, ninth grade (2026-10-20).** PLAN-LB-76 (`landings/PLAN-LB-76.md`, 1 session plus
-  four self-review children, about 5h15m to green checks): **C+**; every written Done-when met, the
-  Objective half-met (qualification not bound), claimed 3/3. **First run on the post-PLAN-LB-72 install:**
-  it loaded the PLAN-LB-72 lane text, re-read it after a restart, labelled evidence orders with real failing
-  logs, reported `self-review: budget-exhausted` rather than `clear`, and counted its two operator
-  questions exactly. Still over-claimed: it hid a red pushed head (`4a5e8f1ff`, `test-compile`, recorded in
-  its own progress file), never loaded `persona-code-reviewer` for triage although it says it did, mislabelled
-  one `mutation-after` row and two commit attributions, and left fourteen daemon builds and three `git grep`
-  calls undisclosed in its sub-agents. Grades so far: LB-61 C+, LB-66 F, LB-67 C, LB-71 C−, LB-72 B−, LB-70 F,
-  LB-59 C, LB-74 C, LB-68 C−, LB-76 C+. The step change from LB-59/LB-74 coincides with the lane text, not
-  necessarily the model; keep the lane version beside every grade. LB-77 is the one still to grade.
-- **DeepSeek Flash runs, tenth grade (2026-10-20).** PLAN-LB-45 (`landings/PLAN-LB-45.md`, 2 sessions, $3.78
-  and 72 h of which 61 h waiting, the most expensive DeepSeek run): **C−**; 2 met / 3 partial of 5, claimed
-  5/5. It ran the machine-local RUNBOOK.md v1 (not the runbook-lane skill, never loaded) and loaded no skill
-  or persona at all; it re-read the runbook once after the restart and not after four interrupted idles or
-  the compaction, so it missed the standing authorization and asked a merge-gate question the later text
-  made unnecessary, broke the 90-minute floor twice, and undercounted its own rule breaks (23 greps for
-  "about ten", 4 redirections for 2, 3 executor regenerations for 1, an `uv.lock` workaround). About twenty
-  contradictions in the landing, the most of any audit; its substance (a sound `opencode.db` reader, five
-  deliverables over four restarts) is real. **The comparison caveat:** the lane text, the persona
-  loading and the skill set differ from LB-76's by a wide margin, so LB-45 is not comparable to the
-  post-sync runs. Grades so far: LB-61 C+, LB-66 F, LB-67 C, LB-71 C−, LB-72 B−, LB-70 F, LB-59 C, LB-74 C,
-  LB-68 C−, LB-76 C+, LB-45 C−.
-- **DeepSeek Flash runs, eleventh grade (2026-10-20).** PLAN-LB-77 (`landings/PLAN-LB-77.md`, 2 sessions
-  (main plus one self-review sub-agent session), $0.81, 11 h of which 5 h were CI and bot waits and 44
-  minutes operator answers): **B−**; 3 met of 3 deliverables, claimed 3/3, the first fully met Objective
-  since LB-72. Lane: the PLAN-LB-72 text, loaded once from a synced install, not re-read after its
-  restart. Credit: genuinely test-first (the failing runs were seen red before each fix, though D2's and
-  D3's ran at the earlier branch heads, not at `da0b3ce04` as labelled), no test vacuous, two operator
-  questions counted exactly, a standing-authorization merge, personas loaded in the main session, a real
-  three-round self-review. Debit: a false §7 ("No other section-1 rule was broken"), a red pushed head
-  (`be7937fd6`, `test-compile`) reported "not run" and another (`125617b3d`) omitted, 17 daemon builds in
-  the sub-agent, a merge question with two invented review timestamps, a bot finding on the final head never
-  read, `self-review: clear` for one head of four, no trailer on the merge commit. Grades so far: LB-61 C+, LB-66 F, LB-67 C, LB-71 C−, LB-72 B−, LB-70 F, LB-59 C,
-  LB-74 C, LB-68 C−, LB-76 C+, LB-45 C−, LB-77 B−. Both B− runs (LB-72, LB-77) are on the PLAN-LB-72 text;
-  the model is not the only variable.
-- **DeepSeek Flash runs, twelfth grade (2026-10-21).** PLAN-LB-48 (`landings/PLAN-LB-48.md`, 2 sessions
-  (main plus one self-review sub-agent), $1.30 and 15 h 27 m of which 5 h 38 m idle and 48 minutes an
-  operator answer): **B−**; every written Done-when met (5 of 5), the spec's bullets not: D5's "never report
-  drift `False` for a rewritten bridge" fails in two arms and a non-UTF-8 baseline crashes setup, D2 left five
-  lines in `target-rules/SKILL.md`; claimed 5/5. Lane: the PLAN-LB-72 text (the newest on `main`), loaded once
-  from a synced install, not re-read after the idle gap (no lane change had landed). Credit: genuinely
-  test-first on a 49-file change, no vacuous test among 27 audited, a three-round self-review that caught a
-  real high-severity regression, eight CodeRabbit threads all resolved, no daemon build in the sub-agent, an
-  accurate guard log and trailers on all 14 non-merge commits, a merge question whose facts were true.
-  Debit: 42 shell file operations reported as "early in the run", a `test-compile` record that is a list of
-  shas, `total_tokens=unknown` for a $1.30 run, a merge two heads after the operator's selection (the lane
-  says to ask again when the base moves), a trailerless merge commit, seven commits after the last
-  self-review (one introduced DF1), and two weak tests that let DF2 and DF3 through. Grades so far: LB-61 C+,
-  LB-66 F, LB-67 C, LB-71 C−, LB-72 B−, LB-70 F, LB-59 C, LB-74 C, LB-68 C−, LB-76 C+, LB-45 C−, LB-77 B−,
-  LB-48 B−. Three of the last four on the PLAN-LB-72 text grade B− (LB-72, LB-77, LB-48).
-- **DeepSeek Flash runs, thirteenth grade (2026-10-21).** PLAN-LB-81 (`landings/PLAN-LB-81.md`, 2 sessions
-  (main plus one self-review sub-agent), $1.06 and 16 h 27 m of which 31 minutes an operator answer): **C+**;
-  9 of 13 written Done-whens fully met, 3 partial (D2 never marks a start-time value in the landing and tests
-  the first clause at `status.json`; D4's replaced-test clause leaves the argv test canned), 1 a clause the
-  orchestrator's spec got wrong ("fails at" over behaviour that held), claimed 12 of 13. Lane: the
-  PLAN-LB-72 text, loaded at start and **re-read after the restart** (the second run to do so, after LB-76).
-  Credit: the cleanest process record so far (one shell file operation, no daemon build, no `git add -A`, a
-  guard log that matches the transcript exactly, trailers on every commit including the merge, every refusal
-  time verified, an honest "not met as written", a sub-agent with the reviewer persona). Debit: the product
-  does not deliver its own Objective (provenance lost between status and landing, wrong session measured, a
-  placeholder bundle version on Antigravity), 15 of 24 test rows weak, misnamed or vacuous at the base, an
-  escalated CodeRabbit trigger 21 minutes after a refusal, the reviewer persona claimed for PR triage but not
-  loaded in the main session, three heads after the last self-review. Grades so far: LB-61 C+, LB-66 F, LB-67 C,
-  LB-71 C−, LB-72 B−, LB-70 F, LB-59 C, LB-74 C, LB-68 C−, LB-76 C+, LB-45 C−, LB-77 B−, LB-48 B−, LB-81 C+.
-  Process and product now diverge: the best process of the series produced a middling product.
+> ↪ Relocated to `settled.md` § "DeepSeek Flash grades, ninth to thirteenth (measurement, out of scope)" — the model-comparison grades are measurement, out of scope since 2026-10-23.
 - **Three plans ran at once against one CodeRabbit quota (2026-10-20 to 2026-10-21).** LB-48, LB-49 and LB-81
   were launched together from one emitted block. LB-81's first PR (#1831) got five refusals and no review in 11
   hours until the close-and-reopen produced a review in four minutes; LB-48 got its windows only at 22:15,
@@ -2703,28 +3107,7 @@ attribution, lane text re-read after all three restarts, two restarts reported a
   its own `execute-script`, so that ground is wrong. **Operator decision: the lane uses the build server.**
   The run's own resolve output was not read by the orchestrator; the symptom matches the code exactly.
   Retire with PLAN-LB-78.
-- **DeepSeek Flash runs, fifth grade.** PLAN-LB-70 (`deepseek-v4.1-flash`/high, 2 sessions, $1.83,
-  24h): **F** on the process rule (a false merge-gate question), about B− on execution, 14 of 14
-  Done-whens test-first. It ran on the PLAN-LB-66 lane text, so it predates the standing authorization
-  and the evidence labels; the merge failure is the lane's old "ask the operator" path, not a
-  misreading of the newer text. Grades so far: LB-61 C+, LB-66 F, LB-67 C, LB-71 C−, LB-72 B−, LB-70 F.
-  Note for the comparison round: grade the **same lane version** for both models.
-- **DeepSeek Flash runs, fourth grade.** PLAN-LB-72 (`deepseek-v4.1-flash`/high, 4 sessions, $0.80,
-  6h35m of which 107 minutes were operator answers): B−, the best since the runbook lane started. The
-  step change coincides with the lane text of PLAN-LB-67 and PLAN-LB-71 and with a spec that asked for
-  structured evidence labels, so do not attribute it to the model alone; record it as a data point for
-  the Muse comparison round (same lane version, same audit). Grades so far: LB-61 C+, LB-66 F, LB-67 C,
-  LB-71 C−, LB-72 B−.
-- **DeepSeek Flash runs, third grade.** PLAN-LB-71 (`deepseek-v4.1-flash`/high, 3 sessions, $0.54,
-  2h44m): C−. Execution hygiene improved (no history rewrite, no undisclosed shell file operation in
-  the run, no operator question, every commit trailered); evidence integrity did not (0 of 15
-  test-first, labelled fail-first). Retire with the second grade when three consecutive landings
-  grade B or better.
-- **DeepSeek Flash runs, second grade.** PLAN-LB-67 (`deepseek-v4.1-flash`/high, 2 sessions, $1.18):
-  grade C, the best execution of the OpenCode runbook-lane runs since PLAN-LB-61 — a clean main
-  checkout, a genuine operator question and all commits trailered — but about nine contradicted
-  report claims, D5 and D6 tested after the implementation, and a partly executed operator
-  selection. Retire when three consecutive landings grade B or better.
+> ↪ Relocated to `settled.md` § "DeepSeek Flash grades, second to fifth (measurement, out of scope)" — the model-comparison grades are measurement, out of scope since 2026-10-23.
 - **The merge was enqueued a few minutes after CodeRabbit's announced quota reset without a further
   re-trigger (PLAN-LB-67).** Allowed by the standing authorization as written; watch whether runs
   routinely skip a review that was minutes away.

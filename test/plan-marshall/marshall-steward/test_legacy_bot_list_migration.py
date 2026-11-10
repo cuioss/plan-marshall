@@ -3,7 +3,7 @@
 """End-to-end landing suite for the retired ``enabled_bots`` auto-map.
 
 Cross-cutting counterpart to ``test_upgrade.py``, which owns the pure
-:func:`migrate_bot_lists` function's four input states. This suite pins the
+:func:`migrate_bot_lists` function's five input states. This suite pins the
 LANDING — that a project which only ever configured the legacy single list
 lands on the standard roster without hand repair after the migration runs,
 and that re-running the upgrade never disturbs a settled value.
@@ -12,7 +12,7 @@ Two properties, both end-to-end from a project fixture through the migration
 and into ``review_completeness``:
 
 1. **Standard roster seeds the migration.** State 1 seeds
-   ``required_bots: cuioss-review-bot,coderabbit`` and
+   ``required_bots: coderabbit`` and
    ``optional_bots: sourcery`` (not the legacy value verbatim), names each
    dropped legacy bot in ``discarded_legacy``, and records provenance
    ``migrated``. Unknown legacy names are reported by ``validate_bot_lists``
@@ -60,8 +60,44 @@ _LEGACY_BOTS = 'coderabbit,sourcery'
 # guarantees for a legacy-only project. Kept as literals mirroring
 # ``upgrade._STANDARD_REQUIRED_BOTS`` / ``_STANDARD_OPTIONAL_BOTS`` so the
 # landing suite pins the exact values a legacy-only config lands on.
-_STANDARD_REQUIRED_BOTS = 'cuioss-review-bot,coderabbit'
+_STANDARD_REQUIRED_BOTS = 'coderabbit'
 _STANDARD_OPTIONAL_BOTS = 'sourcery'
+
+
+def test_a_retired_bot_kind_is_stripped_from_either_roster_list():
+    """A configuration written while a reviewer existed is migrated, not refused.
+
+    An unknown kind classifies ``unregistered_kind`` — unproven and BLOCKING exactly as
+    ``absent`` — so a leftover name would hold that consumer's merge forever. The
+    migration strips every name in ``RETIRED_BOT_KINDS`` from both lists in EVERY state,
+    including the already-answered one, and reports what it removed.
+    """
+    import _config_defaults
+
+    retired = _config_defaults.RETIRED_BOT_KINDS[0]
+    params = {'required_bots': f'{retired},coderabbit', 'optional_bots': retired}
+
+    report = upgrade.migrate_bot_lists(params)
+
+    assert report['state'] == 'retired_stripped'
+    assert report['removed_retired'] == [retired, retired]
+    assert params['required_bots'] == 'coderabbit'
+    assert params['optional_bots'] == ''
+
+
+def test_a_retired_bot_kind_is_stripped_from_an_answered_roster():
+    """MATCHED CONTROL: the strip is not gated on the roster being unanswered."""
+    import _config_defaults
+
+    retired = _config_defaults.RETIRED_BOT_KINDS[0]
+    params = {'required_bots': f'{retired},coderabbit', 'bot_lists_provenance': 'answered'}
+
+    report = upgrade.migrate_bot_lists(params)
+
+    assert report['state'] == 'retired_stripped'
+    assert report['removed_retired'] == [retired]
+    assert params['required_bots'] == 'coderabbit'
+    assert params['bot_lists_provenance'] == 'answered'
 
 
 def _legacy_project_config() -> dict:
@@ -397,6 +433,179 @@ class TestLiveConfigVerb:
         # ... and every dropped bot is named, not echoed as the raw CSV string.
         assert result['discarded_legacy'] == _expected_discarded()
 
+    def test_verb_saves_a_strip_when_no_legacy_key_remains(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        """The retired-bot strip is a SAVE, not an in-memory no-op.
+
+        A consumer seeded before the retirement carries the withdrawn kind in
+        ``required_bots`` and has no ``enabled_bots`` key left to consume, so a ``noop``
+        return left the unregistered name in the file and blocked every merge as
+        ``unregistered_kind``. The second run proves the state disarms itself: it strips
+        nothing, returns ``noop`` and leaves the file's bytes untouched.
+        """
+        import argparse
+
+        import _config_defaults
+
+        retired = _config_defaults.RETIRED_BOT_KINDS[0]
+        config = {
+            'plan': {
+                'phase-6-finalize': {
+                    'steps': {
+                        _AUTOMATIC_REVIEW_STEP_ID: {
+                            'required_bots': f'{retired},coderabbit',
+                            'review_bot_buffer_seconds': 180,
+                        }
+                    }
+                }
+            }
+        }
+        marshal = self._stage_marshal_json(tmp_path, monkeypatch, config)
+
+        result = upgrade.cmd_migrate_bot_lists(argparse.Namespace())
+
+        assert result['status'] == 'success'
+        assert result['state'] == 'retired_stripped'
+        assert result['removed_retired'] == [retired]
+        persisted = _step_params(json.loads(marshal.read_text(encoding='utf-8')))
+        assert persisted['required_bots'] == 'coderabbit'
+        assert persisted['review_bot_buffer_seconds'] == 180
+
+        settled_bytes = marshal.read_bytes()
+        second = upgrade.cmd_migrate_bot_lists(argparse.Namespace())
+
+        assert second['status'] == 'success'
+        assert second['state'] == 'noop'
+        assert marshal.read_bytes() == settled_bytes
+
+    def test_a_strip_that_empties_required_reseeds_coderabbit(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        """An answer naming only the retired kind must not become an empty required list.
+
+        Saving ``required_bots: ''`` would pass the merge gate with no required
+        reviewer. The verb re-seeds the standard required roster instead, records the
+        provenance the re-seed actually has (``migrated``) and reports it as
+        ``reseeded_required``.
+        """
+        import argparse
+
+        import _config_defaults
+
+        retired = _config_defaults.RETIRED_BOT_KINDS[0]
+        config = {
+            'plan': {
+                'phase-6-finalize': {
+                    'steps': {
+                        _AUTOMATIC_REVIEW_STEP_ID: {
+                            'required_bots': retired,
+                            'bot_lists_provenance': 'answered',
+                        }
+                    }
+                }
+            }
+        }
+        marshal = self._stage_marshal_json(tmp_path, monkeypatch, config)
+
+        result = upgrade.cmd_migrate_bot_lists(argparse.Namespace())
+
+        assert result['status'] == 'success'
+        assert result['state'] == 'retired_stripped'
+        assert result['removed_retired'] == [retired]
+        assert result['reseeded_required'] is True
+        persisted = _step_params(json.loads(marshal.read_text(encoding='utf-8')))
+        assert persisted['required_bots'] == 'coderabbit'
+        assert persisted['bot_lists_provenance'] == 'migrated'
+
+    def test_the_reseed_drops_the_coderabbit_name_from_optional_bots(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """The re-seeded reviewer is never demanded twice.
+
+        When the strip empties ``required_bots`` and the standard required roster is seeded
+        back, a member that also sat in ``optional_bots`` is removed from that list.
+        """
+        import argparse
+
+        import _config_defaults
+
+        retired = _config_defaults.RETIRED_BOT_KINDS[0]
+        config = {
+            'plan': {
+                'phase-6-finalize': {
+                    'steps': {
+                        _AUTOMATIC_REVIEW_STEP_ID: {
+                            'required_bots': retired,
+                            'optional_bots': 'sourcery,coderabbit',
+                            'bot_lists_provenance': 'answered',
+                        }
+                    }
+                }
+            }
+        }
+        marshal = self._stage_marshal_json(tmp_path, monkeypatch, config)
+
+        result = upgrade.cmd_migrate_bot_lists(argparse.Namespace())
+
+        assert result['status'] == 'success'
+        assert result['reseeded_required'] is True
+        persisted = _step_params(json.loads(marshal.read_text(encoding='utf-8')))
+        assert persisted['required_bots'] == 'coderabbit'
+        assert persisted['optional_bots'] == 'sourcery'
+
+    def test_an_empty_required_list_the_operator_wrote_is_not_reseeded(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """A strip that had nothing to empty never re-seeds, even when ``required_bots`` is ''.
+
+        The operator's explicit empty required list stays empty; only the retired kind is
+        stripped from ``optional_bots``.
+        """
+        import argparse
+
+        import _config_defaults
+
+        retired = _config_defaults.RETIRED_BOT_KINDS[0]
+        config = {
+            'plan': {
+                'phase-6-finalize': {
+                    'steps': {
+                        _AUTOMATIC_REVIEW_STEP_ID: {
+                            'required_bots': '',
+                            'optional_bots': f'{retired},sourcery',
+                        }
+                    }
+                }
+            }
+        }
+        marshal = self._stage_marshal_json(tmp_path, monkeypatch, config)
+
+        result = upgrade.cmd_migrate_bot_lists(argparse.Namespace())
+
+        assert result['status'] == 'success'
+        assert result['state'] == 'retired_stripped'
+        assert 'reseeded_required' not in result
+        persisted = _step_params(json.loads(marshal.read_text(encoding='utf-8')))
+        assert persisted['required_bots'] == ''
+        assert persisted['optional_bots'] == 'sourcery'
+
+
+def test_a_degraded_retired_bot_tombstone_is_reported(monkeypatch: pytest.MonkeyPatch):
+    """A strip that cannot fire because the tombstone degraded to empty is reported.
+
+    The ``ImportError`` fallback sets ``RETIRED_BOT_KINDS = ()``, which would make the
+    strip silently do nothing. The test monkeypatches BOTH the empty tombstone and the
+    fallback flag, feeds a roster that DOES name a retired kind, and asserts the name
+    survives (so the strip really could not fire) while the report says so.
+    """
+    monkeypatch.setattr(upgrade, '_RETIRED_KINDS_FALLBACK', True)
+    monkeypatch.setattr(upgrade, '_RETIRED_BOT_KINDS', ())
+    params = {'required_bots': 'cuioss-review-bot,coderabbit'}
+
+    report = upgrade.migrate_bot_lists(params)
+
+    assert report['state'] == 'noop'
+    assert report['retired_kinds_unavailable'] is True
+    assert params['required_bots'] == 'cuioss-review-bot,coderabbit'
+    assert report['removed_retired'] == []
+
 
 def test_standard_roster_is_single_sourced_from_config_defaults():
     """Both roster writers derive from ``_config_defaults`` — no unsynced duplicate.
@@ -408,7 +617,7 @@ def test_standard_roster_is_single_sourced_from_config_defaults():
     """
     import _config_defaults
 
-    assert _config_defaults.STANDARD_REQUIRED_BOTS == 'cuioss-review-bot,coderabbit'
+    assert _config_defaults.STANDARD_REQUIRED_BOTS == 'coderabbit'
     assert _config_defaults.STANDARD_OPTIONAL_BOTS == 'sourcery'
     assert upgrade._STANDARD_REQUIRED_BOTS == _config_defaults.STANDARD_REQUIRED_BOTS
     assert upgrade._STANDARD_OPTIONAL_BOTS == _config_defaults.STANDARD_OPTIONAL_BOTS

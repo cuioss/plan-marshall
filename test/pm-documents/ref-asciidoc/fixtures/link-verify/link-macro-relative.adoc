@@ -1,0 +1,3 @@
+= Link Macro Relative
+
+A relative link:target-file.adoc[Target File] resolves against the containing file.

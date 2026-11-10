@@ -32,7 +32,6 @@ from _github_pr_fixtures import (
     VacuousPopulationError,
     guard_non_empty,
 )
-from _pr_agent_guide_bodies import GUIDE_WITH_FINDING, OBSERVED_CLEAN_GUIDE
 
 from conftest import get_script_path, get_skill_dir, load_script_module, run_script
 
@@ -124,7 +123,7 @@ _COMMENTS = [
     },
     {
         'id': 'c3',
-        'author': 'cuioss-review-bot',
+        'author': 'sourcery-ai',
         'thread_id': 'PRRT_3',
         'kind': 'inline',
         'body': 'This loop can be simplified into a comprehension.',
@@ -219,7 +218,7 @@ def _run_fetch_classified(pr_number, plan_id, *, required_bots=None, optional_bo
     """Invoke ``cmd_fetch_findings`` with explicit participation-classification lists.
 
     ``required_bots`` / ``optional_bots`` are the raw comma-joined flag values
-    (``'coderabbit'``, ``'coderabbit,cuioss-review-bot'``, or ``''`` for an answered-empty
+    (``'coderabbit'``, ``'coderabbit,sourcery'``, or ``''`` for an answered-empty
     list). Their union is the CLASSIFIED set; neither list admits or drops a
     comment. The sibling ``_run_fetch`` omits both attributes entirely, which the
     handler's ``getattr(args, ..., None)`` reads as the never-supplied case. Both
@@ -407,8 +406,6 @@ _CLASSIFICATION_FLAGS = derive_bot_flags(
     'fetch_findings',
 )
 assert _CLASSIFICATION_FLAGS, 'derive_bot_flags found no classification flags on fetch_findings'
-_PR_AGENT_REQUIRED_MARKERS = bot_registry.contentless_review_markers('cuioss-review-bot')
-assert _PR_AGENT_REQUIRED_MARKERS, 'bot_registry declares no contentless review markers for cuioss-review-bot'
 _BOT_KIND_TO_LOGIN = {kind: login for login, kind in bot_registry.login_to_bot_kind().items()}
 _HEAD_A = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
 _HEAD_B = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
@@ -429,9 +426,9 @@ _ISO_COMMIT_AT = '2026-08-25T12:00:00Z'
 def test_unclassified_bot_comments_are_ingested_and_reported(plan_context, monkeypatch):
     """A bot in NEITHER list is warned about, never dropped — its findings are USED.
 
-    With only ``--required-bots "coderabbit"`` supplied, sourcery and cuioss-review-bot
-    fall outside the classified union. Under the warn-but-ingest rule their
-    comments are stored exactly like a classified bot's; the two bots are merely
+    With only ``--required-bots "sourcery"`` supplied, coderabbit
+    falls outside the classified union. Under the warn-but-ingest rule its
+    comments are stored exactly like a classified bot's; the bot is merely
     named in ``unclassified_bots`` so the caller can surface the configuration
     gap. Dropping them would let a configuration omission silently destroy real
     review signal.
@@ -439,17 +436,17 @@ def test_unclassified_bot_comments_are_ingested_and_reported(plan_context, monke
     plan_id = 'gh-pr-unclassified-reported'
     _patch_provider(monkeypatch, _COMMENTS)
 
-    result = _run_fetch_classified(101, plan_id, required_bots='coderabbit')
+    result = _run_fetch_classified(101, plan_id, required_bots='sourcery')
     assert result['status'] == 'success'
     # Every comment is ingested — classification is not admission.
     assert result['count_stored'] == len(_COMMENTS)
-    assert result['unclassified_bots'] == ['cuioss-review-bot', 'sourcery']
+    assert result['unclassified_bots'] == ['coderabbit']
     assert result['producer_mismatch_hash_id'] is None
 
     stored = query_findings(plan_id, finding_type='pr-comment')['findings']
     bot_kinds = {f.get('bot_kind') for f in stored}
-    # The unclassified bots' findings are present and usable, not merely counted.
-    assert {'coderabbit', 'cuioss-review-bot', 'sourcery'} <= bot_kinds
+    # The unclassified bot's findings are present and usable, not merely counted.
+    assert {'coderabbit', 'sourcery'} <= bot_kinds
 
 
 def test_own_pipeline_trigger_and_a_rate_limit_notice_are_counted_apart(plan_context, monkeypatch):

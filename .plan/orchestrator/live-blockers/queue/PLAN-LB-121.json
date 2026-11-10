@@ -1,0 +1,11 @@
+{
+  "id": "PLAN-LB-121",
+  "slug": "maven-consumer-gate-truth-fixes",
+  "workstream": "WS-02",
+  "status": "shipped",
+  "lane": "runbook",
+  "plan_marshall_plan_id": "lb-121-maven-consumer-gate-truth-fixes",
+  "pr": "1929",
+  "landing": "landings/PLAN-LB-121.md",
+  "seq": 121
+}

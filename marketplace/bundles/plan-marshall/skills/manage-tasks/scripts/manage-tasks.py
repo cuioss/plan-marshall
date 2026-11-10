@@ -449,6 +449,49 @@ def build_parser() -> argparse.ArgumentParser:
         allow_abbrev=False,
     )
     add_plan_id_arg(p_loop_guard)
+    p_loop_guard.add_argument(
+        '--consumed-tokens',
+        type=int,
+        default=None,
+        help=(
+            'B7 no-progress mode: the total_tokens parsed from the returning dispatch. '
+            'Required beside --completed-tasks-delta; supplying one without the other '
+            'is refused as no_progress_not_decidable.'
+        ),
+    )
+    p_loop_guard.add_argument(
+        '--completed-tasks-delta',
+        type=int,
+        default=None,
+        help=(
+            'B7 no-progress mode: the done-count delta since the previous iteration '
+            '(the difference of two successive done_count values this verb reports).'
+        ),
+    )
+    p_loop_guard.add_argument(
+        '--pending-verify-steps',
+        default=None,
+        help=(
+            'B7 no-progress mode: comma-separated step ids the returning leaf handed back '
+            "(the return contract's pending_verify_steps[])."
+        ),
+    )
+    p_loop_guard.add_argument(
+        '--verification-handback',
+        action='store_true',
+        help=(
+            'B7 no-progress mode: the returning leaf carried verification_handback: true. '
+            'Valid only beside a non-empty --pending-verify-steps.'
+        ),
+    )
+    p_loop_guard.add_argument(
+        '--provisional-cause',
+        default=None,
+        help=(
+            'B7 no-progress mode: the cause the return was provisionally classified as '
+            '(default voluntary_checkpoint). Any other value is echoed unchanged.'
+        ),
+    )
 
     # pre-commit-verify-freshness
     p_freshness = subparsers.add_parser(

@@ -2,10 +2,10 @@
   "id": "PLAN-LB-108",
   "slug": "build-daemon-worktree-serialisation",
   "workstream": "WS-04",
-  "status": "staged",
+  "status": "shipped",
   "lane": "runbook",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "plan_marshall_plan_id": "lb-108-build-daemon-worktree-serialisation",
+  "pr": "1922",
+  "landing": "landings/PLAN-LB-108.md",
   "seq": 108
 }

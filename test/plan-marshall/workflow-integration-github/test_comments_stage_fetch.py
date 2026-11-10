@@ -133,6 +133,19 @@ def _fetch_over(comments, args):
         return cmd_fetch_findings(args)
 
 
+def _fetch_over_real_provider(payload, args, monkeypatch):
+    """Run ``cmd_fetch_findings`` through the REAL ``fetch_pr_comments_data`` layer.
+
+    Only the GraphQL transport is stubbed, so the fetch layer's parsing, placement
+    and connection drain run for real. A test injected after the fetch would never
+    notice a regression in that layer — the weakness this helper removes.
+    """
+    monkeypatch.setattr(github_pr._github, 'check_auth', lambda: (True, ''))
+    monkeypatch.setattr(github_pr._github, 'get_repo_info', lambda: ('octo', 'repo'))
+    monkeypatch.setattr(github_pr._github, 'run_graphql', lambda query, variables: (0, payload, ''))
+    return cmd_fetch_findings(args)
+
+
 _SUBSTANTIVE_COMMENT = {
     'id': 'C-store-1',
     'kind': 'inline',
@@ -209,24 +222,23 @@ class TestPerBotIgnoreFilter:
         assert _is_obvious_noise('lgtm', None)
 
     def test_per_bot_marker_drops_only_its_own_bot(self):
-        """CodeRabbit's ``## Walkthrough`` marker drops a coderabbit comment only."""
-        body = '## Walkthrough\n\nThis PR changes a few files.'
+        """CodeRabbit's learnings notice drops a coderabbit comment only."""
+        body = '✏️ Learnings added\n\nAdded a preference for guarding array bounds.'
         # Dropped for the owning bot.
         assert _is_obvious_noise(body, 'coderabbit')
         # NOT dropped for a different bot or a human — the marker is bot-scoped.
-        assert not _is_obvious_noise(body, 'cuioss-review-bot')
+        assert not _is_obvious_noise(body, 'sourcery')
         assert not _is_obvious_noise(body, None)
 
-    def test_pr_agent_walkthrough_marker_drops_only_pr_agent(self):
-        """PR-Agent's ``## PR Agent Walkthrough`` marker drops a cuioss-review-bot comment only.
+    def test_a_withdrawn_bot_heading_is_not_a_drop(self):
+        """No per-bot walkthrough marker survives a withdrawal of its declaring bot.
 
-        The two bots' markers are deliberately near-identical in shape
-        (``## Walkthrough`` vs ``## PR Agent Walkthrough``), which makes this the
-        sharpest available test of bot-scoping: a substring-based or unscoped
-        filter would cross-drop.
+        The heading a withdrawn reviewer posted is ordinary content now: nothing
+        declares it, so a body carrying it is filed rather than silently dropped on a
+        rule no registry record states.
         """
         body = '## PR Agent Walkthrough\n\nAvailable commands: /review, /ask, /help.'
-        assert _is_obvious_noise(body, 'cuioss-review-bot')
+        assert not _is_obvious_noise(body, 'sunset-review-bot')
         assert not _is_obvious_noise(body, 'coderabbit')
         assert not _is_obvious_noise(body, None)
 
@@ -248,14 +260,14 @@ class TestPerBotIgnoreFilter:
         body = 'This null dereference needs a guard before the call on line 42.'
         assert not _is_obvious_noise(body, 'coderabbit')
 
-    def test_fetch_findings_drops_per_bot_walkthrough_keeps_substantive(self, plan_context):
-        """End-to-end: a coderabbit walkthrough is dropped; a substantive one is stored."""
+    def test_fetch_findings_drops_per_bot_noise_keeps_substantive(self, plan_context):
+        """End-to-end: a coderabbit learnings notice is dropped; a substantive one is stored."""
         comments = [
             {
                 'id': 'W1',
                 'kind': 'issue_comment',
                 'author': 'coderabbitai',
-                'body': '## Walkthrough\n\nThis PR touches three files and adds a helper.',
+                'body': '✏️ Learnings added\n\nAdded a preference for guarding array bounds.',
                 'path': '',
                 'line': 0,
                 'thread_id': '',
@@ -283,7 +295,7 @@ class TestPerBotIgnoreFilter:
             result = cmd_fetch_findings(_stage_make_args(150, 'gh-pr-perbot-walkthrough'))
 
         assert result['status'] == 'success'
-        # The walkthrough is dropped as noise; only the substantive finding is stored.
+        # The learnings notice is dropped as noise; only the substantive finding is stored.
         assert result['count_stored'] == 1
         assert result['count_skipped_noise'] == 1
         # count_stored == expected_stored, so no producer-mismatch Q-Gate fires.
@@ -293,22 +305,22 @@ class TestPerBotIgnoreFilter:
 
         q = query_findings('gh-pr-perbot-walkthrough', finding_type='pr-comment')
         assert q['filtered_count'] == 1
-        # The surviving finding is the substantive comment (W2), not the walkthrough (W1).
+        # The surviving finding is the substantive comment (W2), not the notice (W1).
         assert 'comment_id: W2' in q['findings'][0]['detail']
 
     def test_fetch_findings_does_not_apply_one_bots_marker_to_another(self, plan_context):
-        """A cuioss-review-bot comment carrying CodeRabbit's ``## Walkthrough`` text is NOT dropped.
+        """A sourcery comment carrying CodeRabbit's ``✏️ Learnings added`` text is NOT dropped.
 
-        Proves the per-bot layer is scoped to the authoring bot: the walkthrough
-        marker belongs to coderabbit's registry entry, so a cuioss-review-bot-authored
-        comment with the same heading survives and becomes a finding.
+        Proves the per-bot layer is scoped to the authoring bot: the learnings marker
+        belongs to coderabbit's registry entry, so a sourcery-authored comment
+        with the same line survives and becomes a finding.
         """
         comments = [
             {
                 'id': 'G1',
                 'kind': 'issue_comment',
-                'author': 'cuioss-review-bot',
-                'body': '## Walkthrough\n\nPR-Agent would not normally emit this, but it must not be cross-dropped.',
+                'author': 'sourcery-ai',
+                'body': '✏️ Learnings added\n\nSourcery would not normally emit this, but it must not be cross-dropped.',
                 'path': '',
                 'line': 0,
                 'thread_id': '',
@@ -459,7 +471,7 @@ class TestRefusalNoticeProducerFilter:
         assert not set(matched_by_size_ceiling) & set(matched_by_weekly_quota)
 
     @pytest.mark.parametrize(
-        'bot_kind', [None, 'coderabbit', 'sourcery', 'cuioss-review-bot'], ids=['human', 'cr', 'sr', 'pra']
+        'bot_kind', [None, 'coderabbit', 'sourcery', 'sunset-review-bot'], ids=['human', 'cr', 'sr', 'retired']
     )
     def test_a_refusal_is_never_classified_as_noise(self, bot_kind):
         """``_is_obvious_noise`` must not recognize ANY refusal, for ANY bot.
@@ -843,3 +855,249 @@ def test_fetch_findings_still_dedupes_on_a_resolved_populated_store(plan_context
     assert first['count_stored'] == 1, first
     assert second['count_stored'] == 0, second
     assert second['count_skipped_duplicate'] == 1, second
+
+
+# =============================================================================
+# D4 — a second review's inline comments are filed
+# =============================================================================
+
+_HEAD_ONE = '1111111111111111111111111111111111111111'
+_HEAD_TWO = '2222222222222222222222222222222222222222'
+
+
+def _graphql_page(nodes):
+    return {'nodes': nodes, 'pageInfo': {'hasNextPage': False, 'endCursor': ''}}
+
+
+def _two_review_graphql_payload():
+    """The two-review fixture in the PROVIDER shape ``fetch_pr_comments_data`` parses."""
+
+    def _inline(cid, body, commit):
+        return {
+            'id': cid,
+            'body': body,
+            'author': {'login': 'coderabbitai'},
+            'createdAt': '2026-11-05T00:00:00Z',
+            'updatedAt': '2026-11-05T00:00:00Z',
+            'originalCommit': {'oid': commit},
+            'commit': {'oid': commit},
+        }
+
+    threads = [
+        {
+            'id': 'PRRT_open',
+            'isResolved': False,
+            'path': 'src/a.py',
+            'line': 4,
+            'comments': _graphql_page(
+                [
+                    _inline('open-1', 'This slice drops the final element; use len(items).', _HEAD_ONE),
+                    _inline(
+                        'open-reply-2',
+                        'Still unfixed at the new head: the bound is still dropped.',
+                        _HEAD_TWO,
+                    ),
+                ]
+            ),
+        },
+        {
+            'id': 'PRRT_new',
+            'isResolved': False,
+            'path': 'src/b.py',
+            'line': 9,
+            'comments': _graphql_page(
+                [
+                    _inline(
+                        'new-thread-2',
+                        'The retry loop can spin forever when the backoff cap is zero.',
+                        _HEAD_TWO,
+                    )
+                ]
+            ),
+        },
+        {
+            'id': 'PRRT_closed',
+            'isResolved': True,
+            'path': 'src/c.py',
+            'line': 2,
+            'comments': _graphql_page([_inline('resolved-reply-2', 'Confirmed resolved at the new head.', _HEAD_TWO)]),
+        },
+    ]
+    reviews = [
+        {
+            'id': 'rv1',
+            'body': 'Actionable comments posted: 1.',
+            'author': {'login': 'coderabbitai'},
+            'submittedAt': '2026-11-05T00:00:00Z',
+            'updatedAt': '2026-11-05T00:00:00Z',
+            'commit': {'oid': _HEAD_ONE},
+        },
+        {
+            'id': 'rv2',
+            'body': 'Actionable comments posted: 2.',
+            'author': {'login': 'coderabbitai'},
+            'submittedAt': '2026-11-05T00:00:00Z',
+            'updatedAt': '2026-11-05T00:00:00Z',
+            'commit': {'oid': _HEAD_TWO},
+        },
+    ]
+    return {
+        'repository': {
+            'pullRequest': {
+                'reviewThreads': _graphql_page(threads),
+                'reviews': _graphql_page(reviews),
+                'comments': _graphql_page([]),
+            }
+        }
+    }
+
+
+def test_a_second_review_inline_comments_outside_a_resolved_thread_are_filed(plan_context, monkeypatch):
+    """Every inline comment of the second review outside a resolved thread is stored.
+
+    The case that decides the ``-067``/``#512`` lead: ``fetch_findings`` pages every
+    connection to exhaustion and dedupes per comment id, so a second review is not
+    lost. The resolved thread is skipped by the documented pre-filter, which is
+    recorded here rather than mistaken for a defect. The REAL fetch layer runs — only
+    the GraphQL transport is stubbed — so a regression in its parsing is caught here.
+    """
+    plan_id = 'gh-pr-two-reviews'
+    plan_context.plan_dir_for(plan_id)
+
+    result = _fetch_over_real_provider(_two_review_graphql_payload(), _StoreArgs(510, plan_id), monkeypatch)
+
+    from _findings_core import query_findings
+
+    stored = query_findings(plan_id, finding_type='pr-comment')['findings']
+    stored_ids = {row['detail'].split('comment_id: ')[1].split('\n')[0] for row in stored}
+
+    assert {'new-thread-2', 'open-reply-2'} <= stored_ids, stored_ids
+    assert 'resolved-reply-2' not in stored_ids, 'a resolved thread is skipped by design'
+    assert result['count_skipped_noise'] == 1, result
+
+
+# =============================================================================
+# D5 — a Sourcery review body with the OSS footer is filed when it holds signal
+# =============================================================================
+
+_SOURCERY_OVERALL_COMMENTS = (
+    '## Sourcery Review\n\n'
+    '### Overall Comments\n\n'
+    '- Consider extracting the retry policy out of the transport client.\n'
+    '- The new module duplicates the bounded-wait helper.\n\n'
+    "### Reviewer's Guide\n"
+    'Sourcery is free for open source. Help me be more useful! Please click 👍 or 👎.'
+)
+
+_SOURCERY_FOOTER_ONLY = (
+    'Sourcery is free for open source. Help me be more useful! Please click 👍 or 👎 to share feedback.'
+)
+
+_SOURCERY_REVIEW_GUIDE = (
+    '<!-- Generated by sourcery-ai[bot]: start review_guide -->\n'
+    "## Reviewer's Guide\n\n"
+    'This PR touches two files.\n'
+    'Tips and commands: reply to this comment.\n'
+    '<!-- Generated by sourcery-ai[bot]: end review_guide -->'
+)
+
+_SOURCERY_NO_OP = 'Sourcery reviewed this PR and found 0 issues.'
+
+
+def _sourcery_review(comment_id, body):
+    return {
+        'id': comment_id,
+        'kind': 'review_body',
+        'author': 'sourcery-ai',
+        'body': body,
+        'path': '',
+        'line': 0,
+        'thread_id': '',
+        'resolved': False,
+    }
+
+
+def test_a_sourcery_review_body_with_overall_comments_and_the_footer_is_filed(plan_context):
+    """The footer never causes a drop by itself, so the signal in the body survives."""
+    plan_id = 'gh-pr-sourcery-footer-signal'
+    plan_context.plan_dir_for(plan_id)
+
+    result = _fetch_over([_sourcery_review('sr-overall', _SOURCERY_OVERALL_COMMENTS)], _StoreArgs(520, plan_id))
+
+    from _findings_core import query_findings
+
+    stored = query_findings(plan_id, finding_type='pr-comment')['findings']
+    assert result['count_stored'] == 1
+    assert len(stored) == 1
+    assert 'Overall Comments' in stored[0]['raw_input']['body']
+    assert 'extracting the retry policy' in stored[0]['raw_input']['body']
+
+
+@pytest.mark.parametrize(
+    ('case_id', 'body'),
+    [
+        ('footer-only', _SOURCERY_FOOTER_ONLY),
+        ('reviewers-guide', _SOURCERY_REVIEW_GUIDE),
+        ('found-zero-issues', _SOURCERY_NO_OP),
+    ],
+)
+def test_a_sourcery_comment_with_no_signal_is_still_dropped_as_noise(plan_context, case_id, body):
+    """⛔ MATCHED NEGATIVE CONTROL: with the footer removed, nothing is left to file."""
+    plan_id = f'gh-pr-sourcery-noise-{case_id}'
+    plan_context.plan_dir_for(plan_id)
+
+    result = _fetch_over([_sourcery_review(f'sr-{case_id}', body)], _StoreArgs(521, plan_id))
+
+    assert result['count_stored'] == 0
+    assert result['count_skipped_noise'] == 1
+
+
+_SOURCERY_MULTILINE_FOOTER_CLEAN = (
+    'Sourcery is free for open source.\n'
+    'If you like Sourcery, please consider sponsoring the project.\n'
+    'Help me be more useful! Please click 👍 or 👎 to share feedback.'
+)
+
+
+def test_a_clean_sourcery_body_with_a_multiline_footer_is_not_filed(plan_context):
+    """A footer spread over several lines leaves no markup, so a clean body is still noise.
+
+    Red at 5fd240a5e: only the marker LINES were removed, so the middle continuation
+    line survived and the footer-only body was filed as a finding needing triage.
+    """
+    from _findings_core import query_findings
+
+    plan_id = 'gh-pr-sourcery-multiline-footer-clean'
+    plan_context.plan_dir_for(plan_id)
+
+    result = _fetch_over([_sourcery_review('sr-multiline', _SOURCERY_MULTILINE_FOOTER_CLEAN)], _StoreArgs(522, plan_id))
+
+    assert result['count_stored'] == 0
+    assert result['count_skipped_noise'] == 1
+    assert query_findings(plan_id, finding_type='pr-comment')['findings'] == []
+
+
+def test_a_sourcery_body_with_signal_and_a_multiline_footer_is_filed(plan_context):
+    """A multi-line footer is stripped WITHOUT taking the body's signal with it.
+
+    The footer-only control above proves the strip removes the footer; this positive
+    case proves it leaves the actionable text alone. A strip keyed on the footer's
+    first line alone would either leave the continuation lines (filing noise) or cut
+    the signal that precedes them.
+    """
+    from _findings_core import query_findings
+
+    plan_id = 'gh-pr-sourcery-multiline-footer-signal'
+    plan_context.plan_dir_for(plan_id)
+    body = (
+        '### Overall Comments\n\n'
+        '- Extract the retry policy out of the transport client.\n\n'
+        f'{_SOURCERY_MULTILINE_FOOTER_CLEAN}'
+    )
+
+    result = _fetch_over([_sourcery_review('sr-multiline-signal', body)], _StoreArgs(523, plan_id))
+
+    stored = query_findings(plan_id, finding_type='pr-comment')['findings']
+    assert result['count_stored'] == 1, result
+    assert len(stored) == 1, stored
+    assert 'Extract the retry policy' in stored[0]['raw_input']['body']

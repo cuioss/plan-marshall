@@ -261,6 +261,15 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging read
 
 `--phase` filters only `work` and `decision` log reads.
 
+### signal-scan
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging signal-scan \
+  --plan-id PLAN_ID
+```
+
+The deterministic scanner behind the phase-6-finalize lessons Signal 3 (`signal_script_failure_clusters_count`). It counts three marker classes — `[FAILED]` work-log lines, `[ERROR] ... script_failure` work-log lines, and the B7 no-progress reclassification in the DECISION log — and buckets each by distinct failing notation. It returns `signal_3_count`, `notations[]`, `by_class{}`, `unattributable_count`, `boundary_cause_counts{}` and `verification_handback_rows`; a prescribed orchestrator-tier build hand-back is reported there and never counted. The reclassification marker string is declared once, in `scripts/_signal_scan.py` (`NO_PROGRESS_MARKER`), and the writer in `plan-marshall/workflow/execution.md` § B7 emits that same string.
+
 ---
 
 ## Log Format
@@ -419,6 +428,7 @@ log_entry('work', 'example-plan', 'INFO', '[ARTIFACT] Created deliverable')
 | Client | Operation | Purpose |
 |--------|-----------|---------|
 | `phase-6-finalize` | `read` | Query work/decision logs for PR summary |
+| `phase-6-finalize` | `signal-scan` | Compute the lessons Signal-3 script-failure cluster count |
 | Debugging workflows | `read` | Inspect execution history |
 
 ---
@@ -427,7 +437,8 @@ log_entry('work', 'example-plan', 'INFO', '[ARTIFACT] Created deliverable')
 
 | Script | Notation | Description |
 |--------|----------|-------------|
-| `manage-logging.py` | `plan-marshall:manage-logging:manage-logging` | CLI for logging operations (write and read) |
+| `manage-logging.py` | `plan-marshall:manage-logging:manage-logging` | CLI for logging operations (write, read, signal-scan) |
+| `_signal_scan.py` | - | The Signal-3 scanner and its marker constant (imported, not executed) |
 | `plan_logging.py` | - | Python module (imported, not executed) |
 
 ## Related

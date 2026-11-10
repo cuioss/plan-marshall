@@ -68,25 +68,109 @@ def _rejection_detail(result: dict[str, Any]) -> str:
     return 'raw_input ingestion rejected: ' + str(result.get('message', 'validation failed'))
 
 
-def _classify(record: dict[str, Any], schema: str) -> tuple[str, Any, list[str]]:
+def _classify(record: dict[str, Any], schema: str) -> tuple[str, Any, list[str], list[dict[str, Any]]]:
     """Classify one finding's ``raw_input`` — a pure query, no side effects.
 
-    Returns ``(outcome, payload, clamped)`` where:
+    Returns ``(outcome, payload, clamped, clamps)`` where:
       * ``skipped``  → ``payload`` is ``None`` (the finding carries no ``raw_input``);
       * ``promoted`` → ``payload`` is the validated+clamped fields dict to write to
         the record's top level;
       * ``rejected`` → ``payload`` is the ``resolution_detail`` string.
-    The side-effecting writeback / resolution is performed by the caller so this
-    function stays a pure classifier (command-query separation).
+    ``clamped`` is the validator's human-readable report and ``clamps`` its structured
+    twin, which is what lets the record state its own cut rather than only the pass
+    summary doing so. The side-effecting writeback / resolution is performed by the
+    caller so this function stays a pure classifier (command-query separation).
     """
     raw = record.get('raw_input')
     if not raw:
-        return 'skipped', None, []
+        return 'skipped', None, [], []
 
     result = validate_candidate(schema, raw)
     if result.get('status') == 'success':
-        return 'promoted', result['struct'], list(result.get('clamped', []))
-    return 'rejected', _rejection_detail(result), []
+        return (
+            'promoted',
+            result['struct'],
+            list(result.get('clamped', [])),
+            list(result.get('clamps', [])),
+        )
+    return 'rejected', _rejection_detail(result), [], []
+
+
+def _truncation_fields(clamps: list[dict[str, Any]]) -> dict[str, Any]:
+    """The TRUSTED truncation facts a finding carries when one of its fields was cut.
+
+    Computed by the producer from the validator's structured report, never parsed out
+    of a human-readable message: ``truncated`` says the record was cut,
+    ``original_length`` states the pre-clamp length, and ``truncated_fields`` maps each
+    cut field to its own original length. A finding whose fields all fit carries none
+    of these keys, so "no flag" stays distinguishable from "flag computed as false".
+    """
+    if not clamps:
+        return {}
+    per_field = {str(clamp.get('field') or ''): int(clamp.get('original_length') or 0) for clamp in clamps}
+    return {
+        'truncated': True,
+        'original_length': max(per_field.values(), default=0),
+        'truncated_fields': per_field,
+    }
+
+
+#: The keys :func:`_truncation_fields` writes. Named once, because a later promotion
+#: has to know whether an EXISTING record carries them.
+_TRUNCATION_KEYS: tuple[str, ...] = ('truncated', 'original_length', 'truncated_fields')
+
+
+def _promotion_payload(
+    payload: dict[str, Any], clamps: list[dict[str, Any]], existing: dict[str, Any]
+) -> dict[str, Any]:
+    """The top-level fields this pass writes, including the truncation facts.
+
+    ``update_jsonl`` MERGES, it never deletes, so a record cut by an earlier pass keeps
+    its flags even when the current ``raw_input`` fits. The record's per-field map is
+    therefore REBUILT on every promotion from three sources:
+
+    - a field this pass CUT gets this pass's original length;
+    - a field this pass REPLACED without cutting loses its entry (it now fits);
+    - a field this pass did not mention at all keeps its earlier entry — it still holds
+      the cut text.
+
+    That holds whether or not this pass cut anything, so a pass that cuts ``summary``
+    while leaving an earlier cut ``body`` in place reports both. A record that has never
+    been cut and cuts nothing receives none of the keys.
+    """
+    existing_fields = existing.get('truncated_fields')
+    carried = (
+        {str(field): int(length or 0) for field, length in existing_fields.items() if field not in payload}
+        if isinstance(existing_fields, dict)
+        else {}
+    )
+    # The quarantine's own middle cut happens BEFORE this pass, so the validator only
+    # sees the already-elided text and would report THAT shorter length as original.
+    # The producer records the true length per cut field; fold it in here so
+    # ``original_length`` names the body the reviewer actually wrote.
+    quarantined_lengths = existing.get('raw_input_original_lengths')
+    true_lengths = (
+        {str(field): int(length) for field, length in quarantined_lengths.items() if isinstance(length, int)}
+        if isinstance(quarantined_lengths, dict)
+        else {}
+    )
+    merged = {**carried, **{str(clamp['field']): int(clamp['original_length']) for clamp in clamps}}
+    for field, length in true_lengths.items():
+        merged[field] = max(merged.get(field, 0), length)
+    promoted = {**payload, **_truncation_fields(clamps)}
+    if merged:
+        promoted.update(
+            {
+                'truncated': True,
+                'original_length': max(merged.values()),
+                'truncated_fields': merged,
+            }
+        )
+    elif any(key in existing for key in _TRUNCATION_KEYS):
+        # The record carried cut facts and none survive: state the cleared result
+        # rather than leaving the previous claim behind.
+        promoted.update({'truncated': False, 'original_length': 0, 'truncated_fields': {}})
+    return promoted
 
 
 def ingest_findings(plan_id: str, schema: str = FINDING_SCHEMA) -> dict[str, Any]:
@@ -116,33 +200,35 @@ def ingest_findings(plan_id: str, schema: str = FINDING_SCHEMA) -> dict[str, Any
 
     # 1. Per-plan findings — locate each record's file by its `type`.
     for record in query_findings(plan_id, resolution='pending')['findings']:
-        outcome, payload, record_clamped = _classify(record, schema)
+        outcome, payload, record_clamped, record_clamps = _classify(record, schema)
         if outcome == 'promoted':
-            if payload:
-                update_jsonl(_store_findings_path(store, record['type']), record['hash_id'], payload)
+            promoted_payload = _promotion_payload(payload, record_clamps, record)
+            if promoted_payload:
+                update_jsonl(_store_findings_path(store, record['type']), record['hash_id'], promoted_payload)
             promoted += 1
         elif outcome == 'rejected':
             resolve_finding(plan_id, record['hash_id'], REJECTED_RESOLUTION, payload)
             rejected += 1
         else:
             skipped += 1
-        clamped.extend(record_clamped)
+        clamped.extend(f'{record["hash_id"]}: {entry}' for entry in record_clamped)
         outcomes.append({'hash_id': record['hash_id'], 'outcome': outcome})
 
     # 2. Per-phase Q-Gate findings — locate each record's file by its phase.
     for phase in QGATE_PHASES:
         for record in query_qgate_findings(plan_id, phase, resolution='pending')['findings']:
-            outcome, payload, record_clamped = _classify(record, schema)
+            outcome, payload, record_clamped, record_clamps = _classify(record, schema)
             if outcome == 'promoted':
-                if payload:
-                    update_jsonl(_store_qgate_path(store, phase), record['hash_id'], payload)
+                promoted_payload = _promotion_payload(payload, record_clamps, record)
+                if promoted_payload:
+                    update_jsonl(_store_qgate_path(store, phase), record['hash_id'], promoted_payload)
                 promoted += 1
             elif outcome == 'rejected':
                 resolve_qgate_finding(plan_id, phase, record['hash_id'], REJECTED_RESOLUTION, payload)
                 rejected += 1
             else:
                 skipped += 1
-            clamped.extend(record_clamped)
+            clamped.extend(f'{record["hash_id"]}: {entry}' for entry in record_clamped)
             outcomes.append({'hash_id': record['hash_id'], 'outcome': outcome})
 
     return {

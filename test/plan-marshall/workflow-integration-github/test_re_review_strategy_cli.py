@@ -9,7 +9,6 @@ Covers the three concerns of the post-merge re-review registry:
        comment per strategy and returns the comment-post time:
          coderabbit: posts ``@coderabbitai review``.
          sourcery:   posts ``@sourcery-ai review``.
-         cuioss-review-bot:   posts ``/review``.
     3. Two-signal completion matching — ``await_fresh_review`` is satisfied by
        EITHER ``_match_review`` (a review authored by the awaited bot — its
        ``user`` login resolves to the awaited ``bot_kind`` — whose reviewed-commit
@@ -207,11 +206,11 @@ _GUARD_SWEEP_POPULATION: list[str] = bot_registry.bot_kinds()
 _GUARD_SWEEP_POPULATION_SIZE = len(_GUARD_SWEEP_POPULATION)
 _GUARD_PR_NUMBER = 42
 _GUARD_PUSH_TIME = '2026-01-01T00:00:00Z'
-_PR_AGENT_LOGIN = 'cuioss-review-bot'
+_BOT_KIND_LOGIN = 'sourcery-ai'
 _TRIGGER = '2026-01-01T00:02:00Z'
 
 
-def _await_with_comments(monkeypatch, comments, *, reviews=None, bot_kind='cuioss-review-bot', head_sha='headsha'):
+def _await_with_comments(monkeypatch, comments, *, reviews=None, bot_kind='sourcery', head_sha='headsha'):
     """Run ``await_fresh_review`` over a fixed comment (and review) set.
 
     ``head_sha`` is parametrized for the reviewed-commit-reference cases below, which
@@ -419,8 +418,8 @@ def test_the_comment_and_review_paths_share_ONE_predicate():
     property that matters is that neither path can drift into its own rule. An
     unmatched signal fails closed — there is no evidence to verify against.
     """
-    review = _review(_HEAD_SHA, '2026-01-01T00:05:00Z', user=_review_login('cuioss-review-bot'))
-    comment = _comment(_PR_AGENT_LOGIN, created_at='2026-01-01T00:05:00Z', body=_guide_body(_HEAD_SHA))
+    review = _review(_HEAD_SHA, '2026-01-01T00:05:00Z', user=_review_login('sourcery'))
+    comment = _comment(_BOT_KIND_LOGIN, created_at='2026-01-01T00:05:00Z', body=_guide_body(_HEAD_SHA))
 
     assert github_re_review._verifies_head_sha('review', review, _HEAD_SHA) is True
     assert github_re_review._verifies_head_sha('issue_comment', comment, _HEAD_SHA) is True
@@ -587,7 +586,7 @@ def test_cmd_re_review_unknown_bot_kind_errors():
 
 
 def test_cmd_re_review_short_circuits_on_request_failure(monkeypatch):
-    """A failed cuioss-review-bot trigger post aborts before await is ever called."""
+    """A failed sourcery trigger post aborts before await is ever called."""
     _noop_sleep(monkeypatch)
     monkeypatch.setattr(
         github_re_review._github,
@@ -600,7 +599,7 @@ def test_cmd_re_review_short_circuits_on_request_failure(monkeypatch):
 
     monkeypatch.setattr(github_re_review._github, 'fetch_pr_reviews_with_commits', exploding_fetch)
 
-    result = github_re_review.cmd_re_review(_re_review_args(bot_kind='cuioss-review-bot'))
+    result = github_re_review.cmd_re_review(_re_review_args(bot_kind='sourcery'))
 
     assert result['status'] == 'error'
 

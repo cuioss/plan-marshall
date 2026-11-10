@@ -118,6 +118,16 @@ DISPATCH_TERMINATION_CAUSES = (
     # had to be recorded as `error`, the one bucket the doc rules out, leaving
     # the ledger unable to tell a drift return from a fatal failure.
     'baseline_drift',
+    # A phase-5 leaf that hands an orchestrator-tier build back to the main
+    # context — the yield the workflow PRESCRIBES at Step 11b, Step 11c, the
+    # `running` hand-back and a per-task close that resolved to the orchestrator
+    # tier. The return carries `verification_handback: true` beside a non-empty
+    # `pending_verify_steps[]` whose entries the manifest composed; the
+    # orchestrator owes the build. It is a PRESCRIBED, productive yield — the
+    # leaf did the one thing it is allowed to do with a build outside its
+    # runnable slice — and it is recorded as its own cause, so it never reaches
+    # the lessons script-failure signal.
+    'verification_handback',
 )
 
 # ---------------------------------------------------------------------------

@@ -285,7 +285,7 @@ class TestCommentsStageAuthorKindFields:
             {
                 'id': 'K1',
                 'kind': kind,
-                'author': 'cuioss-review-bot',
+                'author': 'sunset-review-bot',
                 'body': 'A substantive review point about error propagation here.',
                 'path': 'src/Worker.java' if is_inline else '',
                 'line': 17 if is_inline else 0,
@@ -317,7 +317,7 @@ class TestCommentsStageAuthorKindFields:
         # First-class queryable field — equals the provider structure discriminator.
         assert stored['kind'] == kind
         # author is likewise first-class for the same finding.
-        assert stored['author'] == 'cuioss-review-bot'
+        assert stored['author'] == 'sunset-review-bot'
 
     def test_stored_finding_is_queryable_by_first_class_kind(self, plan_context):
         """The first-class ``kind`` field is an indexed query filter, not just stored.

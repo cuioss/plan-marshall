@@ -4,7 +4,7 @@
 
 Cross-cutting counterpart to the co-located unit suites. Those pin per-component
 BEHAVIOUR (``test_review_completeness.py`` owns the predicate's verdicts,
-``test_upgrade.py`` owns the migration's four input states,
+``test_upgrade.py`` owns the migration's five input states,
 ``test_comments_stage.py`` owns the producer's filters). This suite pins the
 CONTRACT the components jointly implement:
 
@@ -694,7 +694,7 @@ class TestCrashedGateNeverRecordsAPass:
             '--plan-id',
             plan_id,
             '--required-bots',
-            'coderabbit,cuioss-review-bot',
+            'coderabbit,sourcery',
             '--optional-bots',
             '--participated-bots',
             '--in-progress-bots',

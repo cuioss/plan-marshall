@@ -130,12 +130,44 @@ class TestCloseValueScopeDiscriminator:
 class TestDispatchTerminationCausesEnum:
     """Structural assertions on the DISPATCH_TERMINATION_CAUSES tuple."""
 
-    def test_enum_contains_exactly_thirteen_values(self):
-        """The enum extends to exactly 13 entries — the legacy 5, the phase-6/phase-4
-        extension (5), the budget_yield phase-5 dispatch-loop signal,
-        returned_with_findings (the productive-loop-back member), plus
-        baseline_drift (the recoverable phase-5 drift return)."""
-        assert len(manage_metrics.DISPATCH_TERMINATION_CAUSES) == 13
+    #: The expected membership, declared by NAME rather than by length. A member
+    #: added or removed is then a deliberate edit here instead of a silently
+    #: re-pinned hand count.
+    EXPECTED_TERMINATION_CAUSES = frozenset(
+        {
+            'voluntary_checkpoint',
+            'task_complete_returned_verbatim',
+            'budget_yield',
+            'harness_cancellation',
+            'error',
+            'clean_exit_queue_empty',
+            'step_complete',
+            'blocked_user_review',
+            'blocked_session_restart',
+            'task_batch_complete',
+            'agent_returned',
+            'returned_with_findings',
+            'baseline_drift',
+            'verification_handback',
+        }
+    )
+
+    def test_enum_membership_matches_the_declared_enumeration(self):
+        """The tuple's membership IS the declared set, with no duplicates."""
+        assert set(manage_metrics.DISPATCH_TERMINATION_CAUSES) == self.EXPECTED_TERMINATION_CAUSES
+        assert len(set(manage_metrics.DISPATCH_TERMINATION_CAUSES)) == len(
+            manage_metrics.DISPATCH_TERMINATION_CAUSES
+        ), 'the enum must not repeat a cause'
+
+    def test_enum_contains_verification_handback_cause(self):
+        """The prescribed build hand-back member is present.
+
+        The leaf is told to hand an orchestrator-tier build back; before this
+        member that return was classified `voluntary_checkpoint` and B7
+        reclassified it as `error`. RED before the member was added (argparse
+        rejected the value).
+        """
+        assert 'verification_handback' in manage_metrics.DISPATCH_TERMINATION_CAUSES
 
     def test_enum_contains_returned_with_findings_cause(self):
         """The productive-non-completion member is present.

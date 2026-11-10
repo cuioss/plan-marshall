@@ -754,6 +754,35 @@ Before the per-step stamping below, the composer walks every task's `verificatio
 
 **Interaction with per-step stamping**: routing runs first and may append `verify:{verb}` entries to `phase_5.verification_steps`; the stamping pass below then resolves a tier for the FINAL list, so every routed step — canonical or generalized — receives a stamped `{step_id, tier}` record. A generalized `verify:{verb}` whose canonical is unresolvable stamps to the `per_task` permissive default per the stamping rule.
 
+### Deliverable chain-tail rung deferral (`owed_rung_deferral`)
+
+The command-level routing above is per task; this decision is per DELIVERABLE. The operator ruling it implements: **one full module build per deliverable.** When a deliverable's per-task `module-tests` rung resolves `orchestrator` from a MEASURED learned duration that exceeds the Bash ceiling, every task deferring on its own would pay the same module build once per task.
+
+The deferral is keyed on `exceeds_bash_ceiling: true` from the same `architecture resolve` the routing pass already runs — NOT on the tier alone. `orchestrator` is also what an UNMEASURED command resolves to (the fail-closed rule above), and the flag itself is `false` for an unmeasured command, so the unmeasured arm cannot reach this decision: no deferral is recorded, because a duration nobody has measured cannot say the build will always exceed the per-task limit. Below the ceiling the rung resolves `per_task` and runs inline per task, also unchanged.
+
+**The owed rung — one definition.** The owed rung is the deliverable's own `module-tests` build command AS COMPOSED into the plan: the command the compose pass records in `verification.owed_rung_command` on the one task the decision gives it to. It is one command per `(deliverable, command)` group, and the decision names which task of that group owns it — `chain_tail` owns it, `deferred` closes without it. Two neighbours are NOT the owed rung and never become it: the **per-task owed hold** is the leaf-side `verification_owed` marker `finalize-step --verification-owed` opens and `--verification-complete` closes, and the `verify:module-tests` step appended to `phase_5.verification_steps` is the orchestrator's single end-of-phase run.
+
+Which of the two surfaces each arm places, and where:
+
+| Arm | `owed_rung` stamp | per-task owed hold |
+|---|---|---|
+| measured, over the ceiling | one `chain_tail` plus `deferred` on the rest of the group | only the chain-tail task opens one |
+| measured, within the ceiling | none | none — the rung runs inline on each task |
+| unmeasured (configured, never observed) | none — nothing was measured, so nothing is placed | every task of the group can open one, each routed by its own live resolve |
+
+The unmeasured row is the arm where the two surfaces come apart: compose places nothing, and each task still hands its own orchestrator-tier rung back, so the hold can legitimately appear on every task of the group. The leaf-side honouring rule is stated once in [`../execute-task/SKILL.md`](../execute-task/SKILL.md) Step 5 (b) and cited by [`../phase-5-execute/SKILL.md`](../phase-5-execute/SKILL.md) Step 7; neither restates this definition.
+
+The decision is recorded on the task ladder, which the leaf already reads:
+
+- `verification.owed_rung: chain_tail` — the LAST task of its `(deliverable, rung command)` group's `depends_on` chain. This is the task the leaf lets hand the build back; it closes with `--verification-owed` when its live resolve routes the rung to the orchestrator.
+- `verification.owed_rung: deferred` — a task that precedes its group's chain tail. It closes without the owed hold, so that group's single build is not requested once per task.
+- `verification.owed_rung_command` — the rung command the decision was taken on, recorded beside either value. It is the first QUALIFYING `module-tests` command the routing pass sees on that task — one whose resolve is orchestrator-tier with an over-ceiling measurement — so a below-ceiling `module-tests` command on the same task is skipped rather than recorded, and a task carrying two qualifying rungs records one and is one tail rather than two. Today's routing drops that command from `verification.commands`, so this field is what a later compose re-measures: the decision survives a re-compose while the duration still exceeds the ceiling, and is cleared when that `(deliverable, command)` pair no longer exceeds it.
+- absent — no deferral decision is recorded and today's routing is untouched. That is the UNMEASURED arm and the below-ceiling arm: an unmeasured duration cannot say the build will always exceed the limit, and a below-ceiling rung runs inline per task.
+
+The rung command itself keeps today's orchestrator-tier routing in every arm: it is dropped from `verification.commands` and the canonical step is appended once to `phase_5.verification_steps`. Retaining it on the chain-tail task would schedule the same module build twice — once through the task's hand-back and once through the end-of-phase step.
+
+The `compose` result and the manifest carry the summary as `phase_5.owed_rung_deferral[]` — one `{deliverable, rung, chain_tail_task, deferred_task_count, cause}` record per decided (deliverable, rung) pair; a deliverable that spans two modules carries two rungs and therefore two records, each with its own chain tail. A `deferred` task keeps its stamp across later composes while its deliverable still carries a measured over-ceiling rung, and the stamp is cleared when that `(deliverable, command)` pair is re-measured below the limit (or the rung stops being detected), so a run that later measures below the limit routes normally again. The owed hold's own contract is unchanged (see `../manage-tasks/SKILL.md` § "Finalize-step verification-owed flag contract").
+
 ### Per-step execution_tier stamping (`step_execution_tier`)
 
 After the canonical-verify footprint pre-filter produces the FINAL `phase_5.verification_steps` list, the composer resolves each selected step's `execution_tier` and stamps a `phase_5.step_execution_tier` record list (one `{step_id, tier}` object per verification step). Each built-in canonical-verify step (`verify:{canonical}`) is resolved via a whole-tree `architecture resolve --command {canonical}`, reading the `execution_tier` field the resolve TOON emits; every other step id (an external `project:` / `bundle:skill` step, or a `verify:{canonical}` whose canonical is unresolvable) defaults to `per_task`. The list is total over `verification_steps` — the composer never emits an unresolved tier.

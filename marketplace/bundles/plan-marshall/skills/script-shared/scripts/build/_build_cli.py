@@ -11,18 +11,22 @@ Split from _build_shared.py to separate CLI wiring from command implementations.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable
 
 from _build_format import format_toon
 from _build_parse import Issue
-from _build_server_protocol import positive_timeout_seconds
+from _build_server_protocol import MARSHALLD_JOB_ENV, positive_timeout_seconds
 from _build_shared import ParserFn, cmd_discover_common, cmd_parse_common
 from file_ops import safe_main  # noqa: F401  # canonical entry-point wrapper
 from marketplace_paths import NO_PLAN_SENTINEL
 
+RESOLVED_PROJECT_DIR_FLAG = '--resolved-project-dir'
+"""The routed child's tree carry (see :func:`add_resolved_project_dir_arg`)."""
+
 
 def add_project_dir_arg(parser) -> None:
-    """Attach the standard --project-dir / --plan-id argument pair to a subparser.
+    """Attach the routing pair (and the routed tree carry) to a subparser.
 
     Every build-class subcommand accepts ``--project-dir`` and ``--plan-id``
     so invocations from an isolated worktree (or any non-cwd directory)
@@ -37,6 +41,11 @@ def add_project_dir_arg(parser) -> None:
     asserted against the argparse-derived build-class roster rather than
     restated as prose, so a subcommand registered without the pair fails
     a test instead of silently falsifying this sentence.
+
+    The pair is declared together with ``--resolved-project-dir``, the routed
+    child's tree carry (:func:`add_resolved_project_dir_arg`). Declaring them at
+    one site is what keeps "the pair" and "the carry that replaces one half of its
+    resolution" from drifting apart.
 
     Scope of that guarantee: the roster's population is every subcommand
     of a wrapper routed through :func:`build_main`. A build-class script
@@ -65,12 +74,21 @@ def add_project_dir_arg(parser) -> None:
       resolves the absent ``--plan-id`` to ``NO_PLAN`` so every handler
       sees a non-empty plan id.
 
+    A ROUTED dispatch additionally carries ``--resolved-project-dir`` (see
+    :func:`add_resolved_project_dir_arg`): the tree its routing process already
+    resolved. It travels only when the child's own tree cannot resolve the plan —
+    the child re-resolves the same record to the same tree otherwise. When that
+    flag is present — and only inside a marshalld job child, which is its sole
+    legitimate producer — ``build_main`` uses it and performs NO ``--plan-id``
+    resolution, because the child's own tree is the one the plan directory may have
+    already left. It replaces neither flag and stays mutually exclusive with
+    ``--project-dir``.
+
     The ``--project-dir`` default stays ``'.'`` so the existing
     ``execute_direct(project_dir=args.project_dir, ...)`` call sites
-    keep compiling. ``apply_plan_id_routing`` (called by the run / parse
-    / coverage / check-warnings handlers via ``_build_shared``)
-    rewrites ``args.project_dir`` to the resolved value before
-    subprocess execution.
+    keep compiling. :func:`build_main` writes the resolved value into
+    ``args.project_dir`` before any handler reads it, so subprocess
+    execution sees the resolved tree and never the raw flag.
     """
     parser.add_argument(
         '--project-dir',
@@ -83,6 +101,39 @@ def add_project_dir_arg(parser) -> None:
     from resolve_project_dir import add_plan_id_arg
 
     add_plan_id_arg(parser)
+    add_resolved_project_dir_arg(parser)
+
+
+def add_resolved_project_dir_arg(parser) -> None:
+    """Attach ``--resolved-project-dir``, the routed child's tree carry.
+
+    This is NOT a third routing source and it is not for human callers. A build
+    routed to the daemon is re-run from the tree the routing process already
+    resolved, and that tree can be one whose plan directory is gone: during the
+    finalize move-back window the plan record has moved to main while the worktree
+    directory still exists. The child would then re-resolve ``--plan-id`` from its
+    own working directory and refuse a resolution that had already succeeded one
+    process up — a ROUTING fault reported as a red build.
+
+    So the routing process hands its resolved tree over here, beside ``--plan-id``
+    rather than in place of it: the plan id must still reach the child's
+    ``kind=build`` ledger row and its build-slot accounting, and ``--plan-id`` /
+    ``--project-dir`` stay mutually exclusive. ``build_main`` consumes this flag
+    BEFORE any resolution, so the strict ``get-worktree-path`` gate is untouched.
+
+    Args:
+        parser: The subparser to extend.
+    """
+    parser.add_argument(
+        RESOLVED_PROJECT_DIR_FLAG,
+        dest='resolved_project_dir',
+        default=None,
+        help=(
+            'Internal: the working-tree root a routing process already resolved for this dispatch. '
+            'Supplied by the build daemon routing seam; not a routing source, and it does not '
+            'replace --plan-id.'
+        ),
+    )
 
 
 def add_root_arg(parser) -> None:
@@ -166,7 +217,7 @@ def add_run_subparser(
     # the only way ``cmd_run`` can tell an explicitly-supplied ``--timeout N``
     # from an unsupplied flag. An explicit value is a true override of the
     # persisted learned value; when the flag is absent the engine's
-    # ``config.default_timeout`` supplies the fallback, exactly as before.
+    # ``config.default_timeout`` supplies the fallback.
     run_parser.add_argument(
         '--timeout',
         type=positive_timeout_seconds,
@@ -189,11 +240,11 @@ def add_run_subparser(
         default='toon',
         help='Output format (default: toon)',
     )
-    # Explicit build-execute routing mode (D5 build-server client API). Declared
+    # Explicit build-execute routing mode. Declared
     # once here so all four build tools (maven, gradle, npm, pyproject) inherit
     # the flag from this single shared 'run' subparser:
     #   auto        — route to marshalld opportunistically; fall back in-process
-    #                 on any unavailability (the historical default behaviour).
+    #                 on any unavailability (the default).
     #   in_process  — never attempt to route; always build in-process.
     #   daemon      — require the marshalld daemon; fail loud instead of falling
     #                 back when the daemon cannot run the build.
@@ -209,8 +260,8 @@ def add_run_subparser(
     # contract automatically. The same ``--plan-id`` value also drives
     # the producer-side auto-storage of parsed issues into the per-type
     # finding store via manage-findings (always-on when set; when unset,
-    # the historical silent behaviour is preserved — parse + format
-    # only). The flag is therefore declared exactly once.
+    # parse and format only, with nothing stored). The flag is therefore declared
+    # exactly once.
     add_project_dir_arg(run_parser)
     if extra_args_fn:
         extra_args_fn(run_parser)
@@ -668,21 +719,51 @@ def build_main(
     # Subcommands that do not declare the pair (e.g., ``parse``) simply
     # lack ``args.plan_id`` and ``args.project_dir`` — the helper is a
     # no-op for those namespaces.
+    #
+    # A ROUTED child declares a THIRD flag, ``--resolved-project-dir``: the tree
+    # its routing process already resolved. It short-circuits the resolution
+    # below, because re-resolving ``--plan-id`` from the child's own working
+    # directory is exactly what fails in the finalize move-back window — there the
+    # plan record is on main while the child stands in the still-existing
+    # worktree. The plan id itself is untouched: it still reaches the handler, the
+    # executor's ledger row and the build-slot accounting.
+    #
+    # ⛔ The carry is honoured ONLY inside a marshalld job child. The routing seam
+    # is its sole producer, and the daemon stamps every child with
+    # ``MARSHALLD_JOB_ENV``. Honouring it anywhere else would let a hand-written
+    # ``--plan-id X --resolved-project-dir ANY_TREE`` run a build in an arbitrary
+    # tree while attributing the ledger row and any stored findings to X — the
+    # plan-existence gate that makes ``--plan-id`` trustworthy, gone.
     from resolve_project_dir import (
         MutuallyExclusiveArgsError,
         WorktreeResolutionError,
+        emit_carried_tree_outside_job_error,
         emit_mutually_exclusive_error,
         emit_worktree_error,
+        resolve_carried_project_dir,
         resolve_project_dir,
     )
 
     plan_id = getattr(args, 'plan_id', None)
     project_dir = getattr(args, 'project_dir', None)
+    carried_project_dir = getattr(args, 'resolved_project_dir', None)
     if hasattr(args, 'project_dir'):
         try:
-            args.project_dir = resolve_project_dir(plan_id, project_dir, default='.')
-        except MutuallyExclusiveArgsError:
-            print(format_toon(emit_mutually_exclusive_error(plan_id, project_dir)))
+            if carried_project_dir is not None:
+                if not os.environ.get(MARSHALLD_JOB_ENV):
+                    print(format_toon(emit_carried_tree_outside_job_error(carried_project_dir, plan_id)))
+                    return 2
+                args.project_dir = resolve_carried_project_dir(carried_project_dir, project_dir, default='.')
+            else:
+                args.project_dir = resolve_project_dir(plan_id, project_dir, default='.')
+        except MutuallyExclusiveArgsError as exc:
+            # The carry's own conflict names a different pair, so its reason wins.
+            carry_message = str(exc) if carried_project_dir is not None else None
+            print(
+                format_toon(
+                    emit_mutually_exclusive_error(plan_id, project_dir, message=carry_message),
+                )
+            )
             return 2
         except WorktreeResolutionError as exc:
             assert plan_id is not None  # only reachable when plan_id was supplied

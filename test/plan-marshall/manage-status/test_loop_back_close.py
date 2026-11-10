@@ -447,16 +447,35 @@ def test_a_second_close_for_the_same_head_does_not_duplicate_the_override_head(p
 
 
 def test_a_close_of_another_step_records_no_override_head(plan_context, tmp_path, monkeypatch):
+    """Only the functional-review close owns the override-closed heads.
+
+    The setup marks the waived step (not a second review close) so the case proves
+    the WRITER's step scope rather than the idempotence of a repeated close: a
+    non-review step completing leaves the override-head list untouched.
+    """
     plan_id = 'loop-back-close-other-step-no-override'
     _make_plan(plan_id)
-    head, completed_at = _tmp_repo_two_heads(tmp_path, monkeypatch)
-    _mark(plan_id, _WAIVED_STEP, 'done', completed_at, 'quality gate green')
+    head, _completed_at = _tmp_repo_two_heads(tmp_path, monkeypatch)
+    _mark(plan_id, _WAIVED_STEP, 'done', head, 'quality gate green')
 
     result = _close(plan_id, head, step=_WAIVED_STEP)
 
     assert result['status'] == 'success', result
     assert result['override_head_recorded'] is False
     assert 'functional_review_override_heads' not in read_status(plan_id)['metadata']
+
+
+def test_a_close_of_another_step_at_an_unvalidated_head_is_refused(plan_context, tmp_path, monkeypatch):
+    """The validated-head refusal applies to EVERY step, not only the functional review."""
+    plan_id = 'loop-back-close-other-step-unvalidated-head'
+    _make_plan(plan_id)
+    head_a, head_b = _tmp_repo_two_heads(tmp_path, monkeypatch)
+    _mark(plan_id, _WAIVED_STEP, 'loop_back', head_a, 'quality gate looped back', loop_back_target='6-finalize')
+
+    result = _close(plan_id, head_b, step=_WAIVED_STEP)
+
+    assert result['status'] == 'error', result
+    assert result['error'] == 'close_head_not_validated', result
 
 
 def test_a_close_reports_an_incomplete_close_when_the_override_head_cannot_be_written(plan_context, monkeypatch):

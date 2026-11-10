@@ -70,6 +70,7 @@ from ci_base import (
     read_and_consume_body,
 )
 from command_forms import STEWARD_COMMAND
+from markdown_fence import fence_marker as _fence_marker
 
 # ---------------------------------------------------------------------------
 # Bot-agnostic rate-limit / service-notice detection (any reviewer bot)
@@ -156,7 +157,7 @@ def _is_rate_limit_notice(body: str) -> bool:
 
     ``refusal_patterns`` is deliberately a DEDICATED field, never a reuse of
     ``ignore_patterns``: ``ignore_patterns`` lists the routine sections a bot emits
-    on a *successful* review (walkthrough headings, learning notices), so matching
+    on a *successful* review (no-op review lines, learning notices), so matching
     refusals against it would classify ordinary successful reviews as refusals. The
     two lists answer different questions. See
     ``automatic-review/standards/bot-participation-contract.md``.
@@ -380,6 +381,227 @@ def bot_claimed_sha_matches_head(body: str, head_sha: str) -> bool:
     return candidate in commit_tokens(body)
 
 
+#: The coverage marker a review bot's summary carries its own reviewed-commit claim
+#: in, and the ``kind`` that makes it a FINISHED review. The marker is an HTML
+#: comment whose payload is JSON::
+#:
+#:     <!-- final_review_risk_coverage:
+#:          {"sourceCommitId":"…","coveredCommitId":"…","kind":"reviewed"} -->
+#:
+#: The two literals live here, in the ONE parser, so a consumer never restates the
+#: field set. This is a stated departure from the registry-data rule: the marker's
+#: NAME and its field names are owned by this parser because the parser must decide
+#: which of several markers is a claim, and `coderabbit.md` names this function as
+#: the one reader of those fields rather than duplicating them.
+_REVIEW_COVERAGE_MARKER = 'final_review_risk_coverage'
+_REVIEW_COVERAGE_REVIEWED_KIND = 'reviewed'
+#: The fields the marker's JSON payload carries. One list, consumed by the parser
+#: below and by the runbook-lane guard, so neither restates a private vocabulary.
+REVIEW_COVERAGE_FIELDS = ('sourceCommitId', 'coveredCommitId', 'kind')
+#: The HTML-comment OPENER the marker appears in. Presence is tested against this
+#: literal at the START of a line, not against the bare identifier: a review body may
+#: MENTION the marker name in prose, quote the marker in a blockquote or a fenced
+#: example, or wrap it in inline code — none of those is the bot's own claim.
+_REVIEW_COVERAGE_OPENING = '<!-- ' + _REVIEW_COVERAGE_MARKER + ':'
+
+
+def _balanced_json_object(text: str) -> str | None:
+    """Return the first balanced ``{...}`` object in ``text``, or ``None``.
+
+    A non-greedy ``\\{.*?\\}`` stops at the FIRST ``}``, so a nested payload is read
+    as unparseable. This scans by brace depth and honours JSON strings, so a nested
+    object or a brace inside a string is part of the same payload.
+    """
+    start = text.find('{')
+    if start < 0:
+        return None
+    depth = 0
+    in_string = False
+    escaped = False
+    for index in range(start, len(text)):
+        character = text[index]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif character == '\\':
+                escaped = True
+            elif character == '"':
+                in_string = False
+            continue
+        if character == '"':
+            in_string = True
+        elif character == '{':
+            depth += 1
+        elif character == '}':
+            depth -= 1
+            if depth == 0:
+                return text[start : index + 1]
+    return None
+
+
+#: How many lines after the opener a multi-line JSON payload may span before the
+#: marker is read as present-but-unreadable. The bot's own summary wraps its payload
+#: over two lines; the bound only stops a malformed body from scanning the comment.
+_COVERAGE_PAYLOAD_MAX_LINES = 40
+
+
+def _coverage_opener_position(line: str) -> int:
+    """The position of a coverage-marker opener at the START of ``line``, or ``-1``.
+
+    A line whose prefix before the opener is anything but spaces — a blockquote
+    marker (``>``), inline code (a backtick) — is a QUOTE of the marker, not the
+    bot's claim, and is read as no marker at all. That is what lets the provider's
+    own ``commit_id`` stand when a review body merely quotes a marker.
+    """
+    position = line.find(_REVIEW_COVERAGE_OPENING)
+    if position < 0:
+        return -1
+    prefix = line[:position]
+    if prefix.strip() or len(prefix) > 3 or '\t' in prefix:
+        return -1
+    return position
+
+
+def _coverage_payload_at(lines: list[str], index: int) -> tuple[bool, dict | None] | None:
+    """``(present, fields)`` for a marker starting on ``lines[index]``, or ``None``.
+
+    ``None`` is "this line does not open a marker". ``(True, None)`` is a marker
+    whose payload could not be read — a claim nobody can evaluate. The payload may
+    span several lines (the bot's summary shows a two-line marker), so the JSON is
+    looked for across the following lines when the opener's own line does not close
+    it.
+    """
+    line = lines[index]
+    position = _coverage_opener_position(line)
+    if position < 0:
+        return None
+    first = line[position + len(_REVIEW_COVERAGE_OPENING) :]
+    payload = _balanced_json_object(first)
+    if payload is None and '-->' not in first:
+        joined = first
+        for extra in lines[index + 1 : index + 1 + _COVERAGE_PAYLOAD_MAX_LINES]:
+            # A fence line ends the marker's own text: a payload-shaped object in a
+            # later fenced example is NOT this marker's payload.
+            if _fence_marker(extra) is not None:
+                break
+            joined += '\n' + extra
+            payload = _balanced_json_object(joined)
+            if payload is not None:
+                break
+            if '-->' in extra:
+                break
+    if payload is None:
+        return True, None
+    try:
+        fields = json.loads(payload)
+    except (TypeError, ValueError):
+        return True, None
+    return True, fields if isinstance(fields, dict) else None
+
+
+def _coverage_payload(body: str) -> tuple[bool, dict | None]:
+    """Return ``(present, fields)`` for a review-coverage marker in ``body``.
+
+    ``present`` says a marker occurs outside a CLOSED fenced code block — tested on
+    the opener at the start of a line, not on the bare identifier, so a review body
+    that merely mentions the name, quotes the marker, or shows it in a fenced
+    example is not a claim. ``fields`` is its parsed JSON object (which may span
+    several lines), or ``None`` when the payload is absent or unreadable. The pair
+    keeps "no marker" and "marker that cannot be read" distinguishable, which is
+    exactly the distinction a fail-closed consumer needs: the first is no claim, the
+    second is a claim nobody can evaluate — and the second must never fall through
+    to an arm that would credit.
+
+    A marker after an UNTERMINATED fence is the second state, not the first: the
+    fence never closes, so the parser cannot know whether the marker is quoted or is
+    the bot's claim. Reporting it as present-but-unreadable keeps the decision
+    fail-closed instead of falling through to the token arm. A marker inside a fence
+    that DOES close is a quote and remains no marker.
+    """
+    text = body or ''
+    lines = text.splitlines()
+    fence: tuple[str, int] | None = None
+    unclosed_marker_seen = False
+    for index, line in enumerate(lines):
+        marker = _fence_marker(line)
+        if fence is not None:
+            if marker is not None and marker[0] == fence[0] and marker[1] >= fence[1] and not marker[2].strip():
+                fence = None
+                # A marker seen inside THIS fence was a quote: the fence closed, so
+                # it must not license the unclosed-fence state for a LATER, unrelated
+                # fence that happens to stay open.
+                unclosed_marker_seen = False
+            elif _coverage_opener_position(line) >= 0:
+                unclosed_marker_seen = True
+            continue
+        if marker is not None:
+            fence = (marker[0], marker[1])
+            continue
+        found = _coverage_payload_at(lines, index)
+        if found is not None and found[0]:
+            return True, found[1]
+    if fence is not None and unclosed_marker_seen:
+        return True, None
+    return False, None
+
+
+def review_coverage_marker_present(body: str) -> bool:
+    """Whether ``body`` carries a review-coverage marker at all, readable or not."""
+    return _coverage_payload(body)[0]
+
+
+def review_coverage_is_finished(body: str) -> bool:
+    """Whether ``body``'s coverage marker is a READABLE, FINISHED review artifact.
+
+    A coverage marker is an artifact SHAPE: a summary in its in-progress state, or one
+    whose payload cannot be parsed, carries the same literal without being a finished
+    review. Consumers deciding whether a comment may be an ANSWER use this predicate,
+    so such a comment is skipped exactly as a marker-less one is — never admitted and
+    then reported as a decline the bot never made.
+    """
+    present, fields = _coverage_payload(body)
+    if not present or fields is None:
+        return False
+    return str(fields.get('kind') or '').strip().lower() == _REVIEW_COVERAGE_REVIEWED_KIND
+
+
+def review_coverage_verdict(body: str, head_sha: str) -> bool | None:
+    """Return what a review-coverage marker says about ``head_sha``, or no verdict.
+
+    The marker a bot publishes on its finished summary names the commit the review
+    COVERED, so it is head-bound evidence in the comment's own text. Three answers,
+    because the marker has three states:
+
+    - ``True`` — the marker names ``head_sha`` as the covered commit and its
+      ``kind`` is ``reviewed``. The review covers the merge candidate.
+    - ``False`` — the marker is present but is not a finished review of ``head_sha``:
+      its payload is unreadable, it names another commit, it carries no covered
+      commit, or its ``kind`` is anything else. A present marker is a claim, so a
+      false one never falls back to a ledger arm that would credit an edit.
+    - ``None`` — no verdict. The body carries no marker, or ``head_sha`` could not
+      be read. ``None`` is never a claim that the review is current; the caller
+      falls back to whatever rule it applied before this one existed.
+
+    ``coveredCommitId`` decides; ``sourceCommitId`` is the fallback when the
+    covered field is absent. Both are compared for EQUALITY against ``head_sha``,
+    never by prefix, and case-insensitively.
+    """
+    if not (head_sha or '').strip():
+        return None
+    present, fields = _coverage_payload(body)
+    if not present:
+        return None
+    if fields is None:
+        return False
+    kind = str(fields.get('kind') or '').strip().lower()
+    if kind != _REVIEW_COVERAGE_REVIEWED_KIND:
+        return False
+    covered = str(fields.get('coveredCommitId') or '').strip() or str(fields.get('sourceCommitId') or '').strip()
+    if not covered:
+        return False
+    return covered.lower() == head_sha.strip().lower()
+
+
 def named_commit_currency(body: str, head_sha: str) -> bool | None:
     """Return what the commits ``body`` names say about a review of ``head_sha``.
 
@@ -397,9 +619,18 @@ def named_commit_currency(body: str, head_sha: str) -> bool | None:
     A body naming several commits is current when ANY of them is ``head_sha``: a
     review that lists a base and a head, or quotes another commit beside the one it
     reviewed, is still a review of the merge candidate.
+
+    A body carrying a review-coverage marker is decided by THAT marker first
+    (:func:`review_coverage_verdict`): the marker is the bot's own structured claim
+    about which commit it covered, and its ``kind`` also says whether the review
+    finished. A marker that cannot be parsed yields ``False`` — an unreadable claim
+    never falls back to the token arm.
     """
     if not (head_sha or '').strip():
         return None
+    coverage = review_coverage_verdict(body, head_sha)
+    if coverage is not None:
+        return coverage
     if not named_commits(body):
         return None
     return bot_claimed_sha_matches_head(body, head_sha)
@@ -1317,33 +1548,57 @@ def _branch_tip_sha(branch: str) -> tuple[str | None, dict | None]:
     The tip SHA is what makes PR correlation revision-accurate: ``gh pr list
     --head`` returns EVERY PR ever opened from the branch NAME, including one that
     merged an earlier tip and left the name to be reused. Only a PR whose head is
-    the branch's current tip speaks to the revision being classified, so a failure
-    to resolve the tip is fatal — the verdict cannot be trusted without it.
+    the branch's current tip speaks to the revision being classified.
+
+    Three answers, in resolution order: the local branch ref
+    (``refs/heads/{branch}``), the remote-tracking ref
+    (``refs/remotes/origin/{branch}``), and the remote itself
+    (``git ls-remote --heads origin {branch}``). The remote arms are what let a
+    merged branch still be classified after its refs were deleted locally and on
+    the remote — the state a foreign repository is left in by branch cleanup.
+
+    ``(None, None)`` is the third answer: the branch exists in none of the three
+    places. That is not a failure to read — it means no unlanded commit lives
+    under the name — so the caller classifies from the PR listing alone rather
+    than reporting an unreadable tip. An UNREADABLE remote (a git failure) stays
+    ``(None, error_dict)``: the handler cannot tell "no such branch" from "could
+    not ask", and a landing verdict must not rest on that.
     """
-    rc, out, err = github_ops.run_git(['rev-parse', branch])
+    for rev in (f'refs/heads/{branch}', f'refs/remotes/origin/{branch}'):
+        rc, out, _err = github_ops.run_git(['rev-parse', '--verify', '--quiet', rev])
+        if rc == 0:
+            sha = out.strip()
+            if sha:
+                return sha, None
+    rc, out, err = github_ops.run_git(['ls-remote', '--heads', 'origin', branch])
     if rc != 0:
         return None, make_error('pr_landing_state', f'Could not resolve the tip SHA of branch {branch!r}', err.strip())
-    sha = out.strip()
-    if not sha:
-        return None, make_error('pr_landing_state', f'git rev-parse returned an empty tip SHA for branch {branch!r}')
-    return sha, None
+    for line in out.splitlines():
+        parts = line.split()
+        if len(parts) >= 2 and parts[1] == f'refs/heads/{branch}':
+            return parts[0], None
+    return None, None
 
 
-def _branch_pushed_state(branch: str) -> tuple[bool | None, dict | None]:
-    """Return ``(pushed, None)`` or ``(None, error_dict)`` for ``branch``.
+def _branch_pushed_state(rev: str) -> tuple[bool | None, dict | None]:
+    """Return ``(pushed, None)`` or ``(None, error_dict)`` for ``rev``.
 
-    ``git branch -r --contains <branch>`` lists the remote-tracking branches that
-    contain the ref's tip; ``rc == 0`` with non-empty output proves the commit is
+    ``git branch -r --contains <rev>`` lists the remote-tracking branches that
+    contain the rev's tip; ``rc == 0`` with non-empty output proves the commit is
     on a remote, ``rc == 0`` with empty output proves it is not. A NON-zero exit
     is neither proof — it is an UNREADABLE result, returned as ``(None, error)``
     so the caller can fail closed rather than silently reading a git failure as
     ``unpushed``, which would clear the archive gate on evidence nobody read.
+
+    The caller passes the resolved tip SHA, never the branch NAME: after branch
+    cleanup only ``refs/remotes/origin/{branch}`` may remain, and a bare short
+    name no longer rev-parses then, while the SHA always does.
     """
-    rc, out, err = github_ops.run_git(['branch', '-r', '--contains', branch])
+    rc, out, err = github_ops.run_git(['branch', '-r', '--contains', rev])
     if rc != 0:
         return None, make_error(
             'pr_landing_state',
-            f'Could not determine whether branch {branch!r} is on a remote',
+            f'Could not determine whether the commit {rev!r} is on a remote',
             err.strip(),
         )
     return bool(out.strip()), None
@@ -1368,6 +1623,16 @@ def cmd_pr_landing_state(args: argparse.Namespace) -> dict:
     a **tip-matching** PR counts, so a stale PR that merged an earlier tip on a
     reused branch name cannot report ``merged`` for new, unlanded commits.
 
+    **A branch whose refs are gone is still readable.** The tip is resolved from
+    the local ref, then from ``origin``, then from the remote directly. When the
+    branch exists in none of them, nothing unlanded can live under the name, so
+    the same-repository PRs in the listing alone decide: a MERGED PR reads
+    ``merged`` — the state a merged change keeps after branch cleanup — an OPEN PR
+    is an inconsistency error (an open PR implies an existing ref), and no MERGED
+    or OPEN PR is an error naming ``branch_absent``. A cross-repository PR is
+    skipped there: ``gh pr list --head`` matches the head BRANCH NAME alone, so a
+    fork PR can carry the same name and says nothing about this repository.
+
     Routed through the CI router's ``--project-dir``, every git/gh subprocess runs
     in the named working tree, so the verb answers "did THIS repository's change
     land?" for a foreign checkout as readily as for the host one. It is the
@@ -1390,7 +1655,6 @@ def cmd_pr_landing_state(args: argparse.Namespace) -> dict:
     tip_sha, err_dict = _branch_tip_sha(branch)
     if err_dict is not None:
         return err_dict
-    assert tip_sha is not None  # narrowed by the err_dict guard
 
     rc, stdout, stderr = github_ops.run_gh(
         [
@@ -1403,7 +1667,7 @@ def cmd_pr_landing_state(args: argparse.Namespace) -> dict:
             '--limit',
             str(_PR_LIST_LIMIT),
             '--json',
-            'number,state,url,headRefName,headRefOid',
+            'number,state,url,headRefName,headRefOid,isCrossRepository',
         ]
     )
     if rc != 0:
@@ -1425,19 +1689,62 @@ def cmd_pr_landing_state(args: argparse.Namespace) -> dict:
 
     # Validate every entry, then keep only PRs whose head IS the current tip.
     tip_pr_states: list[str] = []
+    branch_pr_states: list[str] = []
     for pr in prs:
         if not isinstance(pr, dict):
             return make_error('pr_landing_state', 'gh pr list returned a non-object PR entry', str(pr)[:100])
         state = pr.get('state')
         if not isinstance(state, str) or not state.strip():
             return make_error('pr_landing_state', 'gh pr list returned a PR entry with no usable state', str(pr)[:100])
-        if str(pr.get('headRefOid') or '') == tip_sha:
+        # `--head` matches headRefName ALONE, so a fork PR can carry the same head
+        # name. With a tip to compare against, `headRefOid` settles that; with no
+        # tip (the branch exists nowhere) only a same-repository PR can speak to
+        # THIS repository's branch, so a cross-repository one is skipped.
+        if pr.get('isCrossRepository') is not True:
+            branch_pr_states.append(state)
+        if tip_sha is not None and str(pr.get('headRefOid') or '') == tip_sha:
             tip_pr_states.append(state)
+
+    if tip_sha is None:
+        # The branch exists nowhere, so no unlanded commit lives under the name and
+        # there is no tip to match: the listing alone settles the state. A MERGED
+        # PR means the change landed and its refs were cleaned up; an OPEN PR
+        # contradicts a missing ref, so the read is inconsistent; nothing at all
+        # means the branch was never pushed.
+        #
+        # An OPEN beside a MERGED is the reused-name edge, and the inconsistency
+        # wins there: an open PR implies a live ref the read could not find, so a
+        # `merged` drawn from the old PR would clear the pre-archive gate on a read
+        # nobody could verify. Fail closed, and let the operator look.
+        normalized = {str(state).strip().upper() for state in branch_pr_states if str(state).strip()}
+        if 'OPEN' in normalized:
+            return make_error(
+                'pr_landing_state',
+                f'Branch {branch!r} exists in no local ref, no origin ref and no PR head, yet an OPEN PR '
+                f'names it as its head; the read is inconsistent',
+                'branch_missing_but_pr_open',
+            )
+        if 'MERGED' in normalized:
+            return {
+                'status': 'success',
+                'operation': 'pr_landing_state',
+                'provider': 'github',
+                'branch': branch,
+                'tip_sha': None,
+                'pushed': None,
+                'pr_count': len(branch_pr_states),
+                'landing_state': 'merged',
+                'landing_states': list(LANDING_STATES),
+            }
+        return make_error(
+            'pr_landing_state',
+            f'branch_absent: branch {branch!r} exists in no local ref, no origin ref, and no MERGED or OPEN PR head',
+        )
 
     # Push state informs only the no-PR verdicts (pushed_no_pr vs unpushed). It is
     # gathered unconditionally, but its unreadability is fatal only when the
     # verdict actually rests on it — a tip-matching merged/open PR needs no git.
-    pushed_state, pushed_err = _branch_pushed_state(branch)
+    pushed_state, pushed_err = _branch_pushed_state(tip_sha)
     pushed_known = pushed_state is not None
     landing_state = derive_landing_state(tip_pr_states, bool(pushed_state))
     if landing_state in ('pushed_no_pr', 'unpushed') and not pushed_known:

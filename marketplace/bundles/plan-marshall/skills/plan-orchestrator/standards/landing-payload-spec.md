@@ -101,12 +101,26 @@ the drain consumes. These keys are **required** — a landing missing any of the
 | `model` | The model identifier the plan ran under, or `unknown` when it could not be read. On OpenCode it is measured from the session tree; a single-model tree writes `{model}/{variant}` from `status.metadata.variant`, and a tree that ran more than one model or variant is stamped `mixed` with the distinct `{model}/{variant}` labels carried in `status.metadata.models`, which the producer writes as this fact's list form | `status.metadata.model` (+ `variant` / `models`) |
 | `effort` | The effort level the plan ran under, or `unknown` when it could not be read | `status.metadata.effort` |
 | `plugin_version` | The plan-marshall BUNDLE version the plan ran under (the `version` in the bundle's `.claude-plugin/plugin.json`), or `unknown` when it could not be read. The executor's `MARSHALL_VERSION` rides the OPTIONAL `executor_version` beside it | `status.metadata.bundle_version` |
+| `unresolved_review_threads` | The unresolved review-thread count the merge gate read on the head, from `review-gate`'s `unresolved_review_threads` fact — never a number recalled from the review cycle. A run that could not read the review surfaces writes `unknown` | `review-gate` |
+| `review_body_findings_total` | The finding count the merge gate parsed out of every reviewer's review body on the head, from `review-gate`'s `review_body_findings_total` fact. Every parsed section counts — inline, duplicate, outside-diff, nitpick, follow-up and additional | `review-gate` |
+| `review_body_findings_handled` | How many of those findings carry a disposition naming a commit or a stated reason, from `review-gate`'s `review_body_findings_handled` fact. Equal to the total on a mergeable head | `review-gate` |
+| `sonar_open_new_issues` | The open new-code finding count the Sonar read returned on the merge head — issues plus security hotspots still to review — or `n/a`, or `unknown`. `n/a` is a project that does not analyse with Sonar, a real end state; `unknown` is a read that failed, and asserts only that nothing was observed. Neither collapses into the other, and neither is `0` | `sonar-gate` / `sonar-facts` |
 
 Optional keys a landing MAY carry (not required, so their absence is not incompleteness): `epic`,
 `total_wall_seconds`, `executor_version`, and any per-step typed fact transcribed as
 `step.{name}.{fact_key}={value}`. The functional review's verdict facts and the code review's counts
 are the named instances of the last kind — see § "Functional verdict facts" and § "Code-review
 counts" below.
+
+**A landing written before these keys existed is INCOMPLETE, and it says which keys it lost.** The
+schema marker stays `landing-facts/1`: bumping it would make every pre-existing landing report
+`['schema']` and tell the operator nothing about what to add. Under the one version the
+completeness check names the four absent keys instead, and the remedy is to write them. The runbook
+lane writes all four from `review-gate` and the Sonar read (section 8 of its contract). The
+lifecycle's `emit-landing` step writes none of them yet — no finalize step publishes those three
+review numbers, and `sonar-roundtrip` counts issues without the hotspots — so a lifecycle-emitted
+landing is INCOMPLETE at those keys until those steps record them. That gap is named rather than
+papered over: a check that accepted the landing anyway would be the vacuous guard it replaces.
 
 The four runtime-stamp keys — `harness`, `model`, `effort` and `plugin_version` —
 are read from the plan's runtime metadata, which phase-1-init Step 8a.6 stamps
@@ -144,13 +158,16 @@ different terms because they assert different things.
 
 The **answered-degraded** class is `n/a`. `emit-landing.md` sanctions writing it for a fact the run has
 no value for — no PR was ever created, the step legitimately did not run — so it asserts an ABSENCE THE
-RUN OBSERVED. For `pr`, `merge_state` and `cleanup_owed` that IS an answer — "no PR exists" and "no
-cleanup step ran" are real end states, which is why all three rows above name `n/a` as a legal value.
+RUN OBSERVED. For `pr`, `merge_state`, `cleanup_owed` and `sonar_open_new_issues` that IS an answer —
+"no PR exists", "no cleanup step ran" and "this project does not analyse with Sonar" are real end
+states, which is why all four rows above name `n/a` as a legal value.
 For the remaining required keys — `plan_id`, `deliverables_total`, `deliverables_done`, `total_tokens`,
-`harness`, `model`, `effort`, `plugin_version`, `steps` — it is not: each names something a
+`harness`, `model`, `effort`, `plugin_version`, `steps`, `unresolved_review_threads`,
+`review_body_findings_total` and `review_body_findings_handled` — it is not: each names something a
 landed plan always has, so an absence there is a producer gap, not an answer.
 `check_landing_completeness` treats those as MISSING and names them, so a landing whose token total,
-step list and deliverable counts all degraded is INCOMPLETE rather than silently accepted.
+step list, deliverable counts or review numbers all degraded is INCOMPLETE rather than silently
+accepted.
 
 The **could-not-read** class is `unknown` — the value the `merge_state` row above defines as a state that
 could not be read, asserting only that nothing was observed. `emit-landing.md` routes EVERY failed read
@@ -163,7 +180,8 @@ the two are separate vocabularies rather than one list: `merge_state=n/a` must s
 the allow-list to cover `merge_state` would reject the legitimate `n/a` alongside the failed read.
 
 The two classes therefore split by CONDITION, not by key. Routing a failed read to `n/a` is the
-false-completeness defect this split closes: `n/a` is exempt at `pr`, `merge_state` and `cleanup_owed`, so a merge state
+false-completeness defect this split closes: `n/a` is exempt at `pr`, `merge_state`, `cleanup_owed` and
+`sonar_open_new_issues`, so a merge state
 nobody managed to read would drain as a settled "no PR exists".
 
 `schema` needs no such rule for either class: any value other than
@@ -222,25 +240,25 @@ three reads "no code-review result was recorded", never "the review found nothin
 
 ## Sonar open-issue facts
 
-Whether the pull request was clean of open Sonar issues rides the landing as two typed facts on the
-optional per-step channel, under the step name the plan lifecycle's own Sonar roundtrip already
-uses — one measurement, one channel. The two keys are the RUNBOOK lane's rendering of the read it
-took on the merge head:
+Whether the pull request was clean of open Sonar findings rides the landing as the REQUIRED
+`sonar_open_new_issues` key — the runbook lane's rendering of the read it took on the merge head, and
+the one spelling the schema, the gate and the renderer share — with the rules of the issues left open
+beside it on the OPTIONAL per-step channel, under the step name the plan lifecycle's own Sonar
+roundtrip already uses:
 
-| Optional key | Value |
-|--------------|-------|
-| `step.sonar-roundtrip.open_issue_count` | The open new-code issue count the read measured at the merge head |
-| `step.sonar-roundtrip.open_issue_rules` | The rules of the issues left open there, or `none` at a measured `0` |
+| Key | Value |
+|-----|-------|
+| `sonar_open_new_issues` (required) | The open new-code finding count the read measured at the merge head — the open issues AND the security hotspots still to review |
+| `step.sonar-roundtrip.open_issue_rules` (optional) | The rules of the issues left open there, or `none` at a measured `0` |
 
-The count is scoped to the pull request's analysis — the issues Sonar found on that head — not a
+The count is scoped to the pull request's analysis — the findings Sonar reports on that head — not a
 whole-project total. A lifecycle landing's `sonar-roundtrip` step records its own fact names on the
-same channel (`count_status`, `new_code_issue_count`, and so on), so a drain reading a lifecycle
-landing finds no `open_issue_count` and reads "no Sonar figure was recorded" — never "the pull
-request had no open issues". The two key sets are distinct measurements of the same platform, and
+same channel (`count_status`, `new_code_issue_count`), which are NOT this key: until that step also
+writes `sonar_open_new_issues`, the drain reports the required key MISSING rather than reading
+"no Sonar figure was recorded". The two key sets are distinct measurements of the same platform, and
 neither is inferred from the other.
 
-Two sentinels are legal, and they are different claims — beside the measured figure itself, and
-`none` for the rules fact at a measured `0`:
+Two sentinels are legal for the required count, and they are different claims:
 
 - `unknown` — a read that failed: `undecidable` (the analysis never settled, or the REST call
   failed) or `unconfigured` (the credential resolve said existed could not authenticate). It asserts
@@ -248,16 +266,17 @@ Two sentinels are legal, and they are different claims — beside the measured f
   is clean, and a failed read has not earned that claim. A drain that reads `unknown` reads a gap,
   exactly as `total_tokens=unknown` does.
 - `n/a` — a project that does not analyse its pull requests with Sonar (the runbook lane's
-  `sonar: not_configured`), a real end state rather than a failed read.
+  `sonar: not_configured`), a real end state rather than a failed read. It is a legal value for the
+  required count precisely because the absence is answered rather than unknown.
 
 `none` is not a sentinel: it is the rules fact's measured answer at a confirmed count of `0`, where
 no rule is left open. A confirmed count above zero always carries the rules it left open, because the
 read enumerates them.
 
-The two keys are OPTIONAL: the required key set above is unchanged, so a landing without them — an
-earlier landing, or a run that recorded none — is still COMPLETE. A consumer that finds neither reads
-"no Sonar figure was recorded", never "the pull request had no open issues"; a recorded `0` is the
-clean answer, and only a recorded one.
+The RULES key is OPTIONAL, so a landing without it — one that recorded no rules, or a producer that
+writes only the required count — is still COMPLETE. A consumer that finds it absent reads "no rule
+list was recorded", never "the pull request had no open findings"; a recorded `0` is the clean answer,
+and only a recorded one.
 
 ## The narrative residue section
 

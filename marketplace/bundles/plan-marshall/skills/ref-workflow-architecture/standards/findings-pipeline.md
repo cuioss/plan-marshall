@@ -75,7 +75,7 @@ FIND LOOP      all providers: fetch_findings → ledger, untrusted free-text
    ▼
 INGEST PASS    one batched validate_struct over every raw_input.{field}
    │           → promote clamped values to the clean TOP-LEVEL fields;
-   │           [truncated] marker on cap overflow; a rejection resolves the finding.
+   │           head+tail kept, middle elided on cap overflow; a rejection resolves the finding.
    ▼
 ONE TRIAGE     one domain-grouped pass over the whole ledger (ext-triage-{domain});
    │           reads TOP-LEVEL fields only, never raw_input.* (plugin-doctor
@@ -126,7 +126,7 @@ Each provider producer exposes pure zero-LLM verbs — `fetch_findings` (FIND: f
 
 | Producer | FIND verb | Finding type | Notes |
 |---|---|---|---|
-| `workflow-integration-github` | `github_pr fetch_findings --pr-number N --plan-id P` | `pr-comment` | Pre-filter: `comment-patterns.json` drops automated/acknowledgment noise. Untrusted comment body quarantined under `raw_input.{body}`; source-specific metadata (thread_id, author, kind=inline\|review_body) indexed. |
+| `workflow-integration-github` | `github_pr fetch_findings --pr-number N --plan-id P` | `pr-comment` | Pre-filter: the shared noise baseline in `comment-patterns.json` plus the per-bot marker lists in `automatic-review/standards/{bot_kind}.md` — see `bot-participation-contract.md` § "The four per-bot marker lists answer four different questions" for which list drops, which strips, and which branches. Untrusted comment body quarantined under `raw_input.{body}`; source-specific metadata (thread_id, author, kind=inline\|review_body) indexed. |
 | `workflow-integration-gitlab` | `gitlab_pr fetch_findings --pr-number N --plan-id P` | `pr-comment` | Mirror of GitHub; provider-agnostic schema. |
 | `workflow-integration-sonar` | `sonar fetch_findings --plan-id P --project K --pr N` | `sonar-issue` | Pre-filter: `sonar-rules.json` drops issues already suppressed via NOSONAR. Untrusted issue message quarantined under `raw_input`; severity/rule from the issue. `--pr` scopes the enumeration to that pull request and arms the analysis-revision gate; without it the count is confirmed on Compute-Engine state alone. |
 | `build-pyproject` / `build-maven` / `build-gradle` / `build-npm` | `run --command-args "…" --plan-id P` (always-on when `--plan-id` is set) | `build-error` / `test-failure` / `lint-issue` | Each parsed log entry self-files during the build run (no respond side). Build tool is the `module` field; issue category becomes `rule`. |
@@ -145,7 +145,7 @@ Every producer reports `count_fetched` vs `count_stored` mismatches as a `qgate`
 
 `manage-findings` (`marketplace/bundles/plan-marshall/skills/manage-findings/`) is the unified plan-scoped store. The CLI surface (`add` / `list` / `get` / `resolve` / `promote` / `ingest` / `qgate {add,list,resolve,clear}` / `assessment {add,list,get,clear}`) is the only access path; direct file I/O on the JSONL files is never permitted.
 
-**Quarantine + ingestion.** Untrusted external free-text (a PR-comment body, a Sonar message) is filed under a quarantined `raw_input.{field}` sub-object, capped per field at `plan.finding_raw_input_max_bytes` (default 64 KiB, `[truncated]` marker on overflow). The `ingest` verb runs one batched `validate_struct` pass over every pending finding's `raw_input.{field}` values and promotes only the validated, clamped output to the clean top-level fields — the containment boundary that keeps triage's read surface clean (`raw_input.*` = audit-only quarantine; top-level = clean-by-construction). See [`manage-findings/standards/jsonl-format.md`](../../manage-findings/standards/jsonl-format.md) § "`raw_input` quarantine namespace" and [`untrusted-ingestion/SKILL.md`](../../untrusted-ingestion/SKILL.md) § "Application to the findings ledger".
+**Quarantine + ingestion.** Untrusted external free-text (a PR-comment body, a Sonar message) is filed under a quarantined `raw_input.{field}` sub-object, capped per field at `plan.finding_raw_input_max_bytes` (default 64 KiB; head and tail kept, middle elided on overflow). The `ingest` verb runs one batched `validate_struct` pass over every pending finding's `raw_input.{field}` values and promotes only the validated, clamped output to the clean top-level fields — the containment boundary that keeps triage's read surface clean (`raw_input.*` = audit-only quarantine; top-level = clean-by-construction). See [`manage-findings/standards/jsonl-format.md`](../../manage-findings/standards/jsonl-format.md) § "`raw_input` quarantine namespace" and [`untrusted-ingestion/SKILL.md`](../../untrusted-ingestion/SKILL.md) § "Application to the findings ledger".
 
 Storage layout (under `.plan/local/plans/{plan_id}/artifacts/findings/`):
 

@@ -176,7 +176,7 @@ _DECLARED_WORDING_PAIRS: list[tuple[str, str]] = [
     (bot_kind, pattern) for bot_kind in bot_registry.bot_kinds() for pattern in bot_registry.refusal_patterns(bot_kind)
 ]
 _DECLARED_WORDING_POPULATION_SIZE = len(_DECLARED_WORDING_PAIRS)
-_DECLARED_WORDING_POPULATION_BASELINE = 9
+_DECLARED_WORDING_POPULATION_BASELINE = 10
 
 
 def _login(bot_kind: str) -> str:
@@ -420,7 +420,7 @@ class TestTheRecoveryActionSelectorDerivesItsVerdict:
         window arm is exactly what these inputs would do for an awaitable bot —
         the matched control below shows they do.
         """
-        non_awaitable = _bots_of_class('hard_quota') + _bots_of_class('unknown')
+        non_awaitable = _bots_of_class('hard_quota') + ['sunset-review-bot']
         window_arms = (
             github_re_review.RECOVERY_ACTION_AWAIT_WINDOW,
             github_re_review.RECOVERY_ACTION_CLOSE_AND_REOPEN,
@@ -496,19 +496,19 @@ class TestTheRecoveryActionSelectorDerivesItsVerdict:
         There is no unknown-bot list: ``rate_limit_class`` fails closed to
         ``unknown`` for a kind it does not know, and the ordinary class arm does
         the rest. The matched control is a REGISTERED bot whose declared class is
-        also ``unknown`` — it must reach the identical action and reason, so the
+        equally non-awaitable — it must reach the identical action and reason, so the
         two verdicts differ ONLY in ``bot_kind_registered``. A special-cased
-        unknown-bot branch could not produce that agreement.
+        unregistered-bot branch could not produce that agreement.
         """
         stale = _verdict('some-retired-bot')
-        registered_unknown = _verdict(_bots_of_class('unknown')[0])
+        registered_non_awaitable = _verdict(_bots_of_class('hard_quota')[0])
 
         assert stale['action'] == github_re_review.RECOVERY_ACTION_ESCALATE_NOT_AWAITABLE
-        assert stale['reason'] == registered_unknown['reason'] == 'class_not_awaitable'
-        assert stale['action'] == registered_unknown['action']
+        assert stale['reason'] == registered_non_awaitable['reason'] == 'class_not_awaitable'
+        assert stale['action'] == registered_non_awaitable['action']
         assert stale['rate_limit_class'] == bot_registry.rate_limit_class('some-retired-bot')
         assert stale['bot_kind_registered'] is False
-        assert registered_unknown['bot_kind_registered'] is True
+        assert registered_non_awaitable['bot_kind_registered'] is True
 
     def test_every_arm_publishes_the_inputs_its_derivation_read(self):
         """One verdict SHAPE across every arm, and the whole vocabulary is reached.

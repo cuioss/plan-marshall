@@ -59,6 +59,7 @@ from constants import (
     HASH_ID_LENGTH,
     QGATE_PHASES,
     QGATE_SOURCES,
+    RESOLUTION_TAKEN_INTO_ACCOUNT,
     VALID_CERTAINTIES,
     VALID_RESOLUTIONS,
 )
@@ -84,13 +85,16 @@ CERTAINTY_VALUES = VALID_CERTAINTIES
 # "the record is in the store" versus "the record was rejected".
 #
 # ``success`` (freshly appended), ``deduplicated`` (an identical pending record
-# already exists), ``reopened`` (a matching resolved record was returned to
-# pending) and ``kept`` (an unchanged re-emission of a resolved record left the
-# recorded resolution, detail and timestamp exactly as stored) all mean the
-# finding IS in the store. The remaining value, ``error``, means it is NOT —
-# and callers MUST NOT fold it into the benign no-op outcomes. Every caller
-# consults this set rather than re-deriving the partition inline with
-# ``status == 'success'``.
+# already exists), ``reopened`` (a matching record was returned to pending, either
+# because the caller passed the ``--reopen`` opt-in on a ``fixed`` record or because
+# an OBSERVATION re-armed the review's own ``taken_into_account`` disposition) and
+# ``kept`` (an unchanged re-emission of a record whose disposition stands — an
+# operator ``accepted``, ``rejected`` or triage Hold, or a ``fixed`` record without
+# the opt-in — left it exactly as stored, carrying ``not_reopened`` to name which
+# resolution stood) all mean the finding IS in the store. The remaining value,
+# ``error``, means it is NOT — and callers MUST NOT fold it into the benign no-op
+# outcomes. Every caller consults this set rather than re-deriving the partition
+# inline with ``status == 'success'``.
 QGATE_PERSIST_OK = frozenset({'success', 'deduplicated', 'reopened', 'kept'})
 
 # The published partition of ``add_finding``'s five-valued ``status`` (the values
@@ -124,6 +128,13 @@ FIXED_RESOLUTION = 'fixed'
 FIX_COMMIT_FIELD = 'fix_commit_sha'
 FIX_TASK_FIELD = 'fix_task_number'
 
+#: The ``resolution_source`` value a loop-back round's own rule-keyed resolution
+#: writes. Only a ``taken_into_account`` record carrying it is re-armed by an
+#: identical re-file: that disposition is the review's own supersession. A triage
+#: Hold records the same resolution through ``resolve_qgate_finding`` and carries
+#: no source, so the operator's decision stands.
+RULE_RESOLUTION_SOURCE = 'rule'
+
 _COMMIT_SHA_RE = re.compile(r'^[0-9a-f]{7,40}$')
 
 # Valid reviewer-bot identity values for pr-comment findings (derived from author).
@@ -141,11 +152,73 @@ BOT_KINDS = _registry_bot_kinds()
 # this default; callers thread the resolved value in via `raw_input_max_bytes`.
 DEFAULT_RAW_INPUT_MAX_BYTES = 65536
 
-# Marker appended to a raw_input value that exceeded the per-field byte cap.
+# Marker appended to a raw_input value whose head the degenerate byte cap kept.
 RAW_INPUT_TRUNCATION_MARKER = '[truncated]'
+#: The elision marker a middle cut writes. Same shape as the untrusted-ingestion
+#: clamp's marker, so a reader sees ONE vocabulary for a cut value.
+RAW_INPUT_ELISION_TEMPLATE = ' [... {} characters elided ...] '
 
 
 # --- Untrusted free-text quarantine ---
+
+
+def _elide_for_byte_cap(text: str, max_bytes: int) -> str:
+    """Keep a value's head AND tail within ``max_bytes``, eliding the middle.
+
+    A head-only cut removes a review bot's conclusion — the verdict paragraph and the
+    links live at the END of a long body — so the quarantine must keep both ends. The
+    elision marker names how many characters were removed, matching the clamp
+    ``validate_struct`` applies later. Forty-eight bytes are reserved for the marker's
+    own digits so a realistic result fits the byte budget; a budget too small for a
+    head+tail pair falls back to the head plus the truncation marker.
+    """
+    encoded = text.encode('utf-8')
+    if len(encoded) <= max_bytes:
+        return text
+    budget = max(max_bytes - 48, 0)
+    half = budget // 2
+    if half == 0:
+        # A degenerate cap leaves no room for a head+tail pair. Keep the head and the
+        # truncation marker, which is also what makes a zero cap quarantine to
+        # nothing (the marker-only value is not text).
+        return encoded[:max_bytes].decode('utf-8', errors='ignore') + RAW_INPUT_TRUNCATION_MARKER
+    head = encoded[:half].decode('utf-8', errors='ignore')
+    tail = encoded[len(encoded) - (budget - half) :].decode('utf-8', errors='ignore')
+    elided = len(text) - len(head) - len(tail)
+    return head + RAW_INPUT_ELISION_TEMPLATE.format(max(elided, 0)) + tail
+
+
+def _quarantine_raw_input_with_lengths(
+    raw_input: dict[str, Any] | None,
+    max_bytes: int = DEFAULT_RAW_INPUT_MAX_BYTES,
+) -> tuple[dict[str, str] | None, dict[str, int]]:
+    """Quarantine ``raw_input`` and report the TRUE original length of every cut field.
+
+    Each field's value is stringified, UTF-8 encoded, and — when it overflows
+    ``max_bytes`` — elided in the middle by :func:`_elide_for_byte_cap`, so the
+    conclusion survives. The second return value maps each cut field to its original
+    CHARACTER length, which the ingest pass reports as ``original_length``; without
+    it the validator only ever sees the already-elided text and reports that shorter
+    length as the original.
+    """
+    if not raw_input:
+        return None, {}
+
+    # Clamp the cap to a non-negative budget: a misconfigured non-positive
+    # `max_bytes` would otherwise make a negative slice select from the end and
+    # silently bypass the byte cap. A zero budget elides the whole value.
+    safe_max_bytes = max(max_bytes, 0)
+
+    quarantined: dict[str, str] = {}
+    original_lengths: dict[str, int] = {}
+    for field, value in raw_input.items():
+        text = value if isinstance(value, str) else str(value)
+        encoded = text.encode('utf-8')
+        if len(encoded) > safe_max_bytes:
+            original_lengths[field] = len(text)
+            text = _elide_for_byte_cap(text, safe_max_bytes)
+        quarantined[field] = text
+    return quarantined, original_lengths
 
 
 def _quarantine_raw_input(
@@ -154,29 +227,11 @@ def _quarantine_raw_input(
 ) -> dict[str, str] | None:
     """Store untrusted free-text under a quarantined `raw_input.{field}` namespace.
 
-    Each field's value is stringified, UTF-8 encoded, and capped at ``max_bytes``.
-    A value that overflows the cap is truncated to the byte budget (decoding
-    defensively so a multi-byte character split at the boundary never raises) and
-    the ``RAW_INPUT_TRUNCATION_MARKER`` is appended so downstream readers can tell
-    the value was clipped. Returns ``None`` for an empty/absent mapping so callers
-    omit the key entirely.
+    The value is kept whole up to ``max_bytes``; beyond that its head and tail survive
+    and the middle is elided, so a long review body keeps its conclusion. Returns
+    ``None`` for an empty/absent mapping so callers omit the key entirely.
     """
-    if not raw_input:
-        return None
-
-    # Clamp the cap to a non-negative budget: a misconfigured non-positive
-    # `max_bytes` would otherwise make `encoded[:max_bytes]` slice from the end
-    # (Python negative-index semantics) and silently bypass the byte cap. A zero
-    # budget truncates the value to just the marker.
-    safe_max_bytes = max(max_bytes, 0)
-
-    quarantined: dict[str, str] = {}
-    for field, value in raw_input.items():
-        text = value if isinstance(value, str) else str(value)
-        encoded = text.encode('utf-8')
-        if len(encoded) > safe_max_bytes:
-            text = encoded[:safe_max_bytes].decode('utf-8', errors='ignore') + RAW_INPUT_TRUNCATION_MARKER
-        quarantined[field] = text
+    quarantined, _original_lengths = _quarantine_raw_input_with_lengths(raw_input, max_bytes)
     return quarantined
 
 
@@ -697,9 +752,11 @@ def add_finding(
     if bot_kind:
         record['bot_kind'] = bot_kind
 
-    quarantined = _quarantine_raw_input(raw_input, raw_input_max_bytes)
+    quarantined, original_lengths = _quarantine_raw_input_with_lengths(raw_input, raw_input_max_bytes)
     if quarantined:
         record['raw_input'] = quarantined
+        if original_lengths:
+            record['raw_input_original_lengths'] = original_lengths
 
     append_jsonl(_store_findings_path(store, finding_type), record)
 
@@ -1375,7 +1432,7 @@ def update_finding_text(
     if not parent or parent.get('status') != 'success':
         return _not_found(plan_id, store, hash_id, 'Finding')
 
-    quarantined = _quarantine_raw_input(raw_input, raw_input_max_bytes)
+    quarantined, original_lengths = _quarantine_raw_input_with_lengths(raw_input, raw_input_max_bytes)
     if not _carries_text(quarantined):
         return {
             'status': 'error',
@@ -1405,6 +1462,9 @@ def update_finding_text(
 
     if outcome != 'kept_resolved':
         updates['raw_input'] = quarantined
+        # Always REPLACE the map, so a replacement that now fits clears an earlier
+        # cut's true length instead of leaving it to over-report truncation.
+        updates['raw_input_original_lengths'] = original_lengths
         if reviewed_commit_sha:
             updates['reviewed_commit_sha'] = reviewed_commit_sha
 
@@ -1451,6 +1511,66 @@ def _find_by_title_and_discriminator(
     return None
 
 
+def _reopen_qgate_record(
+    qgate_path: Any,
+    existing: dict[str, Any],
+    phase: str,
+    store: Any,
+    iteration: int | None,
+    *,
+    reopened_by: str,
+) -> dict[str, Any]:
+    """Return a matched resolved record to ``pending``, keeping its prior disposition.
+
+    ``reopened_by`` names the trigger and travels on the result so a caller can tell
+    the two apart: ``observation`` (an identical re-file of a finding a loop-back
+    round resolved ``taken_into_account`` by its rule key — it still blocks, so it is
+    pending again) and ``opt_in`` (a caller passing ``--reopen`` against a ``fixed``
+    record). An observation alone does NOT reopen a ``taken_into_account`` record an
+    operator Hold wrote: such a record carries no ``resolution_source: rule`` marker,
+    so it is kept and the caller reports why.
+
+    The prior resolution, detail and timestamp move into the record's ``history``
+    instead of being nulled, so the disposition the re-detection overrides stays
+    readable. The caller's ``iteration`` is stored on the record when one is
+    supplied, so the re-armed finding carries the re-detection iteration.
+    """
+    prior = {
+        'resolution': existing.get('resolution'),
+        'resolution_detail': existing.get('resolution_detail'),
+        'resolution_timestamp': existing.get('resolution_timestamp'),
+        'timestamp': existing.get('timestamp'),
+    }
+    history = list(existing.get('history') or [])
+    history.append(prior)
+    reobserved_count = int(existing.get('reobserved_count', 0) or 0) + 1
+    reopen_updates: dict[str, Any] = {
+        'resolution': 'pending',
+        'resolution_detail': None,
+        'resolution_timestamp': None,
+        'resolution_source': None,
+        'history': history,
+        'reobserved_count': reobserved_count,
+    }
+    if iteration is not None:
+        reopen_updates['iteration'] = iteration
+    update_jsonl(qgate_path, existing['hash_id'], reopen_updates)
+    reopened: dict[str, Any] = {
+        'status': 'reopened',
+        'hash_id': existing['hash_id'],
+        'phase': phase,
+        'resolution': 'pending',
+        'previous_resolution': str(existing.get('resolution') or ''),
+        'reopened_by': reopened_by,
+        'history': history,
+        'reobserved_count': reobserved_count,
+        **store_state_fields(store),
+    }
+    if iteration is not None:
+        reopened['iteration'] = iteration
+    return reopened
+
+
 def add_qgate_finding(
     plan_id: str,
     phase: str,
@@ -1483,16 +1603,35 @@ def add_qgate_finding(
     which do leave the finding present. Callers test membership in
     :data:`QGATE_PERSIST_OK`, never ``status == 'success'``.
 
+    A matched resolved record is handled by disposition:
+
+    * ``taken_into_account`` recorded by a loop-back round's rule-keyed resolution
+      (``resolution_source: rule``) — the review's own "superseded by a later
+      round" disposition. An identical re-file is an OBSERVATION that the finding
+      still blocks, so the record returns to ``pending`` (``status: reopened``,
+      ``reopened_by: observation``). This is what lets a full loop-back round
+      re-file what still blocks and still be acceptable. A ``taken_into_account``
+      record an operator Hold wrote through ``resolve_qgate_finding`` carries no
+      source and is kept like any other operator decision.
+    * ``fixed`` with ``reopen`` — re-armed (``status: reopened``,
+      ``reopened_by: opt_in``); without the opt-in it is kept.
+    * any other disposition (``accepted``, ``rejected``, ``suppressed``) — kept,
+      because an observation alone never re-arms an operator decision. The result
+      carries ``not_reopened: <resolution>``, so a caller that asked for a reopen
+      can tell why it did not get one, rather than reading a bare ``kept``.
+
     ``reopen`` is the opt-in that re-arms the Q-Gate for a re-detected defect
     the store had recorded as ``fixed``: only a matched record whose resolution
-    is ``fixed`` reopens, and only when the caller passes the opt-in. A reopen stores the
+    is ``fixed`` reopens through the opt-in. A reopen stores the
     caller's ``iteration`` on the record when one is supplied, so the re-armed
     finding carries the re-detection iteration rather than the iteration the
     prior disposition was recorded under. The prior
     resolution, detail and timestamp move into the record's ``history`` instead
     of being nulled, so the disposition the re-detection overrides stays
-    readable. A ``fixed`` record re-observed without the opt-in is kept, and a
-    non-``fixed`` resolution re-observed with the opt-in is kept.
+    readable. A ``fixed`` record re-observed without the opt-in is kept; a
+    ``taken_into_account`` record resolved by a loop-back round reopens with or
+    without the opt-in; any other non-``fixed`` resolution re-observed with the
+    opt-in is kept.
 
     REFUSES against an absent plan directory, for the same reason
     :func:`add_finding` does: the terminal ``append_jsonl`` would mkdir the whole
@@ -1529,63 +1668,63 @@ def add_qgate_finding(
                 'phase': phase,
                 **store_state_fields(store),
             }
+        resolution = str(existing.get('resolution') or '')
+        # An OBSERVATION re-arms the review's OWN disposition, and only that. A
+        # ``taken_into_account`` record a loop-back round resolved through its rule
+        # key (``resolution_source: rule``) is the review superseding itself, so a
+        # re-file of the same blocking finding reports it still blocks and the
+        # record returns to pending. A ``taken_into_account`` record an operator
+        # chose as a triage Hold carries no source and is KEPT: the operator's
+        # decision is not the review's to re-arm. Without the re-arm the finding
+        # blocks ``validate`` while being unpending in the store, and
+        # ``loop-back close --accept`` refuses it with ``finding_not_pending``.
+        if resolution == RESOLUTION_TAKEN_INTO_ACCOUNT and existing.get('resolution_source') == RULE_RESOLUTION_SOURCE:
+            return _reopen_qgate_record(
+                qgate_path,
+                existing,
+                phase,
+                store,
+                iteration,
+                reopened_by='observation',
+            )
         # Opt-in reopen: a re-detected defect the Q-Gate store had recorded as
         # ``fixed`` re-arms the gate only when the filing step passes the opt-in.
         # The prior resolution, detail and timestamp move into the record's
         # ``history`` instead of being nulled, so the overridden disposition stays
-        # readable. A ``fixed`` record re-observed without the opt-in is kept, and
-        # any non-``fixed`` resolution re-observed with the opt-in is kept.
-        if reopen and existing.get('resolution') == FIXED_RESOLUTION:
-            prior = {
-                'resolution': existing.get('resolution'),
-                'resolution_detail': existing.get('resolution_detail'),
-                'resolution_timestamp': existing.get('resolution_timestamp'),
-                'timestamp': existing.get('timestamp'),
-            }
-            history = list(existing.get('history') or [])
-            history.append(prior)
-            reobserved_count = int(existing.get('reobserved_count', 0) or 0) + 1
-            reopen_updates: dict[str, Any] = {
-                'resolution': 'pending',
-                'resolution_detail': None,
-                'resolution_timestamp': None,
-                'history': history,
-                'reobserved_count': reobserved_count,
-            }
-            if iteration is not None:
-                reopen_updates['iteration'] = iteration
-            update_jsonl(
+        # readable. A ``fixed`` record re-observed without the opt-in is kept; a
+        # ``taken_into_account`` record resolved by a loop-back round reopens with or
+        # without the opt-in; any other non-``fixed`` resolution re-observed with the
+        # opt-in is kept.
+        if reopen and resolution == FIXED_RESOLUTION:
+            return _reopen_qgate_record(
                 qgate_path,
-                existing['hash_id'],
-                reopen_updates,
+                existing,
+                phase,
+                store,
+                iteration,
+                reopened_by='opt_in',
             )
-            reopened: dict[str, Any] = {
-                'status': 'reopened',
-                'hash_id': existing['hash_id'],
-                'phase': phase,
-                'resolution': 'pending',
-                'previous_resolution': FIXED_RESOLUTION,
-                'history': history,
-                'reobserved_count': reobserved_count,
-                **store_state_fields(store),
-            }
-            if iteration is not None:
-                reopened['iteration'] = iteration
-            return reopened
         # Kept-resolution: the same title AND the same content is a genuine
-        # re-detection of the resolved finding, and the recorded resolution
-        # stands — resolution, detail and timestamp are kept exactly, so an
-        # unchanged re-emission never re-arms a gate the reviewer had cleared.
+        # re-detection of a resolved finding whose disposition an observation may
+        # not touch — an operator Hold, an acceptance, a rejection, a suppression,
+        # or a fixed record with no opt-in. Resolution, detail and timestamp are
+        # kept exactly, so an unchanged re-emission never re-arms what the operator
+        # decided.
         # The re-observation is recorded as a counter on the record; nothing
         # else is touched. A same-title-different-content finding never lands
         # here (it fails the discriminator match above) and is filed fresh.
+        #
+        # ``not_reopened`` names WHY nothing was re-armed. A bare ``kept`` cannot
+        # be told apart from a no-op by a caller that asked for a reopen.
         reobserved_count = int(existing.get('reobserved_count', 0) or 0) + 1
         update_jsonl(qgate_path, existing['hash_id'], {'reobserved_count': reobserved_count})
         return {
             'status': 'kept',
             'hash_id': existing['hash_id'],
             'phase': phase,
-            'resolution': existing['resolution'],
+            'resolution': resolution,
+            'not_reopened': resolution,
+            'reopen_requested': reopen,
             'reobserved_count': reobserved_count,
             **store_state_fields(store),
         }
@@ -1616,9 +1755,11 @@ def add_qgate_finding(
     if rule:
         record['rule'] = rule
 
-    quarantined = _quarantine_raw_input(raw_input, raw_input_max_bytes)
+    quarantined, original_lengths = _quarantine_raw_input_with_lengths(raw_input, raw_input_max_bytes)
     if quarantined:
         record['raw_input'] = quarantined
+        if original_lengths:
+            record['raw_input_original_lengths'] = original_lengths
 
     append_jsonl(qgate_path, record)
 
@@ -1740,6 +1881,7 @@ def resolve_qgate_finding(
     path = _store_qgate_path(store, phase)
     updates: dict[str, Any] = {
         'resolution': resolution,
+        'resolution_source': None,
         'resolution_timestamp': timestamp(),
     }
     if detail:
@@ -1864,6 +2006,11 @@ def resolve_qgate_findings_by_rule(
     ``untouched`` — the key is the only selector, so a finding the caller did not
     name is never swept up alongside the ones it did.
 
+    Every resolved record carries ``resolution_source: rule``. That marker is what
+    lets a later identical re-file tell the loop-back round's own supersession
+    (re-armed) from an operator Hold recorded through ``resolve_qgate_finding``
+    (kept).
+
     Returns ``{status, plan_id, phase, rule, resolution, resolved[], untouched[]}``
     where each list carries ``{hash_id, rule}`` entries (``rule`` is the empty
     string for a finding that carries none), so the caller can report exactly
@@ -1902,6 +2049,7 @@ def resolve_qgate_findings_by_rule(
             record['hash_id'],
             {
                 'resolution': resolution,
+                'resolution_source': RULE_RESOLUTION_SOURCE,
                 'resolution_timestamp': timestamp(),
                 'resolution_detail': detail,
             },

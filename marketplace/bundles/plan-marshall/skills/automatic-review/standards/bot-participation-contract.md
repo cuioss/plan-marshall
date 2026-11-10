@@ -263,15 +263,25 @@ comment carries it (§ "A shape may be gated on a content marker" below).
 
 | Publish shape | Counts as evidence because | Declared by |
 |---------------|---------------------------|-------------|
-| `inline` | A per-line comment can only be produced by reading the diff at that line. | CodeRabbit, PR-Agent |
+| `inline` | A per-line comment can only be produced by reading the diff at that line — **and** the provider must PLACE it at the merge candidate. A reply posted into an existing thread is never evidence, whatever it says. | CodeRabbit |
 | `review_body` | The bot's review summary is emitted by a completed review pass over the diff. | CodeRabbit, Sourcery |
-| `issue_comment` | A PR-level comment a bot declares as a publish shape is a review artifact it emitted against the diff — it counts on its own terms, not because the bot has no other shape. | CodeRabbit, PR-Agent |
+| `issue_comment` | A PR-level comment a bot declares as a publish shape is a review artifact it emitted against the diff — it counts on its own terms, not because the bot has no other shape. | CodeRabbit |
 
 A shape's evidentiary weight is a property of the shape, never of how many shapes the declaring bot
-has. A bot may declare several: PR-Agent publishes `issue_comment` unconditionally and `inline` when
-`/improve` is enabled for the repository, and each shape counts on the reasoning in its own row. It
-follows that the ABSENCE of one declared shape is not evidence of non-participation — only the
-presence of a declared shape is evidence, and only of participation.
+has. A bot may declare several: CodeRabbit publishes `review_body`, `inline` and `issue_comment`, and
+each shape counts on the reasoning in its own row. It follows that the ABSENCE of one declared shape
+is not evidence of non-participation — only the presence of a declared shape is evidence, and only of
+participation.
+
+**An `inline` record must be PLACED, and a thread reply is never evidence.** The provider reports the
+commit an inline comment is attached to (`commit`, falling back to the review's commit) and whether
+it answers an existing thread (`replyTo`, with thread POSITION as the fallback: the first comment of
+a thread opens it, every later one replies). An inline comment is credited only when it opens its
+thread and is placed at the merge candidate; a reply post-dates the push while reviewing nothing, and
+an unplaced comment proves no review of the candidate. Both are reported in
+`stale_participation_bots[]` rather than credited, so the remedy is a re-review. This gate applies to
+every bot declaring `inline`, independent of `participation_requires_update` — placement is a fact
+about the comment, not a currency arm.
 
 The vocabulary is **closed to publish shapes**, and that closure is what enforces the diff-derived
 rule below: a publish shape is an artifact the bot produced against the diff, so anything without one
@@ -286,12 +296,15 @@ A publish shape is evidence because of what it *is*, but one bot can publish two
 in the same shape — one proving a review **started**, one proving it **finished** — and the shape
 cannot tell them apart. `participation_evidence_markers` is the per-bot, per-shape field that closes
 that: a map from a declared publish shape to the literal a comment in that shape must carry to count.
-A comment in a gated shape without the literal is **not evidence** — it is neither credited nor
-reported as a stale publish, because it is not a review artifact at all. The producer applies the gate
-before the currency test (`github_pr._is_participation_evidence`, read through
-`bot_registry.participation_evidence_marker`), so no bot name enters the code. The re-review matcher
-reads the same `issue_comment` entry: a comment in that shape without the literal is no answer to a
-re-review request either, so the wait does not end on a review that has only started
+A shape may declare an ALTERNATION — a list of literals, ANY one of which counts — because a bot can
+retire one finished-review marker for another and both formats are then in flight; a single literal
+would credit one and reject the other. A comment in a gated shape carrying none of the declared
+literals is **not evidence** — it is neither credited nor reported as a stale publish, because it is
+not a review artifact at all. The producer applies the gate before the currency test
+(`github_pr._is_participation_evidence`, read through
+`bot_registry.participation_evidence_markers_for`), so no bot name enters the code. The re-review
+matcher reads the same `issue_comment` entries: a comment in that shape carrying none of them is no
+answer to a re-review request either, so the wait does not end on a review that has only started
 (`github_re_review._ReReviewStrategy._match_bot_comment`).
 
 **The gate is FAIL-OPEN on an absent declaration.** A shape with no entry — and every shape of a bot
@@ -305,17 +318,16 @@ whose unconditional evidence shape carries no marker straight to `absent`. The f
 
 | Bot | Declaration | Why |
 |-----|-------------|-----|
-| CodeRabbit | `issue_comment` gated on `<!-- recent_review_start -->` | Its walkthrough / summary `issue_comment` is posted before any review completes; its review verdict carries the marker. Ungated, the walkthrough alone credited a review that had not happened. See [`coderabbit.md`](coderabbit.md). |
+| CodeRabbit | `issue_comment` gated on an alternation: `<!-- recent_review_start -->` OR `<!-- final_review_risk_coverage:` | Its walkthrough / summary `issue_comment` is posted before any review completes; a finished review carries one of the two markers — the retired wrapper, or the current coverage marker. Ungated, the walkthrough alone credited a review that had not happened. See [`coderabbit.md`](coderabbit.md). |
 | Sourcery | none | It declares no `issue_comment` shape at all — `review_body` is its only publish shape, and no pre-review artifact of its shares that shape — so there is nothing to gate. |
-| PR-Agent (`cuioss-review-bot`) | none — **deliberately left undeclared** | Its Guide `issue_comment` is its only UNCONDITIONAL evidence shape. Gating it is a change to the one shape that keeps this bot from resolving `absent`, and it was not taken here. The accepted reach of that decision: its other `issue_comment` publishes — a `/help` reference, an `/ask` answer — still credit on the shape alone. |
 
 ### Why a check-run state is not evidence
 
 A check-run reports that a *job ran*, not that a *review was published*. The two come apart in both
 directions, so reading check state as participation is wrong regardless of which way it errs:
 
-- **False negative.** PR-Agent posts **no check-run at all** and submits **no review object**.
-  Scoring it on check state would mark it absent on every run no matter how well it reviewed.
+- **False negative.** A bot that reviews without a check-run — and without submitting a review object
+  at all — would be marked absent on every run no matter how well it reviewed.
 - **False positive.** A check-run can conclude successfully having posted nothing, or having posted
   only a refusal. A green check is not a published review.
 
@@ -390,15 +402,29 @@ its answer on the second look, so the same unedited comment at the same HEAD fli
 
 #### The named-commit arm — a comment that names a commit is decided by that commit
 
-A currency-tested comment can state which commit it reviewed: the in-house reviewer writes it into its
-persistent comment as a `…/commit/{sha}` permalink carrying the full commit id. Where a comment does
-that, its own statement decides the credit, **ahead of every ledger arm**:
+A currency-tested comment can state which commit it reviewed, and there are three shapes in which it
+does so. The in-house reviewer writes it into its persistent comment as a `…/commit/{sha}` permalink
+carrying the full commit id; the provider reports it on a per-review artifact as `commit_id`; and
+CodeRabbit's current summary carries it in its `final_review_risk_coverage` payload as
+`coveredCommitId` / `sourceCommitId` with a `kind`. Where the evidence names a commit, that statement
+decides the credit, **ahead of every ledger arm**:
 
 | The comment | Verdict |
 |-------------|---------|
 | names the merge candidate | **current** — credited, on first sight as on any later fetch |
 | names at least one commit, none of them the merge candidate | **stale** — reported in `stale_participation_bots[]`, whatever its timestamps or edit history say |
-| names no commit | no verdict from this arm — the ledger arms in § "Evidence for a bot that edits one comment in place" decide, unchanged |
+| carries no commit anywhere in its evidence | no verdict from this arm — the ledger arms in § "Evidence for a bot that edits one comment in place" decide, unchanged |
+| a coverage marker whose `kind` is not `reviewed` | **not a finished review** — never credited |
+| a coverage marker that cannot be parsed | **never credited** — an unreadable marker is a claim nobody can evaluate, so it neither credits nor falls through to a ledger arm that would credit an edit |
+
+The coverage marker is read by `_github_pr.review_coverage_verdict`, the single parser of
+`sourceCommitId`, `coveredCommitId` and `kind`; no consumer restates those fields.
+
+**An in-place edit alone never credits evidence that names its commit.** This is the absorbed
+"participation credit ignores an in-progress review" defect: the fresh-edit arm measures
+`updated_at` movement, which a bot produces by editing its comment without re-reviewing. Where the
+evidence names a commit, the named-commit arm answers first, so the edit cannot credit a commit the
+comment does not name. Evidence that names no commit keeps the ledger arms unchanged.
 
 **Why it outranks the ledger.** The ledger arms infer the reviewed commit from when the plan saw the
 comment and whether it moved. A fresh edit is their strongest signal, and it is still an inference: a
@@ -540,8 +566,8 @@ hand.
 ### Evidence for a bot that edits one comment in place
 
 A bot that re-reviews by **editing a persistent comment in place** rather than posting a new one
-declares `participation_requires_update: true`. A bot may keep more than one such comment (PR-Agent
-keeps one per review pass); each is tested on its own, under its own `comment_id`. For such a bot the comment's continued existence
+declares `participation_requires_update: true`. A bot may keep more than one such comment — one per
+review pass; each is tested on its own, under its own `comment_id`. For such a bot the comment's continued existence
 proves only that it reviewed **once, at some commit** — after a loop-back or force-push the unchanged
 comment would silently credit it with reviewing code it never saw. Applying the currency rule, its
 evidence requires the comment to prove a review of the **merge candidate**. A comment that names a
@@ -619,15 +645,21 @@ it was awaited for.
 
 #### The reviewed-commit reference is recognised wherever it sits, and compared for EQUALITY
 
-`head_sha_verified` is decided by whether the matched signal's evidence **references** the awaited
-HEAD — not by whether that evidence *is* the bare SHA. On the review arm the evidence is the review's
+`head_sha_verified` is decided by whether the matched signal's evidence **names** the awaited HEAD
+— not by whether that evidence *is* the bare SHA. On the review arm the evidence is the review's
 reviewed-commit field; on the issue-comment arm it is the comment **body**, because a bot that
 republishes its summary in place states the commit it reviewed there (CodeRabbit's `Review updated
 until commit …`). The same reviewed-commit value arrives in more than one
 shape: a bare hex token, the SHA carried inside a `…/commit/{sha}` permalink, or either of those
-inside prose. Each names the same commit, so each MUST verify — and both arms read it through the
-one predicate, `github_re_review._references_head_sha`, whose extraction is the one commit recogniser
-(`_github_pr.commit_tokens`) the participation currency test also reads.
+inside prose. Each names the same commit, so each MUST verify — and the issue-comment arm reads it
+through `github_re_review._body_names_head`, whose extraction is the one commit recogniser
+(`_github_pr.commit_tokens`) the participation currency test also reads, PLUS one precedence rule:
+a review-coverage marker present in the body decides first
+(`_github_pr.review_coverage_verdict`, which also says whether `kind` is a finished review), and the
+token recogniser is the fallback for a comment carrying no marker. The review arm reads its field
+through `github_re_review._references_head_sha`. A comment whose coverage marker is present but
+unreadable, or whose `kind` is not a finished review, is not an answer at all: it is skipped without
+a record rather than admitted and reported as a decline.
 
 ⛔ **This predicate fails toward BLOCKING, which is the opposite direction from the rest of this
 contract's refusal handling, and is why the recognition must be wide.** A reference the matcher does
@@ -653,6 +685,9 @@ Worked example — awaited HEAD `a1b2c3d4e5f60718293a4b5c6d7e8f9012345678`:
 | `https://github.com/{owner}/{repo}/commit/0f1e2d3c4b5a69788796a5b4c3d2e1f098765432` | `false` | The same shape naming a genuinely different commit: the negative control the widening must still fail. |
 | `https://github.com/{owner}/{repo}/commit/a1b2c3d4e5f6` | `false` | An abbreviation of the awaited HEAD — equality, never prefix. |
 | comment body: `Review updated until commit [a1b2c3d](https://github.com/{owner}/{repo}/commit/a1b2c3d4e5f60718293a4b5c6d7e8f9012345678)` | `true` | The in-place-republished summary names the awaited HEAD in its body. |
+| coverage marker: `{"sourceCommitId":"a1b2c3d4…","coveredCommitId":"a1b2c3d4…","kind":"reviewed"}` | `true` | The marker names the awaited HEAD and declares a finished review. |
+| same marker with `coveredCommitId` naming another commit | `false` | A present marker is a claim, so it decides — the tokens elsewhere in the body do not override it. |
+| coverage marker whose payload cannot be parsed, or whose `kind` is not `reviewed` | not an answer | Skipped without a record: an in-progress or unreadable summary is no finished review. |
 | comment body naming no commit | `false` | The bot answered without naming what it reviewed — the decline this member exists to record. |
 
 A widening asserted only by its positive case cannot show it did not simply match everything, so the
@@ -774,9 +809,10 @@ has been written down. Two consequences follow, and both are properties of the m
 gaps in any one bot's record:
 
 - **A bot whose `refusal_patterns[]` is empty rests entirely on the arms that do not read its
-  registry record.** Nothing about that is hypothetical: PR-Agent declares an empty list today, and it
-  is one of the bots this repository's merge barrier treats as *required* — so a reviewer whose
-  silence actually blocks a merge has no registry counterexample on file.
+  registry record.** Nothing about that is hypothetical: a bot may be registered before any refusal
+  wording has been observed for it, and it can still be one of the bots the merge barrier treats as
+  *required* — a reviewer whose silence actually blocks a merge with no registry counterexample on
+  file.
 - **A refusal REWORDED past every enumerated shape is recognised as an
   `unrecognised_refusal`** — not filed as review feedback, and not credited as participation. It
   resolves to the `refused_unknown` member, because an arm that could not read the notice supports no
@@ -1035,23 +1071,38 @@ The producer therefore treats a recognised refusal as a **three-way branch**, no
 This is also why `refusal_patterns` must never be unioned into the producer's `ignore_patterns` drop
 set: doing so collapses the very distinction the two-field split exists to carry.
 
-### The three per-bot marker lists answer three different questions
+### The four per-bot marker lists answer four different questions
 
-A bot's registry doc declares three independent marker surfaces that each drive a **comment-level**
-outcome (drop or branch). They are easy to confuse because all three are literal-substring lists read
-by the same producer, but each drives a different outcome and none is a superset of another. (The
-`refusal_size_patterns` overlay from § "Two axes" is deliberately NOT one of these three: it drives no
+A bot's registry doc declares four independent marker surfaces that each drive a **comment-level**
+outcome (drop, strip or branch). They are easy to confuse because all four are literal-substring
+lists read by the same producer, but each drives a different outcome and none is a superset of
+another. (The
+`refusal_size_patterns` overlay from § "Two axes" is deliberately NOT one of these four: it drives no
 comment-level outcome — it labels a refusal's CAUSE, which selects the `refused_structural`
 member rather than dropping or keeping a comment — and it is by design a subset of
-`refusal_patterns`, so the no-superset property here is scoped to these three comment-level surfaces.
-The `no_unreviewed_commit_patterns` overlay from § "The refusal condition" is outside the three for
+`refusal_patterns`, so the no-superset property here is scoped to these four comment-level surfaces.
+The `no_unreviewed_commit_patterns` overlay from § "The refusal condition" is outside the four for
 the same reason: it labels a refusal's CONDITION and is likewise a subset of `refusal_patterns`.)
 
 | Marker surface | Match semantics | Outcome |
 |----------------|-----------------|---------|
-| `ignore_patterns` | **Any** entry present in the body. | **Unconditional drop.** The comment is a routine section of a successful review (a walkthrough, a tips block, a `/help` echo) and is never a finding, whatever else the body carries. |
-| `refusal_patterns` | **Any** entry present in the body. | **A branch, never a drop.** The comment is the bot declining to review; it is excluded from findings AND from `participated_bots[]`, counted under `count_skipped_refusal`, and surfaced in `refused_bots[]` (see the table above). |
-| `contentless_review_markers` + `contentless_review_headings` + `actionable_content_markers` | **Every** `contentless_review_markers` entry present, **any one** `contentless_review_headings` entry present when the bot declares any, **and** no `actionable_content_markers` entry present. | **A conditional drop.** The comment is a real review that found nothing, so it is dropped as noise (`count_skipped_noise`) — but only when the body is *fully* clean. A single actionable marker, one missing required marker, or none of the declared headings leaves the comment in place and it is filed as a finding in full. |
+| `ignore_patterns` | **Any** entry present in the body. | **A drop, vetoed by the same bot's `actionable_content_markers` and concern section.** The comment is a routine section of a successful review (a no-op review line, a learnings-only notice) and is dropped as noise — unless it also carries an actionable marker or a declared concern section whose text states a concern, in which case the finding is kept. A marker that a *review summary* also carries belongs in the conditional row below instead: an unconditional drop on it lost every concern a summary raised in the same body. |
+| `footer_patterns` | **Any** entry present on a LINE. | **A strip, then the ordinary test.** Everything from the first marker line to the end of the body is removed before the `ignore_patterns` and contentless tests — a footer is a terminal block, so a footer spread over one line or several leaves no markup behind, and a review body carrying real findings is filed with its signal intact; a body left with nothing but footer is dropped as noise. A footer never causes a drop by itself. |
+| `refusal_patterns` | **Any** entry present in the body. | **A branch, never a drop.** The comment is the bot declining to review; it is excluded from findings AND from `participated_bots[]`, counted under `count_skipped_refusal`, and surfaced in `refused_bots[]` (see the table above). A bot that states one ceiling in several wordings — CodeRabbit's file-count skip says `Too many files!` on its automatic-review notice and `files exceed the limit of` on its commanded-review reply — needs each wording declared: the whole point of this arm is that the notice is READ, so a wording nobody enumerated leaves the bot looking like it reviewed. |
+| `contentless_review_markers` + `contentless_review_headings` + `actionable_content_markers` + `concern_section_headings` / `clean_section_verdicts` | **Every** `contentless_review_markers` entry present, **any one** `contentless_review_headings` entry present when the bot declares any, **no** `actionable_content_markers` entry present, **and** every declared `concern_section_headings` section carrying a `clean_section_verdicts` literal. | **A conditional drop.** The comment is a real review that found nothing, so it is dropped as noise (`count_skipped_noise`) — but only when the body is *fully* clean. A single actionable marker, one missing required marker, none of the declared headings, or a concern section whose text states a concern leaves the comment in place and it is filed as a finding in full. An empty `clean_section_verdicts` beside a declared heading files every section under it (fail closed). |
+
+**This is where a review summary belongs.** A summary that carries a concern in its own body — the
+nitpick, outside-diff and follow-up sections a bot renders there instead of as inline comments, or a
+free-text statement under its `concern_section_headings` entry — carries exactly the same walkthrough,
+marketing and tips boilerplate as a summary that found nothing.
+No unconditional marker can separate the two, so the summary's boilerplate is the conditional row's
+job: the summary marker is the conjunction anchor, the headings name the states one persistent summary
+comment is published in, an actionable section or a concern section without a declared
+`clean_section_verdicts` literal vetoes the drop. The
+matched controls are the summary that carries no concern (still noise), the summary whose concern
+section carries the observed clean verdict (still noise) and the in-progress state of the
+same comment (still noise); the case the rule exists for is the summary that carries nothing BUT a
+concern, which is filed. CodeRabbit is the bot that declares it.
 
 The layer is a conjunction over `contentless_review_markers` precisely so it cannot be widened by
 accident: weakening the list to one representative marker would silently broaden the suppression.
@@ -1076,7 +1127,7 @@ rule below, and `review_completeness.classify_bot()` assigns `participated_but_e
 bot present in `proven_participants` — a bot absent from `participated_bots[]` falls through to an
 unproven state that blocks the quorum. The reading that follows turns on a CONDITION, not on a named
 roster: it applies to a bot that declares `participation_requires_update` **and** opts into the
-contentless drop by declaring `contentless_review_markers` — PR-Agent is one such bot, and any
+contentless drop by declaring `contentless_review_markers` — CodeRabbit is one such bot, and any
 registry doc can add another. For such a bot an unchanged clean comment is credited while the merge
 candidate is the commit it was reviewed against, and denied once HEAD advances past that commit, so
 once a loop-back or force-push moves HEAD a dropped clean Guide resolves
@@ -1263,7 +1314,7 @@ accumulate, the verb ships as a measurement with **no parity claim attached**.
 | Consumer | What it reads |
 |----------|---------------|
 | `automatic-review/SKILL.md` | Both lists, to drive the completion-aware poll, the re-review trigger set, and the step-done guard. |
-| `github_pr fetch_findings` | Both lists, to classify each ingested comment and emit the unclassified-bot warning; each bot's `participation_evidence` / `participation_evidence_markers` / `participation_requires_update`, to derive the evidence-typed `participated_bots[]` **and the `stale_participation_bots[]` set that carries `participated_stale`**; each bot's `refusal_patterns`, to branch a refusal into `refused_bots[]` rather than drop it, and its `refusal_size_patterns`, to attribute each refusal's CAUSE into `refused_causes[]` (size vs quota), and its `refusal_size_cap_patterns`, to read the stated ceiling into `refused_size_caps[]`; the enumerative arm, to report a refusal no earlier arm could read into `unrecognised_refusal[]` — withholding the finding, denying the participation credit, and carrying the registry file and field that close the gap; each bot's `contentless_review_markers` / `contentless_review_headings` / `actionable_content_markers`, to drop a fully clean review comment as noise. |
+| `github_pr fetch_findings` | Both lists, to classify each ingested comment and emit the unclassified-bot warning; each bot's `participation_evidence` / `participation_evidence_markers` / `participation_requires_update`, to derive the evidence-typed `participated_bots[]` **and the `stale_participation_bots[]` set that carries `participated_stale`**; each bot's `refusal_patterns`, to branch a refusal into `refused_bots[]` rather than drop it, and its `refusal_size_patterns`, to attribute each refusal's CAUSE into `refused_causes[]` (size vs quota), and its `refusal_size_cap_patterns`, to read the stated ceiling into `refused_size_caps[]`; the enumerative arm, to report a refusal no earlier arm could read into `unrecognised_refusal[]` — withholding the finding, denying the participation credit, and carrying the registry file and field that close the gap; each bot's `contentless_review_markers` / `contentless_review_headings` / `actionable_content_markers` / `concern_section_headings` / `clean_section_verdicts`, to drop a fully clean review comment as noise (a concern section whose text carries no clean verdict vetoes the drop). |
 | `github_pr fetch_findings` → `merge_candidate_sha_resolved` | Nothing from this contract — it is the producer's report of whether the merge-candidate SHA could be READ at all. `fetch_pr_head_sha` returns `''` on any failure path, so a `false` is *"the head is unresolvable"*, never a verdict about a bot that an operator can act on. **Producer-side disclosure: no taxonomy member routes on it.** |
 | `github_pr fetch_findings` → `undecidable_participation_bots[]` | Each bot's `participation_evidence` / `participation_evidence_markers` / `participation_requires_update`, to name the bots whose comment was already admissible evidence — a declared publish shape carrying that shape's declared content marker where one is declared — on a fetch where the merge candidate was unreadable. A comment a marker-gated shape rejects reaches this set no more than it reaches `participated_bots[]`: both are filled below the one `_is_participation_evidence` gate. Reported in **neither** `participated_bots[]` (nothing anchors the credit) **nor** `stale_participation_bots[]` (stale's remedy is a re-review trigger, which cannot fix a failed read). An unreadable merge candidate is the only ground on which a bot is named here. ⚠ **No classifier member** — the failure taxonomy above has no member for this state, so `review_completeness` does not route on it. Widening the taxonomy is a separate plan, and this field is the prerequisite it needs; the gap is stated here rather than left to surface as an unreachable branch. **One consumer reads the list:** the `no_unreviewed_commit` recovery ([`../SKILL.md`](../SKILL.md) § "Rate-limit refusal recovery" Branch 6) maps a bot named here to the review-on-record state `undecidable`, which resolves `unmeasured` and posts nothing — so a review the producer could not place is never read as no review on record. |
 | `github_pr fetch_findings` → `refusal_pattern_drift[]` | Each bot's `refusal_patterns` and `participation_evidence`, read through the `_github_pr.refusal_layers` provenance seam at the FILING pre-filter only (never the participation loop), to emit one `{bot_kind, layer}` record per bot whose notice the STRUCTURAL arm read **while that bot's own declared `refusal_patterns` did NOT** — `layer` naming the arm that read it, and therefore always `structural_fallback`: the notice was caught by shape while the registry record missed it, so that record has drifted from the bot's current wording. ⛔ **The predicate is DIRECTIONAL, not "exactly one arm fired".** The mirror case — the registry arm matching while the structural arm does not — is the DESIGNED state for a whole class of refusals and is never emitted: a diff-size ceiling is a comparison rather than an "exceeded / reached / hit" statement, so it is invisible to the structural arm BY CONSTRUCTION (see § "Two axes"), and recording its registry-only match would report the architecture working as designed as decay. **Diagnostic only: it changes no verdict, denies no credit, and no taxonomy member routes on it** — the refusal itself was still recognised and classified normally. Deduped on `(bot_kind, layer)`, because drift is a property of the declared wording rather than of each comment carrying it. |

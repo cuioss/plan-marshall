@@ -122,13 +122,13 @@ class Issue:
         severity: Issue severity (SEVERITY_ERROR or SEVERITY_WARNING).
         category: Optional category (e.g., "compilation", "test_failure", "deprecation").
         stack_trace: Optional stack trace for test failures.
-        detail: Optional representative failure detail block (a traceback /
-            assertion body) captured once per unique failure signature. Distinct
-            from ``stack_trace`` (raw ``at``/``Caused by:`` frame collection) — it
-            carries the *why* of a failure so it can reach the emitted result and
-            the finding store without a raw-log re-read. Presentation-only: it is
-            truncated to a display cap by the parser, so it MUST NOT be used as a
-            dedup identity — use ``signature`` for that.
+        detail: Optional representative detail block that explains the issue
+            without a raw-log re-read: a failure's traceback / assertion body
+            (pyproject), or a compiler error's ``symbol:`` / ``location:``
+            continuation lines (Maven). Distinct from ``stack_trace`` (raw
+            ``at``/``Caused by:`` frame collection). Presentation-only, and the
+            producer may truncate it to a display cap, so it MUST NOT be used as
+            a dedup identity — use ``signature`` for that.
         signature: Optional full, un-truncated parser-computed failure signature
             (assertion type + normalized message + failing frame). Kept separate
             from ``detail`` so failure deduplication (``_issue_failure_signature``)

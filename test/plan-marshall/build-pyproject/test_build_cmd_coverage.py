@@ -196,6 +196,7 @@ DOCUMENTED_MARKER_NAMES = sorted(
         'xdist_group',
         'allow_daemon_routing',
         'allow_root_filesystem_pollution',
+        'real_directory_lock',
         'slow_live',
         'touches_real_state',
     ]

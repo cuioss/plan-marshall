@@ -13,6 +13,8 @@ import file_ops
 import pytest
 from _freshness_notation_crosscheck_fixtures import (
     _CURRENT_SHA,
+    _GRADLE,
+    _MAVEN,
     _NPM,
     _OTHER_SHA,
     _PYPROJECT,
@@ -29,6 +31,12 @@ from _freshness_notation_crosscheck_fixtures import (
     _write_ledger,
     _write_status,
     cmd_pre_commit_verify_freshness,
+)
+from _pre_commit_verify_freshness_fixtures import (
+    _py_footprint_requirement,
+    _run_gate_over_rows,
+    _same_sha_row,
+    _stub_verdict,
 )
 from _resolve_project_dir_fixtures import worktree_query_result
 
@@ -446,7 +454,7 @@ def test_the_observed_three_row_ledger_no_longer_certifies_a_whole_tree_change(
     assert result['reason'] == crosscheck.REASON_SCOPE_NARROW
     assert result['scope_cross_check'] == crosscheck.NARROW
     # The refusal names WHAT the row ran, not merely that something was narrow.
-    assert result['row_scopes'] == ['module-tests plan-marshall/manage-findings: ' + crosscheck.ROW_CANONICAL_TOO_WEAK]
+    assert result['row_scopes'] == ['module-tests plan-marshall/manage-findings: ' + crosscheck.ROW_SCOPE_TOO_NARROW]
 
 
 def test_a_whole_tree_verify_row_still_certifies_the_same_change(plan_context, monkeypatch, tmp_path) -> None:
@@ -618,25 +626,236 @@ def test_the_notation_property_survives_the_scope_widening(monkeypatch) -> None:
 
 
 # =============================================================================
-# Every scope inability passes, and says which one it was
+# A READABLE scope is judged before the canonical vocabulary
 # =============================================================================
 
 
-def test_an_unreadable_row_scope_passes_and_names_the_inability(plan_context, monkeypatch, tmp_path) -> None:
-    """A row whose ``args`` carries no ``--command-args`` is undetermined, not narrow.
+@pytest.mark.parametrize('canonical', ['test', 'package'])
+def test_a_maven_row_outside_the_vocabulary_is_narrow_before_it_is_unknown(monkeypatch, canonical) -> None:
+    """A READ row that built one module refutes a whole-tree change.
 
-    ⛔ The fail direction here is the whole point: an unreadable row must NOT be
-    read as whole-tree (which would manufacture the false-green) and must NOT be
-    read as narrow (which would refuse every pre-existing ledger row). It is an
-    absence of knowledge, so it passes with the inability recorded.
+    ``test`` and ``package`` are deliberately outside ``CANONICAL_ANALYSES``, and
+    the canonical-unknown route is an INABILITY: it passes with the inability
+    recorded. Judged in that order, a ``{canonical} -pl core-api -am`` row — which
+    measurably built one module — certified a whole-tree change. The scope is
+    readable and decisive, so the row is refuted rather than unknown; the
+    vocabulary's documented partiality must not outrank positive knowledge.
+    """
+    _stub_expected(monkeypatch, {_PYPROJECT})
+    outcome = crosscheck.cross_check_candidates(
+        [_build_entry(args=_args_for(f'{canonical} -pl core-api -am'))],
+        '/nonexistent-project-dir',
+        _required(),
+    )
+
+    assert outcome['scope_verdict'] == crosscheck.NARROW, outcome
+    assert outcome['scope_reason'] == crosscheck.REASON_SCOPE_NARROW
+    assert outcome['row_scopes'] == [f'{canonical} core-api: ' + crosscheck.ROW_SCOPE_TOO_NARROW]
+    assert outcome['contributing'] == []
+
+
+def test_a_vocabulary_canonical_at_the_same_scope_is_still_narrow(monkeypatch) -> None:
+    """Control: the reordering does not change a canonical the vocabulary knows.
+
+    The same row and the same whole-tree change, with ``verify`` in place of the
+    unmapped canonical, must reach the identical scope refusal — the reordering
+    removes a mask, it does not widen or narrow the vocabulary branch.
+    """
+    _stub_expected(monkeypatch, {_PYPROJECT})
+    outcome = crosscheck.cross_check_candidates(
+        [_build_entry(args=_args_for('verify -pl core-api -am'))],
+        '/nonexistent-project-dir',
+        _required(),
+    )
+
+    assert outcome['scope_verdict'] == crosscheck.NARROW, outcome
+    assert outcome['row_scopes'] == ['verify core-api: ' + crosscheck.ROW_SCOPE_TOO_NARROW]
+
+
+def test_a_whole_tree_vocabulary_row_stays_covered(monkeypatch) -> None:
+    """Control: a row that names no scope still certifies the whole tree."""
+    _stub_expected(monkeypatch, {_PYPROJECT})
+    outcome = crosscheck.cross_check_candidates(
+        [_build_entry(args=_args_for('verify'), outcome=_outcome_for(19007))],
+        '/nonexistent-project-dir',
+        _required(),
+    )
+
+    assert outcome['scope_verdict'] == crosscheck.COVERED, outcome
+    assert outcome['contributing'] == [0]
+
+
+def test_a_confined_change_is_not_refused_by_a_vocabulary_silent_row(monkeypatch) -> None:
+    """Control: with an adequate scope, the canonical-unknown route stays an inability.
+
+    Nothing about that route changed for a change the row's recorded scope really
+    covers: the canonical is still outside the vocabulary, so the row is
+    undetermined and passes rather than being refused.
+    """
+    _stub_expected(monkeypatch, {_PYPROJECT})
+    outcome = crosscheck.cross_check_candidates(
+        [_build_entry(args=_args_for('test -pl core-api -am'))],
+        '/nonexistent-project-dir',
+        _required(whole_tree=False, modules={'core-api'}),
+    )
+
+    assert outcome['scope_verdict'] == crosscheck.UNDETERMINED, outcome
+    assert outcome['scope_reason'] == crosscheck.REASON_SCOPE_UNREADABLE
+    assert outcome['contributing'] == [0]
+
+
+def test_a_whole_tree_vocabulary_silent_row_stays_undetermined(monkeypatch) -> None:
+    """Control: a whole-tree row names no scope, so the scope does not decide.
+
+    With nothing scoped there is no scope refusal to reach first, and the row
+    keeps the absence-of-knowledge verdict it has always had.
+    """
+    _stub_expected(monkeypatch, {_PYPROJECT})
+    outcome = crosscheck.cross_check_candidates(
+        [_build_entry(args=_args_for('test'))],
+        '/nonexistent-project-dir',
+        _required(),
+    )
+
+    assert outcome['scope_verdict'] == crosscheck.UNDETERMINED, outcome
+    assert outcome['scope_reason'] == crosscheck.REASON_SCOPE_UNREADABLE
+    assert outcome['contributing'] == [0]
+
+
+# =============================================================================
+# The recorded command payload — the row's own field beats the joined argv
+# =============================================================================
+
+
+@pytest.mark.parametrize(
+    ('command_args', 'expected'),
+    [
+        ('verify', ('verify', ())),
+        ('verify plan-marshall', ('verify', ('plan-marshall',))),
+        ('test -pl core-api -am', ('test', ('core-api',))),
+        ('module-tests -k foo', None),
+        ('verify --timeout 900', None),
+        ('', None),
+    ],
+)
+def test_parse_row_scope_prefers_the_recorded_command_payload(command_args, expected) -> None:
+    """The field is the payload the joined ``args`` cannot recover.
+
+    ``--command-args`` receives one argv element, so the executor can record the
+    executor/payload boundary the unquoted join loses. A flag INSIDE that value
+    is still unreadable: the reader must not guess whether it narrows the run.
+    An empty value is unreadable too, never whole-tree.
+    """
+    row = _build_entry(args='run --command-args verify --timeout 900', command_args=command_args)
+
+    parsed = crosscheck.parse_row_scope(row)
+
+    if expected is None:
+        assert parsed is None
+    else:
+        assert parsed is not None
+        assert (parsed.canonical, parsed.scope_tokens) == expected
+
+
+def test_a_row_recording_the_command_payload_certifies_a_whole_tree_change(monkeypatch) -> None:
+    """The executor's own trailing flag no longer blocks a measured whole-tree run.
+
+    The row below is exactly the documented call shape ``run --command-args
+    verify --timeout 900``. The joined ``args`` cannot say whether ``--timeout``
+    sat inside the payload's quoting or after it; the recorded field can, and it
+    says the payload is a bare ``verify``.
+    """
+    _stub_expected(monkeypatch, {_PYPROJECT})
+    row = _build_entry(
+        args='run --command-args verify --timeout 900',
+        command_args='verify',
+        outcome=_outcome_for(19007),
+    )
+
+    outcome = crosscheck.cross_check_candidates([row], '/nonexistent-project-dir', _required())
+
+    assert outcome['scope_verdict'] == crosscheck.COVERED, outcome
+    assert outcome['contributing'] == [0]
+
+
+def test_a_payload_flag_inside_the_recorded_value_stays_unreadable(monkeypatch) -> None:
+    """CONTROL: the field does not bless a narrowing filter.
+
+    ``-k foo`` is the payload's own flag. Recording the payload does not make it
+    readable, because the reader still cannot say how much of the suite ran.
+    """
+    _stub_expected(monkeypatch, {_PYPROJECT})
+    row = _build_entry(args='run --command-args module-tests -k foo', command_args='module-tests -k foo')
+
+    outcome = crosscheck.cross_check_candidates([row], '/nonexistent-project-dir', _required())
+
+    assert outcome['scope_verdict'] == crosscheck.UNDETERMINED, outcome
+    assert outcome['joint_reason'] == crosscheck.REASON_SCOPE_UNREADABLE_WHOLE_TREE
+
+
+def test_a_recorded_payload_with_no_flag_stays_whole_tree(monkeypatch) -> None:
+    """CONTROL: a flagless payload covers whole-tree exactly as before."""
+    _stub_expected(monkeypatch, {_PYPROJECT})
+    row = _build_entry(args='run --command-args verify', command_args='verify', outcome=_outcome_for(19007))
+
+    outcome = crosscheck.cross_check_candidates([row], '/nonexistent-project-dir', _required())
+
+    assert outcome['scope_verdict'] == crosscheck.COVERED, outcome
+    assert outcome['contributing'] == [0]
+
+
+def test_a_legacy_unreadable_row_names_the_flag_placement_remedy(plan_context, monkeypatch, tmp_path) -> None:
+    """An old row's refusal names the ONE remedy that makes it readable.
+
+    A row written before the field existed keeps today's unreadable reading, and
+    the generic "re-run a build" advice loops: the re-run writes the same shape.
+    The message therefore names the two changes that work — record the payload as
+    its own field (a regenerated executor does), or move the executor's own flag
+    before ``--command-args`` / drop it.
+    """
+    _stub_expected(monkeypatch, {_PYPROJECT})
+    _stub_required(monkeypatch, _required())
+    result = _run(
+        plan_context,
+        monkeypatch,
+        tmp_path,
+        [_build_entry(args='run --command-args verify --timeout 900', outcome=_outcome_for(19007))],
+        'scope-legacy-flag',
+    )
+
+    assert result['status'] == 'stale', result
+    assert result['reason'] == crosscheck.REASON_SCOPE_UNREADABLE_WHOLE_TREE
+    assert 'before --command-args' in result['message']
+    assert 'Re-run a build whose canonical and scope cover this change.' not in result['message']
+
+
+# =============================================================================
+# An unreadable scope's inability passes for a narrow change, and refuses a
+# whole-tree one
+# =============================================================================
+
+
+def test_an_unreadable_row_blocks_a_whole_tree_change_and_names_the_inability(
+    plan_context, monkeypatch, tmp_path
+) -> None:
+    """A row whose ``args`` carries no ``--command-args`` cannot certify a whole tree.
+
+    ⛔ An unreadable row must NOT be read as whole-tree (which would manufacture
+    the false-green) and must NOT be read as narrow (which would claim a blast
+    radius nobody measured). It is an absence of knowledge, and an absence must
+    not stand in for evidence exactly where the claim is widest: a whole-tree
+    change is refused with the inability named, while a change that needs less
+    still passes on the same row
+    (``test_an_unreadable_row_still_passes_a_change_that_does_not_need_whole_tree``).
     """
     _stub_expected(monkeypatch, {_PYPROJECT})
     _stub_required(monkeypatch, _required())
     result = _run(plan_context, monkeypatch, tmp_path, [_build_entry(args='run')], 'scope-unreadable')
 
-    assert result['status'] == 'fresh', result
+    assert result['status'] == 'stale', result
+    assert result['reason'] == crosscheck.REASON_SCOPE_UNREADABLE_WHOLE_TREE
     assert result['scope_cross_check'] == crosscheck.UNDETERMINED
-    assert result['scope_cross_check_reason'] == crosscheck.REASON_SCOPE_UNREADABLE
+    assert result['missing_analyses'] == [], 'a row nobody read names no missing analysis'
 
 
 def test_an_underivable_requirement_passes_and_names_the_inability(plan_context, monkeypatch, tmp_path) -> None:
@@ -693,10 +912,35 @@ def test_a_canonical_outside_the_vocabulary_is_undetermined_not_refuted(
         ('run --command-args', None),
         ('run --command-args --timeout 900', None),
         ('run --command-args verify', ('verify', ())),
-        ('run --command-args verify --timeout 900', ('verify', ())),
+        # An EXECUTOR flag after the payload is not scope: the joined argv cannot
+        # say whether it sat inside the quoted command or after it. The row is
+        # therefore unreadable, which at the gate blocks a whole-tree change and
+        # passes a change that needs less.
+        ('run --command-args verify --timeout 900', None),
         ('run --command-args=verify', ('verify', ())),
         ('run --command-args verify plan-marshall', ('verify', ('plan-marshall',))),
         ('run --command-args=verify plan-marshall', ('verify', ('plan-marshall',))),
+        # A KNOWN scope-bearing flag carries the module set instead of dropping it.
+        ('run --command-args module-tests -pl mod-a', ('module-tests', ('mod-a',))),
+        ('run --command-args module-tests --projects mod-a,mod-b', ('module-tests', ('mod-a', 'mod-b'))),
+        ('run --command-args module-tests -pl=mod-a', ('module-tests', ('mod-a',))),
+        ('run --command-args verify plan-marshall -pl mod-a', ('verify', ('plan-marshall', 'mod-a'))),
+        # The KNOWN non-narrowing companion maven emits beside ``-pl`` is ignored,
+        # so the resolved module row stays scoped instead of unreadable.
+        ('run --command-args package -pl consumer -am', ('package', ('consumer',))),
+        ('run --command-args package -pl consumer --also-make', ('package', ('consumer',))),
+        # A neutral companion with NO scope of any kind is not a whole-tree claim.
+        ('run --command-args package -am', None),
+        ('run --command-args package --also-make', None),
+        # An UNKNOWN flag is neither whole-tree nor a scope: it is unreadable.
+        ('run --command-args module-tests -k foo', None),
+        # The executor's OWN flags, in the documented call shapes, land in the same
+        # unquoted stream and are therefore indistinguishable from the payload's.
+        ('run --command-args verify --format json', None),
+        ('run --command-args verify --mode errors --format json', None),
+        ('run --command-args verify -Ppre-commit -pl core-api', None),
+        ('run --command-args module-tests -pl', None),
+        ('run --command-args module-tests -pl=,', None),
     ],
 )
 def test_parse_row_scope_never_reads_an_unreadable_row_as_whole_tree(args, expected) -> None:
@@ -706,6 +950,11 @@ def test_parse_row_scope_never_reads_an_unreadable_row_as_whole_tree(args, expec
     available — so every shape that carries no readable ``--command-args`` must
     return ``None`` instead. Both argparse spellings are accepted because the
     ledger stamps whichever the caller used.
+
+    A trailing flag is ambiguous in the unquoted ledger argv — it could have sat
+    inside the quoted command (narrowing the build) or after it — so every flag
+    that is not a known scope-bearing one makes the row unreadable rather than
+    letting it read as whole-tree.
     """
     parsed = crosscheck.parse_row_scope(_build_entry(args=args))
 
@@ -757,3 +1006,605 @@ def test_required_coverage_is_derived_from_the_footprint_not_fixed() -> None:
     assert with_source.analyses == frozenset({vocabulary.compile, vocabulary.lint, vocabulary.test})
     # ``divergence_possible`` is taken verbatim — this dimension does not re-derive it.
     assert with_source.whole_tree is True
+
+
+# =============================================================================
+# A narrowing expressed as a flag inside ``--command-args``
+# =============================================================================
+#
+# ``parse_row_scope`` collects scope at a flag after the canonical command, so a
+# Maven row stamped ``--command-args module-tests -pl mod-a`` reads as scope
+# ``mod-a`` rather than as no scope at all — which the coverage dimension reads as
+# whole-tree, the false-green direction. These three cases are the refusal, its
+# unknown-flag sibling, and the matched control.
+
+
+def test_a_scope_bearing_flag_narrows_the_row_and_is_refused_for_a_whole_tree_change(monkeypatch) -> None:
+    """(a) ``-pl mod-a`` is the row's scope, so a whole-tree change is not covered."""
+    _stub_expected(monkeypatch, {_PYPROJECT})
+    vocabulary, reason = crosscheck.load_analysis_vocabulary()
+    assert vocabulary is not None, reason
+    row = _build_entry(args=_args_for('module-tests -pl mod-a'), outcome=_outcome_for(120))
+
+    parsed = crosscheck.parse_row_scope(row)
+    assert parsed is not None
+    assert (parsed.canonical, parsed.scope_tokens) == ('module-tests', ('mod-a',))
+
+    outcome = crosscheck.cross_check_candidates(
+        [row],
+        '/nonexistent-project-dir',
+        _required(analyses={vocabulary.test}, whole_tree=True),
+    )
+
+    assert outcome['scope_verdict'] == crosscheck.NARROW, outcome
+    assert outcome['contributing'] == []
+    assert outcome['row_scopes'] == ['module-tests mod-a: ' + crosscheck.ROW_SCOPE_TOO_NARROW]
+
+
+def test_an_unknown_flag_contributes_no_coverage_and_is_never_labelled_whole_tree(monkeypatch) -> None:
+    """(b) ``-k foo`` is not a known scope flag: the row is unreadable, not whole-tree.
+
+    An unreadable row is refused for a whole-tree change, because it cannot show
+    the coverage that change needs. The inversion is deliberate: this case used to
+    assert that the row passes with nothing credited to it, which is exactly the
+    pass a narrow row with a trailing executor flag was getting.
+    """
+    _stub_expected(monkeypatch, {_PYPROJECT})
+    vocabulary, reason = crosscheck.load_analysis_vocabulary()
+    assert vocabulary is not None, reason
+    row = _build_entry(args=_args_for('module-tests -k foo'), outcome=_outcome_for(120))
+
+    assert crosscheck.parse_row_scope(row) is None
+
+    outcome = crosscheck.cross_check_candidates(
+        [row],
+        '/nonexistent-project-dir',
+        _required(analyses={vocabulary.test}, whole_tree=True),
+    )
+
+    assert outcome['scope_verdict'] == crosscheck.UNDETERMINED, outcome
+    assert outcome['scope_reason'] == crosscheck.REASON_SCOPE_UNREADABLE
+    # Nothing is credited to the row: "could not read" is not "covered it".
+    assert outcome['contributing'] == []
+    assert outcome['contributing_analyses'] == []
+    assert outcome['joint_reason'] == crosscheck.REASON_SCOPE_UNREADABLE_WHOLE_TREE
+    assert outcome['row_scopes'] == ['unreadable: ' + crosscheck.ROW_ARGS_UNREADABLE]
+
+
+def test_the_matched_control_row_with_no_scope_is_still_whole_tree_and_adequate(monkeypatch) -> None:
+    """(c) MATCHED CONTROL: ``module-tests`` with no scope tokens is genuinely whole-tree."""
+    _stub_expected(monkeypatch, {_PYPROJECT})
+    vocabulary, reason = crosscheck.load_analysis_vocabulary()
+    assert vocabulary is not None, reason
+    row = _build_entry(args=_args_for('module-tests'), outcome=_outcome_for(19007))
+
+    parsed = crosscheck.parse_row_scope(row)
+    assert parsed is not None
+    assert (parsed.canonical, parsed.scope_tokens) == ('module-tests', ())
+
+    outcome = crosscheck.cross_check_candidates(
+        [row],
+        '/nonexistent-project-dir',
+        _required(analyses={vocabulary.test}, whole_tree=True),
+    )
+
+    assert outcome['scope_verdict'] == crosscheck.COVERED, outcome
+    assert outcome['contributing'] == [0]
+    assert outcome['contributing_analyses'] == [[vocabulary.test]]
+    assert outcome['row_scopes'] == ['module-tests: ' + crosscheck.COVERED]
+
+
+def test_the_scope_flag_registry_names_the_flags_each_build_tool_carries() -> None:
+    """The registry is explicit, so a flag cannot become "scope" by accident.
+
+    Maven's ``-pl`` / ``--projects`` is the minimum the plan names; npm's
+    ``--workspace`` selects the same blast radius. The neutral set holds only
+    flags that provably cannot narrow. Asserting both exact sets keeps an
+    accidental addition — a pytest ``-p`` plugin flag, a test filter, a verbosity
+    flag — from being read as a module scope, and keeps the neutral set from
+    growing into a hole.
+    """
+    assert crosscheck._SCOPE_FLAGS == {
+        '-pl': 1,
+        '--projects': 1,
+        '--workspace': 1,
+    }
+    assert crosscheck._SCOPE_NEUTRAL_FLAGS == frozenset({'-am', '--also-make'})
+
+
+def test_the_executor_run_flag_registry_names_the_flags_after_the_payload() -> None:
+    """The hint's flag set is derived from the parsers, so parser drift fails here.
+
+    The set is every flag the ``run`` subparser accepts after the payload: the
+    shared declaration plus the tool-local extras npm and pyproject declare.
+    ``--command-args`` is excluded because it is the marker the payload is read
+    FROM, and argparse's own ``-h`` / ``--help`` pair because it is declared by the
+    parser, not by the subcommand.
+
+    The expected option-to-arity map is DERIVED from the actual parser
+    declarations — shared, plus each tool's ``extra_args_fn`` — rather than
+    compared against a second literal copy, so a flag that is added, removed or
+    given another arity fails this test instead of leaving the remedy quietly
+    wrong. The non-vacuity guard keeps an empty derivation from passing.
+    """
+    import argparse
+
+    import _build_cli
+    import npm
+    import pyproject_build
+
+    def declared(extra_args_fn) -> dict[str, int]:
+        root = argparse.ArgumentParser()
+        run_parser = _build_cli.add_run_subparser(root.add_subparsers(), extra_args_fn=extra_args_fn)
+        mapping: dict[str, int] = {}
+        for action in run_parser._actions:
+            for option in action.option_strings:
+                if option in {'--command-args', '-h', '--help'}:
+                    continue
+                # ``nargs is None`` is argparse's "exactly one value"; anything else
+                # (``?``, ``*``, ``+``, an explicit count) is an arity this reader
+                # does not model, so the test refuses rather than guessing.
+                assert action.nargs is None or action.nargs == 1, (option, action.nargs)
+                mapping[option] = 1
+        return mapping
+
+    derived = declared(None)
+    derived.update(declared(npm._npm_extra_args))
+    derived.update(declared(pyproject_build._pyproject_extra_args))
+
+    assert derived, 'the derivation must not be vacuous'
+    assert crosscheck._EXECUTOR_RUN_FLAGS == derived
+
+
+def test_a_gradle_submodule_multi_task_row_is_unreadable_not_whole_tree(monkeypatch) -> None:
+    """The submodule task list names ONE subproject, so dropping it would over-claim.
+
+    ``_gradle_cmd_discover`` prefixes every task with the subproject path, so
+    ``:core:test :core:jacocoTestReport`` is a coverage run of ``core`` alone.
+    Read as goals-only it would look whole-tree and credit a whole-tree change the
+    run never performed; the reader cannot recover Gradle's project paths, so the
+    row is an inability — which still refuses a change that needs the whole tree.
+    """
+    _stub_expected(monkeypatch, {_GRADLE})
+    row = _build_entry(
+        notation=_GRADLE,
+        args=_args_for(':core:test :core:jacocoTestReport'),
+        outcome=_outcome_for(120),
+    )
+
+    assert crosscheck.parse_row_scope(row) is None
+
+    outcome = crosscheck.cross_check_candidates([row], '/nonexistent-project-dir', _required())
+
+    assert outcome['contributing'] == []
+    assert outcome['joint_reason'] == crosscheck.REASON_SCOPE_UNREADABLE_WHOLE_TREE
+
+
+def test_a_single_task_gradle_submodule_row_is_also_unreadable(monkeypatch) -> None:
+    """A lone ``:core:test`` names the same subproject, so it must not read whole-tree.
+
+    The project prefix lives on the FIRST task here, and reading the row as
+    goal-plus-no-scope would credit a whole-tree change a one-subproject run never
+    performed.
+    """
+    _stub_expected(monkeypatch, {_GRADLE})
+    row = _build_entry(notation=_GRADLE, args=_args_for(':core:test'), outcome=_outcome_for(120))
+
+    assert crosscheck.parse_row_scope(row) is None
+
+    outcome = crosscheck.cross_check_candidates([row], '/nonexistent-project-dir', _required())
+
+    assert outcome['contributing'] == []
+    assert outcome['joint_reason'] == crosscheck.REASON_SCOPE_UNREADABLE_WHOLE_TREE
+
+
+def test_a_resolved_maven_module_row_is_read_as_a_narrow_scope() -> None:
+    """A resolver-shaped Maven module row is scoped, not whole-tree.
+
+    ``_maven_cmd_discover`` emits the module in a flag after the canonical goal —
+    ``package -pl {module} -am`` for a reactor-test-artifact consumer, and
+    ``test -pl {module} -am`` otherwise (``_maven_cmd_discover.py`` L917,
+    L940-943). This case pins the parser against that shape; the fixture-resolved
+    executable itself is recorded in the PR body (``test_cmd_resolve`` resolves the
+    ``reactor-test-artifact-project`` consumer to
+    ``... run --command-args "package -pl consumer -am"``).
+    """
+    row = _build_entry(args=_args_for('package -pl consumer -am'), outcome=_outcome_for(120))
+
+    parsed = crosscheck.parse_row_scope(row)
+
+    assert parsed is not None
+    assert (parsed.canonical, parsed.scope_tokens) == ('package', ('consumer',))
+    assert crosscheck._scope_adequate(parsed, _required(whole_tree=True)) is False
+
+
+# =============================================================================
+# An unreadable row is an inability, and an inability is not a coverage credit
+# =============================================================================
+#
+# The executor's own flags sit in the same unquoted ``args`` token stream as the
+# payload's, so a row carrying one after the canonical command cannot be read for
+# scope. Reading that as a pass would let a narrow row — ``verify plan-marshall
+# --format json`` — certify a whole-tree change. The decision: an unreadable row
+# BLOCKS a change that needs whole-tree coverage and still passes a change that
+# does not, because only the former claims more than the row can show.
+
+
+def test_a_whole_tree_change_is_not_certified_by_an_unreadable_row(monkeypatch):
+    """A narrow row whose trailing executor flag hides its scope does not pass."""
+    _stub_expected(monkeypatch, {_PYPROJECT})
+    vocabulary, reason = crosscheck.load_analysis_vocabulary()
+    assert vocabulary is not None, reason
+    row = _build_entry(args=_args_for('verify plan-marshall --format json'), outcome=_outcome_for(19007))
+
+    assert crosscheck.parse_row_scope(row) is None
+
+    outcome = crosscheck.cross_check_candidates(
+        [row],
+        '/nonexistent-project-dir',
+        _required(analyses={vocabulary.test}, whole_tree=True),
+    )
+
+    assert outcome['contributing'] == []
+    assert outcome['scope_verdict'] == crosscheck.UNDETERMINED
+    assert outcome['joint_reason'] == crosscheck.REASON_SCOPE_UNREADABLE_WHOLE_TREE
+    assert outcome['missing_analyses'] == [], 'nothing is known to be missing about a row nobody read'
+
+
+def test_the_documented_profile_and_module_row_is_unreadable_and_blocks_a_whole_tree_change(monkeypatch):
+    """``verify -Ppre-commit -pl core-api`` cannot be placed, so it fails closed.
+
+    The flag sequence may narrow the run (``-pl core-api``) or may not, and the
+    ledger keeps no record of where the payload's quoting ended — so the row is an
+    inability. An inability blocks a change that needs whole-tree coverage, which
+    is the direction this gate must never guess in.
+    """
+    _stub_expected(monkeypatch, {_PYPROJECT})
+    vocabulary, reason = crosscheck.load_analysis_vocabulary()
+    assert vocabulary is not None, reason
+    row = _build_entry(args=_args_for('verify -Ppre-commit -pl core-api'), outcome=_outcome_for(19007))
+
+    assert crosscheck.parse_row_scope(row) is None
+
+    outcome = crosscheck.cross_check_candidates(
+        [row],
+        '/nonexistent-project-dir',
+        _required(analyses={vocabulary.test}, whole_tree=True),
+    )
+
+    assert outcome['contributing'] == []
+    assert outcome['joint_reason'] == crosscheck.REASON_SCOPE_UNREADABLE_WHOLE_TREE
+
+
+def test_an_unreadable_row_still_passes_a_change_that_does_not_need_whole_tree(monkeypatch):
+    """MATCHED CONTROL: the narrower change keeps the recorded inability."""
+    _stub_expected(monkeypatch, {_PYPROJECT})
+    vocabulary, reason = crosscheck.load_analysis_vocabulary()
+    assert vocabulary is not None, reason
+    row = _build_entry(args=_args_for('verify plan-marshall --format json'), outcome=_outcome_for(19007))
+
+    outcome = crosscheck.cross_check_candidates(
+        [row],
+        '/nonexistent-project-dir',
+        _required(analyses={vocabulary.test}, whole_tree=False, modules={'plan-marshall'}),
+    )
+
+    assert outcome['contributing'] == [0], 'an inability must not become a refusal for a narrow change'
+    assert outcome['contributing_analyses'] == [[]]
+    assert outcome['scope_verdict'] == crosscheck.UNDETERMINED
+    assert outcome['joint_reason'] is None
+
+
+@pytest.mark.parametrize(
+    ('command_args', 'canonical'),
+    [
+        ('verify -pl core-api -am', 'verify'),
+        ('package -pl core-api -am', 'package'),
+        ('test -pl core-api -am', 'test'),
+    ],
+    ids=['verify-narrow', 'package-canonical-unknown', 'test-canonical-unknown'],
+)
+def test_each_resolved_maven_row_shape_is_refused_by_its_recorded_scope(monkeypatch, command_args, canonical):
+    """Every module row ``_maven_cmd_discover`` emits is scoped, and refutes.
+
+    ``verify`` is in the analysis vocabulary while ``package`` and ``test`` are
+    outside it by design (the vocabulary maps what an analysis examines, and
+    neither maps). All three record exactly one module for a whole-tree change, so
+    the scope refutes them before the canonical is consulted — the documented
+    partiality of the vocabulary cannot turn a measured one-module build into a
+    coverage credit.
+    """
+    _stub_expected(monkeypatch, {_PYPROJECT})
+    vocabulary, reason = crosscheck.load_analysis_vocabulary()
+    assert vocabulary is not None, reason
+    row = _build_entry(args=_args_for(command_args), outcome=_outcome_for(19007))
+
+    outcome = crosscheck.cross_check_candidates(
+        [row],
+        '/nonexistent-project-dir',
+        _required(analyses={vocabulary.test}, whole_tree=True),
+    )
+
+    assert outcome['scope_verdict'] == crosscheck.NARROW, outcome
+    assert outcome['contributing'] == [], outcome
+    assert outcome['row_scopes'] == [f'{canonical} core-api: ' + crosscheck.ROW_SCOPE_TOO_NARROW]
+
+
+def test_the_control_row_with_no_extra_flag_is_still_whole_tree_and_adequate(monkeypatch):
+    """CONTROL: ``verify`` with nothing after it reads as whole-tree and covers."""
+    _stub_expected(monkeypatch, {_PYPROJECT})
+    vocabulary, reason = crosscheck.load_analysis_vocabulary()
+    assert vocabulary is not None, reason
+    row = _build_entry(args=_args_for('verify'), outcome=_outcome_for(19007))
+
+    outcome = crosscheck.cross_check_candidates(
+        [row],
+        '/nonexistent-project-dir',
+        _required(analyses={vocabulary.test}, whole_tree=True),
+    )
+
+    assert outcome['scope_verdict'] == crosscheck.COVERED, outcome
+    assert outcome['contributing'] == [0]
+
+
+def test_a_broken_vocabulary_stays_visible_beside_an_unreadable_row(monkeypatch):
+    """A deployment fault is never relabelled as a property of the rows.
+
+    ``analysis_vocabulary_unimportable`` says THIS CHECK IS BROKEN. The whole-tree
+    refusal is about rows nobody could place, so when the vocabulary itself could
+    not be loaded the loud token must survive — the row is unreadable either way,
+    and blaming it would hide a broken deployment behind an ordinary refusal.
+    """
+    _stub_expected(monkeypatch, {_PYPROJECT})
+    monkeypatch.setattr(
+        crosscheck,
+        'load_analysis_vocabulary',
+        lambda: (None, crosscheck.REASON_VOCABULARY_UNIMPORTABLE),
+    )
+    row = _build_entry(args=_args_for('verify plan-marshall --format json'), outcome=_outcome_for(19007))
+    # Built literally: ``_required()`` loads the vocabulary this case has just
+    # broken, and the requirement is an input to the check, not its subject.
+    required = crosscheck.RequiredCoverage(analyses=frozenset({'test'}), whole_tree=True, modules=frozenset())
+
+    outcome = crosscheck.cross_check_candidates([row], '/nonexistent-project-dir', required)
+
+    assert outcome['scope_verdict'] == crosscheck.UNDETERMINED
+    assert outcome['scope_reason'] == crosscheck.REASON_VOCABULARY_UNIMPORTABLE
+    assert outcome['joint_reason'] is None, 'the broken-check token must stay the stated reason'
+
+
+# =============================================================================
+# Positional tokens are module scope only for the tool whose positionals are
+# modules
+# =============================================================================
+#
+# The npm, Maven and Gradle discoverers emit tool-native goals, tasks and script
+# names after the canonical — ``run test``, ``clean install``,
+# ``spotlessCheck check``. Reading those as a module scope turned a whole-tree
+# change into ``build_scope_narrow`` where it used to be an unmapped canonical,
+# an inability that passed. The reader therefore keys the positional reading on
+# the row's own ``notation``, the only field that says what its positionals mean.
+
+_GOAL_POSITIONAL_ROWS = [
+    (_NPM, 'run test', 'run'),
+    (_MAVEN, 'clean install', 'clean'),
+    (_GRADLE, 'spotlessCheck check', 'spotlessCheck'),
+    (_GRADLE, 'test jacocoTestReport', 'test'),
+]
+
+
+@pytest.mark.parametrize(('notation', 'command_args', 'canonical'), _GOAL_POSITIONAL_ROWS)
+def test_a_goal_positional_row_is_undetermined_rather_than_narrow(
+    monkeypatch, notation, command_args, canonical
+) -> None:
+    """A tool-native goal is not a module, so the row cannot narrow the change.
+
+    The goal-positional tools must not read as unreadable either: an unreadable
+    row refuses every whole-tree change, which is the same false red by another
+    route. The row is readable, names its canonical, and that canonical is
+    outside the vocabulary — an INABILITY that passes with its reason recorded.
+    """
+    _stub_expected(monkeypatch, {notation})
+
+    row = _build_entry(notation=notation, args=_args_for(command_args))
+    outcome = crosscheck.cross_check_candidates([row], '/nonexistent-project-dir', _required())
+
+    assert outcome['scope_verdict'] == crosscheck.UNDETERMINED, outcome
+    assert outcome['scope_reason'] == crosscheck.REASON_SCOPE_UNREADABLE
+    assert outcome['contributing'] == [0], outcome
+    assert outcome['joint_reason'] is None, outcome
+    assert outcome['row_scopes'] == [f'{canonical}: {crosscheck.ROW_CANONICAL_UNKNOWN}'], outcome
+
+
+def test_the_npm_goal_row_parses_to_its_canonical_with_no_scope() -> None:
+    """``run test`` is a GOAL and its task, not a canonical and a module."""
+    parsed = crosscheck.parse_row_scope(_build_entry(notation=_NPM, args=_args_for('run test')))
+
+    assert parsed is not None
+    assert (parsed.canonical, parsed.scope_tokens) == ('run', ())
+
+
+def test_parse_row_scope_reads_an_npm_workspace_row_as_scoped() -> None:
+    """npm's ``--workspace`` is its module selector, so it IS the row's scope."""
+    parsed = crosscheck.parse_row_scope(_build_entry(notation=_NPM, args='run --command-args test --workspace=pkg-a'))
+
+    assert parsed is not None
+    assert (parsed.canonical, parsed.scope_tokens) == ('test', ('pkg-a',))
+
+
+def test_two_positional_tokens_under_an_unknown_notation_are_unreadable() -> None:
+    """The reader cannot tell a module from a goal, so it refuses to guess."""
+    assert crosscheck.parse_row_scope(_build_entry(notation=None, args=_args_for('run test'))) is None
+    assert (
+        crosscheck.parse_row_scope(
+            _build_entry(notation='plan-marshall:build-unknown:tool', args=_args_for('run test'))
+        )
+        is None
+    )
+
+
+def test_an_npm_workspace_row_still_narrows_by_its_workspace_selector(monkeypatch) -> None:
+    """MATCHED CONTROL: the module flag still names the one module the row built.
+
+    Held fixed and varied only by what the change needs, exactly as the
+    pyproject pair above does for positional scope.
+    """
+    vocabulary, reason = crosscheck.load_analysis_vocabulary()
+    assert vocabulary is not None, reason
+    _stub_expected(monkeypatch, {_NPM})
+    row = _build_entry(notation=_NPM, args=_args_for('run test --workspace=pkg-a'), outcome=_outcome_for(120))
+    test_only = {vocabulary.test}
+
+    whole_tree = crosscheck.cross_check_candidates(
+        [row], '/nonexistent-project-dir', _required(analyses=test_only, whole_tree=True)
+    )
+    other_module = crosscheck.cross_check_candidates(
+        [row],
+        '/nonexistent-project-dir',
+        _required(analyses=test_only, whole_tree=False, modules={'pkg-b'}),
+    )
+    own_module = crosscheck.cross_check_candidates(
+        [row],
+        '/nonexistent-project-dir',
+        _required(analyses=test_only, whole_tree=False, modules={'pkg-a'}),
+    )
+
+    assert whole_tree['scope_verdict'] == crosscheck.NARROW, whole_tree
+    assert other_module['scope_verdict'] == crosscheck.NARROW, other_module
+    assert own_module['scope_verdict'] == crosscheck.UNDETERMINED, own_module
+    assert own_module['contributing'] == [0], own_module
+
+
+def test_an_npm_colon_script_name_keeps_its_workspace_scope(monkeypatch) -> None:
+    """An npm script may start with a colon; that is a name, not a project path.
+
+    The ``:module:`` guard is Gradle's shape. Applying it to npm would discard the
+    row's real scope and turn a correctly refused change into an inability.
+    """
+    vocabulary, reason = crosscheck.load_analysis_vocabulary()
+    assert vocabulary is not None, reason
+    _stub_expected(monkeypatch, {_NPM})
+    row = _build_entry(notation=_NPM, args=_args_for('run :check --workspace=pkg-a'), outcome=_outcome_for(120))
+    test_only = {vocabulary.test}
+
+    parsed = crosscheck.parse_row_scope(row)
+    assert parsed is not None
+    assert (parsed.canonical, parsed.scope_tokens) == ('run', ('pkg-a',))
+
+    other_module = crosscheck.cross_check_candidates(
+        [row],
+        '/nonexistent-project-dir',
+        _required(analyses=test_only, whole_tree=False, modules={'pkg-b'}),
+    )
+    own_module = crosscheck.cross_check_candidates(
+        [row],
+        '/nonexistent-project-dir',
+        _required(analyses=test_only, whole_tree=False, modules={'pkg-a'}),
+    )
+
+    assert other_module['scope_verdict'] == crosscheck.NARROW, other_module
+    assert own_module['scope_verdict'] == crosscheck.UNDETERMINED, own_module
+
+
+def test_a_maven_goal_row_with_a_module_flag_is_narrow(monkeypatch) -> None:
+    """``clean install -pl core-api -am`` built one module, whatever the goals say.
+
+    The module comes from the flag, so the dropped goals leave the refusal exactly
+    where it was for a Maven row that really was scoped.
+    """
+    vocabulary, reason = crosscheck.load_analysis_vocabulary()
+    assert vocabulary is not None, reason
+    _stub_expected(monkeypatch, {_MAVEN})
+    row = _build_entry(notation=_MAVEN, args=_args_for('clean install -pl core-api -am'), outcome=_outcome_for(120))
+
+    outcome = crosscheck.cross_check_candidates(
+        [row],
+        '/nonexistent-project-dir',
+        _required(analyses={vocabulary.test}, whole_tree=True),
+    )
+
+    assert outcome['scope_verdict'] == crosscheck.NARROW, outcome
+    assert outcome['contributing'] == []
+    assert outcome['row_scopes'] == ['clean core-api: ' + crosscheck.ROW_SCOPE_TOO_NARROW], outcome
+
+
+def test_a_whole_tree_npm_goal_row_passes_the_gate_with_the_inability_recorded(
+    plan_context, monkeypatch, tmp_path
+) -> None:
+    """Gate level: a bare npm ``run test`` row no longer refutes a whole-tree change.
+
+    Against the unfixed reader this ledger returned ``stale`` /
+    ``build_scope_narrow``. The goals are not scope, so the row is whole-tree,
+    its canonical is outside the vocabulary, and the inability passes with its
+    reason recorded on the decision record.
+    """
+    _stub_expected(monkeypatch, {_NPM})
+    _stub_verdict(monkeypatch, {'decision': 'build'})
+
+    result = _run_gate_over_rows(
+        plan_context,
+        monkeypatch,
+        tmp_path,
+        [_same_sha_row('run test', notation=_NPM)],
+        required=_py_footprint_requirement(whole_tree=True),
+        plan_id='scope-npm-goal-positional',
+    )
+
+    assert result['status'] == 'fresh', result
+    assert result['scope_cross_check'] == crosscheck.UNDETERMINED
+    assert result['scope_cross_check_reason'] == crosscheck.REASON_SCOPE_UNREADABLE
+    assert result['row_scopes'] == ['run: ' + crosscheck.ROW_CANONICAL_UNKNOWN]
+
+
+# =============================================================================
+# The remedy hint fires only for a row an executor flag actually broke
+# =============================================================================
+#
+# ``row_scope_remedy_hint`` used to return the legacy hint for EVERY legacy row
+# with payload tokens that did not parse, telling the operator to move an
+# executor flag that does not exist — ``module-tests -k foo`` has no such flag.
+# The hint now requires that the unreadable tail really carries one of the
+# ``run`` subparser's own flags and that removing it makes the payload parse.
+
+
+@pytest.mark.parametrize(
+    'args',
+    [
+        'run --command-args module-tests -k foo',
+        'run --command-args package -am',
+        'run --command-args module-tests -pl=,',
+        'run --command-args ',
+    ],
+)
+def test_a_legacy_row_with_no_executor_flag_after_the_payload_gets_no_remedy_hint(args) -> None:
+    """The remedy must fit the row: none of these carries an executor flag to move."""
+    assert crosscheck.row_scope_remedy_hint(_build_entry(args=args)) is None
+
+
+def test_a_legacy_row_whose_executor_flag_explains_the_unreadability_keeps_the_hint() -> None:
+    """MATCHED CONTROL: with one of the ``run`` flags present, the hint applies.
+
+    ``--timeout 900`` is the executor's own flag, so moving it before
+    ``--command-args`` is a remedy that actually makes this row readable.
+    """
+    row = _build_entry(args='run --command-args verify --timeout 900')
+
+    assert crosscheck.row_scope_remedy_hint(row) == crosscheck.LEGACY_ROW_SCOPE_REMEDY
+
+
+@pytest.mark.parametrize(
+    ('args', 'tokens'),
+    [
+        ('run --command-args module-tests --env A=1 B=2', ['module-tests', '--env', 'A=1', 'B=2']),
+        ('run --command-args module-tests --env=A=1 B=2', ['module-tests', '--env=A=1', 'B=2']),
+    ],
+)
+def test_a_multi_token_env_value_is_stripped_with_its_flag(args, tokens) -> None:
+    """``--env`` takes a space-separated list, so the join left residue behind.
+
+    Both tokens belong to the flag, not to the payload: stripping only the first
+    would leave ``B=2`` to be read as payload scope, and the remedy would then be
+    aimed at a payload the row never had.
+    """
+    assert crosscheck._payload_without_executor_run_flags(tokens) == ['module-tests']
+    assert crosscheck.row_scope_remedy_hint(_build_entry(args=args)) == crosscheck.LEGACY_ROW_SCOPE_REMEDY

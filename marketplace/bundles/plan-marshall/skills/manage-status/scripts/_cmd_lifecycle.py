@@ -14,7 +14,7 @@ import subprocess
 from pathlib import Path
 from typing import Any, NamedTuple
 
-from _criteria_snapshot import open_criteria, read_snapshot
+from _criteria_snapshot import functional_review_drop_reason, open_criteria, read_snapshot
 from _handshake_commands import cmd_capture, cmd_verify
 from _invariants import (
     _BLOCKING_BOUNDARIES,
@@ -717,10 +717,12 @@ def _plan_recorded_change_shas(worktree_root: str | None) -> set[str] | None:
 def _phase_end_marker_refusal(plan_id: str, status: dict[str, Any]) -> dict[str, Any] | None:
     """End-marker post-condition for the 5-execute boundary.
 
-    Every per-deliverable commit belongs to the phase-5-execute envelope's
-    Step 10a chain-tail, which appends one ``kind=change`` ledger row per
-    commit. A worktree-branch commit with no such row is unrecorded execute
-    work reaching the finalize boundary — the silent skip this guard refuses.
+    Every branch commit owes one ``kind=change`` ledger row, whichever phase
+    made it: the phase-5-execute Step 10a chain-tail records a deliverable
+    commit, and the gate-bearing ``git-workflow commit`` verb records a
+    ``6-finalize`` commit's own. A worktree-branch commit with no such row is
+    unrecorded work reaching the finalize boundary — the silent skip this guard
+    refuses.
     Returns ``None`` when the transition may proceed.
 
     Three structurally different outcomes refuse or pass with their OWN shape:
@@ -736,9 +738,10 @@ def _phase_end_marker_refusal(plan_id: str, status: dict[str, Any]) -> dict[str,
       ``unrecorded_commits`` key is published, because nothing was enumerated
       from the git side.
     - ``execute_commits_unrecorded`` — both sides were read and named branch
-      commits carry no row, enumerated in ``unrecorded_commits``. When the
-      store holds zero rows at all the markers are wholly missing (the Step 10a
-      bookkeeping never ran); when it holds some the recording is partial.
+      commits carry no row, enumerated in ``unrecorded_commits`` and named in
+      ``message`` with one append invocation each. When the store holds zero
+      rows at all the markers are wholly missing (no row writer ever ran); when
+      it holds some the recording is partial.
       ``recorded_count`` names which of the two the reader is looking at.
       Among the partial cases the payload distinguishes two conditions by
       ``signature``: ``history_rewritten`` when the unrecorded set is the whole
@@ -869,18 +872,33 @@ def _phase_end_marker_refusal(plan_id: str, status: dict[str, Any]) -> dict[str,
     unrecorded = [sha for sha in branch_shas if not _sha_is_recorded(sha, recorded)]
     if not unrecorded:
         return None
+
+    # EVERY unrecorded SHA is named in `message`, each with its own append
+    # invocation. The payload carries the whole set in `unrecorded_commits`, and
+    # the message names every SHA with its own invocation so one pass repairs
+    # them all.
+    #
+    # ONE line, deliberately: this payload crosses a TOON boundary, and a
+    # multi-line plain string is not a TOON value — its second and later lines
+    # land at column zero, where the parser reads them as sibling keys. A
+    # newline here would truncate the message to its first line and corrupt the
+    # envelope.
+    append_invocations = [_append_invocation(worktree_path, sha) for sha in unrecorded]
+    append_block = ' | '.join(
+        f'{sha}: {invocation}' for sha, invocation in zip(unrecorded, append_invocations, strict=True)
+    )
     if not recorded:
         error = PHASE_END_MARKERS_MISSING_ERROR
         message = (
             f'Worktree branch holds {len(branch_shas)} commit(s) since diverging from {base_branch} '
-            'and the change-ledger holds zero kind=change rows: no 5-execute deliverable commit was '
-            'recorded. Run the phase-5-execute Step 10a settlement bookkeeping, then retry the transition.'
+            'and the change-ledger holds zero kind=change rows: no commit made on this branch was '
+            'recorded. Record every unrecorded commit with the invocation after its SHA '
+            f'({_REPLACE_PLACEHOLDERS}): {append_block}'
         )
         remedy: dict[str, Any] = {}
     else:
         is_rewrite, any_row_stale = _rewrite_evidence(worktree_path, unrecorded, branch_shas, recorded)
         whole_branch = len(unrecorded) == len(branch_shas)
-        append_invocations = [_append_invocation(worktree_path, sha) for sha in unrecorded]
         if is_rewrite:
             error = EXECUTE_COMMITS_UNRECORDED_ERROR
             remap_invocation = _remap_invocation(worktree_path)
@@ -893,8 +911,7 @@ def _phase_end_marker_refusal(plan_id: str, status: dict[str, Any]) -> dict[str,
                     f'{base_branch} carry no kind=change ledger row and no branch commit matches a recorded '
                     'row: the whole branch is unrecorded. If it was rewritten (rebase, amend or cherry-pick), '
                     f'map the recorded rows onto their rewritten counterparts: {remap_invocation} If it was '
-                    f'not rewritten, record the unrecorded commits ({_REPLACE_PLACEHOLDERS}): '
-                    f'{append_invocations[0]}'
+                    f'not rewritten, record every unrecorded commit ({_REPLACE_PLACEHOLDERS}): {append_block}'
                 )
             else:
                 # The second D2 condition: the rows describe a history HEAD does
@@ -905,8 +922,8 @@ def _phase_end_marker_refusal(plan_id: str, status: dict[str, Any]) -> dict[str,
                     f'{len(unrecorded)} of {len(branch_shas)} worktree-branch commit(s) since diverging from '
                     f'{base_branch} carry no kind=change ledger row, and every recorded row points at a commit '
                     "outside HEAD's history. Map the recorded rows onto their rewritten counterparts: "
-                    f'{remap_invocation} Or record the unrecorded commits ({_REPLACE_PLACEHOLDERS}): '
-                    f'{append_invocations[0]}'
+                    f'{remap_invocation} Or record every unrecorded commit ({_REPLACE_PLACEHOLDERS}): '
+                    f'{append_block}'
                 )
             remedy = {
                 'signature': 'history_rewritten',
@@ -918,9 +935,10 @@ def _phase_end_marker_refusal(plan_id: str, status: dict[str, Any]) -> dict[str,
             error = EXECUTE_COMMITS_UNRECORDED_ERROR
             message = (
                 f'{len(unrecorded)} of {len(branch_shas)} worktree-branch commit(s) since diverging from '
-                f'{base_branch} carry no kind=change ledger row. Run the phase-5-execute Step 10a '
-                f'settlement bookkeeping for the unrecorded commits, then retry the transition '
-                f'({_REPLACE_PLACEHOLDERS}): {append_invocations[0]}'
+                f'{base_branch} carry no kind=change ledger row. Every unrecorded commit is named with '
+                'its own append invocation; a commit is owed its row by the writer that made it — '
+                'the phase-5-execute Step 10a settlement for a deliverable commit, the commit path itself '
+                f'for a finalize commit ({_REPLACE_PLACEHOLDERS}): {append_block}'
             )
             remedy = {
                 'signature': 'bookkeeping_gap',
@@ -1209,45 +1227,6 @@ def verify_blocks_transition(verify_result: dict[str, Any]) -> bool:
     return verify_result.get('error') in VERIFY_REFUSAL_ERRORS
 
 
-def _phase_6_manifest_steps(plan_id: str) -> set[str] | None:
-    """The plan's composed phase-6 step ids, or ``None`` when unreadable/absent.
-
-    Reads ``execution.toon`` (TOON ``phase_6.steps``) — the ONE composed manifest
-    the phase-6 dispatcher writes. An absent or unreadable manifest yields
-    ``None``, so the caller keeps today's behaviour rather than inventing a drop.
-    """
-    try:
-        path = get_plan_dir(plan_id) / 'execution.toon'
-        if not path.is_file():
-            return None
-        from toon_parser import parse_toon
-
-        data = parse_toon(path.read_text(encoding='utf-8'))
-    except Exception:
-        return None
-    if not isinstance(data, dict):
-        return None
-    phase_6 = data.get('phase_6')
-    if not isinstance(phase_6, dict):
-        return None
-    steps = phase_6.get('steps')
-    if not isinstance(steps, list):
-        return None
-    return {str(step) for step in steps if isinstance(step, str) and step}
-
-
-def _functional_review_scheduled(plan_id: str) -> bool | None:
-    """Whether the composed phase-6 manifest schedules the functional review.
-
-    ``None`` when the manifest cannot be read. The comparison accepts the bare and
-    the ``*:functional-review`` spellings the candidate list may carry.
-    """
-    steps = _phase_6_manifest_steps(plan_id)
-    if steps is None:
-        return None
-    return any(step == 'functional-review' or step.endswith(':functional-review') for step in steps)
-
-
 def _outline_snapshot_refusal(plan_id: str, status: dict[str, Any]) -> dict[str, Any] | None:
     """Refuse leaving ``3-outline`` for ``4-plan`` without a frozen snapshot.
 
@@ -1280,18 +1259,13 @@ def _functional_review_drop_reason(plan_id: str, status: dict[str, Any]) -> str 
     commit-push or a ``functional_review: off`` lane all subtract the step, and
     any of them leaves the plan with no verdict to grade its criteria. The
     completion gate must not read that absence as outstanding work.
+
+    Delegates to the ONE reader in :mod:`_criteria_snapshot`, so the completion
+    gate and the finalize triage source cannot decide the drop differently.
+    ``status`` is accepted for the callers' existing shape; the shared reader reads
+    the live record itself so a stale in-memory copy cannot decide otherwise.
     """
-    scheduled = _functional_review_scheduled(plan_id)
-    if scheduled is None or scheduled:
-        return None
-    metadata = normalize_metadata(status) if isinstance(status, dict) else {}
-    recorded = metadata.get('functional_review_drop_reason')
-    if isinstance(recorded, str) and recorded.strip():
-        return recorded.strip()
-    scope = metadata.get('scope_estimate')
-    if isinstance(scope, str) and scope.strip().lower() in ('surgical', 'single_module', 'micro', 'single-module'):
-        return 'surgical scope'
-    return 'not scheduled in the phase-6 manifest'
+    return functional_review_drop_reason(plan_id)
 
 
 def _criteria_gate_note(plan_id: str, status: dict[str, Any]) -> str | None:

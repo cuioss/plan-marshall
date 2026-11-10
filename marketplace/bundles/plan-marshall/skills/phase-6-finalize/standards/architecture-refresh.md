@@ -14,12 +14,12 @@ implements: plan-marshall:extension-api/standards/ext-point-finalize-step
 
 Pure executor for the `architecture-refresh` finalize step. The pre-baseline is the committed `origin/main` tree: `_project.json` and the per-module `enriched.json` files are git-tracked, so `origin/main`'s `.plan/project-architecture/` is a zero-cost baseline of the architecture surface as it stood before this plan. The architecture verbs read that baseline by ref (`--pre-ref origin/main`) — this step materializes nothing on disk. Tier 0 re-runs `discover --force --apply plan`, which writes only the plan-attributable part of the regenerated descriptor, and commits it when the regression gate is green; Tier 1 optionally re-enriches the affected modules via an LLM pass.
 
-## Exit-code convention for `manage-*` script calls
+## Exit-code convention for every script call
 
-Every `manage-*` script call in this document carries the following exit-code contract unless a step explicitly states otherwise:
-
-- **`exit_code == 0`**: parse the returned TOON and use the value as the step describes.
-- **`exit_code != 0`**: STOP and return an error TOON to the orchestrator carrying the script's stderr verbatim. Non-zero exits include `argparse_rejection` (exit 2) — silent swallowing of `wrong_parameters` rejections is the prohibited anti-pattern; "log and continue" is equally forbidden.
+The exit-code contract for every `python3 .plan/execute-script.py` call in this
+document — of EVERY notation, not only `manage-*` — is stated once in
+[`tools-script-executor/standards/exit-code-convention.md`](../../tools-script-executor/standards/exit-code-convention.md);
+it is not restated here.
 
 This document carries NO step-activation logic. Activation is controlled by the dispatcher in `phase-6-finalize/SKILL.md` Step 3 and is driven solely by presence of `architecture-refresh` in `manifest.phase_6.steps`. When the dispatcher runs this step, the document executes top to bottom — there is no skip-conditional branching at this layer beyond the documented Tier-0 / Tier-1 knob reads, the absent-baseline short-circuit, and the attribution-verdict branches.
 
@@ -262,9 +262,20 @@ When `git status --porcelain .plan/project-architecture` is non-empty AND the 3c
 git -C {worktree_path} add .plan/project-architecture
 ```
 
-```bash
-git -C {worktree_path} commit -m "chore(architecture): refresh derived data after {plan-title}"
+Author the message — the subject `chore(architecture): refresh derived data after {plan-title}` plus the resolved co-author trailer — to the worktree-absolute message file with the `Write` tool, then commit through the gate-bearing verb. Both steps are the Commit Changes flow's own: see [`workflow-integration-git`](../../workflow-integration-git/SKILL.md) § Commit Changes for the trailer resolution and the worktree-absolute path rule.
+
+```text
+Write(file_path="{worktree_path}/.plan/temp/{plan_id}-architecture-commit-msg.txt", content="{subject}\n\n{coauthor_trailer}\n")
 ```
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow commit \
+  --plan-id {plan_id} \
+  --project-dir {worktree_path} \
+  --message-file {worktree_path}/.plan/temp/{plan_id}-architecture-commit-msg.txt
+```
+
+This commit carries only `.plan/` state, so the source-commit gate admits it with no `--step`; the verb is also what records it — a `6-finalize` commit leaves its own `kind=change` row (§ Commit Changes in the same skill) — so the next `5-execute` boundary admits it like any other finalize commit. `--plan-id` is passed because a `use_worktree: false` plan's tree IS the main checkout, whose path names no plan; without it the verb would resolve no phase and write no row. A raw `git commit` is refused by the enforcement guard in `6-finalize` on both harnesses, and would leave no row.
 
 `{plan-title}` is the plan's short description, captured from `manage-status read --plan-id {plan_id}` field `plan.short_description`. When `short_description` is `None` or empty, use the literal `plan-id` as the slug (e.g., `chore(architecture): refresh derived data after phase-d-auto-refresh`). The subject is accurate because `--apply plan` keeps every tool migration off disk: what this commit carries is plan-caused.
 
@@ -351,7 +362,7 @@ The user has chosen to never re-enrich automatically, so the affected-module lis
 >
 > The fix is a **re-homing**, not a rewrite of this branch: the deferred-enrichment note belongs in a surface that runs after `default:create-pr` (order 20) — either appended by a post-`create-pr` step, or carried as a fact this step records and a later step consumes when it edits the PR body. Re-homing it is deliberately **out of scope here** and is recorded as owed rather than left standing as a prescription that cannot succeed. Until it lands, the deferral is recorded in the decision log and the step's `display_detail` (below), both of which are readable without a PR.
 >
-> **Condition on the re-homing.** Wherever the `ci pr view` → `ci pr prepare-body --for edit` → `ci pr edit` chain is re-homed, it lands with a positive shape requirement per call — each is usable when and only when the return carries `status: success` together with the field the next call consumes (`pr_number` for `view`, the prepared body path for `prepare-body`), and every other shape stops the step. The chain also makes its host document's exit-code convention obligatory in the widened form, because none of the three calls is `manage-*`. This document keeps the `manage-*`-scoped convention below precisely because, with the chain removed, every call it now issues IS `manage-*` — the scope is derived from the calls present, not inherited.
+> **Condition on the re-homing.** Wherever the `ci pr view` → `ci pr prepare-body --for edit` → `ci pr edit` chain is re-homed, it lands with a positive shape requirement per call — each is usable when and only when the return carries `status: success` together with the field the next call consumes (`pr_number` for `view`, the prepared body path for `prepare-body`), and every other shape stops the step. The chain also makes its host document's exit-code convention obligatory in the widened form, because none of the three calls is `manage-*`. This document carries the widened form above for the same reason: it commissions the gate-bearing `git-workflow commit` verb (§ 3d and the Tier-1 branch), which is not `manage-*` — the scope is derived from the calls present, not inherited.
 
 Record the deferral in the decision log. `{affected_modules_csv}` is the sorted, comma-separated module-name list (e.g., `oauth-sheriff-core, oauth-sheriff-quarkus`):
 
@@ -392,17 +403,24 @@ for each module M in affected_modules_csv:
 
 There is no batch form of the enrich verb that accepts a comma-separated module list — only the per-module triplet (`enrich module` / `enrich package` / `enrich skills-by-profile`) is registered, and it rewrites `enriched.json` for one named module per call without touching `derived.json`. Follow the per-module signal analysis documented in `manage-architecture/SKILL.md` Steps 5–8 (purpose-value table, key-package selection, skills-by-profile resolution) to determine each command's arguments.
 
-After enrichment completes for every module in `affected_modules_csv`, stage and commit the updated `enriched.json` files:
+After enrichment completes for every module in `affected_modules_csv`, stage and commit the updated `enriched.json` files the same way § 3d does — author the message (`chore(architecture): re-enrich affected modules after {plan-title}` plus the co-author trailer) to the worktree-absolute message file, then commit through the gate-bearing verb:
 
 ```bash
 git -C {worktree_path} add .plan/project-architecture
 ```
 
-```bash
-git -C {worktree_path} commit -m "chore(architecture): re-enrich affected modules after {plan-title}"
+```text
+Write(file_path="{worktree_path}/.plan/temp/{plan_id}-architecture-commit-msg.txt", content="{subject}\n\n{coauthor_trailer}\n")
 ```
 
-As in Tier 0, this step does not push — the order-11 `default:push` barrier ships this commit with the rest of the converged branch.
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow commit \
+  --plan-id {plan_id} \
+  --project-dir {worktree_path} \
+  --message-file {worktree_path}/.plan/temp/{plan_id}-architecture-commit-msg.txt
+```
+
+As in Tier 0 this is a `.plan/`-only commit, admitted without a `--step` and recorded by the same verb; and as in Tier 0 this step does not push — the order-11 `default:push` barrier ships this commit with the rest of the converged branch.
 
 Log the artifact:
 
@@ -646,7 +664,8 @@ else:
             return    # leave .plan/project-architecture uncommitted
         log decision: "Regression gate green — examined_fields, modules_examined, modules_unreadable"
         git -C {worktree_path} add .plan/project-architecture
-        git -C {worktree_path} commit -m "chore(architecture): refresh derived data after {plan-title}"
+        # § 3d: author the message file, then commit through the gate-bearing verb
+        git-workflow commit --plan-id {plan_id} --project-dir {worktree_path} --message-file {worktree_path}/.plan/temp/{plan_id}-architecture-commit-msg.txt
         # no push — the order-11 default:push barrier ships this commit
         committed := true
         log artifact
@@ -710,7 +729,8 @@ switch tier_1:
                 architecture --project-dir {worktree_path} enrich package --module M --package P --description ...
             architecture --project-dir {worktree_path} enrich skills-by-profile --module M --reasoning ...
         git -C {worktree_path} add .plan/project-architecture
-        git -C {worktree_path} commit -m "chore(architecture): re-enrich affected modules after {plan-title}"
+        # as § 3d: author the message file, then commit through the gate-bearing verb
+        git-workflow commit --plan-id {plan_id} --project-dir {worktree_path} --message-file {worktree_path}/.plan/temp/{plan_id}-architecture-commit-msg.txt
         # no push — the order-11 default:push barrier ships this commit
         mark-step-done detail="refreshed + re-enriched ({n} modules)"
 

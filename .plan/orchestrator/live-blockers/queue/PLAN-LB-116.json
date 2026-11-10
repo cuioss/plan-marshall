@@ -1,0 +1,11 @@
+{
+  "id": "PLAN-LB-116",
+  "slug": "runbook-lane-review-and-sonar-gates",
+  "workstream": "WS-04",
+  "status": "shipped",
+  "lane": "runbook",
+  "plan_marshall_plan_id": "rb-lb-116-runbook-lane-review-and-sonar-gates",
+  "pr": "1940",
+  "landing": "landings/PLAN-LB-116.md",
+  "seq": 116
+}

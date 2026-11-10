@@ -125,7 +125,6 @@ assert _UNREGISTERED_TOKEN not in _REGISTERED_BOTS, (
 # retires a publish shape breaks these tests loudly instead of silently.
 CODERABBIT_EVIDENCE = {'coderabbit': 'inline'}
 SOURCERY_EVIDENCE = {'sourcery': 'review_body'}
-PR_AGENT_EVIDENCE = {'cuioss-review-bot': 'issue_comment'}
 
 #: The publish-shape vocabulary DERIVED from the live registry: the union of every
 #: registered bot's declared ``participation_evidence``, sorted so the pairing order
@@ -720,14 +719,14 @@ class TestStaleParticipationIsPairForm:
             '--plan-id',
             plan_id,
             '--required-bots',
-            'cuioss-review-bot',
+            'coderabbit',
             '--stale-participation-bots',
-            'cuioss-review-bot:issue_comment',
+            'coderabbit:issue_comment',
         )
 
         assert result.success, result.stderr
         assert 'participation_complete: false' in result.stdout
-        assert 'cuioss-review-bot,participated_stale' in result.stdout
+        assert 'coderabbit,participated_stale' in result.stdout
 
     def test_bare_kind_to_stale_flag_is_rejected(self, plan_context):
         """A BARE kind on the now-pair-form flag is a caller error — the other D1 half."""
@@ -740,9 +739,9 @@ class TestStaleParticipationIsPairForm:
             '--plan-id',
             plan_id,
             '--required-bots',
-            'cuioss-review-bot',
+            'coderabbit',
             '--stale-participation-bots',
-            'cuioss-review-bot',
+            'coderabbit',
         )
 
         assert result.returncode == 1, result.stderr

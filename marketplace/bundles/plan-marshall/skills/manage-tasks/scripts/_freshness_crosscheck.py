@@ -133,6 +133,13 @@ cross-check can decline to corroborate — because they are different facts:
   on a supplementary check that could not run trades a false-green for a
   false-red on strictly less evidence.
 
+  **The one exception is a whole-tree change against rows whose SCOPE cannot be
+  read.** There the inability has a claim attached to it — the change needs every
+  required analysis over the whole tree — and an unreadable row substantiates
+  none of that claim. That is the ratio this module is built on: fail closed where
+  the ledger was asked for the widest evidence and could not show it, pass with
+  the inability named everywhere the change asks for less.
+
 ⛔ The two are never folded together. ``unverified`` is a stated sentinel, not a
 quiet ``corroborated``: it always reaches the decision record, so "passed
 uncross-checked" is visible to a reader rather than indistinguishable from
@@ -164,13 +171,16 @@ suffixes matter.
 Reading the scope off the row — what is available, and what is not
 ==================================================================
 
-**The row already carries more than the gate used to read — checked, not
+**The row already carries more than the gate reads — checked, not
 assumed.** ``_ledger_core.build_record`` records ``notation``, ``args`` (the
 executor argv, stamped on every build-class dispatch as
-``' '.join(script_args)``), ``command`` (the line the wrapper reported running)
-and ``outcome`` (the wrapper's whole stdout TOON). The gate historically read
-none of them; it now reads ``notation`` for attribution and ``args`` for
-coverage.
+``' '.join(script_args)``), ``command_args`` (the single ``--command-args``
+element), ``command`` (the line the wrapper reported running) and ``outcome``
+(the wrapper's whole stdout TOON). The gate reads ``notation`` for attribution,
+``command_args`` when present for the payload boundary, ``args`` for coverage, and
+``notation`` AGAIN to decide what the payload's positionals are — module names for
+the pyproject tool, goals for the ones whose positionals are goals (see
+:func:`parse_row_scope`).
 
 ``args`` is the coverage source rather than ``command`` because it is OUR argv
 shape, uniform across every build tool: the canonical and its scope always follow
@@ -190,6 +200,29 @@ separate positional. That ambiguity does not affect this check, because both
 readings name the SAME blast radius — an invocation that mentions
 ``plan-marshall`` and nothing wider. What the ambiguity would break is a claim
 about the argv's *structure*, which nothing here makes.
+
+A flag after the canonical is a different matter, and :func:`parse_row_scope`
+resolves it conservatively: a KNOWN scope-bearing flag (maven's ``-pl`` /
+``--projects`` and npm's ``--workspace``, each grounded in the resolver that emits
+it) contributes its value to the scope, a known non-narrowing companion
+(``-am`` / ``--also-make``) is ignored, and **any other flag makes the row
+unreadable**. Reading an unknown flag as "no scope" would assert whole-tree over a
+run that might have been narrowed inside the lost quoting — the false-green
+direction — so it is an inability with its reason recorded instead.
+
+**A POSITIONAL token is module scope only for the tool whose positionals are
+modules.** The pyproject wrapper's canonical commands take ``<canonical>
+<module>``, so its positionals are scope. npm, Maven and Gradle do not: their
+discoverers emit the tool's own goals, tasks and script names (``run test``,
+``clean install``, ``spotlessCheck check``), and reading those as a module scope
+refutes a whole-tree change as ``build_scope_narrow`` when the row in fact ran
+whole-tree. Which reading applies is decided by the row's own ``notation`` — the
+one field that says what its positionals ARE — never by guessing a tool from its
+arguments (:data:`_GOAL_POSITIONAL_NOTATIONS` and
+:data:`_PYPROJECT_NOTATION`). A notation the reader does not know is read only
+when it carries a single positional (the canonical); with two or more it is an
+inability, because the reader cannot tell a module from a goal and either guess
+manufactures a coverage claim nobody measured.
 
 The claim the gate now makes, and why it is bounded
 ====================================================
@@ -215,11 +248,19 @@ compile — and three properties bound it:**
    ``.py`` file does not require the compile/lint dimensions, and an empty
    footprint requires nothing — see :func:`required_coverage`. The gate demands a
    whole-tree ``verify`` only of a change whose blast radius is whole-tree.
-3. **Only a POSITIVE refutation fails closed.** A row whose scope cannot be read,
-   a canonical outside the known vocabulary, and a change whose required coverage
-   could not be derived all yield :data:`UNDETERMINED`, which passes with the
+3. **Only a POSITIVE refutation fails closed, and one inability fails closed with
+   it.** A canonical outside the known vocabulary, and a change whose required
+   coverage could not be derived, both yield :data:`UNDETERMINED` and pass with the
    inability recorded — the same split fail-direction the attribution dimension
-   takes, for the same reason.
+   takes, for the same reason. A row whose SCOPE cannot be read is the exception,
+   and only where the change needs whole-tree coverage: that change claims every
+   required analysis ran over the whole tree, and a row nobody could place cannot
+   show any part of it, so the joint selection refuses it
+   (:data:`REASON_SCOPE_UNREADABLE_WHOLE_TREE`) rather than trading the false-green
+   for a quiet pass on strictly no evidence. The same row still passes a change
+   that needs less, with the inability recorded — so the exception is bounded by
+   the change's blast radius, never a general licence to refuse a pre-existing
+   ledger row.
 
 Structural stale verdicts are NOT this module's business
 ========================================================
@@ -279,7 +320,11 @@ COVERED = 'covered'
 NARROW = 'narrow'
 #: The coverage comparison could not be performed on either side. Nothing is
 #: known, so — like :data:`UNVERIFIED` on the attribution dimension — it passes
-#: with the inability recorded rather than failing closed on no evidence.
+#: with the inability recorded rather than failing closed on no evidence. The one
+#: exception is a whole-tree change whose candidate rows carry unreadable scope:
+#: there the joint selection refuses (see
+#: :data:`REASON_SCOPE_UNREADABLE_WHOLE_TREE`), because that change claims the
+#: widest coverage and an unreadable row cannot substantiate any part of it.
 UNDETERMINED = 'undetermined'
 
 #: ``scope_cross_check_reason`` when the change's required coverage could not be
@@ -291,11 +336,21 @@ REASON_REQUIRED_COVERAGE_UNKNOWN = 'required_coverage_unknown'
 #: dimension this means THIS CHECK IS BROKEN rather than that the project is
 #: un-crawlable, so it is named apart.
 REASON_VOCABULARY_UNIMPORTABLE = 'analysis_vocabulary_unimportable'
-#: ``scope_cross_check_reason`` when no candidate row's ``args`` carries a
-#: readable ``--command-args``, or every canonical it names is outside the known
-#: vocabulary. The rows were read and said nothing usable — distinct from a row
-#: that said something and was refuted.
+#: ``scope_cross_check_reason`` when no candidate row can be read for scope: its
+#: ``args`` carries no ``--command-args``, or every canonical it names is outside
+#: the known vocabulary, or a row carries a flag that is neither a known
+#: scope-bearing one nor a known non-narrowing companion — so its blast radius
+#: cannot be placed inside or outside the command's lost quoting. The rows were
+#: read and said nothing usable about coverage — distinct from a row that said
+#: something and was refuted.
 REASON_SCOPE_UNREADABLE = 'build_scope_unreadable'
+#: ``stale`` reason (and the joint refusal token) when a row's scope cannot be read
+#: AND the change needs whole-tree coverage. The coverage dimension still reports
+#: :data:`UNDETERMINED` — it genuinely could not judge — but the joint selection
+#: refuses, because an inability to show a whole-tree run is not evidence of one.
+#: Named apart from :data:`REASON_SCOPE_UNREADABLE` so a reader can tell the
+#: ordinary narrow-change pass (inability recorded, no refusal) from this refusal.
+REASON_SCOPE_UNREADABLE_WHOLE_TREE = 'build_scope_unreadable_for_whole_tree_change'
 #: ``stale`` reason (and ``scope_cross_check_reason``). THE refusal this
 #: dimension exists to make.
 REASON_SCOPE_NARROW = 'build_scope_narrow'
@@ -317,11 +372,127 @@ ROW_SCOPE_TOO_NARROW = 'scope_narrower_than_change'
 ROW_TESTS_EXECUTED_ZERO = 'tests_executed_zero'
 ROW_ARGS_UNREADABLE = 'args_carry_no_command_args'
 
+#: The remedy sentence a refusal carries when a row predates the
+#: ``command_args`` field, so the joined ``args`` cannot place a flag that follows
+#: the payload. Prose, not a token: it goes into the gate's ``message``, where a
+#: reader needs the fix rather than a name for the defect.
+LEGACY_ROW_SCOPE_REMEDY = (
+    'This row predates the command_args field, so a flag recorded after '
+    '--command-args cannot be placed inside or outside the payload: put the '
+    "executor's own flag before --command-args (or drop it), and re-run so the row "
+    'records the payload as its own field. '
+)
+
 #: The executor flag that introduces the canonical command and its scope in a
 #: ``kind=build`` row's ``args``. Copied verbatim from the shared ``run``
 #: subparser declaration (``_build_cli.add_run_subparser``), which is why this
 #: reader works for every build tool rather than only for the Python one.
 _COMMAND_ARGS_FLAG = '--command-args'
+
+#: Flags a build tool's resolved executable carries that NARROW the run to a
+#: subset of modules, mapped to the number of value tokens each consumes. Each
+#: entry is grounded in a resolver in this repository:
+#:
+#: * ``-pl`` / ``--projects`` — maven's module list (``mod-a`` or ``mod-a,mod-b``),
+#:   emitted beside ``-am`` by ``_maven_cmd_discover``;
+#: * ``--workspace`` — npm's workspace selector, emitted as ``--workspace=<name>``
+#:   by ``_npm_cmd_discover``.
+#:
+#: ⛔ A flag NOT in this map is deliberately NOT propagated as scope. The ledger
+#: joins its argv without quoting, so a flag after the canonical command cannot be
+#: placed inside or outside the command's own quoting — reading it as whole-tree
+#: would manufacture the false-green this dimension exists to close. Such a row
+#: returns ``None`` (UNREADABLE) instead.
+_SCOPE_FLAGS: dict[str, int] = {
+    '-pl': 1,
+    '--projects': 1,
+    '--workspace': 1,
+}
+
+#: Flags that are KNOWN NOT to narrow the run, so they neither contribute scope
+#: nor make the row unreadable. Each is a zero-arity companion of a scope flag the
+#: tool's resolved executable emits next to it: maven's ``-am`` / ``--also-make``
+#: is always emitted beside ``-pl`` (:mod:`_maven_cmd_discover`), and it only
+#: ADDS the selected modules' dependencies. Ignoring it cannot create a
+#: whole-tree claim while a scope was actually selected: the ``-pl`` value beside
+#: it (or a positional module) still names the scope. With NO scope of any kind
+#: the row is unreadable instead — ``package -am`` alone selects nothing.
+_SCOPE_NEUTRAL_FLAGS: frozenset[str] = frozenset({'-am', '--also-make'})
+
+#: The one notation whose POSITIONAL payload tokens are module names: the
+#: pyproject wrapper's canonical commands take ``<canonical> <module>``, so every
+#: positional after the canonical is scope.
+_PYPROJECT_NOTATION = 'plan-marshall:build-pyproject:pyproject_build'
+
+#: Notations whose positional payload tokens are the tool's OWN goals, tasks or
+#: script names rather than module names. Each is emitted by a discoverer that
+#: records the tool-native shape:
+#:
+#: * ``plan-marshall:build-maven:maven`` — ``clean install``, ``test``, and
+#:   ``verify -pl X -am`` (:mod:`_maven_cmd_discover`);
+#: * ``plan-marshall:build-gradle:gradle`` — ``spotlessCheck check``,
+#:   ``test jacocoTestReport``, and the single tokens ``build`` / ``test``
+#:   (:mod:`_gradle_cmd_discover`);
+#: * ``plan-marshall:build-npm:npm`` — ``install``, ``run build``, ``run lint``,
+#:   ``run test`` (:mod:`_npm_cmd_discover`).
+#:
+#: For these, the first positional is still the canonical — the same reading
+#: ``_build_examined.examined_analyses`` takes — every remaining positional is
+#: dropped, and the scope is only what a known scope-bearing flag selects.
+#: Reading a goal as a module would refute every whole-tree change of a project
+#: built by one of these tools, which is the false red :func:`parse_row_scope`
+#: exists to avoid.
+#:
+#: ⛔ A Gradle SUBMODULE row is the exception the dropping must not swallow: its
+#: discoverer prefixes every task with the subproject path (``:core:test``,
+#: ``:core:test :core:jacocoTestReport``), so those tokens name a real blast
+#: radius. Dropping them would read a one-subproject run as whole-tree — the false
+#: green this dimension exists to close — so :func:`parse_row_scope` reports a row
+#: carrying any ``:module:``-prefixed token as unreadable instead. npm is exempt
+#: from that guard: a script name may begin with a colon, but it selects no
+#: project path, so dropping it keeps the row's real ``--workspace`` scope.
+_GOAL_POSITIONAL_NOTATIONS: frozenset[str] = frozenset(
+    {
+        'plan-marshall:build-maven:maven',
+        'plan-marshall:build-gradle:gradle',
+        'plan-marshall:build-npm:npm',
+    }
+)
+
+#: The ``run`` subparser's OWN flags — the ones that sit in a legacy row's joined
+#: ``args`` beside the payload, in the same unquoted token stream, so the reader
+#: cannot tell whether they belonged to the payload or to the executor. Each
+#: consumes ONE recorded token, except the flags whose value is itself a
+#: space-separated list (:data:`_MULTI_TOKEN_VALUE_FLAGS`). Copied from the shared
+#: subparser declaration (``_build_cli.add_run_subparser``: ``--timeout``,
+#: ``--mode``, ``--format``, ``--execution-mode``, the ``--project-dir`` /
+#: ``--plan-id`` pair and the routed ``--resolved-project-dir`` carry) and the
+#: tool-local extras npm and pyproject declare (``--working-dir``, ``--env``).
+#: ``--command-args`` itself is absent on purpose: it is the marker the payload is
+#: read FROM.
+#:
+#: A flag outside this set is not the executor's: it either belongs to the build
+#: tool itself (``-k``, ``-Ppre-commit``) or is a scope-bearing one the reader
+#: already knows (``-pl``, ``--workspace``). Only an executor flag can be the one
+#: that made a legacy row unreadable.
+_EXECUTOR_RUN_FLAGS: dict[str, int] = {
+    '--timeout': 1,
+    '--mode': 1,
+    '--format': 1,
+    '--execution-mode': 1,
+    '--project-dir': 1,
+    '--plan-id': 1,
+    '--resolved-project-dir': 1,
+    '--working-dir': 1,
+    '--env': 1,
+}
+
+#: The declared flags whose value is a space-separated LIST, so the unquoted join
+#: records more than one token for it: ``--env`` takes shell-style ``KEY=VALUE``
+#: assignments (``--env 'NODE_ENV=test CI=true'``). The stripper consumes the
+#: first value token and then every following ``KEY=VALUE`` token, so the residue
+#: the join creates is not left in the payload to be read as scope.
+_MULTI_TOKEN_VALUE_FLAGS: frozenset[str] = frozenset({'--env'})
 
 
 @dataclass(frozen=True)
@@ -373,9 +544,11 @@ class RowScope:
 
     Attributes:
         canonical: The canonical command token that followed ``--command-args``.
-        scope_tokens: The remaining non-flag tokens — the module / directory
-            scope. EMPTY means whole-tree, which is why an unreadable row must
-            never be represented as a ``RowScope`` with no tokens: see
+        scope_tokens: The module / directory scope the row names: for a notation
+            whose positionals are modules, the remaining non-flag tokens; for the
+            goal-positional tools only the value of a known scope-bearing flag.
+            EMPTY means whole-tree, which is why an unreadable row must never be
+            represented as a ``RowScope`` with no tokens: see
             :func:`parse_row_scope`, which returns ``None`` for that case.
     """
 
@@ -525,13 +698,66 @@ def freshness_inputs_for_composition(
     }
 
 
+def _row_payload_tokens(entry: dict[str, Any]) -> list[str] | None:
+    """Return the ``--command-args`` payload tokens ``entry`` records, or ``None``.
+
+    Prefers the executor's ``command_args`` field: that value is the ONE argv
+    element the flag received, so it needs no marker search and can never absorb
+    a flag that sat after it. Falls back to the marker search in the joined
+    ``args`` for a row written before that field existed.
+
+    Args:
+        entry: A ``kind=build`` ledger row.
+
+    Returns:
+        The payload tokens in order, or ``None`` when the row carries no payload.
+        An empty list is a recorded-but-empty payload, which the caller rejects
+        rather than reading as whole-tree.
+    """
+    recorded = entry.get('command_args')
+    if isinstance(recorded, str):
+        return recorded.split()
+    args = entry.get('args')
+    if not isinstance(args, str):
+        return None
+    tokens = args.split()
+    for position, token in enumerate(tokens):
+        if token == _COMMAND_ARGS_FLAG:
+            return tokens[position + 1 :]
+        if token.startswith(f'{_COMMAND_ARGS_FLAG}='):
+            return [token.split('=', 1)[1], *tokens[position + 1 :]]
+    return None
+
+
 def parse_row_scope(entry: dict[str, Any]) -> RowScope | None:
     """Read the canonical and scope a ``kind=build`` row records, or ``None``.
 
-    Reads ``args`` — the executor argv — and takes the tokens that follow
-    ``--command-args`` up to the next flag: the first is the canonical, the rest
-    are the scope. Both the space-separated (``--command-args verify``) and the
-    joined (``--command-args=verify``) spellings are accepted, because argparse
+    Reads the payload the row recorded — the ``command_args`` field when the
+    executor wrote one, otherwise the tokens that follow ``--command-args`` in the
+    joined ``args`` — and takes its first non-flag as the canonical. What the
+    REMAINING positional tokens mean is decided by the row's own ``notation``,
+    because that is the only field that says what its tool's positionals ARE:
+
+    * a pyproject row (:data:`_PYPROJECT_NOTATION`) keeps the ``<canonical>
+      <module>`` reading: its positionals are module names and are scope;
+    * an npm, Maven or Gradle row (:data:`_GOAL_POSITIONAL_NOTATIONS`) carries the
+      tool's own goals, tasks or script names, never module names: its remaining
+      positionals are dropped and contribute no scope, exactly as
+      ``_build_examined.examined_analyses`` reads only the first token. The one
+      exception is a Gradle submodule row, whose ``:module:``-prefixed task list
+      DOES name one subproject: its project paths are not recoverable here, so
+      such a row is unreadable rather than widened to whole-tree. npm is exempt
+      from that exception: a script name may begin with a colon without naming any
+      project path, so it is dropped and the row's ``--workspace`` scope stands;
+    * any other notation — absent or unknown — is read only when it carries ONE
+      positional token; two or more return ``None``, because the reader cannot
+      tell a module from a goal and either guess would manufacture a coverage
+      claim nobody measured.
+
+    A KNOWN scope-bearing flag (:data:`_SCOPE_FLAGS`) contributes its value to the
+    scope for every notation, since the flag is what selects the tool's modules.
+    In the joined fallback both the space-separated (``--command-args verify``) and
+    the joined (``--command-args=verify``) spellings are accepted, because argparse
     accepts both and the ledger stamps whichever the caller used.
 
     ⛔ ``None`` means UNREADABLE and is never equivalent to a ``RowScope`` with an
@@ -540,6 +766,20 @@ def parse_row_scope(entry: dict[str, Any]) -> RowScope | None:
     manufacture exactly the false-green this dimension exists to remove. ``args``
     that is absent, not a string, carries no ``--command-args``, or carries one
     with no following non-flag token all yield ``None``.
+
+    A flag that is NOT a known scope-bearing one also yields ``None`` rather than
+    silently ending the scope. The ledger joins ``args`` WITHOUT quoting, so a
+    flag after the canonical cannot be placed inside or outside the command's own
+    quoting — an unknown flag might be narrowing the build (``-k foo``,
+    ``-Dtest=…``) or might be the executor's own (``--timeout``), and reading
+    either as whole-tree is the false-green direction. The fail direction is an
+    inability whose reason is recorded, never a coverage credit: the row cannot
+    certify a WHOLE-TREE change (the joint selection refuses it, see
+    :data:`REASON_SCOPE_UNREADABLE_WHOLE_TREE`) and still passes a change that
+    needs less, with the inability recorded. The one exception is a KNOWN
+    non-narrowing companion (:data:`_SCOPE_NEUTRAL_FLAGS`,
+    maven's ``-am`` / ``--also-make``): it provably cannot narrow, so it is
+    ignored rather than making the row unreadable.
 
     ``command`` is deliberately not consulted as a fallback — see the module
     docstring for why a build-tool-specific command line cannot be read for scope
@@ -551,29 +791,152 @@ def parse_row_scope(entry: dict[str, Any]) -> RowScope | None:
     Returns:
         The recorded :class:`RowScope`, or ``None`` when it cannot be read.
     """
-    args = entry.get('args')
-    if not isinstance(args, str):
+    rest = _row_payload_tokens(entry)
+    if rest is None:
         return None
-    tokens = args.split()
-    rest: list[str] = []
-    for position, token in enumerate(tokens):
-        if token == _COMMAND_ARGS_FLAG:
-            rest = tokens[position + 1 :]
-            break
-        if token.startswith(f'{_COMMAND_ARGS_FLAG}='):
-            rest = [token.split('=', 1)[1], *tokens[position + 1 :]]
-            break
-    else:
-        return None
-    payload = []
-    for token in rest:
+    payload: list[str] = []
+    scope: list[str] = []
+    saw_neutral = False
+    index = 0
+    while index < len(rest):
+        token = rest[index]
+        if token in _SCOPE_NEUTRAL_FLAGS:
+            saw_neutral = True
+            index += 1
+            continue
         if token.startswith('-'):
-            break
-        if token:
+            name, separator, inline = token.partition('=')
+            arity = _SCOPE_FLAGS.get(name)
+            if arity is None:
+                return None
+            if separator:
+                values = [inline]
+            else:
+                values = []
+                for offset in range(1, arity + 1):
+                    if index + offset >= len(rest) or rest[index + offset].startswith('-'):
+                        return None
+                    values.append(rest[index + offset])
+                index += arity
+            if not all(values):
+                return None
+            parts = [part for value in values for part in value.split(',') if part]
+            if not parts:
+                # ``-pl=`` / ``-pl=,`` names no scope at all. Returning an empty
+                # tuple here would assert whole-tree on the back of a flag that was
+                # meant to narrow — the one direction this reader must never take.
+                return None
+            scope.extend(parts)
+        elif token:
             payload.append(token)
+        index += 1
     if not payload:
         return None
-    return RowScope(canonical=payload[0], scope_tokens=tuple(payload[1:]))
+    notation = entry.get('notation')
+    if isinstance(notation, str) and notation in _GOAL_POSITIONAL_NOTATIONS:
+        # The remaining positionals are the tool's own goals, tasks or script
+        # names. They narrow nothing, so they are dropped rather than read as a
+        # module scope: ``run test`` is a whole-tree run, and only the tool's own
+        # scope flag can narrow it. The one exception is a ``:module:``-prefixed
+        # token — the Gradle submodule shape, whose discoverer embeds the module
+        # in EVERY task (``:core:test``, ``:core:test :core:jacocoTestReport``).
+        # Those tokens DO name a blast radius, and dropping them would assert
+        # whole-tree over a run that built one subproject. No other
+        # goal-positional tool emits that shape — an npm script name may also
+        # begin with a colon, but it selects no project path — and if one did the
+        # same reading is the safe one: the project paths are not recoverable
+        # here, so such a row is unreadable rather than widened.
+        if notation != 'plan-marshall:build-npm:npm' and any(token.startswith(':') for token in payload):
+            return None
+        payload = payload[:1]
+    elif notation != _PYPROJECT_NOTATION and len(payload) > 1:
+        return None
+    if saw_neutral and not scope and len(payload) == 1:
+        # A neutral companion with NO scope of any kind (``package -am``) is not a
+        # whole-tree claim: the flag only means "also the selected modules'
+        # dependencies", and the resolver never emits it without ``-pl``. Nothing
+        # selected the modules, so the blast radius is unreadable rather than the
+        # widest possible one.
+        return None
+    return RowScope(canonical=payload[0], scope_tokens=tuple(payload[1:] + scope))
+
+
+def _payload_without_executor_run_flags(tokens: list[str]) -> list[str] | None:
+    """Return ``tokens`` with every declared executor ``run`` flag removed.
+
+    A declared flag is dropped together with its one value token, and the
+    ``--flag=value`` spelling drops the whole token. A flag whose value is a
+    space-separated list (:data:`_MULTI_TOKEN_VALUE_FLAGS`) additionally consumes
+    the ``KEY=VALUE`` tokens the unquoted join made of the rest of that value.
+    ``None`` means a declared flag had no value to drop, so no reconstruction of
+    the payload is possible.
+
+    Args:
+        tokens: The row's recorded payload-and-tail tokens.
+
+    Returns:
+        The remaining tokens, or ``None`` when a declared flag carries no value.
+    """
+    remaining: list[str] = []
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
+        name, separator, _inline = token.partition('=')
+        arity = _EXECUTOR_RUN_FLAGS.get(name)
+        if arity is None:
+            remaining.append(token)
+            index += 1
+            continue
+        if separator:
+            index += 1
+        else:
+            if index + arity >= len(tokens):
+                return None
+            index += arity + 1
+        if name in _MULTI_TOKEN_VALUE_FLAGS:
+            # The value is a space-separated list, so the join recorded the REST
+            # of it as bare tokens (``--env A=1 B=2``, and the same residue after
+            # the ``--env=A=1`` spelling). Consume those too, or the residue would
+            # be read as payload scope.
+            while index < len(tokens) and '=' in tokens[index] and not tokens[index].startswith('-'):
+                index += 1
+    return remaining
+
+
+def row_scope_remedy_hint(entry: dict[str, Any]) -> str | None:
+    """Name the row-specific remedy when ``entry`` is unreadable for want of the field.
+
+    A row that carries a ``--command-args`` payload in its joined ``args`` but no
+    ``command_args`` field cannot say whether a later flag belonged to the payload
+    or to the executor. Telling its reader to "re-run a build" loops — the re-run
+    writes the same shape — so the refusal names the changes that work.
+
+    The hint applies only where that ambiguity is the actual cause: the tail after
+    the payload must carry one of the ``run`` subparser's OWN flags
+    (:data:`_EXECUTOR_RUN_FLAGS`) AND the payload with those flags and their
+    values removed must parse. A row made unreadable by a flag that belongs to the
+    build tool (``module-tests -k foo``) has no executor flag to move, and naming
+    one would send its reader after a remedy that does not exist.
+
+    Args:
+        entry: A ``kind=build`` ledger row.
+
+    Returns:
+        :data:`LEGACY_ROW_SCOPE_REMEDY` for that shape, otherwise ``None``.
+    """
+    if isinstance(entry.get('command_args'), str):
+        return None
+    if parse_row_scope(entry) is not None:
+        return None
+    tokens = _row_payload_tokens(entry)
+    if not tokens:
+        return None
+    stripped = _payload_without_executor_run_flags(tokens)
+    if stripped is None:
+        return None
+    if parse_row_scope({**entry, 'command_args': ' '.join(stripped)}) is None:
+        return None
+    return LEGACY_ROW_SCOPE_REMEDY
 
 
 def _measured_zero_tests(entry: dict[str, Any]) -> bool:
@@ -606,9 +969,12 @@ def _row_refusal(
 ) -> str | None:
     """Return why ``entry`` does not cover ``required``, or ``None`` when it does.
 
-    Evaluated in order of how much the row said: a row nobody could parse, then a
-    canonical outside the vocabulary, then the substantive refusals. The first
-    two are inabilities.
+    Evaluated from the most decisive fact to the least: a row nobody could parse,
+    then a READABLE scope that provably built less than the change needs, then a
+    canonical outside the vocabulary, then the analyses. Scope comes before the
+    canonical because the vocabulary is PARTIAL by design — an unmapped canonical
+    is an inability that passes, and it must not mask a row that positively
+    recorded a narrower blast radius.
 
     Args:
         entry: A ``kind=build`` ledger row.
@@ -621,16 +987,13 @@ def _row_refusal(
     scope = parse_row_scope(entry)
     if scope is None:
         return ROW_ARGS_UNREADABLE
+    if not _scope_adequate(scope, required):
+        return ROW_SCOPE_TOO_NARROW
     performed = vocabulary.by_canonical.get(scope.canonical)
     if performed is None:
         return ROW_CANONICAL_UNKNOWN
     if not required.analyses <= performed:
         return ROW_CANONICAL_TOO_WEAK
-    if scope.scope_tokens:
-        if required.whole_tree:
-            return ROW_SCOPE_TOO_NARROW
-        if not required.modules <= set(scope.scope_tokens):
-            return ROW_SCOPE_TOO_NARROW
     if vocabulary.test in required.analyses and _measured_zero_tests(entry):
         return ROW_TESTS_EXECUTED_ZERO
     return None
@@ -985,6 +1348,50 @@ def _joint_contributors(
     return union_contributors(candidates, required, vocabulary, attributable) or {}
 
 
+def _unreadable_scope_blocks_whole_tree(
+    candidates: list[dict[str, Any]],
+    required: RequiredCoverage | None,
+    scope: dict[str, Any],
+) -> bool:
+    """Whether an unreadable row's inability refuses a WHOLE-TREE change.
+
+    The split fail-direction this module takes — a refutation fails closed, an
+    inability passes with the inability recorded — holds for every change whose
+    blast radius a row could still substantiate on another dimension. It does not
+    hold where the change needs WHOLE-TREE coverage and a candidate row's scope
+    could not be read at all: there the row can join neither an adequate answer
+    nor a refusal, and passing it would assert coverage nobody measured. Such a
+    change needs every required analysis at whole-tree scope, so an unreadable row
+    can only be evidence of something narrower — or of nothing.
+
+    The rows are re-read here rather than judged from the dimension's reason token,
+    because one :data:`UNDETERMINED` verdict can come from an unreadable ``args``
+    or from a canonical outside the vocabulary. Only the first is this refusal:
+    the second is the vocabulary's documented partiality, which stays an inability
+    that passes.
+
+    Args:
+        candidates: Matching ``kind=build`` rows in ledger file order.
+        required: What the change needs covered, or ``None`` when underivable.
+        scope: The coverage dimension's verdict dict.
+
+    Returns:
+        True only for a whole-tree change whose coverage verdict is
+        :data:`UNDETERMINED` and at least one candidate row cannot be read for
+        scope. A verdict whose reason is
+        :data:`REASON_VOCABULARY_UNIMPORTABLE` is never this refusal: that token
+        says THIS CHECK IS BROKEN, which must stay visible rather than be
+        relabelled as a property of the rows.
+    """
+    if required is None or not required.whole_tree:
+        return False
+    if scope['verdict'] != UNDETERMINED:
+        return False
+    if scope['reason'] == REASON_VOCABULARY_UNIMPORTABLE:
+        return False
+    return any(parse_row_scope(entry) is None for entry in candidates)
+
+
 def cross_check_candidates(
     candidates: list[dict[str, Any]],
     project_dir: str,
@@ -1105,7 +1512,8 @@ def cross_check_candidates(
         unavailable_reason=coverage_unavailable_reason or vocabulary_reason,
     )
 
-    refused = notation_verdict == REFUTED or scope['verdict'] == NARROW
+    whole_tree_unreadable = _unreadable_scope_blocks_whole_tree(candidates, required, scope)
+    refused = notation_verdict == REFUTED or scope['verdict'] == NARROW or whole_tree_unreadable
     credited: dict[int, list[str]] = (
         {} if refused else _joint_contributors(candidates, attributable, scope, required, vocabulary)
     )
@@ -1123,13 +1531,18 @@ def cross_check_candidates(
         joint_reason = notation_reason
     elif scope['verdict'] == NARROW:
         joint_reason = scope['reason']
+    elif whole_tree_unreadable:
+        joint_reason = REASON_SCOPE_UNREADABLE_WHOLE_TREE
     else:
         joint_reason = REASON_NO_ADMISSIBLE_ROW
 
     # What a refusal still lacks is judged over the rows that MAY be cited: an
     # analysis only an unattributable row performed is still missing. Where the
-    # requirement or the vocabulary is unavailable nothing can be named.
-    if contributing or required is None or vocabulary is None:
+    # requirement or the vocabulary is unavailable nothing can be named, and an
+    # unreadable scope names nothing either — the row may have performed every
+    # required analysis at a scope nobody could place, so naming a gap would
+    # assert a shortfall the ledger does not show.
+    if contributing or required is None or vocabulary is None or whole_tree_unreadable:
         missing_analyses: list[str] = []
     else:
         missing_analyses = uncovered_analyses(candidates, required, vocabulary, attributable)

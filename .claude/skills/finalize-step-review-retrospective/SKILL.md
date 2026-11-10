@@ -21,8 +21,8 @@ implements: plan-marshall:extension-api/standards/ext-point-finalize-step
 
 ## Purpose
 
-After a plan finishes, compare the PR's reviewers — the three automated reviewers
-(CodeRabbit `coderabbitai`, Sourcery `sourcery-ai`, PR-Agent `cuioss-review-bot`)
+After a plan finishes, compare the PR's reviewers — the automated reviewers
+(CodeRabbit `coderabbitai`, Sourcery `sourcery-ai`)
 plus any human reviewer — on review quality, reading THIS plan's `pr-comment` findings
 grouped by reviewer. The step is **HYBRID by construction**:
 
@@ -97,7 +97,7 @@ Every terminal `--outcome done` record therefore captures the **main-checkout** 
 
 ## Reviewer comment-structure asymmetry
 
-The three automated reviewers post structurally different comment layers per PR,
+The automated reviewers post structurally different comment layers per PR,
 all under one login each, so a naive "every pr-comment finding = one actionable
 item" count over-counts CodeRabbit. The aggregator discriminates on the
 first-class `kind` field:
@@ -108,10 +108,6 @@ first-class `kind` field:
   walkthrough/poem that is also META.
 - **Sourcery** (`sourcery-ai`): inline `<issue_to_address>` comments plus an
   **Overall Comments** `review_body`; its Reviewer's Guide `issue_comment` is META.
-- **PR-Agent** (`cuioss-review-bot`): no inline comments at all — exactly one
-  persistent `issue_comment` headed `## PR Reviewer Guide 🔍`, updated in place on
-  re-review. Its findings live inside that one record, so a stage that counts
-  inline comments will conclude this bot found nothing.
 
 So `kind=inline` is actionable, a substantive `review_body` is actionable, and
 CodeRabbit's status-summary `review_body` + walkthrough `issue_comment` are

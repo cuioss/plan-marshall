@@ -9,10 +9,11 @@ time and exposes stable accessors so the finding store, the re-review strategy
 registry, the producer pre-filter, and the rate-limit detector DERIVE what they
 need (the bot-kind set, the login->bot_kind map, each bot's re-review trigger
 comment, its escalated trigger comment, its trigger semantics, its completion
-check-run name, its skip-label-honoring flag, its ignore patterns, its
-acknowledgment patterns, its refusal patterns, its no-unreviewed-commit patterns,
-its contentless-review markers and headings, its actionable-content markers, its
-participation-evidence publish shapes and the content marker each of those
+check-run name, its skip-label-honoring flag, its ignore patterns, its footer
+markers, its acknowledgment patterns, its refusal patterns, its no-unreviewed-commit
+patterns, its contentless-review markers and headings, its actionable-content markers,
+its concern-section headings and clean-section verdicts,
+its participation-evidence publish shapes and the content literals each of those
 shapes must carry to count, its severity map, its rate-limit class, and its
 rate-limit ETA patterns) instead of hard-coding three bots across several code
 files.
@@ -39,8 +40,10 @@ Data-block shape (one per ``standards/{bot_kind}.md``)::
       issue_comment: "<!-- recent_review_start -->"
     participation_requires_update: true
     ignore_patterns:
-      - "## Walkthrough"
       - "No actionable comments were generated"
+      - "✏️ Learnings added"
+    footer_patterns:                  # branding / feedback lines, stripped before the signal test
+      - "Sourcery is free for open source"
     acknowledgment_patterns:          # a reply confirming a command was RECEIVED, never its answer
       - "Review triggered"
     review_body_summary_patterns:     # a review_body OPENING with one of these is a status summary
@@ -60,6 +63,10 @@ Data-block shape (one per ``standards/{bot_kind}.md``)::
       - "## Code Review Guide"
     actionable_content_markers:
       - "<details>"
+    concern_section_headings:         # the TEXT under one of these decides clean vs concern
+      - "Merge Risk:"
+    clean_section_verdicts:           # the literals that mark that section clean; empty = fail closed
+      - "No actionable merge-blocking risk remains."
     rate_limit_eta_patterns:
       - "wait ([0-9]+ minutes)"
     severity_map:
@@ -68,24 +75,28 @@ Data-block shape (one per ``standards/{bot_kind}.md``)::
     ```
 
 Stdlib-only (no PyYAML): the block is a tightly-constrained subset — top-level
-scalars, lists (``ignore_patterns``, ``acknowledgment_patterns``,
-``review_body_summary_patterns``,
+scalars, lists (``ignore_patterns``, ``footer_patterns``,
+``acknowledgment_patterns``, ``review_body_summary_patterns``,
 ``refusal_patterns``, ``refusal_size_patterns``, ``no_unreviewed_commit_patterns``,
 ``refusal_size_cap_patterns``, ``contentless_review_markers``,
 ``contentless_review_headings``, ``actionable_content_markers``,
+``concern_section_headings``, ``clean_section_verdicts``,
 ``participation_evidence``,
 ``rate_limit_eta_patterns``), and two nested maps
 (``participation_evidence_markers``, ``severity_map``) — parsed by a small
-deterministic reader below. Load order is the sorted
+deterministic reader below. A ``participation_evidence_markers`` value may itself be
+a LIST (an alternation of literals for one shape), which the reader accepts inside
+that map. Load order is the sorted
 ``standards/*.md`` filename order, so ``bot_kinds()`` is stable across runs.
 
 The reader is permissive by design, so the one place a malformed record would
 disable a gate SILENTLY is checked explicitly at load:
 ``participation_evidence_markers`` must be a MAP, every key must be a shape the
 same record lists in ``participation_evidence``, and every value must be a
-non-blank string. A record breaking any of the three raises
-:class:`BotRegistryError`. See :func:`_validate_participation_evidence_markers`
-for why this single field fails loud while the accessors fail open or closed.
+non-blank string or a non-empty list of them. A record breaking any of the three
+raises :class:`BotRegistryError`. See
+:func:`_validate_participation_evidence_markers` for why this single field fails
+loud while the accessors fail open or closed.
 """
 
 import re
@@ -146,6 +157,20 @@ def _scalar(raw: str) -> Any:
     return _coerce(text)
 
 
+def _marker_literals(value: Any) -> list[str]:
+    """Return the literals one ``participation_evidence_markers`` entry declares.
+
+    A single quoted literal (the original shape) and a list alternation normalise to
+    the same list, so every consumer reads one vocabulary regardless of how the doc
+    spelled it. An empty list means "no gate on this shape".
+    """
+    if isinstance(value, str):
+        return [value.strip()] if value.strip() else []
+    if isinstance(value, list):
+        return [item.strip() for item in value if isinstance(item, str) and item.strip()]
+    return []
+
+
 def _parse_block(block: str) -> dict[str, Any]:
     """Parse a constrained registry data block into a plain dict.
 
@@ -157,6 +182,11 @@ def _parse_block(block: str) -> dict[str, Any]:
     """
     data: dict[str, Any] = {}
     current_key: str | None = None
+    # The nested-map key a following ``- item`` block belongs to. A map entry may
+    # declare an ALTERNATION (a list of literals) rather than one scalar — the
+    # participation content gate is the field that needs it — so the reader tracks
+    # which child key opened such a list.
+    current_map_key: str | None = None
 
     for raw_line in block.splitlines():
         if not raw_line.strip():
@@ -171,6 +201,7 @@ def _parse_block(block: str) -> dict[str, Any]:
             if not sep:
                 continue
             key = key.strip()
+            current_map_key = None
             if not _strip_inline_comment(rest).strip():
                 # A remainder that is empty once its trailing ``#`` comment is
                 # removed opens a nested block (list or map); its kind is decided
@@ -195,24 +226,45 @@ def _parse_block(block: str) -> dict[str, Any]:
         if current_key is None:
             continue
         if stripped.startswith('- '):
+            if current_map_key is not None and isinstance(data.get(current_key), dict):
+                # A list declared INSIDE a nested map: the alternation for one key
+                # of that map. Appending is the whole difference from the flat
+                # list case below, which must never replace an open map.
+                container = data[current_key]
+                if not isinstance(container.get(current_map_key), list):
+                    container[current_map_key] = []
+                container[current_map_key].append(_scalar(stripped[2:]))
+                continue
             if not isinstance(data.get(current_key), list):
                 data[current_key] = []
             data[current_key].append(_scalar(stripped[2:]))
-        elif stripped == '-':
             continue
+        if stripped == '-':
+            continue
+        child_key, sep, rest = stripped.partition(':')
+        if not sep:
+            continue
+        if not isinstance(data.get(current_key), dict):
+            data[current_key] = {}
+        if not _strip_inline_comment(rest).strip():
+            # The child opens its own list (the alternation shape above).
+            data[current_key][child_key.strip()] = None
+            current_map_key = child_key.strip()
         else:
-            child_key, sep, rest = stripped.partition(':')
-            if not sep:
-                continue
-            if not isinstance(data.get(current_key), dict):
-                data[current_key] = {}
             data[current_key][child_key.strip()] = _scalar(rest)
+            current_map_key = None
 
     # A block key that opened but gathered no children normalizes to an empty
-    # list (harmless — the shipped blocks always carry children).
+    # list (harmless — the shipped blocks always carry children). A nested-map key
+    # that opened and gathered none normalizes the same way, so an empty
+    # alternation reads as the same "no declaration" a missing key does.
     for key, value in list(data.items()):
         if value is None:
             data[key] = []
+        elif isinstance(value, dict):
+            for child, child_value in list(value.items()):
+                if child_value is None:
+                    value[child] = []
     return data
 
 
@@ -240,9 +292,10 @@ def _validate_participation_evidence_markers(bot_kind: str, record: dict[str, An
     - A key outside the record's own ``participation_evidence``. One typo —
       ``issue_comments:`` for ``issue_comment:`` — and the gate the doc was edited
       to add never runs.
-    - A key whose VALUE is not a non-blank string. It normalises to ``''`` at the
-      accessor, which is the very answer an UNDECLARED shape gets, so the author
-      wrote a gate and the shape credits on shape alone.
+    - A key whose VALUE is not a non-blank string (or, for an alternation, a non-empty
+      list of them). It normalises to ``''`` at the accessor, which is the very answer
+      an UNDECLARED shape gets, so the author wrote a gate and the shape credits on
+      shape alone.
 
     For CodeRabbit all three are the live case this guard exists for: its
     pre-review walkthrough is published in the very shape the marker gates, so an
@@ -298,14 +351,24 @@ def _validate_participation_evidence_markers(bot_kind: str, record: dict[str, An
         )
     # Every offending key is named, so one load reports the whole edit rather than
     # the first mistake in it.
-    blank = sorted(key for key, marker in markers.items() if not (isinstance(marker, str) and marker.strip()))
+
+    def _is_declared_literal(value: Any) -> bool:
+        """One literal, or a non-empty alternation of literals, per declared shape."""
+        if isinstance(value, str):
+            return bool(value.strip())
+        if isinstance(value, list):
+            return bool(value) and all(isinstance(item, str) and item.strip() for item in value)
+        return False
+
+    blank = sorted(key for key, marker in markers.items() if not _is_declared_literal(marker))
     if blank:
         raise BotRegistryError(
             f'{bot_kind}: participation_evidence_markers declares key(s) {blank} with no usable '
-            f'literal. A marker value must be a non-blank string — a blank or non-string one '
-            f'normalises to the empty string at the accessor, which the producer reads as UNGATED, so '
-            f'the shape credits on shape alone while the doc reads as though it were gated. Give each '
-            f'key the literal a credited comment carries, or remove the key.'
+            f'literal. A marker value must be a non-blank string — or, where one shape is gated on '
+            f'more than one literal, a non-empty list of them. A blank or non-string one normalises '
+            f'to the empty string at the accessor, which the producer reads as UNGATED, so the shape '
+            f'credits on shape alone while the doc reads as though it were gated. Give each key the '
+            f'literal(s) a credited comment carries, or remove the key.'
         )
 
 
@@ -472,6 +535,25 @@ class BotRegistry:
         value = self._by_kind.get(bot_kind, {}).get('ignore_patterns', [])
         return list(value) if isinstance(value, list) else []
 
+    def footer_patterns(self, bot_kind: str) -> list[str]:
+        """Return the per-bot FOOTER markers (``[]`` if unknown/absent).
+
+        A footer marker is a branding or feedback-prompt line a bot appends to a
+        SUCCESSFUL review — never a section that replaces the review. It is therefore
+        stripped from the body before the whole-comment signal test, and a body that
+        is nothing but footer is dropped as noise. It can never cause a drop by
+        itself: a review body that carries findings AND the footer keeps its findings.
+
+        A DEDICATED field rather than a slice of :meth:`ignore_patterns`, because the
+        two lists answer different questions — "is this comment a footer?" versus "is
+        this whole comment boilerplate?" — and folding the footer into the drop set is
+        exactly what discarded a whole review body. An empty list is the default, so a
+        bot that has not opted in is filtered exactly as it was before this field
+        existed.
+        """
+        value = self._by_kind.get(bot_kind, {}).get('footer_patterns', [])
+        return list(value) if isinstance(value, list) else []
+
     def acknowledgment_patterns(self, bot_kind: str) -> list[str]:
         """Return the per-bot literal ACKNOWLEDGMENT markers (``[]`` if unknown/absent).
 
@@ -507,8 +589,8 @@ class BotRegistry:
 
         This is deliberately a DEDICATED field, never a reuse of
         :meth:`ignore_patterns`. ``ignore_patterns`` lists the routine sections a
-        bot emits on a *successful* review (CodeRabbit's ``## Walkthrough`` and
-        ``✏️ Learnings added``, Sourcery's Reviewer's-Guide marker), so matching
+        bot emits on a *successful* review (CodeRabbit's no-op review line and its
+        ``✏️ Learnings added`` notice, Sourcery's Reviewer's-Guide marker), so matching
         refusals against it would classify ordinary successful reviews as refusals.
         The two lists answer different questions and must stay distinct — see
         ``automatic-review/standards/bot-participation-contract.md`` § "Detecting a
@@ -658,9 +740,10 @@ class BotRegistry:
         """Return the review-comment headings a contentless body may carry (``[]`` if absent).
 
         The ALTERNATION companion to :meth:`contentless_review_markers`. A bot that
-        publishes the same clean shape under more than one persistent review comment
-        — PR-Agent's security ``## PR Reviewer Guide`` and its code-review
-        ``## PR Code Review Guide`` — cannot list both headings in the conjunction,
+        publishes the same clean shape in more than one state of its persistent review
+        comment — CodeRabbit's finished ``## Walkthrough`` and the
+        ``Currently processing new changes`` notice the same comment carries while a
+        review runs — cannot list both headings in the conjunction,
         because no single body carries both. Each entry here is one such heading,
         and the producer's test requires ANY ONE of them to be present, on top of
         every :meth:`contentless_review_markers` entry.
@@ -723,6 +806,36 @@ class BotRegistry:
         drop short-circuits on the empty required list first.
         """
         value = self._by_kind.get(bot_kind, {}).get('actionable_content_markers', [])
+        return list(value) if isinstance(value, list) else []
+
+    def concern_section_headings(self, bot_kind: str) -> list[str]:
+        """Return the summary headings whose TEXT decides clean versus concern-bearing.
+
+        A summary comment can carry a free-text concern under a heading that is not one
+        of the ``actionable_content_markers`` sections — CodeRabbit states its Merge Risk
+        paragraph as prose. Each entry here names such a heading; the producer takes the
+        text under it and requires that it carry at least one
+        :meth:`clean_section_verdicts` entry before the body may be dropped as contentless.
+
+        An empty list adds no section condition, so a bot that has not declared the field
+        keeps exactly its previous behaviour. The companion of
+        :meth:`clean_section_verdicts`; together they carry the rule as data.
+        """
+        value = self._by_kind.get(bot_kind, {}).get('concern_section_headings', [])
+        return list(value) if isinstance(value, list) else []
+
+    def clean_section_verdicts(self, bot_kind: str) -> list[str]:
+        """Return the literals that mark a concern section CLEAN (``[]`` = fail closed).
+
+        Read by the producer against the text under a :meth:`concern_section_headings`
+        entry. A section that carries none of these literals holds a concern and vetoes
+        the contentless drop.
+
+        An empty list is the FAIL-CLOSED default: a bot that declares a concern heading
+        but no clean wording has that section filed on every body, so an undeclared
+        clean shape is filed rather than swallowed.
+        """
+        value = self._by_kind.get(bot_kind, {}).get('clean_section_verdicts', [])
         return list(value) if isinstance(value, list) else []
 
     def participation_evidence(self, bot_kind: str) -> list[str]:
@@ -789,11 +902,31 @@ class BotRegistry:
         value = self._by_kind.get(bot_kind, {}).get('participation_evidence_markers', {})
         if not isinstance(value, dict):
             return ''
-        marker = value.get(evidence_kind, '')
-        return marker.strip() if isinstance(marker, str) else ''
+        literals = _marker_literals(value.get(evidence_kind, ''))
+        return literals[0] if literals else ''
+
+    def participation_evidence_markers_for(self, bot_kind: str, evidence_kind: str) -> tuple[str, ...]:
+        """Return EVERY literal an ``evidence_kind`` comment may carry to COUNT.
+
+        The ALTERNATION companion to :meth:`participation_evidence_marker`. A bot may
+        publish two different finished artifacts in one shape — CodeRabbit replaces its
+        ``<!-- recent_review_start -->`` summary with a ``final_review_risk_coverage``
+        one — and a single literal per shape would then credit one format and reject
+        the other. Declaring both makes either evidence; the shaped gate itself is
+        unchanged.
+
+        An undeclared shape is FAIL-OPEN exactly as the singular accessor is: the
+        empty tuple, which the producer reads as "no gate on this shape". A declared
+        key normalises to its literals in declared order; the loader refuses a key
+        whose declaration is blank, non-string, or an empty list.
+        """
+        value = self._by_kind.get(bot_kind, {}).get('participation_evidence_markers', {})
+        if not isinstance(value, dict):
+            return ()
+        return tuple(_marker_literals(value.get(evidence_kind, '')))
 
     def participation_evidence_markers(self, bot_kind: str) -> dict[str, str]:
-        """Return the whole per-shape marker map as DECLARED (``{}`` if unknown/absent).
+        """Return each declared shape's PRIMARY marker literal (``{}`` if unknown/absent).
 
         The plural companion to :meth:`participation_evidence_marker`, and the
         reason it exists is the KEY set: the singular accessor can only be asked
@@ -804,16 +937,13 @@ class BotRegistry:
         counterpart in the test tree, and by any consumer auditing what a doc
         actually declares.
 
-        The KEYS are raw, exactly as the doc declares them. Each VALUE is routed
-        through :meth:`participation_evidence_marker`, so the two accessors cannot
-        disagree about what any one shape is gated on: ``markers[shape]`` is always
-        the literal the producer would compare against.
-
-        There is no DECLARED-but-ungating entry to expose. A declared key whose
-        value is blank or non-string is refused at load by
-        :func:`_validate_participation_evidence_markers`, so every value in a
-        returned map is a real literal and the map's information is its KEY set —
-        which is exactly what the singular accessor cannot enumerate.
+        Each VALUE is the shape's FIRST declared literal, routed through
+        :meth:`participation_evidence_marker`, so the two accessors cannot
+        disagree about the primary gate. It is NOT the whole alternation: a shape
+        may declare several literals, and :meth:`participation_evidence_markers_for`
+        is the accessor that answers the admissibility question with all of them.
+        A consumer deciding whether a comment counts reads the ``_for`` accessor;
+        this one exists to enumerate keys.
         """
         value = self._by_kind.get(bot_kind, {}).get('participation_evidence_markers', {})
         if not isinstance(value, dict):
@@ -824,7 +954,7 @@ class BotRegistry:
         """Return whether ``bot_kind``'s evidence additionally requires update movement.
 
         True for a bot that re-reviews by EDITING its single persistent comment in
-        place rather than posting a new one (PR-Agent's Guide comment). For such a bot
+        place rather than posting a new one (CodeRabbit's summary comment). For such a bot
         the mere continued existence of the comment proves only that it reviewed ONCE,
         at some earlier HEAD, so its credit has to clear the producer's CURRENCY TEST.
 
@@ -957,6 +1087,11 @@ def ignore_patterns(bot_kind: str) -> list[str]:
     return REGISTRY.ignore_patterns(bot_kind)
 
 
+def footer_patterns(bot_kind: str) -> list[str]:
+    """The per-bot footer markers for ``bot_kind`` (``[]`` if unknown/absent)."""
+    return REGISTRY.footer_patterns(bot_kind)
+
+
 def acknowledgment_patterns(bot_kind: str) -> list[str]:
     """The per-bot literal acknowledgment markers for ``bot_kind`` (``[]`` if absent)."""
     return REGISTRY.acknowledgment_patterns(bot_kind)
@@ -1002,6 +1137,16 @@ def actionable_content_markers(bot_kind: str) -> list[str]:
     return REGISTRY.actionable_content_markers(bot_kind)
 
 
+def concern_section_headings(bot_kind: str) -> list[str]:
+    """The summary headings whose text decides clean vs concern for ``bot_kind`` (``[]`` if absent)."""
+    return REGISTRY.concern_section_headings(bot_kind)
+
+
+def clean_section_verdicts(bot_kind: str) -> list[str]:
+    """The literals marking a ``bot_kind`` concern section clean (``[]`` = fail closed)."""
+    return REGISTRY.clean_section_verdicts(bot_kind)
+
+
 def review_body_summary_patterns(bot_kind: str) -> list[str]:
     """The literals marking a ``bot_kind`` review_body a STATUS SUMMARY (``[]`` = counted)."""
     return REGISTRY.review_body_summary_patterns(bot_kind)
@@ -1041,6 +1186,11 @@ def participation_evidence(bot_kind: str) -> list[str]:
 def participation_evidence_marker(bot_kind: str, evidence_kind: str) -> str:
     """The literal a ``bot_kind`` comment of ``evidence_kind`` must carry to count (``''`` = ungated)."""
     return REGISTRY.participation_evidence_marker(bot_kind, evidence_kind)
+
+
+def participation_evidence_markers_for(bot_kind: str, evidence_kind: str) -> tuple[str, ...]:
+    """EVERY literal a ``bot_kind`` comment of ``evidence_kind`` may carry (``()`` = ungated)."""
+    return REGISTRY.participation_evidence_markers_for(bot_kind, evidence_kind)
 
 
 def participation_evidence_markers(bot_kind: str) -> dict[str, str]:

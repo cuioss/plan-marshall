@@ -507,21 +507,88 @@ No new plan-marshall high or critical defect turned up apart from the operator-g
 
 ⚠ **Coverage gap:** the store set rests on probing sibling names by hand, because no wildcard listing was possible in this session. ⚠ **Unreconciled:** ids the 2026-11-01 run recorded as left in place, for example API `2026-10-12-07-002` and TokenSheriff `2026-10-31-12-001`, are no longer at those paths.
 
-### 2026-11-10 — eleventh `ingest` run (`gather`, cross-repo)
+### 2026-11-02 — first `gather` run (cross-repo: four sibling checkouts)
 
-Run as the epic-local `gather` command (RULING 2026-11-02). All 36 entries under `/Users/oliver/git/` were probed. Two stores were new since the tenth run: `plan-marshall-mcp` (19 lessons) and `cui-open-rewrite` (2). 21 lessons in all; 13 are about plan-marshall tooling and were moved into the archive, 8 are project-only and stay in their stores. Per-lesson dispositions and the full probe list: `lessons-archive/INDEX.md` § Sweep 2026-11-10.
+The first run of the `gather` command. All 27 sibling checkouts and 7 sibling worktrees were probed. Stores found: cui-http (47, a store the earlier cross-repo run did not have), API-Sheriff (22), nifi-extensions (16) and pm-mcp-core (3), 88 lessons in all. Every other probed repository returned a zero, TokenSheriff and cui-jsf-test-basic among them. 68 lessons are about plan-marshall or its bundles and were moved into the archive, removing them from the source. The other 20 are project-specific and stay in their checkouts. Grading took two passes (consolidation and dedup, then a ground-truth check at `f6830b837`) by three read-only leaves; the orchestrator verified the evidence of every filed item. Per-lesson dispositions: `lessons-archive/INDEX.md` § Sweep 2026-11-02 (third run, `gather`).
 
 | Disposition | Lessons | Where |
 |---|---|---|
-| filed to `live-blockers` | 0 | — (nothing high or critical; its inbox was empty) |
+| high (operator), filed | 2 in `lessons-routing-075` (Sourcery footer markers drop the review body) and `-076` (routed build misreports a routing failure as `build_failed`) | `live-blockers/inbox/` |
+| domain content, filed | 13 in 7 filings, `-077`..`-083` (pm-dev-java javadoc, junit-core, java-core, java-security; pm-dev-java-cui cui-http-testing; pm-documents ref-asciidoc) | same |
+| already-covered | 33 | `lessons-archive/low/{repo}/` |
+| medium | 7 | `lessons-archive/medium/{repo}/` |
+| low | 3 | `lessons-archive/low/{repo}/` |
+| stale | 10 | `lessons-archive/stale/{repo}/` |
+| not applicable, left in source | 20 | — |
+
+No new plan-marshall defect turned up at high or critical except the two the operator graded high from borderline medium/high. Lessons were moved with `mv -n`; all 68 destinations were verified present and no source-repo tombstone or commit was made (same deviation as the earlier cross-repo runs).
+
+⚠ **Unreconciled:** the 2026-11-02 second run recorded 82 left in place with named ids (pm-mcp-core 49, API-Sheriff 25, nifi-extensions 6). Those stores now hold different populations (pm-mcp-core 3, API-Sheriff 22, nifi-extensions 16), and none of the named ids is at its recorded path. This run graded what it found and could not establish where the earlier ones went.
+
+### 2026-11-10 — eleventh `ingest` run (inbox, 33 messages)
+
+Corpus at start: 0. Inbox at start: 33 live, valid `candidate-lesson` messages, all about the `plan-marshall` bundle: 17 from two pm-mcp-core plans (`plan-v2-86-core-store-tests-b`, `plan-v2-89-runtime-tests-start-and-config`), 12 from the pm-mcp-core orchestrators (`pm-mcp-core-m2-m4` 403..407, `pm-mcp-core-m2-m4-v2` 001..007), and 4 relayed by the API-Sheriff epic `kidicap-gateway-requirements` (014..017). Per-message dispositions: `lessons-archive/INDEX.md` § Sweep 2026-11-10.
+
+| Disposition | Messages | Where |
+|---|---|---|
+| high (operator), filed to `live-blockers` | 3 in 2 filings, `lessons-routing-084` (merge gate never proves the merge mutex is held; a not-live holder blocks admission) and `-085` (a rewriting quality gate's success never matches the committed tree) | `live-blockers/inbox/` |
+| already-covered | 8 | archived; subjects owned by `-049`, `-050`, `-051`, `-060`, `-064`, `-065` and two medium clusters |
+| stale | 3 | archived; `verification_handback` is accepted at HEAD, and the producer no longer writes `sonar_key` |
+| medium | 16 | `inbox/archive/{sender}/` |
+| low | 3 | same |
+
+Operator rulings: both borderlines, the merge-lock cluster and the rewriting gate, were graded **high**. Checked at `e7033b83a`: `pre_merge_gate.py` has no merge-lock reference, `_cmd_pre_commit_verify_freshness.py:261-262` matches a build row only on the current tree, `sonar.py:886`, `manage-metrics.py:130`. The other grades rest on the message text and the earlier indexes. As in the 2026-10-23 and 2026-11-02 runs, bodies stay verbatim in `inbox/archive/` and no copy was made under `lessons-archive/{level}/`. `live-blockers` was open (`phase: orchestrating`) before routing, and its inbox held no undrained `lessons-routing` filing to amend, so no recurrence was added by `inbox amend`.
+
+⚠ The R41 filings `lessons-routing-075`..`-083` are no longer in the `live-blockers` queue; they sit in its `inbox/archive/lessons-routing/`. This run did not establish whether that epic dispositioned them or only relocated them (the same caveat as the 2026-10-23 run).
+
+### 2026-11-10 — second `gather` run (cross-repo: TokenSheriff)
+
+At the operator's request, after the inbox drain above. This machine (Linux, `/home/oliver/git`) has nine sibling checkouts; two hold a lessons store: `API-Sheriff` (10) and `TokenSheriff` (36). The other seven are recorded zeros. The probe used `find`, not the ruling's `git status --ignored`. Per-lesson dispositions: `lessons-archive/INDEX.md` § Sweep 2026-11-10 (second run).
+
+| Disposition | Lessons | Where |
+|---|---|---|
+| stale | 2 | `lessons-archive/stale/TokenSheriff/` |
+| medium (operator) | 1 (`2026-11-09-16-012`, merge-queue enqueue with no already-queued check) | `lessons-archive/medium/TokenSheriff/` |
+| already-covered or low | 19 | `lessons-archive/low/TokenSheriff/` |
+| not applicable, left in source | 9 new, plus 15 graded 2026-11-01 and untouched (API-Sheriff 10, TokenSheriff 5) | — |
+
+Nothing was filed to `live-blockers`. 31 TokenSheriff lessons were newer than the 2026-11-01 sweep and were graded by two read-only leaves, whose evidence was spot-checked only for the borderline item (`_github_pr.py:3094`). 22 were moved with `mv -n` and all 22 destinations verified present; no source-repo commit was made. One leaf miscounted its own batch (it reported 10 not applicable and 6 in scope; its per-lesson table gives 9 and 7), so the table was used.
+
+⚠ **Likely cause of the earlier "unreconciled" ids, not verified:** the 2026-11-02 runs probed 27 sibling checkouts on a different machine (the ruling names `/Users/oliver/git/*`). This machine has nine, so those stores' populations differ by machine, not by loss. Whether the other machine still holds the ids was not checked.
+
+### 2026-11-10 — twelfth `ingest` run (corpus)
+
+Corpus at start: 29 active lessons (`2026-09-22-06-001` to `2026-10-02-13-007`), all about the `plan-marshall` bundle, none seen by an earlier sweep. Per-lesson dispositions: `lessons-archive/INDEX.md` § Sweep 2026-11-10 (third run).
+
+| Disposition | Lessons | Where |
+|---|---|---|
+| high (operator), filed to `live-blockers` | 1 in `lessons-routing-086` (a build-server submit with no plan selector builds the main checkout and reports success) | `live-blockers/inbox/`; body in `lessons-archive/filed-live-blockers/` |
+| stale, archived | 16 (fixed or retired at HEAD: #1559, #1685, #1718, #1750, #1758, #1866, #1941, PLAN-LB-42/44/54) | `lessons-archive/stale/` |
+| medium, archived | 4 (daemon timeout tuning, baseline-reconcile probe, the `post_responses` cluster of two) | `lessons-archive/medium/` |
+| already-covered, archived | 4 | `lessons-archive/low/` |
+| low, archived | 4 | `lessons-archive/low/` |
+
+All 29 were removed through `manage-lessons remove` after their archive copy existed (verdict `superseded` for the filed one, `redundant` for the four already covered, `obsolete` for the rest). Corpus after the run: 0 active. Operator rulings: the raw build-server submit was graded **high** from a borderline; the `post_responses` cluster and the baseline-reconcile probe were graded **medium**. Checked and re-read at `e7033b83a`: `github_pr.py:3648`, `build_server.py:436-452` and `:498-520`. The other grades rest on two read-only leaves' citations. `2026-09-24-05-001` collides with an archived lesson of the same id (a different lesson) and is stored as `medium/2026-09-24-05-001-post-responses.md`. `lessons-routing-054`, which three of the lessons relate to, was already drained in `live-blockers`, so the merge-lock recurrence was recorded here rather than amended.
+
+### 2026-11-10 — thirteenth `ingest` run (`gather`, cross-repo: macOS sibling checkouts)
+
+Run as the epic-local `gather` command (RULING 2026-11-02) on the macOS machine, in parallel with the Linux session's runs above; the two machines hold different store populations. All 36 entries under `/Users/oliver/git/` were probed. Two stores were new to the ledger: `plan-marshall-mcp` (19 lessons) and `cui-open-rewrite` (2). 21 lessons in all; 13 are about plan-marshall tooling and were moved into the archive, 8 are project-only and stay in their stores. Per-lesson dispositions and the full probe list: `lessons-archive/INDEX.md` § Sweep 2026-11-10 (fourth run).
+
+| Disposition | Lessons | Where |
+|---|---|---|
+| filed to `live-blockers` | 0 | — (nothing high or critical) |
 | already-covered | 3 | `lessons-archive/low/plan-marshall-mcp/` |
 | medium | 8 | `lessons-archive/medium/plan-marshall-mcp/` |
 | stale | 2 | `lessons-archive/stale/plan-marshall-mcp/` |
 | not applicable, left in source | 8 | `plan-marshall-mcp` 6, `cui-open-rewrite` 2 |
 
-Checked at `64907fa3b`: the `ci-verify` producer vocabulary is pinned by a contract test, `foreign_pr_gate.py:67-86` no longer assumes `feature/{plan_id}`, and `adr-propose.md:110` still prompts through `AskUserQuestion` from a dispatched leaf. Both fixed subjects had been recorded as still present at the 2026-10-12 sweep. No borderline grade, no operator ruling needed. Lessons were moved with `mv -n` and all 13 destinations verified; no source-repo tombstone or commit.
+Checked at `64907fa3b`: the `ci-verify` producer vocabulary is pinned by a contract test, `foreign_pr_gate.py:67-86` no longer assumes `feature/{plan_id}`, and `adr-propose.md:110` still prompts through `AskUserQuestion` from a dispatched leaf (a recurrence of the third run's dispatched-leaf medium cluster). No borderline grade, no operator ruling needed. Lessons were moved with `mv -n` and all 13 destinations verified; no source-repo tombstone or commit.
 
-⚠ **Coverage gap:** `other-llm-projects` and `other-test-projects` are plain directories that may hold checkouts one level deeper, and were not listed. ⚠ **Watch:** `API-Sheriff` now holds tombstones only. The 25 project-only lessons the tenth run left there are gone from the store and not in this archive. Who removed them is not established: the store carries tombstones, the newest `2026-11-03-08-001`, but no tombstone was matched to those ids. The "Unreconciled" note above stays open.
+**Resolves part of the "Unreconciled" notes above.** The macOS stores hold pm-mcp-core 49, nifi-extensions 6, TokenSheriff 1 and cui-jsf-test-basic 1 lesson, the counts the 2026-11-02 second run left in place, so that run was on this machine and those lessons are not lost (ids not re-compared). The ids the 2026-11-02 third run and the TokenSheriff run found missing belong to the Linux machine. Still open: the 25 API-Sheriff lessons the second run left in place are gone from the macOS store (tombstones only, newest `2026-11-03-08-001`, none matched to those ids).
+
+⚠ **Coverage gap:** `other-llm-projects` and `other-test-projects` are plain directories that may hold checkouts one level deeper, and were not listed.
+
+⚠ **Land conflict.** This run's first land (PR #1956) was based on a ledger worktree that sat at #1905 while `main` had advanced to #1955 through the Linux session's lands, so its `epic.md`, `INDEX.md`, anchor and view conflicted. The branch was repaired by merging `origin/main` (no force-push), keeping `main`'s versions and re-adding this run's records.
 
 ## START HERE
 

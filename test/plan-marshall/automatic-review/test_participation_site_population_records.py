@@ -61,8 +61,15 @@ SEED_SYMBOLS: tuple[str, ...] = (
     'participation_evidence',
     'participation_evidence_marker',
     'participation_evidence_markers',
+    'participation_evidence_markers_for',
     '_validate_participation_evidence_markers',
     '_is_participation_evidence',
+    'review_coverage_verdict',
+    '_evidence_named_verdict',
+    'review_coverage_is_finished',
+    'review_coverage_marker_present',
+    '_inline_comment_placement',
+    '_reported_commit_matches_candidate',
     'head_sha_verified',
     'stale_participation',
     'existing_comment_keys',
@@ -197,17 +204,20 @@ SITE_EXPECTATIONS: dict[str, SiteExpectation] = {
         'Per-bot registry record. Declares participation_requires_update: true, so this bot '
         'edits its summary comment in place on re-review and its credit is currency-tested.',
     ),
-    f'{_SKILLS}/automatic-review/standards/cuioss-review-bot.md': SiteExpectation(
-        'registry_data',
-        'none',
-        'yes',
-        'Per-bot registry record. Declares participation_requires_update: true, so its credit is currency-tested.',
-    ),
     f'{_SKILLS}/automatic-review/standards/sourcery.md': SiteExpectation(
         'registry_data',
         'none',
         'yes',
         'Per-bot registry record. Declares participation_requires_update: false.',
+    ),
+    f'{_SKILLS}/runbook-lane/SKILL.md': SiteExpectation(
+        'normative_text',
+        'commit_sha',
+        'not_applicable',
+        'The merge gate states the qualifying-review rule for a quota-limited reviewer: a '
+        'marker-bearing summary comment whose sourceCommitId / coveredCommitId name one of the '
+        'PR’s heads and whose kind is reviewed. It points at review_coverage_verdict as the ONE '
+        'parser of those fields and evaluates nothing itself.',
     ),
     f'{_SKILLS}/phase-6-finalize/SKILL.md': SiteExpectation(
         'normative_text',
@@ -265,6 +275,14 @@ SITE_EXPECTATIONS: dict[str, SiteExpectation] = {
         'not_applicable',
         'Publishes the producer’s SHA-anchored return contract AND the timestamp-anchored '
         'github_ops pr wait-for-comments completion predicate — two anchors on one surface.',
+    ),
+    f'{_SKILLS}/workflow-integration-github/scripts/github_ops.py': SiteExpectation(
+        'live_comment_scan',
+        'commit_sha',
+        'yes',
+        "The inline placement parser. Reads the comment's originalCommit, its review's "
+        'commit and only then its own mutable commit, plus replyTo, to place a review '
+        'comment at the commit it was POSTED at and decide whether it opens a thread.',
     ),
     f'{_SKILLS}/workflow-integration-github/scripts/_github_pr.py': SiteExpectation(
         'live_comment_scan',
@@ -328,6 +346,11 @@ CANDIDATE_EXCLUSIONS: dict[str, str] = {
         'The FILING dedup’s key reconstruction: it decides whether a comment is new '
         'INFORMATION to file, never whether a bot participated. Its site is already in the '
         'population through the seed existing_comment_keys, which names the key set it rebuilds.'
+    ),
+    '_REVIEW_COVERAGE_REVIEWED_KIND': (
+        'The KIND VALUE a review-coverage marker must carry to be a finished review: a label on '
+        'the marker payload, not a decision. The decision that reads it is review_coverage_verdict, '
+        'which anchors the credit on the marker’s covered commit; this constant owns no site.'
     ),
 }
 

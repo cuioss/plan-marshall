@@ -9,7 +9,6 @@ Covers the three concerns of the post-merge re-review registry:
        comment per strategy and returns the comment-post time:
          coderabbit: posts ``@coderabbitai review``.
          sourcery:   posts ``@sourcery-ai review``.
-         cuioss-review-bot:   posts ``/review``.
     3. Two-signal completion matching — ``await_fresh_review`` is satisfied by
        EITHER ``_match_review`` (a review authored by the awaited bot — its
        ``user`` login resolves to the awaited ``bot_kind`` — whose reviewed-commit
@@ -233,11 +232,10 @@ _GUARD_SWEEP_POPULATION: list[str] = bot_registry.bot_kinds()
 _GUARD_SWEEP_POPULATION_SIZE = len(_GUARD_SWEEP_POPULATION)
 _GUARD_PR_NUMBER = 42
 _GUARD_PUSH_TIME = '2026-01-01T00:00:00Z'
-_PR_AGENT_LOGIN = 'cuioss-review-bot'
 _TRIGGER = '2026-01-01T00:02:00Z'
 
 
-def _await_with_comments(monkeypatch, comments, *, reviews=None, bot_kind='cuioss-review-bot', head_sha='headsha'):
+def _await_with_comments(monkeypatch, comments, *, reviews=None, bot_kind='sourcery', head_sha='headsha'):
     """Run ``await_fresh_review`` over a fixed comment (and review) set.
 
     ``head_sha`` is parametrized for the reviewed-commit-reference cases below, which
@@ -340,15 +338,6 @@ def test_resolve_strategy_coderabbit_is_generic_with_coderabbit_trigger():
     assert strategy is not None
     assert isinstance(strategy, github_re_review._ReReviewStrategy)
     assert strategy.trigger_comment == '@coderabbitai review'
-
-
-def test_resolve_strategy_pr_agent_is_generic_with_pr_agent_trigger():
-    """cuioss-review-bot resolves to the same generic strategy class, carrying its own trigger."""
-    strategy = github_re_review.resolve_strategy('cuioss-review-bot')
-
-    assert strategy is not None
-    assert isinstance(strategy, github_re_review._ReReviewStrategy)
-    assert strategy.trigger_comment == '/review'
 
 
 def test_resolve_strategy_sourcery_is_generic_with_sourcery_trigger():
@@ -585,11 +574,6 @@ def test_bot_kind_for_author_strips_bot_suffix():
 def test_bot_kind_for_author_is_case_insensitive():
     """Login casing drift is tolerated via lower-casing."""
     assert github_re_review.bot_kind_for_author('CodeRabbitAI') == 'coderabbit'
-
-
-def test_bot_kind_for_author_known_pr_agent_login():
-    """The PR-Agent bot account login maps to the cuioss-review-bot bot_kind."""
-    assert github_re_review.bot_kind_for_author('cuioss-review-bot') == 'cuioss-review-bot'
 
 
 def test_bot_kind_for_author_unregistered_bot_returns_none():

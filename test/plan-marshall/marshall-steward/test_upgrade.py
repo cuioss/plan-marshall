@@ -393,20 +393,22 @@ def test_project_kind_auto_invokes_detector(monkeypatch, capsys: pytest.CaptureF
 
 
 # =============================================================================
-# migrate-bot-lists — the one-shot legacy auto-map, over its four input states
+# migrate-bot-lists — the one-shot legacy auto-map, over its five input states
 # =============================================================================
 #
-# The four states are exhaustive over the presence/absence cross-product of the
-# retired ``enabled_bots`` key and the two replacement keys. States (3) and (4)
-# are deliberately indistinguishable once the legacy key is gone — that
-# collapse is what makes the migration self-disarming and safe to re-run.
+# The five states are exhaustive over the presence/absence cross-product of the
+# retired ``enabled_bots`` key and the two replacement keys, plus the strip-only
+# state: a roster that still names a retired kind is SAVED even with no legacy key
+# left. States (3) and (4) are deliberately indistinguishable once the legacy key is
+# gone and nothing is stripped — that collapse is what makes the migration
+# self-disarming and safe to re-run.
 
 
 def test_migrate_bot_lists_seeds_required_from_legacy_verbatim():
     """State 1 — legacy alone seeds the standard roster (not verbatim).
 
     The legacy-only config lands valid without hand repair: required carries
-    ``cuioss-review-bot,coderabbit``, optional carries ``sourcery``, each dropped
+    ``coderabbit``, optional carries ``sourcery``, each dropped
     legacy bot is named in ``discarded_legacy`` so no name disappears silently,
     and provenance records ``migrated``. Unknown legacy names are reported by
     ``validate_bot_lists`` rather than copied. (Function name is historical: it
@@ -418,10 +420,10 @@ def test_migrate_bot_lists_seeds_required_from_legacy_verbatim():
     report = upgrade.migrate_bot_lists(params)
 
     assert report['state'] == 'migrated'
-    assert report['required_bots'] == 'cuioss-review-bot,coderabbit'
+    assert report['required_bots'] == 'coderabbit'
     assert report['optional_bots'] == 'sourcery'
     assert report['discarded_legacy'] == ['coderabbit', 'sourcery']
-    assert params['required_bots'] == 'cuioss-review-bot,coderabbit'
+    assert params['required_bots'] == 'coderabbit'
     assert params['optional_bots'] == 'sourcery'
     assert params['bot_lists_provenance'] == 'migrated'
     # The legacy key is consumed, and the unrelated knob is untouched.
@@ -452,7 +454,7 @@ def test_migrate_bot_lists_operator_answer_wins_over_legacy():
     """
     params = {
         'enabled_bots': 'coderabbit,sourcery',
-        'required_bots': 'cuioss-review-bot',
+        'required_bots': 'sourcery',
         'optional_bots': 'sourcery',
         'bot_lists_provenance': 'answered',
     }
@@ -461,7 +463,7 @@ def test_migrate_bot_lists_operator_answer_wins_over_legacy():
 
     assert report['state'] == 'operator_answer_kept'
     assert report['discarded_legacy'] == ['coderabbit', 'sourcery']
-    assert params['required_bots'] == 'cuioss-review-bot'
+    assert params['required_bots'] == 'sourcery'
     assert params['optional_bots'] == 'sourcery'
     assert params['bot_lists_provenance'] == 'answered'
     assert 'enabled_bots' not in params
@@ -500,7 +502,7 @@ def test_migrate_bot_lists_is_self_disarming_on_second_run():
     assert first['discarded_legacy'] == ['coderabbit', 'sourcery']
     assert second['state'] == 'noop'
     assert params == after_first
-    assert second['required_bots'] == 'cuioss-review-bot,coderabbit'
+    assert second['required_bots'] == 'coderabbit'
     assert second['optional_bots'] == 'sourcery'
 
 
@@ -509,9 +511,9 @@ def test_migrate_bot_lists_is_self_disarming_on_second_run():
 # states plus the matched negative control
 # =============================================================================
 #
-# The four states mirror the shape the ``migrate_bot_lists`` suite above already
-# establishes for this file: every configured token valid, one token unknown, an
-# empty list, and an absent step.
+# The four states below are this verb's own input cross-product: every configured
+# token valid, one token unknown, an empty list, and an absent step. (The
+# ``migrate_bot_lists`` suite above covers five states of a different verb.)
 #
 # The load-bearing addition is the CONTROL. Asserting only that a valid list
 # produced no unknown tokens would pass just as happily for a check that examined
@@ -860,9 +862,9 @@ def test_stage2_order_seeded_roster_survives_merge_and_validates_clean():
     """Legacy-only config seeds the standard roster, survives the merge, validates clean.
 
     The full Stage 2 order in one test: migrate seeds
-    ``required_bots=cuioss-review-bot,coderabbit`` + ``optional_bots=sourcery``,
+    ``required_bots=coderabbit`` + ``optional_bots=sourcery``,
     the sync-defaults back-fill must not clobber the seeded values, and validate
-    reports clean over the three seeded tokens with the live kind set.
+    reports clean over the two seeded tokens with the live kind set.
     """
     import _cmd_sync_defaults
 
@@ -875,13 +877,13 @@ def test_stage2_order_seeded_roster_survives_merge_and_validates_clean():
     _cmd_sync_defaults._backfill_standard_roster(merged, enabled=True)
     kept = _params_of(merged)
 
-    assert kept['required_bots'] == 'cuioss-review-bot,coderabbit'
+    assert kept['required_bots'] == 'coderabbit'
     assert kept['optional_bots'] == 'sourcery'
     validation = upgrade.validate_bot_lists(kept)
     assert validation['state'] == 'clean'
     assert validation['unknown_tokens'] == []
     assert validation['known_bot_kinds'] == bot_registry.bot_kinds()
-    assert validation['checked_count'] == 3
+    assert validation['checked_count'] == 2
 
 
 def test_stage2_order_operator_answer_survives_merge_and_validates_clean():
@@ -929,7 +931,7 @@ def test_sync_backfill_fills_absent_roster_and_never_clobbers_operator_answer():
     absent = _merged_with_params({})
     _cmd_sync_defaults._backfill_standard_roster(absent, enabled=True)
     filled = _params_of(absent)
-    assert filled['required_bots'] == 'cuioss-review-bot,coderabbit'
+    assert filled['required_bots'] == 'coderabbit'
     assert filled['optional_bots'] == 'sourcery'
 
     kinds = _live_kinds()

@@ -80,8 +80,8 @@ Script: `plan-marshall:manage-tasks:manage-tasks`
 | `remove-step` | `--plan-id --task-number --step` | Remove step from task |
 | `rename-path` | `--plan-id --old-path --new-path [--include-completed]` | Record path rename and rewrite step targets. By default only unfinished work is rewritten — a `done` task is skipped whole, and elsewhere only `pending` steps are touched — so a finished task's record stays a faithful account of the paths it edited. `--include-completed` lifts both guards, for the case that default cannot serve: an upstream rename landing mid-plan, where the path a completed step names no longer exists, so leaving it alone strands the task on a dead path that `declared_set_closure` then flags with no sanctioned way to correct it. Returns `rewritten_completed_count` and, per entry, BOTH the `step_status` and the `task_status` the record carried BEFORE the rewrite, so an edit to finished work is visible in the result rather than merely inferable from the flag. Both statuses are reported, and the count treats an entry as finished work when EITHER is finished, because either guard alone can be the one lifted — a done task whose step rows still read `pending` is finished work just as much as a done step is |
 | `qgate-mechanical-checks` | `--plan-id [--no-emit]` | Run the deterministic Q-Gate checks for phase-4-plan Step 8: coverage, skill-resolution, acyclic, files-exist, keyword-drift, structural-token-drift, plus the two CLOSURE checks — declared-set-closure and declared-scope-reconciliation. The first six ask whether each declared thing is well-formed and resolves; the closure pair asks whether the declared SET is complete, which none of the others can see. Pure regex + graph + filesystem; no LLM dispatch. Each failure becomes a Q-Gate finding under `--source qgate` so phase-4-plan's existing aggregate consumes it. Returns `total_failed`, per-check counts, a `population` block reporting what each population-publishing check actually scanned (with `population_complete`), and an `ambiguous` flag the caller uses to decide whether the LLM q-gate-validation dispatch still needs to fire — `ambiguous` flips on an unparseable outline OR an incomplete population, since a zero over an unscanned set is not a verdict. The block covers **three** checks, not only the two closure ones: `acyclic` publishes alongside them because it also loses records before it measures — a task number it cannot use is dropped from the graph, and two records claiming one number collapse to a single node — so its `duplicate_task_numbers` / `unusable_task_numbers` / `nodes_indexed` are what keep a "no cycle" from being a verdict over a shortened node set. Also returns `qgate_persist_failed` (bool) and `qgate_persist_failures` (list of `{title, message}`) — a persist the Q-Gate primitive rejected means the check failed but its finding never reached the store, so the caller MUST fail loudly on `qgate_persist_failed: true` rather than trusting `total_failed` alone. Alongside `findings_emitted` (newly appended records only) returns `reobserved_count` — how many persists re-detected an already-resolved finding and kept its recorded resolution (the primitive's `kept` outcome) — and `still_detected_but_fixed_count` — how many of those kept records carry the `fixed` resolution. An unchanged-plan re-run therefore reports `findings_emitted` zero with the re-observed counts stating what it re-saw, instead of a bare zero that reads as "nothing detected"; the kept resolutions are untouched. |
-| `loop-exit-guard` | `--plan-id` | Script-level enforcement of the phase-5-execute "unfinished > 0 → must continue" invariant. The predicate is the union of `pending` AND `in_progress` tasks. Emits `status: continue` (with `pending_count`, `pending_ids`, `in_progress_count`, `in_progress_ids`) when EITHER bucket is non-empty — the non-success status forces the orchestrator to re-dispatch the execution-context. Emits `status: success` (with all four count/id fields present and zero-valued) only when BOTH counts are zero. See "Loop-Exit Guard" below for the contract. |
-| `pre-commit-verify-freshness` | `--plan-id` | Script-level enforcement that the current working-tree state has been observed by a successful build before any pre-commit transition — but only where a build was necessary at all. Consults the command-free `build-decision` verdict first, then queries the unified change-ledger for a `kind=build` entry with `status == success` whose `worktree_sha` matches the recomputed working-tree currency hash, and finally cross-checks the matching rows on two dimensions — their notations against the build notations this project's architecture resolves, and the canonical + scope they recorded against the blast radius of the change. Emits `status: exempt` (verdict `not_necessary` — no build was owed, so the gate returns BEFORE the ledger scan with the verdict's own `reason` forwarded verbatim; nothing about the tree was examined), `status: fresh` (one or more matching successful build entries citable on BOTH dimensions and covering the change, alone or between them — `notation_cross_check` and `scope_cross_check` say whether each was audited or merely undetermined, and the record names every row the verdict rests on and every candidate's recorded scope), `status: stale` (no successful build matches the current working-tree sha, or every one that does names a build this project never runs, or the ones that do fall short of the change alone and combined — carrying a `reason` that names WHICH route: `worktree_mutated`, `build_error`, `build_timeout`, `build_killed`, `build_indeterminate`, `notation_unrelated`, `notation_absent`, `build_scope_narrow`, or `no_row_both_attributable_and_adequate`, since the routes need different remedies and a `killed` build must never be blind-retried), or `status: undecidable` (no positive proof — `no_registry` when the ledger is absent/empty, `head_unresolvable` when the working-tree sha cannot be computed). Fail-closed contract: exactly `exempt` and `fresh` permit transition, and they permit on different bases — read the member, never the absence of a refusal. See "Pre-Commit Verify Freshness" below for the contract. |
+| `loop-exit-guard` | `--plan-id [--consumed-tokens N] [--completed-tasks-delta N] [--pending-verify-steps "ids"] [--verification-handback] [--provisional-cause CAUSE]` | Script-level enforcement of the phase-5-execute "unfinished > 0 → must continue" invariant. The predicate is the union of `pending` AND `in_progress` tasks. Emits `status: continue` (with `pending_count`, `pending_ids`, `in_progress_count`, `in_progress_ids`, `owed_count`, `owed_ids`, `done_count`) when EITHER bucket is non-empty — the non-success status forces the orchestrator to re-dispatch the execution-context. Emits `status: success` (with `pending_count`, `in_progress_count` and `owed_count` zero; `done_count` carries the completed total) only when BOTH unfinished counts are zero. `owed_count`/`owed_ids` name the `in_progress` tasks held open by `verification_owed: true`; they still block the clean exit. `done_count` is the delta's source: the orchestrator subtracts the previous iteration's figure. Supplying any predicate input switches the verb into the deterministic B7 no-progress evaluation and adds `predicate_*`, `verification_handback_valid`, `verification_handback_unknown_steps`, `classification` and `classification_reason`; the evaluation needs BOTH measurements, and one without the other returns `status: error, error: no_progress_not_decidable`. See "Loop-Exit Guard" below for both contracts. |
+| `pre-commit-verify-freshness` | `--plan-id` | Script-level enforcement that the current working-tree state has been observed by a successful build before any pre-commit transition — but only where a build was necessary at all. Consults the command-free `build-decision` verdict first, then queries the unified change-ledger for a `kind=build` entry with `status == success` whose `worktree_sha` matches the recomputed working-tree currency hash, and finally cross-checks the matching rows on two dimensions — their notations against the build notations this project's architecture resolves, and the canonical + scope they recorded against the blast radius of the change. Emits `status: exempt` (verdict `not_necessary` — no build was owed, so the gate returns BEFORE the ledger scan with the verdict's own `reason` forwarded verbatim; nothing about the tree was examined), `status: fresh` (one or more matching successful build entries citable on BOTH dimensions and covering the change, alone or between them — `notation_cross_check` and `scope_cross_check` say whether each was audited or merely undetermined, and the record names every row the verdict rests on and every candidate's recorded scope), `status: stale` (no successful build matches the current working-tree sha, or every one that does names a build this project never runs, or the ones that do fall short of the change alone and combined — carrying a `reason` that names WHICH route: `worktree_mutated`, `build_error`, `build_timeout`, `build_killed`, `build_indeterminate`, `notation_unrelated`, `notation_absent`, `build_scope_narrow`, `build_scope_unreadable_for_whole_tree_change`, or `no_row_both_attributable_and_adequate`, since the routes need different remedies and a `killed` build must never be blind-retried), or `status: undecidable` (no positive proof — `no_registry` when the ledger is absent/empty, `head_unresolvable` when the working-tree sha cannot be computed). Fail-closed contract: exactly `exempt` and `fresh` permit transition, and they permit on different bases — read the member, never the absence of a refusal. See "Pre-Commit Verify Freshness" below for the contract. |
 
 ### Loop-Exit Guard (`loop-exit-guard`)
 
@@ -112,8 +112,8 @@ broadened predicate. Either non-empty bucket forces `status: continue`.
 
 **TOON return contract:**
 
-Both `continue` and `success` branches emit all four count/id fields so
-callers can read either axis without conditional presence checks:
+Both `continue` and `success` branches emit every count/id field so callers can
+read either axis without conditional presence checks:
 
 ```toon
 status: continue | success
@@ -122,6 +122,9 @@ pending_count: N
 pending_ids[N]: [task_numbers]
 in_progress_count: M
 in_progress_ids[M]: [task_numbers]
+owed_count: K
+owed_ids[K]: [task_numbers]
+done_count: D
 message: "..."
 ```
 
@@ -134,6 +137,57 @@ message: "..."
   queue empty by the broadened predicate, clean exit permitted. The
   boundary-call fence in `plan-marshall/workflow/execution.md` may now
   record `termination-cause == clean_exit_queue_empty`.
+- `owed_count` / `owed_ids` — the subset of the `in_progress` bucket held
+  open by `verification_owed: true` (waiting on an orchestrator-tier build).
+  They are reported separately, but they are NOT removed from the blocking
+  bucket: an owed task still forces `status: continue`, because the build it
+  waits on has not reported. The split exists for the no-progress predicate
+  below, which must not count a task the workflow itself is holding open.
+- `done_count` — the `done` count from the same queue walk. It is the source
+  of `completed_tasks_delta`: the orchestrator snapshots it per iteration and
+  subtracts the previous snapshot, so the delta and the queue state can never
+  disagree about which tasks completed.
+
+**No-progress mode (B7).** Entered for a return provisionally classified
+`voluntary_checkpoint`, and for a return that carries a hand-back pair (passed
+with `--provisional-cause voluntary_checkpoint`); every other return keeps its
+own cause and is not evaluated. Passing any predicate input — `--consumed-tokens`,
+`--completed-tasks-delta`, `--pending-verify-steps` or `--verification-handback` —
+switches the verb into the deterministic B7 evaluation the orchestrator runs
+after a dispatch returns and before `record-dispatch-boundary`. The evaluation
+needs BOTH `--consumed-tokens` and `--completed-tasks-delta`; a call that
+supplies one without the other returns `status: error` with
+`error: no_progress_not_decidable` and no classification, and carries the queue
+verdict separately as `queue_status` (`continue` | `success`) — `status: error`
+in that result never means the queue is empty. The result
+then also carries:
+
+```toon
+predicate_in_progress_count: {in_progress_count - owed_count}
+predicate_completed_tasks_delta: {D}
+predicate_consumed_tokens: {X}
+predicate_holds: {true|false}
+verification_handback_valid: {true|false}
+verification_handback_unknown_steps[N]: [step_ids]
+classification: {error|verification_handback|voluntary_checkpoint|<provisional cause>}
+classification_reason: {...}
+```
+
+The predicate is `predicate_in_progress_count > 0 AND
+predicate_completed_tasks_delta == 0 AND predicate_consumed_tokens > 50000`
+— stated once, with its exemptions, in `plan-marshall/workflow/execution.md`
+§ "B7 — voluntary_checkpoint no-progress reclassification". The predicate is
+consulted for its two qualifying returns — a return provisionally classified
+`voluntary_checkpoint` and one that hands a build back: the
+owed-task subtraction keeps the handed-back task out of `predicate_in_progress_count`;
+a `running` hand-back, whose task stays `in_progress` without the owed hold, is credited
+to the return's own marker when no owed task is in flight; a FURTHER non-owed task that
+stalled in the same dispatch is still classified `error`;
+and a hand-back naming a step id outside the manifest's composed
+`phase_5.verification_steps` exempts nothing. The verb reports
+`verification_handback_unknown_steps[]` — the named ids the manifest does not
+carry — so a rejected hand-back is observable rather than inferred.
+`classification` is the cause to record.
 
 **Rationale:** before this verb, the loop-exit decision was driven by the
 dispatched agent's terminal payload, which the agent could echo verbatim
@@ -176,6 +230,18 @@ triggers it, and the script never resolves tiers itself:
 - Reopening an owed task for new work is `add-step` (a new actionable step
   makes `next` select it again); a bare `update --status in_progress` on an
   all-terminal owed task changes nothing actionable.
+- **A task stamped `verification.owed_rung: deferred` closes WITHOUT
+  `--verification-owed`.** Compose stamps that field whenever a deliverable's
+  measured test build exceeds the per-task limit, because that
+  deliverable's rung is deferred to its chain tail (see
+  `manage-execution-manifest/SKILL.md` § "Deliverable chain-tail rung
+  deferral"). The leaf honours the stamp — it runs its narrow units inline and
+  closes per-task — and the hold fires only on the chain-tail task, which
+  carries `verification.owed_rung: chain_tail`. The rule is enforced here as
+  well as stated: `finalize-step` IGNORES `--verification-owed` on a `deferred`
+  task, closes it `done`, and reports `owed_rung_deferred_dropped: true`, so a
+  leaf that passes the flag anyway cannot stall the task on a build it never
+  requested.
 
 `next` skips verification-owed tasks that have no pending or in_progress
 step — they are waiting on a build, not on the leaf — while an owed task
@@ -336,7 +402,7 @@ compared on **blast radius**:
 
 | Side | Source | What it yields |
 |---|---|---|
-| The row | `args`, at `--command-args` | The canonical it ran and the scope tokens that followed — no tokens means whole-tree |
+| The row | `args`, at `--command-args` | The canonical it ran and its blast radius. Which positionals are scope depends on the row's own `notation`: a pyproject row takes the non-flag tokens that follow the canonical (its positionals are modules), an npm/Maven/Gradle row takes only a KNOWN scope-bearing flag's value (maven `-pl` / `--projects`, npm `--workspace`) because its positionals are goals, tasks or scripts. A known non-narrowing companion (`-am` / `--also-make`) is ignored. No scope tokens AND no flag means whole-tree; a Gradle `:module:`-prefixed task list, two positionals under any other notation, and any OTHER flag make the row unreadable, never whole-tree |
 | The row | `outcome.tests_run` + `outcome.tests_population` | Whether it MEASURED that it executed zero tests |
 | The change | the live plan footprint via `_test_scope_divergence.resolve_test_scope`, with the registered targets and the bundle modules from the shared helpers `_test_scope_targets.resolve_registered_targets` and `resolve_bundle_modules` | The module set a scoped run must cover, and whether only a whole-tree run will do |
 
@@ -363,6 +429,24 @@ false-green direction, so `command` is **not** used as a fallback: a row whose
 `args` carries no `--command-args` is reported undetermined rather than guessed
 at.
 
+A flag inside `args` is resolved the same conservative way, because the ledger
+joins its argv WITHOUT quoting and the boundary between the command's own
+arguments and the executor's is therefore gone. A known scope-bearing flag
+contributes its value to the scope. Every other flag makes the row **unreadable**
+— the `-k foo` of a test filter and the `--timeout 900` of the executor are
+indistinguishable there, and either read as "no scope" would assert whole-tree
+over a run that may have been narrowed. The one exception is a flag known NOT to
+narrow the run — maven's `-am` / `--also-make`, which only adds the selected
+modules' dependencies and is always emitted beside `-pl`: ignoring it cannot
+widen a claim, so the row stays readable and its `-pl` scope is still judged. A
+neutral flag with NO scope of any kind (`package -am`) is unreadable instead,
+because nothing selected the modules. An unreadable row contributes no coverage
+and is never labelled whole-tree; the inability is recorded, and no requirement
+is credited to it. It also does not certify a **whole-tree** change: there the
+gate refuses (`build_scope_unreadable_for_whole_tree_change`) rather than pass on a
+row nobody could place, while the same row still passes a change whose blast
+radius it could plausibly cover.
+
 **What the change requires is DERIVED, not fixed.** A non-empty footprint
 requires the `test` analysis unconditionally (markdown under the bundle tree is a
 build input — the same reasoning that refuses the doc-only carve-out above), and
@@ -377,10 +461,11 @@ demands no type-check at all of a change that altered no source.
 |---|---|---|
 | `covered` | Every required analysis was performed by a candidate row at a scope adequate for the change — by one row alone, or by several rows between them (§ "Joint selection" states the rule) | `fresh` |
 | `narrow` | The readable rows provably fall short of the change, alone and combined: at least one required analysis was performed by no row at an adequate scope | `stale` (`build_scope_narrow`) |
-| `undetermined` | The comparison could not be performed on one side or the other | `fresh`, with the inability stated in the record |
+| `undetermined` | The comparison could not be performed on one side or the other | `fresh`, with the inability stated in the record — EXCEPT a whole-tree change whose candidate rows carry unreadable scope, which is `stale` (`build_scope_unreadable_for_whole_tree_change`) |
 
 The split fail-direction is the same one the attribution dimension takes, for the
-same reason: only a positive refutation fails closed. `row_scopes` publishes what
+same reason: only a positive refutation fails closed, plus the single whole-tree
+exception named in the table above. `row_scopes` publishes what
 each candidate actually recorded (`'{canonical} {scope}: {covered|refusal}'`), so
 a refusal names *which* row falls short alone and *how*. Each line judges its row
 by itself, so a row that contributes to a covering set still carries its own
@@ -395,7 +480,12 @@ owners:
 |---|---|---|
 | `analysis_vocabulary_unimportable` | The canonical→analyses map (`_build_examined`) could not be imported | **This check is broken** — a deployment or `PYTHONPATH` fault, not a quiet pass. |
 | `required_coverage_unknown` | The live footprint or the registered-target set could not be resolved | The plan state — a worktree not yet materialised, or an unreadable marketplace root. |
-| `build_scope_unreadable` | Rows were read, but none carries a usable `--command-args` or names a canonical in the vocabulary | The producer — something wrote rows the dispatch boundary would not have written. |
+| `build_scope_unreadable` | No candidate row can be read for scope: none carries a usable `--command-args`, or every canonical it names is outside the vocabulary, or a row carries a flag that is neither a known scope-bearing one (`-pl`/`--projects`, `--workspace`) nor the known non-narrowing `-am`/`--also-make` | The producer when no row carries `--command-args` (something wrote rows the dispatch boundary would not have written); otherwise the argv's lost quoting, which is why an unknown flag is unreadable rather than guessed at. An unknown CANONICAL shares this token because both are inabilities, but only an unreadable row reaches the whole-tree refusal: a row whose scope is readable and adequate stays an inability that passes. |
+
+`build_scope_unreadable_for_whole_tree_change` is NOT in this vocabulary: it is a
+JOINT reason, one the selection takes when these unreadable rows meet a change that
+needs whole-tree coverage, and the scope verdict itself stays `undetermined`. It is
+listed with the other `stale` reasons below.
 
 ⛔ An unresolvable footprint is an **inability**, never an empty one. Rendering it
 as "the change requires nothing" would make every row cover it, re-opening the
@@ -441,7 +531,11 @@ attributable rows fall short AND every row that would close the gap was
 unattributable — nothing is citable. That state carries its own reason,
 `no_row_both_attributable_and_adequate`, rather than borrowing either
 dimension's: a reader told `build_scope_narrow` there would go looking for a
-refusal the coverage check never made.
+refusal the coverage check never made. The one state that reaches the same
+"neither dimension refused" shape but carries a different reason is a whole-tree
+change against rows whose scope is unreadable: there the coverage dimension
+reports `undetermined` and the joint selection refuses with
+`build_scope_unreadable_for_whole_tree_change` (see § "The scope cross-check").
 
 **Return statuses (fail-closed contract):**
 
@@ -495,8 +589,9 @@ on observed evidence.
 - `status: stale` — the ledger has entries but none is citable: either none is a
   successful build against the current working-tree sha, or every such build
   names a notation this project does not resolve, or such builds fall short of
-  the change alone and combined, or the attributable rows fall short while the
-  rows that would close the gap are unattributable. The gate
+  the change alone and combined, or the change needs whole-tree coverage and a
+  candidate row's scope cannot be read, or the attributable rows fall short while
+  the rows that would close the gap are unattributable. The gate
   MUST fail closed. Carries `worktree_sha`, `worktree_root`, `ledger_path`, and a
   **`reason` naming which route to `stale` was taken** — plus `observed_status`
   (the offending row's own build status) whenever a row carried a readable status
@@ -504,8 +599,11 @@ on observed evidence.
   `expected_notations` / `candidate_notations` / `row_scopes` /
   `missing_analyses` on every cross-check route. `missing_analyses` is the sorted
   list of required analyses no citable row performed at an adequate scope; it is
-  empty where what the change requires could not be derived, and
-  `scope_cross_check` then says `undetermined`. `observed_status` is absent on `worktree_mutated` (no row
+  empty where what the change requires could not be derived, empty where the
+  analysis vocabulary could not be imported, and empty on the
+  whole-tree-unreadable route, where the refusal rests on a scope nobody could
+  read rather than on an analysis nobody ran, so `scope_cross_check` says
+  `undetermined` there too. `observed_status` is absent on `worktree_mutated` (no row
   was observed), on the `build_indeterminate` sub-case where the row carried no
   readable `status` at all, and on every cross-check route (where every candidate
   was `success`, so reporting it would say nothing); supplying one where none was
@@ -525,6 +623,7 @@ on observed evidence.
   | `notation_absent` | Successful rows carry this sha, but **none** carries a usable `notation` — the key is missing, empty, or not a string | `build_record` always emits a non-empty `notation` for a dispatched build, so no such row came from the dispatch boundary. Something other than a build of this project is writing to the ledger; find it. |
   | `build_scope_narrow` | Successful, attributable rows carry this sha, but alone and combined they leave a required analysis uncovered — no row performed it, the rows that did were scoped too narrowly for the change, or the only test row measured zero tests | Run the missing analysis — `missing_analyses` names it — at a scope adequate for this change. Do not re-run `verify` by reflex: an analysis a row already covers needs no second run. `row_scopes` names what each row actually ran. |
   | `no_row_both_attributable_and_adequate` | Neither dimension refused, yet the citable rows do not cover the change — the attributable rows fall short AND every row that would close the gap was unattributable | Both remedies at once: run the analyses `missing_analyses` names, AND establish where the unattributable row came from. |
+  | `build_scope_unreadable_for_whole_tree_change` | The change needs whole-tree coverage and at least one candidate row's scope could not be read — a trailing flag puts the row's blast radius inside or outside the command's lost quoting, and nobody can say which | Dispatch a build whose recorded argv carries no flag after the canonical command (or only a known scope-bearing one), so the row's scope is readable. A row written by an executor that records `command_args` is readable this way already; for an older row whose unreadability comes from one of the executor's own flags, put that flag before `--command-args` (or drop it) and re-run so the row records the payload as its own field. The message names that remedy only when such a flag is actually present — a row broken by the build tool's own flag (`-k foo`) gets the generic re-run advice instead, because it has no executor flag to move. `row_scopes` shows the rows as `unreadable`. |
 
   The two `notation_*` routes are mutually exclusive and `notation_unrelated`
   wins a mixed set: a candidate list holding one notation-less row and one
@@ -634,8 +733,10 @@ from inside the loop.
      states — one row alone, or several between them
      (`scope_cross_check: covered`). When the comparison could
      not be performed on either side the dimension judges nothing and admits
-     **every** row, recording `scope_cross_check: undetermined` with its reason.
-     When the readable rows provably fall short alone and combined the dimension
+     **every** row, recording `scope_cross_check: undetermined` with its reason —
+     EXCEPT a whole-tree change against rows whose own scope is unreadable, which
+     the joint selection refuses (§ "The scope cross-check"). When the readable
+     rows provably fall short alone and combined the dimension
      REFUSES (`scope_cross_check: narrow`), and no row is citable.
 
    The gate cites the rows § "Joint selection" selects from those attribution
@@ -646,6 +747,7 @@ from inside the loop.
    |---|---|
    | Attribution refuted | `notation_unrelated` (some candidate carried a notation) or `notation_absent` (none did) |
    | Coverage refused | `build_scope_narrow` |
+   | Whole-tree change against a row whose scope is unreadable | `build_scope_unreadable_for_whole_tree_change` |
    | Neither refused, yet the rows attribution admits do not cover the change | `no_row_both_attributable_and_adequate` |
 
    ⛔ **Selection is joint, never per-dimension.** Letting attribution

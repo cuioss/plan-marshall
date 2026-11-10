@@ -1,0 +1,11 @@
+{
+  "id": "PLAN-LB-125",
+  "slug": "review-gate-jvm-acceptance-and-triage-exemption",
+  "workstream": "WS-03",
+  "status": "shipped",
+  "lane": "runbook",
+  "plan_marshall_plan_id": "rb-lb-125-review-gate-jvm-acceptance-and-triage-exemption",
+  "pr": "1939",
+  "landing": "landings/PLAN-LB-125.md",
+  "seq": 125
+}

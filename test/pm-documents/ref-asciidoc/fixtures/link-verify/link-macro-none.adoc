@@ -1,0 +1,3 @@
+= Link Macro None
+
+This file carries no macro of the link form at all.

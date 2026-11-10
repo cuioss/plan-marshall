@@ -377,7 +377,7 @@ opposite handling (the first is re-asked, the second is not). `bot_lists_provena
 that distinction.
 
 These lists have **one default: EMPTY**. The standard roster
-(`required_bots: cuioss-review-bot,coderabbit`, `optional_bots: sourcery`) is not a default but an
+(`required_bots: coderabbit`, `optional_bots: sourcery`) is not a default but an
 **upgrade seed**, written only by the upgrade-time migrations below (`migrated` provenance). A plain
 `sync-defaults` never writes it — the roster back-fill is opt-in via
 `sync-defaults --backfill-bot-roster`, which only the `marshall-steward` upgrade's Stage-2
@@ -388,7 +388,7 @@ exactly as it is.
 | Provenance | Meaning | Set by |
 |------------|---------|--------|
 | `never_asked` | The wizard has not put the question to the operator. The empty value is a placeholder, not an answer. | The seeded default. |
-| `migrated` | Seeded by an upgrade-time migration — the standard roster, not an operator answer. | The `marshall-steward` upgrade's Stage 2: the `reconcile-marshal-json` sub-step runs `sync-defaults --backfill-bot-roster`, and the `migrate-bot-lists` sub-step auto-maps a retired `enabled_bots` list. |
+| `migrated` | Seeded by an upgrade-time migration — the standard roster, not an operator answer. | The `marshall-steward` upgrade's Stage 2: the `reconcile-marshal-json` sub-step runs `sync-defaults --backfill-bot-roster`, and the `migrate-bot-lists` sub-step auto-maps a retired `enabled_bots` list. That sub-step also strips every RETIRED bot kind from both lists in every state, because a name no registry answers to classifies `unregistered_kind` and would block that consumer's merge. |
 | `answered` | The operator was asked and answered — **including an explicit answer of none**. An answered-empty value is a real answer and is never re-asked. | The `marshall-steward` wizard question. |
 
 An EMPTY `required_bots` with provenance `answered` is a fully valid configured state: the
@@ -408,7 +408,7 @@ Read/write through the nested step-param verb (never a dotted `--field` path):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config plan phase-6-finalize step set \
-  --step-id plan-marshall:automatic-review --param required_bots --value "coderabbit,cuioss-review-bot"
+  --step-id plan-marshall:automatic-review --param required_bots --value "coderabbit,sourcery"
 ```
 
 ```bash
@@ -661,7 +661,7 @@ These fields live directly under `plan`, outside any phase block.
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `open_in_ide` | bool | true | Whether Plan Marshall attempts to open the plan/worktree in the IDE on creation. A missing key is also treated as `true` by `manage-files open-in-ide`. Set `false` to suppress IDE auto-open. |
-| `finding_raw_input_max_bytes` | int | 65536 | Per-field byte cap for quarantined `raw_input.{field}` free-text in the findings ledger. Every producer files untrusted free-text (PR-comment body, Sonar message, …) under the `raw_input.{field}` quarantine sub-namespace; the ledger caps each field at this many bytes and appends a `[truncated]` marker on overflow. The 64 KiB default is corpus-grounded (p99 ≈ 21 KB, max ≈ 68 KB across 399 PR-comment findings), retaining the full body for effectively every real finding while bounding a hostile oversized payload. Callers thread the resolved value into `manage-findings ... --raw-input-max-bytes`. |
+| `finding_raw_input_max_bytes` | int | 65536 | Per-field byte cap for quarantined `raw_input.{field}` free-text in the findings ledger. Every producer files untrusted free-text (PR-comment body, Sonar message, …) under the `raw_input.{field}` quarantine sub-namespace; the ledger caps each field at this many bytes, keeping the head and tail and eliding the middle (a cap too small for a pair keeps the head plus a `[truncated]` marker). The 64 KiB default is corpus-grounded (p99 ≈ 21 KB, max ≈ 68 KB across 399 PR-comment findings), retaining the full body for effectively every real finding while bounding a hostile oversized payload. Callers thread the resolved value into `manage-findings ... --raw-input-max-bytes`. |
 
 (The plan-wide `plan.coverage` two-dial cell is documented under [Coverage cell](#coverage-cell-per-phase--plan-wide) below.)
 

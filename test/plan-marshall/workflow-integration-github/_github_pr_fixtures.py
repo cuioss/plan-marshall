@@ -411,3 +411,223 @@ def coderabbit_finished_review(base_sha: str, head_sha: str) -> str:
         'the backoff cap is zero — guard the cap before entering the loop.\n\n'
         f'Reviewing files that changed from the base of the PR and between {base_sha} and {head_sha}.'
     )
+
+
+#: The summary comment's own marker — the literal every CodeRabbit review summary OPENS
+#: with, and the one the producer treated as an unconditional whole-comment drop before the
+#: concern veto existed.
+CODERABBIT_SUMMARY_MARKER = '<!-- This is an auto-generated comment: summarize by coderabbit.ai -->'
+
+#: The concern section CodeRabbit renders inside a review body, OBSERVED verbatim on
+#: ``cuioss/plan-marshall#1939`` (the "Nitpick comments: 1" disclosure of the review
+#: published at ``f5a16312f``). Its rows carry the same ``cr-comment`` marker an inline
+#: finding carries, so the section is a real concern rather than prose.
+CODERABBIT_SUMMARY_CONCERN_SECTION = (
+    '<details>\n'
+    '<summary>Nitpick comments: 1</summary><blockquote>\n'
+    '<dl>\n'
+    '<dd>\n'
+    '<br>\n'
+    '`873-959`: **Trivial** · **Maintainability & Code Quality** · **Low value**\n'
+    '\n'
+    '**Add a review-commit fallback case to the GraphQL fixture.**\n'
+    '\n'
+    'The `_inline` helper accepts `path` and `line` but never uses them.\n'
+    '\n'
+    '<!-- cr-comment:v1:f5938e42944c13ae985adcbf -->\n'
+    '\n'
+    '</dd>\n'
+    '</dl>\n'
+    '</blockquote></details>'
+)
+
+#: The trailing marketing block every CodeRabbit summary carries, OBSERVED on the same
+#: comment set. Its three literals are distinct whole-comment markers of their own, so a
+#: summary that carries a concern must survive all three.
+CODERABBIT_SUMMARY_TIPS_BLOCK = (
+    '<!-- tips_start -->\n'
+    '\n'
+    '---\n'
+    '\n'
+    'Thanks for using [CodeRabbit](https://coderabbit.ai?utm_source=oss&utm_medium=github)! '
+    "It's free for OSS, and your support helps us grow.\n"
+    '\n'
+    '<sub>Comment `@coderabbitai help` to get the list of available commands.</sub>\n'
+    '\n'
+    '<!-- tips_end -->'
+)
+
+
+def coderabbit_summary_with_concern() -> str:
+    """Return a summary body whose ONLY content beyond the boilerplate is a concern.
+
+    CONSTRUCTED body, OBSERVED parts. A live CodeRabbit summary comment really does
+    carry a concern alongside its boilerplate: on ``cuioss/plan-marshall#1931``
+    (IC_kwDOQ3xasM8AAAABj8Aypw) the comment opening with the summarize marker carries,
+    in its Merge Risk block, "The remaining issue is a contract test that could pass
+    after the never-downgrade rule loses its verdict list; fix it in this PR or as a
+    follow-up." — a concern statement the old unconditional drop discarded whole.
+
+    What the same bot publishes in a machine-readable SECTION form is the nitpick
+    disclosure of a review body, read off ``cuioss/plan-marshall#1939``
+    (PRR_kwDOQ3xasM8AAAABWrdvtQ). This fixture puts that observed section inside the
+    observed summary shape, which is what makes it the concern case rather than a
+    control.
+    """
+    return (
+        f'{CODERABBIT_SUMMARY_MARKER}\n'
+        '## Walkthrough\n\n'
+        'The change gates participation credit on a per-shape content marker.\n\n'
+        f'{CODERABBIT_SUMMARY_CONCERN_SECTION}\n\n'
+        f'{CODERABBIT_SUMMARY_TIPS_BLOCK}'
+    )
+
+
+def coderabbit_summary_plain_walkthrough() -> str:
+    """Return the matched control: the same summary with the concern section removed.
+
+    CONSTRUCTED body, OBSERVED wording: the walkthrough and tips text is the same live
+    wording, in the structure the ``review-in-progress`` fixture establishes. It differs
+    from :func:`coderabbit_summary_with_concern` in exactly one fact: it carries no
+    concern section.
+    """
+    return (
+        f'{CODERABBIT_SUMMARY_MARKER}\n'
+        '## Walkthrough\n\n'
+        'The change gates participation credit on a per-shape content marker.\n\n'
+        f'{CODERABBIT_SUMMARY_TIPS_BLOCK}'
+    )
+
+
+def coderabbit_summary_bodies() -> tuple[tuple[str, str, str], ...]:
+    """Return ``(case id, body, provenance)`` for the two summary shapes that decide D1.
+
+    The pair is published together so a case that passes for the concern body and a case
+    that passes for the control are read off the SAME wording: the two differ only in the
+    concern section, which is the fact under test. The provenance label names the WORDING
+    (the module's vocabulary), so both read :data:`ACKNOWLEDGMENT_OBSERVED`; their SHAPE
+    was assembled, which each builder's own docstring states.
+    """
+    return guard_non_empty(
+        (
+            ('summary-with-concern', coderabbit_summary_with_concern(), ACKNOWLEDGMENT_OBSERVED),
+            ('summary-plain-walkthrough', coderabbit_summary_plain_walkthrough(), ACKNOWLEDGMENT_OBSERVED),
+        ),
+        'coderabbit_summary_bodies',
+        'the two literal summary bodies declared in _github_pr_fixtures',
+    )
+
+
+#: The Merge Risk block CodeRabbit renders in a summary that found nothing to flag,
+#: OBSERVED VERBATIM (newlines collapsed by the CI abstraction) on ``cuioss/plan-marshall#1942``
+#: (``IC_kwDOQ3xasM8AAAABkOyUGA``). The no-risk fact is the closing sentence, not the risk
+#: level: the block is labelled ``Minimal`` here, while the concern-bearing block below is
+#: labelled ``Low`` and still carries a concern.
+CODERABBIT_SUMMARY_MERGE_RISK_CLEAN = (
+    '<details> <summary><strong>Merge Risk:</strong> <strong><picture><img '
+    'src="https://storage.googleapis.com/coderabbit_public_assets/review-comment-icons-v1/'
+    'risk-unassessed-16.svg" width="16" height="16" align="absmiddle" alt=""></picture> Minimal</strong>'
+    ' · previous review <code>8eeec</code></summary> <dl> <dd> <br>  '
+    '<!-- final_review_risk_start --> '
+    '<!-- final_review_risk_label **Merge Risk:** **⚪ Minimal** · up to `8eeec` --> '
+    '<!-- final_review_risk_coverage:{"sourceCommitId":"8eeec321a6b299e3eabc42646e5d66bc8a4ef242",'
+    '"coveredCommitId":"8eeec321a6b299e3eabc42646e5d66bc8a4ef242","kind":"reviewed"} -->  '
+    'Finalize commits now get ledger rows, and the foreign PR gate classifies the declared or '
+    'checked-out branch. The gate still returns an error when a declared branch disagrees with the '
+    'checkout, which the PR documents as intended and lists as a known limitation. '
+    'No actionable merge-blocking risk remains. '
+    '<!-- final_review_risk_end -->  </dd> </dl> </details>'
+)
+
+#: The Merge Risk block CodeRabbit renders in a summary that carries its concern as FREE TEXT,
+#: OBSERVED VERBATIM (newlines collapsed by the CI abstraction) on ``cuioss/plan-marshall#1931``
+#: (``IC_kwDOQ3xasM8AAAABj8Aypw``). It states no section title the actionable-section veto can
+#: see, which is exactly why the block's text is judged against the declared clean verdict.
+CODERABBIT_SUMMARY_MERGE_RISK_CONCERN = (
+    '<details> <summary><strong>Merge Risk:</strong> <strong><picture><img '
+    'src="https://storage.googleapis.com/coderabbit_public_assets/review-comment-icons-v1/'
+    'risk-low-16.svg" width="16" height="16" align="absmiddle" alt=""></picture> Low</strong>'
+    ' · previous review <code>f9af8</code></summary> <dl> <dd> <br>  '
+    '<!-- final_review_risk_start --> '
+    '<!-- final_review_risk_label **Merge Risk:** **🔵 Low** · up to `f9af8` --> '
+    '<!-- final_review_risk_coverage:{"sourceCommitId":"f9af868ed29daaab1bf27c26135de47dc4914caa",'
+    '"coveredCommitId":"f9af868ed29daaab1bf27c26135de47dc4914caa","kind":"reviewed"} -->  '
+    'The changes are mostly documentation and checker fixes. The remaining issue is a contract test '
+    'that could pass after the never-downgrade rule loses its verdict list; fix it in this PR or as '
+    'a follow-up. '
+    '<!-- final_review_risk_end -->  </dd> </dl> </details>'
+)
+
+
+def coderabbit_summary_with_merge_risk(merge_risk_block: str) -> str:
+    """Return a summary body whose Merge Risk block is the OBSERVED ``merge_risk_block``.
+
+    The surrounding shape (summary marker, ``## Walkthrough`` and the tips block) is the
+    shape :func:`coderabbit_summary_plain_walkthrough` establishes; the Merge Risk block is
+    the captured live one, inserted verbatim. The two callers differ only in that block —
+    the clean-verdict wording versus the concern statement — so the file/drop decision is
+    attributable to the block's own text and nothing else.
+    """
+    return (
+        f'{CODERABBIT_SUMMARY_MARKER}\n'
+        '## Walkthrough\n\n'
+        'The change gates participation credit on a per-shape content marker.\n\n'
+        f'{merge_risk_block}\n\n'
+        f'{CODERABBIT_SUMMARY_TIPS_BLOCK}'
+    )
+
+
+def coderabbit_summary_merge_risk_bodies() -> tuple[tuple[str, str, str], ...]:
+    """Return ``(case id, body, provenance)`` for the clean and concern Merge Risk bodies.
+
+    Both bodies carry the SAME surrounding summary shape; the only difference is the
+    captured Merge Risk block. Provenance is :data:`ACKNOWLEDGMENT_OBSERVED` because the
+    block text is the live wording, read off the CI abstraction and named with its comment
+    id in the two constants above.
+    """
+    return guard_non_empty(
+        (
+            (
+                'summary-merge-risk-clean',
+                coderabbit_summary_with_merge_risk(CODERABBIT_SUMMARY_MERGE_RISK_CLEAN),
+                ACKNOWLEDGMENT_OBSERVED,
+            ),
+            (
+                'summary-merge-risk-concern',
+                coderabbit_summary_with_merge_risk(CODERABBIT_SUMMARY_MERGE_RISK_CONCERN),
+                ACKNOWLEDGMENT_OBSERVED,
+            ),
+        ),
+        'coderabbit_summary_merge_risk_bodies',
+        'the two observed Merge Risk summary bodies declared in _github_pr_fixtures',
+    )
+
+
+#: The file-count skip notice as CodeRabbit posts it in answer to a COMMANDED review,
+#: OBSERVED verbatim on ``cuioss/plan-marshall#1753`` (the reply to ``@coderabbitai review``
+#: published ``2026-10-12T09:15:22Z``). It names the cause without the "Too many files!"
+#: wording the automatic-review notice uses, so no declared refusal literal matched it.
+CODERABBIT_FILE_LIMIT_NOTICE = (
+    '<!-- This is an auto-generated reply by CodeRabbit --> '
+    '<!-- CodeRabbit review command invocation: '
+    'v2:57c08c35620f62fc1d91024182d87913ab6333f1a107c5cdd683918c879aef5d --> '
+    '<details> <summary>⚠️ Action not completed</summary> '
+    'Review skipped: 198 files exceed the limit of 100. '
+    '</details>'
+)
+
+#: NEGATIVE control, same bot and the same ceiling stated a different way: the
+#: automatic-review skip notice, OBSERVED on the same PR, which opens with
+#: ``Review skipped`` and states the ceiling as "98 over the limit of 100".
+CODERABBIT_FILE_LIMIT_SUMMARY_NOTICE = (
+    f'{CODERABBIT_SUMMARY_MARKER}\n'
+    '> [!IMPORTANT]\n'
+    '> ## Review skipped\n'
+    '>\n'
+    '> Too many files!\n'
+    '>\n'
+    '> This PR contains 198 files, which is 98 over the limit of 100.\n'
+    '>\n'
+    '> To get a review, reduce the PR to 100 files or fewer by splitting it into smaller PRs '
+    'or changing its base branch.'
+)

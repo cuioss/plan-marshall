@@ -43,6 +43,7 @@ import threading
 from pathlib import Path
 from typing import Any
 
+import _github_pr
 from _flat_install_fixtures import flat_install_tree, run_script_in_flat
 
 from conftest import (
@@ -52,6 +53,7 @@ from conftest import (
     get_script_path,
     get_scripts_dir,
     load_script_module,
+    parse_ns,
     run_script,
 )
 
@@ -59,13 +61,12 @@ from conftest import (
 _SKILL_NAME = 'runbook-lane'
 _SKILL_DIR = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / _SKILL_NAME
 
-#: The eight repository-specific literals the shipped skill must not contain.
+#: The repository-specific literals the shipped skill must not contain.
 _FORBIDDEN_LITERALS = (
     'live-blockers',
     'PLAN-LB',
     'build-pyproject',
     'pyproject_build',
-    'cuioss-review-bot',
     'coderabbit',
     'sourcery',
     'noreply@cuioss.de',
@@ -332,6 +333,38 @@ def test_merge_gate_counts_the_marker_bearing_summary_comment() -> None:
     assert 'not quota-limited' in gate and 'current head' in gate
 
 
+#: The single function that parses the coverage marker. Both documents point at it,
+#: so neither carries a second reading of the same fields.
+_COVERAGE_PARSER = 'review_coverage_verdict'
+
+#: The fields the parser reads out of the marker's JSON payload. Read from the parser
+#: itself, not restated here: a hand list drifts the moment the parser gains a field.
+_COVERAGE_FIELDS = _github_pr.REVIEW_COVERAGE_FIELDS
+
+
+def test_the_lane_and_the_registry_name_one_coverage_parser() -> None:
+    """Both documents name the same marker fields and the same parser, or they drift.
+
+    The lane states the merge rule in prose and the registry doc states it for the
+    producer; the parser in ``_github_pr`` is the only code that reads it. A document
+    that names a different field set from the parser is the drift this guard exists to
+    catch.
+    """
+    gate = _section('## 7. Merge gate')
+    registry_doc = (
+        MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'automatic-review' / 'standards' / 'coderabbit.md'
+    ).read_text(encoding='utf-8')
+
+    for text, origin in ((gate, 'runbook-lane/SKILL.md § 7'), (registry_doc, 'coderabbit.md')):
+        assert _COVERAGE_PARSER in text, f'{origin} names no coverage-marker parser'
+        for field in _COVERAGE_FIELDS:
+            assert field in text, f'{origin} does not name the marker field {field}'
+        # `kind` alone is satisfied by any prose containing the word; the guard has to
+        # pin the VALUE it must carry for the marker to be a finished review.
+        assert 'reviewed' in text, f'{origin} does not name the `kind` value a finished review carries'
+        assert 'coveredCommitId' in text, f'{origin} does not name the covered commit field'
+
+
 #: The merge-gate state PLAN-LB-72 shipped: both required bots reported clean,
 #: ``ci pr reviews`` is empty, and CodeRabbit's clean-review summary comment
 #: covers the head. A clean review has no formal review body, so the comment is
@@ -357,19 +390,16 @@ def _summary_review_state_qualifies(state: dict[str, Any]) -> bool:
     """Whether a pull request's review state satisfies the summary-comment leg.
 
     Derived from the state ALONE: a formal review is absent, and one summary
-    comment carries the marker whose covered commit is the head and whose kind
-    is ``reviewed``.
+    comment's marker covers the head as a finished review. It reads the marker with
+    the production parser, so this fixture cannot pass on a shape production reads
+    differently.
     """
     if state['review_count'] or state['reviews']:
         return False
-    for comment in state['summary_comments']:
-        marker = re.search(r'final_review_risk_coverage:(\{.*?\})', comment['body'])
-        if marker is None:
-            continue
-        fields = json.loads(marker.group(1))
-        if fields.get('coveredCommitId') == state['head'] and fields.get('kind') == 'reviewed':
-            return True
-    return False
+    return any(
+        _github_pr.review_coverage_verdict(comment['body'], state['head']) is True
+        for comment in state['summary_comments']
+    )
 
 
 def test_the_plan_lb_72_merge_gate_state_qualifies_as_a_review() -> None:
@@ -1002,10 +1032,22 @@ def test_skill_states_the_preflight_degraded_and_killed_rules() -> None:
         assert phrase in text, f'the skill does not state {phrase!r}'
 
 
-def test_skill_states_the_one_daemon_routed_build_rule() -> None:
+def test_skill_states_the_per_directory_serialisation_rule() -> None:
+    """The lane states the MECHANISM, not a prose rule the mechanism supersedes.
+
+    Two builds of one worktree used to be a hazard the reader was told to avoid
+    ("one daemon-routed build at a time"). The daemon now admits one job per
+    project directory and every in-process build holds the same per-directory
+    lock, so the hazard is gone rather than merely forbidden — and a lane that
+    still asked for hand-avoidance would describe a constraint the runtime no
+    longer has. Both halves are pinned: the mechanism is stated, and the old
+    prose rule is gone.
+    """
     lowered = _skill_text().lower()
-    assert 'one daemon-routed build at a time' in lowered
-    assert 'sub-agents included' in lowered
+    assert 'one build per worktree at a time' in lowered
+    assert 'directory_busy' in lowered
+    assert 'queued_seconds' in lowered
+    assert 'one daemon-routed build at a time' not in lowered
 
 
 def test_skill_routes_every_build_and_retries_a_launch_fault_once() -> None:
@@ -1182,13 +1224,6 @@ def test_resolve_reports_a_quota_limited_reviewer(tmp_path: Path) -> None:
     data = _run_resolve(spec, tmp_path)
     row = next(row for row in data['required_bots'] if row['bot'] == 'coderabbit')
     assert row['quota_limited'] is True
-
-
-def test_resolve_reports_a_reviewer_that_is_not_quota_limited(tmp_path: Path) -> None:
-    spec = _seed_fixture(tmp_path, executable=_PYPROJECT_EXEC, required_bots='cuioss-review-bot')
-    data = _run_resolve(spec, tmp_path)
-    row = next(row for row in data['required_bots'] if row['bot'] == 'cuioss-review-bot')
-    assert row['quota_limited'] is False
 
 
 def test_bot_standard_without_a_declaration_resolves_not_quota_limited(tmp_path: Path) -> None:
@@ -2830,7 +2865,10 @@ _TEMPLATE_FACT_VALUES: dict[str, str] = {
     'plugin_version': '0.1.1919',
     'executor_version': '0.1.1919',
     'steps': 'setup:done,implement:done,build-gate:done,self-review:clear,pr:done,reviews:done,merge:done',
-    'step.sonar-roundtrip.open_issue_count': '0',
+    'unresolved_review_threads': '0',
+    'review_body_findings_total': '4',
+    'review_body_findings_handled': '4',
+    'sonar_open_new_issues': 'n/a',
     'step.sonar-roundtrip.open_issue_rules': 'none',
 }
 
@@ -2887,3 +2925,104 @@ def test_a_landing_from_the_section_8_template_is_complete_except_total_tokens(p
     data = result.toon()
     assert data['complete'] is False
     assert data['missing_keys'] == ['total_tokens']
+
+
+# =============================================================================
+# D4 — the lane reads its delivered mailbox
+# =============================================================================
+
+
+def test_resolve_publishes_the_mailbox_read_command(tmp_path: Path) -> None:
+    """`resolve` reports the command that reads this plan's delivered mailbox."""
+    spec = _seed_fixture(tmp_path, executable=_PYPROJECT_EXEC, required_bots='x')
+    data = _run_resolve(spec, tmp_path)
+
+    assert data['inbox_read_command'].startswith('python3 .plan/execute-script.py ')
+    assert 'plan-marshall:plan-orchestrator:orchestrator inbox read' in data['inbox_read_command']
+
+
+def test_the_mailbox_read_and_write_address_the_same_plan(tmp_path: Path) -> None:
+    """Both commands name this plan's own address, taken from the resolve result.
+
+    The write half queues a landing under the epic; the read half addresses the
+    plan's mailbox. What this pins is that neither spells its own slug or plan id
+    — both are the resolved values, so a rename of the plan cannot leave one
+    command pointing at the previous one.
+    """
+    spec = _seed_fixture(tmp_path, executable=_PYPROJECT_EXEC, required_bots='x')
+    data = _run_resolve(spec, tmp_path)
+
+    assert f'--slug {data["slug"]}' in data['inbox_read_command']
+    assert f'--plan-id {data["plan"]}' in data['inbox_read_command']
+    assert f'--slug {data["slug"]}' in data['inbox_write_command']
+    assert f'--sender-id rb-{data["plan"]}' in data['inbox_write_command']
+
+
+def test_the_mailbox_read_command_is_the_orchestrator_s_own_surface(tmp_path: Path) -> None:
+    """The emitted flags are the ones `orchestrator inbox read` actually accepts.
+
+    Parsed through the orchestrator's OWN argparse surface, so a flag this lane
+    invented would be an argparse rejection here rather than a broken call in a
+    live run.
+    """
+    spec = _seed_fixture(tmp_path, executable=_PYPROJECT_EXEC, required_bots='x')
+    data = _run_resolve(spec, tmp_path)
+
+    argv = data['inbox_read_command'].split()
+    verb_at = argv.index('read')
+    flags = argv[verb_at + 1 :]
+    namespace = parse_ns('plan-marshall', 'plan-orchestrator', 'orchestrator.py', 'inbox', 'read', *flags)
+
+    assert namespace.slug == data['slug']
+    assert namespace.plan_id == data['plan']
+
+
+def test_the_lane_text_reads_the_mailbox_at_three_points() -> None:
+    """Setup, before self-review and before the enqueue — and each item disposed."""
+    setup = _section('## 2. Set up the worktree')
+    self_review = _section('## 5. Self-review before the PR')
+    gate = _section('## 7. Merge gate')
+
+    assert '{inbox_read_command}' in setup
+    assert '{inbox_read_command}' in self_review
+    assert '{inbox_read_command}' in gate
+    assert 'the first of three reads' in setup
+    assert 'the third read' in gate
+    assert 'blocks the enqueue' in setup
+    assert 'blocks the enqueue' in gate
+
+
+def test_the_progress_template_carries_the_mailbox_disposition_line() -> None:
+    progress = _raw_section('## 0a. Progress file and resume (do this first, every session)')
+    template = next((block for block in _fenced_blocks(progress) if 'setup: worktree' in block), None)
+
+    assert template is not None, 'section 0a carries no progress template'
+    mailbox_lines = [line for line in template.splitlines() if line.startswith('mailbox:')]
+    assert mailbox_lines, 'the progress template carries no mailbox disposition line'
+    assert 'declined with reason' in mailbox_lines[0]
+    assert 'asked' in mailbox_lines[0]
+
+
+# =============================================================================
+# D5 — an evidence claim needs an artifact
+# =============================================================================
+
+
+def test_the_grading_rule_requires_an_artifact_for_every_claim() -> None:
+    """§1 owns the rule: an artifact-less claim is `not evidenced` and is not counted."""
+    rules = _section('## 1. Rules (every one binds; breaking one fails the run)')
+
+    assert 'not evidenced' in rules
+    assert 'artifact' in rules
+    assert 'screenshot' in rules, '§1 does not say what a browser check cites'
+    assert 'log path' in rules, '§1 does not say what a run must cite'
+    assert 'does not count toward `deliverables_done`' in rules
+
+
+def test_the_landing_report_grades_a_claim_by_the_artifact_rule() -> None:
+    """§8 refers to the §1 rule instead of restating it, and names the verdict."""
+    landing = _section('## 8. Landing message (the last step, after the merge)')
+
+    assert 'not evidenced' in landing
+    assert 'section 1' in landing, '§8 does not point at the grading rule'
+    assert '`test-first` is met' not in landing, '§8 restates the §1 grading rule'

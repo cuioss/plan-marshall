@@ -61,8 +61,15 @@ SEED_SYMBOLS: tuple[str, ...] = (
     'participation_evidence',
     'participation_evidence_marker',
     'participation_evidence_markers',
+    'participation_evidence_markers_for',
     '_validate_participation_evidence_markers',
     '_is_participation_evidence',
+    'review_coverage_verdict',
+    '_evidence_named_verdict',
+    'review_coverage_is_finished',
+    'review_coverage_marker_present',
+    '_inline_comment_placement',
+    '_reported_commit_matches_candidate',
     'head_sha_verified',
     'stale_participation',
     'existing_comment_keys',
@@ -197,17 +204,20 @@ SITE_EXPECTATIONS: dict[str, SiteExpectation] = {
         'Per-bot registry record. Declares participation_requires_update: true, so this bot '
         'edits its summary comment in place on re-review and its credit is currency-tested.',
     ),
-    f'{_SKILLS}/automatic-review/standards/cuioss-review-bot.md': SiteExpectation(
-        'registry_data',
-        'none',
-        'yes',
-        'Per-bot registry record. Declares participation_requires_update: true, so its credit is currency-tested.',
-    ),
     f'{_SKILLS}/automatic-review/standards/sourcery.md': SiteExpectation(
         'registry_data',
         'none',
         'yes',
         'Per-bot registry record. Declares participation_requires_update: false.',
+    ),
+    f'{_SKILLS}/runbook-lane/SKILL.md': SiteExpectation(
+        'normative_text',
+        'commit_sha',
+        'not_applicable',
+        'The merge gate states the qualifying-review rule for a quota-limited reviewer: a '
+        'marker-bearing summary comment whose sourceCommitId / coveredCommitId name one of the '
+        'PR’s heads and whose kind is reviewed. It points at review_coverage_verdict as the ONE '
+        'parser of those fields and evaluates nothing itself.',
     ),
     f'{_SKILLS}/phase-6-finalize/SKILL.md': SiteExpectation(
         'normative_text',
@@ -274,6 +284,16 @@ SITE_EXPECTATIONS: dict[str, SiteExpectation] = {
         'read. It reads the fetched comment list and matches movement since the wait started; '
         'it grants no participation credit.',
     ),
+    f'{_SKILLS}/workflow-integration-github/scripts/github_ops.py': SiteExpectation(
+        'live_comment_scan',
+        'commit_sha',
+        'yes',
+        "The inline placement parser. Reads the comment's originalCommit, its review's "
+        'commit and only then its own mutable commit, plus replyTo, to place a review '
+        'comment at the commit it was POSTED at and decide whether it opens a thread. A '
+        'pure read over the fetched node: it grants no credit itself, but supplies the '
+        'placement the producer credits on.',
+    ),
     f'{_SKILLS}/workflow-integration-github/scripts/github_pr.py': SiteExpectation(
         'currency_ledger',
         'both',
@@ -328,6 +348,11 @@ CANDIDATE_EXCLUSIONS: dict[str, str] = {
         'The FILING dedup’s key reconstruction: it decides whether a comment is new '
         'INFORMATION to file, never whether a bot participated. Its site is already in the '
         'population through the seed existing_comment_keys, which names the key set it rebuilds.'
+    ),
+    '_REVIEW_COVERAGE_REVIEWED_KIND': (
+        'The KIND VALUE a review-coverage marker must carry to be a finished review: a label on '
+        'the marker payload, not a decision. The decision that reads it is review_coverage_verdict, '
+        'which anchors the credit on the marker’s covered commit; this constant owns no site.'
     ),
 }
 
@@ -428,3 +453,14 @@ def test_the_unrecorded_site_guard_fires_on_a_site_with_no_record():
     assert guard_every_site_recorded(PARTICIPATION_SITES, SITE_EXPECTATIONS)
     with pytest.raises(UnrecordedSiteError, match='no expectation record'):
         guard_every_site_recorded((*PARTICIPATION_SITES, 'a/new/crediting_site.py'), SITE_EXPECTATIONS)
+
+
+def test_the_inline_placement_site_is_in_the_population():
+    """The placement parser decides where an inline comment sits — a participation site.
+
+    Red at 5fd240a5e: the population seeded the credit GRANT but not the placement
+    that decides whether an inline comment may grant it, so a change to the placement
+    rule could not be caught by this guard.
+    """
+    assert f'{_SKILLS}/workflow-integration-github/scripts/github_ops.py' in PARTICIPATION_SITES
+    assert '_inline_comment_placement' in SITE_SEEDS[f'{_SKILLS}/workflow-integration-github/scripts/github_ops.py']

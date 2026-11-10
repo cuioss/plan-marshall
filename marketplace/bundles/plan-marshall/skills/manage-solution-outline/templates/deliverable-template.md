@@ -25,6 +25,9 @@ Mandatory template for each deliverable in solution_outline.md. **ALL fields are
 - `{explicit/path/to/existing-file.ext}` (write-replace)
 - `{explicit/path/to/consulted-file.ext}` (read)
 
+**Tests to remove:**
+- `{test identity}`: {number of removed assertions}
+
 **Change per file:** {Specific description of what changes in these files}
 
 **Verification:**
@@ -63,13 +66,15 @@ Use the returned `executable` value as the Verification Command. Both Command an
 | `domain` | Yes | Single value from `config.domains` |
 | `module` | Yes | Module name from architecture |
 | `depends` | Yes | Use `none` if no dependencies |
+| `foreign_branch` | Conditional | Foreign deliverables only: the name of the branch the foreign change is on, as a `**Metadata:**` entry. The gate reads it together with the foreign checkout's own branch; the rule is stated once in [`phase-6-finalize/standards/archive-plan.md`](../../phase-6-finalize/standards/archive-plan.md) § Pre-Archive Foreign-PR Landing Gate |
 | `**Intent gloss:**` | Conditional | Required when title head morpheme is a planning-domain verb; ≤15 words |
 | `**Profiles:**` | Yes | At least `implementation`; add `module_testing` only if deliverable creates/modifies test files |
 | `**Affected files:**` | Conditional | Required UNLESS the deliverable is survey-scope (declaring the `Files to survey:` / `Files expected to mutate:` pair instead) or verification-only. Explicit paths only - NO wildcards, NO "all files in...". Each entry MUST carry a required `(intent)` marker: `read`, `write-new`, `write-replace`, or `delete` |
 | `**Files to survey:**` + `**Files expected to mutate:**` | Conditional | The survey-scope alternative to `Affected files:`, for a discovery-style deliverable whose mutation set is not knowable at authoring time. Declared as a disjoint PAIR — one field alone does not satisfy the section requirement. Neither carries `(intent)` markers, and the survey pool MAY name a pattern; see `phase-3-outline/standards/outline-workflow-detail.md` § "Survey-scope vs mutation-scope declaration" |
+| `**Tests to remove:**` | Conditional | Only when the deliverable deliberately removes tests. One bullet per test: the test identity the test-integrity check uses (`class::function`, or the bare function name), optionally followed by the number of removed assertions (`- \`test_old\`: 2`). A declared removal is accepted by the review; an undeclared one blocks until an operator accepts it |
 | `**Change per file:**` | Yes | What specifically changes |
 | `**Verification:**` | Yes | Command and Criteria - both required |
-| `**Success Criteria:**` | Yes | At least one criterion |
+| `**Success Criteria:**` | Yes | At least one criterion. One top-level bullet per criterion — `-` or `*`; a wrapped continuation line and an indented sub-bullet belong to the criterion above them, and a blank line between bullets is allowed. Any line in the block that is neither a bullet nor part of one is reported by `snapshot-criteria` as unparsed, never dropped |
 
 ## Invalid Patterns
 

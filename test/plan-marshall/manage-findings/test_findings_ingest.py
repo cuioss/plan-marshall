@@ -21,10 +21,17 @@ PLAN_IDS = (
     'cli-ingest-rt',
     'ingest-all-fields',
     'ingest-audit',
+    'ingest-body-under-cap',
     'ingest-clamp',
+    'ingest-cut-tail',
+    'ingest-cut-tail-over-quarantine',
+    'ingest-multibyte-cut',
+    'ingest-cut-then-short',
     'ingest-empty',
     'ingest-idem',
     'ingest-mixed',
+    'ingest-partial-cut',
+    'ingest-partial-replace',
     'ingest-promote',
     'ingest-qgate',
     'ingest-qgate-reject',
@@ -140,7 +147,158 @@ def test_ingest_clamps_overlong_field_and_reports_clamped(plan_context):
 
     record = query_findings(pid)['findings'][0]
     assert len(record['detail']) == 8000
-    assert record['detail'] == 'x' * 8000
+    assert 'elided' in record['detail'], 'the clamp kept the head only'
+
+
+def test_ingest_keeps_the_tail_of_a_cut_body_and_says_it_was_cut(plan_context):
+    """A body cut at the promotion cap keeps its conclusion and states the cut on its record.
+
+    The reported shape (lesson ``-067``): a 36,938-character review body whose change
+    request sits in its last 2,000 characters. A head-only cut removed the request and
+    left no trace on the finding that it had happened.
+    """
+    pid = 'ingest-cut-tail'
+    request = 'CHANGE REQUEST: guard the empty-input branch before indexing.'
+    body = ('a' * (36938 - len(request))) + request
+    assert len(body) == 36938
+    assert request in body[-2000:]
+    add_finding(plan_id=pid, finding_type='bug', title='t', detail='ph', raw_input={'body': body})
+
+    result = ingest_findings(pid)
+    assert result['promoted'] == 1
+
+    record = query_findings(pid)['findings'][0]
+    assert request in record['body'], 'the promoted body dropped the actionable conclusion'
+    assert 'elided' in record['body']
+    assert record['truncated'] is True
+    assert record['original_length'] == 36938
+    # The pass summary names WHICH finding was cut, not only that something was.
+    assert any(record['hash_id'] in report for report in result['clamped'])
+
+
+def test_ingest_keeps_the_tail_of_a_body_over_the_quarantine_cap(plan_context):
+    """A body over 64 KiB keeps the conclusion that sits past the quarantine cap. Red at 5fd240a5e."""
+    pid = 'ingest-cut-tail-over-quarantine'
+    request = 'CHANGE REQUEST: the conclusion sits past the 64 KiB quarantine cap.'
+    body = ('a' * ((64 * 1024) + 50000 - len(request))) + request
+    assert request not in body[: 64 * 1024]
+    add_finding(plan_id=pid, finding_type='bug', title='t', detail='ph', raw_input={'body': body})
+
+    result = ingest_findings(pid)
+    assert result.get('promoted') == 1, result
+
+    record = query_findings(pid)['findings'][0]
+    assert request in record['body'], 'the quarantine cut was head-only and dropped the conclusion'
+    assert record['truncated'] is True
+    assert record['original_length'] == len(body), 'original_length must name the body the reviewer wrote'
+
+
+def test_ingest_reports_the_true_character_length_of_a_multibyte_body(plan_context):
+    """A multibyte body's `original_length` is its CHARACTER count, not its byte count."""
+    pid = 'ingest-multibyte-cut'
+    request = 'CHANGE REQUEST: multibyte tail.'
+    body = ('ä' * 70000) + request
+    add_finding(plan_id=pid, finding_type='bug', title='t', detail='ph', raw_input={'body': body})
+
+    result = ingest_findings(pid)
+    assert result.get('promoted') == 1, result
+
+    record = query_findings(pid)['findings'][0]
+    assert request in record['body']
+    assert record['original_length'] == len(body)
+    assert len(body.encode('utf-8')) > 65536
+
+
+def test_ingest_promotes_a_body_under_the_cap_byte_identically_with_no_flag(plan_context):
+    """A body under the cap is untouched, and no truncation facts appear on the record."""
+    pid = 'ingest-body-under-cap'
+    body = 'A short review body, well under the promotion cap.'
+    add_finding(plan_id=pid, finding_type='bug', title='t', detail='ph', raw_input={'body': body})
+
+    result = ingest_findings(pid)
+    assert result['promoted'] == 1
+
+    record = query_findings(pid)['findings'][0]
+    assert record['body'] == body
+    assert not record.get('truncated')
+    assert 'original_length' not in record
+
+
+def test_a_later_promotion_that_no_longer_cuts_clears_the_stale_flags(plan_context):
+    """A rewritten short body must not keep reporting the earlier cut.
+
+    ``update_jsonl`` merges and never deletes, so the truncation facts an earlier pass
+    wrote would survive a rewrite unless ingest explicitly resets them. A record that
+    claims a cut its current body does not have is the same defect as a silent cut.
+    """
+    pid = 'ingest-cut-then-short'
+    add_finding(plan_id=pid, finding_type='bug', title='t', detail='ph', raw_input={'body': 'x' * 9000})
+
+    assert ingest_findings(pid)['promoted'] == 1
+    cut = query_findings(pid)['findings'][0]
+    assert cut['truncated'] is True
+    assert cut['original_length'] == 9000
+
+    _core.update_finding_text(
+        pid,
+        cut['hash_id'],
+        detail=cut['detail'],
+        raw_input={'body': 'now a short body'},
+    )
+    assert ingest_findings(pid)['promoted'] == 1
+
+    record = query_findings(pid)['findings'][0]
+    assert record['body'] == 'now a short body'
+    assert record['truncated'] is False
+    assert record['original_length'] == 0
+    assert record['truncated_fields'] == {}
+
+
+def test_a_partial_replacement_keeps_the_metadata_of_the_field_it_leaves(plan_context):
+    """A field the replacement does not touch keeps its own cut claim.
+
+    A pass that rewrites only ``summary`` leaves the stored top-level ``body`` in
+    place — still the cut text. Clearing the whole record's metadata would then claim
+    that body is unaffected by the cap, which it is not.
+    """
+    pid = 'ingest-partial-replace'
+    add_finding(plan_id=pid, finding_type='bug', title='t', detail='ph', raw_input={'body': 'x' * 9000})
+
+    assert ingest_findings(pid)['promoted'] == 1
+    cut = query_findings(pid)['findings'][0]
+    assert cut['truncated_fields'] == {'body': 9000}
+
+    _core.update_finding_text(pid, cut['hash_id'], detail=cut['detail'], raw_input={'summary': 'short'})
+    assert ingest_findings(pid)['promoted'] == 1
+
+    record = query_findings(pid)['findings'][0]
+    assert record['body'] == cut['body'], 'the untouched body is still the cut text'
+    assert record['truncated'] is True
+    assert record['original_length'] == 9000
+    assert record['truncated_fields'] == {'body': 9000}
+
+
+def test_a_new_cut_on_one_field_keeps_an_earlier_cut_on_another(plan_context):
+    """A pass that cuts ``summary`` while leaving the cut ``body`` alone reports BOTH.
+
+    The record's cut facts are rebuilt per field on every promotion: the new cut is
+    added, the untouched field's earlier entry is carried, and only a field this pass
+    actually replaced stops being reported.
+    """
+    pid = 'ingest-partial-cut'
+    add_finding(plan_id=pid, finding_type='bug', title='t', detail='ph', raw_input={'body': 'x' * 9000})
+
+    assert ingest_findings(pid)['promoted'] == 1
+    cut = query_findings(pid)['findings'][0]
+    assert cut['truncated_fields'] == {'body': 9000}
+
+    _core.update_finding_text(pid, cut['hash_id'], detail=cut['detail'], raw_input={'summary': 'y' * 9000})
+    assert ingest_findings(pid)['promoted'] == 1
+
+    record = query_findings(pid)['findings'][0]
+    assert record['truncated'] is True
+    assert record['truncated_fields'] == {'body': 9000, 'summary': 9000}
+    assert record['original_length'] == 9000
 
 
 # =============================================================================
