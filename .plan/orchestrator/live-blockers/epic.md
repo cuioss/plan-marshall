@@ -53,6 +53,126 @@ derive, for rows still live.
   - PLAN-LB-31 in-house-reviewer — PLAN-LB-21, PLAN-LB-20 D4 and D5.
   - PLAN-LB-14 launch-gate-scope — unchanged.
 
+- **PLAN-LB-132** (shipped #1952, 2026-11-10, runbook lane, `deepseek-v4.1-flash/high`) — see `landings/PLAN-LB-132.md`. Merge commit
+  `3ed0888ea`, a squash commit with one parent `64907fa3b` (the #1955 ledger land, read with git before the leaf prompt named it). One
+  three-layer leaf read it with the lane's seven claims passed one by one; the orchestrator re-read the edit-credit arm, the
+  scope-ambiguous refusal, the PR-scope partition, the `manage-findings` verb list and the `foreign_stored_findings` consumers. The
+  lane's review history, build logs and mutation runs were not re-read; the `review-gate` re-run agrees with the counted thread and
+  finding numbers. The message is `complete: false` on `total_tokens` alone (out of scope). A harness sync is owed for the
+  `automatic-review`, `runbook-lane`, `phase-6-finalize` and `workflow-integration-github` edits; no verb was added, and `trigger-bot`
+  and `check` gained `--pr-number` (the leaf read both flags), so the operator's executor regeneration is owed again (the lane says it
+  regenerated its own worktree executor; not re-read). **No blocker and no major.** Closed: a size refusal seen only in `refused_causes` escalates; stored findings read for the
+  current pull request only; an edit naming no commit credits nothing; an optional bot never asks. Open: the declined inline-2 is not
+  sound (no verb stamps or removes a findings row), the surface drift is partly undisclosed, and the minors are Watches.
+
+- **PLAN-LB-142** (staged, runbook lane, WS-05; staged on the operator's word of 2026-11-10) — a handled CodeRabbit review is the
+  review. After one qualifying review on a pull request and all handling of it, no path posts a CodeRabbit trigger, waits for another,
+  or demands a review of the later head, and the plan or lane proceeds to merge; a pull request with no qualifying review keeps the
+  first trigger and the quota policy. The rule is per pull request and per bot behind a new registry flag, set for CodeRabbit only, so
+  Sourcery and any bot without the flag are unchanged. Four deliverables (the state, the requests, the gates, the sweep) on
+  `automatic-review`, `github_re_review.py`, `pre_merge_gate.py`, the branch-cleanup standards and `runbook-lane/SKILL.md`. Grounded by
+  a read-only leaf against `15aae32c6`; the orchestrator re-read the lane's section 6 and 7 text, the trigger-B text, the elapsed-arm
+  selector and the stale arm of `classify_bot`; the post chokepoint, trigger A, the merge-gate functions and the review-gate absence of
+  head currency are leaf reads, labelled HYPOTHESIS in the spec. Declared surface overlaps two running plans: PLAN-LB-138 on
+  `runbook_lane.py` and `test_runbook_lane.py` (both HYPOTHESIS entries of this spec), and PLAN-LB-133 on `phase-6-finalize/SKILL.md`
+  plus the `phase-6-finalize` test directory. Evidence for the cost it removes: PLAN-LB-132 spent three reviews, two quota refusals and an
+  already-reviewed reply on one pull request, all after its first review.
+
+- **PLAN-LB-134** (running, PR #1954 open, runbook lane, `deepseek-v4.1-flash/high`) — a mid-flight report, not a landing: the plan
+  stopped before the merge because CodeRabbit, a required reviewer, refused on its own quota and no review exists on the head
+  `03a35cf11` (confirmed: the remote branch tip is that sha, `ci pr reviews` returns none, every check is green, `review-gate`
+  returns 0 threads and 0 findings). The lane's next permitted trigger is not before 19:50Z on 2026-11-10 and its plan stays parked
+  on that wait; the branch and worktree stay in place for the session that resumes it. The row stays `running` and holds its slot
+  until the PR merges; the message was read as an observation and no landing report was written. Its four deliverables read met
+  against the lane's own table (mutation-after evidence named per clause; not re-run here). The lane records residue for a later
+  plan: the `permission.bash` scalar replaced by an empty map in six writers, `--dry-run` blind to a conflict, and the contract text
+  against the loader (non-object root, `save_error` against `io_error`). One test file outside the Expected Surface
+  (`test/marketplace/targets/opencode/test_opencode2_shape.py`) is named by the lane itself, with its reason. PLAN-LB-135, 136 and 140
+  stay held behind it. The full landing analysis runs when the plan files its merge message.
+
+- **PLAN-LB-131** (shipped #1948, 2026-11-10, runbook lane, `deepseek-v4.1-flash/high`) — see `landings/PLAN-LB-131.md`. Merge commit
+  `652d977cf`, a squash commit with one parent `d1e4b5128` (the #1947 merge, read with git before the leaf prompt named it). One
+  three-layer leaf read it with the lane's nine claims passed one by one; the orchestrator re-read the default-branch reader, the
+  branch resolution, the tip-resolution order and the merged-PR classification, and the changed path list. The lane's review history,
+  CI and merge-queue claims were not re-read; the `review-gate` re-run agrees with the landing's counted numbers. The message is
+  `complete: false` on `total_tokens` alone (out of scope, no defect). No verb or flag was added, so no executor regeneration is owed;
+  a harness sync is. **No blocker and no major.** The PLAN-LB-126 major is closed: the default branch is never a change's branch, a
+  declaration wins over a checkout on it, and a merged branch whose refs are gone is read from its merged PR.
+  - **Layer 2 (minor):** the lane's "no surface drift" claim is false for four files (the deliverable template, two contract documents
+    of the CI skill and the new doc test); each is forced by a deliverable, and the spec's own surface omitted the contract documents.
+    Self-review ended `budget-exhausted` with five LOW items recorded as residue by the operator's choice.
+  - **Layer 3 (minors, Watch below, not staged):** the name-only merged read trusts a declaration; local-first tip order; a declaration
+    equal to the default branch blocks for good with a misleading message; a stale `origin/HEAD` after a remote rename; weak guard
+    tests; two wording defects.
+  - **Unblocks:** PLAN-LB-133 (`_cmd_lifecycle.py`).
+- **PLAN-LB-141** (shipped #1951, 2026-11-10, runbook lane, `deepseek-v4.1-flash/high`) — see `landings/PLAN-LB-141.md`. Merge commit
+  `e7033b83a`, a squash commit with one parent `549e35374` (the #1949 merge, read with git before the leaf prompt named it). One
+  three-layer leaf read it with the lane's claims passed one by one; the orchestrator re-read the shared registry, the unconfigure hook,
+  the sweep's recognisers and the relocation predicate. The lane's review history, CI and merge-queue claims and its run-private
+  measurement were not re-read; the `review-gate` re-run on the merged head agrees with the landing (no finding, merge allowed). The
+  message is `complete: false` on `total_tokens` alone (out of scope, no defect). No verb or flag was added, so no executor
+  regeneration is owed, and no bundle file changed, so no harness sync is owed. **No blocker and no major.** Every deliverable is met:
+  the relocation predicate is byte-identical, no call site was edited, the stub directory is created lazily and torn down, and the
+  sweep names its sites and asserts its population.
+  - **Layer 1 (minor):** D3's letter covers only `mkdtemp` while the standing constraint forbids any import-time creation; the spec's
+    "no accumulation on re-run" is not met literally (one `tmp*.md` file per run from a `mkstemp` helper, no directory).
+  - **Layer 3 (minors, Watch below, not staged):** the sweep credits a lifecycle method by name, any `finally` by name, and a removal
+    after a `yield`, and does not see an aliased `mkdtemp` or a module-level `create`; the registry keeps its `atexit` handler after a
+    release and ignores removal errors; the guard documents and code comments overstate or carry history.
+  - **Not shown by reading:** that the unconfigure hook runs in every worker under `-n auto` (the lane's own probe), and the
+    run-private measurement. A live count of `guard-node-*` after the next suite run is the cheap confirmation.
+  - **Watch (owed, operator-run):** the `systemd-tmpfiles` janitor for killed runs and the optional `nr_inodes` raise.
+- **PLAN-LB-130** (shipped #1949, 2026-11-10, runbook lane, `deepseek-v4.1-flash/high`) — see `landings/PLAN-LB-130.md`. Merge commit
+  `549e35374`, a squash commit with one parent `652d977cf` (the foreign-gate merge #1948, read with git before the leaf prompt named it). One
+  three-layer leaf read it with the lane's claims passed one by one; the orchestrator re-read the notation branches of
+  `parse_row_scope`, the whole-tree refusal, the Gradle discoverer's task prefixing, the Surefire executed-count reader and the guard's
+  summary path. The lane's review history, CI and merge-queue claims were not re-read; the `review-gate` re-run agrees with the
+  landing's two counted numbers. The message is `complete: false` on `total_tokens` alone (out of scope, no defect). No verb or flag
+  was added, so no executor regeneration is owed; a harness sync is, because bundle files changed. **One major (Gradle carve-out),
+  reported to the operator, NOT staged** (Open Defects below). The npm, Maven and Gradle single-root rows read as the spec asks, the
+  remedy hint fires only for a flag-broken row, and a skipped test no longer credits a run.
+  - **Layer 2/3 major (re-read):** a `:`-prefixed payload token on a Maven or Gradle row returns unreadable
+    (`_freshness_crosscheck.py:849-850`), and the Gradle discoverer prefixes every submodule task that way. A whole-tree change with a
+    root row and any submodule row at the sha is refused and no re-run can clear it. The spec said the opposite on both counts.
+  - **Minors (Watch below):** the unknown-notation rule loosens the gate for a narrow change; the npm exemption pins a row no
+    discoverer emits; a documentation sentence and a code comment now contradict the code; a wrong cause token for the new unreadable
+    rows (unverified lead).
+- **PLAN-LB-129** (shipped #1947, 2026-11-09, runbook lane, `deepseek-v4.1-flash/high`) — see `landings/PLAN-LB-129.md`. Merge commit
+  `d1e4b5128`, a squash commit with one parent `be02c096b` (the ledger land #1950, read with git before the leaf prompt named it). One three-layer leaf read it with the lane's claims passed one by one; the orchestrator re-read the thread
+  rule, the count and placeholder readers, the refusal arm and the label list. The lane's review history, CI and merge-queue claims
+  were not re-read; the `review-gate` re-run agrees with the landing's counted numbers. The message is `complete: false` on
+  `total_tokens` alone (out of scope, no defect). No verb or flag was added, so no executor regeneration is owed; a harness sync is.
+  **No blocker and no major confirmed.** The PLAN-LB-116 major is closed: a resolved thread is read by its last bot comment, a
+  colon-counted section counts its declared findings, and a placeholder is not evidence.
+  - **Layer 3, not shown by reading (Watch below):** any counted summary outside a recognised section and the six declared labels now
+    refuses the gate for good. The leaf graded it a major but could not show it; the `review-gate` reads of the three newest PRs, all
+    live CodeRabbit bodies, parsed without that refusal.
+  - **Minors:** the declared count wins even when the row markers say more; a combined placeholder (`TBD later`) reads as a reason; a
+    non-Latin reason reads as empty; the marker vocabulary is a lowercase substring; a plan-orchestrator standard was edited though the
+    spec excludes it (one word); the captured #1940 body was not used for the gate tests.
+  - **Closed by this landing:** the `<picture>`-decorated title Watch (the markup is dropped before the count is read).
+- **PLAN-LB-128** (shipped #1946, 2026-11-09, runbook lane, `deepseek-v4.1-flash/high`) — see `landings/PLAN-LB-128.md`. Merge commit
+  `af1ad9513`, a squash commit with one parent `b2652750a` (the PLAN-LB-126 ledger land, read with git before the leaf prompt named it).
+  One three-layer leaf read it with the lane's ten claims passed one by one; the orchestrator re-read the strip and re-seed code, the
+  section scanner and the clean-verdict test, the registry accessors, the data lines, the Done-when tests and the diff surface. The
+  lane's review history, CI and merge-queue claims were not re-read; the `review-gate` re-run on the merged head agrees with the
+  landing's three numbers (same parser as the lane). The message is `complete: false` on `total_tokens` alone (out of scope, no
+  defect). No verb or flag was added, so no executor regeneration is owed; a harness sync is. **No blocker and no major.** The lane
+  reports both deliverables met. Both PLAN-LB-127 majors are closed: the strip is saved (`upgrade.py:512-515`) and a free-text Merge
+  Risk concern is filed (`github_pr.py:324-381`); the two HIGH Open Defects that staged this plan are retired.
+  - **Layer 1 (minor):** the spec's literal section boundary is unworkable on the captured shape; the lane's deviation (strip closed
+    comments, bound at heading, `<details>`, `</details>`) is the stricter reading. D2(c) "each fails at base" cannot hold for the
+    file-limit control, which is a registered refusal at base too.
+  - **Layer 2 (minor):** `retired_kinds_unavailable` is reported in the dict and named by no document or consumer; the second clean
+    wording (#1946) is registry data only, with a hand-built control body not labelled CONSTRUCTED. Eight files lie outside the
+    declared surface (two skill documents, the participation contract, four contract-test docstrings, `test_bot_registry_markers.py`),
+    each forced by a pin or a statement the change made false.
+  - **Layer 3 (five minors, Watch below, not staged):** substring clean test, case-sensitive heading, boundary-less occurrence
+    subsumption, scalar-typed `concern_section_headings` reads as empty, and the document sentence "never left with no required
+    reviewer" overstating the strip.
+  - **Residue for PLAN-LB-129 (closed by its landing):** the lane reported that `review-gate` did not count a `<picture>`-decorated
+    `Nitpick comments: 1` title; the PLAN-LB-129 count reader drops markup before it reads the count (`landings/PLAN-LB-129.md`).
+  - **Watch (owed, operator-run):** the harness sync after the merge.
 - **PLAN-LB-126** (shipped #1942, 2026-11-08, runbook lane, `deepseek-v4.1-flash/high`) — see `landings/PLAN-LB-126.md`. Merge commit
   `f1945737a`, a squash commit with one parent `5eb2f9d9d` (the PLAN-LB-116 merge, read with git before the leaf prompt named it). One
   three-layer leaf read it with the lane's 10 claims passed one by one; the orchestrator re-read the major's code and the landing-state
@@ -1224,6 +1344,51 @@ derive, for rows still live.
 
 ## Decisions
 
+- 2026-11-10 — **PLAN-LB-132 is analysed from the inbox, PLAN-LB-142 is staged on the operator's word, and PLAN-LB-134 is read as a mid-flight
+  report.** PLAN-LB-132 (#1952, merge commit `3ed0888ea`, one parent `64907fa3b`) was read by one three-layer leaf with the lane's seven
+  claims passed one by one; the orchestrator re-read the coverage-marker arm of `_reviewed_at_merge_candidate`, the scope-ambiguous
+  refusal and its remedy text, `_scope_findings`, the `manage-findings` verb list and the consumers of `foreign_stored_findings`. No
+  blocker, no major. The lane's decline of CodeRabbit's inline-2 is graded not sound, because the two actions its refusal text offers
+  have no supported verb; the reach is the pre-stamp tail of a plan that worked a second pull request and it fails closed, so it is a
+  Watch. The lane's surface-drift disclosure is partial (fourteen paths outside its Expected Surface, one explained). PLAN-LB-134
+  (#1954) was filed as `merge_state=open`: the pull request is open, CI is green and CodeRabbit refused on quota, so the row stays
+  `running` and its slot stays held. PLAN-LB-142 (a handled CodeRabbit review is the review; operator rule: after one successful review
+  and all handling of it no further review, then merge) is staged with a grounded spec; it overlaps PLAN-LB-138 on `runbook_lane.py`
+  and `test_runbook_lane.py` and PLAN-LB-133 on `phase-6-finalize/SKILL.md`, so its emit goes through the overlap prompt.
+
+- 2026-11-10 — **The PLAN-LB-129, PLAN-LB-130, PLAN-LB-131 and PLAN-LB-141 landings are analysed from the inbox and PLAN-LB-132,
+  PLAN-LB-133, PLAN-LB-134 and PLAN-LB-138 are emitted into the four freed slots (operator word: "anaylze").** Each landing was read by its own leaf on three
+  layers with the lane's claims passed one by one; every squash parent was read with git and named in the leaf prompt; the orchestrator
+  re-read the points recorded as re-read in each report and says which it did not. The `review-gate` re-run on each merged head agrees
+  with the landings' counted numbers (the handled count is not re-verified; it needs the lane's progress file). All three messages are
+  `complete: false` on `total_tokens` alone, out of scope. No blocker. **One major: the PLAN-LB-130 Gradle carve-out**, reported to
+  the operator and NOT staged (Open Defects): it is outside this repository (pyproject) and affects Gradle consumers with a root row and
+  a submodule row at one sha, so the stop rule's "normal use" test is the operator's call. PLAN-LB-129 carries one unproven point the
+  leaf graded a major (a counted title outside the declared labels refuses the gate for good); three live bodies parse without it, so
+  it is a Watch, not a plan. The PLAN-LB-129 HIGH Open Defect is retired and the PLAN-LB-130 one is replaced by the Gradle defect.
+  Layer-3 minors of all three are Watches. A fourth landing (PLAN-LB-131, #1948) was filed while the drain ran; it was not part of
+  the first enumeration and was drained in a second pass the same day on its own leaf: no blocker, no major, its HIGH Open Defect is
+  retired and its minors are a Watch. Emit: scope is four and, once PLAN-LB-131 was reconciled, no plan is in flight, so four
+  slots were free; the gate read every candidate (declarative surface, determinate comparison, no verdict row with `admits: false`,
+  no overlap prompt required against in-flight work). PLAN-LB-133 was held for PLAN-LB-131 (`_cmd_lifecycle.py`) and is admissible
+  now; PLAN-LB-135, 136 and 140 follow PLAN-LB-134 one at a time (`opencode_runtime.py`); PLAN-LB-137 and PLAN-LB-138 share two files
+  so only one of them goes in this round, and PLAN-LB-139 is admissible but not chosen. The four chosen share no file pairwise
+  (read from the declared surfaces). PLAN-LB-132 went first as already recorded; the heading drift and the scalar-typed registry field
+  of the PLAN-LB-128 Watch are still the operator's call to fold there. No overlap prompt was asked. `auto_emit` is false, so the
+  `launched` transitions wait for the operator's confirmation. Reversible by the operator word.
+- 2026-11-09 — **The PLAN-LB-128 landing is analysed from the inbox and PLAN-LB-141 is emitted into the freed slot (operator word:
+  "analyze and emit").** PLAN-LB-128 (#1946, `af1ad9513`, one parent `b2652750a`) read on three layers by one leaf; the orchestrator
+  re-read the code, the tests and the diff surface and re-ran `review-gate` on the merged head. No blocker, no major: both
+  PLAN-LB-127 majors are closed, so their two HIGH Open Defects are retired and the minors go to a Watch, nothing staged (the stop rule:
+  none fails open on an observed shape). Three findings are worth the operator's eye: the clean-verdict test is a substring test
+  (accepted on purpose for the #1946 wording), a changed `Merge Risk` heading rendering would fail open with no signal, and a scalar typo
+  in the registry field silently disables the concern veto. The first two could ride PLAN-LB-132, which edits `github_pr.py` next;
+  that fold is the operator's call and was not made. The landing is `complete: false` on `total_tokens` alone, out of scope under the
+  ruling of 2026-10-23, so no defect. Corpus verdicts for the shipped spec were not persisted (no staged claim of it feeds an
+  admission). Emit: scope is four and three plans are in flight, so one slot was free; PLAN-LB-141 passed every gate conjunct (declarative
+  surface, determinate comparison with no blocking candidate and no shared file with the in-flight plans, no verdict rows), no overlap
+  prompt was asked, and it went ahead of PLAN-LB-132 because the temp directory leak grows with every suite the running plans run.
+  `auto_emit` is false, so the `launched` transition waits for the operator's confirmation. Reversible by the operator word.
 - 2026-11-09 — **The `/tmp` inode exhaustion is staged as PLAN-LB-141 (operator word: "Analyze and create a plan for the following",
   with the operator's own incident analysis pasted).** The incident stopped every tool call on the machine, including the ledger land of
   the same day, which was left in flight after its snapshot and resumes with the next `land`. The paste was treated as a lead and
@@ -2111,53 +2276,26 @@ derive, for rows still live.
 
 ## Open Defects
 
-- **HIGH — the foreign-PR gate blocks an already merged foreign change when the foreign tree sits on `main` and nothing is declared
-  (PLAN-LB-126 landing, 2026-11-08; STAGED as PLAN-LB-131 on the operator's word of 2026-11-09).** The checkout arm
-  returns the branch the foreign tree is on, `main` included (`foreign_pr_gate.py:258-263`); `landing-state` counts only PRs whose
-  head is the branch tip, so a pushed `main` reads `pushed_no_pr` (`ci_base.py:926-958`, `_github_pr.py:1621-1673`); the gate is
-  `blocked` and says to open a PR. Declaring `foreign_branch` instead gives `branch_disagreement` and `error`, so after cleanup the
-  gate never clears; the operator remedy is to leave the foreign tree on the change branch. The unit test that covers the arm uses an
-  answer (`main: merged`) the real verb cannot give (`test_foreign_pr_gate_gate.py:486-504`). Foreign deliverables are rare, so
-  whether this is "normal use" under the stop rule is the operator's call. Fix shape: the base or default branch is never a change's
-  branch (an undeclared `main` becomes an `unresolved` row), plus a fixture for the post-cleanup state. Detail:
-  `landings/PLAN-LB-126.md` L3-1, L1-1, L2-2.
-- **HIGH — the retired-bot roster strip is never saved, so a consumer config keeps the name and every merge blocks (PLAN-LB-127
-  landing, 2026-11-08; STAGED as PLAN-LB-128 D1 on the operator's word of 2026-11-09).** `migrate_bot_lists` strips
-  `cuioss-review-bot` in memory and returns `noop` for a config with no legacy `enabled_bots`; `cmd_migrate_bot_lists` saves only when
-  the state is not `noop` (`upgrade.py:446-454,532`; both re-read). The previous standard seed was `cuioss-review-bot,coderabbit`, so
-  every config seeded or back-filled before the merge has it, and the name classifies `unregistered_kind`, which blocks like `absent`.
-  Not this repository. The tests cover only the pure function. Qualifies under the stop rule (a gate falsely blocks in normal use).
-  Detail: `landings/PLAN-LB-127.md` L3-1.
-- **HIGH — the CodeRabbit summary rule still drops the live concern shape (PLAN-LB-127 landing, 2026-11-08; STAGED as
-  PLAN-LB-128 D2 on the operator's word of 2026-11-09).** A summary with the marker, `## Walkthrough` and a free-text Merge Risk concern, none of the four section
-  titles, is dropped as noise (`github_pr.py:332-344,552-554`, re-read), and the bot resolves `participated_but_empty`. The shipped
-  positive test is an assembled body; the docs say a straying summary is filed. Whether the same concern is also posted through a
-  formal review is not shown by reading, so this qualifies under the stop rule only if it is not. Related minor: `No actionable
-  comments were generated` is dropped before the concern check. Detail: `landings/PLAN-LB-127.md` L3-2, L1-1.
-- **HIGH — `review-gate` ignores a bot's restated concern when the lane replied last (PLAN-LB-116 landing, 2026-11-08; STAGED as
-  PLAN-LB-129 on the operator's word of 2026-11-09).** `_thread_concern_remains` tests only the last comment of a resolved thread and only when a bot wrote it
-  (`runbook_lane.py:2617-2630`, re-read), so `[bot opener, lane "fixed in abc", bot "This still applies", lane "done"]` reads handled
-  and `merge_allowed` is true. The spec says the last BOT comment. Detail: `landings/PLAN-LB-116.md` L3-1. Same file, fold candidates:
-  the silent zero for a prose-only body, an un-keyworded counted title and an `issue_comment`; the marker vocabulary; the placeholder
-  evidence (`TBD`); the under-count of a section with no declared count.
 - **MEDIUM — the PLAN-LB-127 landing message is incomplete (2026-11-08).** `inbox landing-check` reports `complete: false` for
   `rb-lb-127-coderabbit-registry-summary-concerns-and-file-limit-001.md`, missing `total_tokens` (out of scope) and
   `unresolved_review_threads`, `review_body_findings_total`, `review_body_findings_handled`, `sonar_open_new_issues`. The lane text that
   produced it predates the four required keys PLAN-LB-116 added; the lifecycle producer cannot emit them either (PLAN-LB-116 landing,
   layer 1). The merge state and the deliverable count were read from the PR and the diff instead. Retire when the finalize steps publish
   the four numbers.
-- **HIGH — the push gate reads the goal tokens of a multi-token build payload as scope and refutes a whole-tree change (PLAN-LB-124
-  landing, 2026-11-08; STAGED as PLAN-LB-130 on the operator's word of 2026-11-09).** `_row_refusal` now judges scope
-  before the canonical, and `parse_row_scope` takes every non-flag token after the first as scope. The npm discoverer's rows
-  (`run test`, `run lint`, `run build`) read as canonical `run` with scope `(test)`, so `_scope_adequate` is false for a whole-tree
-  change and the row is `build_scope_narrow`, a refutation, where it used to be an unmapped canonical, an inability that passed
-  (`_freshness_crosscheck.py:719-731,805-806,829-833`; `_npm_cmd_discover.py:350-381`; both re-read). The same flip is reported, not
-  re-read, for the Maven `clean install` canonical (`_maven_cmd_discover.py:1252`) and the Gradle multi-task canonicals
-  (`_gradle_cmd_discover.py:502-522`). Effect: the push and freshness gate goes stale for npm-only, Gradle and Maven-chain commits in
-  consumer projects, a false block in normal use. This repository (pyproject) is not affected. The suite models the npm row as
-  `test --workspace=pkg-a`, so no test names the shape. Detail: `landings/PLAN-LB-124.md` L3-1, L1-1. Related minor, same landing: a
-  `-Dtest` run with `failIfNoSpecifiedTests=false` and a `No tests to run.` line is now `success` (L3-2), fail-open only if Surefire
-  prints that line for a missed selector.
+- **HIGH — the freshness gate refuses a whole-tree change on a Gradle ledger that holds a submodule row beside a root row
+  (PLAN-LB-130 landing, 2026-11-10; NOT STAGED, reported to the operator, a fix plan only on the operator's word).** The PLAN-LB-124
+  defect (goal tokens read as module scope) is closed for npm, Maven and Gradle root rows. The PLAN-LB-130 lane added a carve-out the
+  spec did not ask for: `parse_row_scope` returns unreadable for any `:`-prefixed payload token on a Maven or Gradle row
+  (`_freshness_crosscheck.py:849-850`), and the Gradle discoverer prefixes every submodule task that way
+  (`_gradle_cmd_discover.py:492-498`; both re-read). Gradle canonicals are outside the vocabulary, so the ledger stays undetermined, and
+  the whole-tree refusal fires when ANY candidate row is unreadable (`:1386-1392`, re-read). Input: a whole-tree change with a root
+  `build` row and a `:core:test` row at the sha; it was fresh at the base and is stale now
+  (`build_scope_unreadable_for_whole_tree_change`), and a root-only re-run at the same sha cannot clear it. A ledger of submodule rows
+  alone is a correct refusal. Consumer projects on Gradle only; this repository (pyproject) is unaffected, so whether it is "normal use"
+  under the stop rule is the operator's call. Fix shape: read the module from the `:module:` token or treat the row as an inability like
+  a root row, and drop or justify the npm exemption. Detail: `landings/PLAN-LB-130.md` L2-1, L3-1. Related minor from the PLAN-LB-124
+  landing, still open: a `-Dtest` run with `failIfNoSpecifiedTests=false` and a `No tests to run.` line is `success` (its L3-2),
+  fail-open only if Surefire prints that line for a missed selector.
 > ↪ Relocated to `settled.md` § "Sonar closed by ruling, the PLAN-LB-100 merge-path half, and its incomplete-landing note" — the Sonar item closed by the ruling of 2026-10-28 (refined 2026-11-07, see Decisions), the merge-path half fixed by PLAN-LB-100, and one out-of-scope incomplete-landing note.
 - **MEDIUM — the merge-path participation check binds to the provider's candidate, the merge to the local head (PLAN-LB-100
   landing, 2026-10-29; NOT STAGED; a known limit the PR accepted).** `_check_participation` proves participation against the
@@ -2938,6 +3076,76 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
 
 ## Watches
 
+- **The minors of the PLAN-LB-132 landing (2026-11-10; recorded, not staged).** None fails open on an observed shape. They ride the
+  next plan on these surfaces, which is PLAN-LB-142 (it changes the same participation verdict). Layer 3: a pre-stamp legacy row on
+  a plan that worked a second pull request makes `participation_scope_ambiguous` refuse the merge for good, resolved rows included,
+  with no verb to stamp or remove a findings row (`pre_merge_gate.py:1043-1060`, `:1228-1237`, `review_completeness.py:1139-1208`;
+  re-read); `foreign_stored_findings` is computed and consumed nowhere (`review_completeness.py:1264, 1619`; re-read), so an earlier
+  pull request's pending required finding neither blocks nor surfaces in that check; the `refusal_structural` shape lists
+  `unproven_bots[N]` while Branch 0 does not say to fill it; `bot-participation-contract.md:416, 597, 604` and a comment at
+  `github_pr.py:2160-2162` still describe an edit arm that is gone (leaf, not re-read). Layer 2: `trigger-bot --pr-number` has no end
+  to end test, so dropping `args.pr_number` at `review_completeness.py:2337` would pass. Not reproduced: a body carrying the retired
+  `recent_review_start` wrapper and no commit id loses its edit credit; a counted non-finding block before a section with no declared
+  count under-counts its rows. Layer 1: the lane's decline of inline-2 rests on two clearing actions that have no verb. The lane
+  filed the missing `manage-findings` verb as a follow-up in the findings store (not read).
+
+- **The minors of the PLAN-LB-128 landing (2026-11-09; recorded, not staged).** None fails open on an observed shape, so the stop rule
+  stages nothing; they ride the next plan that touches `github_pr.py` or the registry (PLAN-LB-132 is the next one). Layer 3: the clean
+  verdict is a substring test, so a block carrying a declared clean literal and a concern in a later sentence reads clean
+  (`github_pr.py:379`, accepted on purpose for the #1946 wording); the `Merge Risk:` heading is a case-sensitive literal, so a changed
+  rendering finds no section and the body drops as before with no drift signal (`:370-375`); a second occurrence with no boundary
+  before it is absorbed into the first section (`:346-349`); a scalar-typed `concern_section_headings` reads as empty and disables the
+  veto silently while the same typo on `clean_section_verdicts` fails closed (`bot_registry.py:824-825`); `upgrade-flow.md:493-494`
+  and `marshall-steward/SKILL.md` say a project is never left with no required reviewer, which an operator-written empty list
+  contradicts. Layer 2: `retired_kinds_unavailable` is named by no document or consumer; the #1946 control body is hand-built and not
+  labelled CONSTRUCTED; history wording in `bot-participation-contract.md:1089` (leaf reading, not re-read). The cheapest to close are
+  the heading drift and the scalar typo; whether to fold them into PLAN-LB-132 is the operator's call. Retire an item when a plan
+  fixes it. Detail: `landings/PLAN-LB-128.md`.
+- **The minors of the PLAN-LB-131 landing (2026-11-10; recorded, not staged).** None lets the gate clear an unlanded change without a
+  mis-declared or reused branch name, and the rest fail closed. When no ref exists anywhere, `landing-state` reads `merged` from the
+  declared name alone, so a stale or wrong name whose old pull request merged clears an unlanded change when the checkout is back on the
+  default branch or detached (`_github_pr.py:1727-1738`, re-read); the local ref is tried before `origin/X`, so a stale local ref at an
+  old merged head reads `merged` for new commits pushed from another clone (`:1567-1572`, re-read); a declaration equal to the default
+  branch is accepted and then blocks for good on `pushed_no_pr` with an "open a PR" message (`foreign_pr_gate.py:319-332`, re-read); the
+  default branch comes from `refs/remotes/origin/HEAD` first, which a fetch does not update, so a remote rename leaves a stale default
+  (`:213-219`); an `unpushed` read still clears the gate by design (`archive-plan.md:35`, pre-existing). Guard strength: the
+  exactly-once doc test counts one case-sensitive phrase, the unreadable-remote test asserts only an absent error code, the timeout
+  test does not pin the bound, and no test covers a declaration equal to the default. Wording: the OPEN-arm message contradicts
+  itself and a docstring misdescribes the remote arms (`_github_pr.py:1723-1725,1556-1558`, re-read). Not shown by reading: that
+  `isCrossRepository` is always emitted, that `ls-remote` cannot stall on a credential prompt. Retire an item when a plan fixes it.
+  Detail: `landings/PLAN-LB-131.md`.
+- **The minors of the PLAN-LB-141 landing (2026-11-10; recorded, not staged).** The guard is a regression detector for the two named
+  sites, and none of these leaves them leaking. The sweep credits a class method named `teardown`/`cleanup`/`close` without proving
+  pytest calls it, credits any `finally` or post-`yield` removal of the same name whatever its position, credits `os.rmdir`/`unlink`
+  as a removal, and does not see an aliased `mkdtemp` or a module-level `_system_temp.create` (`test_tempdir_teardown.py:43,57-64,
+  163-185`, re-read). The registry keeps its `atexit` handler after a release and ignores removal errors (`_system_temp.py:51,68,72-78`,
+  re-read). The `_system_temp` docstring and `test/README.md` say a bare `mkdtemp` "fails the suite", which overstates the sweep, and
+  code comments carry history and a stale call-site figure (`_guard_node_harness.py:253-256`). Not shown by reading: that the hook runs
+  in every worker under `-n auto`, and the run-private measurement; a live `guard-node-*` count after the next suite run settles it.
+  Retire an item when a plan fixes it. Detail: `landings/PLAN-LB-141.md`.
+- **The minors of the PLAN-LB-130 landing (2026-11-10; recorded, not staged; the Gradle major is an Open Defect).** The spec's rule
+  for an unknown or absent notation (more than one positional is unreadable) is more permissive than the base for a narrow change
+  (`_freshness_crosscheck.py:852-853`, edge case because the dispatch boundary always stamps a notation); the npm colon exemption and
+  its test pin a row no discoverer emits; `build-maven/SKILL.md:40` lists a report whose population cannot be read among the shapes
+  that keep their green while the code makes a summary-less leading `test` run indeterminate (`_maven_execute.py:626-638`); the comment
+  at `_maven_cmd_parse.py:476-479` calls an all-`@Disabled` selector match a truthful green while `apply_zero_test_guard` now makes it
+  indeterminate (both re-read); the cause token `args_carry_no_command_args` is reported to be emitted for rows that do carry
+  `--command-args`, and `manage-tasks/SKILL.md:626` gives a remedy a Gradle submodule row cannot carry out (unverified leads); an
+  inline literal beside named constants. Retire an item when a plan fixes it. Detail: `landings/PLAN-LB-130.md`.
+- **The minors of the PLAN-LB-129 landing (2026-11-10; recorded, not staged), and one point not shown by reading.** The refusal arm
+  now refuses any counted `<summary>` outside a recognised section and the six declared labels (`runbook_lane.py:2316-2323,
+  2606-2609`), in every review body on the PR. The leaf named plausible CodeRabbit titles (`Files skipped from review as they are
+  similar to previous changes: N`, `Files with no reviewable changes: N`, `Learnings`) that would then refuse the gate for good and
+  that a retry cannot clear; reading cannot show whether CodeRabbit posts them on this repository, and the `review-gate` reads of
+  #1947, #1949 and #1951, all live bodies, parsed without that refusal. If a live PR ever returns `undecidable_read` on a counted
+  title, add the title to the label list. The minors: the declared count wins even when the row markers say more (`:2538-2539`);
+  `TBD later`, `todo: wip` and `n/a — see later` read as reasons because the whitespace is stripped before the comparison (`:2465`);
+  a reason in a non-Latin script reduces to empty and is refused (`:2454,2465`); the concern marker is a lowercase substring and a later
+  markerless comment by any registered bot discharges (`:2716-2720`); an uncounted last section spans to the end of the body and sums a
+  trailing counted file list; `Additional comments (N)` is clearable by disposition where it was a hard refusal; test docstrings
+  describe the old behaviour; the gate tests use constructed bodies and the captured #1940 body is unused. Closed: the
+  `<picture>`-decorated title (the markup is dropped before the count is read). Retire an item when a plan fixes it. Detail:
+  `landings/PLAN-LB-129.md`.
 - **The minors of the PLAN-LB-126 landing (2026-11-08; recorded, not staged).** None fails open or falsely blocks a gate in normal use;
   they ride the next plan that touches the same file. The D2 red proof is a signature `TypeError` and the branch semantics were shown
   red only by mutation; `cmd_commit` reports no `ledger_*` key when the phase is `unknown` or unset and only `ledger_recorded:false`
@@ -2950,14 +3158,14 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
   test docstrings. Retire an item when a plan fixes it.
 - **The minors of the PLAN-LB-116 and 127 landings (2026-11-08; recorded, not staged).** Only the one PLAN-LB-116 and two PLAN-LB-127
   majors fail open or falsely block a gate, and they are Open Defects. The rest ride the next plan that touches the same file.
-  PLAN-LB-116: the minor shapes under its major (silent zero, vocabulary, placeholder evidence, positional ids, prose-only head
-  currency, dispositions not read from the progress file, the count under-read), a hotspot partition trusted from the lane, a dead
+  PLAN-LB-116: the minor shapes under its major (silent zero for a prose-only body and an `issue_comment`, vocabulary, positional ids,
+  prose-only head currency, dispositions not read from the progress file; the placeholder evidence and the count under-read of a
+  section with no declared count were fixed by PLAN-LB-129), a hotspot partition trusted from the lane, a dead
   `_SECTION_DEPTH`, doc-standard labels and wording, a bare `review-gate` command in two documents, the lifecycle producer that cannot
-  emit the four new numbers. PLAN-LB-127: the unconditional `No actionable comments were generated` drop, the vacuous skip-notice
-  control and the untested marker-bearing skip notice, the veto strings without provenance, zero required reviewers after a strip of an
-  answer naming only the retired kind, the AGENTS.md rationale that still cites the PR-Agent reviewer, history wording, and whether the
-  deleted contentless-guide modules carried drop-path currency coverage that no CodeRabbit test replaces. Retire an item when a plan
-  fixes it.
+  emit the four new numbers. PLAN-LB-127: the AGENTS.md rationale that still cites the PR-Agent reviewer, history wording, and whether
+  the deleted contentless-guide modules carried drop-path currency coverage that no CodeRabbit test replaces (the unconditional
+  `No actionable comments were generated` drop, the skip-notice controls, the veto provenance and the zero-required-reviewer strip
+  were fixed by PLAN-LB-128). Retire an item when a plan fixes it.
 - **The minors of the PLAN-LB-115, 124 and 125 landings (2026-11-08; recorded, not staged).** None fails open or falsely blocks a gate
   in normal use, so the stop rule stages nothing; they ride the next plan that touches the same file. PLAN-LB-115: the carry predicate
   is read at submit time, a renamed protocol test cannot fail on its name, four deliverable labels remain in touched modules. PLAN-LB-124:
