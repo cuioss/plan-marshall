@@ -46,10 +46,12 @@ _LIFECYCLE_METHODS = frozenset({'__exit__', 'cleanup', 'teardown', 'close'})
 #: ``TemporaryDirectory`` handle; the rest are direct filesystem removals.
 _REMOVAL_CALLS = frozenset({'rmtree', 'rmdir', 'unlink', 'cleanup'})
 
-#: ``(receiver, attribute)`` pairs whose CALL registers a removal that runs later
-#: (``atexit.register``, ``weakref.finalize``). The receiver is part of the key:
-#: ``scheduler.register(root)`` registers a job, not a removal.
-_DEFERRED_REMOVAL_RECEIVERS = frozenset({('atexit', 'register'), ('weakref', 'finalize')})
+#: ``(receiver, attribute)`` pairs whose CALL registers a removal that runs later.
+#: The receiver is part of the key: ``scheduler.register(root)`` registers a job,
+#: not a removal. Only ``atexit`` is listed: ``weakref.finalize`` requires a
+#: weak-referenceable object, and neither a ``str`` nor a ``Path`` is, so a
+#: ``weakref`` arm could only ever credit a site that cannot exist.
+_DEFERRED_REMOVAL_RECEIVERS = frozenset({('atexit', 'register')})
 
 
 def _is_mkdtemp_call(node: ast.AST) -> bool:
@@ -183,11 +185,21 @@ def _removes_after_a_yield(function: ast.AST, name: str | None, attr: str | None
     return False
 
 
+def _is_removal_callable(node: ast.AST) -> bool:
+    """Whether ``node`` names a removal function (``shutil.rmtree`` and friends).
+
+    A registration is a removal path only when the CALLABLE removes something:
+    ``atexit.register(notify, root)`` runs ``notify`` at exit and leaves the
+    directory where it is.
+    """
+    return isinstance(node, ast.Attribute) and node.attr in _REMOVAL_CALLS
+
+
 def _registers_a_removal(function: ast.AST, name: str | None, attr: str | None) -> bool:
     """Whether ``function`` hands the directory to a REGISTERED teardown.
 
-    The receiver is checked, not just the attribute name: ``scheduler.register(root)``
-    registers a job, not a removal, and must not clear a leaking site.
+    Both the receiver and the callback are checked: ``scheduler.register(root)``
+    registers a job, and ``atexit.register(notify, root)`` registers a notification.
     """
     for node in _nodes_of_own_scope(function):
         if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
@@ -195,7 +207,9 @@ def _registers_a_removal(function: ast.AST, name: str | None, attr: str | None) 
         receiver = node.func.value
         if not isinstance(receiver, ast.Name) or (receiver.id, node.func.attr) not in _DEFERRED_REMOVAL_RECEIVERS:
             continue
-        if any(_names_target(argument, name, attr) for argument in node.args):
+        if not node.args or not _is_removal_callable(node.args[0]):
+            continue
+        if any(_names_target(argument, name, attr) for argument in node.args[1:]):
             return True
     return False
 
@@ -383,8 +397,9 @@ def build():
 
 
 def test_the_sweep_does_not_credit_an_unrelated_register_call():
-    """Positive control: only ``atexit``/``weakref`` registration is a removal."""
+    """Positive control: only an ``atexit``-registered REMOVAL is a removal path."""
     source = """
+import atexit
 import tempfile
 from pathlib import Path
 
@@ -393,11 +408,17 @@ def build(scheduler):
     root = Path(tempfile.mkdtemp())
     scheduler.register(root)
     return root
+
+
+def notify_at_exit():
+    root = Path(tempfile.mkdtemp())
+    atexit.register(print, root)
+    return root
 """
 
     offenders, _sites = _sites_without_removal(source, 'control.py')
 
-    assert len(offenders) == 1, offenders
+    assert len(offenders) == 2, offenders
 
 
 def test_the_sweep_does_not_credit_a_lifecycle_method_removing_another_attribute():
@@ -463,15 +484,29 @@ def annotated():
         yield root
     finally:
         shutil.rmtree(root, ignore_errors=True)
+
+
+def walrus():
+    if root := Path(tempfile.mkdtemp()):
+        try:
+            yield root
+        finally:
+            shutil.rmtree(root, ignore_errors=True)
+
+
+def yield_from_fixture():
+    root = Path(tempfile.mkdtemp())
+    yield from [root]
+    shutil.rmtree(root, ignore_errors=True)
 """
 
     offenders, sites = _sites_without_removal(source, 'control.py')
 
-    assert sites == 4
+    assert sites == 6
     assert offenders == []
 
 
-def test_the_unconfigure_hook_drains_the_registry(monkeypatch, outside_repo_dir: Path):
+def test_the_unconfigure_hook_drains_the_registry(monkeypatch):
     """The drain is wired: ``pytest_unconfigure`` is what removes a registered root.
 
     Without this control the whole teardown chain can be deleted — the sweep credits
