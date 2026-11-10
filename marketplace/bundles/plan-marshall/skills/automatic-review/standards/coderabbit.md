@@ -404,9 +404,10 @@ loop-back an unedited comment would silently credit CodeRabbit with reviewing co
 That is the false-positive direction, and `participation_requires_update: true` closes it: every
 declared-shape comment must clear the currency test, which anchors the credit to the merge candidate
 through the plan-scoped **currency ledger** — the sole source that test reads. The credit holds when
-the SHA the ledger recorded for this comment IS the merge candidate, when the ledger holds no row for
-it and this fetch observes it at a resolvable merge candidate the comment does not demonstrably
-predate, or when its `updated_at` differs from the value recorded at the last credit. An unresolvable
+the SHA the ledger recorded for this comment IS the merge candidate, or when the ledger holds no row
+for it and this fetch observes it at a resolvable merge candidate the comment does not demonstrably
+predate. An in-place edit credits nothing on its own: a moved `updated_at` says the comment was
+touched, not which commit it reviewed. An unresolvable
 merge-candidate SHA withholds it on every arm. A failed currency test is emphatically **not**
 `absent`: CodeRabbit published, so the remedy is the `@coderabbitai review` re-review trigger rather
 than escalating a reviewer that never engaged.

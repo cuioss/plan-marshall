@@ -1145,9 +1145,9 @@ def _stored_pr_comment_hashes(findings: list[dict]) -> dict[tuple[str, str], str
 #
 # Recording BOTH the SHA and the ``updated_at`` keeps the ledger a complete record of
 # each credit: the SHA is what the currency test compares against the merge candidate,
-# and the timestamp is the provenance of the observation that produced it — which credit
-# landed when, and against what. Neither is read as a movement test: a comment's own
-# ``updated_at`` says the bot touched its comment, never which commit it reviewed.
+# and the timestamp is the comment's own edit stamp at the moment that credit was
+# recorded — provenance, never a movement test. A comment's ``updated_at`` says the bot
+# touched its comment, not which commit it reviewed.
 #
 # It sits BESIDE the findings store (the same ``artifacts/`` root) rather than
 # inside ``artifacts/findings/``, and that placement is load-bearing: these are
@@ -1400,13 +1400,16 @@ def _reviewed_at_merge_candidate(
     ⛔ **An EDIT is not evidence, and ``updated_at`` is never a credit test.** A moved
     ``updated_at`` says the bot touched its comment; it does not say what the comment
     now claims, so a marker-bearing summary re-worded, corrected or flipped to its own
-    in-progress state cannot be scored as a review of the current commit. Credit comes
-    from exactly two sources: the comment's OWN evidence naming the merge candidate (the
-    named-commit arm the caller evaluates first, which covers a coverage marker, a
-    provider-reported ``commit_id`` and a full id written into the body), or a ledger row
-    anchored at that commit (``recorded_sha == merge_candidate_sha``). A comment whose
-    evidence names no commit and whose recorded SHA is an earlier commit is STALE — the
-    honest verdict, whose remedy is a re-review.
+    in-progress state cannot be scored as a review of the current commit. What PLACES a
+    comment is one of: its OWN evidence naming the merge candidate (the named-commit arm
+    the caller evaluates first, which covers a coverage marker, a provider-reported
+    ``commit_id`` and a full id written into the body); a ledger row anchored at that
+    commit (``recorded_sha == merge_candidate_sha``); the first-observation assumption,
+    available only when nothing is recorded and bounded by the comment not predating the
+    commit; or — for a comment the test placed at an EARLIER commit — the bot's own
+    ``no_unreviewed_commit`` reply written after that commit existed. A comment whose
+    evidence names no commit and whose recorded SHA is an earlier commit, with no such
+    reply, is STALE — the honest verdict, whose remedy is a re-review.
     """
     comment_id = str(comment.get('id') or 'unknown')
     record = currency_records.get((bot_kind, comment_id))

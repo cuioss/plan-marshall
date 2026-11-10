@@ -892,9 +892,10 @@ def classify_bot(
       ``bot-participation-contract.md`` § "Evidence taxonomy", which carries both
       conjuncts — the declared publish shape and, where gated, that shape's content
       marker), but the currency test failed: the currency ledger — the sole source that test
-      reads — anchors the comment to a commit that is not the merge candidate, and its
-      ``updated_at`` is unchanged from the value recorded at that credit, so the review
-      it proves predates this HEAD. Unproven and therefore blocking, but the remedy is to
+      reads — anchors the comment to a commit that is not the merge candidate, or the
+      comment's own evidence names a commit that is not the merge candidate, so the
+      review it proves predates this HEAD. A moved ``updated_at`` is not a currency fact
+      and credits nothing. Unproven and therefore blocking, but the remedy is to
       re-trigger a re-review — the opposite of ``absent``, where there is no review to
       refresh.
     - **``in_progress``** — the bot's review is still running.

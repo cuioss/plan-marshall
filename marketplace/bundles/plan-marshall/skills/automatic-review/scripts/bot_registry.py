@@ -961,10 +961,11 @@ class BotRegistry:
         That test reads ONE source — the plan-scoped currency ledger beside the
         findings store, which records per ``(bot_kind, comment_id)`` the
         merge-candidate SHA and the ``updated_at`` at the fetch that LAST credited the
-        comment. The credit holds when the recorded SHA is the merge candidate, when
+        comment. The credit holds when the recorded SHA is the merge candidate, or when
         the ledger holds no row for the comment and this fetch observes it at a
-        resolvable merge candidate the comment does not demonstrably predate, or when
-        its ``updated_at`` differs from the recorded value. An unresolvable
+        resolvable merge candidate the comment does not demonstrably predate. Movement
+        of the comment's own ``updated_at`` is not a credit: it says the comment was
+        edited, not which commit it reviewed. An unresolvable
         merge-candidate SHA withholds the credit on every arm. See
         ``github_pr._reviewed_at_merge_candidate`` for the predicate this flag gates
         and ``standards/bot-participation-contract.md`` § "The currency rule".
