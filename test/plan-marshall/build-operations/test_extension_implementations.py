@@ -16,6 +16,7 @@ import shutil
 import tempfile
 from pathlib import Path
 
+import _system_temp
 import pytest
 from extension_base import ExtensionBase
 
@@ -106,7 +107,7 @@ def create_test_project(build_system: str) -> Path:
     them would conflate concepts. The D5 outline explicitly permits this
     file to retain its local copy with a justification comment.
     """
-    temp_dir = Path(tempfile.mkdtemp())
+    temp_dir = _system_temp.create(prefix='extension-impl-')
 
     if build_system == 'maven':
         (temp_dir / 'pom.xml').write_text('<project></project>')

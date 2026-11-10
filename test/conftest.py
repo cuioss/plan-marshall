@@ -319,6 +319,12 @@ for _helper_dir in _TEST_HELPER_DIRS:
     if _helper_dir not in sys.path:
         sys.path.insert(0, _helper_dir)
 
+# The registered-teardown helper every long-lived system temp root in the test
+# tree goes through (see ``test/_shared/_system_temp.py``). Bound here, before any
+# test module imports it, so the drain below and the creating module share one
+# registry object.
+import _system_temp  # noqa: E402
+
 # Shared isolation fixtures live directly in this root conftest rather than
 # in bundle-scoped ``_fixtures.py`` modules: the production modules they
 # redirect (``_providers_core``, ``_config_core``) live in the plan-marshall
@@ -998,16 +1004,6 @@ def create_temp_file(content: str, suffix: str = '.md', dir: str | Path | None =
     return Path(path)
 
 
-def create_temp_dir() -> Path:
-    """
-    Create a temporary directory.
-
-    Returns:
-        Path to created directory (caller must delete with shutil.rmtree)
-    """
-    return Path(tempfile.mkdtemp())
-
-
 # =============================================================================
 # Pytest Fixtures
 # =============================================================================
@@ -1603,6 +1599,30 @@ def pytest_sessionfinish(session, exitstatus):
             reporter.write_line(f'  {nodeid}', red=True)
             reporter.write_line(f'      approved reason: {approved_reason}', red=True)
             reporter.write_line(f'      recorded reason: {recorded_reason}', red=True)
+
+
+def pytest_unconfigure(config):
+    """Remove every registered system temp root this pytest process created.
+
+    This is the one lifecycle hook the registered-teardown contract needs. It
+    runs in EVERY pytest process — the controller and each xdist worker: the
+    verify-first measurement for this contract ran a ``-n 2`` probe whose
+    atexit-registered and hook-registered directories were both observed gone
+    after the run, and ``pytest_unconfigure`` was the hook that removed its own.
+
+    The hook rather than only the per-root ``atexit`` handler, because
+    ``pytest_unconfigure`` runs at the end of the session, before interpreter
+    shutdown: a session that fails, errors out of collection or leaves fixtures
+    un-finalised still drains here, while a KILLED worker skips both and is out
+    of scope for in-process teardown (the janitor rule the plan records as owed).
+
+    Without it, a suite run from inside a plan worktree leaves one
+    ``guard-node-*`` directory per relocated harness behind (the guard's scratch
+    root cannot live under ``.plan/local/worktrees/``) plus one
+    ``executor-mappings-*`` per worker; that accumulation exhausted the system
+    temp inode pool.
+    """
+    _system_temp.release_all()
 
 
 _ENTRY_CWD_KEY = pytest.StashKey[str]()

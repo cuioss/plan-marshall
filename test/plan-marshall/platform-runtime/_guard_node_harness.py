@@ -35,10 +35,11 @@ import json
 import os
 import shutil
 import subprocess
-import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+import _system_temp
 
 #: This file lives at ``test/plan-marshall/platform-runtime/``; the test tree
 #: root is two levels up and the repository root one above that.
@@ -245,10 +246,18 @@ def _outside_any_worktree(scratch: Path) -> Path:
     and couple every case to that shape. In that case a system temp directory is
     used instead; the guard reads the allow-list from a scratch location either
     way, so the relocation changes nothing else.
+
+    The relocated root is created through :func:`_system_temp.create`, so its
+    removal is registered: ``test/conftest.py::pytest_unconfigure`` drains it at
+    the end of every pytest process (each xdist worker included) and an
+    ``atexit`` handler covers a process that exits without pytest. Before that,
+    every call left a ``guard-node-*`` directory behind for good — one per
+    ``build_harness`` call (68 call sites), which over five days of runs from
+    inside plan worktrees reached about 41,000 directories.
     """
     normalized = scratch.resolve().as_posix() + '/'
     if '/.plan/local/worktrees/' in normalized:
-        return Path(tempfile.mkdtemp(prefix='guard-node-'))
+        return _system_temp.create(prefix='guard-node-')
     return scratch
 
 
