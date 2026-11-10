@@ -228,15 +228,34 @@ def test_trigger_bot_still_lists_an_unflagged_stale_bot():
     assert payload['review_complete_bots'] == []
 
 
-def test_trigger_bot_leaves_an_unreviewed_flagged_bot_alone_when_no_source_names_it():
-    """No admitted review means no trigger list entry — the first trigger is elsewhere."""
+def test_trigger_bot_leaves_a_flagged_bot_whose_review_is_not_admitted_in_the_join():
+    """A stored finding alone is not the stale observation: the bot stays in the join.
+
+    The exclusion keys on the stale report (the producer's admitted review), so a
+    flagged bot with only an older stored finding is triggered exactly as today —
+    the fail-closed direction for a pull request whose review nobody admitted.
+    """
     payload = rc.list_bots_for_trigger(
         [],
-        [],
+        ['coderabbit'],
         ['coderabbit'],
         optional_bots=['sourcery'],
+        stored_findings_stale=True,
     )
 
-    assert payload['trigger_bots'] == []
+    assert payload['trigger_bots'] == ['coderabbit']
     assert payload['required_stale_bots'] == []
     assert payload['review_complete_bots'] == []
+
+
+def test_a_flagged_candidate_in_neither_roster_list_is_still_reported_unclassified():
+    """The done filter must not swallow the misconfiguration warning."""
+    payload = rc.list_bots_for_trigger(
+        ['coderabbit'],
+        [],
+        ['sourcery'],
+        optional_bots=[],
+    )
+
+    assert payload['review_complete_bots'] == ['coderabbit']
+    assert payload['unclassified_bots'] == ['coderabbit']

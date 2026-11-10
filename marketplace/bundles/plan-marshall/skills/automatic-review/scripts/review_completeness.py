@@ -204,7 +204,10 @@ Subcommands:
     trigger-bot
                List every bot a re-review must be requested from after a fix commit,
                required bots first: the bots whose participation is stale at the
-               current HEAD, joined with the bots that have stored findings. Its
+               current HEAD, joined with the bots that have stored findings. A bot
+               declaring ``review_complete_after_handling`` is withheld from both
+               lists and reported in ``review_complete_bots`` instead, because its
+               stale participation is a qualifying review on record. Its
                ``--required-bots`` / ``--optional-bots`` are bare-form and its
                ``--stale-participation-bots`` is pair-form, exactly as on ``check``.
 
@@ -217,6 +220,8 @@ Return TOON shape (trigger-bot):
     stored_finding_bots[N]:              # the bots with a stored finding, joined or not
       - bot
     stored_findings_stale: true|false    # whether the stored-finding bots were joined
+    review_complete_bots[N]:             # flagged bots whose handled review completes them
+      - bot
     unclassified_bots[N]:                # candidates in neither list — not triggered
       - bot
     store_scope: pr|unscoped              # whether the stored-finding join was PR-scoped
@@ -416,7 +421,10 @@ CAUSE_SIZE = 'size'
 # proven publish shape against the merge candidate: ``participated`` filed at least
 # one finding, ``participated_but_empty`` reviewed and found nothing. Every other
 # state is a non-review (a refusal, an absence, a stale or in-flight publish), so it
-# can be neither a deficit baseline nor a meaningful finding count.
+# can be neither a deficit baseline nor a meaningful finding count. A bot declaring
+# ``review_complete_after_handling`` reaches both states on a review of an EARLIER
+# head too, because that review completes it — so for such a bot the pair means
+# "reviewed", not necessarily "reviewed this head".
 _REVIEWED_STATES = frozenset({STATE_PARTICIPATED, STATE_PARTICIPATED_BUT_EMPTY})
 
 # The two actions the participation guard can take on a ``participation_complete:
@@ -494,9 +502,9 @@ def list_bots_for_trigger(
     required = list(required_bots)
     required_set = set(required)
     optional_set = set(optional_bots or [])
-    stale_set = set(stale_participation_bots)
-    done_set = {bot for bot in stale_set if bot_registry.review_complete_after_handling(bot)}
-    stale_set -= done_set
+    stale_all = set(stale_participation_bots)
+    done_set = {bot for bot in stale_all if bot_registry.review_complete_after_handling(bot)}
+    stale_set = stale_all - done_set
     stored_set = set(stored_finding_bots)
 
     candidates = set(stale_set)
@@ -512,7 +520,12 @@ def list_bots_for_trigger(
         'stored_finding_bots': sorted(stored_set),
         'stored_findings_stale': stored_findings_stale,
         'review_complete_bots': sorted(done_set),
-        'unclassified_bots': sorted(candidates - required_set - optional_set),
+        # Read from the UNFILTERED population: a flagged bot configured in neither
+        # roster list is a misconfiguration warning, and the done filter must not
+        # swallow it.
+        'unclassified_bots': sorted(
+            (stale_all | (stored_set if stored_findings_stale else set())) - required_set - optional_set
+        ),
     }
 
 
@@ -1441,7 +1454,12 @@ def check_completeness(
                            ``stale_participation_bots[]``. They resolve to
                            ``participated_stale`` — unproven and blocking, but whose
                            remedy is a re-review trigger rather than the
-                           non-participation escalation ``absent`` calls for. The
+                           non-participation escalation ``absent`` calls for. A bot
+                           declaring ``review_complete_after_handling`` does NOT land
+                           there on a review on record: that review completes it, so
+                           it resolves ``participated`` / ``participated_but_empty``
+                           and its pending findings still block through the triage
+                           arm. The
                            producer already subtracted the proven set, so a bot with
                            one stale and one fresh comment never arrives here.
         declined_bots:     Bots that were asked to review the merge candidate (a
