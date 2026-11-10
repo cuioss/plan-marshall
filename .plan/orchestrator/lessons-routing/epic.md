@@ -525,6 +525,51 @@ No new plan-marshall defect turned up at high or critical except the two the ope
 
 ⚠ **Unreconciled:** the 2026-11-02 second run recorded 82 left in place with named ids (pm-mcp-core 49, API-Sheriff 25, nifi-extensions 6). Those stores now hold different populations (pm-mcp-core 3, API-Sheriff 22, nifi-extensions 16), and none of the named ids is at its recorded path. This run graded what it found and could not establish where the earlier ones went.
 
+### 2026-11-10 — eleventh `ingest` run (inbox, 33 messages)
+
+Corpus at start: 0. Inbox at start: 33 live, valid `candidate-lesson` messages, all about the `plan-marshall` bundle: 17 from two pm-mcp-core plans (`plan-v2-86-core-store-tests-b`, `plan-v2-89-runtime-tests-start-and-config`), 12 from the pm-mcp-core orchestrators (`pm-mcp-core-m2-m4` 403..407, `pm-mcp-core-m2-m4-v2` 001..007), and 4 relayed by the API-Sheriff epic `kidicap-gateway-requirements` (014..017). Per-message dispositions: `lessons-archive/INDEX.md` § Sweep 2026-11-10.
+
+| Disposition | Messages | Where |
+|---|---|---|
+| high (operator), filed to `live-blockers` | 3 in 2 filings, `lessons-routing-084` (merge gate never proves the merge mutex is held; a not-live holder blocks admission) and `-085` (a rewriting quality gate's success never matches the committed tree) | `live-blockers/inbox/` |
+| already-covered | 8 | archived; subjects owned by `-049`, `-050`, `-051`, `-060`, `-064`, `-065` and two medium clusters |
+| stale | 3 | archived; `verification_handback` is accepted at HEAD, and the producer no longer writes `sonar_key` |
+| medium | 16 | `inbox/archive/{sender}/` |
+| low | 3 | same |
+
+Operator rulings: both borderlines, the merge-lock cluster and the rewriting gate, were graded **high**. Checked at `e7033b83a`: `pre_merge_gate.py` has no merge-lock reference, `_cmd_pre_commit_verify_freshness.py:261-262` matches a build row only on the current tree, `sonar.py:886`, `manage-metrics.py:130`. The other grades rest on the message text and the earlier indexes. As in the 2026-10-23 and 2026-11-02 runs, bodies stay verbatim in `inbox/archive/` and no copy was made under `lessons-archive/{level}/`. `live-blockers` was open (`phase: orchestrating`) before routing, and its inbox held no undrained `lessons-routing` filing to amend, so no recurrence was added by `inbox amend`.
+
+⚠ The R41 filings `lessons-routing-075`..`-083` are no longer in the `live-blockers` queue; they sit in its `inbox/archive/lessons-routing/`. This run did not establish whether that epic dispositioned them or only relocated them (the same caveat as the 2026-10-23 run).
+
+### 2026-11-10 — second `gather` run (cross-repo: TokenSheriff)
+
+At the operator's request, after the inbox drain above. This machine (Linux, `/home/oliver/git`) has nine sibling checkouts; two hold a lessons store: `API-Sheriff` (10) and `TokenSheriff` (36). The other seven are recorded zeros. The probe used `find`, not the ruling's `git status --ignored`. Per-lesson dispositions: `lessons-archive/INDEX.md` § Sweep 2026-11-10 (second run).
+
+| Disposition | Lessons | Where |
+|---|---|---|
+| stale | 2 | `lessons-archive/stale/TokenSheriff/` |
+| medium (operator) | 1 (`2026-11-09-16-012`, merge-queue enqueue with no already-queued check) | `lessons-archive/medium/TokenSheriff/` |
+| already-covered or low | 19 | `lessons-archive/low/TokenSheriff/` |
+| not applicable, left in source | 9 new, plus 15 graded 2026-11-01 and untouched (API-Sheriff 10, TokenSheriff 5) | — |
+
+Nothing was filed to `live-blockers`. 31 TokenSheriff lessons were newer than the 2026-11-01 sweep and were graded by two read-only leaves, whose evidence was spot-checked only for the borderline item (`_github_pr.py:3094`). 22 were moved with `mv -n` and all 22 destinations verified present; no source-repo commit was made. One leaf miscounted its own batch (it reported 10 not applicable and 6 in scope; its per-lesson table gives 9 and 7), so the table was used.
+
+⚠ **Likely cause of the earlier "unreconciled" ids, not verified:** the 2026-11-02 runs probed 27 sibling checkouts on a different machine (the ruling names `/Users/oliver/git/*`). This machine has nine, so those stores' populations differ by machine, not by loss. Whether the other machine still holds the ids was not checked.
+
+### 2026-11-10 — twelfth `ingest` run (corpus)
+
+Corpus at start: 29 active lessons (`2026-09-22-06-001` to `2026-10-02-13-007`), all about the `plan-marshall` bundle, none seen by an earlier sweep. Per-lesson dispositions: `lessons-archive/INDEX.md` § Sweep 2026-11-10 (third run).
+
+| Disposition | Lessons | Where |
+|---|---|---|
+| high (operator), filed to `live-blockers` | 1 in `lessons-routing-086` (a build-server submit with no plan selector builds the main checkout and reports success) | `live-blockers/inbox/`; body in `lessons-archive/filed-live-blockers/` |
+| stale, archived | 16 (fixed or retired at HEAD: #1559, #1685, #1718, #1750, #1758, #1866, #1941, PLAN-LB-42/44/54) | `lessons-archive/stale/` |
+| medium, archived | 4 (daemon timeout tuning, baseline-reconcile probe, the `post_responses` cluster of two) | `lessons-archive/medium/` |
+| already-covered, archived | 4 | `lessons-archive/low/` |
+| low, archived | 4 | `lessons-archive/low/` |
+
+All 29 were removed through `manage-lessons remove` after their archive copy existed (verdict `superseded` for the filed one, `redundant` for the four already covered, `obsolete` for the rest). Corpus after the run: 0 active. Operator rulings: the raw build-server submit was graded **high** from a borderline; the `post_responses` cluster and the baseline-reconcile probe were graded **medium**. Checked and re-read at `e7033b83a`: `github_pr.py:3648`, `build_server.py:436-452` and `:498-520`. The other grades rest on two read-only leaves' citations. `2026-09-24-05-001` collides with an archived lesson of the same id (a different lesson) and is stored as `medium/2026-09-24-05-001-post-responses.md`. `lessons-routing-054`, which three of the lessons relate to, was already drained in `live-blockers`, so the merge-lock recurrence was recorded here rather than amended.
+
 ## START HERE
 
 ### Annotations
