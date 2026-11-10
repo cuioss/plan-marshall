@@ -641,6 +641,52 @@ def test_remove_succeeds_while_a_wildcard_action_rule_stands(
     assert not [rule for rule in rules if rule.get('action') == 'shell' and rule.get('resource') == 'git push *']
 
 
+def test_remove_keeps_a_row_with_a_different_effect(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    """A removal never deletes an ask row because a deny was named at the same place."""
+    monkeypatch.chdir(tmp_path)
+    config = tmp_path / 'opencode.json'
+    config.write_text(
+        json.dumps(
+            {
+                'permissions': [
+                    {'action': 'shell', 'resource': '*', 'effect': 'allow'},
+                    {'action': 'shell', 'resource': 'git push *', 'effect': 'ask'},
+                ]
+            },
+            indent=2,
+        )
+        + '\n',
+        encoding='utf-8',
+    )
+
+    result = parse_toon(runtime.permission_fix('project', 'remove', ['deny(git push *)'], False))
+
+    assert result['status'] == 'success'
+    assert result['removed'] == 0
+    rules = _load(config)['permissions']
+    assert [rule for rule in rules if rule.get('resource') == 'git push *'] == [
+        {'action': 'shell', 'resource': 'git push *', 'effect': 'ask'}
+    ]
+
+
+def test_remove_does_not_report_a_wildcard_block_for_another_effect(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    """A wildcard rule carrying a different effect decides something else and blocks nothing."""
+    monkeypatch.chdir(tmp_path)
+    config = tmp_path / 'opencode.json'
+    config.write_text(
+        json.dumps({'permissions': [{'action': '*', 'resource': '*', 'effect': 'ask'}]}), encoding='utf-8'
+    )
+
+    result = parse_toon(runtime.permission_fix('project', 'remove', ['deny(git push *)'], False))
+
+    assert result['status'] == 'success'
+    assert result['removed'] == 0
+
+
 def test_remove_reports_the_wildcard_action_rule_it_cannot_remove(
     runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ):

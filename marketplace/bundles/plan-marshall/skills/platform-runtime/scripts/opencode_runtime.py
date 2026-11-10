@@ -623,15 +623,18 @@ def _rule_exists(rules: list[Any], action: str, resource: str, effect: str) -> b
     return present and _effective_rule_effect(rules, action, resource) == effect
 
 
-def _wildcard_action_rule(rules: list[Any], action: str, resource: str) -> dict[str, Any] | None:
-    """Return the rule whose ``action`` is the wildcard and that decides *resource*.
+def _wildcard_action_rule(rules: list[Any], action: str, resource: str, effect: str) -> dict[str, Any] | None:
+    """Return the wildcard-action rule that decides *resource* with *effect*.
 
     Such a rule decides every action, so removing a grant for one named action
     cannot take it down: the caller is told the named reason instead of being
-    handed a ``not_found`` while the effect is still in force.
+    handed a ``not_found`` while the effect is still in force. A wildcard rule
+    carrying a DIFFERENT effect decides something else, so it never blocks.
     """
     for rule in rules:
         if not isinstance(rule, dict) or rule.get('action') != '*' or action == '*':
+            continue
+        if _rule_effect(rule) != effect:
             continue
         if _resource_matches(rule.get('resource'), resource):
             return rule
@@ -693,10 +696,20 @@ def _upsert_permission_rule(rules: list[Any], action: str, resource: str, effect
     return PermissionRuleWrite(True)
 
 
-def _remove_permission_rule(rules: list[Any], action: str, resource: str) -> bool:
-    """Remove the exact ``(action, resource)`` rule; returns whether one was removed."""
+def _remove_permission_rule(rules: list[Any], action: str, resource: str, effect: str) -> bool:
+    """Remove the ``(action, resource, effect)`` rule; returns whether one was removed.
+
+    The effect is part of the identity: a caller that names a deny must not take
+    down an ``ask`` row sharing the action and resource, which would silently
+    change the outcome that row was deciding.
+    """
     for index, rule in enumerate(list(rules)):
-        if isinstance(rule, dict) and rule.get('action') == action and rule.get('resource') == resource:
+        if (
+            isinstance(rule, dict)
+            and rule.get('action') == action
+            and rule.get('resource') == resource
+            and _rule_effect(rule) == effect
+        ):
             del rules[index]
             return True
     return False
@@ -1888,28 +1901,30 @@ class OpenCodeRuntime(Runtime):
 
         if rules is not None and operation == 'remove':
             removed = 0
-            unresolved: list[str] = []
+            unresolved: list[tuple[str, str, str, str]] = []
             for item in arguments:
-                cat, pat, _ = to_opencode_grant(str(item))
+                cat, pat, act = to_opencode_grant(str(item))
                 action = _permission_action(cat)
                 if dry_run:
                     if any(
-                        isinstance(rule, dict) and rule.get('action') == action and rule.get('resource') == pat
+                        isinstance(rule, dict)
+                        and rule.get('action') == action
+                        and rule.get('resource') == pat
+                        and _rule_effect(rule) == act
                         for rule in rules
                     ):
                         removed += 1
                     else:
-                        unresolved.append(str(item))
-                elif _remove_permission_rule(rules, action, pat):
+                        unresolved.append((str(item), action, pat, act))
+                elif _remove_permission_rule(rules, action, pat, act):
                     removed += 1
                 else:
-                    unresolved.append(str(item))
+                    unresolved.append((str(item), action, pat, act))
             if not dry_run:
                 # Only a grant the removal could not take down is reported; a
                 # sibling that was removed is never turned into an error.
-                for item in unresolved:
-                    cat, pat, _ = to_opencode_grant(item)
-                    blocker = _wildcard_action_rule(rules, _permission_action(cat), pat)
+                for item, action, pat, act in unresolved:
+                    blocker = _wildcard_action_rule(rules, action, pat, act)
                     if blocker is not None:
                         return toon_error(
                             'permission fix',
@@ -2302,7 +2317,7 @@ class OpenCodeRuntime(Runtime):
                 changed = True
             elif remove and current == 'allow':
                 if not dry_run:
-                    _remove_permission_rule(rules, 'webfetch', '*')
+                    _remove_permission_rule(rules, 'webfetch', '*', 'allow')
                 changed = True
         else:
             perm = settings.setdefault('permission', {})

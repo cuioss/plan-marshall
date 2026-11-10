@@ -494,14 +494,14 @@ def _opencode_remove(settings_path: Path, settings: dict[str, Any], permission: 
     )
 
     result: dict[str, Any] = {'settings_file': str(settings_path)}
-    cat, pat, _ = to_opencode_grant(permission)
+    cat, pat, act = to_opencode_grant(permission)
 
     rules = _permission_rules(settings, create=False)
     if rules is not None:
         result['permission_shape'] = 'permissions'
         action = _permission_action(cat)
-        if not _remove_permission_rule(rules, action, pat):
-            blocker = _wildcard_action_rule(rules, action, pat)
+        if not _remove_permission_rule(rules, action, pat, act):
+            blocker = _wildcard_action_rule(rules, action, pat, act)
             if blocker is not None:
                 result.update(
                     {
