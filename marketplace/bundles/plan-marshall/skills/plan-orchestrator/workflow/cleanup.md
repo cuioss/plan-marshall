@@ -128,7 +128,7 @@ python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator cor
   --slug {slug} --plan PLAN-NN
 ```
 
-per staged spec (or read the same `declaration` field the emission gate saw). Flag `declaration: none named` — a staged spec whose deliverables carry no `Skills:` / `Persona:` lines — and flag `emit_allowed: false`, whose `missing_skills[]` names each declared skill or persona the installed bundles do not ship. The declaration is filled at staging from this verb's `suggested_skills` / `suggested_persona` (see [`decompose.md`](decompose.md) Step 4), so a spec that declares nothing is an authoring omission rather than a project that configured no domain skills — a project with no skills for the module still records the line as `Skills: none`.
+per staged spec (or read the same `declaration` field the emission gate saw). Flag `declaration: none named` — a staged spec whose deliverables carry NO `Skills:` / `Persona:` line at all — and flag `emit_allowed: false`, whose `missing_skills[]` names each declared skill or persona the installed bundles do not ship. A `Skills: none` line is NOT this finding: it is the author's answered absence and reports `declaration: declared`. The declaration is filled at staging from this verb's `suggested_skills` / `suggested_persona` (see [`decompose.md`](decompose.md) Step 4), so a spec with no line is an authoring omission rather than a project that configured no domain skills — a project with no skills for the module still records the line as `Skills: none`.
 
 ### Step 6 (A4): Duplication
 

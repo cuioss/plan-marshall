@@ -80,7 +80,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metada
   --plan-id {slug} --get --field parallelization_scope --store orchestrator
 ```
 
-Count `R`, the plans currently in `launched` status, and select up to `N − R` candidates — a block sized by the scope knob rather than a hardcoded single (at the default `N = 1` that block is exactly one). Walk `staged` plans in queue order whose dependencies (sequencing notes in their `{epic_dir}/plans/PLAN-NN-{plan_slug}.md` spec) are satisfied, and admit a candidate ONLY when both admission tests pass:
+Count `R`, the plans currently in `launched` status, and select up to `N − R` candidates — a block sized by the scope knob rather than a hardcoded single (at the default `N = 1` that block is exactly one). Walk `staged` plans in queue order whose dependencies (sequencing notes in their `{epic_dir}/plans/PLAN-NN-{plan_slug}.md` spec) are satisfied, and admit a candidate ONLY when both admission tests and the declaration gate below pass — the two tests decide overlap and readiness, and the gate decides whether the spec can be launched at all:
 
 - **Disjoint** — decided from the PARSER, not from a reader's judgement over the rendered `Surface (expected)` cell. The test has two halves and they come from **two different reads**, because no single verb produces both. Read the corpus's declared surfaces once:
 
@@ -96,20 +96,20 @@ Count `R`, the plans currently in `launched` status, and select up to `N − R` 
     --slug {slug}
   ```
 
-  A candidate passes the test **iff** ALL FOUR hold:
+  A candidate passes the disjointness test **iff** ALL THREE hold:
 
   1. its `corpus surfaces` row carries `admits_disjointness_check: true`;
   2. its own `spec_comparisons[]` row in the `corpus cross-check` payload carries `overlap_prompt_required: false` — or carries `true` and the operator answered that the overlap is not a problem (see **The overlap prompt** below);
-  3. that same `spec_comparisons[]` row carries `comparison_determinate: true`;
-  4. its `corpus spec-skills --plan {plan_id}` payload carries `emit_allowed: true` — an EMPTY `missing_skills[]`.
+  3. that same `spec_comparisons[]` row carries `comparison_determinate: true`.
 
-  **Conjunct 4 is the declaration gate.** Run
+  **The declaration gate is a THIRD admission test, not a disjointness fact.** Run
   `plan-marshall:plan-orchestrator:orchestrator corpus spec-skills --slug {slug} --plan {plan_id}`
-  before emitting and refuse the candidate when `emit_allowed` is `false`, naming each entry of
-  its `missing_skills[]`: a spec whose deliverable names a skill or persona the installed bundles
-  do not ship would launch a run told to apply a standard that is not there, and the lane stops on
-  it anyway. A spec that declares nothing is legal (`declaration: none named`) and passes — the
-  template asks for the lines, it does not make them load-bearing.
+  before emitting. It passes exactly when the payload carries `emit_allowed: true` — an EMPTY
+  `missing_skills[]`. Refuse the candidate otherwise, naming each entry of `missing_skills[]`: a
+  spec whose deliverable names a skill or persona the installed bundles do not ship would launch a
+  run told to apply a standard that is not there, and the lane stops on it anyway. A spec that
+  declares nothing is legal (`declaration: none named`) and passes — the template asks for the
+  lines, it does not make them load-bearing.
 
   Each read supplies exactly the half the other cannot: `corpus surfaces` publishes only THIS epic's own declarations — per-spec `derivation_status`, `admits_disjointness_check` and `claimed_count`, plus a flat `claimed[]` list — and carries no launched-plan surface and no intersection; `corpus cross-check` is the sole producer of the intersection and of the per-candidate verdict over it. Asking `corpus surfaces` alone for the overlap half asks it for a field it does not emit.
 

@@ -2785,15 +2785,39 @@ _HOLDS_AT = re.compile(r'holds at', re.IGNORECASE)
 #: unchanged. The look-arounds keep a HYPHENATED compound out: the word in
 #: ``statement-keeps-default`` names a rule, it does not assert a state.
 _PRESERVATION_WORD = re.compile(r'(?<![\w-])(?:still|keeps|unchanged)(?![\w-])', re.IGNORECASE)
-#: A double-quoted segment. A word inside one is NAMED, not asserted — a spec that
-#: quotes this rule's own vocabulary (``beside the words "still", "keeps"``) is
+#: A quoted segment, double or single. A word inside one is NAMED, not asserted — a
+#: spec that quotes this rule's own vocabulary (``beside the words "still"``) is
 #: describing the defect, not committing it.
-_QUOTED_SEGMENT = re.compile(r'"[^"]*"')
+_QUOTED_SEGMENT = re.compile(r'"[^"]*"|\'[^\']*\'')
 #: A commit id, or the template's own placeholder — never a code symbol.
 _SHA_TOKEN = re.compile(r'^(?:[0-9a-f]{7,40}|\{sha\})$', re.IGNORECASE)
 #: Clause boundaries inside one Done-when unit.
 _CLAUSE_SPLIT = re.compile(r'(?<=[.;:])\s+')
 _CODE_SPAN = re.compile(r'`([^`]+)`')
+
+#: A fenced-block delimiter line (CommonMark allows up to three spaces of indent).
+#: A Done-when or HYPOTHESIS line inside a fence is an EXAMPLE, exactly as the
+#: surface reader treats a fenced path: it is never read as a declaration.
+_FENCE_LINE = re.compile(r'^ {0,3}(`{3,}|~{3,})')
+
+
+def _fenced_line_indices(lines: list[str]) -> set[int]:
+    """The indices of the lines that sit inside (or delimit) a fenced block."""
+    masked: set[int] = set()
+    opening = ''
+    for index, line in enumerate(lines):
+        match = _FENCE_LINE.match(line)
+        if match:
+            masked.add(index)
+            marker = match.group(1)
+            if not opening:
+                opening = marker
+            elif marker[0] == opening[0] and len(marker) >= len(opening):
+                opening = ''
+            continue
+        if opening:
+            masked.add(index)
+    return masked
 
 
 def _done_when_units(text: str) -> list[str]:
@@ -2801,18 +2825,24 @@ def _done_when_units(text: str) -> list[str]:
 
     A unit opens with the Done-when label at the start of a line and runs to the
     next blank line, or with a Done-when heading whose body runs to the next
-    heading. Both shapes occur in the corpus, so both are read.
+    heading. Both shapes occur in the corpus, so both are read. A fenced block is
+    a SAMPLE: no line inside one opens or extends a unit.
     """
     lines = text.splitlines()
+    fenced = _fenced_line_indices(lines)
     units: list[str] = []
     index = 0
     while index < len(lines):
+        if index in fenced:
+            index += 1
+            continue
         stripped = lines[index].strip()
         if _DONE_WHEN_HEADING.match(stripped):
             collected: list[str] = []
             index += 1
             while index < len(lines) and not lines[index].lstrip().startswith('#'):
-                collected.append(lines[index])
+                if index not in fenced:
+                    collected.append(lines[index])
                 index += 1
             units.append(' '.join(' '.join(collected).split()))
             continue
@@ -2820,7 +2850,8 @@ def _done_when_units(text: str) -> list[str]:
             collected = [stripped]
             index += 1
             while index < len(lines) and lines[index].strip():
-                collected.append(lines[index].strip())
+                if index not in fenced:
+                    collected.append(lines[index].strip())
                 index += 1
             units.append(' '.join(' '.join(collected).split()))
             continue
@@ -2830,8 +2861,12 @@ def _done_when_units(text: str) -> list[str]:
 
 def _hypothesis_symbols(text: str) -> dict[str, str]:
     """Every code symbol a HYPOTHESIS claim of the spec names, with its claim line."""
+    lines = text.splitlines()
+    fenced = _fenced_line_indices(lines)
     symbols: dict[str, str] = {}
-    for line in text.splitlines():
+    for index, line in enumerate(lines):
+        if index in fenced:
+            continue
         if not re.match(r'^\s*-\s*HYPOTHESIS:', line):
             continue
         for span in _CODE_SPAN.findall(line):
@@ -3911,13 +3946,10 @@ def cmd_corpus_read(args: argparse.Namespace) -> dict[str, Any]:
 # reports as applicable to the module owning the path. A path neither rung places
 # is reported ``unmapped`` and its skills are never guessed.
 
-#: The persona each path KIND suggests, from the template's closed vocabulary.
-SPEC_SKILLS_PERSONAS = (
-    ('source', 'implementer'),
-    ('test', 'module-tester'),
-    ('document', 'documenter'),
-)
-SPEC_SKILLS_PERSONA_BY_KIND = dict(SPEC_SKILLS_PERSONAS)
+#: The persona each path KIND suggests, from the template's closed set. The set
+#: itself is authored once in `templates/plan-spec.md` and pinned by the template
+#: test; this map names only the three kinds a path can take.
+SPEC_SKILLS_PERSONA_BY_KIND = {'source': 'implementer', 'test': 'module-tester', 'document': 'documenter'}
 #: The kind order a mixed surface resolves its ONE suggested persona in.
 SPEC_SKILLS_KIND_ORDER = ('source', 'test', 'document')
 
@@ -3994,8 +4026,12 @@ def _profile_skills(profiles: Any, profile: str = 'implementation') -> list[str]
     return skills
 
 
-def _configured_domains() -> list[dict[str, Any]]:
+def _configured_domains() -> tuple[list[dict[str, Any]], bool]:
     """Every configured domain with its ``file_globs`` and its profile blocks.
+
+    Returns ``(domains, readable)``. ``readable`` is false when the DOMAIN KEY list
+    could not be read at all: an unreadable configuration is a failed read, never a
+    project that configures no domains, and the caller reports it as one.
 
     The domain keys come from ``skill-domains list``; each key's block comes from
     ``skill-domains get``, whose payload carries ``file_globs`` and one key per
@@ -4005,7 +4041,7 @@ def _configured_domains() -> list[dict[str, Any]]:
     listing = _script_payload(_CONFIG_NOTATION, ['skill-domains', 'list'], project_config=True)
     keys = listing.get('domains') if isinstance(listing, dict) else None
     if not isinstance(keys, list):
-        return []
+        return [], False
     domains: list[dict[str, Any]] = []
     for key in keys:
         if not isinstance(key, str):
@@ -4018,10 +4054,10 @@ def _configured_domains() -> list[dict[str, Any]]:
             {
                 'domain': key,
                 'globs': [entry for entry in globs if isinstance(entry, str)] if isinstance(globs, list) else [],
-                'profiles': payload,
+                'config': payload,
             }
         )
-    return domains
+    return domains, True
 
 
 def _glob_matches(path: str, glob: str) -> bool:
@@ -4095,7 +4131,10 @@ def cmd_corpus_spec_skills(args: argparse.Namespace) -> dict[str, Any]:
     - the SUGGESTION, derived from the spec's declared surface paths mapped to
       modules through the architecture client and placed in a configured domain
       by the project's own domain knowledge (see the block above) — a path no rung
-      places is reported ``unmapped``, never guessed;
+      places is reported ``unmapped``, never guessed. The surface is a SPEC-level
+      section, so the suggestion is ONE spec-wide list applied to every
+      deliverable; ``suggestion_scope: spec`` states that, and a deliverable that
+      touches only part of the surface narrows by hand;
     - the EMIT VERDICT, ``emit_allowed``: false exactly when a declared skill does
       not exist, so ``next`` can refuse to emit the spec and name what is missing.
 
@@ -4122,18 +4161,21 @@ def cmd_corpus_spec_skills(args: argparse.Namespace) -> dict[str, Any]:
     if derivation_status == SURFACE_UNREADABLE:
         surface_unreadable = _read_spec(spec)[1] or 'the surface could not be classified'
 
-    domains = _configured_domains()
+    domains, domains_readable = _configured_domains()
     applicable: dict[str, list[str]] = {}
     path_rows: list[dict[str, Any]] = []
     for entry in claim.claimed if claim is not None else ():
         module = _module_for_path(entry.path)
-        domain, rung = _domain_for_path(entry.path, module, domains, applicable)
+        domain, rung = _domain_for_path(entry.path, module, domains, applicable) if domains_readable else (None, '')
         mapped = domain is not None
         reason = ''
         if not mapped:
-            reason = (
-                'unmapped: no module owns the path' if not module else 'unmapped: no configured domain matches the path'
-            )
+            if not domains_readable:
+                reason = 'unmapped: the project configuration could not be read'
+            elif not module:
+                reason = 'unmapped: no module owns the path'
+            else:
+                reason = 'unmapped: no configured domain matches the path'
         path_rows.append(
             {
                 'path': entry.path,
@@ -4144,7 +4186,7 @@ def cmd_corpus_spec_skills(args: argparse.Namespace) -> dict[str, Any]:
                 'persona': SPEC_SKILLS_PERSONA_BY_KIND[_spec_path_kind(entry.path)],
                 'mapped': mapped,
                 'reason': reason,
-                'skills': _profile_skills(domain['profiles']) if domain is not None else [],
+                'skills': _profile_skills(domain['config']) if domain is not None else [],
             }
         )
     for raw in claim.unresolved if claim is not None else ():
@@ -4171,7 +4213,7 @@ def cmd_corpus_spec_skills(args: argparse.Namespace) -> dict[str, Any]:
         {
             'number': row['number'],
             'title': row['title'],
-            'declared_skills': spec_skills.declared_skills(row['skills']),
+            'declared_skills': row.get('declared_skills', []),
             'declared_persona': row['persona'],
             'suggested_persona': suggested_persona,
             'skills': suggested,
@@ -4186,8 +4228,11 @@ def cmd_corpus_spec_skills(args: argparse.Namespace) -> dict[str, Any]:
         'store': ORCHESTRATOR_STORE,
         'plan': plan,
         'spec': spec.name,
-        'skill_source': 'skill_domains.{domain}.profiles.implementation.defaults (project configuration)',
+        'skill_source': 'skill_domains.{domain}.implementation.defaults (project configuration)',
+        'suggestion_scope': 'spec',
         'configured_domains_total': len(domains),
+        'configured_domains_readable': domains_readable,
+        'suggestion_unavailable': '' if domains_readable else 'project_configuration_unreadable',
         'declaration': declaration['skills_note'],
         'deliverables_total': len(deliverables),
         'deliverables': deliverables,

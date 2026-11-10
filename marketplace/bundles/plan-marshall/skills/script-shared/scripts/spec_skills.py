@@ -36,11 +36,6 @@ DELIVERABLE_HEAD_RE = re.compile(r'^(?P<number>\d+)\.\s+(?P<title>.+?)\s*$')
 SKILLS_DECL_RE = re.compile(r'^(?:\s*[-*]\s*)?Skills:\s*(?P<value>.+?)\s*$')
 PERSONA_DECL_RE = re.compile(r'^(?:\s*[-*]\s*)?Persona:\s*(?P<value>.+?)\s*$')
 
-#: The persona KINDS the template offers, with the skill each resolves to. A bare
-#: kind is prefixed with the canonical ``persona-`` marker, so a spec may write
-#: either ``implementer`` or ``plan-marshall:persona-implementer``.
-PERSONA_KINDS = ('implementer', 'module-tester', 'integration-tester', 'security-expert', 'documenter')
-
 
 def _this_skill_dir() -> Path:
     """The shared module's own skill directory."""
@@ -82,7 +77,7 @@ def installed_bundle(skill_dir: Path | None = None) -> str | None:
 NO_SKILLS_VALUE = 'none'
 
 
-def spec_deliverables(spec: Path) -> list[dict[str, str]]:
+def spec_deliverables(spec: Path) -> list[dict[str, Any]]:
     """Read a staged spec's ``## Deliverables`` section into per-deliverable rows.
 
     Each row carries its number, title, raw ``Skills:`` value and raw
@@ -97,8 +92,8 @@ def spec_deliverables(spec: Path) -> list[dict[str, str]]:
     start = next((i for i, line in enumerate(lines) if line.strip() == DELIVERABLES_HEADING), None)
     if start is None:
         return []
-    rows: list[dict[str, str]] = []
-    current: dict[str, str] | None = None
+    rows: list[dict[str, Any]] = []
+    current: dict[str, Any] | None = None
     in_fence = False
     for line in lines[start + 1 :]:
         if line.strip().startswith('```'):
@@ -250,9 +245,14 @@ def resolve_deliverable_skills(
     rows = spec_deliverables(spec)
     declared: list[str] = []
     personas: list[str] = []
+    # A declaration is the LINE, not the skill list: ``Skills: none`` states the
+    # author looked and the project configures none, which is a different fact from
+    # a deliverable that carries no line at all.
+    declaration_seen = any(row['skills'].strip() or row['persona'].strip() for row in rows)
     for row in rows:
         skills = declared_skills(row['skills'])
         declared.extend(skills)
+        row['declared_skills'] = skills
         row['skills'] = ', '.join(skills)
         row['persona'] = declared_persona(row['persona'])
         if row['persona']:
@@ -275,7 +275,7 @@ def resolve_deliverable_skills(
         'deliverables': rows,
         'missing_skills': missing,
         'missing_probed': probed,
-        'skills_note': 'declared' if declared or personas else 'none named',
+        'skills_note': 'declared' if declaration_seen else 'none named',
     }
 
 
@@ -283,7 +283,6 @@ __all__ = [
     'DELIVERABLES_HEADING',
     'DELIVERABLE_HEAD_RE',
     'NO_SKILLS_VALUE',
-    'PERSONA_KINDS',
     'declared_persona',
     'declared_skills',
     'installed_bundle',

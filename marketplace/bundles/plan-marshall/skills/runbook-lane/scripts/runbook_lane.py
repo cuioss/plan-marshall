@@ -744,7 +744,7 @@ def cmd_executor_skew(args: argparse.Namespace) -> dict[str, Any]:
     return result
 
 
-def _spec_deliverables(spec: Path) -> list[dict[str, str]]:
+def _spec_deliverables(spec: Path) -> list[dict[str, Any]]:
     """Read a staged spec's ``## Deliverables`` section into per-deliverable rows.
 
     Delegates to the shared reader: each row carries its number, title, raw
@@ -755,7 +755,12 @@ def _spec_deliverables(spec: Path) -> list[dict[str, str]]:
 
 
 def _declared_skills(value: str) -> list[str]:
-    """Split a ``Skills:`` value into its ``bundle:skill`` notations."""
+    """Split a ``Skills:`` value into its ``bundle:skill`` notations.
+
+    Delegates to the shared reader, which also drops the ``none`` literal — a
+    deliverable that writes ``Skills: none`` declares that the project configures
+    none, and probing a skill called ``none`` would refuse the emission.
+    """
     return spec_skills.declared_skills(value)
 
 

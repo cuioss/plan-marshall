@@ -140,10 +140,11 @@ gate silently rather than being refused there.}
 
 - {OBSERVED|HYPOTHESIS}: `{path}`:{line} — `{symbol}` (verify-at-outline when HYPOTHESIS)
 
-⛔ **An entry is a FULL repo-relative path.** A bare filename (`b.py`) is reported as unresolved by
-the reader rather than resolved against a sibling: write `marketplace/bundles/x/b.py`, never
-`b.py`. The same reader drops nothing in silence any more — an unresolvable entry reaches
-`unresolved` instead.
+⛔ **An entry is a FULL repo-relative path.** A bare FILE NAME whose suffix a repository file carries
+(`b.py`) is reported as unresolved by the reader rather than resolved against a sibling: write
+`marketplace/bundles/x/b.py`, never `b.py`. The reader's bare-name test is a stated suffix vocabulary,
+so an out-of-vocabulary or extensionless bare name is still dropped in silence — which is why the
+authoring rule is the full path, not the reader's report.
 
 ## Dependencies and Sequencing
 

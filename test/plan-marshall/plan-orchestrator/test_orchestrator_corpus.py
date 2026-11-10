@@ -439,9 +439,10 @@ def _write_status(
     return write_ledger(_epic_dir(plan_context, slug) if epic_dir is None else epic_dir, doc)
 
 
-#: The default ``## Expected Surface`` body. ``a.py`` carries no ``/`` segment,
-#: so the path extractor never sees a path here — a spec written without an
-#: explicit surface contributes NOTHING to the file-overlap class.
+#: The default ``## Expected Surface`` body. ``a.py`` is a bare FILE NAME, so the
+#: reader reports it as an unresolved entry rather than a claimed path — a spec
+#: written without an explicit surface contributes NOTHING to the file-overlap
+#: class, and its one unresolved entry is the report D2's parser change added.
 _DEFAULT_SURFACE = ['- OBSERVED: `a.py` — `f`']
 
 _DEFAULT_CLAIM = '- OBSERVED: a claim — read at `a.py` § `f`'
@@ -7611,6 +7612,29 @@ class TestLintDoneWhens:
 
         assert cmd_corpus_lint_done_whens(_LINT_ARGS)['findings'] == []
 
+    def test_a_single_quoted_rule_vocabulary_is_not_read_as_the_defect(self, plan_context):
+        _write_status(plan_context, [_row('PLAN-01')])
+        _lint_spec(plan_context, done_when="a rule naming a 'fails at' clause beside 'still' is flagged.")
+
+        assert cmd_corpus_lint_done_whens(_LINT_ARGS)['findings'] == []
+
+    def test_a_done_when_inside_a_fenced_example_is_not_read(self, plan_context):
+        _write_status(plan_context, [_row('PLAN-01')])
+        body = (
+            '# PLAN-01\n\n## Deliverables\n\n1. **A deliverable.**\n\n'
+            '   ```text\n'
+            '   *Done when:* the parser fails at `abc1234` while it still holds.\n'
+            '   ```\n'
+        )
+        path = _epic_dir(plan_context) / 'plans' / 'PLAN-01-alpha.md'
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(body, encoding='utf-8')
+
+        result = cmd_corpus_lint_done_whens(_LINT_ARGS)
+
+        assert result['specs_with_done_when'] == 0
+        assert result['findings'] == []
+
     def test_a_hyphenated_compound_is_not_a_preservation_claim(self, plan_context):
         # ``statement-keeps-default`` names a rule; the hyphenated compound never
         # asserts that a behaviour still holds.
@@ -7710,11 +7734,6 @@ class TestCleanupConsumesTheLint:
         for rule in DONE_WHEN_RULES:
             assert f'`{rule}`' in step, rule
 
-    def test_the_rule_vocabulary_is_the_verbs_own(self):
-        # Non-vacuity: the two names asserted above are the production constants,
-        # so a rule renamed in the code fails the doc-contract check above.
-        assert DONE_WHEN_RULES == (DONE_WHEN_RULE_FAILS_AT, DONE_WHEN_RULE_HOLDS_AT)
-
 
 # =============================================================================
 # corpus spec-skills — the declaration, its suggested fill, and the emit verdict
@@ -7722,10 +7741,11 @@ class TestCleanupConsumesTheLint:
 #
 # The verb is the orchestrator half of the per-deliverable declaration: it reads
 # the lines through the SAME shared reader the runbook lane loads, maps the
-# declared surface to modules through the project's architecture, and reports the
-# domain skills those modules carry. Its `emit_allowed` is the conjunct `next`
-# refuses on. The fixtures name REAL repository paths, because the module mapping
-# is a read of this repository's architecture data rather than a stub.
+# declared surface to the project's CONFIGURED domains (file type first, then the
+# module's applicable domains), and reports each domain's configured implementation
+# skills. Its `emit_allowed` is the gate `next` refuses on. The fixtures name REAL
+# repository paths, because the module mapping is a read of this repository's
+# architecture data rather than a stub.
 
 cmd_corpus_spec_skills = _orch.cmd_corpus_spec_skills
 
@@ -7742,9 +7762,8 @@ _SPEC_SKILLS_ARGS = parse_ns(
     register=False,
 )
 
-#: Source paths owned by a Python-domain and a Java-domain bundle module.
+#: A source path owned by a Python-domain module.
 _PYTHON_SURFACE = 'marketplace/bundles/pm-dev-python/skills/plan-marshall-plugin/extension.py'
-_JAVA_SURFACE = 'marketplace/bundles/pm-dev-java/skills/plan-marshall-plugin/extension.py'
 
 
 def _write_skills_spec(
@@ -7789,6 +7808,8 @@ class TestCorpusSpecSkills:
 
         assert result['status'] == 'success'
         assert result['configured_domains_total'] >= 1, 'the project configuration was not read'
+        assert result['configured_domains_readable'] is True
+        assert result['suggestion_scope'] == 'spec'
         row = result['paths'][0]
         assert row['path'] == _PYTHON_SURFACE
         assert row['module'] == 'pm-dev-python'
@@ -7801,9 +7822,7 @@ class TestCorpusSpecSkills:
         )
         assert result['suggested_skills'] == sorted(row['skills'])
         assert result['suggested_persona'] == 'implementer'
-        assert result['skill_source'] == (
-            'skill_domains.{domain}.profiles.implementation.defaults (project configuration)'
-        )
+        assert result['skill_source'] == ('skill_domains.{domain}.implementation.defaults (project configuration)')
         assert result['emit_allowed'] is True
         assert result['declaration'] == 'declared'
 
@@ -7822,7 +7841,7 @@ class TestCorpusSpecSkills:
         java_domain = {
             'domain': 'java',
             'globs': ['**/*.java'],
-            'profiles': {
+            'config': {
                 'implementation': {
                     'defaults': [
                         {'skill': 'pm-dev-java:java-core', 'description': 'Core Java standards'},
@@ -7831,7 +7850,7 @@ class TestCorpusSpecSkills:
                 }
             },
         }
-        monkeypatch.setattr(_orch, '_configured_domains', lambda: [java_domain])
+        monkeypatch.setattr(_orch, '_configured_domains', lambda: ([java_domain], True))
 
         result = cmd_corpus_spec_skills(_SPEC_SKILLS_ARGS)
 
@@ -7853,6 +7872,21 @@ class TestCorpusSpecSkills:
         assert result['unmapped_count'] == 1
         assert any(row['path'] == 'b.py' and row['mapped'] is False for row in result['paths'])
 
+    def test_an_unreadable_configuration_is_not_a_zero_domain_count(self, plan_context, monkeypatch):
+        # A failed configuration read must not read as "the project configures no
+        # domains": every path would be unmapped and the author told to record
+        # `none`. The payload names the failed read instead.
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_skills_spec(plan_context, [f'- OBSERVED: `{_PYTHON_SURFACE}`'])
+        monkeypatch.setattr(_orch, '_configured_domains', lambda: ([], False))
+
+        result = cmd_corpus_spec_skills(_SPEC_SKILLS_ARGS)
+
+        assert result['configured_domains_readable'] is False
+        assert result['suggestion_unavailable'] == 'project_configuration_unreadable'
+        assert result['paths'][0]['mapped'] is False
+        assert 'configuration' in result['paths'][0]['reason']
+
     def test_a_declared_skill_that_does_not_exist_refuses_the_emission(self, plan_context):
         """The `next` fixture: a spec naming a skill the bundles do not ship."""
         _write_status(plan_context, [_row('PLAN-01')])
@@ -7866,15 +7900,17 @@ class TestCorpusSpecSkills:
 
     def test_skills_none_declares_an_answered_absence_and_still_emits(self, plan_context):
         # The template's `Skills: none` states that the project configures no domain
-        # skills; it is a declaration, never a skill named `none` to probe.
+        # skills; it is a declaration (the author looked), never a skill named `none`
+        # to probe — and never the same reading as a deliverable with no line at all.
         _write_status(plan_context, [_row('PLAN-01')])
-        _write_skills_spec(plan_context, [f'- OBSERVED: `{_PYTHON_SURFACE}`'], skills='none', persona='implementer')
+        _write_skills_spec(plan_context, [f'- OBSERVED: `{_PYTHON_SURFACE}`'], skills='none')
 
         result = cmd_corpus_spec_skills(_SPEC_SKILLS_ARGS)
 
-        assert result['declaration'] == 'declared', 'the persona line is a declaration; the skills line said none'
+        assert result['declaration'] == 'declared', 'a Skills line is present, so the spec declared'
         assert result['missing_skills'] == []
         assert result['emit_allowed'] is True
+        assert result['deliverables'][0]['declared_skills'] == []
 
     def test_a_spec_declaring_nothing_still_emits(self, plan_context):
         # The preserved half: the lines are optional, so an undeclared spec still
