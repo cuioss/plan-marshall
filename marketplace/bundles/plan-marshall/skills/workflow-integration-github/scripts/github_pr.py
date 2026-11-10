@@ -1842,10 +1842,9 @@ def cmd_fetch_findings(args):
     refutes the unconditional claim — a fetch at the SAME HEAD whose head-SHA read fails
     yields the undecidable outcome instead of the credit, so the answer changed without
     any observation state being consumed. An in-place EDIT is not a credit: it moves the
-    comment, not the ledger's anchor: an edit adds nothing on top of the arms that
-    already place a comment (its own named commit, or a recorded SHA equal to the merge
-    candidate), and it never places one those arms reject.
-    places the comment at that commit.
+    comment, not the ledger's anchor, so it adds nothing on top of the arms that already
+    place a comment (its own named commit, or a recorded SHA equal to the merge
+    candidate) and never places one those arms reject.
 
     One arm outranks the ledger: a comment of such a bot whose OWN EVIDENCE names a
     commit is decided by that commit, whatever its timestamps or edit history say.

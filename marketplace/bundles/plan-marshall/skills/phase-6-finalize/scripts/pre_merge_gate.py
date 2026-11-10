@@ -1217,14 +1217,26 @@ def _participation_refusal(plan_id: str, head: str | None, verdict: dict[str, An
     unproven = verdict['unproven_bots']
     detail = verdict.get('detail') or 'no reason was reported'
     authorizable = bool(verdict.get('authorizable'))
-    remedy = (
-        f'A required reviewer is never demoted, and the only ruling that covers its silence is a '
-        f'recorded HEAD-bound merge authorization over {REVIEW_BARRIER_GAP_CLASS}.'
-        if authorizable
-        else 'No merge authorization covers this: a participation state nobody could read is not a '
-        'review gap, so the gate must be made readable (roster, provider, producer, or predicate) '
-        'before this merge can proceed.'
-    )
+    if verdict.get('error') == 'participation_scope_ambiguous':
+        # A readable gate that still cannot answer: the store holds rows belonging to no
+        # known PR, so the generic "make it readable" remedy names work already done.
+        remedy = (
+            'No merge authorization covers this: the findings store spans more than one PR and '
+            'carries rows with no PR stamp, so a pending finding may exist here that the gate '
+            'could neither place nor ignore. Stamp, migrate or retire those rows (or resolve '
+            'them) before this merge can proceed.'
+        )
+    elif authorizable:
+        remedy = (
+            f'A required reviewer is never demoted, and the only ruling that covers its silence is a '
+            f'recorded HEAD-bound merge authorization over {REVIEW_BARRIER_GAP_CLASS}.'
+        )
+    else:
+        remedy = (
+            'No merge authorization covers this: a participation state nobody could read is not a '
+            'review gap, so the gate must be made readable (roster, provider, producer, or predicate) '
+            'before this merge can proceed.'
+        )
     payload: dict[str, Any] = {
         'status': 'error',
         'error': MERGE_PARTICIPATION_UNPROVEN,

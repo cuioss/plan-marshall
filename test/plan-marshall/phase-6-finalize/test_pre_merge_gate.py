@@ -738,6 +738,30 @@ def test_the_production_chain_reads_the_roster_the_producer_and_the_predicate(mo
     assert 'other-bot:400 lines' in predicate_argv
 
 
+def test_the_chain_refuses_a_store_whose_rows_cannot_be_placed(monkeypatch):
+    """A legacy row on a multi-PR store is neither joinable nor ignorable at a merge.
+
+    The predicate excludes it from the scoped read, so it never reaches the pending-finding
+    input — which makes it a hole in the gate that decides the merge. The chain refuses it
+    by name rather than reporting a clean verdict over a row nobody could place.
+    """
+    unplaceable = dict(
+        _PREDICATE_PAYLOAD,
+        store_scope='pr',
+        unscoped_stored_findings=1,
+        unscoped_stored_finding_ids=['deadbeef'],
+    )
+
+    verdict, _calls = _participation_chain(
+        monkeypatch, _full_chain_responses(**{gate._COMPLETENESS_NOTATION: unplaceable})
+    )
+
+    assert verdict['status'] == 'error'
+    assert verdict['error'] == 'participation_scope_ambiguous'
+    assert verdict['unscoped_stored_finding_ids'] == ['deadbeef']
+    assert verdict['roster_read'] is True
+
+
 def test_the_chain_does_not_reach_the_producer_when_the_roster_is_empty(monkeypatch):
     """An empty roster is decided before any provider call: nothing to prove, nothing to read."""
     empty = dict(_ROSTER_PAYLOAD, params={'required_bots': '', 'optional_bots': ''})
