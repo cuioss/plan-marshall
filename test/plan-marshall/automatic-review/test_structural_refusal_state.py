@@ -823,3 +823,141 @@ class TestUnrecognisedRefusalIsADistinctState:
         """
         seam = self._seam()
         assert seam.UNRECOGNISED_REFUSAL_MAX_CHARS is None
+
+
+# ---------------------------------------------------------------------------
+# The STRUCTURAL member's ROUTE out of the participation guard
+# ---------------------------------------------------------------------------
+
+
+class TestTheParticipationGuardEscalatesAStructuralRefusal:
+    """The guard must not loop back on a refusal that no re-entry can change.
+
+    ``refused_structural`` is the one blocking member whose answer does not depend on
+    time, yet the guard's ``participation_complete: false`` branch loops back into FIND
+    for every unproven bot alike. The loop re-enters, awaits a bot that has already
+    refused for a reason the diff itself supplies, and returns the same verdict. The
+    guard therefore carries the ROUTE as data — ``guard_action`` — rather than leaving
+    a reader of the document to re-derive it, and these pin that route.
+
+    ⛔ The knob is not an input: ``check_completeness`` takes no
+    ``review_rate_window_await``, which is the structural half of the fix. A size
+    refusal is observed on the FINDINGS surface (``refused_causes``) as readily as on
+    the rate-limit one, so a routing that existed only inside the rate-window recovery
+    would loop back for exactly the refusals that never reached it.
+    """
+
+    def test_a_size_refusal_visible_only_in_refused_causes_escalates(self, plan_context):
+        """The fixture the deliverable names: nothing but a ``refused_causes`` entry.
+
+        No rate-limit notice, no ``rate_limited_bots[]`` record — the size cause
+        arrives on the findings surface alone. At the pre-fix classifier this bot still
+        resolved ``refused_structural`` (that mapping shipped), but the guard had no
+        route to act on it and recorded ``loop_back``.
+        """
+        plan_id = 'structural-guard-causes-only'
+        plan_context.plan_dir_for(plan_id)
+
+        result = rc.check_completeness(
+            plan_id,
+            ['sourcery'],
+            refused_bots=['sourcery'],
+            refused_causes={'sourcery': 'size'},
+            refusal_size_caps={'sourcery': '150000 diff characters'},
+            measured_diff_size='210000 diff characters',
+        )
+
+        assert _state_of(result, 'sourcery') == rc.STATE_REFUSED_STRUCTURAL
+        assert result['participation_complete'] is False
+
+        guard = result['guard_action']
+        assert guard['action'] == rc.GUARD_ACTION_ESCALATE_ASK
+        assert guard['reason'] == rc.STATE_REFUSED_STRUCTURAL
+        assert guard['bot_kind'] == 'sourcery'
+        assert guard['refusal_cause'] == rc.CAUSE_SIZE
+        # The gap the operator is asked to accept is QUANTIFIED: the ceiling the notice
+        # stated, beside the measured size that hit it.
+        assert guard['cap'] == '150000 diff characters'
+        assert guard['measured_diff_size'] == '210000 diff characters'
+
+    def test_the_escalation_offers_two_or_three_options_and_never_a_wait(self, plan_context):
+        """⛔ The non-option the member exists to remove is the assertion.
+
+        A wait offered for a diff-size ceiling is an action the operator can take that
+        is guaranteed not to work, so the option set is checked with the same
+        ``_WAIT_OFFER`` sweep the documents are held to — one vocabulary for the code
+        and the prose.
+        """
+        plan_id = 'structural-guard-option-set'
+        plan_context.plan_dir_for(plan_id)
+
+        result = rc.check_completeness(
+            plan_id,
+            ['sourcery'],
+            refused_bots=['sourcery'],
+            refused_causes={'sourcery': 'size'},
+        )
+
+        options = result['guard_action']['prompt_options']
+        assert 2 <= len(options) <= 3, f'a structural escalation offers two or three options, got {options}'
+        waiting = [option for option in options if _WAIT_OFFER.search(option)]
+        assert not waiting, f'the structural escalation offers a wait, which cannot work: {waiting}'
+
+    def test_the_cap_and_size_are_unknown_rather_than_defaulted(self, plan_context):
+        """A notice that states no ceiling, and a diff nobody measured, stay unknown."""
+        plan_id = 'structural-guard-unmeasured'
+        plan_context.plan_dir_for(plan_id)
+
+        result = rc.check_completeness(
+            plan_id,
+            ['sourcery'],
+            refused_bots=['sourcery'],
+            refused_causes={'sourcery': 'size'},
+        )
+
+        guard = result['guard_action']
+        assert guard['cap'] == 'unknown'
+        assert guard['measured_diff_size'] == 'unknown'
+
+    def test_an_optional_bot_refusing_structurally_never_escalates(self, plan_context):
+        """The quorum is over REQUIRED bots; an optional bot's silence gates nothing.
+
+        Escalating it would put a decision in front of the operator that no gate needs
+        answered — and under the ``defer`` policy it would skip a merge for a reviewer
+        nobody required.
+        """
+        plan_id = 'structural-guard-optional'
+        plan_context.plan_dir_for(plan_id)
+
+        result = rc.check_completeness(
+            plan_id,
+            ['coderabbit'],
+            optional_bots=['sourcery'],
+            refused_bots=['sourcery'],
+            refused_causes={'sourcery': 'size'},
+        )
+
+        assert _state_of(result, 'sourcery') == rc.STATE_REFUSED_STRUCTURAL
+        assert result['guard_action']['action'] == rc.GUARD_ACTION_LOOP_BACK
+        assert 'bot_kind' not in result['guard_action']
+
+    def test_an_await_futile_non_structural_member_keeps_the_loop_back(self, plan_context):
+        """⛔ MATCHED CONTROL — the route is the STRUCTURAL member, not "any refusal".
+
+        A hard quota is unrecoverable too, but its remedy is a recorded authorization
+        the guard does not mint, so the guard still records a loop-back and the
+        document's own remedy guard governs it. Without this arm, an implementation
+        that escalated EVERY refusal would pass the tests above.
+        """
+        plan_id = 'structural-guard-hard-quota'
+        plan_context.plan_dir_for(plan_id)
+
+        result = rc.check_completeness(
+            plan_id,
+            ['sourcery'],
+            refused_bots=['sourcery'],
+            refused_causes={'sourcery': 'quota'},
+        )
+
+        assert _state_of(result, 'sourcery') in {rc.STATE_REFUSED_HARD, rc.STATE_REFUSED_AWAITABLE}
+        assert result['guard_action']['action'] == rc.GUARD_ACTION_LOOP_BACK

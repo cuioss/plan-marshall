@@ -239,7 +239,7 @@ Read `re_review_on_loopback` (default: `false`) off the returned `params` object
      --plan-id {plan_id} --type pr-comment
    ```
 
-   Walk `findings` newest-first and capture `{reviewed_commit_sha}` from the first finding whose `bot_kind` is non-empty. When no bot-authored finding exists (the list is empty, or every finding is human-authored), `{reviewed_commit_sha}` is empty. That is NOT a reason to skip the section: a bot with no stored finding is exactly the bot the participation read in step 3 exists to find.
+   Walk `findings` newest-first and capture `{reviewed_commit_sha}` from the first finding whose `bot_kind` is non-empty **and whose `title` names THIS pull request** (`PR #{pr_number} …` — the producer stamps the PR into the title and into the first `detail` line of every finding it files). ⛔ **The store is PLAN-scoped, so a plan that has worked an earlier PR still holds that PR's findings**, and the newest of those is not this PR's review record: taking it would compare another PR's reviewed commit against this PR's head and silently decide whether to join on a fact about a different pull request. A finding filed for another PR of this plan is skipped here exactly as it is skipped by `trigger-bot`'s scoped join below. When no bot-authored finding of THIS PR exists (the list is empty, every finding is human-authored, or every bot finding names another PR), `{reviewed_commit_sha}` is empty. That is NOT a reason to skip the section: a bot with no stored finding is exactly the bot the participation read in step 3 exists to find.
 
    ⛔ **This read comes BEFORE step 3, and the order is load-bearing.** Step 3 issues the producer call, which re-stamps every stored finding's `reviewed_commit_sha` to the current HEAD. Read afterwards, the stamp always equals HEAD and the stored-finding bots are never joined.
 
@@ -265,7 +265,7 @@ Read `re_review_on_loopback` (default: `false`) off the returned `params` object
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:automatic-review:review_completeness trigger-bot \
-     --plan-id {plan_id} --required-bots "{required_bots}" --optional-bots "{optional_bots}" \
+     --plan-id {plan_id} --pr-number {pr_number} --required-bots "{required_bots}" --optional-bots "{optional_bots}" \
      --stale-participation-bots "{stale_participation_bots}" \
      --reviewed-commit-sha "{reviewed_commit_sha}" --head-sha "{head_sha}"
    ```
@@ -274,6 +274,7 @@ Read `re_review_on_loopback` (default: `false`) off the returned `params` object
 
    - `trigger_bots[]` — every bot whose review is out of date, required bots first: the bots named in `{stale_participation_bots}`, joined with the bots that have stored findings when `{head_sha}` differs from `{reviewed_commit_sha}`. A bot in neither `required_bots` nor `optional_bots` is not listed; the return names it in `unclassified_bots[]`.
    - `required_stale_bots[]` — the required bots named in `{stale_participation_bots}`.
+   - `store_scope` — `pr` when the stored-finding join was scoped to `{pr_number}`, `unscoped` when it was not. ⛔ **The plan's findings store spans every PR the plan has worked**, so the join MUST be scoped or an earlier PR's review is re-triggered as if it were this PR's — which is what `--pr-number` above is for. A row whose PR could not be placed (a finding filed before the producer stamped one) is reported in `unscoped_stored_findings` / `unscoped_stored_finding_ids` and NOT joined: on a plan that spans more than one PR it belongs to no known PR, and assigning it to this one would be the silent join the scoping exists to prevent.
 
 5. Choose the bots this pass triggers, as `{bots_to_trigger}`:
 
@@ -325,6 +326,8 @@ This sub-block is evaluated on exactly TWO outcomes of the `github_re_review re-
 - `matched: true` AND `head_sha_verified: false` — the **incremental-review decline** routed here from the arm above. The bot answered, so no budget expired, but its answer did not reference `{head_sha}` — it named no reviewed commit at all, or named a different one — and re-triggering it produces another decline rather than a review.
 
 Leaving either unhandled means the unreviewed HEAD silently proceeds to the merge gate (the gap this contract closes). Read `re_review_on_timeout` off the same `params` object returned by the `step-params get` call above (default: `ask`) and branch on its value; the policy is applied verbatim on both entry paths, so a decline and a timeout dispose identically. **Every branch is decision-logged** — advancing an unreviewed HEAD is always an explicit, auditable decision.
+
+⛔ **This sub-block is for REQUIRED bots only — an optional bot's decline or timeout is RECORDED and does not escalate.** `trigger_bots[]` carries optional bots whenever `re_review_on_loopback` is true, and `re_review_on_timeout` is the policy for a review whose absence HOLDS THE STEP OPEN — which an optional bot never does (the participation quorum is over `required_bots`, so an optional bot's silence is not a failure anywhere else in this contract). Escalating one therefore puts a question in front of the operator that no gate needs answered, and under `defer` it would skip the merge for a reviewer nobody required. So: when the bots added to `{timed_out_bots}` / `{declined_bots}` on this pass are ALL optional, decision-log at INFO what was recorded, carry them into the accumulator for visibility exactly as any other bot, and proceed to "Wait for review-bot comments" — do NOT enter the `proceed` / `defer` / `ask` branches. When at least one REQUIRED bot is in either set, the branches below run for the pass as written, and an optional bot in the same set is still carried in `{declined_bots}` and still escalates nothing of its own.
 
 **Resolve `{outcome}`, `{outcome_detail}` and `{declined_bots}` ONCE here, from the entry path that reached this sub-block.** Every branch below — decision-log line and returned envelope alike — renders these rather than restating a budget expiry, because the two entry paths are not the same observation and only one of them expired a budget:
 
@@ -1303,7 +1306,8 @@ Invoke WITHOUT `--triage-ran` — triage has not run at this FIND step, so only 
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:automatic-review:review_completeness check \
-  --plan-id {plan_id} --required-bots "{required_bots}" --optional-bots "{optional_bots}" \
+  --plan-id {plan_id} --pr-number {pr_number} \
+  --required-bots "{required_bots}" --optional-bots "{optional_bots}" \
   --participated-bots "{participated_bots}" --in-progress-bots "{in_progress_bots}" \
   --refused-bots "{refused_bots}" --stale-participation-bots "{stale_participation_bots}" \
   --declined-bots "{declined_bots}" \
@@ -1342,10 +1346,24 @@ alone to make an empty list safe.**
 Read `participation_complete`, `pending_bots`, `unproven_bots`, `bot_states`, `known_bot_kinds`, and `review_state_summary` from the returned TOON. `bot_states` carries one `{bot_kind, state}` row per classified bot, each resolving to exactly one state: a member of the closed non-participation taxonomy (`absent`, `not_triggered`, `in_progress`, `refused_awaitable`, `refused_hard`, `refused_unknown`, `refused_structural`, `participated_but_empty`, `participated_stale`, `declined`, `unregistered_kind`) or `participated`. The taxonomy's SIZE is deliberately not stated here — the members are enumerated instead, so a reader who wants a total counts the enumeration and a member added later cannot leave a stale numeral behind it. `known_bot_kinds` is the live registry kind set every configured token was checked against — the ADR-019 coverage discriminator for that membership test, and the remedy an `unregistered_kind` verdict is unreadable without. A refusal takes its DEFAULT member from the refusing bot's three-valued registry `rate_limit_class` — `awaitable_window` → `refused_awaitable`, `hard_quota` → `refused_hard`, `unknown` → `refused_unknown`, so a declared *we-do-not-know* reaches the reader as ignorance rather than as a positive hard-quota finding — and TWO per-refusal observations displace that default: an observed `cause: size` gives `refused_structural` (the ceiling is on the diff rather than on a window), and a refusal no arm of the recognition stack could read gives `refused_unknown` whatever the class says (nothing was read, so nothing is known). Both outrank the class because the class is declared per BOT while each observation is made per REFUSAL. `review_state_summary` is the compact one-line distribution of those states (e.g. `"3 refused"`, `"1 reviewed, 2 empty"`, or `""` for an empty roster); Branch A interpolates it into `display_detail` so a reader can tell *reviewed-and-clean* from *nobody-reviewed*. `pending_bots` is reported for visibility but does NOT gate the mark-done at this FIND step (the `--triage-ran` flag is omitted). The predicate is fail-closed over the required set — a plan with no observations reports every required bot as `absent` (or `not_triggered`, when no `pull_request` run exists at all) and `participation_complete: false`, and a bot whose registry record declares no `participation_evidence` can never be proven a participant.
 
 - **`participation_complete: true`** — every REQUIRED bot resolved to `participated` or `participated_but_empty`. An unproven OPTIONAL bot never blocks. Pending-but-fetched findings do NOT block here; they await the downstream dispatcher-owned unified triage. Proceed to Branch A and mark the step `done` — recording participation, never a quality claim.
-- **`participation_complete: false`** — at least one REQUIRED bot is in `unproven_bots` (`absent`, `not_triggered`, `in_progress`, any of the four refusal members, `participated_stale`, `declined`, or `unregistered_kind`). A pending-but-fetched bot, an optional bot, or a bot that participated-but-empty does NOT cause `false` at this FIND step. The step is **NOT markable done** on this pass. Take exactly one of two paths:
+- **`participation_complete: false`** — at least one REQUIRED bot is in `unproven_bots` (`absent`, `not_triggered`, `in_progress`, any of the four refusal members, `participated_stale`, `declined`, or `unregistered_kind`). A pending-but-fetched bot, an optional bot, or a bot that participated-but-empty does NOT cause `false` at this FIND step. The step is **NOT markable done** on this pass.
+
+  ⛔ **Read `guard_action` from the return FIRST, and take it as the decision.** The predicate decides what this verdict DOES, from the states it has just classified, so no reader re-derives it: `guard_action: loop_back` (the ordinary case) falls through to path 1 below; `guard_action: escalate_ask` with `guard_reason: refused_structural` is the STRUCTURAL exception and takes path 1a.
+
+  **1a. Escalate a STRUCTURAL refusal — do NOT record a loop-back.** When `guard_action` is `escalate_ask` with `refused_structural`, a REQUIRED bot refused because the DIFF is over a ceiling its notice stated, so no loop-back and no wait can change its answer. Decision-log, then return `status: escalate_ask` with `reason: refusal_structural` — **Branch 0's envelope**, whose field set is defined once in "Output" below and is NOT restated here. Render `prompt_options[]` from the return's `guard_prompt_options` verbatim, which is **exactly TWO options — split the diff, or accept the coverage gap under a recorded merge authorization — and NEVER a wait and never a demotion** (Branch 0 states why). Carry the return's `guard_bot_kind`, `guard_refusal_cause`, `guard_cap` and `guard_refused_diff_size` as the envelope's `{bot_kind}`, `refusal_cause`, `cap` and `measured_diff_size`; each is the literal `unknown` when unmeasured, never a default.
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    decision --plan-id {plan_id} --level INFO \
+    --message "(plan-marshall:automatic-review) participation guard ESCALATES — required bot {bot_kind} is refused_structural (cap={cap}, measured_diff_size={measured_diff_size}); returning escalate_ask{reason: refusal_structural} instead of a loop-back no re-entry can change"
+  ```
+
+  ⛔ **This routing does not depend on `review_rate_window_await`, and must not be made to.** That knob arms the "Rate-limit refusal recovery" sequence, which is a TEMPORAL remedy: it asks whether a window will reopen. A structural refusal has no window — the ceiling is a property of the diff — so turning the temporal wait off says nothing about it, and gating this escalation on the knob would leave a project with the knob off looping back forever on a bot that cannot answer differently. The refusal can also be observed on either surface (a rate-limit notice carrying a `size` cause, or a `refused_causes[]` record the findings fetch reported), and both reach this same verdict through the predicate's own classification.
+
+  Take exactly one of the remaining two paths otherwise:
   1. **Loop back into FIND** (default): treat the unproven participation as an un-surfaced review — re-enter the FIND pipeline (await the bot) and record Branch C (`--outcome loop_back --loop-back-target 6-finalize`) for this iteration instead of Branch A. The terminal Branch A mark waits for a later pass that returns `participation_complete: true`. (This is a FIND-participation loop-back — awaiting an unproven bot review — NOT a triage loop-back; triage loop-back, including any real still-pending incompleteness after triage runs, is owned by the unified triage.)
 
-     Read `bot_states` before re-entering, because some blocking members name a **different** remedy than awaiting, and for those the default loop-back is an action guaranteed not to produce the review. A required bot on `participated_stale` has a review that only predates this HEAD, so the productive action is the re-review trigger rather than a longer wait for a bot that already published. The loop-back recorded here leads to that trigger on re-entry: "Re-review after a loop-back fix commit (trigger B)" reads the stale set from participation state at the current HEAD and triggers every required bot it names, even when `re_review_on_loopback` is `false`, so no `--force` and no config change is needed to have the bot asked again; a PR-wide `not_triggered` means no reviewer was ever asked, so the productive action is to generate the trigger event at all; a required bot on `declined` answered a re-review with a comment that does not reference the merge candidate, and re-triggering it produces another decline, so the productive action is to record a HEAD-bound operator merge authorization over the decline — never a demotion, because a required bot is mandatory; a required bot on `refused_hard` is out of a budget this plan cannot restore, so the productive action is that same recorded authorization rather than a wait for a window that does not reopen on a useful timescale; and a required bot on `refused_structural` refused because the DIFF is over its ceiling, so no loop-back and no wait can change its answer — the productive actions are to split the diff, or to accept the gap under a recorded merge authorization; and a required bot on `unregistered_kind` is not a reviewer at all but a NAME no reviewer answers to, so the productive action is to correct the configured token (see the escalation immediately below). Each is still a block, and awaiting any of them is waiting for something that will not arrive on its own.
+     Read `bot_states` before re-entering, because some blocking members name a **different** remedy than awaiting, and for those the default loop-back is an action guaranteed not to produce the review. A required bot on `participated_stale` has a review that only predates this HEAD, so the productive action is the re-review trigger rather than a longer wait for a bot that already published. The loop-back recorded here leads to that trigger on re-entry: "Re-review after a loop-back fix commit (trigger B)" reads the stale set from participation state at the current HEAD and triggers every required bot it names, even when `re_review_on_loopback` is `false`, so no `--force` and no config change is needed to have the bot asked again; a PR-wide `not_triggered` means no reviewer was ever asked, so the productive action is to generate the trigger event at all; a required bot on `declined` answered a re-review with a comment that does not reference the merge candidate, and re-triggering it produces another decline, so the productive action is to record a HEAD-bound operator merge authorization over the decline — never a demotion, because a required bot is mandatory; a required bot on `refused_hard` is out of a budget this plan cannot restore, so the productive action is that same recorded authorization rather than a wait for a window that does not reopen on a useful timescale; a required bot on `refused_structural` never reaches this path at all — path 1a above escalated it, because the ceiling is on the DIFF and no loop-back can change its answer; and a required bot on `unregistered_kind` is not a reviewer at all but a NAME no reviewer answers to, so the productive action is to correct the configured token (see the escalation immediately below). Each is still a block, and awaiting any of them is waiting for something that will not arrive on its own.
 
      **Escalating `unregistered_kind` — name the token, the kind set, and the login mapping.** This is the one blocking member whose remedy is neither a wait, nor a trigger, nor an acceptance: the configured NAME matches no member of the live registry kind set, so no reviewer was ever asked and none ever could be — a re-trigger has nobody to send to. What makes it hard to act on is that it renders like `absent`, and the two prescribe opposite moves (chase the reviewer vs. edit the config), so the escalation MUST name three things. All three are already in hand — none is re-derived here:
 
@@ -1365,7 +1383,7 @@ Read `participation_complete`, `pending_bots`, `unproven_bots`, `bot_states`, `k
 
      The step remains NOT markable done on this pass. Because no wait and no trigger can clear this member, the only two exits are an operator config correction (after which a later pass re-classifies the token) or the force-done escape hatch below with its mandatory recorded reason.
 
-     **Generating the trigger for `not_triggered`.** Naming two states with opposite remedies is only useful if BOTH remedies are reachable, so the `not_triggered` arm carries the same concrete mechanism the `participated_stale` arm does — the D2 re-review registry. `not_triggered` is a **PR-WIDE** observable (no `pull_request`-event run exists for this PR at all — the `{not_triggered}` item of the participation guard above), so there is no per-bot evidence to condition on and every participating bot is equally un-asked: fire the trigger **once per bot in `required_bots ∪ optional_bots`**, never per-bot on a per-bot observation. Resolve the HEAD SHA and its commit time once, then invoke the registry per bot:
+     **Generating the trigger for `not_triggered`.** Naming two states with opposite remedies is only useful if BOTH remedies are reachable, so the `not_triggered` arm carries the same concrete mechanism the `participated_stale` arm does — the D2 re-review registry. `not_triggered` is a **PR-WIDE** observable (no `pull_request`-event run exists for this PR at all — the `{not_triggered}` item of the participation guard above), so there is no per-bot evidence to condition on and every participating bot is equally un-asked: fire the trigger **once per bot in `required_bots ∪ optional_bots`**, never per-bot on a per-bot observation. ⛔ **The same optional-bot filter the timeout sub-block states applies here: an optional bot's decline or timeout is RECORDED and does not escalate.** That bot was triggered because nobody was, not because its review is required — so its decline or timeout takes a decision-log line and enters the accumulator for visibility, and raises no `escalate_ask{reason: re_review_timeout}` on its own. A REQUIRED bot's decline or timeout behaves exactly as the sub-block states. Resolve the HEAD SHA and its commit time once, then invoke the registry per bot:
 
      ```bash
      git -C {worktree_path} rev-parse HEAD
@@ -1687,7 +1705,8 @@ The canonical argparse surface for the invocable scripts this skill registers: `
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:automatic-review:review_completeness check \
-  --plan-id PLAN_ID [--required-bots [REQUIRED_BOTS]] [--optional-bots [OPTIONAL_BOTS]] \
+  --plan-id PLAN_ID [--pr-number PR_NUMBER] \
+  [--required-bots [REQUIRED_BOTS]] [--optional-bots [OPTIONAL_BOTS]] \
   [--participated-bots [PARTICIPATED_BOTS]] [--in-progress-bots [IN_PROGRESS_BOTS]] \
   [--refused-bots [REFUSED_BOTS]] [--stale-participation-bots [STALE_PARTICIPATION_BOTS]] \
   [--declined-bots [DECLINED_BOTS]] [--unrecognised-refusal-bots [UNRECOGNISED_REFUSAL_BOTS]] \
@@ -1695,6 +1714,12 @@ python3 .plan/execute-script.py plan-marshall:automatic-review:review_completene
   [--refused-causes [REFUSED_CAUSES]] [--refusal-size-caps [REFUSAL_SIZE_CAPS]] \
   [--measured-diff-size [MEASURED_DIFF_SIZE]]
 ```
+
+`--pr-number` scopes the findings read to one pull request. It is a store-scoping scalar, not a bot
+observation: the store is PLAN-scoped, so an earlier PR's findings join this PR's verdict unless the
+read is scoped. Omitting it is legal and reported (`store_scope: unscoped`), and a row whose PR could
+not be placed travels in `unscoped_stored_findings` rather than being joined on a plan that spans more
+than one PR.
 
 `--measured-diff-size` is **not** a list flag: it is a single scalar, because it measures the PR rather
 than a bot. Its value is nonetheless OPTIONAL, for the same transport reason every list flag's is —
@@ -1835,14 +1860,23 @@ reviewer can have a ceiling nobody has taught the registry to read, and collapsi
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:automatic-review:review_completeness trigger-bot \
-  --plan-id PLAN_ID [--required-bots [REQUIRED_BOTS]] [--optional-bots [OPTIONAL_BOTS]] \
+  --plan-id PLAN_ID [--pr-number PR_NUMBER] \
+  [--required-bots [REQUIRED_BOTS]] [--optional-bots [OPTIONAL_BOTS]] \
   [--stale-participation-bots [STALE_PARTICIPATION_BOTS]] \
   [--reviewed-commit-sha [REVIEWED_COMMIT_SHA]] [--head-sha [HEAD_SHA]]
 ```
 
 Lists every bot trigger B must request a fresh review from. It returns `trigger_bots[]` — required
 bots first, in `--required-bots` order, then the optional ones by name — together with
-`required_stale_bots[]`, `stored_finding_bots[]`, `stored_findings_stale` and `unclassified_bots[]`.
+`required_stale_bots[]`, `stored_finding_bots[]`, `stored_findings_stale`, `unclassified_bots[]`, and
+the scope fields `store_scope` / `unscoped_stored_findings` / `unscoped_stored_finding_ids`.
+
+`--pr-number` scopes the stored-finding population to one pull request. The plan's findings store is
+plan-scoped, so without it a bot whose finding was filed for an EARLIER PR of the same plan is joined
+and triggered as though that review were out of date for this one. Omitted, every stored finding joins
+and `store_scope` says `unscoped`. A row whose PR could not be placed (written before the producer
+stamped one) is reported in `unscoped_stored_findings` and NOT joined when the store spans more than
+one PR.
 
 The list is the union of two sources. `--stale-participation-bots` takes the
 `stale_participation_bots[]` field of `github_pr fetch_findings` verbatim, as `bot_kind:evidence_kind`

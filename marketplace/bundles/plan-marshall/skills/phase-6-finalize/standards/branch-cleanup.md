@@ -1030,13 +1030,18 @@ Feed the retained sets to the same predicate the FIND step uses:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:automatic-review:review_completeness \
-  check --plan-id {plan_id} --required-bots "{required_bots}" --optional-bots "{optional_bots}" \
+  check --plan-id {plan_id} --pr-number {pr_number} \
+  --required-bots "{required_bots}" --optional-bots "{optional_bots}" \
   --participated-bots "{participated_bots}" --refused-bots "{refused_bots}" \
   --stale-participation-bots "{stale_participation_bots}" --declined-bots "{declined_bots}" \
   --refused-causes "{refused_causes}" --refusal-size-caps "{refusal_size_caps}" \
   --unrecognised-refusal-bots "{unrecognised_refusal_bots}" \
   --measured-diff-size "{measured_diff_size}"
 ```
+
+`--pr-number` scopes the findings read to this pull request. The plan's findings store is
+plan-scoped, so without it an EARLIER PR's stored review joins this PR's verdict — and this is the
+call that decides a merge.
 
 Append the bare `--not-triggered` flag to that call when and only when the read above reported `has_pull_request_run: false`. It is a `store_true` bool carrying no value of its own, so it is never interpolated and never quoted — the quoting discipline below governs the list flags only.
 

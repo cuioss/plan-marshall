@@ -987,6 +987,10 @@ def _check_participation(plan_id: str, pr_number: int, project_dir: str) -> dict
         'check',
         '--plan-id',
         plan_id,
+        # Scope the stored-findings read to the PR being merged: the plan's store spans
+        # every PR it has worked, so an earlier PR's review would otherwise join this one.
+        '--pr-number',
+        str(pr_number),
         '--required-bots',
         ','.join(required),
     ]

@@ -729,3 +729,84 @@ class TestBothConsumerDocsExemptEveryAwaitFutileMember:
         assert planted in str(rejection.value), (
             f'the guard must reject exactly the planted awaitable member {planted}; got {rejection.value}'
         )
+
+
+# ---------------------------------------------------------------------------
+# The STRUCTURAL member's ROUTE out of the participation guard — doc contract
+# ---------------------------------------------------------------------------
+
+_GUARD_FALSE_ANCHOR = '- **`participation_complete: false`**'
+
+
+def _guard_false_branch() -> str:
+    """The SKILL's ``participation_complete: false`` branch, sliced to its next peer.
+
+    Bounded by the document's own bullet structure rather than a character count: a
+    fixed window silently stops covering whatever is appended past its end, and the
+    routing this class pins is exactly what a later edit would append. ``index`` raises
+    when the anchor moves, which fails loudly rather than passing.
+    """
+    text: str = _AR_SKILL.read_text(encoding='utf-8')
+    start = text.index(_GUARD_FALSE_ANCHOR)
+    nxt = re.search(r'^(?:- \*\*|##)\s', text[start + len(_GUARD_FALSE_ANCHOR) :], re.MULTILINE)
+    return text[start : start + len(_GUARD_FALSE_ANCHOR) + nxt.start()] if nxt else text[start:]
+
+
+def _assert_guard_routes_structural(text: str) -> None:
+    """THE guard-routing rule — one definition, called by the guard AND its control.
+
+    The branch must (a) route on the predicate's own ``guard_action``, (b) name the
+    structural member as the one that escalates, (c) state that the routing does not
+    depend on ``review_rate_window_await``, and (d) forbid a wait in the escalation's
+    option set. Lives in a helper so the negative control executes the guard's OWN
+    assertions instead of re-implementing a rule shaped like them.
+    """
+    assert 'guard_action' in text, (
+        "the guard branch does not route on the predicate's guard_action, so the "
+        'structural route is re-derived by a reader and drifts from the code'
+    )
+    assert 'escalate_ask' in text, 'the guard branch never names the escalation it must return'
+    assert f'`{rc.STATE_REFUSED_STRUCTURAL}`' in text, (
+        'the guard branch does not name refused_structural as the member that escalates'
+    )
+    assert 'does not depend on `review_rate_window_await`' in text, (
+        'the guard branch does not state its independence from review_rate_window_await — '
+        'the knob arms the temporal recovery and says nothing about a diff-size ceiling'
+    )
+    assert 'NEVER a wait' in text, "the guard branch does not forbid a wait in the structural escalation's options"
+
+
+class TestTheGuardBranchRoutesTheStructuralRefusal:
+    """A structural refusal escalates from the guard, whatever the knob and surface."""
+
+    def test_the_guard_branch_routes_refused_structural_to_the_escalation(self):
+        """The shipped SKILL text is held to the rule the code implements."""
+        _assert_guard_routes_structural(_guard_false_branch())
+
+    def test_the_rule_rejects_a_branch_that_only_loops_back(self):
+        """⛔ Negative control: the shipped defect, planted — the guard must FAIL on it.
+
+        This is the pre-fix text: an unproven required bot is looped back, with the
+        structural member's impossible remedy merely described. A rule that rejected
+        every synthetic branch would produce the same red, so the shipped text is
+        asserted ACCEPTED above.
+        """
+        broken = (
+            f'{_GUARD_FALSE_ANCHOR} — take one path: record Branch C '
+            '(`--outcome loop_back --loop-back-target 6-finalize`).'
+        )
+        with pytest.raises(AssertionError) as rejection:
+            _assert_guard_routes_structural(broken)
+        assert 'guard_action' in str(rejection.value)
+
+    def test_the_code_option_set_and_the_documented_one_are_the_same_fact(self):
+        """The escalation's options are code, and the document must not offer a wait.
+
+        The leaf RETURNS the option set, so it is the machine-readable copy; a wait in
+        the returned set would reach an operator's screen even if the prose forbade it.
+        """
+        options = rc.GUARD_STRUCTURAL_OPTIONS
+        assert 2 <= len(options) <= 3
+        waiting = [option for option in options if _WAIT_OFFER.search(option)]
+        assert not waiting, f'the returned structural options contain a wait: {waiting}'
+        assert 'NEVER a wait' in _guard_false_branch()
