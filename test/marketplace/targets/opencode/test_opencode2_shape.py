@@ -166,19 +166,22 @@ def test_emitted_agent_permissions_carry_action_resource_effect(
 def test_emitted_agent_permissions_evaluate_like_the_source_tool_grants(
     bundle_root: Path, tmp_path: Path, opencode_config_dir: Path
 ):
-    """Last-match-wins evaluation per tool equals the source ``tools:`` grant.
+    """Every granted tool is allowed, and no shell catch-all overrides a global deny.
 
-    The source grants ``Read, Write, Bash, Task``. Under OpenCode 2's tool
-    names that is ``read``, ``edit`` (Write and Edit both map to ``edit``),
-    ``shell`` and ``subagent``: each must evaluate to ``allow``. A tool the
-    source did NOT grant must not evaluate to ``allow``.
+    The source grants ``Read, Write, Bash, Task``. Under OpenCode 2's tool names
+    that is ``read``, ``edit`` (Write and Edit both map to ``edit``), ``shell``
+    and ``subagent``. Agent rules are appended after the global ones, so a
+    ``{shell, *, allow}`` here would re-decide a command the global list denied;
+    the shell grant is therefore not emitted and OpenCode's own base policy
+    decides it. A tool the source did NOT grant must not evaluate to ``allow``.
     """
     out = tmp_path / 'out'
     emit_bundles(bundle_root, out, opencode_config_dir)
 
     rules = _permissions(out / 'agent' / 'demo-agent.md')
-    for granted in ('read', 'edit', 'shell', 'subagent'):
+    for granted in ('read', 'edit', 'subagent'):
         assert _effect(rules, granted) == 'allow', f'{granted} is granted in source but not allowed after emit'
+    assert not [rule for rule in rules if rule['action'] == 'shell'], 'no agent shell rule may be emitted'
     for ungranted in ('webfetch', 'websearch', 'glob', 'grep'):
         assert _effect(rules, ungranted) != 'allow', f'{ungranted} is not granted in source but evaluates allow'
 

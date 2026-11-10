@@ -16,7 +16,7 @@ import json
 import pathlib
 
 import pytest
-from opencode_runtime import OPENCODE_DEFAULT_PERMISSIONS, OpenCodeRuntime
+from opencode_runtime import OPENCODE_DEFAULT_PERMISSIONS, OpenCodeRuntime, to_opencode_grant
 from toon_parser import parse_toon
 
 from conftest import PROJECT_ROOT
@@ -67,6 +67,14 @@ def _effective_effect(rules: list[dict], action: str, resource: str) -> str | No
     return hits[-1]['effect'] if hits else None
 
 
+def _effective_effect_any_action(rules: list[dict], action: str, resource: str) -> str | None:
+    """Evaluate the way OpenCode 2 does, including the ``*`` action wildcard."""
+    hits = [
+        rule for rule in rules if rule.get('action') in (action, '*') and _matches(rule.get('resource', ''), resource)
+    ]
+    return hits[-1]['effect'] if hits else None
+
+
 def _assert_no_legacy_map(data: dict) -> None:
     assert 'permission' not in data, 'a `permission` map must never be added beside a `permissions` list'
 
@@ -113,7 +121,21 @@ def test_new_skeleton_is_opencode2_shaped(runtime: OpenCodeRuntime, tmp_path: pa
     _assert_no_legacy_map(data)
     rules = data['permissions']
     assert isinstance(rules, list) and rules
-    assert rules[0]['action'] == 'shell' and rules[0]['resource'] == '*'
+    assert all(rule['action'] == 'shell' and rule['effect'] == 'allow' for rule in rules)
+
+
+def test_a_new_skeleton_carries_no_shell_catch_all(runtime: OpenCodeRuntime, tmp_path: pathlib.Path):
+    """No skeleton rule re-decides a command a global deny already decided.
+
+    Project rules are appended after the global ones, so a skeleton catch-all
+    there would decide every command the global list denied. The client answers
+    ``ask`` when nothing matches, which is the default the catch-all restated.
+    """
+    path = runtime.permission_settings_path('project', write=True, project_dir=str(tmp_path))
+    rules = _load(pathlib.Path(path))['permissions']
+
+    assert not [rule for rule in rules if rule['resource'] == '*'], 'the skeleton must carry no catch-all'
+    assert {rule['resource'] for rule in rules} == set(OPENCODE_DEFAULT_PERMISSIONS)
 
 
 # ---------------------------------------------------------------------------
@@ -287,3 +309,232 @@ def test_health_permissions_reads_the_permissions_list(
 def test_default_permissions_constant_is_not_empty() -> None:
     """Vacuity guard: an empty default set would make the assertions above hollow."""
     assert OPENCODE_DEFAULT_PERMISSIONS
+
+
+# ---------------------------------------------------------------------------
+# rule writer: conflicts and the evaluated action wildcard
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize('requested', ['ask(git push *)', 'allow(git push *)'])
+def test_ensure_refuses_to_override_a_more_specific_later_deny(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, requested: str
+):
+    """A requested rule is never moved past a later, more specific deny.
+
+    The list grants broadly, denies ``git push --force *``, then ends with a
+    broader ``git *`` ask. Making ``git push *`` ask or allow effective would
+    have to cross that deny, changing an outcome the caller did not name, so the
+    write is a named conflict and the file is left byte-identical.
+    """
+    monkeypatch.chdir(tmp_path)
+    config = tmp_path / 'opencode.json'
+    config.write_text(
+        json.dumps(
+            {
+                'permissions': [
+                    {'action': 'shell', 'resource': '*', 'effect': 'allow'},
+                    {'action': 'shell', 'resource': 'git push --force *', 'effect': 'deny'},
+                    {'action': 'shell', 'resource': 'git *', 'effect': 'ask'},
+                ]
+            },
+            indent=2,
+        )
+        + '\n',
+        encoding='utf-8',
+    )
+    before = config.read_bytes()
+
+    result = parse_toon(runtime.permission_fix('project', 'ensure', [requested], False))
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'permission_conflict'
+    assert config.read_bytes() == before, 'a conflicting write must leave the file untouched'
+
+
+def test_the_bare_shell_tool_names_the_shell_catch_all():
+    """``shell`` is OpenCode 2's shell tool, not the literal command ``shell``."""
+    assert to_opencode_grant('deny(shell)') == ('bash', '*', 'deny')
+
+
+def test_a_wildcard_action_rule_decides_the_requested_effect(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    """The action wildcard is evaluated, so a new allow has to outrank it."""
+    monkeypatch.chdir(tmp_path)
+    config = tmp_path / 'opencode.json'
+    config.write_text(
+        json.dumps({'permissions': [{'action': '*', 'resource': '*', 'effect': 'deny'}]}, indent=2) + '\n',
+        encoding='utf-8',
+    )
+
+    result = parse_toon(runtime.permission_fix('project', 'ensure', ['allow(read)'], False))
+
+    assert result['status'] == 'success'
+    rules = _load(config)['permissions']
+    assert _effective_effect_any_action(rules, 'read', '/tmp/x') == 'allow'
+
+
+def test_an_opencode1_map_write_maps_subagent_to_task(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    """An OpenCode 1 map knows ``task``, so a ``subagent`` grant is written as ``task``."""
+    monkeypatch.chdir(tmp_path)
+    config = tmp_path / 'opencode.json'
+    config.write_text(json.dumps({'permission': {'bash': {}}}), encoding='utf-8')
+
+    result = parse_toon(runtime.permission_fix('project', 'ensure', ['subagent'], False))
+
+    assert result['status'] == 'success'
+    perm = _load(config)['permission']
+    assert perm.get('task') == 'allow'
+    assert 'subagent' not in perm
+
+
+def test_configure_maps_subagent_to_the_map_task_key(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    """``permission configure`` writes the same map key the fix verbs do."""
+    monkeypatch.chdir(tmp_path)
+    config = tmp_path / 'opencode.json'
+    config.write_text(json.dumps({'permission': {'bash': {}}}), encoding='utf-8')
+
+    parse_toon(runtime.permission_configure('project', [{'rule': 'subagent'}]))
+
+    perm = _load(config)['permission']
+    assert perm.get('task') == 'allow'
+    assert 'subagent' not in perm
+
+
+def test_fix_remove_maps_subagent_to_the_map_task_key(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Removing a ``subagent`` grant deletes the ``task`` key it was written as."""
+    monkeypatch.chdir(tmp_path)
+    config = tmp_path / 'opencode.json'
+    config.write_text(json.dumps({'permission': {'bash': {}, 'task': 'allow'}}), encoding='utf-8')
+
+    result = parse_toon(runtime.permission_fix('project', 'remove', ['subagent'], False))
+
+    assert result['removed'] == 1
+    assert 'task' not in _load(config)['permission']
+
+
+def test_a_bare_task_grant_on_a_map_file_writes_task(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    """A ``task`` grant is already the OpenCode 1 name and keeps it."""
+    monkeypatch.chdir(tmp_path)
+    config = tmp_path / 'opencode.json'
+    config.write_text(json.dumps({'permission': {'bash': {}}}), encoding='utf-8')
+
+    runtime.permission_fix('project', 'ensure', ['task'], False)
+
+    assert _load(config)['permission'].get('task') == 'allow'
+
+
+# ---------------------------------------------------------------------------
+# unreadable input and failed writes are reported
+# ---------------------------------------------------------------------------
+
+
+def test_an_unparsable_config_is_reported_and_left_untouched(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    """A config that does not parse is never loaded as an error skeleton and written over."""
+    monkeypatch.chdir(tmp_path)
+    config = tmp_path / 'opencode.json'
+    config.write_text('not json', encoding='utf-8')
+
+    result = parse_toon(runtime.permission_fix('project', 'ensure', ['deny(git push *)'], False))
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'load_error'
+    assert config.read_text(encoding='utf-8') == 'not json'
+
+
+def test_a_non_utf8_config_returns_the_loader_error(runtime: OpenCodeRuntime, tmp_path: pathlib.Path):
+    """Undecodable bytes are a failed read, not an empty settings object."""
+    config = tmp_path / 'opencode.json'
+    config.write_bytes(b'\xff\xfe{"permissions": []}')
+
+    loaded = runtime.permission_load_settings(str(config))
+
+    assert 'error' in loaded
+
+
+def test_ensure_defaults_reports_a_failed_save(
+    runtime: OpenCodeRuntime, list_settings: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    """A defaults write that never reached disk carries an error, not just ``applied: False``."""
+    monkeypatch.setattr(runtime, 'permission_save_settings', lambda *_args, **_kwargs: False)
+    settings = runtime.permission_load_settings(str(list_settings))
+
+    result = runtime.permission_ensure_defaults(settings, str(list_settings), dry_run=False)
+
+    assert result['applied'] is False
+    assert 'error' in result
+
+
+def test_project_initial_setup_reports_an_unparsable_config(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Setup surfaces the permission write it used to discard."""
+    monkeypatch.chdir(tmp_path)
+    config = tmp_path / 'opencode.json'
+    config.write_text('not json', encoding='utf-8')
+
+    result = parse_toon(runtime.project_initial_setup(str(tmp_path), 'opencode'))
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'permission_write_failed'
+    assert config.read_text(encoding='utf-8') == 'not json'
+
+
+def test_ensure_wildcards_does_not_wrap_a_failed_result(
+    runtime: OpenCodeRuntime, list_settings: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    """A failed defaults write is an error envelope, never a success one."""
+    monkeypatch.setattr(runtime, 'permission_save_settings', lambda *_args, **_kwargs: False)
+
+    result = parse_toon(runtime.permission_ensure_wildcards('project', str(list_settings.parent), False))
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'io_error'
+
+
+# ---------------------------------------------------------------------------
+# one deny reader
+# ---------------------------------------------------------------------------
+
+
+def test_both_deny_readers_report_the_same_hybrid_deny_set():
+    """A file carrying both shapes reports its list denies and its map denies."""
+    from opencode_runtime import _deny_rules, _deny_rules_from_config
+
+    config = {
+        'permissions': [{'action': 'shell', 'resource': '*', 'effect': 'allow'}],
+        'permission': {'bash': {'rm *': 'deny'}},
+    }
+
+    from_list = {(rule['action'], rule['resource']) for rule in _deny_rules(config)}
+    from_config = set(_deny_rules_from_config(config))
+
+    assert from_list == from_config
+    assert ('bash', 'rm *') in from_list
+
+
+def test_both_deny_readers_report_an_agent_scoped_deny():
+    """An ``agents.*.permissions`` deny is a deny at both entry points."""
+    from opencode_runtime import _deny_rules, _deny_rules_from_config
+
+    config = {
+        'permissions': [],
+        'agents': {'b': {'permissions': [{'action': 'shell', 'resource': 'gh *', 'effect': 'deny'}]}},
+    }
+
+    from_list = {(rule['action'], rule['resource']) for rule in _deny_rules(config)}
+    from_config = set(_deny_rules_from_config(config))
+
+    assert from_list == from_config
+    assert ('shell', 'gh *') in from_list

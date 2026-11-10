@@ -60,6 +60,12 @@ LIST_PERMISSION_TOOLS: frozenset[str] = frozenset()
 # target-absent marker (an explicit ``null``) does not.
 _TOOL_KEY_MISSING = object()
 
+#: The OpenCode 2 action that runs shell commands. An agent rule on this action
+#: with ``resource: "*"`` re-decides every command a global deny already
+#: decided, because agent rules are appended last, so the emitter never writes
+#: one.
+_SHELL_ACTION = 'shell'
+
 
 class UnmappedFrontmatterError(RuntimeError):
     """Raised when a required frontmatter field is missing from a source file."""
@@ -305,10 +311,13 @@ def transform_agent_frontmatter(
     Maps Claude ``tools`` declarations into an OpenCode 2 ``permissions``
     LIST of ``{action, resource, effect}`` rules via
     ``mapping['tool_permissions']``. OpenCode 2 evaluates that list
-    last-match-wins, so the rules are written specific-after-any-catch-all:
-    this transform emits no catch-all of its own (a tool the source does not
-    grant matches nothing and falls through to OpenCode's ``ask`` default),
-    and every emitted grant is a specific rule that must come after one.
+    last-match-wins and appends the agent's rules AFTER the global ones, so
+    this transform emits no catch-all of its own: an agent rule with
+    ``resource: "*"`` re-decides every command a global ``deny`` already
+    decided, and for the shell action that is a security regression (a global
+    ``gh *`` or ``rm *`` deny becomes an allow). A shell grant is therefore
+    deliberately not emitted at all; OpenCode 2's own base policy decides what
+    an unlisted action may do.
 
     A tool with no key in ``tool_permissions`` raises ``UnmappedToolError``
     so the CLI exits with code 2; a key present with ``null`` is the
@@ -345,9 +354,10 @@ def transform_agent_frontmatter(
             actions.append(mapped)
         if unknown:
             raise UnmappedToolError(f'{source_label}: unmapped tool(s) in frontmatter: {", ".join(unknown)}')
-        if actions:
+        granted = [action for action in sorted(actions) if action != _SHELL_ACTION]
+        if granted:
             lines.append('permissions:')
-            for action in sorted(actions):
+            for action in granted:
                 lines.append(f'  - action: {action}')
                 lines.append('    resource: "*"')
                 lines.append('    effect: allow')

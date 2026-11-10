@@ -131,11 +131,15 @@ OpenCode resolves configuration from three tiered locations:
 2. **Project Subdirectory (`<project_dir>/.opencode/opencode.json`)**: Alternative project-local configuration folder.
 3. **Global User Configuration (`~/.config/opencode/opencode.json`)**: User-global configuration. Can be overridden via the `OPENCODE_CONFIG_DIR` environment variable.
 
-OpenCode 2 applies the **last** matching rule in a list and defaults to `ask` when nothing matches, so every list — global or per-agent — keeps its catch-all first and its specific rules after it. (The repository's root-config test `test/plan-marshall/platform-runtime/test_opencode_root_config.py` models the global-then-agent evaluation.)
+OpenCode 2 applies the **last** matching rule in a list and defaults to `ask` when nothing matches, so every list — global or per-agent — keeps its catch-all first and its specific rules after it. The rule lists are combined in one order: lower-priority configuration first, the global rules next, and the agent's own rules last, so an agent rule re-decides every resource a global rule already decided. (The repository's root-config test `test/plan-marshall/platform-runtime/test_opencode_root_config.py` models the global-then-agent evaluation.)
+
+`action` is matched with the same whole-value wildcard as `resource`: `*` matches every action. A rule whose action is `*` therefore decides the resource for every tool, which is why the effective-effect computation treats it as a match rather than as an opaque tool name.
 
 === Permission Schema
 
-OpenCode 2 permissions are declared under the `"permissions"` key as an ordered list of `{action, resource, effect}` rules conforming to `https://opencode.ai/config.json`. `action` is the tool name (`shell` for command execution), `resource` is a glob over the tool's input, and `effect` is `allow`, `ask` or `deny`. No match means `ask`. The landed plan-marshall `opencode.json` keeps the shell catch-all as the first rule and follows it with the never-legitimate deny rows, the rare-legitimate ask rows, and the final allow rows, so last-match-wins yields the intended effect. The OpenCode 1 `"permission"` map is not emitted; the normalizer would concatenate it *before* the list, where its catch-all could be overridden by the list's.
+OpenCode 2 permissions are declared under the `"permissions"` key as an ordered list of `{action, resource, effect}` rules conforming to `https://opencode.ai/config.json`. `action` is the tool name (`shell` for command execution) or the `*` wildcard, `resource` is a glob over the tool's input, and `effect` is `allow`, `ask` or `deny`. No match means `ask`. The landed plan-marshall `opencode.json` keeps the shell catch-all as the first rule and follows it with the never-legitimate deny rows, the rare-legitimate ask rows, and the final allow rows, so last-match-wins yields the intended effect. The OpenCode 1 `"permission"` map is not emitted; the normalizer would concatenate it *before* the list, where its catch-all could be overridden by the list's.
+
+An agent's emitted rules never carry a `shell` catch-all. Because the agent's rules are appended after the global ones, a catch-all there would turn a global `gh *` or `rm *` deny into an allow; the shell grant is left to OpenCode's own base policy instead.
 
 === Global Shell Permission List
 
@@ -236,7 +240,7 @@ The `OpenCodeRuntime` subclass implements target operations:
   ** `layout_bundle_cache_root()`: Probes global cache roots.
 * **Harness Ceiling**: Resolves 120 seconds as OpenCode's bash timeout ceiling.
 * **Permission Management**:
-  ** `permission_settings_path(scope, write, project_dir)`: Resolves global or project settings paths. When `write=True` and the target file is absent, initializes an OpenCode 2 `opencode.json` skeleton with schema and a `permissions` list whose shell catch-all comes first.
+  ** `permission_settings_path(scope, write, project_dir)`: Resolves global or project settings paths. When `write=True` and the target file is absent, initializes an OpenCode 2 `opencode.json` skeleton with the schema and a `permissions` list of the baseline command allows, with no shell catch-all.
   ** `permission_load_settings(path)` / `permission_save_settings(path, settings)`: Safe JSON I/O.
   ** `permission_ensure_defaults(settings, settings_path, dry_run)`: Ensures baseline command patterns exist in the `permissions` list, after its catch-all, adding a `permission` map only when the file being edited already carries that OpenCode 1 shape.
   ** `permission_configure(scope, grants)`: Appends or updates grants translated via `to_opencode_grant()` — the mapping domain spans `allow`, `ask`, and `deny` actions.

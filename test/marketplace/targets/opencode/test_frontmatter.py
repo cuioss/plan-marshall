@@ -122,8 +122,8 @@ class TestToolPermissionMapping:
         result = transform_agent_frontmatter(fm, mapping, rules, source_label='agents/x.md')
         assert 'action: read' in result
         assert 'action: edit' in result  # Write maps to edit
-        assert 'action: shell' in result  # Bash maps to OpenCode 2's shell action
-        assert result.count('effect: allow') == 3
+        assert 'action: shell' not in result, 'a shell catch-all would override a global deny'
+        assert result.count('effect: allow') == 2
 
     def test_duplicate_permissions_deduplicated(self, mapping: dict[str, dict], rules: dict[str, list[str]]):
         fm = {
@@ -172,9 +172,10 @@ class TestTargetAbsentToolDisposition:
         fm = {'description': 'agent', 'tools': 'Read, Monitor, Bash'}
         result = transform_agent_frontmatter(fm, mapping, rules, source_label='agents/x.md')
         assert 'action: read' in result
-        assert 'action: shell' in result
-        # Exactly the two mapped rules — the sentinel contributes none.
-        assert result.count('effect: allow') == 2
+        assert 'action: shell' not in result
+        # Exactly the one emitted rule — the sentinel contributes none, and the
+        # shell grant is left to OpenCode's base policy.
+        assert result.count('effect: allow') == 1
 
     def test_genuinely_unknown_tool_still_raises(self, mapping: dict[str, dict], rules: dict[str, list[str]]):
         """The fail-closed guard survives: a MISSING key still raises."""

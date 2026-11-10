@@ -434,3 +434,147 @@ class TestOpenCodePermissionWritesUseTheListShape:
 
         rules = self._rules(config)
         assert any(rule['action'] == 'read' and rule['effect'] == 'allow' for rule in rules)
+
+
+class TestOpenCodeOneMapWrites:
+    """The OpenCode 1 map knows ``task``, so a ``subagent`` grant lands there."""
+
+    def _map_settings(self, tmp_path):
+        config = tmp_path / 'opencode.json'
+        config.write_text(json.dumps({'permission': {'bash': {}}}), encoding='utf-8')
+        return config
+
+    def test_ensure_maps_subagent_to_task(self, monkeypatch, tmp_path, in_tmp_cwd):
+        config = self._map_settings(tmp_path)
+        force_opencode(monkeypatch)
+
+        result = pf.cmd_ensure(
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'ensure',
+                '--permissions',
+                'subagent',
+                '--target',
+                'project',
+            )
+        )
+
+        assert result['status'] == 'success'
+        perm = json.loads(config.read_text())['permission']
+        assert perm.get('task') == 'allow'
+        assert 'subagent' not in perm
+
+
+class TestOpenCodeUnreadableInputIsReported:
+    """A file that does not parse is reported by every writing verb, and never overwritten."""
+
+    def _unparsable(self, tmp_path):
+        config = tmp_path / 'opencode.json'
+        config.write_text('not json', encoding='utf-8')
+        return config
+
+    def test_ensure_reports_an_unparsable_project_file(self, monkeypatch, tmp_path, in_tmp_cwd):
+        config = self._unparsable(tmp_path)
+        force_opencode(monkeypatch)
+
+        result = pf.cmd_ensure(
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'ensure',
+                '--permissions',
+                'deny(git push *)',
+                '--target',
+                'project',
+            )
+        )
+
+        assert result['status'] == 'error'
+        assert config.read_text(encoding='utf-8') == 'not json'
+
+    def test_ensure_executor_reports_an_unparsable_project_file(self, monkeypatch, tmp_path, in_tmp_cwd):
+        config = self._unparsable(tmp_path)
+        force_opencode(monkeypatch)
+
+        result = pf.cmd_ensure_executor(
+            parse_ns(
+                'plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'ensure-executor', '--target', 'project'
+            )
+        )
+
+        assert result['status'] == 'error'
+        assert config.read_text(encoding='utf-8') == 'not json'
+
+    def test_add_and_remove_work_on_an_opencode2_list(self, monkeypatch, tmp_path, in_tmp_cwd):
+        config = tmp_path / 'opencode.json'
+        config.write_text(
+            json.dumps({'permissions': [{'action': 'shell', 'resource': '*', 'effect': 'ask'}]}), encoding='utf-8'
+        )
+        force_opencode(monkeypatch)
+
+        added = pf.cmd_add(
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'add',
+                '--permission',
+                'deny(git push *)',
+                '--target',
+                'project',
+            )
+        )
+        removed = pf.cmd_remove(
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'remove',
+                '--permission',
+                'deny(git push *)',
+                '--target',
+                'project',
+            )
+        )
+
+        assert added['status'] == 'success'
+        assert removed['status'] == 'success'
+        rules = json.loads(config.read_text())['permissions']
+        assert not [rule for rule in rules if rule['action'] == 'shell' and rule['resource'] == 'git push *']
+
+    def test_add_and_remove_work_on_an_opencode1_map(self, monkeypatch, tmp_path, in_tmp_cwd):
+        config = tmp_path / 'opencode.json'
+        config.write_text(json.dumps({'permission': {'bash': {}}}), encoding='utf-8')
+        force_opencode(monkeypatch)
+
+        added = pf.cmd_add(
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'add',
+                '--permission',
+                'deny(git push *)',
+                '--target',
+                'project',
+            )
+        )
+        removed = pf.cmd_remove(
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'remove',
+                '--permission',
+                'deny(git push *)',
+                '--target',
+                'project',
+            )
+        )
+
+        assert added['status'] == 'success'
+        assert removed['status'] == 'success'
+        assert json.loads(config.read_text())['permission']['bash'] == {}
