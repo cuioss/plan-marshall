@@ -763,3 +763,251 @@ cui-http 4, API-Sheriff 6, nifi-extensions 7, pm-mcp-core 3: the consumer projec
 | stale | 10 |
 | not applicable (left in source) | 20 |
 | **total** | **88** |
+
+## Sweep 2026-11-10 — inbox, 33 messages
+
+Input was this epic's own inbox: `plan-v2-86-core-store-tests-b-001`..`-011` (11) and `plan-v2-89-runtime-tests-start-and-config-001`..`-006` (6) from pm-mcp-core plans; `pm-mcp-core-m2-m4-403`..`-407` (5) and `pm-mcp-core-m2-m4-v2-001`..`-007` (7) from the pm-mcp-core orchestrators; `api-sheriff-kidicap-gateway-requirements-014`..`-017` (4) from API-Sheriff. Corpus: 0. All 33 valid, all live, all `candidate-lesson`, all about the `plan-marshall` bundle; none is domain-bundle content. Grading was done in the orchestrator session. Message bodies stay verbatim in `inbox/archive/{sender}/`; no copy was made under `{level}/`. Abbreviations: `v86-NNN` = `plan-v2-86-core-store-tests-b-NNN`, `v89-NNN` = `plan-v2-89-runtime-tests-start-and-config-NNN`, `pm-NNN` = `pm-mcp-core-m2-m4-NNN`, `pm2-NNN` = `pm-mcp-core-m2-m4-v2-NNN`, `as-NNN` = `api-sheriff-kidicap-gateway-requirements-NNN`.
+
+**Operator rulings this run.** Two borderlines were put to the operator and both were graded **high**: the merge-lock cluster (`v86-006`, `v86-007`) and the rewriting quality gate (`pm2-001`).
+
+**Checked at `e7033b83a`:** `pre_merge_gate.py` has no reference to `merge_lock`, `holds_lock` or `lock_held`; `_cmd_pre_commit_verify_freshness.py:261-262` matches a build row only on `worktree_sha == current_sha`; `workflow-integration-sonar/scripts/sonar.py:886` builds `raw_input` with `message` only (no `sonar_key`); `manage-metrics.py:130` lists `verification_handback`. Nothing else was re-verified in code: other grades rest on the message text and on the earlier sweeps' index.
+
+### Filed to `live-blockers` (2 filings, 3 sources)
+
+| Message | Level | Sources | Subject |
+|---|---|---|---|
+| `lessons-routing-084` | high (operator) | v86-006, v86-007 | The merge gate never proves the calling plan holds the merge mutex (a chained enqueue after `admission=blocked` merged); a holder with liveness `not_live` blocked the FIFO for 240 s. Adjacent to `-054`; check PLAN-LB-100 and PLAN-LB-120 |
+| `lessons-routing-085` | high (operator) | pm2-001 | A quality gate that rewrites files records its success against an end-state tree that is never committed, so the freshness gate stays `build_indeterminate` and re-running cannot clear it. False-fail twin of `-068`; PLAN-LB-130 running on the same gate |
+
+### Already covered (8, no new filing)
+
+| Messages | Covered by |
+|---|---|
+| as-014 | `-064` `weakened_test` re-raises intended removals (here the removal was in the spec but not in the outline's Tests-to-remove form); PLAN-LB-75 superseded |
+| as-015 | `-049` declared footprint omits ADRs and restating sites (amending an ADR leaves other ADRs that cite it marked untouched) |
+| pm-405 | `-060` (amended, revision 1): the merge gate ignores a `--waive-refire` the step record accepted |
+| pm-407 | `-050` size caps before create-pr (CodeRabbit 110 files over a cap of 100) |
+| pm2-005 | `-065` the success-criteria parser drops continuation lines of a wrapped bullet; not re-checked at HEAD, so whether it is fixed is open |
+| v89-004 | `-051` leaves denied Grep and Glob have no sanctioned search; the leaves broke the commit and file-operation rules |
+| v86-009 | the `medium/` build-hygiene cluster (pm 393, build-server wait-log spam) |
+| v86-011 | the `medium/` dispatch-boundary accounting cluster (pm 260, keyless boundary rows) |
+
+### `stale/` (3)
+
+| Message | Why |
+|---|---|
+| v86-001 | The sender reports `sonar_key` in `raw_input` refused by the untrusted-ingestion schema. At HEAD the producer writes `raw_input={'message': ...}` only (`sonar.py:886`), so the key is not emitted |
+| v89-001, pm-403 | `verification_handback` is accepted by `record-dispatch-boundary` at HEAD (`manage-metrics.py:130`); #1911 and PLAN-LB-109 / PLAN-LB-117 shipped the hand-back classification. pm-403's own text says it may already be fixed. Its proposed contract test (every cause named in the workflow is accepted by the recorder) was not checked for |
+
+### `medium/` (16, not filed)
+
+| Cluster | Messages |
+|---|---|
+| Sonar configured but no producer credentials on the host: the step records `work_performed=false` after a manual public-API read (`unconfigured` vs `internal_error` is in the earlier Sonar medium cluster) | v86-002, pm-406 |
+| Dispatch-boundary and execution-log accounting: no `--step-id`, typed token figures, no `record-step` row for the verify builds | v89-002, v89-003, pm2-006 |
+| Review-bot refusal and timeout handling: a rebased head answered "already reviewed" is treated as a decline; no `escalate_ask` reason for `window_open` or a quota refusal with await off; one operator decision asked four times on one HEAD | v89-005, pm-404, pm2-004 |
+| Head-dependent verdicts re-fire on every commit because `verdict_inputs` are undeclared (the withdrawn filing of the 2026-10-23 sweep, excluded by the focus rule) | v86-004 |
+| Finalize bookkeeping and false positives: a commit made outside execute-task has no change-ledger row and the 5→6 transition refuses; the retrospective grades that designed refusal as a script bug | pm2-002, v86-010 |
+| Metrics: a finalize loop-back overwrites the finalize start and folds a window into 5-execute | pm2-003 |
+| Runbook-lane landings report `unknown` for `total_tokens` and `plugin_version`, so `landing-check` never reads `complete` | pm2-007 |
+| Build and architecture tooling: the build wrapper files findings for a module the plan did not touch; architecture-refresh counts stale-baseline modules as the plan's additions | v86-008, v86-005 |
+| Outline scope fence: files added outside the request's listed docs without a recorded operator answer (the Q-Gate caught it as designed) | as-016 |
+
+### `low/` (3, not filed)
+
+| Message | Subject |
+|---|---|
+| as-017 | One `manage-findings` argparse rejection from a paraphrased verb; the invented-verb recurrence class (`-044`) |
+| v86-003 | `git-workflow commit` answers `git commit failed: exit 1` when nothing is staged |
+| v89-006 | Script failures of one finalize run: invented flags, argparse rejections (same class as `-044`); the internal-error rows were not diagnosed |
+
+### Dispositions
+
+| Disposition | Count |
+|---|---|
+| filed (2 filings) | 3 |
+| already-covered | 8 |
+| stale | 3 |
+| medium | 16 |
+| low | 3 |
+| **total** | **33** |
+
+## Sweep 2026-11-10 (second run) — `gather`: TokenSheriff
+
+Stores probed on this machine (Linux, `/home/oliver/git`): the nine sibling checkouts `organisation`, `gip-products`, `API-Sheriff`, `TokenSheriff`, `docker-template`, `quarkus-template`, `kidicap-gateway`, `kidicap-apigateway-bff` and `cui-http`, found with `find` for a `.plan/local/lessons-learned` directory (not the ruling's `git status --ignored` probe, which was not run). Two hold a store: `API-Sheriff` (10) and `TokenSheriff` (36). Every other probed checkout returned a zero. No sibling worktree store exists. This repository's own store (29 lessons) is an `ingest` input and was not swept here.
+
+**API-Sheriff, 10, nothing moved.** All ten are the ids the 2026-11-01 sweep graded not applicable and left in place (`2026-10-02-12-008`, `2026-10-12-07-002`, `-07-005`, `-07-010`, `2026-10-12-16-011`, `-16-012`, `-16-013`, `2026-10-13-14-001`, `2026-10-13-14-002`, `2026-10-14-13-002`), so they were not graded again.
+
+**TokenSheriff, 36.** 5 were the not-applicable ids of 2026-11-01 (`2026-10-31-12-001`, `-12-002`, `-12-004`, `-12-005`, `-12-008`), left in place. The other 31 are newer than that sweep and were graded by two read-only leaves against `e7033b83a`, then adjudicated here. 22 are about `plan-marshall` and were moved verbatim (`mv -n`) into `{level}/TokenSheriff/`; 9 are project-only and stay. All 22 destinations were verified present afterwards, and no source-repo commit was made (the stores are git-ignored).
+
+**Operator ruling this run:** `2026-11-09-16-012` was put to the operator as a borderline medium/high and graded **medium**.
+
+No filing to `live-blockers` came out of this run. No lesson was a high or critical defect nobody already owns, and none was domain-bundle content.
+
+### `stale/TokenSheriff/` (2)
+
+| Lesson | Why |
+|---|---|
+| `2026-11-05-23-002` | `weakened_test` per-file report after a test-class split: the comparison pairs deleted and added paths at HEAD (`_review_support_integrity.py:18-19`, `:1010-1023`); #1913, #1919, #1925 and #1939 shipped. The consumer may have run an older install (not checked) |
+| `2026-11-05-23-004` | Required bot on a one-review-per-hour quota: `review_rate_window_await` defaults on and the policy is to wait (`automatic-review/SKILL.md:46-47`, `:482`); the lesson's run had it false |
+
+### `medium/TokenSheriff/` (1)
+
+| Lesson | Subject |
+|---|---|
+| `2026-11-09-16-012` | `ci pr merge-queue` runs `gh pr merge --auto` with no already-queued check (`workflow-integration-github/scripts/_github_pr.py:3094`; a `pr queue-state` verb exists). The reported cancel of an in-flight queue run on re-dispatch is unverified platform behaviour. The flaky end-to-end screenshot half is project-only |
+
+### `low/TokenSheriff/` (19, stored together whether already covered or low)
+
+| Lessons | Covered by / subject |
+|---|---|
+| `2026-11-09-16-002`, `-16-003`, `-16-005` (the same `weakened_test` re-raise class as the stale `2026-11-05-23-002`) | `-064` `weakened_test` (reworked in #1913 after the filing): identity-based move detection, declared `Tests to remove`, a plan-level accepted-removal set. Whether the reported artefacts still reproduce was not run |
+| `2026-11-05-23-003` | Documentation-only fix commits re-fire the head-dependent finalize steps: `-005`, the withdrawn `-047` (cost class, excluded by the focus rule). A per-step `verdict_inputs` classifier exists (`verdict_currency.py`) but no step declares an input surface |
+| `2026-11-09-16-001`, `-16-004` | Criteria that cannot be evidenced at review time (a local run, the finalize gates, the PR body); the earlier medium cluster |
+| `2026-11-09-16-006`, `-16-007` | Scope-creep warnings from hand-picked scope and review-fix files; a warning the operator accepts (`scope_creep_check.py:35-38`, `:144`) |
+| `2026-11-09-16-008`, `-16-009`, `-16-010` | Outline and task-plan Q-Gate catches (profile against change type, a verification command without the profile, a module-mapping pairing); the gate worked as designed |
+| `2026-11-09-16-011` | Required bot refuses a PR over its file cap: `-007`, `-050`; PLAN-LB-127 shipped |
+| `2026-11-09-16-013` | Post-merge `checks wait --adaptive` waits on a long benchmark workflow: cost only; the wait warns and continues |
+| `2026-11-10-09-002`, `2026-11-10-14-002` | Invented or misplaced flags on `manage-*` scripts: `-044`; the router-flag case is already detected (`input_validation.py:1054-1271`). Live residue: three skill docs still read `qgate add/query/resolve` (`phase-3-outline/SKILL.md:785`, `phase-2-refine/SKILL.md:366`, `phase-4-plan/SKILL.md:1242`) |
+| `2026-11-05-23-001` (low) | Fix a doc-wording defect as one sweep per statement shape: generic process advice, no concrete defect |
+| `2026-11-10-09-001` (low) | A review-bot triage commit in 6-finalize is refused without a sanction; the guard is deliberate (`git-workflow.py:520-575`) and recovery by loop-back is the designed route |
+| `2026-11-09-16-014`, `-16-015` (low) | `pr edit` with only a title leaves the body unchanged (documented, `_github_pr.py:3577-3600`); a loop-back close needs pending findings (`_cmd_loop_back.py:674-692`, deliberate) |
+
+### Not applicable — left in the source checkout (9 new, 5 earlier)
+
+TokenSheriff `2026-11-02-10-001`, `2026-11-02-14-001`, `2026-11-02-14-002`, `2026-11-04-13-001`, `2026-11-04-13-002`, `2026-11-05-23-005`, `2026-11-05-23-006`, `2026-11-05-23-007`, `2026-11-10-14-001`: the consumer's own code, ADRs, Javadoc, tests and security fixtures. Not verified in code, since they are project-only by subject. `2026-11-10-14-001` states generic security practice; whether `java-security` or `persona-security-expert` already says it was not checked.
+
+### Dispositions
+
+| Disposition | Count |
+|---|---|
+| stale | 2 |
+| medium | 1 |
+| already-covered or low (stored in `low/`) | 19 |
+| not applicable (left in source), new | 9 |
+| not applicable (left in source), graded 2026-11-01 | 15 (API-Sheriff 10, TokenSheriff 5) |
+| **total** | **46** |
+
+## Sweep 2026-11-10 (third run) — `ingest`: this repository's own corpus
+
+Corpus at start: 29 active lessons (`2026-09-22-06-001` to `2026-10-02-13-007`), none seen by an earlier sweep (no id in this index). All 29 are about the `plan-marshall` bundle; none is domain-bundle content. Grading was drafted by two read-only leaves against `e7033b83a` and adjudicated here. Lessons were copied verbatim into the archive first, then retired through `manage-lessons remove` (verdict `superseded` for the filed one, `redundant` for the four already covered, `obsolete` for the other 24). Corpus after the run: 0 active.
+
+**Operator rulings this run.** Four borderlines were put to the operator: the `post_responses` cluster (`2026-09-24-05-001`, `2026-10-02-13-003`) and the baseline-reconcile probe failure (`2026-09-22-06-002`) were graded **medium**; the raw build-server submit (`2026-10-02-13-005`) was graded **high**.
+
+**Checked at `e7033b83a`, re-read by the orchestrator:** `github_pr.py:3648` (`reply_body = finding.get('resolution_detail')`), `build_server.py:436-452` (`exec_path = args.exec_path or project_path`, job spec from the caller's command) and `:498-520` (the submit reply names no built tree). Every other grade rests on the leaves' `file:line` citations, which were not re-read.
+
+**Id collision.** `2026-09-24-05-001` already exists in `medium/` as a different lesson (PLAN-TRUTH-147, six deferred fix tasks). The post_responses lesson is stored as `medium/2026-09-24-05-001-post-responses.md`; its tombstone in the local store still carries the plain id.
+
+### Filed to `live-blockers` (1 filing, 1 source)
+
+| Message | Level | Source | Subject |
+|---|---|---|---|
+| `lessons-routing-086` | high (operator) | `2026-10-02-13-005` | A build-server submit with no plan selector builds the main checkout and reports `success` for the wrong tree; the reply names no built tree. The wrapper path is PLAN-LB-104, -112 and -115; this is the raw submit. Copy: `filed-live-blockers/2026-10-02-13-005.md` |
+
+### `stale/` (16)
+
+| Lesson | Why (fixed or retired at HEAD) |
+|---|---|
+| `2026-09-22-06-003`, `2026-10-02-13-004` | `resolve_base_ref` prefers `origin/{base}` and reports `base_ref_source` (`_references_core.py:215-261`; #1559). Both were observed after that PR merged, so a skewed install is the likely cause (not verified). Not implemented: the warning the lesson asked for when the local base is behind the remote |
+| `2026-09-22-06-004` | `ci_verify` flags and the `pr edit --for` body kind are documented (`ci-verify.md:50-55`) |
+| `2026-09-22-06-005`, `2026-09-23-05-002`, `2026-10-02-13-007` | `participated_stale` blocks (`review_completeness.py:321`, `pre_merge_gate.py:1121`); a stale required bot is re-triggered on loop-back; the PR-Agent bot is retired (#1941) |
+| `2026-09-24-05-003` | PR-Agent retired (#1941); `not_triggered` is a separate observable from `timed_out` |
+| `2026-09-22-18-002`, `2026-09-22-18-003` | The whole-outline hash row is keyed per phase and an empty assessment store reports "not run" (PLAN-LB-42, PLAN-LB-54); `-022`, `-023`, `-028` |
+| `2026-09-22-18-004` | `classify_check` defaults to `ci_build_failure` (`ci_verify.py:185-259`; PLAN-LB-44, #1848) |
+| `2026-09-22-18-007` | The orchestration probe classifies with the channel's own `classify_source_id` (#1685). Stale wording remains at `phase-6-finalize/SKILL.md:735` ("known to disagree") |
+| `2026-09-24-05-002` | `derive_gate_bundles` takes a module resolver and reports `unresolved[]` (#1866); the Maven parser sums every summary block (#1750); `-031` |
+| `2026-09-24-07-001` | `manage-adr scan` carries `duplicate_count`, `duplicate_numbers`, `duplicate_paths` (`manage-adr.py:477-495`; #1586); `-036` |
+| `2026-09-24-07-002`, `2026-10-02-13-001` | The pre-submission self-review step and its surfacer were retired (#1757, #1758); `default:code-review` reads whole files. The residual idea (a statement made false on untouched lines) was not found addressed in `code-review.md` and is generic review practice |
+| `2026-10-02-13-002` | Loop-back budgets are per requesting source (`phase-6-finalize/SKILL.md:1658-1663`; #1718). The "dispatch failed, round consumed" half was not verified |
+
+### `medium/` (4, not filed)
+
+| Lesson | Subject |
+|---|---|
+| `2026-09-22-06-001` | The build daemon's 1800 s default and the wrapper cap are shorter than an IT or native run; an explicit `--timeout` works (`marshalld.py:78`, `_build_execute.py:127`). Earlier medium cluster, INDEX § 2026-11-01 |
+| `2026-09-22-06-002` (operator) | `baseline-reconcile` classifies `no_overlap` when the `git merge-tree --write-tree` probe failed (`_cmd_baseline_reconcile.py:555-570`); needs git older than 2.38, and `merge_tree_error` is in the payload |
+| `2026-09-24-05-001`, `2026-10-02-13-003` (operator) | `post_responses` sends the stored `resolution_detail` verbatim as the public reply, with no internal-versus-public split, no per-finding selector, and no answer path for a finding without `pr_number`. A public leak happened once and was prevented once. The walkthrough-concern drop the second lesson reports is fixed (#1941, #1946; `-027`). No filing or plan owns the rest |
+
+### `low/` (8: 4 already covered, 4 low)
+
+| Lessons | Covered by / subject |
+|---|---|
+| `2026-09-22-18-001` | Operator outline answers that match the recommended default are not written into the outline: the earlier medium cluster (INDEX § 2026-11-01, TokenSheriff `2026-10-31-13-005`). The documented flow is unconditional, so it was an orchestrator deviation |
+| `2026-09-23-05-003` | Merge-lock release says "already free" for a lock the plan acquired (`merge_lock.py:1926-1935`): `-054`, and the `-084` filing of this date. `-054` was already drained, so it was not amended |
+| `2026-09-25-06-001` | Installed executor and workflow docs drift apart: `-045`, `-021`; both specific items are fixed |
+| `2026-10-02-13-006` | Execute leaves repeat argparse rejections: `-044`, `-045`; `--fail-on-dirty` is declared at HEAD, `--number` is still an invented flag |
+| `2026-09-22-18-005`, `2026-09-22-18-006` (low) | Router flag after the verb; `--number` for `--deliverable-number`: the invented-flag class (`-044`); the error now names the correct position |
+| `2026-09-23-05-001` (low) | `finalize-step-simplify` and the pre-commit gate fight over import blank lines: a consumer formatter interplay, not a bundle defect |
+| `2026-09-25-06-002` (low) | Per-deliverable verification re-runs the module suite for docs-only deliverables: cost only; an empty build list already skips the build (`phase-5-execute/SKILL.md:838-856`) |
+
+### Dispositions
+
+| Disposition | Count |
+|---|---|
+| filed (1 filing) | 1 |
+| stale | 16 |
+| medium | 4 |
+| already-covered (stored in `low/`) | 4 |
+| low | 4 |
+| **total** | **29** |
+
+## Sweep 2026-11-10 (fourth run) — `gather`: sibling checkouts on the macOS machine
+
+Input was every sibling checkout's lesson store under `/Users/oliver/git/` on the macOS machine, run as the epic-local `gather` command (RULING 2026-11-02). The earlier `gather` runs of this date probed a different machine (Linux, `/home/oliver/git`), so the two populations differ by machine. Two stores were new to the ledger: `plan-marshall-mcp` (19) and `cui-open-rewrite` (2). Remote text is externally sourced and was treated as a lead. Grading and the ground-truth check were done at `64907fa3b`, before this run's records were merged with the Linux session's sweeps above; the overlap with those sweeps was checked afterwards and is stated per cluster.
+
+**Coverage.** All 36 entries of `/Users/oliver/git/*` were probed with `git -C {repo} status --porcelain --ignored --untracked-files=all` (after the probe returned known non-empty stores in the same session). Lesson files found: `pm-mcp-core` 49, `nifi-extensions` 6, `plan-marshall-mcp` 19, `cui-open-rewrite` 2, `TokenSheriff` 1, `cui-jsf-test-basic` 1. `API-Sheriff` holds tombstones only (0 lessons). Probed with no lesson files: plan-marshall-business, plan-marshall-documentation (and its two follow-up checkouts), plan-marshall-telemetry (and its follow-up), pm-mcp-parent, pm-mcp-clients, cuioss-organization, cuioss-review-bot, coderabbit, cuioss-parent-pom, cuioss.github.io, playwright-test-artifacts, and every other `cui-*` checkout (cui-http included: the 47 lessons of the third run were on the Linux machine). Sibling worktrees probed with no store: API-Sheriff `_orchestrator` and `plan-sec-05-…`, pm-mcp-core `_orchestrator` and its `.plan/temp/` worktree. Not git repositories, so not probed: `doc`, `worktrees`. **Gap:** `other-llm-projects` and `other-test-projects` are plain directories that may hold checkouts one level deeper; not listed.
+
+**Left in source (unchanged by count from the 2026-11-02 second run):** pm-mcp-core 49, nifi-extensions 6, TokenSheriff 1, cui-jsf-test-basic 1. Their counts equal the 2026-11-02 second run's left-in-place counts for those four repositories, so that run was on this machine; ids were not re-compared. That resolves the "Unreconciled" note for them: the stores are here, not lost. API-Sheriff differs: the 25 left in place then are not here now, and no tombstone was matched to those ids. The Linux machine holds 10 API-Sheriff lessons, the ids the 2026-11-01 sweep left in place.
+
+**Operator rulings this run.** None needed: no item was borderline medium/high.
+
+**Checked at `64907fa3b`:** the `ci-verify` producer vocabulary is now pinned by `test/plan-marshall/plan-marshall/test_verification_feedback_producer_vocab.py:14-70` (accept-set parsed from `verification-feedback.md`, producers swept from `ci_verify.classify_check`); `foreign_pr_gate.py:67-86` classifies on the declared `foreign_branch` or the checked-out branch and states there is no fall-back to `feature/{plan_id}`; `adr-propose.md:110` still calls `AskUserQuestion` from a step dispatched as a leaf (`:42`). Everything else rests on the lesson text.
+
+### Filed to `live-blockers` (0)
+
+Nothing reached high or critical. `live-blockers` inbox was empty (0 live, 0 invalid) at the grading.
+
+### `stale/` (2)
+
+| Lesson | Why |
+|---|---|
+| pmmcp `2026-10-20-15-001` | `ci-verify` producers outside the `verification-feedback` accept-set: fixed, contract test above (compare the stale `2026-09-22-18-004` row of the third run) |
+| pmmcp `2026-11-05-15-005` | `foreign_pr_gate` assumed `feature/{plan_id}`: fixed, `foreign_pr_gate.py:67-86`. Residual asks (a PR-less evidence-store landing form, a recorded operator override) are not stated at HEAD; low, not filed |
+
+### `low/` (3, already covered)
+
+| Lesson | Covered by |
+|---|---|
+| pmmcp `2026-10-17-14-002`, `2026-10-21-05-003` | Invented or under-specified script flags: `-044` script surface drift |
+| pmmcp `2026-10-20-15-003` | `-031`/`-058` Maven module-tests DEGRADED |
+
+### `medium/` (8, not filed — message text only unless noted)
+
+| Cluster | Lessons |
+|---|---|
+| Q-Gate mechanical-check false positives, each needs a manual disposition | pmmcp `2026-10-17-14-001` (`declared_set_closure`: absolute vs repo-relative paths), `2026-10-20-15-005` (`declared_scope_reconciliation`: survey-only glob read as write scope), `2026-10-21-05-002` (`files_exist`: a delete target an earlier task creates) |
+| Outline authoring | pmmcp `2026-11-06-16-002` (transient cherry-picked file and sibling files with the same defect left out of Affected files; the earlier outline-authoring medium cluster) |
+| Leaf and consumer-repo contract gaps | pmmcp `2026-10-20-15-002` (`adr-propose` Step 5 prompts via `AskUserQuestion` in a leaf; present at `adr-propose.md:110`; a recurrence of the third run's dispatched-leaf medium cluster, cui-http `2026-09-06-07-003`), `2026-10-20-15-004` (`marketplace/bundles/...` paths shown to leaves and operator in a consumer repo) |
+| Finalize | pmmcp `2026-11-05-15-003` (PR stays mergeable while finalize re-runs pre-merge reviews after a rebase; related to `-060`; distinct from `-084`, which is about the merge mutex) |
+| `git-workflow commit` | pmmcp `2026-11-06-16-003` (`FETCH_FAILURE` for an unstaged change; a recurrence of v12-001 and v46-003 of the 2026-11-02 inbox sweep and of v86-003 of the 2026-11-10 inbox sweep, now five sources) |
+
+### Not applicable — left in the source checkout (8)
+
+| Lessons | Why |
+|---|---|
+| pmmcp `2026-10-17-14-003`, `2026-10-21-05-001`, `2026-11-05-15-002`, `2026-11-06-16-001` | `plan-marshall-mcp` project documents and experiments: work-package wording, a paired-experiment report, a terminology sweep over a run command, roadmap milestones |
+| pmmcp `2026-11-05-15-001`, `2026-11-05-15-004` | `pm-mcp-clients` SNAPSHOT deploy gating; owed `pm-e2e` architecture hints for that module |
+| cui-open-rewrite `2026-07-20-23-001`, `-23-002` | The OpenRewrite recipe library's own code (marker scoping, LST node identity); not a plan-marshall bundle |
+
+### Dispositions
+
+| Disposition | Count |
+|---|---|
+| filed | 0 |
+| already-covered (stored in `low/`) | 3 |
+| medium | 8 |
+| stale | 2 |
+| not applicable (left in source) | 8 |
+| **total** | **21** |
+
+The 13 lessons taken in were moved with `mv -n` to `{level}/plan-marshall-mcp/`; all 13 destinations were verified present with `git status`, and 6 `plan-marshall-mcp` plus 2 `cui-open-rewrite` lessons remain in their stores. No tombstone and no commit was made in either source repository.

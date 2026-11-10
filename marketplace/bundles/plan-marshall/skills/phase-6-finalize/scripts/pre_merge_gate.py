@@ -987,6 +987,10 @@ def _check_participation(plan_id: str, pr_number: int, project_dir: str) -> dict
         'check',
         '--plan-id',
         plan_id,
+        # Scope the stored-findings read to the PR being merged: the plan's store spans
+        # every PR it has worked, so an earlier PR's review would otherwise join this one.
+        '--pr-number',
+        str(pr_number),
         '--required-bots',
         ','.join(required),
     ]
@@ -1030,6 +1034,30 @@ def _check_participation(plan_id: str, pr_number: int, project_dir: str) -> dict
                 'an unknown verdict is never a pass'
             ),
         }
+    # The scope the predicate read under, and the rows it could not place. A legacy
+    # (pre-stamp) row on a store that spans several PRs is EXCLUDED from the read, so it
+    # never reaches the pending-finding input — which makes it a silent hole in a gate
+    # that decides a merge. It is named and refused rather than forwarded as a clean
+    # verdict: assigning such a row to this PR would be the silent join the scoping
+    # exists to prevent, and ignoring it would hide a pending finding.
+    unscoped_ids = list(checked.get('unscoped_stored_finding_ids') or [])
+    if unscoped_ids:
+        return {
+            'status': 'error',
+            'error': 'participation_scope_ambiguous',
+            'roster_read': True,
+            'required_bots': required,
+            'optional_bots': optional,
+            'store_scope': checked.get('store_scope'),
+            'unscoped_stored_findings': len(unscoped_ids),
+            'unscoped_stored_finding_ids': unscoped_ids,
+            'reason': (
+                f'{len(unscoped_ids)} stored finding(s) could not be placed at any one PR '
+                f'({", ".join(unscoped_ids)}); the store spans more than one PR and these rows '
+                'predate the PR stamp, so neither joining them to this PR nor ignoring them is '
+                'an answer the gate may choose'
+            ),
+        }
     return {
         'status': 'success',
         'participation_complete': checked.get('participation_complete') is True,
@@ -1039,6 +1067,7 @@ def _check_participation(plan_id: str, pr_number: int, project_dir: str) -> dict
         'unproven_bots': list(checked.get('unproven_bots') or []),
         'bot_states': list(checked.get('bot_states') or []),
         'proves': checked.get('proves'),
+        'store_scope': checked.get('store_scope'),
         # The predicate can answer ``participation_complete: false`` with every bot a
         # proofed participant — that is a required finding still ``pending`` once triage
         # has run (see ``review_completeness``). Name it here, so a refusal built from
@@ -1177,6 +1206,14 @@ def _participation_refusal(plan_id: str, head: str | None, verdict: dict[str, An
     authorization can apply, and an UNKNOWN is not — the remedy for that one is to make
     the participation state readable, never to rule past it.
 
+    ONE unreadable-gate cause is neither of those and carries its own remedy: a store
+    whose rows belong to no known PR (``code: participation_scope_ambiguous``). The
+    roster, provider and predicate all answered, so pointing the operator at making the
+    gate readable would name work already done; the fault is in the STORE. The remedy is
+    to PLACE those rows — write the PR stamp into each row's ``detail``, or remove the
+    row — because disposition does not place a finding: resolving one changes its state
+    and leaves its provenance untouched, so no resolution clears this refusal.
+
     A gap that IS authorizable advertises the labels the remedy accepts, in
     ``override_options``. They are :data:`BARRIER_OVERRIDE_LABELS` itself — the one
     constant ``merge-authorization grant`` validates against — never a copy, so the
@@ -1188,14 +1225,27 @@ def _participation_refusal(plan_id: str, head: str | None, verdict: dict[str, An
     unproven = verdict['unproven_bots']
     detail = verdict.get('detail') or 'no reason was reported'
     authorizable = bool(verdict.get('authorizable'))
-    remedy = (
-        f'A required reviewer is never demoted, and the only ruling that covers its silence is a '
-        f'recorded HEAD-bound merge authorization over {REVIEW_BARRIER_GAP_CLASS}.'
-        if authorizable
-        else 'No merge authorization covers this: a participation state nobody could read is not a '
-        'review gap, so the gate must be made readable (roster, provider, producer, or predicate) '
-        'before this merge can proceed.'
-    )
+    if verdict.get('code') == 'participation_scope_ambiguous':
+        # A readable gate that still cannot answer: the store holds rows belonging to no
+        # known PR, so the generic "make it readable" remedy names work already done.
+        remedy = (
+            'No merge authorization covers this: the findings store spans more than one PR and '
+            'carries rows with no PR stamp, so a pending finding may exist here that the gate '
+            "could neither place nor ignore. Write the PR stamp into those rows' detail (or "
+            "remove the rows) — a resolution changes a finding's disposition, never its "
+            'provenance, so it cannot clear this — before this merge can proceed.'
+        )
+    elif authorizable:
+        remedy = (
+            f'A required reviewer is never demoted, and the only ruling that covers its silence is a '
+            f'recorded HEAD-bound merge authorization over {REVIEW_BARRIER_GAP_CLASS}.'
+        )
+    else:
+        remedy = (
+            'No merge authorization covers this: a participation state nobody could read is not a '
+            'review gap, so the gate must be made readable (roster, provider, producer, or predicate) '
+            'before this merge can proceed.'
+        )
     payload: dict[str, Any] = {
         'status': 'error',
         'error': MERGE_PARTICIPATION_UNPROVEN,

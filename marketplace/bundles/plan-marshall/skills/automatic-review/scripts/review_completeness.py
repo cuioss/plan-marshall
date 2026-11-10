@@ -122,11 +122,11 @@ state — the quorum is vacuously satisfied and ``participation_complete`` is
 ``true``.
 
 Usage:
-    review_completeness.py check --plan-id <id> [--required-bots [<csv>]] [--optional-bots [<csv>]] [--participated-bots [<csv>]] [--in-progress-bots [<csv>]] [--refused-bots [<csv>]] [--stale-participation-bots [<csv>]] [--declined-bots [<csv>]] [--unrecognised-refusal-bots [<csv>]] [--not-triggered] [--triage-ran] [--refused-causes [<csv>]] [--refusal-size-caps [<csv>]] [--measured-diff-size [<s>]]
+    review_completeness.py check --plan-id <id> [--pr-number <n>] [--required-bots [<csv>]] [--optional-bots [<csv>]] [--participated-bots [<csv>]] [--in-progress-bots [<csv>]] [--refused-bots [<csv>]] [--stale-participation-bots [<csv>]] [--declined-bots [<csv>]] [--unrecognised-refusal-bots [<csv>]] [--not-triggered] [--triage-ran] [--refused-causes [<csv>]] [--refusal-size-caps [<csv>]] [--measured-diff-size [<s>]]
     review_completeness.py deficit --plan-id <id> [--required-bots [<csv>]] [--optional-bots [<csv>]] [--participated-bots [<csv>]] [--in-progress-bots [<csv>]] [--refused-bots [<csv>]] [--stale-participation-bots [<csv>]] [--declined-bots [<csv>]] [--unrecognised-refusal-bots [<csv>]] [--not-triggered] [--refused-causes [<csv>]] [--refusal-size-caps [<csv>]] [--min-deficit <n>]
     review_completeness.py size-caps
     review_completeness.py roster --plan-id <id>
-    review_completeness.py trigger-bot --plan-id <id> [--required-bots [<csv>]] [--optional-bots [<csv>]] [--stale-participation-bots [<csv>]] [--reviewed-commit-sha [<sha>]] [--head-sha [<sha>]]
+    review_completeness.py trigger-bot --plan-id <id> [--pr-number <n>] [--required-bots [<csv>]] [--optional-bots [<csv>]] [--stale-participation-bots [<csv>]] [--reviewed-commit-sha [<sha>]] [--head-sha [<sha>]]
     review_completeness.py --help
 
 Every list flag above takes an OPTIONAL value: it may be supplied bare (the flag
@@ -219,6 +219,10 @@ Return TOON shape (trigger-bot):
     stored_findings_stale: true|false    # whether the stored-finding bots were joined
     unclassified_bots[N]:                # candidates in neither list — not triggered
       - bot
+    store_scope: pr|unscoped              # whether the stored-finding join was PR-scoped
+    unscoped_stored_findings: <n>         # emitted only when non-empty — stored rows
+    unscoped_stored_finding_ids[N]:       # whose PR could not be placed (legacy rows
+      - hash_id                           # on a plan that spans more than one PR)
 
 Return TOON shape (check):
     status: success
@@ -238,6 +242,29 @@ Return TOON shape (check):
                                          # without it. Always present in the payload.
     measured_diff_size: <how big the refused diff was>   # emitted only alongside a non-empty refusal_causes
     refusal_causes[N]{bot_kind,cause,cap}: ...  # emitted only when non-empty — the size/quota CAUSE axis per refusing bot, with the ceiling its notice stated (``unknown`` when it stated none)
+    guard_action: loop_back|escalate_ask    # what the guard DOES with this verdict.
+                                         # ``loop_back`` needs no further field; the
+                                         # escalation names the fields below.
+    guard_reason: refused_structural     # escalation only — the member that selected it
+    guard_bot_kind: bot                  # escalation only — the REQUIRED bot that refused
+    guard_refusal_cause: size            # escalation only
+    guard_refusal_class: <bot's rate_limit_class>  # escalation only — the declared class,
+                                         # reported because the refusal_structural envelope
+                                         # carries refusal_class; never consulted for routing
+    guard_cap: <ceiling its notice stated|unknown>       # escalation only
+    guard_refused_diff_size: <measured diff|unknown>     # escalation only — the size
+                                         # of the refused diff (a DIFFERENT field from
+                                         # measured_diff_size, which the refusal_causes
+                                         # overlay prints)
+    guard_unproven_bots[N]:              # escalation only — EVERY unproven REQUIRED bot,
+      - bot                              # not only the one that refused: accepting the
+                                         # gap authorizes past all of them
+    guard_prompt_options[N]:             # escalation only — never contains a wait
+      - <operator option>
+    store_scope: pr|unscoped             # whether the findings read was PR-scoped
+    unscoped_stored_findings: <n>        # emitted only when non-empty — stored rows
+    unscoped_stored_finding_ids[N]:      # whose PR could not be placed (legacy rows
+      - hash_id                          # on a plan that spans more than one PR)
 
 Return TOON shape (size-caps):
     status: success
@@ -258,6 +285,7 @@ Return TOON shape (deficit):
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 
 import bot_registry
@@ -390,6 +418,27 @@ CAUSE_SIZE = 'size'
 # state is a non-review (a refusal, an absence, a stale or in-flight publish), so it
 # can be neither a deficit baseline nor a meaningful finding count.
 _REVIEWED_STATES = frozenset({STATE_PARTICIPATED, STATE_PARTICIPATED_BUT_EMPTY})
+
+# The two actions the participation guard can take on a ``participation_complete:
+# false`` verdict. ``LOOP_BACK`` is the ordinary default: treat the unproven
+# participation as an un-surfaced review and re-enter FIND. ``ESCALATE_ASK`` is the
+# STRUCTURAL exception — a required bot whose refusal is a ceiling on the DIFF gets
+# asked about, because no loop-back can change its answer.
+GUARD_ACTION_LOOP_BACK = 'loop_back'
+GUARD_ACTION_ESCALATE_ASK = 'escalate_ask'
+
+# The STRUCTURAL escalation's operator options — the dispatcher's own labels, verbatim
+# from the branch table that routes the operator's selection
+# (``phase-6-finalize/SKILL.md`` § item 7a, ``branch-cleanup.md`` § "Structural refusal").
+# ⛔ They are NOT free prose: the dispatcher branches on these exact strings, so a leaf
+# returning a differently-worded pair would render options that match no documented
+# branch and hand the operator a selection nothing acts on. A wait option here would
+# also be the non-option ``refused_structural`` exists to remove — the ceiling is a
+# property of the diff, so waiting is guaranteed to fail.
+GUARD_STRUCTURAL_OPTIONS = (
+    'Split the PR into diffs under the cap',
+    'Accept the coverage gap (record reason)',
+)
 
 
 def list_bots_for_trigger(
@@ -848,9 +897,10 @@ def classify_bot(
       ``bot-participation-contract.md`` § "Evidence taxonomy", which carries both
       conjuncts — the declared publish shape and, where gated, that shape's content
       marker), but the currency test failed: the currency ledger — the sole source that test
-      reads — anchors the comment to a commit that is not the merge candidate, and its
-      ``updated_at`` is unchanged from the value recorded at that credit, so the review
-      it proves predates this HEAD. Unproven and therefore blocking, but the remedy is to
+      reads — anchors the comment to a commit that is not the merge candidate, or the
+      comment's own evidence names a commit that is not the merge candidate, so the
+      review it proves predates this HEAD. A moved ``updated_at`` is not a currency fact
+      and credits nothing. Unproven and therefore blocking, but the remedy is to
       re-trigger a re-review — the opposite of ``absent``, where there is no review to
       refresh.
     - **``in_progress``** — the bot's review is still running.
@@ -1054,13 +1104,124 @@ def assess_deficit(
     }
 
 
-def _read_pr_comment_findings(plan_id: str) -> dict:
+#: The originating PR, stamped by the producer as the FIRST ``detail`` line of every
+#: ``pr-comment`` finding it files, and read back from there by plan-scoped consumers.
+#:
+#: ⛔ **The PR number lives in ``detail``, not in a field of its own, and that is a
+#: decided schema question — not an accident of history.** ``detail`` is the
+#: producer's structured record for a finding: one ``key: value`` line per fact
+#: (kind, author, thread, comment, path, line, edit term), and the PR is one more
+#: line in it. A first-class column would have to be a SECOND copy of a fact the
+#: producer already writes, and two copies of one fact drift: the wire shape
+#: (``add_finding``) would have to grow a parameter every caller must remember, and
+#: ``post_responses`` already routes on the ``detail`` extraction, so a store could
+#: carry a field saying PR 5 beside a detail line saying PR 3 with nothing to say
+#: which one a consumer should believe. The extraction is anchored to the START of
+#: the whole detail string and admits digits only — the producer's own shape — so a
+#: ``pr_number:`` line appearing later in text a future producer appends cannot be
+#: read as the origin. ``github_pr._PR_NUMBER_DETAIL`` is the same recogniser on the
+#: producer side; the parity suite asserts the two agree.
+_FINDING_PR_NUMBER = re.compile(r'\Apr_number:[ \t]*(?P<id>[0-9]+)[ \t]*(?:\n|\Z)')
+
+
+def finding_pr_number(finding: dict) -> str:
+    """Return the PR a stored ``pr-comment`` finding was filed for, or ``''``.
+
+    ``''`` means the row carries no readable PR — a finding written before the
+    producer stamped one, or one whose ``detail`` is not the producer's shape. It is
+    NEVER read as "belongs to the PR being asked about": that inference is what let a
+    plan's older PRs satisfy the current one's stored-finding presence check.
+    """
+    match = _FINDING_PR_NUMBER.match(str(finding.get('detail') or ''))
+    return match.group('id') if match else ''
+
+
+def _scope_findings(findings: list[dict], pr_number: int | None) -> dict:
+    """Partition a plan's ``pr-comment`` findings by the PR they belong to.
+
+    The findings store is PLAN-scoped, not PR-scoped, so a plan that iterates over
+    several pull requests keeps every earlier PR's findings. A consumer asking about
+    the current PR must see only that PR's rows, or an older review reads as evidence
+    about a head it never saw — the defect this partition removes.
+
+    Three populations, and only one of them is a judgement call:
+
+    - a row whose PR IS ``pr_number`` joins;
+    - a row whose PR is some OTHER number is foreign and is dropped — the caller is
+      asking about one PR, and another PR's review says nothing about it;
+    - a row with NO number is LEGACY (written before the producer stamped one). It
+      joins only when the store cannot be shown to span more than one PR. The known
+      population is the distinct numbers the rows DO carry plus ``pr_number`` itself: a
+      store holding only PR 5's rows while PR 5 is asked about has one PR, so its legacy
+      rows are that PR's; a store holding PR 4's rows while PR 5 is asked about spans
+      two, so its legacy rows are reported as ``unscoped`` rather than assigned.
+
+    ⚠ **The test is the STORE's evidence, not a plan-level PR registry — and no such
+    registry exists** (``manage-status`` carries no PR field). A plan whose every legacy
+    row belongs to a *different* PR therefore reads as single-PR and joins, which is the
+    fail-open direction. It is the only reachable reading: the alternative — treating
+    every legacy row as unscoped — would drop the genuinely single-PR plan's findings,
+    which is the behaviour this scoping must preserve. Both producers have stamped the
+    PR since the field existed, so the population it affects is the pre-stamp tail of a
+    plan that has since worked a second PR.
+
+    ⛔ **Unscoped is REPORTED, never joined silently.** A legacy row on a multi-PR plan
+    is a real finding nobody can place, and assigning it to the current PR is exactly
+    the silent join this function exists to stop. It travels back as its hash id so
+    the caller's envelope names it and an operator can act on it.
+
+    ``pr_number is None`` means the caller asked no PR-scoped question at all: every
+    row joins, and the scope is reported as ``unscoped`` so a reader can see the read
+    was not scoped rather than inferring that it was.
+    """
+    if pr_number is None:
+        return {
+            'joined': list(findings),
+            'foreign_count': 0,
+            'unscoped': [],
+            'known_prs': sorted({finding_pr_number(row) for row in findings} - {''}),
+            'scope': 'unscoped',
+        }
+    current = str(pr_number)
+    joined: list[dict] = []
+    legacy: list[dict] = []
+    foreign = 0
+    for row in findings:
+        row_pr = finding_pr_number(row)
+        if not row_pr:
+            legacy.append(row)
+            continue
+        if row_pr == current:
+            joined.append(row)
+        else:
+            foreign += 1
+    known_prs = sorted({finding_pr_number(row) for row in findings} - {''} | {current})
+    legacy_join = len(known_prs) <= 1
+    if legacy_join:
+        joined.extend(legacy)
+    return {
+        'joined': joined,
+        'foreign_count': foreign,
+        'unscoped': [] if legacy_join else [str(row.get('hash_id') or '') for row in legacy],
+        'known_prs': known_prs,
+        'scope': 'pr',
+    }
+
+
+def _read_pr_comment_findings(plan_id: str, pr_number: int | None = None) -> dict:
     """Read the plan's ``pr-comment`` findings, or return this module's error envelope.
 
     Returns the successful query payload (whose ``findings`` key the caller may
     then subscript) or an envelope in the shape :func:`_emit_toon` renders —
     ``status: error`` plus ``error`` and ``detail``, with no verdict field, which
     the caller reads as an UNKNOWN verdict.
+
+    ``pr_number`` scopes the read to ONE pull request: the returned ``findings`` are
+    that PR's rows, and the payload also carries ``store_scope``
+    (``pr``/``unscoped``), ``unscoped_stored_findings`` (the count of rows that could
+    belong to any of several PRs) and ``unscoped_stored_finding_ids``. Omitted, every
+    row joins and the scope says so — see :func:`_scope_findings` for the partition
+    and for why an unplaceable row is reported rather than assigned.
 
     TWO failure modes, kept apart because they name different faults with
     different remedies:
@@ -1090,7 +1251,91 @@ def _read_pr_comment_findings(plan_id: str) -> dict:
             'detail': f'Failed to load findings store: {exc}',
         }
     refusal = as_unresolved_store_error(result)
-    return refusal if refusal is not None else result
+    if refusal is not None:
+        return refusal
+    scoped = _scope_findings(list(result.get('findings') or []), pr_number)
+    return {
+        **result,
+        'findings': scoped['joined'],
+        # The scope DISCRIMINATOR, carried unconditionally: a consumer must be able to
+        # tell a read that was scoped to one PR from one that was not, because the two
+        # answer the same question with different evidence.
+        'store_scope': scoped['scope'],
+        'foreign_stored_findings': scoped['foreign_count'],
+        'unscoped_stored_findings': len(scoped['unscoped']),
+        'unscoped_stored_finding_ids': scoped['unscoped'],
+        'known_stored_prs': scoped['known_prs'],
+    }
+
+
+def guard_disposition(
+    bot_states: list[dict[str, str]],
+    required_bots: list[str],
+    refusal_causes: list[dict[str, str]] | None = None,
+    measured_diff_size: str = '',
+) -> dict:
+    """Decide what the participation guard DOES with an unproven required bot.
+
+    The guard's default is a loop back into FIND: an un-surfaced review may still
+    arrive, so the step re-enters the FIND pipeline and waits. That default is wrong
+    for exactly one member. A required bot on ``refused_structural`` refused because
+    the DIFF is over a ceiling its own notice stated, so no loop-back and no wait can
+    change its answer — a point the guard text makes in as many words.
+
+    ``refused_structural`` therefore escalates instead, with Branch 0's envelope and
+    Branch 0's option set (split the diff, or accept the gap under a recorded merge
+    authorization; never a wait, never a demotion). The decision is made HERE, from
+    the states the predicate just classified, rather than re-derived by a reader of
+    the document: the refusal can be observed on EITHER surface — a rate-limit notice
+    carrying a ``size`` cause, or a ``refused_causes`` entry the findings fetch
+    reported — and both reach this one verdict through the same classification.
+
+    ⛔ **The knob is not an input, and that is the point.** ``review_rate_window_await``
+    arms the rate-limit RECOVERY sequence; it says nothing about whether a structural
+    refusal is answerable. Taking it as a parameter would make this decision
+    configurable, which is the defect: with the knob off, a structural refusal would
+    loop back forever on a project that had merely turned the *temporal* wait off.
+
+    Only a REQUIRED bot escalates. An optional bot's refusal never holds the step
+    open, so escalating one would put a decision the operator does not need in front
+    of them.
+
+    Returns ``{'action': 'loop_back'}`` when no required bot refused structurally, or
+    the escalation record naming the bot, its cause, the ceiling its notice stated
+    (``unknown`` when it stated none), the measured diff size (``unknown`` when
+    unmeasured) and the option set the operator may pick from.
+    """
+    required = set(required_bots)
+    caps = {record['bot_kind']: record.get('cap') or '' for record in refusal_causes or []}
+    # EVERY unproven required bot travels with the escalation, not only the one that
+    # refused structurally. Accepting the gap authorizes past all of them, so a prompt
+    # naming only the refusing bot would let an operator accept an absence they were
+    # never shown — the same rule the pre-merge barrier's structural prompt states.
+    unproven = [
+        record['bot_kind']
+        for record in bot_states
+        if record['bot_kind'] in required and record['state'] in _UNPROVEN_STATES
+    ]
+    for record in bot_states:
+        bot = record['bot_kind']
+        if record['state'] != STATE_REFUSED_STRUCTURAL or bot not in required:
+            continue
+        return {
+            'action': GUARD_ACTION_ESCALATE_ASK,
+            'reason': STATE_REFUSED_STRUCTURAL,
+            'bot_kind': bot,
+            'refusal_cause': CAUSE_SIZE,
+            # The bot's DECLARED rate-limit class travels with the escalation because
+            # the ``refusal_structural`` envelope shape carries ``refusal_class``, and
+            # this path has no other source for it. It is reported, never consulted: the
+            # ceiling on the diff, not the class, is what selected this route.
+            'refusal_class': bot_registry.rate_limit_class(bot),
+            'cap': caps.get(bot) or 'unknown',
+            'measured_diff_size': measured_diff_size or 'unknown',
+            'prompt_options': list(GUARD_STRUCTURAL_OPTIONS),
+            'unproven_bots': unproven,
+        }
+    return {'action': GUARD_ACTION_LOOP_BACK}
 
 
 def check_completeness(
@@ -1108,6 +1353,7 @@ def check_completeness(
     refusal_size_caps: dict[str, str] | None = None,
     measured_diff_size: str = '',
     unrecognised_refusal_bots: list[str] | None = None,
+    pr_number: int | None = None,
 ) -> dict:
     """Classify each bot's PARTICIPATION against the plan's ``pr-comment`` findings store.
 
@@ -1188,6 +1434,12 @@ def check_completeness(
                            than a per-bot set, because the condition holds for
                            every bot at once. It refines what would otherwise be
                            ``absent`` and overrides no positive observation.
+        pr_number:         The pull request this verdict is about. Supplying it scopes
+                           the store read to THAT PR's findings, so an earlier PR's
+                           review of this plan cannot be credited as this PR's (the
+                           stored findings are plan-scoped, and a plan can iterate over
+                           several PRs). Omitted, every row joins and the payload says
+                           ``store_scope: unscoped``. See :func:`_scope_findings`.
 
     Returns:
         Dict with the TOON-serialisable fields ``status``,
@@ -1208,6 +1460,12 @@ def check_completeness(
         ``participation_complete``, and only ``pending``'s contribution
         additionally depends on ``triage_ran``.
 
+        ``guard_action`` is what the guard DOES with that verdict, decided here so no
+        document has to re-derive it: ``{'action': 'loop_back'}`` for the ordinary
+        unproven verdict, or the ``refused_structural`` escalation record when a
+        REQUIRED bot refused because the diff is over a ceiling — see
+        :func:`guard_disposition`.
+
         On an unreadable findings store returns the ``_emit_toon`` error-branch
         payload ``{'status': 'error', 'error': 'load_failure', 'detail': ...}``,
         and on a store ``manage-findings`` never reached the refusal it publishes
@@ -1216,7 +1474,7 @@ def check_completeness(
         :func:`_read_pr_comment_findings` for why neither is answered with an
         empty finding list.
     """
-    read = _read_pr_comment_findings(plan_id)
+    read = _read_pr_comment_findings(plan_id, pr_number)
     if read['status'] != 'success':
         return read
     findings = read['findings']
@@ -1334,6 +1592,17 @@ def check_completeness(
         # The CAUSE axis per refusing bot with the ceiling its notice stated. Names the
         # remedy; state-determining for ``size``, advisory for every other value.
         'refusal_causes': refusal_causes_out,
+        # What the guard DOES with this verdict. ``loop_back`` is the ordinary default;
+        # ``escalate_ask`` with ``reason: refused_structural`` is the structural
+        # exception, decided from the states just classified so a reader of the document
+        # never has to re-derive it — and so the decision is identical whichever surface
+        # observed the refusal. See :func:`guard_disposition`.
+        'guard_action': guard_disposition(
+            bot_states,
+            required_bots,
+            refusal_causes_out,
+            measured_diff_size,
+        ),
         # ADR-019 coverage discriminator for the membership test ``classify_bot``
         # applies: the POPULATION every configured token was checked against. Carried
         # unconditionally here so an ``unregistered_kind`` verdict is never a bare
@@ -1343,6 +1612,13 @@ def check_completeness(
         # the RENDERING on whether any token actually failed; the datum is always
         # present in the payload, so a programmatic consumer never has to re-derive it.
         'known_bot_kinds': bot_registry.bot_kinds(),
+        # Which PR this read was about, and what could not be placed. A scoped read
+        # and an unscoped one answer the same question with different evidence, so the
+        # scope travels with the verdict instead of being inferred from the caller.
+        'store_scope': read.get('store_scope', 'unscoped'),
+        'foreign_stored_findings': read.get('foreign_stored_findings', 0),
+        'unscoped_stored_findings': read.get('unscoped_stored_findings', 0),
+        'unscoped_stored_finding_ids': list(read.get('unscoped_stored_finding_ids') or []),
     }
 
 
@@ -1403,6 +1679,16 @@ def check_deficit(
     # skipping it here would make the two commands report different states for one
     # refusal — the disagreement the docstring above forbids.
     causes_in = recover_causes_from_caps(refused_causes, refusal_size_caps)
+
+    # The findings read here is NOT PR-scoped, deliberately. This signal measures a
+    # reviewer's YIELD across the plan's whole record — how much a required reviewer
+    # produced against a baseline — so narrowing it to one pull request would compare a
+    # reviewer's output against a baseline drawn from a different population. The
+    # consequence is stated rather than hidden: on a plan that spans several PRs, a bot
+    # can read ``participated`` here (an earlier PR filed findings) and
+    # ``participated_but_empty`` from a PR-scoped ``check``. The two verdicts answer
+    # different questions — yield over the plan vs participation in one PR — and the
+    # scoped one is the one that gates a merge.
 
     reviewers: list[dict] = []
     for bot in classified:
@@ -1518,6 +1804,35 @@ def _emit_toon(payload: dict) -> None:
             }
             for record in causes
         ]
+
+    # What the guard does with the verdict. ``loop_back`` is emitted as the action
+    # alone: the guard's default needs no fields, and an envelope that carried a
+    # structural reason beside a loop-back would invite a consumer to escalate on it.
+    # The escalation record is rendered FLAT for the same reason the rest of this
+    # envelope is — one field per fact, so no consumer has to walk a nested object to
+    # find the option set it must present.
+    guard = payload.get('guard_action') or {'action': GUARD_ACTION_LOOP_BACK}
+    emitted['guard_action'] = guard.get('action', GUARD_ACTION_LOOP_BACK)
+    if guard.get('action') == GUARD_ACTION_ESCALATE_ASK:
+        emitted['guard_reason'] = guard.get('reason', '')
+        emitted['guard_bot_kind'] = guard.get('bot_kind', '')
+        emitted['guard_refusal_cause'] = guard.get('refusal_cause', '')
+        emitted['guard_refusal_class'] = guard.get('refusal_class', '')
+        emitted['guard_cap'] = guard.get('cap') or 'unknown'
+        emitted['guard_refused_diff_size'] = guard.get('measured_diff_size') or 'unknown'
+        emitted['guard_unproven_bots'] = list(guard.get('unproven_bots') or [])
+        emitted['guard_prompt_options'] = list(guard.get('prompt_options') or [])
+
+    # The store scope travels with every verdict: a read scoped to one PR and a read of
+    # the whole plan-scoped store answer the same question on different evidence, and a
+    # consumer must be able to tell which one it holds.
+    emitted['store_scope'] = payload.get('store_scope', 'unscoped')
+    unscoped = list(payload.get('unscoped_stored_finding_ids') or [])
+    if unscoped:
+        # Rendered only when a row could not be placed: on a single-PR plan there is
+        # nothing to place, and a permanent ``0`` beside a clean verdict is noise.
+        emitted['unscoped_stored_findings'] = len(unscoped)
+        emitted['unscoped_stored_finding_ids'] = unscoped
 
     print(serialize_toon(emitted))
 
@@ -1946,6 +2261,7 @@ def cmd_check(args: argparse.Namespace) -> int:
         refusal_size_caps=obs['refusal_size_caps'],
         measured_diff_size=args.measured_diff_size,
         unrecognised_refusal_bots=obs['unrecognised_refusal_bots'],
+        pr_number=args.pr_number,
     )
     _emit_toon(payload)
     return 0 if payload.get('status') == 'success' else 1
@@ -1999,6 +2315,12 @@ def cmd_trigger_bot(args: argparse.Namespace) -> int:
       stored finding are joined: they are when both are supplied and differ. An
       absent value on either side joins nothing, because a comparison that was
       not made says nothing about whether those findings are out of date.
+    - ``--pr-number`` scopes that stored-finding population to the pull request being
+      worked. This plan's findings store is plan-scoped, so without it a bot whose
+      finding was filed for an EARLIER PR of the same plan is joined and triggered
+      here although nothing about it is out of date for this PR. Unplaceable (legacy,
+      no recorded PR) rows are reported in ``unscoped_stored_findings`` rather than
+      joined when the store spans more than one PR — see :func:`_scope_findings`.
 
     The stored-finding bots are read from the plan's findings store here, not
     supplied by the caller. A store that cannot be read is the same structured
@@ -2012,7 +2334,7 @@ def cmd_trigger_bot(args: argparse.Namespace) -> int:
     except MalformedBotFlag as exc:
         print(serialize_toon({'status': 'error', 'error': 'malformed_bot_flag', 'detail': str(exc)}))
         return 1
-    read = _read_pr_comment_findings(args.plan_id)
+    read = _read_pr_comment_findings(args.plan_id, args.pr_number)
     if read['status'] != 'success':
         print(serialize_toon(read))
         return 1
@@ -2026,6 +2348,15 @@ def cmd_trigger_bot(args: argparse.Namespace) -> int:
         optional_bots=optional,
         stored_findings_stale=bool(reviewed_sha and head_sha and reviewed_sha != head_sha),
     )
+    # The scope travels with the list: a caller must be able to tell that the join it
+    # got was scoped to its PR, and which rows nobody can place. The unscoped fields are
+    # emitted only when there IS such a row — a permanent ``0`` beside a clean list is
+    # noise, and the return shape documents them as conditional.
+    payload['store_scope'] = read.get('store_scope', 'unscoped')
+    unscoped_ids = list(read.get('unscoped_stored_finding_ids') or [])
+    if unscoped_ids:
+        payload['unscoped_stored_findings'] = len(unscoped_ids)
+        payload['unscoped_stored_finding_ids'] = unscoped_ids
     print(serialize_toon(payload))
     return 0
 
@@ -2286,6 +2617,20 @@ def main(argv: list[str] | None = None) -> int:
             'reported as unknown, never as zero.'
         ),
     )
+    check_parser.add_argument(
+        '--pr-number',
+        type=int,
+        default=None,
+        help=(
+            'The pull request this verdict is about. Supplying it scopes the findings '
+            "read to THAT PR's stored findings; the plan's findings store is plan-scoped, "
+            'so an earlier PR of the same plan would otherwise join the current one. '
+            'Omitted, every stored finding joins and the payload reports '
+            'store_scope: unscoped. A legacy row (no recorded PR) is reported in '
+            'unscoped_stored_findings rather than joined when the store spans more than '
+            'one PR.'
+        ),
+    )
     check_parser.set_defaults(func=cmd_check)
 
     deficit_parser = subparsers.add_parser(
@@ -2405,6 +2750,17 @@ def main(argv: list[str] | None = None) -> int:
             'The current worktree HEAD commit. See --reviewed-commit-sha. May '
             'be supplied bare (no value), which reads as not observed and joins '
             'no stored-finding bot.'
+        ),
+    )
+    trigger_bot_parser.add_argument(
+        '--pr-number',
+        type=int,
+        default=None,
+        help=(
+            'The pull request being worked. Supplying it scopes the stored-finding '
+            "population to THAT PR's findings; without it a bot whose finding was filed "
+            'for an earlier PR of the same plan is joined and triggered. Omitted, every '
+            'stored finding joins and the payload reports store_scope: unscoped.'
         ),
     )
     trigger_bot_parser.set_defaults(func=cmd_trigger_bot)

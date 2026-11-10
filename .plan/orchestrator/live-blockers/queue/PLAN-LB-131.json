@@ -2,10 +2,10 @@
   "id": "PLAN-LB-131",
   "slug": "foreign-gate-default-branch",
   "workstream": "WS-01",
-  "status": "running",
+  "status": "shipped",
   "lane": "runbook",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "plan_marshall_plan_id": "rb-lb-131-foreign-gate-default-branch",
+  "pr": "1948",
+  "landing": "landings/PLAN-LB-131.md",
   "seq": 131
 }
