@@ -69,7 +69,7 @@ def _mkdtemp_sites(tree: ast.Module) -> list[tuple[ast.Call, ast.AST | None, ast
     found: list[tuple[ast.Call, ast.AST | None, ast.ClassDef | None]] = []
 
     def visit(node: ast.AST, function: ast.AST | None, klass: ast.ClassDef | None) -> None:
-        if _is_mkdtemp_call(node):
+        if isinstance(node, ast.Call) and _is_mkdtemp_call(node):
             found.append((node, function, klass))
         for child in ast.iter_child_nodes(node):
             if isinstance(child, _FUNCTION_NODES):
@@ -154,8 +154,9 @@ def _removes_in(statements: list[ast.stmt], name: str | None, attr: str | None) 
     """Whether any of ``statements`` removes the named directory."""
     for statement in statements:
         for node in _nodes_of_own_scope(statement):
-            if _is_removal_call(node) and node.args and _names_target(node.args[0], name, attr):
-                return True
+            if isinstance(node, ast.Call) and _is_removal_call(node) and node.args:
+                if _names_target(node.args[0], name, attr):
+                    return True
     return False
 
 
@@ -179,9 +180,10 @@ def _removes_after_a_yield(function: ast.AST, name: str | None, attr: str | None
         return False
     last_yield = max(yields)
     for node in _nodes_of_own_scope(function):
-        if _is_removal_call(node) and getattr(node, 'lineno', 0) > last_yield and node.args:
-            if _names_target(node.args[0], name, attr):
-                return True
+        if not isinstance(node, ast.Call) or not _is_removal_call(node) or not node.args:
+            continue
+        if getattr(node, 'lineno', 0) > last_yield and _names_target(node.args[0], name, attr):
+            return True
     return False
 
 
