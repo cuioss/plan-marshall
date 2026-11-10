@@ -239,7 +239,7 @@ Read `re_review_on_loopback` (default: `false`) off the returned `params` object
      --plan-id {plan_id} --type pr-comment
    ```
 
-   Walk `findings` newest-first and capture `{reviewed_commit_sha}` from the first finding whose `bot_kind` is non-empty **and whose `title` names THIS pull request** (`PR #{pr_number} …` — the producer stamps the PR into the title and into the first `detail` line of every finding it files). ⛔ **The store is PLAN-scoped, so a plan that has worked an earlier PR still holds that PR's findings**, and the newest of those is not this PR's review record: taking it would compare another PR's reviewed commit against this PR's head and silently decide whether to join on a fact about a different pull request. A finding filed for another PR of this plan is skipped here exactly as it is skipped by `trigger-bot`'s scoped join below — the two agree on every row that carries a PR stamp; a pre-stamp row carries none, so this read always skips it while the selector joins it when its store holds only one PR. When no bot-authored finding of THIS PR exists (the list is empty, every finding is human-authored, or every bot finding names another PR), `{reviewed_commit_sha}` is empty. That is NOT a reason to skip the section: a bot with no stored finding is exactly the bot the participation read in step 3 exists to find.
+   Walk `findings` newest-first and capture `{reviewed_commit_sha}` from the first finding whose `bot_kind` is non-empty **and whose `title` names THIS pull request** (`PR #{pr_number} …` — the producer stamps the PR into the title and into the first `detail` line of every finding it files). ⛔ **The store is PLAN-scoped, so a plan that has worked another PR still holds that PR's findings**, and the newest of those is not this PR's review record: taking it would compare another PR's reviewed commit against this PR's head and silently decide whether to join on a fact about a different pull request. A finding filed for another PR of this plan is skipped here exactly as it is skipped by `trigger-bot`'s scoped join below — the two agree on every row that carries a PR stamp; a pre-stamp row carries none, so this read always skips it while the selector joins it when its store holds only one PR. When no bot-authored finding of THIS PR exists (the list is empty, every finding is human-authored, or every bot finding names another PR), `{reviewed_commit_sha}` is empty. That is NOT a reason to skip the section: a bot with no stored finding is exactly the bot the participation read in step 3 exists to find.
 
    ⛔ **This read comes BEFORE step 3, and the order is load-bearing.** Step 3 issues the producer call, which re-stamps every stored finding's `reviewed_commit_sha` to the current HEAD. Read afterwards, the stamp always equals HEAD and the stored-finding bots are never joined.
 
@@ -274,7 +274,7 @@ Read `re_review_on_loopback` (default: `false`) off the returned `params` object
 
    - `trigger_bots[]` — every bot whose review is out of date, required bots first: the bots named in `{stale_participation_bots}`, joined with the bots that have stored findings when `{head_sha}` differs from `{reviewed_commit_sha}`. A bot in neither `required_bots` nor `optional_bots` is not listed; the return names it in `unclassified_bots[]`.
    - `required_stale_bots[]` — the required bots named in `{stale_participation_bots}`.
-   - `store_scope` — `pr` when the stored-finding join was scoped to `{pr_number}`, `unscoped` when it was not. ⛔ **The plan's findings store spans every PR the plan has worked**, so the join MUST be scoped or an earlier PR's review is re-triggered as if it were this PR's — which is what `--pr-number` above is for. A row whose PR could not be placed (a finding filed before the producer stamped one) is reported in `unscoped_stored_findings` / `unscoped_stored_finding_ids` and NOT joined: on a plan that spans more than one PR it belongs to no known PR, and assigning it to this one would be the silent join the scoping exists to prevent.
+   - `store_scope` — `pr` when the stored-finding join was scoped to `{pr_number}`, `unscoped` when it was not. ⛔ **The plan's findings store spans every PR the plan has worked**, so the join MUST be scoped or a different PR's review is re-triggered as if it were this PR's — which is what `--pr-number` above is for. A row whose PR could not be placed (a finding filed before the producer stamped one) is reported in `unscoped_stored_findings` / `unscoped_stored_finding_ids` and NOT joined: on a plan that spans more than one PR it belongs to no known PR, and assigning it to this one would be the silent join the scoping exists to prevent.
 
 5. Choose the bots this pass triggers, as `{bots_to_trigger}`:
 
@@ -1717,7 +1717,7 @@ python3 .plan/execute-script.py plan-marshall:automatic-review:review_completene
 ```
 
 `--pr-number` scopes the findings read to one pull request. It is a store-scoping scalar, not a bot
-observation: the store is PLAN-scoped, so an earlier PR's findings join this PR's verdict unless the
+observation: the store is PLAN-scoped, so a different PR's findings join this PR's verdict unless the
 read is scoped. Omitting it is legal and reported (`store_scope: unscoped`), and a row whose PR could
 not be placed travels in `unscoped_stored_findings` rather than being joined on a plan that spans more
 than one PR.
@@ -1873,7 +1873,7 @@ bots first, in `--required-bots` order, then the optional ones by name — toget
 the scope fields `store_scope` / `unscoped_stored_findings` / `unscoped_stored_finding_ids`.
 
 `--pr-number` scopes the stored-finding population to one pull request. The plan's findings store is
-plan-scoped, so without it a bot whose finding was filed for an EARLIER PR of the same plan is joined
+plan-scoped, so without it a bot whose finding was filed for a DIFFERENT PR of the same plan is joined
 and triggered as though that review were out of date for this one. Omitted, every stored finding joins
 and `store_scope` says `unscoped`. A row whose PR could not be placed (written before the producer
 stamped one) is reported in `unscoped_stored_findings` and NOT joined when the store spans more than
