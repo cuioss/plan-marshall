@@ -68,7 +68,10 @@ For GitLab projects use `plan-marshall:workflow-integration-gitlab:gitlab_pr fet
 > has since advanced past) and
 > `not_triggered` (no `pull_request`-event run exists, so nothing was ever asked — surfaced by
 > `ci checks pull-request-runs`) both block, but their remedy is to **re-trigger** or **trigger** the
-> review, the opposite of `absent`'s escalate-the-non-participation. Rendering all three alike
+> review, the opposite of `absent`'s escalate-the-non-participation. A reviewer declaring
+> `review_complete_after_handling` does not reach `participated_stale` on a review on record — that
+> review completes it, so no trigger is owed — which is the one case where the re-trigger remedy does
+> not apply. Rendering all three alike
 > prescribes escalation in the two cases where a trigger was the correct answer. `refused_structural`
 > (the bot refused because the DIFF is over its declared ceiling) is the sharpest case: neither a
 > trigger nor a wait can change its answer, so its remedies are to **split**, or to **accept the gap
