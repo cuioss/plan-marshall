@@ -17,13 +17,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from pathlib import Path
 from typing import Any
 
 import _criteria_snapshot as _snap
 import review_support
 
-from conftest import get_skill_dir, load_script_module
+from conftest import PROJECT_ROOT, get_skill_dir, load_script_module
 
 PLAN_ID = 'lb70-criteria-gate-d1'
 _lifecycle = load_script_module('plan-marshall', 'manage-status', '_cmd_lifecycle.py', '_lb70_d1_lifecycle')
@@ -105,6 +106,90 @@ def test_surgical_plan_without_a_review_completes_finalize(plan_context, tmp_pat
 
     assert result is not None and result['status'] == 'success', result
     assert result['criteria_gate'].startswith('not_applicable'), result
+
+
+# --- D1 (a): the criteria-gate note is persisted on the plan's status record -------------
+
+
+def test_dropped_review_completion_persists_the_criteria_gate_note(plan_context, tmp_path, monkeypatch) -> None:
+    """A dropped-review completion records the note, so a later read still sees it.
+
+    The transition payload is transient; the status record is what an archive,
+    a landing read or an audit sees afterwards, so the note has to land there.
+    """
+    plan_dir = _plan(plan_context, ['parser accepts input'], freeze_from=['parser accepts input'])
+    _manifest(plan_dir, ['pre-push-quality-gate', 'sonar-roundtrip'])
+    _status(plan_dir, {'use_worktree': False, 'scope_estimate': 'surgical'})
+    monkeypatch.setattr(_lifecycle, 'assert_finalize_findings_clean', lambda *_a, **_k: 0)
+    monkeypatch.setattr(_lifecycle, 'log_entry', lambda *_a, **_k: None)
+    monkeypatch.setattr(_lifecycle, '_surface_drive', lambda *_a, **_k: None)
+
+    result = _lifecycle.cmd_transition(
+        argparse.Namespace(plan_id=PLAN_ID, completed='6-finalize', allow_bare_transition=False, bare_reason=None)
+    )
+
+    assert result is not None and result['status'] == 'success', result
+    record = json.loads((plan_dir / 'status.json').read_text(encoding='utf-8'))
+    assert record['metadata']['criteria_gate'] == result['criteria_gate'], record
+    assert record['metadata']['criteria_gate'].startswith('not_applicable'), record
+
+
+def test_a_reviewed_plan_records_no_criteria_gate_note(plan_context, tmp_path, monkeypatch) -> None:
+    """Control: a plan whose review graded every criterion carries no note.
+
+    An absence is the answer here — the note exists only to say "there was
+    nothing to grade", so a graded plan must not carry one.
+    """
+    plan_dir = _plan(plan_context, ['parser accepts input'], freeze_from=['parser accepts input'])
+    _manifest(plan_dir, ['functional-review', 'pre-push-quality-gate'])
+    _sealed_live(
+        plan_dir,
+        tmp_path,
+        {
+            'deliverables': [
+                {
+                    'number': 1,
+                    'verdict': 'met',
+                    'criteria': [
+                        {'criterion': 'parser accepts input', 'status': 'met', 'evidence': ['src/parser.py:1']}
+                    ],
+                }
+            ],
+            'unrequested_changes': [],
+            'self_reports': [],
+            'files_read': ['src/parser.py'],
+        },
+    )
+    monkeypatch.setattr(_lifecycle, 'assert_finalize_findings_clean', lambda *_a, **_k: 0)
+    monkeypatch.setattr(_lifecycle, 'log_entry', lambda *_a, **_k: None)
+    monkeypatch.setattr(_lifecycle, '_surface_drive', lambda *_a, **_k: None)
+
+    result = _lifecycle.cmd_transition(
+        argparse.Namespace(plan_id=PLAN_ID, completed='6-finalize', allow_bare_transition=False, bare_reason=None)
+    )
+
+    assert result is not None and result['status'] == 'success', result
+    assert 'criteria_gate' not in result, result
+    record = json.loads((plan_dir / 'status.json').read_text(encoding='utf-8'))
+    assert 'criteria_gate' not in record['metadata'], record
+
+
+def test_the_retired_drop_reason_key_has_no_reader() -> None:
+    """The dead ``functional_review_drop_reason`` metadata key is read nowhere.
+
+    No producer ever wrote it, so the read could only ever fall through to the
+    scope and not-scheduled fallbacks. Removing the read without leaving a
+    second consumer behind is what makes that removal safe.
+    """
+    marker = re.compile(r"""['"]functional_review_drop_reason['"]""")
+    bundles = PROJECT_ROOT / 'marketplace' / 'bundles'
+    offenders = [
+        str(path.relative_to(PROJECT_ROOT))
+        for path in sorted(bundles.rglob('*.py'))
+        if marker.search(path.read_text(encoding='utf-8', errors='replace'))
+    ]
+
+    assert offenders == [], offenders
 
 
 def test_plan_whose_review_is_scheduled_still_refuses_an_open_criterion(plan_context, tmp_path, monkeypatch) -> None:
@@ -223,7 +308,7 @@ def test_superseded_deliverable_criteria_do_not_block(plan_context, tmp_path) ->
         plan_dir,
         tmp_path,
         {
-            'deliverables': [{'number': 1, 'verdict': 'superseded', 'superseded_by': 'operator decision X'}],
+            'deliverables': [{'number': 1, 'verdict': 'superseded', 'superseded_by': 'D1'}],
             'unrequested_changes': [],
             'self_reports': [],
             'files_read': [],

@@ -1815,6 +1815,22 @@ def cmd_transition(args: argparse.Namespace) -> dict[str, Any] | None:
     # the aged-token predicate (_status_core.title_token_is_stale), not a
     # transition-side one. A transition-side sweep only fires when a phase
     # happens to change, so a stranded token could outlive it indefinitely.
+    #
+    # The criteria-gate outcome is PERSISTED here, before the write, and not only
+    # returned: the transition payload is transient, while the status record is
+    # what the archive move, a landing read and an audit still see afterwards.
+    # The note exists only for a completion whose functional review the composed
+    # manifest dropped, so a graded completion carries none — and the write
+    # therefore also clears a note left by an earlier attempt.
+    criteria_gate: str | None = None
+    if args.completed in _COMPLETION_GUARD_PHASES:
+        criteria_gate = _criteria_gate_note(args.plan_id, status)
+        metadata = normalize_metadata(status)
+        if criteria_gate is not None:
+            metadata['criteria_gate'] = criteria_gate
+        else:
+            metadata.pop('criteria_gate', None)
+
     write_status(args.plan_id, status)
     # Persisted-title-state-write drive seam (best-effort, fire-and-forget):
     # a phase advance is a current_phase write, so bind + repaint fire here so
@@ -1827,14 +1843,11 @@ def cmd_transition(args: argparse.Namespace) -> dict[str, Any] | None:
     else:
         result['message'] = 'All phases completed'
 
-    # Record the criteria-gate outcome on the completion payload: when the plan's
-    # composed manifest dropped the functional review there is nothing to grade,
-    # and the exit says so (`criteria_gate: not_applicable (review dropped: …)`)
-    # rather than reading the ungraded criteria as outstanding work.
-    if args.completed in _COMPLETION_GUARD_PHASES:
-        gate = _criteria_gate_note(args.plan_id, status)
-        if gate is not None:
-            result['criteria_gate'] = gate
+    # The same note rides the payload, so a caller reading the exit alone still
+    # sees why nothing was graded (`criteria_gate: not_applicable (review
+    # dropped: …)`) instead of reading the ungraded criteria as outstanding work.
+    if criteria_gate is not None:
+        result['criteria_gate'] = criteria_gate
 
     # Mailbox check-point (roster key ``phase-transition``). Placed AFTER the
     # phase write and on the success payload alone: a refusal above is not a

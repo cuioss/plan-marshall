@@ -49,7 +49,7 @@ import hashlib
 import json
 import re
 import uuid
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
@@ -142,6 +142,10 @@ PARSER_KEY = 'parser'
 CURRENT_PARSER = 3
 #: The functional verdict that retires a deliverable: its criteria are not open.
 SUPERSEDED = 'superseded'
+#: The deliverable references a ``superseded_by`` value may carry: the outline's
+#: own ``D<n>`` form and the spelled ``deliverable <n>`` form. Only a number that
+#: names one of the outline's deliverable numbers closes the criteria.
+_DELIVERABLE_REFERENCE = re.compile(r'\b[dD]\s?(\d+)\b|\bdeliverables?\s+#?(\d+)\b')
 CRITERION_UNPARSED = 'criterion_unparsed'
 #: The named state an unterminated fenced block leaves in ``unparsed``. It is a
 #: coalesced marker (not the raw line) so a gate reads a state rather than text.
@@ -1801,8 +1805,12 @@ def functional_review_drop_reason(plan_id: str) -> str | None:
     The ONE reader both the finalize triage source and the finalize completion gate
     use. It reads the composed phase-6 manifest (``execution.toon``): a manifest
     that schedules the review, or cannot be read, drops nothing. A manifest that
-    does not schedule it is a drop, and the reason is the recorded one, the settled
-    surgical scope, or the generic not-scheduled sentence.
+    does not schedule it is a drop, and the reason is the settled surgical scope or
+    the generic not-scheduled sentence.
+
+    The reason is DERIVED from the manifest and the plan's settled scope, never read
+    from a recorded key: no writer ever recorded one, so a recorded-key read could
+    only ever fall through to the same two fallbacks.
 
     This module may not import ``manage-status`` (the layering rule in the module
     docstring), so the decision lives here and ``manage-status`` delegates to it
@@ -1818,13 +1826,39 @@ def functional_review_drop_reason(plan_id: str) -> str | None:
     document = _status_doc(plan_id)
     if isinstance(document, dict) and isinstance(document.get('metadata'), dict):
         metadata = document['metadata']
-    recorded = metadata.get('functional_review_drop_reason')
-    if isinstance(recorded, str) and recorded.strip():
-        return recorded.strip()
     scope = metadata.get('scope_estimate')
     if isinstance(scope, str) and scope.strip().lower() in ('surgical', 'single_module', 'micro', 'single-module'):
         return 'surgical scope' if scope.strip().lower() == 'surgical' else f'{scope.strip()} scope'
     return 'not scheduled in the phase-6 manifest'
+
+
+def superseded_by_names_deliverable(cited: object, outline_numbers: Iterable[object]) -> bool:
+    """Does ``superseded_by`` name a deliverable the outline actually carries?
+
+    A ``superseded`` verdict closes a deliverable's criteria, so the value has to
+    point somewhere: free text closed them, which let a typo or a stray marker
+    release ungraded work. The accepted reference forms are the ones the outline
+    and the review vocabulary already use — ``D3`` / ``d3`` and ``deliverable 3``
+    / ``deliverables 3`` — and the cited number has to be one of the outline's own
+    deliverable numbers.
+
+    The ONE rule the validator and :func:`open_criteria` share, so the two cannot
+    decide the same verdict differently.
+    """
+    text = str(cited or '').strip()
+    if not text:
+        return False
+    numbers: set[int] = set()
+    for number in outline_numbers:
+        if isinstance(number, int) and not isinstance(number, bool):
+            numbers.add(number)
+        elif isinstance(number, str) and number.strip().isdigit():
+            numbers.add(int(number.strip()))
+    for match in _DELIVERABLE_REFERENCE.finditer(text):
+        raw = match.group(1) or match.group(2)
+        if raw is not None and int(raw) in numbers:
+            return True
+    return False
 
 
 def open_criteria(plan_id: str, verdict_file: Path | None = None) -> dict[str, Any]:
@@ -1856,7 +1890,8 @@ def open_criteria(plan_id: str, verdict_file: Path | None = None) -> dict[str, A
     states additionally close criteria rather than reading them as open work:
 
     * an operator decision authorizes the exact change (``authorized_changes``);
-    * the deliverable's verdict is ``superseded``;
+    * the deliverable's verdict is ``superseded`` AND its ``superseded_by`` names a
+      deliverable the snapshot carries (:func:`superseded_by_names_deliverable`);
     * the operator closed the review past its round cap (:func:`_review_closed_reason`);
     * the manifest dropped the functional review (:func:`functional_review_drop_reason`)
       — the completion gate exempts exactly this case, and ``source: review_dropped``
@@ -1901,13 +1936,16 @@ def open_criteria(plan_id: str, verdict_file: Path | None = None) -> dict[str, A
         return {'source': 'review_closed', 'closed_reason': closed_reason, 'open_count': 0, 'open': []}
     path = verdict_file if verdict_file is not None else base_path('plans', plan_id, FUNCTIONAL_VERDICT_FILE)
     verdict, verdict_state = _checked_verdict(path, plan_id)
+    snapshot_numbers = {row.get('number') for row in snapshot.get('deliverables') or [] if isinstance(row, dict)}
     rows: list[dict[str, Any]] = []
     for row in snapshot.get('deliverables') or []:
         if not isinstance(row, dict):
             continue
         number = row.get('number')
         graded_row = verdict.get(number) or {}
-        if str(graded_row.get('verdict') or '') == SUPERSEDED:
+        if str(graded_row.get('verdict') or '') == SUPERSEDED and superseded_by_names_deliverable(
+            graded_row.get('superseded_by'), snapshot_numbers
+        ):
             continue
         graded = graded_row.get('criteria') or []
         for index, criterion in enumerate(row.get('criteria') or [], start=1):
