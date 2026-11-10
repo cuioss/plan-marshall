@@ -320,7 +320,14 @@ Extract `value` (`light` or `deep`). When the field is absent or unresolved, tre
      ```
 
    - **`outline_prompt` carrying a re-freeze question** — the envelope could not freeze the criteria: `snapshot-criteria` answered `refreeze_requires_decision`, so `3-outline` did NOT advance and the `status: success` branch below does not apply. This orchestrator runs in the main context and can reach the operator, which a dispatched leaf cannot (see [`ref-workflow-architecture/standards/agents.md`](../../ref-workflow-architecture/standards/agents.md) § "Leaf cannot fire AskUserQuestion — return a prompt-required envelope"): fire ONE `AskUserQuestion` over the envelope's question and act only on the option the operator SELECTS.
-     - **Approved** — run `criteria-refreeze-authorize` through the command in [`phase-3-outline/SKILL.md`](../../phase-3-outline/SKILL.md) § Log Completion, then re-dispatch the SAME light-lane envelope exactly ONCE through the resolve + `Task` shape of step 3, so its retried `snapshot-criteria` succeeds and the envelope transitions `3-outline`.
+     - **Approved** — run `criteria-refreeze-authorize` with the operator's decision, then re-dispatch:
+
+       ```bash
+       python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-solution-outline \
+         criteria-refreeze-authorize --plan-id {plan_id} --decision "{operator decision}"
+       ```
+
+       Re-dispatch the SAME light-lane envelope exactly ONCE through the resolve + `Task` shape of step 3, so its retried `snapshot-criteria` succeeds and the envelope transitions `3-outline`.
      - **Refused** — STOP: nothing was frozen, so the phase must not advance. Emit the `[ERROR]` work-log line naming the operator's refusal and surface it; record no boundary.
      - A re-dispatch that returns `outline_prompt` again is the same decision asked twice: STOP and report it rather than looping.
 

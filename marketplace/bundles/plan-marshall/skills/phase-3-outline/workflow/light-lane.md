@@ -264,7 +264,7 @@ The light lane is **not exempt** from the narrowing obligation either, and for t
 
    Second, the envelope's return TOON `domain_narrow_report` field (see § Output), which carries the report **verbatim** off this envelope without the 80-ASCII-character cap `display_detail` is bound by. `display_detail` is deliberately NOT a sink for it: its shape is fixed by the Output contract below, so it cannot carry the report verbatim and does not claim to.
 
-   **Both sinks are consumed.** The decision log keeps the report with the plan. The return field is read by the orchestrator: `plan-marshall/workflow/planning.md` (light-lane branch, `status: success`) prints it to the operator verbatim as one line when the envelope return carries it, and prints nothing when it is absent.
+   **Both sinks are consumed.** The decision log keeps the report with the plan. The return field is read by the orchestrator: `plan-marshall/workflow/planning.md` (light-lane branch, `status: success`) prints it to the operator verbatim as one line when the envelope return carries it, and prints nothing when it is absent. That includes the `refreeze_requires_decision` return of Step 6, which is also a `status: success` carrying this field: the light-lane branch prints it before it asks the re-freeze question.
 
 The verb owns the narrowing decision; this envelope invokes it, persists its result, and reports it. The rationale for the rule — why end-of-outline is the site, why a `narrowed: false` outcome is recorded rather than skipped, and the four-legged safety bound the verb applies — lives in [`../SKILL.md`](../SKILL.md) § Domain Narrowing. Do NOT restate it here.
 
@@ -311,14 +311,14 @@ deliverable_count: {N}
 discovery_bound_hit: false
 qgate_validation_required: false
 domain_narrow_report: {the domain-narrow report, verbatim; see Step 5c}
-outline_prompt: {the re-freeze question; present only on Step 6's refreeze_requires_decision branch}
+outline_prompt: {one question in the declared questions[] shape; present only on Step 6's refreeze_requires_decision branch}
 ```
 
 `domain_narrow_report` carries the `report` string returned by `manage-config domain-narrow`, verbatim and unedited, on **both** of the verb's success outcomes — a `narrowed: false` run reports too. It exists because `display_detail`'s fixed shape above and its 80-character ASCII cap cannot carry the report itself. The orchestrator reads it: `plan-marshall/workflow/planning.md` (light-lane branch) prints it to the operator verbatim as one line; the decision-log entry at Step 5c keeps it with the plan. The field is **omitted** when the verb returned `status: error` — nothing was evaluated, so there is no report, and an empty string would render a pass that could not look as one that looked and found nothing. It is **omitted on the domain-alphabet refusal branch too** (Step 5c step 2b): there the verb did produce a report and the step withheld it, so carrying the field while its decision-log sink was refused would leave the two sinks disagreeing about whether the step reported. It is absent from the escalate shape below by construction: the ratchet returns at Step 4, before Step 5c ever runs.
 
 `qgate_validation_required` is always `false` on the light lane — the bounded read set + premise-check + escalation ratchet are the light lane's verification, and the deep-lane q-gate-validation is reached only via escalation.
 
-`outline_prompt` is the batched prompt-required envelope described in [`../SKILL.md`](../SKILL.md) § "Operator-input contract". The lane emits it — alongside an otherwise-`status: success` return, before Step 6's transition — only on that step's `refreeze_requires_decision` branch, which is the one decision the lane cannot make and cannot ask about itself. It carries the re-freeze question, whose options name the branch each one selects. The main-context orchestrator fires ONE `AskUserQuestion` over it and, on the operator's approval, runs `criteria-refreeze-authorize` and re-dispatches this lane at most once with the answer baked in; the lane performs none of the operator-facing interaction. The field is omitted on every other path.
+`outline_prompt` is the batched prompt-required envelope described in [`../SKILL.md`](../SKILL.md) § "Operator-input contract". The lane emits it — alongside an otherwise-`status: success` return, before Step 6's transition — only on that step's `refreeze_requires_decision` branch, which is the one decision the lane cannot make and cannot ask about itself. It carries ONE question in the envelope's declared `questions[]{id,question,header,options,recommended}` shape, with `id: refreeze-authorize`, and its two options name the branch each one selects: re-freeze the snapshot and retry it, or stop without a freeze. The main-context orchestrator fires ONE `AskUserQuestion` over it and, on the operator's approval, runs `criteria-refreeze-authorize` and re-dispatches this lane at most once with the answer baked in; the lane performs none of the operator-facing interaction. The field is omitted on every other path.
 
 ### escalate (DQ3 ratchet fired)
 

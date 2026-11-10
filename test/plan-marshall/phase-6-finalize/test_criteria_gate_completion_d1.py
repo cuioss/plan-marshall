@@ -65,10 +65,14 @@ def _manifest(plan_dir: Path, steps: list[str]) -> None:
     (plan_dir / 'execution.toon').write_text(head + body, encoding='utf-8')
 
 
-def _status(plan_dir: Path, metadata: dict[str, Any] | None = None) -> None:
+def _status(
+    plan_dir: Path,
+    metadata: dict[str, Any] | None = None,
+    phases: list[dict[str, str]] | None = None,
+) -> None:
     status = {
         'title': 'fixture',
-        'phases': [{'name': '6-finalize', 'status': 'pending'}],
+        'phases': phases if phases is not None else [{'name': '6-finalize', 'status': 'pending'}],
         'current_phase': '6-finalize',
         'metadata': metadata if metadata is not None else {'use_worktree': False},
     }
@@ -224,12 +228,37 @@ def test_a_graded_completion_clears_a_stale_criteria_gate_note(plan_context, tmp
     assert 'criteria_gate' not in record['metadata'], record
 
 
+def test_a_completion_archive_records_the_criteria_gate_note(plan_context, tmp_path, monkeypatch) -> None:
+    """The archive — the production finalize completion — records the note too.
+
+    ``archive-plan`` is the step that closes ``6-finalize`` in production, and
+    after its single move no second write can reach the live path, so the note
+    has to ride the same write that closes the phases.
+    """
+    plan_dir = _plan(plan_context, ['parser accepts input'], freeze_from=['parser accepts input'])
+    _manifest(plan_dir, ['pre-push-quality-gate'])
+    _status(
+        plan_dir,
+        {'use_worktree': False, 'scope_estimate': 'surgical'},
+        phases=[{'name': '6-finalize', 'status': 'in_progress'}],
+    )
+    monkeypatch.setattr(_lifecycle, 'assert_finalize_findings_clean', lambda *_a, **_k: 0)
+    monkeypatch.setattr(_lifecycle, 'log_entry', lambda *_a, **_k: None)
+    monkeypatch.setattr(_lifecycle, '_surface_drive', lambda *_a, **_k: None)
+
+    result = _lifecycle.cmd_archive(argparse.Namespace(plan_id=PLAN_ID, dry_run=False, reason=None))
+
+    assert result is not None and result['status'] == 'success', result
+    archived = json.loads((Path(result['archived_to']) / 'status.json').read_text(encoding='utf-8'))
+    assert archived['metadata']['criteria_gate'].startswith('not_applicable'), archived
+
+
 def test_the_retired_drop_reason_key_has_no_reader() -> None:
-    """The dead ``functional_review_drop_reason`` metadata key is read nowhere.
+    """The dead ``functional_review_drop_reason`` metadata key is read by no module.
 
     No producer ever wrote it, so the read could only ever fall through to the
-    scope and not-scheduled fallbacks. Removing the read without leaving a
-    second consumer behind is what makes that removal safe.
+    scope and not-scheduled fallbacks. The population is every ``*.py`` under the
+    shipped bundles: a module is what can read a metadata key.
     """
     marker = re.compile(r"""['"]functional_review_drop_reason['"]""")
     bundles = PROJECT_ROOT / 'marketplace' / 'bundles'

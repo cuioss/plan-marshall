@@ -430,7 +430,7 @@ def _grade_row(
     expected: dict[str, Any],
     facts: dict[str, int],
     plan_id: str,
-    outline_numbers: frozenset[int] | set[int] = frozenset(),
+    outline_numbers: frozenset[int] | set[int],
     evidence_root: Path | None = None,
 ) -> None:
     number = expected['number']
@@ -444,7 +444,7 @@ def _grade_row(
     if verdict == 'superseded':
         cited = str(row.get('superseded_by') or '').strip()
         if not cited:
-            grading.errors.append(f'{where}: superseded without a cited operator decision or refutation')
+            grading.errors.append(f'{where}: superseded without a superseded_by')
         elif not superseded_by_names_deliverable(cited, outline_numbers):
             grading.errors.append(f'{where}: superseded_by {cited!r} names no deliverable of the outline')
         return

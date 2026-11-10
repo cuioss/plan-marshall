@@ -1982,6 +1982,7 @@ def cmd_archive(args: argparse.Namespace) -> dict[str, Any] | None:
     # gate is about; which phase is nominally current is not.
     open_scan = in_progress_phases(status)
     exemption_report: dict[str, Any] | None = None
+    completion_gate_ran = False
     if reason is None or _normalize_archive_reason(reason) in _COMPLETION_ASSERTING_ARCHIVE_REASONS:
         # Fail CLOSED on an unexaminable record. This guard's job is to refuse, and a
         # scan that could not read the phase structure cannot establish that
@@ -2007,6 +2008,7 @@ def cmd_archive(args: argparse.Namespace) -> dict[str, Any] | None:
             findings_refusal = _finalize_findings_refusal(args.plan_id, status)
             if findings_refusal is not None:
                 return findings_refusal
+            completion_gate_ran = True
     else:
         exemption_report = _exempt_archive_findings_report(args.plan_id, status, reason)
 
@@ -2055,6 +2057,17 @@ def cmd_archive(args: argparse.Namespace) -> dict[str, Any] | None:
     # second commit of the same document, and after ``shutil.move`` the live plan path no
     # longer resolves — exactly the failure the atomic phase-close exists to avoid.
     metadata = normalize_metadata(status)
+    # The criteria-gate outcome is recorded on the SAME write that closes the phases,
+    # because this is the production finalize completion (``archive-plan``) and after
+    # ``shutil.move`` no second write can reach the live path. It is scoped to the
+    # completion archive that ran the completion gate: a deliberate close of an
+    # abandoned plan graded nothing, so it records nothing.
+    if completion_gate_ran:
+        criteria_gate = _criteria_gate_note(args.plan_id, status)
+        if criteria_gate is not None:
+            metadata['criteria_gate'] = criteria_gate
+        else:
+            metadata.pop('criteria_gate', None)
     loop_back_marker = metadata.pop('loop_back_reentry', None)
     if loop_back_marker is not None:
         # A structurally odd marker (not a dict) is still consumed rather than left
