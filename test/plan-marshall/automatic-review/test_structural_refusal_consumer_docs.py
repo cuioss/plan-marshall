@@ -748,7 +748,7 @@ def _guard_false_branch() -> str:
     """
     text: str = _AR_SKILL.read_text(encoding='utf-8')
     start = text.index(_GUARD_FALSE_ANCHOR)
-    nxt = re.search(r'^(?:- \*\*|##)\s', text[start + len(_GUARD_FALSE_ANCHOR) :], re.MULTILINE)
+    nxt = re.search(r'^(?:- \*\*|#{1,6}\s)', text[start + len(_GUARD_FALSE_ANCHOR) :], re.MULTILINE)
     return text[start : start + len(_GUARD_FALSE_ANCHOR) + nxt.start()] if nxt else text[start:]
 
 

@@ -424,15 +424,17 @@ _REVIEWED_STATES = frozenset({STATE_PARTICIPATED, STATE_PARTICIPATED_BUT_EMPTY})
 GUARD_ACTION_LOOP_BACK = 'loop_back'
 GUARD_ACTION_ESCALATE_ASK = 'escalate_ask'
 
-# The STRUCTURAL escalation's operator options — exactly the two Branch 0 offers, and
-# never a wait. Restated here rather than derived, because the leaf RETURNS this set
-# and the document renders the same set: one of the two has to be the machine-readable
-# copy, and a consumer reading the options off a document would have to parse prose.
-# ⛔ A wait option here would be the non-option ``refused_structural`` exists to
-# remove: the ceiling is a property of the diff, so waiting is guaranteed to fail.
+# The STRUCTURAL escalation's operator options — the dispatcher's own labels, verbatim
+# from the branch table that routes the operator's selection
+# (``phase-6-finalize/SKILL.md`` § item 7a, ``branch-cleanup.md`` § "Structural refusal").
+# ⛔ They are NOT free prose: the dispatcher branches on these exact strings, so a leaf
+# returning a differently-worded pair would render options that match no documented
+# branch and hand the operator a selection nothing acts on. A wait option here would
+# also be the non-option ``refused_structural`` exists to remove — the ceiling is a
+# property of the diff, so waiting is guaranteed to fail.
 GUARD_STRUCTURAL_OPTIONS = (
-    'Split the diff so it fits the ceiling',
-    'Accept the coverage gap under a recorded merge authorization',
+    'Split the PR into diffs under the cap',
+    'Accept the coverage gap (record reason)',
 )
 
 
