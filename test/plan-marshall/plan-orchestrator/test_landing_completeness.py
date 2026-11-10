@@ -58,6 +58,7 @@ compute_surface_delta = _inbox.compute_surface_delta
 parse_delta_paths = _inbox._parse_delta_paths
 LANDING_REQUIRED_KEYS = _inbox.LANDING_REQUIRED_KEYS
 LANDING_FACTS_SCHEMA = _inbox.LANDING_FACTS_SCHEMA
+LANDING_FACTS_FENCE = _inbox.LANDING_FACTS_FENCE
 SURFACE_DELTA_CLEAN = _inbox.SURFACE_DELTA_CLEAN
 SURFACE_DELTA_EXPANSION = _inbox.SURFACE_DELTA_EXPANSION
 SURFACE_DELTA_VACUOUS = _inbox.SURFACE_DELTA_VACUOUS
@@ -1660,3 +1661,96 @@ class TestSingleLandingTotalsContract:
 
         assert complete is True
         assert missing == []
+
+
+# =============================================================================
+# The fence's info string may be separated from the backticks by whitespace
+# =============================================================================
+#
+# CommonMark permits spaces or tabs between a fence's backtick run and its info
+# string, and the landing producer documents render that shape. A landing opened
+# "``` landing-facts" carried every required key and still drained INCOMPLETE,
+# because the reader demanded that the info string abut the backticks. The
+# spaced form is read now, and every shape the reader refused before — another
+# info string, an indented fence, a longer backtick run — is still refused, so
+# the widening is pinned in both directions.
+
+
+def _landing_carrying(block: str) -> str:
+    """A landing body carrying ``block`` between a headline and a residue section."""
+    return f'## What landed\n\nx shipped.\n\n{block}\n\n## Residue\n\nnone\n'
+
+
+def _spaced_block(**overrides: str) -> str:
+    """The complete facts block, with its opening fence's info string spaced off."""
+    return _facts_block(**overrides).replace(f'{_FENCE}{LANDING_FACTS_FENCE}', f'{_FENCE} {LANDING_FACTS_FENCE}', 1)
+
+
+class TestSpacedFenceInfoString:
+    def test_parse_reads_a_space_before_the_info_string(self):
+        facts = parse_landing_facts(_landing_carrying(_spaced_block()))
+
+        assert facts is not None
+        assert facts['schema'] == LANDING_FACTS_SCHEMA
+        assert facts['plan_id'] == _SAMPLE_FACT_VALUES['plan_id']
+
+    def test_parse_reads_a_tab_before_the_info_string(self):
+        block = _facts_block().replace(f'{_FENCE}{LANDING_FACTS_FENCE}', f'{_FENCE}\t{LANDING_FACTS_FENCE}', 1)
+
+        assert parse_landing_facts(_landing_carrying(block)) is not None
+
+    def test_a_spaced_fence_carrying_every_key_is_complete(self):
+        complete, missing = check_landing_completeness(_landing_carrying(_spaced_block()))
+
+        assert complete is True
+        assert missing == []
+
+    @pytest.mark.parametrize(
+        'opening',
+        (
+            f'{_FENCE}json',
+            f'{_FENCE}{LANDING_FACTS_FENCE}X',
+            f'{_FENCE}{LANDING_FACTS_FENCE} extra',
+        ),
+    )
+    def test_another_info_string_is_still_not_read(self, opening):
+        block = _facts_block().replace(f'{_FENCE}{LANDING_FACTS_FENCE}', opening, 1)
+
+        assert parse_landing_facts(_landing_carrying(block)) is None
+
+    def test_an_indented_fence_is_still_not_read(self):
+        block = _facts_block().replace(f'{_FENCE}{LANDING_FACTS_FENCE}', f'  {_FENCE}{LANDING_FACTS_FENCE}', 1)
+
+        assert parse_landing_facts(_landing_carrying(block)) is None
+
+    def test_a_longer_backtick_run_is_still_not_read(self):
+        block = _facts_block().replace(f'{_FENCE}{LANDING_FACTS_FENCE}', f'{_FENCE}`{LANDING_FACTS_FENCE}', 1)
+
+        assert parse_landing_facts(_landing_carrying(block)) is None
+
+
+class TestEmitLandingStatesTheExactOpeningLine:
+    """Step 2 teaches the producer the line itself, not a padded rendering of it."""
+
+    def _step_two_item(self) -> str:
+        text = _EMIT_LANDING_DOC.read_text(encoding='utf-8')
+        item = re.search(r'^2\. \*\*The required.*$', text, re.MULTILINE)
+        assert item, 'emit-landing.md carries no Step 2 "2. **The required ..." item'
+        return item.group(0)
+
+    def test_the_item_states_the_exact_opening_line(self):
+        item = self._step_two_item()
+
+        assert f'{_FENCE}{LANDING_FACTS_FENCE}' in item, (
+            'emit-landing.md Step 2 does not state the exact opening line of the '
+            'landing-facts fence. A padded rendering of the info string reads as a space '
+            'to a model, which then writes a fence the consumer cannot parse.'
+        )
+
+    def test_the_item_does_not_render_the_fence_as_a_padded_info_string(self):
+        item = self._step_two_item()
+
+        assert f'` {LANDING_FACTS_FENCE} `' not in item, (
+            'emit-landing.md Step 2 still renders the opening fence as a padded '
+            'info string, the shape a model reproduces as a literal space.'
+        )
