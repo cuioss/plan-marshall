@@ -1730,27 +1730,28 @@ class TestSpacedFenceInfoString:
 
 
 class TestEmitLandingStatesTheExactOpeningLine:
-    """Step 2 teaches the producer the line itself, not a padded rendering of it."""
+    """Step 2 spells out the line itself, not a padded rendering of it."""
 
-    def _step_two_item(self) -> str:
+    def _step_two_prose(self) -> str:
+        """Step 2's prose, bounded before the example block that repeats the line."""
         text = _EMIT_LANDING_DOC.read_text(encoding='utf-8')
-        item = re.search(r'^2\. \*\*The required.*$', text, re.MULTILINE)
-        assert item, 'emit-landing.md carries no Step 2 "2. **The required ..." item'
-        return item.group(0)
+        start = text.index('### Step 2:')
+        end = text.index(f'\n{_FENCE}{LANDING_FACTS_FENCE}\n', start)
+        return text[start:end]
 
-    def test_the_item_states_the_exact_opening_line(self):
-        item = self._step_two_item()
+    def test_the_prose_states_the_exact_opening_line(self):
+        prose = self._step_two_prose()
 
-        assert f'{_FENCE}{LANDING_FACTS_FENCE}' in item, (
+        assert f'{_FENCE}{LANDING_FACTS_FENCE}' in prose, (
             'emit-landing.md Step 2 does not state the exact opening line of the '
             'landing-facts fence. A padded rendering of the info string reads as a space '
             'to a model, which then writes a fence the consumer cannot parse.'
         )
 
-    def test_the_item_does_not_render_the_fence_as_a_padded_info_string(self):
-        item = self._step_two_item()
+    def test_the_prose_does_not_render_the_fence_as_a_padded_info_string(self):
+        prose = self._step_two_prose()
 
-        assert f'` {LANDING_FACTS_FENCE} `' not in item, (
+        assert f'` {LANDING_FACTS_FENCE} `' not in prose, (
             'emit-landing.md Step 2 still renders the opening fence as a padded '
             'info string, the shape a model reproduces as a literal space.'
         )
