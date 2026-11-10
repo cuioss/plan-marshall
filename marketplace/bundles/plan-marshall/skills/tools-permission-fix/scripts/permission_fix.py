@@ -377,12 +377,14 @@ def _opencode_add(settings_path: Path, settings: dict[str, Any], permission: str
         if write.conflict:
             result.update({'success': False, 'status': 'error', 'error': write.conflict})
             return result
-        result['action'] = 'added'
         result['success'] = save_settings(str(settings_path), settings)
-        if not result['success']:
-            result['error'] = 'Failed to save settings'
         result['status'] = 'success' if result['success'] else 'error'
-        result['added'] = [label]
+        if result['success']:
+            result['action'] = 'added'
+            result['added'] = [label]
+        else:
+            result['action'] = 'not_saved'
+            result['error'] = 'Failed to save settings'
         return result
 
     perm = settings.setdefault('permission', {})
@@ -413,11 +415,13 @@ def _opencode_add(settings_path: Path, settings: dict[str, Any], permission: str
                 result.update({'success': True, 'action': 'already_exists', 'status': 'success'})
                 return result
             perm[map_key] = act
-    result['action'] = 'added'
     result['success'] = save_settings(str(settings_path), settings)
-    if not result['success']:
-        result['error'] = 'Failed to save settings'
     result['status'] = 'success' if result['success'] else 'error'
+    if result['success']:
+        result['action'] = 'added'
+    else:
+        result['action'] = 'not_saved'
+        result['error'] = 'Failed to save settings'
     return result
 
 
@@ -460,12 +464,20 @@ def cmd_remove(args: argparse.Namespace) -> dict:
 
 
 def _opencode_remove(settings_path: Path, settings: dict[str, Any], permission: str) -> dict:
-    """Remove one grant from an OpenCode file in whichever shape it carries."""
+    """Remove one grant from an OpenCode file in whichever shape it carries.
+
+    A grant decided by a wildcard-action rule reports that as the named reason:
+    deleting the named rule would leave the effect in force, so ``not_found``
+    would be a false answer. A map whose value is a pattern map loses only the
+    named pattern — never the whole category.
+    """
     from opencode_runtime import (
         _permission_action,
         _permission_map_key,
         _permission_rules,
         _remove_permission_rule,
+        _rule_effect,
+        _wildcard_action_rule,
         to_opencode_grant,
     )
 
@@ -475,7 +487,22 @@ def _opencode_remove(settings_path: Path, settings: dict[str, Any], permission: 
     rules = _permission_rules(settings, create=False)
     if rules is not None:
         result['permission_shape'] = 'permissions'
-        if not _remove_permission_rule(rules, _permission_action(cat), pat):
+        action = _permission_action(cat)
+        if not _remove_permission_rule(rules, action, pat):
+            blocker = _wildcard_action_rule(rules, action, pat)
+            if blocker is not None:
+                result.update(
+                    {
+                        'success': False,
+                        'status': 'error',
+                        'error': (
+                            f'{permission!r} is decided by the wildcard-action rule '
+                            f'({blocker.get("resource")!r}, effect {_rule_effect(blocker)}); '
+                            'removing the named grant would not remove the effect'
+                        ),
+                    }
+                )
+                return result
             result.update({'success': True, 'action': 'not_found', 'status': 'success'})
             return result
         result['action'] = 'removed'
@@ -485,26 +512,33 @@ def _opencode_remove(settings_path: Path, settings: dict[str, Any], permission: 
         result['status'] = 'success' if result['success'] else 'error'
         return result
 
+    not_found = {'success': True, 'action': 'not_found', 'status': 'success'}
     perm = settings.get('permission')
     if not isinstance(perm, dict):
-        result.update({'success': True, 'action': 'not_found', 'status': 'success'})
+        result.update(not_found)
         return result
     map_key = _permission_map_key(cat)
     if cat == 'bash':
         bash_map = perm.get('bash')
         if not isinstance(bash_map, dict) or pat not in bash_map:
-            result.update({'success': True, 'action': 'not_found', 'status': 'success'})
+            result.update(not_found)
             return result
         del bash_map[pat]
     elif map_key not in perm:
-        result.update({'success': True, 'action': 'not_found', 'status': 'success'})
+        result.update(not_found)
         return result
     else:
         existing = perm[map_key]
-        if isinstance(existing, dict) and pat in existing:
-            del existing[pat]
-        elif existing == '*':
-            result.update({'success': True, 'action': 'not_found', 'status': 'success'})
+        if isinstance(existing, dict):
+            if pat in existing:
+                del existing[pat]
+            elif pat == '*' and '*' in existing:
+                del existing['*']
+            else:
+                result.update(not_found)
+                return result
+        elif pat != '*':
+            result.update(not_found)
             return result
         else:
             del perm[map_key]
@@ -564,7 +598,10 @@ def cmd_ensure(args: argparse.Namespace) -> dict:
                         'success': False,
                         'error': write.conflict,
                     }
-                added.append(label)
+                if write.changed:
+                    added.append(label)
+                else:
+                    already_exists.append(label)
 
             result = {
                 'settings_file': str(settings_path),

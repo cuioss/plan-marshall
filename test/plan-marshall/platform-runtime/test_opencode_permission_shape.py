@@ -538,3 +538,36 @@ def test_both_deny_readers_report_an_agent_scoped_deny():
 
     assert from_list == from_config
     assert ('shell', 'gh *') in from_list
+
+
+# ---------------------------------------------------------------------------
+# the action wildcard decides, and the writer reports what it cannot do
+# ---------------------------------------------------------------------------
+
+
+def test_the_action_wildcard_decides_the_effective_effect():
+    """A rule whose ``action`` is ``*`` decides every action, so it must be matched."""
+    from opencode_runtime import _effective_rule_effect
+
+    rules = [{'action': '*', 'resource': '*', 'effect': 'deny'}]
+
+    assert _effective_rule_effect(rules, 'read', '/tmp/x') == 'deny'
+    assert _effective_rule_effect(rules, 'shell', 'git status') == 'deny'
+
+
+def test_remove_reports_the_wildcard_action_rule_it_cannot_remove(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Removing the named grant would not remove the effect, so it is a named reason."""
+    monkeypatch.chdir(tmp_path)
+    config = tmp_path / 'opencode.json'
+    config.write_text(
+        json.dumps({'permissions': [{'action': '*', 'resource': '*', 'effect': 'deny'}]}), encoding='utf-8'
+    )
+    before = config.read_bytes()
+
+    result = parse_toon(runtime.permission_fix('project', 'remove', ['deny(read)'], False))
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'wildcard_action_rule'
+    assert config.read_bytes() == before

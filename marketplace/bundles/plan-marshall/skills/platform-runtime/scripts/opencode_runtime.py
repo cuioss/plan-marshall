@@ -600,20 +600,37 @@ def _effective_rule_effect(rules: list[Any], action: str, resource: str) -> str 
 
 
 def _rule_exists(rules: list[Any], action: str, resource: str, effect: str) -> bool:
-    """True when an exact (action, resource, effect) rule is present AND effective.
+    """True when a rule naming (action, resource, effect) is present AND effective.
 
     Presence alone is not enough: a later, broader rule can override it under
     last-match-wins, in which case the requested effect does not hold and the
-    rule still has to be moved to the end.
+    rule still has to be moved to the end. The action wildcard counts: a rule
+    deciding every action already decides this one, so a caller must not be
+    told its effect had to be added when the list already produces it.
     """
     present = any(
         isinstance(rule, dict)
-        and rule.get('action') == action
+        and _action_matches(rule.get('action'), action)
         and rule.get('resource') == resource
         and _rule_effect(rule) == effect
         for rule in rules
     )
     return present and _effective_rule_effect(rules, action, resource) == effect
+
+
+def _wildcard_action_rule(rules: list[Any], action: str, resource: str) -> dict[str, Any] | None:
+    """Return the rule whose ``action`` is the wildcard and that decides *resource*.
+
+    Such a rule decides every action, so removing a grant for one named action
+    cannot take it down: the caller is told the named reason instead of being
+    handed a ``not_found`` while the effect is still in force.
+    """
+    for rule in rules:
+        if not isinstance(rule, dict) or rule.get('action') != '*' or action == '*':
+            continue
+        if _resource_matches(rule.get('resource'), resource):
+            return rule
+    return None
 
 
 def _move_rule_to_end(rules: list[Any], rule: dict[str, Any], index: int) -> None:
@@ -629,26 +646,29 @@ def _upsert_permission_rule(rules: list[Any], action: str, resource: str, effect
     An exact ``(action, resource)`` rule is updated in place. A new specific
     rule is inserted AFTER that action's catch-all (``resource == "*"``, under
     an exact or wildcard action), so last-match-wins lets the specific rule
-    override it. A new catch-all is inserted at the FRONT, where it cannot
-    override anything.
+    override it. A new catch-all goes after that same catch-all, because a
+    wildcard-action catch-all ordering it would otherwise re-decide it.
 
     Inserting after the catch-all is necessary but not sufficient: an existing
     later rule can still match the same resource and win. A requested effect
     the list does not already produce is made effective by moving the rule to
     the end — but never past a later, more specific rule with a different
-    effect the caller did not ask to change. That case is a named conflict and
-    the list is left exactly as it was.
+    effect the caller did not ask to change. That case is a named conflict: the
+    rule is restored and nothing is saved.
     """
     for index, rule in enumerate(rules):
         if isinstance(rule, dict) and rule.get('action') == action and rule.get('resource') == resource:
+            had_effect = 'effect' in rule
             previous = rule.get('effect')
             changed = _rule_effect(rule) != effect
             rule['effect'] = effect
             if _effective_rule_effect(rules, action, resource) != effect:
                 conflict = _conflicting_later_rule(rules, index + 1, action, resource, effect)
                 if conflict is not None:
-                    if previous is not None:
+                    if had_effect:
                         rule['effect'] = previous
+                    else:
+                        rule.pop('effect', None)
                     return PermissionRuleWrite(False, _conflict_detail(action, resource, effect, conflict))
                 _move_rule_to_end(rules, rule, index)
                 changed = True
@@ -1871,6 +1891,18 @@ class OpenCodeRuntime(Runtime):
                         removed += 1
                 elif _remove_permission_rule(rules, action, pat):
                     removed += 1
+            if removed == 0 and not dry_run:
+                for item in arguments:
+                    cat, pat, _ = to_opencode_grant(str(item))
+                    blocker = _wildcard_action_rule(rules, _permission_action(cat), pat)
+                    if blocker is not None:
+                        return toon_error(
+                            'permission fix',
+                            'wildcard_action_rule',
+                            f'{item!r} is decided by the wildcard-action rule '
+                            f'({blocker.get("resource")!r}, effect {_rule_effect(blocker)}); '
+                            'removing the named grant would not remove the effect',
+                        )
             if removed and not dry_run:
                 if not self.permission_save_settings(settings_path, settings):
                     return toon_error(

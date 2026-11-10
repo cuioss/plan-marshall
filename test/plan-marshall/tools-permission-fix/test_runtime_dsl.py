@@ -466,6 +466,55 @@ class TestOpenCodeOneMapWrites:
         assert perm.get('task') == 'allow'
         assert 'subagent' not in perm
 
+    def test_ensure_reports_an_effect_the_wildcard_action_already_produces(self, monkeypatch, tmp_path, in_tmp_cwd):
+        """An effect the wildcard-action rule already produces is not written twice."""
+        config = tmp_path / 'opencode.json'
+        config.write_text(
+            json.dumps({'permissions': [{'action': '*', 'resource': '*', 'effect': 'deny'}]}), encoding='utf-8'
+        )
+        before = config.read_bytes()
+        force_opencode(monkeypatch)
+
+        result = pf.cmd_ensure(
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'ensure',
+                '--permissions',
+                'deny(read)',
+                '--target',
+                'project',
+            )
+        )
+
+        assert result['status'] == 'success'
+        assert result['added_count'] == 0
+        assert 'read' in result['already_exists']
+        assert config.read_bytes() == before
+
+    def test_remove_leaves_an_unrelated_pattern_map_intact(self, monkeypatch, tmp_path, in_tmp_cwd):
+        """Removing a category grant never deletes a pattern map it does not name."""
+        config = tmp_path / 'opencode.json'
+        config.write_text(json.dumps({'permission': {'bash': {}, 'webfetch': {'a.com': 'allow'}}}), encoding='utf-8')
+        force_opencode(monkeypatch)
+
+        result = pf.cmd_remove(
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'remove',
+                '--permission',
+                'webfetch',
+                '--target',
+                'project',
+            )
+        )
+
+        assert result['action'] == 'not_found'
+        assert json.loads(config.read_text())['permission']['webfetch'] == {'a.com': 'allow'}
+
 
 class TestOpenCodeUnreadableInputIsReported:
     """A file that does not parse is reported by every writing verb, and never overwritten."""
