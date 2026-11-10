@@ -59,7 +59,7 @@ def test_the_light_lane_dispatcher_consumes_the_refreeze_envelope() -> None:
     authorization verb lives in the same document set as the lane that returns it.
     """
     text = _normalized(get_skill_dir('plan-marshall', 'plan-marshall') / 'workflow' / 'planning.md')
-    branch = text[text.index('**Light-lane branch**') : text.index('**Light-lane capture-source matrix**')]
+    branch = text[text.index('**Light-lane branch**') : text.index('**Light-lane capture-source matrix.**')]
 
     assert 'outline_prompt' in branch, 'the light-lane branch never reads the envelope it is promised'
     assert 'criteria-refreeze-authorize' in branch, 'the branch names no re-freeze authorization verb'
