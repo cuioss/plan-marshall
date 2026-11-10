@@ -4093,6 +4093,11 @@ def _suggested_skills(domain: dict[str, Any]) -> list[str]:
     return combined
 
 
+#: ``skill_domains`` siblings that are bookkeeping rather than domains, so
+#: ``skill-domains get`` cannot read them and they are not "unreadable domains".
+_CONFIG_BOOKKEEPING_KEYS = frozenset({'active_profiles'})
+
+
 def _configured_domains() -> tuple[list[dict[str, Any]], bool, list[str]]:
     """Every configured domain with its ``file_globs`` and its profile blocks.
 
@@ -4114,6 +4119,8 @@ def _configured_domains() -> tuple[list[dict[str, Any]], bool, list[str]]:
     unreadable: list[str] = []
     for key in keys:
         if not isinstance(key, str):
+            continue
+        if key in _CONFIG_BOOKKEEPING_KEYS:
             continue
         payload = _script_payload(_CONFIG_NOTATION, ['skill-domains', 'get', '--domain', key], project_config=True)
         if payload is None or payload.get('status') != 'success':
