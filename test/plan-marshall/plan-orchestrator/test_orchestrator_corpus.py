@@ -7708,6 +7708,20 @@ class TestLintDoneWhens:
 
         assert _lint_rules(cmd_corpus_lint_done_whens(_LINT_ARGS)) == {DONE_WHEN_RULE_HOLDS_AT}
 
+    def test_a_hypothesis_symbol_on_a_continuation_line_is_still_read(self, plan_context):
+        """The claim's symbol may wrap; the whole claim block is scanned."""
+        _write_status(plan_context, [_row('PLAN-01')])
+        _lint_spec(
+            plan_context,
+            done_when='the existing form holds at `abc1234` over `fence_marker`.',
+            claims=[
+                '- HYPOTHESIS: the shared fence reader is owned by',
+                '  `fence_marker` today — confirm at outline',
+            ],
+        )
+
+        assert _lint_rules(cmd_corpus_lint_done_whens(_LINT_ARGS)) == {DONE_WHEN_RULE_HOLDS_AT}
+
     def test_a_spec_with_no_done_when_contributes_no_row(self, plan_context):
         _write_status(plan_context, [_row('PLAN-01')])
         _write_spec(plan_context, 'PLAN-01-alpha.md')

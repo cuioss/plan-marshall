@@ -2866,8 +2866,10 @@ def _hypothesis_symbols(text: str) -> dict[str, str]:
         if parsed is not None and parsed.get('verdict') == 'corroborated':
             continue
         index = int(claim['line'])
+        end = int(claim['block_end'])
         line = lines[index] if 0 <= index < len(lines) else ''
-        for span in _CODE_SPAN.findall(line):
+        block = ' '.join(part.strip() for part in lines[index:end])
+        for span in _CODE_SPAN.findall(block):
             token = span.strip()
             if token and not _SHA_TOKEN.match(token):
                 symbols.setdefault(token, line.strip())
