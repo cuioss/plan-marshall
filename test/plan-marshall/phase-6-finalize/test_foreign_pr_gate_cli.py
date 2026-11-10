@@ -46,7 +46,7 @@ def _deliverable(number, *, foreign, paths, intent='write-replace'):
     }
 
 
-def _run(deliverables, *, roots=None, landings=None, resolved_paths=None, branches=None):
+def _run(deliverables, *, roots=None, landings=None, resolved_paths=None, branches=None, default_branches=None):
     """Drive gate.check with fully in-memory seams.
 
     ``roots`` maps a declared path to its resolved repo root. ``landings`` maps a
@@ -54,14 +54,19 @@ def _run(deliverables, *, roots=None, landings=None, resolved_paths=None, branch
     ``{branch: state}`` map. ``branches`` maps a repo root to the branch its
     checkout is on; the default is a readable branch, because the checkout is one
     of the two branch sources and a default of "no branch" would make every
-    unrelated fixture a ``branch_unreadable`` error. ``resolved_paths``, when
-    given, is a list the root resolver appends every path it is asked about to —
-    the observable that a path did or did not enter the population.
+    unrelated fixture a ``branch_unreadable`` error. ``default_branches`` maps a
+    repo root to its default branch and answers ``'main'`` for every resolved root
+    unless a test says otherwise, so the default checkout branch is never the
+    default branch. ``resolved_paths``, when given, is a list the root resolver
+    appends every path it is asked about to — the observable that a path did or
+    did not enter the population.
     """
     roots = roots or {}
     landings = landings or {}
     if branches is None:
         branches = {root: 'fix/foreign-branch' for root in roots.values() if root}
+    if default_branches is None:
+        default_branches = {root: 'main' for root in roots.values() if root}
 
     def loader(_plan_id):
         return _listed(deliverables)
@@ -73,6 +78,9 @@ def _run(deliverables, *, roots=None, landings=None, resolved_paths=None, branch
 
     def branch_resolver(root):
         return branches.get(root)
+
+    def default_branch_resolver(root):
+        return default_branches.get(root)
 
     def landing_resolver(root, branch):
         state = landings.get(root)
@@ -86,6 +94,7 @@ def _run(deliverables, *, roots=None, landings=None, resolved_paths=None, branch
         root_resolver=root_resolver,
         landing_resolver=landing_resolver,
         branch_resolver=branch_resolver,
+        default_branch_resolver=default_branch_resolver,
     )
 
 
@@ -351,6 +360,7 @@ def test_the_real_parser_and_column_feed_the_gate_the_narrowed_population(monkey
         root_resolver=root_resolver,
         landing_resolver=lambda root, branch: {'landing_state': landings[root]},
         branch_resolver=lambda _root: 'fix/foreign-branch',
+        default_branch_resolver=lambda _root: 'main',
     )
 
     assert result['status'] == 'blocked'

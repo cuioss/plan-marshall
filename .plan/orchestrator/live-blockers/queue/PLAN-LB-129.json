@@ -2,7 +2,7 @@
   "id": "PLAN-LB-129",
   "slug": "review-gate-thread-and-count-truth",
   "workstream": "WS-04",
-  "status": "staged",
+  "status": "running",
   "lane": "runbook",
   "plan_marshall_plan_id": "",
   "pr": "",

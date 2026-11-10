@@ -486,12 +486,18 @@ python3 .plan/execute-script.py plan-marshall:marshall-steward:upgrade migrate-b
 A one-shot legacy auto-map of the retired `enabled_bots` knob onto the two-list
 participation model (`required_bots` / `optional_bots`) on the
 `plan-marshall:automatic-review` step. It takes no arguments and is
-**self-disarming**: once the legacy key is gone the verb is a no-op success, so
-re-running the upgrade flow is always safe. An operator answer already recorded
-in the new keys WINS — the migration removes only the stale legacy key and never
-downgrades `bot_lists_provenance` from `answered`. See the `marshall-steward`
-Canonical invocations (`upgrade migrate-bot-lists`) for the verb shape and
-`upgrade.py`'s `migrate_bot_lists` docstring for the four exhaustive input states.
+**self-disarming**: once the legacy key is gone and no retired kind remains the verb is a
+no-op success, so re-running the upgrade flow is always safe. It also SAVES a roster that
+names a retired kind: the strip is reported as `state: retired_stripped`, so a consumer
+whose configuration still names the withdrawn bot loses the name even though it has no
+legacy key left. A strip that emptied `required_bots` re-seeds `coderabbit` and records
+`reseeded_required: true`, because a project is never left with no required reviewer. An
+operator answer already recorded in the new keys WINS — the migration removes only the
+stale legacy key and keeps `bot_lists_provenance: answered`, except when the strip
+emptied that answered `required_bots`: the value it replaces no longer exists, so the
+re-seed records `migrated`. See the
+`marshall-steward` Canonical invocations (`upgrade migrate-bot-lists`) for the verb shape
+and `upgrade.py`'s `migrate_bot_lists` docstring for the five exhaustive input states.
 
 Reaching Stage 3 without running this sub-step is the concrete loss it guards: a
 project carrying a legacy `enabled_bots` value completes the upgrade with the

@@ -299,9 +299,12 @@ def build_plan(integrate: bool, project_kind: str) -> dict:
 # hosted on the EXISTING upgrade entry point rather than as a new script, and is
 # driven as the ``migrate-bot-lists`` sub_step of Stage 2 (reconcile-config).
 #
-# It is exhaustive over four input states and SELF-DISARMING — once the legacy
-# key is gone, states (3) and (4) are indistinguishable and both are a no-op
-# success, so re-running the upgrade verb is always safe.
+# It is exhaustive over five states and SELF-DISARMING — once the legacy key is
+# gone and no retired kind remains, states (3) and (4) are indistinguishable and
+# both are a no-op success, so re-running the upgrade verb is always safe. The
+# fifth state, ``retired_stripped``, exists because the strip is a SAVE: a
+# consumer that already carries the retired kind in its roster has no legacy key
+# to consume, and a no-op would leave the unregistered name in the file.
 
 _AUTOMATIC_REVIEW_STEP_ID = 'plan-marshall:automatic-review'
 # SHIM(A): the retired enabled_bots knob (seeded into required_bots/optional_bots and deleted).
@@ -325,12 +328,17 @@ _PROVENANCE_KEY = 'bot_lists_provenance'
 # to "no retirement" instead of gaining a second copy of the literal, and the shipped
 # runtime always resolves the canonical host.
 RETIRED_BOT_KINDS: tuple[str, ...]
+#: True when the canonical host could not be imported and the tombstone degraded to
+#: empty. Reported by :func:`migrate_bot_lists`, so a strip that cannot fire is visible
+#: rather than silently doing nothing.
+_RETIRED_KINDS_FALLBACK = False
 try:
     from _config_defaults import RETIRED_BOT_KINDS, STANDARD_OPTIONAL_BOTS, STANDARD_REQUIRED_BOTS
 except ImportError:
     STANDARD_REQUIRED_BOTS = 'coderabbit'
     STANDARD_OPTIONAL_BOTS = 'sourcery'
     RETIRED_BOT_KINDS = ()
+    _RETIRED_KINDS_FALLBACK = True
 _STANDARD_REQUIRED_BOTS = STANDARD_REQUIRED_BOTS
 _STANDARD_OPTIONAL_BOTS = STANDARD_OPTIONAL_BOTS
 _RETIRED_BOT_KINDS = RETIRED_BOT_KINDS
@@ -382,11 +390,24 @@ def _strip_retired_bots(value: object) -> tuple[str, list[str]]:
     return ','.join(kept), removed
 
 
+def _remove_roster_names(value: object, names: set[str]) -> str:
+    """Return the comma-separated roster in ``value`` with every name in ``names`` removed.
+
+    Used to undo the overlap the re-seed would otherwise create: when the strip emptied
+    ``required_bots`` and the standard required roster is seeded back, a member that also
+    sat in ``optional_bots`` must not be demanded twice. Order is preserved and empty
+    entries are dropped, so an optional list that held only the re-seeded name becomes ''.
+    """
+    text = value if isinstance(value, str) else ('' if value is None else str(value))
+    kept = [name.strip() for name in text.split(',') if name.strip() and name.strip() not in names]
+    return ','.join(kept)
+
+
 def migrate_bot_lists(params: dict) -> dict:
     """Auto-map a retired ``enabled_bots`` value onto the two-list model.
 
     Pure function over ONE step's param object. It mutates ``params`` in place
-    and returns a report describing which of the four input states applied.
+    and returns a report describing which of the five input states applied.
 
     A retired bot kind is stripped from both roster lists in EVERY state, before the
     state is decided — a configuration written while the bot existed names it whether
@@ -394,7 +415,16 @@ def migrate_bot_lists(params: dict) -> dict:
     that consumer's merge on a reviewer no registry answers to any more. The removed
     names are reported as ``removed_retired``.
 
-    The four states are exhaustive:
+    A strip that EMPTIES a non-empty ``required_bots`` — an answer naming only the
+    retired kind — re-seeds the standard required roster instead of saving an empty one:
+    an empty required list passes the merge gate with no required reviewer, against the
+    project rule that CodeRabbit is the required reviewer, and refusing would make the
+    upgrade impossible to finish for a reason the operator did not cause. The re-seed
+    records provenance ``migrated``, drops the re-seeded name from ``optional_bots`` so
+    the bot is not demanded twice, and reports ``reseeded_required: true``. An empty
+    ``required_bots`` the operator wrote (no strip) is never re-seeded.
+
+    The five states are exhaustive:
 
     1. **legacy present, no operator answer** — seed the standard roster
        (``required_bots: coderabbit``, ``optional_bots: sourcery``), remove
@@ -407,11 +437,17 @@ def migrate_bot_lists(params: dict) -> dict:
        answered, so THEIR ANSWER WINS: the new keys are left untouched and
        only the stale legacy key is removed. Both values are reported so the
        operator can see what was discarded. Provenance is NOT downgraded to
-       ``migrated`` — an answered value stays ``answered``.
-    3. **legacy absent, no operator answer** — nothing to migrate; a no-op
-       success that leaves the never-asked posture intact.
+       ``migrated`` — an answered value stays ``answered``. The one exception is
+       the re-seed above, which records ``migrated`` because the answered value no
+       longer exists after the strip emptied it.
+    3. **legacy absent, no operator answer, nothing stripped** — nothing to
+       migrate; a no-op success that leaves the never-asked posture intact.
     4. **already migrated** — indistinguishable from (3) once the legacy key is
        gone. This is what makes the migration self-disarming and re-runnable.
+    5. **legacy absent, a retired kind stripped** — the strip itself changed the
+       file, so the state is ``retired_stripped`` and the caller SAVES it. A no-op
+       here is the defect this state exists to close: the roster would keep naming
+       an unregistered bot.
 
     Only a non-empty value, or ``bot_lists_provenance: answered``, counts as
     an operator answer — mere key presence does not, because ``sync-defaults``
@@ -422,16 +458,22 @@ def migrate_bot_lists(params: dict) -> dict:
 
     Returns:
         A report dict: ``state`` (one of ``migrated`` / ``operator_answer_kept`` /
-        ``noop``), plus ``required_bots`` / ``optional_bots`` (the resulting
-        values), ``removed_retired`` (the retired bot names stripped from either
-        roster list) and, when a legacy value was discarded, ``discarded_legacy``
-        (the list of dropped bot names — never the raw ``enabled_bots`` string).
+        ``retired_stripped`` / ``noop``), plus ``required_bots`` / ``optional_bots``
+        (the resulting values), ``removed_retired`` (the retired bot names stripped
+        from either roster list), ``reseeded_required`` (true when the strip emptied
+        the required list and the standard roster was seeded back) and, when a legacy
+        value was discarded, ``discarded_legacy`` (the list of dropped bot names —
+        never the raw ``enabled_bots`` string). ``retired_kinds_unavailable`` is
+        present when the canonical host could not be imported, so the strip could
+        not fire and the report says so.
     """
     removed_retired: list[str] = []
     # Answeredness is a property of what the OPERATOR wrote, so it is read BEFORE the
     # strip: a roster naming only a retired kind would otherwise be emptied first and
     # then re-classified as unanswered, reseeding the standard roster over an answer.
     has_new = _has_operator_answer(params)
+    required_before = params.get(_REQUIRED_BOTS_KEY)
+    required_was_non_empty = isinstance(required_before, str) and bool(required_before.strip())
     for roster_key in (_REQUIRED_BOTS_KEY, _OPTIONAL_BOTS_KEY):
         if roster_key not in params:
             continue
@@ -440,43 +482,50 @@ def migrate_bot_lists(params: dict) -> dict:
             params[roster_key] = cleaned
             removed_retired.extend(removed)
 
-    legacy = params.get(_LEGACY_BOT_LIST_KEY)
-    has_legacy = legacy is not None
+    reseeded_required = False
+    required_after = params.get(_REQUIRED_BOTS_KEY)
+    if removed_retired and required_was_non_empty and not (required_after or '').strip():
+        params[_REQUIRED_BOTS_KEY] = _STANDARD_REQUIRED_BOTS
+        params[_PROVENANCE_KEY] = 'migrated'
+        if _OPTIONAL_BOTS_KEY in params:
+            reseeded_names = {name.strip() for name in _STANDARD_REQUIRED_BOTS.split(',') if name.strip()}
+            params[_OPTIONAL_BOTS_KEY] = _remove_roster_names(params.get(_OPTIONAL_BOTS_KEY), reseeded_names)
+        reseeded_required = True
 
-    if not has_legacy:
-        # States (3) and (4) — nothing to migrate, and deliberately
-        # indistinguishable from each other.
-        return {
-            'state': 'noop',
+    def _report(state: str, **extra: object) -> dict:
+        report = {
+            'state': state,
             'required_bots': params.get(_REQUIRED_BOTS_KEY, ''),
             'optional_bots': params.get(_OPTIONAL_BOTS_KEY, ''),
             'removed_retired': removed_retired,
         }
+        if reseeded_required:
+            report['reseeded_required'] = True
+        if _RETIRED_KINDS_FALLBACK:
+            report['retired_kinds_unavailable'] = True
+        report.update(extra)
+        return report
+
+    legacy = params.get(_LEGACY_BOT_LIST_KEY)
+    has_legacy = legacy is not None
+
+    if not has_legacy:
+        # States (3), (4) and (5) — the strip is the only thing that can make this
+        # branch a save, and a second run over its result strips nothing and is noop.
+        return _report('retired_stripped' if removed_retired else 'noop')
 
     if has_new:
         # State (2) — the operator already answered; their answer wins. Remove
         # only the stale legacy key.
         del params[_LEGACY_BOT_LIST_KEY]
-        return {
-            'state': 'operator_answer_kept',
-            'required_bots': params.get(_REQUIRED_BOTS_KEY, ''),
-            'optional_bots': params.get(_OPTIONAL_BOTS_KEY, ''),
-            'discarded_legacy': _named_discarded_bots(legacy),
-            'removed_retired': removed_retired,
-        }
+        return _report('operator_answer_kept', discarded_legacy=_named_discarded_bots(legacy))
 
     # State (1) — seed the standard roster; name each dropped bot explicitly.
     params[_REQUIRED_BOTS_KEY] = _STANDARD_REQUIRED_BOTS
     params[_OPTIONAL_BOTS_KEY] = _STANDARD_OPTIONAL_BOTS
     params[_PROVENANCE_KEY] = 'migrated'
     del params[_LEGACY_BOT_LIST_KEY]
-    return {
-        'state': 'migrated',
-        'required_bots': _STANDARD_REQUIRED_BOTS,
-        'optional_bots': _STANDARD_OPTIONAL_BOTS,
-        'discarded_legacy': _named_discarded_bots(legacy),
-        'removed_retired': removed_retired,
-    }
+    return _report('migrated', discarded_legacy=_named_discarded_bots(legacy))
 
 
 def cmd_migrate_bot_lists(_args: argparse.Namespace) -> dict:
@@ -484,9 +533,10 @@ def cmd_migrate_bot_lists(_args: argparse.Namespace) -> dict:
 
     Loads marshal.json, applies :func:`migrate_bot_lists` to the
     ``plan-marshall:automatic-review`` step's param object, and writes the config
-    back only when the migration actually changed something. A project with no
-    such step configured is a no-op success — the verb never fails merely because
-    the automatic-review step is absent.
+    back whenever the migration actually changed something — ``migrated``, a
+    ``retired_stripped`` save, or an ``operator_answer_kept`` that consumed the stale
+    legacy key. A project with no such step configured is a no-op success — the verb
+    never fails merely because the automatic-review step is absent.
 
     A project with NO marshal.json at all is likewise a no-op success rather than a
     ``FileNotFoundError`` escaping the verb: this migration runs as a sub-step of

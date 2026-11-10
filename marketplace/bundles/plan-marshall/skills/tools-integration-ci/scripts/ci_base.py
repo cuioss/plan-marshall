@@ -945,10 +945,14 @@ def derive_landing_state(pr_states: list[str], pushed: bool) -> str:
         - ``'unpushed'`` — the branch's commit is on no remote.
 
     PR state is authoritative over push state, so the merged/open checks precede
-    the push check: a merged PR reports ``'merged'`` even after the platform
-    deleted its head branch (so ``pushed`` is then False), and a squash-merged
-    branch's tip never becomes a remote ancestor either — reading push state
-    first would misreport a landed change as ``'unpushed'``.
+    the push check: a merged PR reports ``'merged'`` even when ``pushed`` is False,
+    because a squash-merged branch's tip never becomes a remote ancestor — reading
+    push state first would misreport a landed change as ``'unpushed'``. This
+    function sees only its two arguments; whether a merged change is still
+    readable after its head branch was deleted depends on the CALLER resolving the
+    branch's tip. The handler reaches ``'merged'`` after branch deletion only when
+    that resolution finds the branch (locally, on ``origin``, or at the remote) or
+    when no branch exists anywhere and the PR listing carries a merged PR.
     """
     normalized = {str(state).strip().upper() for state in pr_states if str(state).strip()}
     if 'MERGED' in normalized:

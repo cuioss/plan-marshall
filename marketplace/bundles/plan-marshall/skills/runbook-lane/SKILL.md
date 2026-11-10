@@ -179,24 +179,31 @@ python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane review-g
 
 Decides the merge gate's review condition (section 7) from the surfaces read on the head. It reads
 through the CI abstraction (never `gh`): the unresolved review threads with their `path:line`, and
-the body of every reviewer's review, whose `inline`, `duplicate`, `outside-diff`, `nitpick` and
-`followup` sections are parsed into individually identified findings. Each `--disposition` is one
-progress-file line, repeated once per finding.
+the body of every reviewer's review, whose `inline`, `duplicate`, `outside-diff`, `nitpick`,
+`followup` and `additional` sections are parsed into individually identified findings. A section
+contributes the count its title declares (`(N)` or `: N`); with none declared, it contributes the
+larger of its per-row `cr-comment` markers and its nested per-file block counts, and a non-empty
+block with neither reads as one finding (an empty block reads as none). A counted title that matches
+neither a section nor a declared non-finding label (a file list, a review-info block) is an
+undecidable read, never zero. Each `--disposition` is one progress-file line, repeated once per
+finding.
 
 **The `--disposition` value is `{reviewer} {section} {id} — {sha|reason}`**, exactly the tail of the
 progress line, with no `finding: ` prefix: `reviewer` is the bot kind the registry reports for that
 reviewer's login (not the login a human reader sees), or a human reviewer's lower-cased login;
 `section` and `id` are the parser's own vocabulary (`nitpick`, `followup`, `outside-diff`, `duplicate`,
-`inline`; ids `{section}-{n}`), which the verb reports in its `undisposed` rows so the lane never
+`inline`, `additional`; ids `{section}-{n}`), which the verb reports in its `undisposed` rows so the lane never
 guesses them.
 
 It answers `merge_allowed: false` with a named `reason` while any of these holds: an unresolved
 thread exists (`unresolved_review_threads`); a body finding carries no disposition naming a commit or
-a stated reason (`body_findings_undisposed`); a resolved thread whose last comment is the reviewer
-BOT's and says the concern remains (`thread_concern_remains` — a bot's last word is the finding's, and
-a lane reply can itself contain the vocabulary, which is why a human's last comment is not tested);
-a disposition line names no evidence
-(`disposition_unparsable`); the read is undecidable, truncated, carries a review-body section the
+a stated reason (`body_findings_undisposed`); a resolved thread whose last BOT
+comment says the concern remains (`thread_concern_remains` — the bot's last word is
+the finding's, so a lane or human reply below it never discharges the concern, and
+a lane reply can itself contain the vocabulary);
+a disposition line names no real evidence
+(`disposition_unparsable` — a commit sha or a stated reason; a placeholder such as `TBD`, `-` or
+`n/a` is not evidence); the read is undecidable, truncated, carries a review-body section the
 parser cannot read, carries a record kind the verb does not know, or carries a review body with no
 attributable author (`undecidable_read`); the provider
 publishes no coverage signal for the read (`coverage_unavailable`). An undecidable read is a stop,
@@ -844,7 +851,7 @@ Merge only when all of these hold:
 - The review surfaces of the current head admit the merge: `review-gate` reports `merge_allowed:
   true` on a read taken after the last push — no unresolved review thread, every review-body finding
   carrying a disposition that names a commit or a stated reason, and no resolved thread whose last
-  comment is the reviewer bot's and says the concern remains. Its `--disposition` values are this
+  BOT comment says the concern remains. Its `--disposition` values are this
   run's progress-file `finding:` lines. An undecidable or truncated read is a blocker and is retried.
   The standing review authorization never overrides a `review-gate` `false`.
 
@@ -854,7 +861,7 @@ qualifying review.
 
 **An unresolved review thread or an unhandled review-body finding on the merge head blocks the
 standing authorization.** A reviewer's thread that is still open, or a finding from any review-body
-section — inline, duplicate, outside-diff, nitpick or follow-up — that the run neither fixed nor
+section — inline, duplicate, outside-diff, nitpick, follow-up or additional — that the run neither fixed nor
 answered, means a finding is not handled, so the second condition fails however
 strong the review credit is.
 

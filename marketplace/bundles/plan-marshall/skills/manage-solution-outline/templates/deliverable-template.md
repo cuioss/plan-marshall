@@ -66,7 +66,7 @@ Use the returned `executable` value as the Verification Command. Both Command an
 | `domain` | Yes | Single value from `config.domains` |
 | `module` | Yes | Module name from architecture |
 | `depends` | Yes | Use `none` if no dependencies |
-| `foreign_branch` | Conditional | Foreign deliverables only: the name of the branch the foreign change is on, as a `**Metadata:**` entry. The gate reads it together with the foreign checkout's own branch; the rule, and the one condition under which a declaration is usable, are stated once in [`phase-6-finalize/standards/archive-plan.md`](../../phase-6-finalize/standards/archive-plan.md) § Pre-Archive Foreign-PR Landing Gate |
+| `foreign_branch` | Conditional | Foreign deliverables only: the name of the branch the foreign change is on, as a `**Metadata:**` entry. The gate reads it together with the foreign checkout's own branch; the rule is stated once in [`phase-6-finalize/standards/archive-plan.md`](../../phase-6-finalize/standards/archive-plan.md) § Pre-Archive Foreign-PR Landing Gate |
 | `**Intent gloss:**` | Conditional | Required when title head morpheme is a planning-domain verb; ≤15 words |
 | `**Profiles:**` | Yes | At least `implementation`; add `module_testing` only if deliverable creates/modifies test files |
 | `**Affected files:**` | Conditional | Required UNLESS the deliverable is survey-scope (declaring the `Files to survey:` / `Files expected to mutate:` pair instead) or verification-only. Explicit paths only - NO wildcards, NO "all files in...". Each entry MUST carry a required `(intent)` marker: `read`, `write-new`, `write-replace`, or `delete` |
