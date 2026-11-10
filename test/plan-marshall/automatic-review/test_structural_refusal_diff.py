@@ -978,7 +978,12 @@ class TestStaleParticipationSurvivesAnInadmissibleEvidenceKind:
         assert rc.parse_stale_participation(f'coderabbit:{self._INADMISSIBLE}') == {'coderabbit': self._INADMISSIBLE}
 
     def test_the_cli_resolves_it_to_participated_stale_and_never_absent(self, plan_context):
-        """End-to-end through the real parse — the case the deliverable names."""
+        """End-to-end through the real parse — the case the deliverable names.
+
+        ``sourcery`` declares no ``review_complete_after_handling``, so the stale
+        pair keeps the member this case pins; a flagged bot's stale pair is its done
+        review and is pinned in ``test_review_complete_after_handling``.
+        """
         plan_id = 'stale-inadmissible-kind'
         plan_context.plan_dir_for(plan_id)
 
@@ -988,14 +993,14 @@ class TestStaleParticipationSurvivesAnInadmissibleEvidenceKind:
             '--plan-id',
             plan_id,
             '--required-bots',
-            'coderabbit',
+            'sourcery',
             '--stale-participation-bots',
-            f'coderabbit:{self._INADMISSIBLE}',
+            f'sourcery:{self._INADMISSIBLE}',
         )
 
         assert result.returncode == 0
-        assert f'coderabbit,{rc.STATE_PARTICIPATED_STALE}' in result.stdout
-        assert f'coderabbit,{rc.STATE_ABSENT}' not in result.stdout
+        assert f'sourcery,{rc.STATE_PARTICIPATED_STALE}' in result.stdout
+        assert f'sourcery,{rc.STATE_ABSENT}' not in result.stdout
 
     def test_the_shape_check_still_rejects_a_bare_token(self, plan_context):
         """Dropping the admissibility filter did NOT drop the SHAPE check.

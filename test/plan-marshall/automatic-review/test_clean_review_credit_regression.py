@@ -364,8 +364,13 @@ def test_a_new_format_summary_credits_the_head_it_covers(plan_context, monkeypat
     assert _state_of(result, _BOT) == rc.STATE_PARTICIPATED_BUT_EMPTY
 
 
-def test_a_new_format_summary_covering_an_earlier_head_is_stale(plan_context, monkeypatch):
-    """⛔ MATCHED NEGATIVE CONTROL: the same shape covering another head proves no review of this one."""
+def test_a_new_format_summary_covering_an_earlier_head_is_not_credited_for_this_one(plan_context, monkeypatch):
+    """⛔ MATCHED NEGATIVE CONTROL: the same shape covering another head credits no review of this one.
+
+    The PRODUCER still reports it stale — that is the contrast this case pins. The
+    classifier then reads a flagged bot's stale review as its done state, so the bot
+    is accounted for while the head it reviewed stays the other one.
+    """
     plan_id = 'crr-new-format-earlier-head'
     _stub_provider(monkeypatch, [_comment('cr-coverage', _coverage_summary(_OTHER_SHA))])
 
@@ -374,8 +379,8 @@ def test_a_new_format_summary_covering_an_earlier_head_is_stale(plan_context, mo
 
     assert find_result['participated_bots'] == []
     assert find_result['stale_participation_bots'] == [{'bot_kind': _BOT, 'evidence_kind': 'issue_comment'}]
-    assert _state_of(result, _BOT) == rc.STATE_PARTICIPATED_STALE
-    assert result['participation_complete'] is False
+    assert _state_of(result, _BOT) == rc.STATE_PARTICIPATED_BUT_EMPTY
+    assert result['participation_complete'] is True
 
 
 def test_a_new_format_summary_with_a_non_reviewed_kind_credits_nothing(plan_context, monkeypatch):

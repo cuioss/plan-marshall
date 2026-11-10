@@ -14,7 +14,7 @@ bot appears in neither list, with a warning recorded. See
 
 The fenced-YAML block below is the machine-readable per-bot record. It is data, not frontmatter —
 a fenced code block that plugin-doctor treats as an example, not an executable directive. Consumers
-read `bot_kind`, `author_login`, `trigger_comment`, `escalated_trigger_comment`, `quota_limited`, `completion_check_name`, `honors_skip_label`,
+read `bot_kind`, `author_login`, `trigger_comment`, `escalated_trigger_comment`, `quota_limited`, `review_complete_after_handling`, `completion_check_name`, `honors_skip_label`,
 `participation_evidence`, `participation_evidence_markers`, `participation_requires_update`, `ignore_patterns`,
 `acknowledgment_patterns`, `review_body_summary_patterns`, `refusal_patterns`, `no_unreviewed_commit_patterns`, `contentless_review_markers`,
 `contentless_review_headings`, `actionable_content_markers`, `concern_section_headings`, `clean_section_verdicts`, `rate_limit_class`, `rate_limit_eta_patterns`, and `severity_map` from
@@ -42,6 +42,7 @@ trigger_comment: "@coderabbitai review"
 escalated_trigger_comment: "@coderabbitai full review"   # re-reviews the WHOLE changeset; posted only after a "nothing new to review" reply, and it uses one review from the allowance
 trigger_semantics: requires_explicit_trigger   # the trigger comment above must be posted
 quota_limited: true              # reviews under a finite allowance: a later head can be refused for the quota
+review_complete_after_handling: true   # ONE handled review of this pull request completes it: once a qualifying review is on record and every finding of it is handled, no later head is re-triggered, awaited or demanded. The review business is spent, so the pull request proceeds to merge; the flag is NOT quota_limited, which this bot also declares, because a quota-limited bot is still expected to review a later head when its allowance permits
 completion_check_name: "CodeRabbit"   # in-progress check-run polled to completion by the wait step
 honors_skip_label: true          # central cuioss/coderabbit config skips PRs labelled skip-bot-review
 # ORDERING IS LOAD-BEARING: `issue_comment` is APPENDED after the existing two and must never be
@@ -410,8 +411,10 @@ for it and this fetch observes it at a resolvable merge candidate the comment do
 predate. An in-place edit credits nothing on its own: a moved `updated_at` says the comment was
 touched, not which commit it reviewed. An unresolvable
 merge-candidate SHA withholds it on every arm. A failed currency test is emphatically **not**
-`absent`: CodeRabbit published, so the remedy is the `@coderabbitai review` re-review trigger rather
-than escalating a reviewer that never engaged.
+`absent`: CodeRabbit published, so the reviewer engaged. Under
+`review_complete_after_handling` the recorded review IS the review — once every finding of it is
+handled, no later head is re-triggered, awaited or demanded, so the pull request proceeds to merge
+on it. A currency failure is therefore a classification fact, never a re-review request.
 
 Note the ceiling this evidence carries: it proves CodeRabbit *participated*, never that the review
 was good. See [`bot-participation-contract.md`](bot-participation-contract.md) § "Evidence taxonomy".
@@ -429,6 +432,9 @@ The operator's standing ruling for this bot, which every consumer follows and no
   own bounded wait (a rate-window claim with a bounded wait), never by a raw `sleep`.
 - **No reaction after the windows are spent.** Close the PR **unmerged**, open a NEW PR from the same
   branch, and trigger again. Nothing about a spent quota is a reason to merge without the review.
+  Both this step and the preceding one are scoped to the **no-review case**: they apply while no
+  qualifying review is on record. Once one is on record and every finding of it is handled the review
+  is done (see § Re-review), and the pull request merges on that review.
 - **The operator is asked only after those steps are spent**, and an answer that says "merge" or
   "continue" does not shorten the policy.
 
@@ -475,8 +481,9 @@ race the claim's own expiry. A claimed window already longer than the budget is 
 wait rather than waited out. Only that second pass RE-DELIVERS the request by closing and re-opening the
 PR **when no review by this bot is on record** — the elapsed claim resolves through this record's
 `trigger_semantics` above, and this bot asks for an explicit trigger, so a rebase-push is not what
-fires; a bot whose review is already on record is re-triggered instead, because re-delivering a
-request it answered buys nothing. See `../SKILL.md`
+fires. A bot whose review is already on record is not re-triggered either: under
+`review_complete_after_handling` that recorded review is the review, so a bot with it on record
+settles without a post and the pull request proceeds once its findings are handled. See `../SKILL.md`
 § "Rate-limit refusal recovery" for the branch this lands on, and
 `workflow-integration-github`'s `resolve_recovery_action` for the derivation itself.
 
@@ -556,3 +563,14 @@ Handled by the registry — `github_re_review re-review --bot-kind coderabbit` p
 `@coderabbitai review` and awaits a fresh review. With `--escalated` the same verb posts
 `@coderabbitai full review` instead, which is reached only from the "nothing new to review" recovery
 above.
+
+**One handled review is the review.** Because this record declares
+`review_complete_after_handling: true`, the first qualifying review of a pull request settles the
+bot's obligation for that pull request: once every finding of it is fixed in a pushed commit or
+answered with a stated reason, and each of its threads is resolved, no later head is re-triggered,
+awaited or demanded. The review need not cover the current head — that is the point. `re-review`
+refuses a flagged bot whose qualifying review is on record rather than posting a second request, and
+the merge gates accept that review for the later head. The done rule stops requests, never handling:
+a comment that arrives after done, a thread left open, or a finding an edit reset to pending still
+blocks the merge. A pull request with no qualifying review is untouched — the first trigger and the
+quota policy above apply as written, because the economy is bought only after a review exists.

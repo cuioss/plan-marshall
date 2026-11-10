@@ -463,6 +463,15 @@ def list_bots_for_trigger(
       They are joined only when ``stored_findings_stale`` is true, i.e. when the
       commit those findings were filed against is not the current HEAD.
 
+    A flagged bot's stale participation is a QUALIFYING REVIEW ON RECORD, not an
+    out-of-date obligation. For a bot declaring ``review_complete_after_handling``
+    the handled review completes it, so it is removed from the stale set before the
+    join and never reaches a trigger list. It is reported in
+    ``review_complete_bots`` so a caller can tell "done, no trigger owed" from
+    "silent, trigger owed". The done filter reads only the participation source:
+    a flagged bot with no admitted review keeps its place, so a pull request with
+    no qualifying review is triggered exactly as before.
+
     Only a bot the configuration classifies is triggered: a candidate in neither
     ``required_bots`` nor ``optional_bots`` is reported in ``unclassified_bots``
     and left out of the list.
@@ -478,12 +487,16 @@ def list_bots_for_trigger(
     - ``stored_finding_bots`` — the stored-finding population that was read,
       whether or not it was joined, sorted by name.
     - ``stored_findings_stale`` — whether that population was joined.
+    - ``review_complete_bots`` — the flagged bots removed from the stale set
+      because a qualifying handled review already completes them.
     - ``unclassified_bots`` — candidates left out because no list names them.
     """
     required = list(required_bots)
     required_set = set(required)
     optional_set = set(optional_bots or [])
     stale_set = set(stale_participation_bots)
+    done_set = {bot for bot in stale_set if bot_registry.review_complete_after_handling(bot)}
+    stale_set -= done_set
     stored_set = set(stored_finding_bots)
 
     candidates = set(stale_set)
@@ -498,6 +511,7 @@ def list_bots_for_trigger(
         'required_stale_bots': [bot for bot in required if bot in stale_set],
         'stored_finding_bots': sorted(stored_set),
         'stored_findings_stale': stored_findings_stale,
+        'review_complete_bots': sorted(done_set),
         'unclassified_bots': sorted(candidates - required_set - optional_set),
     }
 
@@ -902,7 +916,10 @@ def classify_bot(
       review it proves predates this HEAD. A moved ``updated_at`` is not a currency fact
       and credits nothing. Unproven and therefore blocking, but the remedy is to
       re-trigger a re-review — the opposite of ``absent``, where there is no review to
-      refresh.
+      refresh. A bot declaring ``review_complete_after_handling`` does not land here on
+      that strength: the stale evidence IS a qualifying review on record, so the bot is
+      classified ``participated`` / ``participated_but_empty`` and needs no later
+      review, while its pending findings still block through the triage arm.
     - **``in_progress``** — the bot's review is still running.
     - **``unregistered_kind``** — the configured token matches no member of the live
       registry kind set, so no reviewer answers to this name and none ever could:
@@ -961,6 +978,17 @@ def classify_bot(
     if bot in (declined or set()):
         return STATE_DECLINED
     if bot in (stale_participants or set()):
+        # A bot declaring ``review_complete_after_handling`` is DONE once a
+        # qualifying review of this pull request is on record: the producer admits
+        # the comment as evidence and fails only the currency test, which is
+        # exactly "a qualifying review on an earlier head". The review business is
+        # spent, so the bot is reported as having participated rather than as
+        # stale. Pending findings still block through the ``triage_ran`` arm below,
+        # and a refusal or decline observed on this candidate still outranks this
+        # branch — the done rule removes the demand for a later review, never the
+        # handling.
+        if bot_registry.review_complete_after_handling(bot):
+            return STATE_PARTICIPATED if has_findings else STATE_PARTICIPATED_BUT_EMPTY
         return STATE_PARTICIPATED_STALE
     if bot in in_progress:
         return STATE_IN_PROGRESS

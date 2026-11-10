@@ -709,7 +709,12 @@ class TestStaleParticipationIsPairForm:
     """
 
     def test_pair_form_stale_classifies_participated_stale(self, plan_context):
-        """A pair — the producer's exact shape — classifies the bot participated_stale."""
+        """A pair — the producer's exact shape — classifies the bot participated_stale.
+
+        ``sourcery`` is the subject: a flagged bot's stale pair is a done review, and
+        the pair SHAPE is what this case pins, so the bot is one the member still
+        applies to.
+        """
         plan_id = 'rc-stale-pair'
         plan_context.plan_dir_for(plan_id)
 
@@ -719,14 +724,14 @@ class TestStaleParticipationIsPairForm:
             '--plan-id',
             plan_id,
             '--required-bots',
-            'coderabbit',
+            'sourcery',
             '--stale-participation-bots',
-            'coderabbit:issue_comment',
+            'sourcery:issue_comment',
         )
 
         assert result.success, result.stderr
         assert 'participation_complete: false' in result.stdout
-        assert 'coderabbit,participated_stale' in result.stdout
+        assert 'sourcery,participated_stale' in result.stdout
 
     def test_bare_kind_to_stale_flag_is_rejected(self, plan_context):
         """A BARE kind on the now-pair-form flag is a caller error — the other D1 half."""
