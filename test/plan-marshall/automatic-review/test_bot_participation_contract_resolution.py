@@ -363,6 +363,14 @@ _NON_LIST_FLAG_COVERAGE = {
         'boundary and the unknown-when-unmeasured rendering are owned by '
         'test_structural_refusal.py'
     ),
+    '--pr-number': (
+        'the store-SCOPING scalar — the pull request whose stored findings this verdict '
+        'is about. Not a bot observation and not a classifier input: the findings store '
+        'is plan-scoped, so the read is scoped to one PR or an earlier PR of the same '
+        'plan joins this verdict. Its CLI boundary, the unscoped disclosure and the '
+        'legacy-row partition are owned by '
+        'test_trigger_b_stale_set_from_participation.py'
+    ),
 }
 
 

@@ -2316,6 +2316,11 @@ _REVIEW_BODY_SECTIONS = (
 _NON_FINDING_SECTION_LABELS = (
     'files selected for processing',
     'files ignored due to path filters',
+    # OBSERVED on ``cuioss/plan-marshall#1952`` in an INCREMENTAL review: the files the
+    # reviewer skipped because they are unchanged since its previous review, posted as a
+    # counted ``<details>`` block with a ``<picture>`` icon wrapper. It is a diagnostic
+    # about what was NOT re-read, so it is neither a findings section nor a stop.
+    'files skipped from review as they are similar to previous changes',
     'review details',
     'review info',
     'run configuration',
@@ -2590,11 +2595,30 @@ def _body_findings(
     findings: list[dict[str, str]] = []
     seen_inline = False
     span_end_of: dict[int, int] = {}
+    starts_by_index = {index: match.group('title') for index, match in starts}
+
+    def _is_span_boundary(index: int) -> bool:
+        """Whether this summary ENDS the span of the section before it.
+
+        A finding section's content runs to the next section heading — and also to a
+        DECLARED NON-FINDING block, which is a boundary even though it contributes no
+        findings: a counted ``Files selected for processing: 1`` list copied inside a
+        section's span would be counted as one more finding of that section, so a single
+        nitpick would arrive as two and the gate would block after the real one was
+        disposed.
+        """
+        if _is_content(index):
+            return False
+        if section_at[index] is not None:
+            return True
+        title = starts_by_index[index]
+        return _declared_count(title) is not None and _is_non_finding_title(title)
+
     for position, (index, _match) in enumerate(starts):
         if not _is_section(index):
             continue
         span_end_of[index] = next(
-            (later.start() for later_index, later in starts[position + 1 :] if _is_section(later_index)),
+            (later.start() for later_index, later in starts[position + 1 :] if _is_span_boundary(later_index)),
             len(body),
         )
     for index, match in starts:

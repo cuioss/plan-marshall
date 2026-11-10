@@ -87,7 +87,7 @@ restates it.
 | `refused_unknown` | The bot posted a refusal about whose awaitability nothing is known. Reached two ways: the registry declares its class `unknown` (its refusal shape has never been observed), or **no arm of the recognition stack could read the notice at all** — which resolves here whatever class the bot declares. | A declared *we-do-not-know*, NEVER a positive hard quota. Rendering it as `refused_hard` steers an operator toward "waiting is futile, force it" for a refusal that might have been awaitable. Its own member so the ignorance reaches the reader as ignorance. |
 | `refused_structural` | The bot posted a refusal whose **cause is a ceiling on the diff itself** — the PR is over a per-PR size budget (an observed `cause: size`). Decided by the cause axis, whatever the bot's `rate_limit_class` declares. | **The only member whose refusal is not temporal.** The other three say *not now*; this one says *not this diff*, and the same request never succeeds while the diff is this size. Remedies: **split the diff**, or **accept the gap under a recorded merge authorization** — ⛔ **never await, and never demote a required bot.** The finding carries the **cap** the notice stated, so the gap is auditable against the measured diff size. |
 | `participated_but_empty` | The bot posted at least one comment, but every comment was filtered out (noise) so it stored zero findings. | **Accounted-for, not a failure.** The bot did its pass and had nothing actionable to say. |
-| `participated_stale` | The bot's comment was already admissible evidence — it matched a declared `participation_evidence` publish shape AND carried that shape's declared content marker where one is declared — but failed the `participation_requires_update` currency test — the currency ledger anchors the comment to a commit that is **not** the merge candidate, and its `updated_at` is unchanged from the value recorded at that credit — or the comment itself names a commit that is not the merge candidate. A bot declaring `participation_requires_update: false` reaches this member too, but ONLY in a fetch that also observed it publishing a refusal: its evidence then has to be placed at the merge candidate by the provider-reported `commit_id`, and a comment whose commit was not reported is not placeable. | The bot reviewed an **earlier** commit, so nothing has reviewed the current diff. Blocking, but the remedy is a re-review trigger. |
+| `participated_stale` | The bot's comment was already admissible evidence — it matched a declared `participation_evidence` publish shape AND carried that shape's declared content marker where one is declared — but failed the `participation_requires_update` currency test: the currency ledger anchors the comment to a commit that is **not** the merge candidate, or the comment itself names a commit that is not the merge candidate. An in-place edit is not a currency fact: a moved `updated_at` credits nothing. The one timestamp the rule reads is the first-observation arm's bound — a comment that demonstrably predates the commit cannot be an observation of it. A bot declaring `participation_requires_update: false` reaches this member too, but ONLY in a fetch that also observed it publishing a refusal: its evidence then has to be placed at the merge candidate by the provider-reported `commit_id`, and a comment whose commit was not reported is not placeable. | The bot reviewed an **earlier** commit, so nothing has reviewed the current diff. Blocking, but the remedy is a re-review trigger. |
 | `declined` | The bot was asked to review the merge candidate (a re-review was triggered) and answered without producing a review of it — an **incremental-review decline**: it responded with a comment that does not REFERENCE the merge candidate (`head_sha_verified: false`) rather than a review of this HEAD. `false` covers BOTH shapes — a comment naming no reviewed commit at all, and one naming a DIFFERENT commit — so neither may be described as the whole of it. | The bot engaged but **declined** to review this commit. Blocking, but re-triggering is futile — the productive action is to record a merge authorization over the decline, not to trigger again and not to demote a required bot (see `coderabbit.md` § "Operator review policy"). |
 
 `participated_but_empty` is the member most often misread. A bot that reviewed and found nothing is a
@@ -420,18 +420,19 @@ decides the credit, **ahead of every ledger arm**:
 The coverage marker is read by `_github_pr.review_coverage_verdict`, the single parser of
 `sourceCommitId`, `coveredCommitId` and `kind`; no consumer restates those fields.
 
-**An in-place edit alone never credits evidence that names its commit.** This is the absorbed
-"participation credit ignores an in-progress review" defect: the fresh-edit arm measures
-`updated_at` movement, which a bot produces by editing its comment without re-reviewing. Where the
-evidence names a commit, the named-commit arm answers first, so the edit cannot credit a commit the
-comment does not name. Evidence that names no commit keeps the ledger arms unchanged.
+**An in-place edit alone never credits.** `updated_at` movement proves a bot touched its comment,
+not which commit the comment now reviews. A bot edits its persistent summary for many reasons — a
+typo, a re-worded footer, its own in-progress state — so movement is not a credit test. Evidence that
+names a commit is decided by that commit (§ above); evidence that names none is placed by the arms
+below — a ledger row whose recorded commit IS the merge candidate, or the bounded first-observation
+assumption.
 
-**Why it outranks the ledger.** The ledger arms infer the reviewed commit from when the plan saw the
-comment and whether it moved. A fresh edit is their strongest signal, and it is still an inference: a
-bot that edits its comment without re-reviewing — or re-reviews an older commit — moves `updated_at`
-exactly as a review of the merge candidate does. A comment that names the previous HEAD after such an
-edit says in its own text that the merge candidate is unreviewed, and an inference must not overrule
-the statement it is an inference about.
+**Why the ledger does not infer from movement.** A review the bot edited in place is indistinguishable
+from one it merely re-worded when only the timestamp is consulted: both move `updated_at` exactly as a
+review of the merge candidate does. What places such a review is therefore the comment's own statement
+— a named commit, or a coverage marker — or a ledger row whose recorded commit IS the merge candidate,
+or the first-observation arm's bounded assumption. None of the three is read off the comment's edit
+history.
 
 **What counts as naming a commit.** Only a FULL commit id, bare or inside a permalink, read through
 the one commit recogniser (`_github_pr.commit_tokens`, narrowed by `_github_pr.named_commits`). An
@@ -578,12 +579,9 @@ For a comment that names none:
   merge-candidate SHA. That ledger records, per `(bot_kind, comment_id)`, the merge-candidate SHA and
   the `updated_at` at the fetch that LAST credited that comment, and it records them whether or not the
   comment produced a finding — so a comment the pre-filter drops is anchored exactly as one that was
-  filed, and no second set of SHAs is consulted or unioned in; **or**
-- it was **edited in place since it was last credited** — `updated_at` differs from the **recorded**
-  `updated_at` the currency ledger holds for that credit, never from `created_at` — a fresh review at
-  the current tree. Comparing against the recorded value is what stops the arm from becoming a
-  permanent "was ever edited" flag: an edit at commit N credits N, and not N+1 unless a further edit
-  lands. An absent `updated_at` reads as no movement, which is the fail-closed direction; **or**
+  filed, and no second set of SHAs is consulted or unioned in. The credit holds when the recorded SHA
+  IS the merge candidate: an edit that moves the comment's `updated_at` credits nothing on its own,
+  because movement proves the bot touched its comment, not which commit it reviewed; **or**
 - this fetch is the **first observation** of the comment — a **bounded assumption**, never a verified
   fact. A fetched comment carries no reviewed SHA, so nothing in it says which commit the bot actually
   read, and the ledger's silence says only that this plan has not seen the comment before — which is
@@ -1147,8 +1145,9 @@ each comment's `(bot_kind, comment_id)` key together with the merge-candidate SH
 at the fetch that last credited it. The currency rule is evaluated against that ledger and against
 nothing else: a dropped comment and a filed one are anchored by the same record, so there is no second
 set of SHAs to union in and no shape of comment the rule reaches only indirectly. A dropped comment's
-recorded SHA is the commit it was credited against; a later HEAD reads as stale, and an `updated_at`
-that differs from the recorded one credits the bot again.
+recorded SHA is the commit it was credited against; a later HEAD reads as stale. The `updated_at` is
+recorded as that credit's provenance — a comment's own edit stamp says nothing about which commit it
+reviewed, so it re-credits nothing.
 
 The ledger holds **observation records, not findings**: they are never returned by a findings query,
 never enter the pending-findings gate, and never reach operator triage, so the triage queue stays as

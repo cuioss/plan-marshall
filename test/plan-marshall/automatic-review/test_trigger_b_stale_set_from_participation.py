@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import re
 
+import _findings_core as fc
 import pytest
 
 from conftest import get_skill_dir, load_script_module
@@ -311,3 +312,187 @@ def test_finalize_hook_names_the_declined_bots_on_a_timed_out_pass():
 
     assert len(cells) == 2, cells
     assert sum(_DECLINED_PLACEHOLDER in cell for cell in cells) == 1, cells
+
+
+# ---------------------------------------------------------------------------
+# The stored-finding set is PR-SCOPED, not merely plan-scoped
+# ---------------------------------------------------------------------------
+
+_HEAD = 'b' * 40
+_STALE = 'a' * 40
+
+
+def _seed_comment(plan_id: str, bot: str, pr_number: str | None, reviewed: str = _STALE) -> str:
+    """File one producer-shaped ``pr-comment`` finding, optionally for a named PR.
+
+    ``pr_number=None`` writes the LEGACY shape — no ``pr_number`` line at all — which
+    is what a finding stored before the producer stamped one looks like.
+    """
+    detail = f'pr_number: {pr_number}\nkind: inline\nauthor: {bot}\nthread_id: t\ncomment_id: c\n'
+    if pr_number is None:
+        detail = 'kind: inline\nauthor: ' + bot + '\nthread_id: t\ncomment_id: c\n'
+    result = fc.add_finding(
+        plan_id,
+        'pr-comment',
+        title=f'PR #{pr_number} inline comment by {bot}',
+        detail=detail,
+        bot_kind=bot,
+        kind='inline',
+        author=bot,
+        reviewed_commit_sha=reviewed,
+    )
+    assert result['status'] == 'success', result
+    return str(result['hash_id'])
+
+
+def _trigger_bots(plan_id: str, pr_number: int | None) -> dict:
+    # ``rc`` is an untyped dynamically-loaded module, so the call's value is ``Any``;
+    # binding it to a declared ``dict`` is what keeps this helper's own signature
+    # honest rather than returning ``Any`` from a ``-> dict`` (``./pw compile``).
+    payload: dict = rc.list_bots_for_trigger(
+        [],
+        [str(f.get('bot_kind') or '') for f in rc._read_pr_comment_findings(plan_id, pr_number)['findings']],
+        ['coderabbit'],
+        optional_bots=['sourcery'],
+        stored_findings_stale=True,
+    )
+    return payload
+
+
+class TestTheStoredFindingJoinIsScopedToOnePullRequest:
+    """The store is PLAN-scoped, so the join must be PR-scoped to answer one PR.
+
+    A plan that iterates over pull requests keeps every earlier PR's findings. Joining
+    them means a bot whose review was filed against PR A is re-triggered from PR B on
+    the strength of a review of a tree PR B never had.
+    """
+
+    def test_a_finding_from_another_pr_is_not_joined(self, plan_context):
+        plan_id = 'trigger-b-other-pr'
+        plan_context.plan_dir_for(plan_id)
+        _seed_comment(plan_id, 'coderabbit', '101')
+
+        read = rc._read_pr_comment_findings(plan_id, 102)
+        assert read['findings'] == []
+        assert read['store_scope'] == 'pr'
+        assert _trigger_bots(plan_id, 102)['trigger_bots'] == []
+
+    def test_the_same_finding_joins_for_its_own_pr(self, plan_context):
+        """⛔ MATCHED CONTROL — same store, same rows; only the PR asked about differs."""
+        plan_id = 'trigger-b-own-pr'
+        plan_context.plan_dir_for(plan_id)
+        _seed_comment(plan_id, 'coderabbit', '101')
+
+        read = rc._read_pr_comment_findings(plan_id, 101)
+        assert [f['bot_kind'] for f in read['findings']] == ['coderabbit']
+        assert _trigger_bots(plan_id, 101)['trigger_bots'] == ['coderabbit']
+
+    def test_a_legacy_row_on_a_two_pr_plan_is_reported_unscoped(self, plan_context):
+        """A row carrying no PR, on a store that spans two, belongs to neither.
+
+        Assigning it to the current PR is the silent join this scoping exists to
+        prevent, so it is reported — with its hash id — and left out of the join.
+        """
+        plan_id = 'trigger-b-legacy-two-prs'
+        plan_context.plan_dir_for(plan_id)
+        _seed_comment(plan_id, 'coderabbit', '101')
+        legacy = _seed_comment(plan_id, 'sourcery', None)
+
+        read = rc._read_pr_comment_findings(plan_id, 102)
+        assert [f['bot_kind'] for f in read['findings']] == []
+        assert read['unscoped_stored_findings'] == 1
+        assert read['unscoped_stored_finding_ids'] == [legacy]
+        assert sorted(read['known_stored_prs']) == ['101', '102']
+
+    def test_a_single_pr_plan_still_joins_its_legacy_rows(self, plan_context):
+        """This holds at the base and must keep holding: one PR means no ambiguity.
+
+        A store whose rows carry no PR, asked about the only PR it can be about, has
+        one possible owner, so the historical join is preserved rather than lost.
+        """
+        plan_id = 'trigger-b-legacy-one-pr'
+        plan_context.plan_dir_for(plan_id)
+        _seed_comment(plan_id, 'coderabbit', None)
+
+        read = rc._read_pr_comment_findings(plan_id, 101)
+        assert [f['bot_kind'] for f in read['findings']] == ['coderabbit']
+        assert read['unscoped_stored_findings'] == 0
+
+    def test_an_unscoped_read_reports_its_scope(self, plan_context):
+        """Omission is legal, and it is DISCLOSED rather than passed off as scoped."""
+        plan_id = 'trigger-b-unscoped'
+        plan_context.plan_dir_for(plan_id)
+        _seed_comment(plan_id, 'coderabbit', '101')
+
+        read = rc._read_pr_comment_findings(plan_id)
+        assert read['store_scope'] == 'unscoped'
+        assert [f['bot_kind'] for f in read['findings']] == ['coderabbit']
+
+    def test_the_presence_check_does_not_see_another_prs_findings(self, plan_context):
+        """The same scoping governs the participation predicate's finding count.
+
+        ``classify_bot`` distinguishes ``participated`` (published AND filed) from
+        ``participated_but_empty`` (published, filed nothing) by the bot's stored
+        findings. An earlier PR's finding must not put this PR's bot into the first
+        state: the review happened, but its findings belong to another tree.
+        """
+        plan_id = 'trigger-b-presence'
+        plan_context.plan_dir_for(plan_id)
+        _seed_comment(plan_id, 'coderabbit', '101')
+
+        own = rc.check_completeness(plan_id, ['coderabbit'], participated_bots={'coderabbit': 'inline'}, pr_number=101)
+        other = rc.check_completeness(
+            plan_id, ['coderabbit'], participated_bots={'coderabbit': 'inline'}, pr_number=102
+        )
+
+        assert _state(own, 'coderabbit') == rc.STATE_PARTICIPATED
+        assert _state(other, 'coderabbit') == rc.STATE_PARTICIPATED_BUT_EMPTY
+        assert other['store_scope'] == 'pr'
+
+
+def _state(result: dict, bot: str) -> str:
+    for record in result['bot_states']:
+        if record['bot_kind'] == bot:
+            return str(record['state'])
+    raise AssertionError(f'{bot} missing from bot_states: {result["bot_states"]}')
+
+
+#: Detail shapes the two recognisers must classify identically: the producer's own
+#: stamp, a legacy row, a line that is NOT first (which must not be read as the origin),
+#: and a non-numeric value.
+_PR_RECOGNISER_SAMPLES = (
+    'pr_number: 132\nkind: inline\n',
+    'pr_number: 7',
+    'kind: inline\npr_number: 132\n',
+    'pr_number: not-a-number\n',
+    'pr_number: 1320\n',
+    '',
+)
+
+
+def test_the_two_pr_recognisers_agree_on_every_shape():
+    """One fact, two readers — held to the same answer on the producer's own shapes.
+
+    The store's PR line is read by the producer verbatim
+    (``github_pr._PR_NUMBER_DETAIL``, which routes ``post_responses``) and by this
+    consumer (``review_completeness._FINDING_PR_NUMBER``, which scopes the quorum read).
+    A recogniser that drifted would split one review's provenance across two answers, so
+    the shapes below are run through both. ``importlib`` resolves ``github_ops`` first:
+    importing ``github_pr`` ahead of it closes an import cycle on a partially
+    initialised module.
+    """
+    import importlib
+
+    importlib.import_module('github_ops')
+    github_pr = importlib.import_module('github_pr')
+
+    for detail in _PR_RECOGNISER_SAMPLES:
+        producer = github_pr._PR_NUMBER_DETAIL.match(detail)
+        consumer = rc._FINDING_PR_NUMBER.match(detail)
+        assert (producer is None) == (consumer is None), f'recognisers disagree on presence for {detail!r}'
+        if producer is not None and consumer is not None:
+            assert producer.group('id') == consumer.group('id'), f'recognisers disagree on the id for {detail!r}'
+
+    # The samples must actually exercise both answers, or the parity is vacuous.
+    assert sum(1 for detail in _PR_RECOGNISER_SAMPLES if rc._FINDING_PR_NUMBER.match(detail)) >= 3
+    assert sum(1 for detail in _PR_RECOGNISER_SAMPLES if not rc._FINDING_PR_NUMBER.match(detail)) >= 2

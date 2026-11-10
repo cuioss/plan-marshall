@@ -726,6 +726,9 @@ def test_the_production_chain_reads_the_roster_the_producer_and_the_predicate(mo
 
     predicate_argv = calls[2][1]
     assert predicate_argv[0] == 'check'
+    # The findings store is PLAN-scoped: the merge-deciding predicate must be scoped to the
+    # PR being merged, or an earlier PR of this plan joins its verdict.
+    assert predicate_argv[predicate_argv.index('--pr-number') + 1] == '42'
     assert predicate_argv[-1] == '--triage-ran', 'the merge runs after triage, so a pending finding must block'
     # The producer emits RECORDS; the predicate consumes PAIRS. One conversion site.
     assert 'coderabbit:review_body' in predicate_argv
@@ -733,6 +736,84 @@ def test_the_production_chain_reads_the_roster_the_producer_and_the_predicate(mo
     assert 'other-bot' in predicate_argv
     assert 'other-bot:size' in predicate_argv
     assert 'other-bot:400 lines' in predicate_argv
+
+
+def test_the_chain_refuses_a_store_whose_rows_cannot_be_placed(monkeypatch):
+    """A legacy row on a multi-PR store is neither joinable nor ignorable at a merge.
+
+    The predicate excludes it from the scoped read, so it never reaches the pending-finding
+    input — which makes it a hole in the gate that decides the merge. The chain refuses it
+    by name rather than reporting a clean verdict over a row nobody could place.
+    """
+    unplaceable = dict(
+        _PREDICATE_PAYLOAD,
+        store_scope='pr',
+        unscoped_stored_findings=1,
+        unscoped_stored_finding_ids=['deadbeef'],
+    )
+
+    verdict, _calls = _participation_chain(
+        monkeypatch, _full_chain_responses(**{gate._COMPLETENESS_NOTATION: unplaceable})
+    )
+
+    assert verdict['status'] == 'error'
+    assert verdict['error'] == 'participation_scope_ambiguous'
+    assert verdict['unscoped_stored_finding_ids'] == ['deadbeef']
+    assert verdict['roster_read'] is True
+
+
+def test_the_scope_refusal_points_the_operator_at_the_store(monkeypatch):
+    """The scope cause gets its own remedy: the gate was readable, the STORE was not placeable.
+
+    Naming "make the gate readable (roster, provider, producer, or predicate)" for this
+    cause would send the operator to work every one of those already completed. The
+    refusal must instead name the rows and the action that clears them.
+    """
+    verdict = {
+        'code': 'participation_scope_ambiguous',
+        'detail': 'one stored finding could not be placed',
+        'authorizable': False,
+        'roster_read': True,
+        'required_bots': ['coderabbit'],
+        'unproven_bots': [],
+        'bot_states': [],
+    }
+
+    payload = gate._participation_refusal(_PLAN_ID, None, verdict)
+
+    assert payload['reason'] == 'participation_scope_ambiguous'
+    assert 'Write the PR stamp into those rows' in payload['message']
+    assert 'must be made readable' not in payload['message']
+
+
+def test_the_participation_verdict_normalises_the_scope_cause_to_code(monkeypatch):
+    """The refusal keys on ``code``, so the normaliser must put the cause there.
+
+    A seam that carried the cause under ``error`` would leave the remedy branch
+    unreachable while every test of the remedy still passed on a hand-built verdict —
+    the defect class this pair of tests exists to close, at both levels.
+    """
+    scope = {
+        'status': 'error',
+        'error': 'participation_scope_ambiguous',
+        'roster_read': True,
+        'required_bots': ['coderabbit'],
+        'optional_bots': [],
+        'unproven_bots': [],
+        'bot_states': [],
+        'reason': 'one stored finding could not be placed',
+    }
+
+    normalised = gate._participation_verdict(
+        _PLAN_ID,
+        42,
+        _PROJECT_DIR,
+        head=None,
+        participation_check=lambda _plan, _pr, _dir: dict(scope),
+    )
+
+    assert normalised['code'] == 'participation_scope_ambiguous'
+    assert 'error' not in normalised
 
 
 def test_the_chain_does_not_reach_the_producer_when_the_roster_is_empty(monkeypatch):
