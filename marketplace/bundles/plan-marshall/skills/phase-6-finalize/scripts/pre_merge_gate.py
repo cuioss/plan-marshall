@@ -1209,8 +1209,10 @@ def _participation_refusal(plan_id: str, head: str | None, verdict: dict[str, An
     ONE unreadable-gate cause is neither of those and carries its own remedy: a store
     whose rows belong to no known PR (``code: participation_scope_ambiguous``). The
     roster, provider and predicate all answered, so pointing the operator at making the
-    gate readable would name work already done; the fault is in the STORE, and the
-    remedy is to place those rows — stamp, migrate, retire, or resolve them.
+    gate readable would name work already done; the fault is in the STORE. The remedy is
+    to PLACE those rows — write the PR stamp into each row's ``detail``, or remove the
+    row — because disposition does not place a finding: resolving one changes its state
+    and leaves its provenance untouched, so no resolution clears this refusal.
 
     A gap that IS authorizable advertises the labels the remedy accepts, in
     ``override_options``. They are :data:`BARRIER_OVERRIDE_LABELS` itself — the one
@@ -1229,8 +1231,9 @@ def _participation_refusal(plan_id: str, head: str | None, verdict: dict[str, An
         remedy = (
             'No merge authorization covers this: the findings store spans more than one PR and '
             'carries rows with no PR stamp, so a pending finding may exist here that the gate '
-            'could neither place nor ignore. Stamp, migrate or retire those rows (or resolve '
-            'them) before this merge can proceed.'
+            "could neither place nor ignore. Write the PR stamp into those rows' detail (or "
+            "remove the rows) — a resolution changes a finding's disposition, never its "
+            'provenance, so it cannot clear this — before this merge can proceed.'
         )
     elif authorizable:
         remedy = (

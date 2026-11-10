@@ -782,8 +782,38 @@ def test_the_scope_refusal_points_the_operator_at_the_store(monkeypatch):
     payload = gate._participation_refusal(_PLAN_ID, None, verdict)
 
     assert payload['reason'] == 'participation_scope_ambiguous'
-    assert 'Stamp, migrate or retire' in payload['message']
+    assert 'Write the PR stamp into those rows' in payload['message']
     assert 'must be made readable' not in payload['message']
+
+
+def test_the_participation_verdict_normalises_the_scope_cause_to_code(monkeypatch):
+    """The refusal keys on ``code``, so the normaliser must put the cause there.
+
+    A seam that carried the cause under ``error`` would leave the remedy branch
+    unreachable while every test of the remedy still passed on a hand-built verdict —
+    the defect class this pair of tests exists to close, at both levels.
+    """
+    scope = {
+        'status': 'error',
+        'error': 'participation_scope_ambiguous',
+        'roster_read': True,
+        'required_bots': ['coderabbit'],
+        'optional_bots': [],
+        'unproven_bots': [],
+        'bot_states': [],
+        'reason': 'one stored finding could not be placed',
+    }
+
+    normalised = gate._participation_verdict(
+        _PLAN_ID,
+        42,
+        _PROJECT_DIR,
+        head=None,
+        participation_check=lambda _plan, _pr, _dir: dict(scope),
+    )
+
+    assert normalised['code'] == 'participation_scope_ambiguous'
+    assert 'error' not in normalised
 
 
 def test_the_chain_does_not_reach_the_producer_when_the_roster_is_empty(monkeypatch):
