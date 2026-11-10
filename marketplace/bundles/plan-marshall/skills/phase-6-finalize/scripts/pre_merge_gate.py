@@ -1206,6 +1206,12 @@ def _participation_refusal(plan_id: str, head: str | None, verdict: dict[str, An
     authorization can apply, and an UNKNOWN is not — the remedy for that one is to make
     the participation state readable, never to rule past it.
 
+    ONE unreadable-gate cause is neither of those and carries its own remedy: a store
+    whose rows belong to no known PR (``code: participation_scope_ambiguous``). The
+    roster, provider and predicate all answered, so pointing the operator at making the
+    gate readable would name work already done; the fault is in the STORE, and the
+    remedy is to place those rows — stamp, migrate, retire, or resolve them.
+
     A gap that IS authorizable advertises the labels the remedy accepts, in
     ``override_options``. They are :data:`BARRIER_OVERRIDE_LABELS` itself — the one
     constant ``merge-authorization grant`` validates against — never a copy, so the
@@ -1217,7 +1223,7 @@ def _participation_refusal(plan_id: str, head: str | None, verdict: dict[str, An
     unproven = verdict['unproven_bots']
     detail = verdict.get('detail') or 'no reason was reported'
     authorizable = bool(verdict.get('authorizable'))
-    if verdict.get('error') == 'participation_scope_ambiguous':
+    if verdict.get('code') == 'participation_scope_ambiguous':
         # A readable gate that still cannot answer: the store holds rows belonging to no
         # known PR, so the generic "make it readable" remedy names work already done.
         remedy = (

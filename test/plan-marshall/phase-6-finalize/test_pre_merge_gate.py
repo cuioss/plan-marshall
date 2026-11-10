@@ -762,6 +762,30 @@ def test_the_chain_refuses_a_store_whose_rows_cannot_be_placed(monkeypatch):
     assert verdict['roster_read'] is True
 
 
+def test_the_scope_refusal_points_the_operator_at_the_store(monkeypatch):
+    """The scope cause gets its own remedy: the gate was readable, the STORE was not placeable.
+
+    Naming "make the gate readable (roster, provider, producer, or predicate)" for this
+    cause would send the operator to work every one of those already completed. The
+    refusal must instead name the rows and the action that clears them.
+    """
+    verdict = {
+        'code': 'participation_scope_ambiguous',
+        'detail': 'one stored finding could not be placed',
+        'authorizable': False,
+        'roster_read': True,
+        'required_bots': ['coderabbit'],
+        'unproven_bots': [],
+        'bot_states': [],
+    }
+
+    payload = gate._participation_refusal(_PLAN_ID, None, verdict)
+
+    assert payload['reason'] == 'participation_scope_ambiguous'
+    assert 'Stamp, migrate or retire' in payload['message']
+    assert 'must be made readable' not in payload['message']
+
+
 def test_the_chain_does_not_reach_the_producer_when_the_roster_is_empty(monkeypatch):
     """An empty roster is decided before any provider call: nothing to prove, nothing to read."""
     empty = dict(_ROSTER_PAYLOAD, params={'required_bots': '', 'optional_bots': ''})
