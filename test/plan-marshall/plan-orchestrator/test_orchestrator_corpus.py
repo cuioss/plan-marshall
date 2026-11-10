@@ -7601,6 +7601,24 @@ class TestLintDoneWhens:
         assert result['findings'] == []
         assert result['findings_count'] == 0
 
+    def test_a_quoted_rule_vocabulary_is_not_read_as_the_defect(self, plan_context):
+        """A spec DESCRIBING the rule quotes its words; a quoted word is named, not asserted."""
+        _write_status(plan_context, [_row('PLAN-01')])
+        _lint_spec(
+            plan_context,
+            done_when='a Done-when that carries a "fails at" clause beside "still" or "keeps" is flagged.',
+        )
+
+        assert cmd_corpus_lint_done_whens(_LINT_ARGS)['findings'] == []
+
+    def test_a_hyphenated_compound_is_not_a_preservation_claim(self, plan_context):
+        # ``statement-keeps-default`` names a rule; the hyphenated compound never
+        # asserts that a behaviour still holds.
+        _write_status(plan_context, [_row('PLAN-01')])
+        _lint_spec(plan_context, done_when='a doc test asserts the statement-keeps-`default` rule and fails at HEAD.')
+
+        assert cmd_corpus_lint_done_whens(_LINT_ARGS)['findings'] == []
+
     def test_a_holds_at_over_a_hypothesis_symbol_is_reported(self, plan_context):
         _write_status(plan_context, [_row('PLAN-01')])
         _lint_spec(

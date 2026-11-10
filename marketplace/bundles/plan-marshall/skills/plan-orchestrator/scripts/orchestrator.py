@@ -2780,8 +2780,13 @@ _FAILS_AT = re.compile(r'fails at', re.IGNORECASE)
 _HOLDS_AT = re.compile(r'holds at', re.IGNORECASE)
 #: The words that state behaviour ALREADY holds. A Done-when carrying one of them
 #: beside ``fails at`` asks for a failing observation of something it also says is
-#: unchanged.
-_PRESERVATION_WORD = re.compile(r'\b(?:still|keeps|unchanged)\b', re.IGNORECASE)
+#: unchanged. The look-arounds keep a HYPHENATED compound out: the word in
+#: ``statement-keeps-default`` names a rule, it does not assert a state.
+_PRESERVATION_WORD = re.compile(r'(?<![\w-])(?:still|keeps|unchanged)(?![\w-])', re.IGNORECASE)
+#: A double-quoted segment. A word inside one is NAMED, not asserted — a spec that
+#: quotes this rule's own vocabulary (``beside the words "still", "keeps"``) is
+#: describing the defect, not committing it.
+_QUOTED_SEGMENT = re.compile(r'"[^"]*"')
 #: A commit id, or the template's own placeholder — never a code symbol.
 _SHA_TOKEN = re.compile(r'^(?:[0-9a-f]{7,40}|\{sha\})$', re.IGNORECASE)
 #: Clause boundaries inside one Done-when unit.
@@ -2842,12 +2847,13 @@ def _done_when_findings(spec: str, text: str) -> list[dict[str, str]]:
         for clause in (part.strip() for part in _CLAUSE_SPLIT.split(unit)):
             if not clause:
                 continue
-            if _FAILS_AT.search(clause) and _PRESERVATION_WORD.search(clause):
+            asserted = _QUOTED_SEGMENT.sub('', clause)
+            if _FAILS_AT.search(asserted) and _PRESERVATION_WORD.search(asserted):
                 findings.append({'spec': spec, 'rule': DONE_WHEN_RULE_FAILS_AT, 'clause': clause, 'symbol': ''})
                 continue
-            if not _HOLDS_AT.search(clause):
+            if not _HOLDS_AT.search(asserted):
                 continue
-            for span in (token.strip() for token in _CODE_SPAN.findall(clause)):
+            for span in (token.strip() for token in _CODE_SPAN.findall(asserted)):
                 if span in symbols:
                     findings.append({'spec': spec, 'rule': DONE_WHEN_RULE_HOLDS_AT, 'clause': clause, 'symbol': span})
     return findings
