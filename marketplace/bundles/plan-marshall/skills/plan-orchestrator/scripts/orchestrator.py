@@ -59,7 +59,7 @@ per-concern layout; no code path here opens a queue row or the anchor itself.
   makes no ``epic.md`` write. Refuses a closed epic (``refused_closed``):
   compaction is a live-epic operation only. The narrative-versus-settled
   RELOCATION judgement is NOT here; it stays LLM.
-- ``corpus {epics,enumerate,read,cross-check,surfaces,declaration-currency,verdicts,lint-done-whens,set-verdict}`` — the
+- ``corpus {epics,enumerate,read,spec-skills,cross-check,surfaces,declaration-currency,verdicts,lint-done-whens,set-verdict}`` — the
   epic population and the epic's staged
   spec corpus: enumerate every epic slug in the store (``epics`` — the one
   slug-free verb, partitioned into active and archived, publishing the roots it
@@ -151,6 +151,7 @@ ledger. No implementation-side capability (no build/CI/source verbs) exists here
 """
 
 import argparse
+import fnmatch
 import importlib.util
 import json
 import os
@@ -166,6 +167,7 @@ from pathlib import Path
 from typing import Any
 
 import plugin_registry
+import spec_skills
 from _cmd_sibling_collision import (
     _OVERLAP_JOIN,
     _iter_active_plan_dirs,
@@ -3786,6 +3788,66 @@ def _spec_within_corpus(path: Path, plans_dir: Path) -> bool:
     return True
 
 
+def _resolve_corpus_spec(slug: str, plan: str) -> tuple[Path | None, dict[str, Any] | None]:
+    """Resolve one plan id to its staged spec file, or the refusal naming why not.
+
+    The ONE resolution seam every corpus verb that addresses a single spec uses —
+    ``corpus read`` and ``corpus spec-skills`` — so the two cannot disagree about
+    which file a plan id names. ``--plan`` is validated against the anchored
+    settled plan-id grammar before any match; an exact stem match wins outright, a
+    single prefix match resolves, zero matches return ``spec_not_found`` carrying
+    ``available_specs``, several prefix matches return ``ambiguous_spec`` carrying
+    ``candidates``, and a match resolving outside ``plans/`` (symlink escape)
+    returns ``spec_escapes_corpus``. Returns ``(spec, None)`` on success and
+    ``(None, error_envelope)`` otherwise.
+    """
+    if not _ADD_ROW_PLAN_ID_RE.match(plan):
+        return None, _error(slug, 'invalid_plan', f'--plan must be a plan id ({PLAN_ID_SEGMENT}), got: {plan!r}')
+    root = _epic_root(slug, allow_archived=True)
+    if not root.is_dir():
+        return None, _error(slug, 'not_found', f'epic {slug!r} has no store tree')
+    specs = _spec_paths(root)
+    try:
+        plans_dir = (root / PLANS_SUBDIR).resolve()
+    except (OSError, RuntimeError):
+        return None, _error(slug, 'not_found', f'epic {slug!r} has no resolvable plans tree')
+    candidates: list[Path] = []
+    for path in specs:
+        if not _spec_matches_row(path, plan):
+            continue
+        if not _spec_within_corpus(path, plans_dir):
+            try:
+                path.resolve()
+            except (OSError, RuntimeError):
+                return None, _error(slug, 'unreadable', f'spec {path.name!r} could not be read', spec=path.name)
+            return None, _error(
+                slug,
+                'spec_escapes_corpus',
+                f'spec {path.name!r} resolves outside {PLANS_SUBDIR}/ and is refused',
+                spec=path.name,
+            )
+        candidates.append(path)
+    matches = sorted(candidates)
+    exact = next((path for path in matches if path.stem == plan), None)
+    if exact is not None:
+        return exact, None
+    if len(matches) == 1:
+        return matches[0], None
+    if not matches:
+        return None, _error(
+            slug,
+            'spec_not_found',
+            f'no spec file for plan {plan!r} in {PLANS_SUBDIR}/',
+            available_specs=[path.name for path in specs],
+        )
+    return None, _error(
+        slug,
+        'ambiguous_spec',
+        f'plan {plan!r} matches several spec files; pass the exact spec stem',
+        candidates=[path.name for path in matches],
+    )
+
+
 def cmd_corpus_read(args: argparse.Namespace) -> dict[str, Any]:
     """Return one staged spec's body through the sanctioned read path.
 
@@ -3797,71 +3859,19 @@ def cmd_corpus_read(args: argparse.Namespace) -> dict[str, Any]:
     uses (cwd-relative — a worktree reads its own branch's copy, not main's),
     reads the single matching spec file, and writes nothing.
 
-    The match reuses :func:`_spec_matches_row` (exact-or-prefix on the stem
-    with the separating hyphen), so ``--plan PLAN-03`` resolves
-    ``PLAN-03-compliant-paths.md``. The ``--plan`` value itself is validated
-    against the anchored settled plan-id grammar
-    (:data:`_ADD_ROW_PLAN_ID_RE`) — a bare ``PLAN`` without its digits never
-    reaches matching. An exact stem match wins outright; a single prefix
-    match resolves; zero matches return ``spec_not_found`` carrying
-    ``available_specs``; several prefix matches return ``ambiguous_spec``
-    carrying ``candidates`` rather than silently returning the first file.
-    A match resolving outside ``plans/`` (symlink escape) returns
-    ``spec_escapes_corpus`` naming the spec.
-    An unreadable file returns ``unreadable``; an unsafe slug returns
-    ``invalid_slug``; a slug with no store tree returns ``not_found``. An
-    absent spec is never rendered as an empty body.
+    The match is :func:`_resolve_corpus_spec`'s — the same resolution
+    ``corpus spec-skills`` uses. An unreadable file returns ``unreadable``; an
+    unsafe slug returns ``invalid_slug``; a slug with no store tree returns
+    ``not_found``. An absent spec is never rendered as an empty body.
     """
     invalid = _validate_slug(args.slug)
     if invalid:
         return _error(args.slug, 'invalid_slug', invalid)
     plan = args.plan
-    if not _ADD_ROW_PLAN_ID_RE.match(plan):
-        return _error(args.slug, 'invalid_plan', f'--plan must be a plan id ({PLAN_ID_SEGMENT}), got: {plan!r}')
-    root = _epic_root(args.slug, allow_archived=True)
-    if not root.is_dir():
-        return _error(args.slug, 'not_found', f'epic {args.slug!r} has no store tree')
-    specs = _spec_paths(root)
-    try:
-        plans_dir = (root / PLANS_SUBDIR).resolve()
-    except (OSError, RuntimeError):
-        return _error(args.slug, 'not_found', f'epic {args.slug!r} has no resolvable plans tree')
-    candidates: list[Path] = []
-    for path in specs:
-        if not _spec_matches_row(path, plan):
-            continue
-        if not _spec_within_corpus(path, plans_dir):
-            try:
-                path.resolve()
-            except (OSError, RuntimeError):
-                return _error(args.slug, 'unreadable', f'spec {path.name!r} could not be read', spec=path.name)
-            return _error(
-                args.slug,
-                'spec_escapes_corpus',
-                f'spec {path.name!r} resolves outside {PLANS_SUBDIR}/ and is refused',
-                spec=path.name,
-            )
-        candidates.append(path)
-    matches = sorted(candidates)
-    exact = next((path for path in matches if path.stem == plan), None)
-    if exact is not None:
-        spec = exact
-    elif len(matches) == 1:
-        spec = matches[0]
-    elif not matches:
-        return _error(
-            args.slug,
-            'spec_not_found',
-            f'no spec file for plan {plan!r} in {PLANS_SUBDIR}/',
-            available_specs=[path.name for path in specs],
-        )
-    else:
-        return _error(
-            args.slug,
-            'ambiguous_spec',
-            f'plan {plan!r} matches several spec files; pass the exact spec stem',
-            candidates=[path.name for path in matches],
-        )
+    spec, refusal = _resolve_corpus_spec(args.slug, plan)
+    if refusal is not None:
+        return refusal
+    assert spec is not None
     text, error = _read_spec(spec)
     if text is None:
         return _error(args.slug, error, f'spec {spec.name!r} could not be read', spec=spec.name)
@@ -3876,6 +3886,322 @@ def cmd_corpus_read(args: argparse.Namespace) -> dict[str, Any]:
         'size_bytes': len(text.encode('utf-8')),
         'line_count': len(lines),
         'body': text,
+    }
+
+
+# --- the spec-skills suggestion verb -----------------------------------------
+#
+# ``corpus spec-skills`` is the orchestrator side of the per-deliverable
+# ``Skills:`` / ``Persona:`` declaration the plan-spec template asks for. It reads
+# the declaration through the SAME shared reader the runbook lane uses, maps the
+# spec's declared surface to modules through the project's architecture, and
+# reports the domain skills the PROJECT CONFIGURES for those paths.
+#
+# The SKILL SOURCE is ``marshal.json``'s ``skill_domains.{domain}.profiles`` —
+# read through ``manage-config skill-domains get``, the configuration's own read
+# verb. The module record carries a ``skills_by_profile`` map too, but it is a
+# PERSISTED enrichment that can be stale (this repository's own ``pm-dev-python``
+# record carries another domain's skills), so re-deriving from the configuration
+# is the only source that cannot disagree with what the project declares.
+#
+# WHICH domain applies is decided in two rungs, most specific first: the path's
+# own file type against each domain's configured ``file_globs`` (the project's
+# domain-detection knowledge, so a ``.py`` path gets the python domain's skills
+# even inside a plugin bundle), and failing that the domains the architecture
+# reports as applicable to the module owning the path. A path neither rung places
+# is reported ``unmapped`` and its skills are never guessed.
+
+#: The persona each path KIND suggests, from the template's closed vocabulary.
+SPEC_SKILLS_PERSONAS = (
+    ('source', 'implementer'),
+    ('test', 'module-tester'),
+    ('document', 'documenter'),
+)
+SPEC_SKILLS_PERSONA_BY_KIND = dict(SPEC_SKILLS_PERSONAS)
+#: The kind order a mixed surface resolves its ONE suggested persona in.
+SPEC_SKILLS_KIND_ORDER = ('source', 'test', 'document')
+
+#: Suffixes that make a path a DOCUMENT. Matched case-insensitively.
+_DOCUMENT_PATH_SUFFIXES = frozenset({'.adoc', '.md', '.rst', '.txt'})
+
+#: The two clients this verb reads through, addressed the way every script
+#: addresses a sibling.
+_ARCHITECTURE_NOTATION = 'plan-marshall:manage-architecture:architecture'
+_CONFIG_NOTATION = 'plan-marshall:manage-config:manage-config'
+
+
+def _script_payload(
+    notation: str,
+    arguments: list[str],
+    *,
+    project_config: bool = False,
+) -> dict[str, Any] | None:
+    """Run one sibling script verb and return its parsed TOON payload.
+
+    ``None`` when the call could not run, exited non-zero, or returned something
+    that is not a TOON object — a failed read is reported as one, never guessed at.
+
+    ``project_config`` reads the CHECKOUT's configuration: it drops the
+    ``PLAN_BASE_DIR`` override from the child environment, because that variable
+    redirects a *store* (a test fixture's, a plan-local one), and the domain
+    configuration this verb reports is the one in the checkout's ``.plan/`` —
+    never a store's.
+    """
+    env = None
+    if project_config:
+        env = {key: value for key, value in os.environ.items() if key != 'PLAN_BASE_DIR'}
+    argv = [sys.executable, '.plan/execute-script.py', notation, *arguments]
+    try:
+        completed = subprocess.run(argv, capture_output=True, text=True, timeout=120, env=env)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if completed.returncode != 0 or not completed.stdout.strip():
+        return None
+    try:
+        parsed = parse_toon(completed.stdout)
+    except Exception:
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def _spec_path_kind(path: str) -> str:
+    """Classify one declared path as ``source``, ``test`` or ``document``."""
+    lowered = path.casefold()
+    name = lowered.rsplit('/', 1)[-1]
+    if (
+        name.startswith('test_')
+        or lowered.startswith(('test/', 'tests/'))
+        or '/test/' in lowered
+        or '/tests/' in lowered
+    ):
+        return 'test'
+    if Path(name).suffix in _DOCUMENT_PATH_SUFFIXES or lowered.startswith('doc/'):
+        return 'document'
+    return 'source'
+
+
+def _profile_skills(profiles: Any, profile: str = 'implementation') -> list[str]:
+    """The ``{profile}.defaults`` skill list of one configured profile block."""
+    block = profiles.get(profile) if isinstance(profiles, dict) else None
+    rows = block.get('defaults') if isinstance(block, dict) else None
+    if not isinstance(rows, list):
+        return []
+    skills: list[str] = []
+    for row in rows:
+        skill = row.get('skill') if isinstance(row, dict) else None
+        if isinstance(skill, str) and skill:
+            skills.append(skill)
+    return skills
+
+
+def _configured_domains() -> list[dict[str, Any]]:
+    """Every configured domain with its ``file_globs`` and its profile blocks.
+
+    The domain keys come from ``skill-domains list``; each key's block comes from
+    ``skill-domains get``, whose payload carries ``file_globs`` and one key per
+    profile. A key whose block cannot be read is skipped rather than reported as a
+    domain with no skills — a failed read is not an empty configuration.
+    """
+    listing = _script_payload(_CONFIG_NOTATION, ['skill-domains', 'list'], project_config=True)
+    keys = listing.get('domains') if isinstance(listing, dict) else None
+    if not isinstance(keys, list):
+        return []
+    domains: list[dict[str, Any]] = []
+    for key in keys:
+        if not isinstance(key, str):
+            continue
+        payload = _script_payload(_CONFIG_NOTATION, ['skill-domains', 'get', '--domain', key], project_config=True)
+        if payload is None or payload.get('status') != 'success':
+            continue
+        globs = payload.get('file_globs')
+        domains.append(
+            {
+                'domain': key,
+                'globs': [entry for entry in globs if isinstance(entry, str)] if isinstance(globs, list) else [],
+                'profiles': payload,
+            }
+        )
+    return domains
+
+
+def _glob_matches(path: str, glob: str) -> bool:
+    """Whether *path* matches one configured domain glob.
+
+    A leading ``**/`` means "any directory", so the remainder also matches the path
+    as a whole (``*.py`` matches ``a/b.py``): the project writes its globs for a
+    filesystem walker, and a repo-relative path is what this verb holds.
+    """
+    if fnmatch.fnmatch(path, glob):
+        return True
+    return glob.startswith('**/') and fnmatch.fnmatch(path, glob[3:])
+
+
+def _module_for_path(path: str) -> str:
+    """The module the architecture says owns *path*, or ``''`` when none does."""
+    payload = _script_payload(_ARCHITECTURE_NOTATION, ['which-module', '--path', path])
+    if payload is None or payload.get('status') != 'success':
+        return ''
+    module = payload.get('module')
+    return module if isinstance(module, str) else ''
+
+
+def _applicable_domains(module: str) -> list[str]:
+    """The domain keys the architecture reports as applicable to *module*."""
+    payload = _script_payload(_ARCHITECTURE_NOTATION, ['suggest-domains', '--module', module])
+    rows = payload.get('domains') if isinstance(payload, dict) else None
+    if not isinstance(rows, list):
+        return []
+    keys: list[str] = []
+    for row in rows:
+        key = row.get('domain') if isinstance(row, dict) else None
+        if isinstance(key, str) and key:
+            keys.append(key)
+    return keys
+
+
+def _domain_for_path(
+    path: str,
+    module: str,
+    domains: list[dict[str, Any]],
+    applicable: dict[str, list[str]],
+) -> tuple[dict[str, Any] | None, str]:
+    """The configured domain *path* resolves to, with the rung that placed it."""
+    chosen: dict[str, Any] | None = None
+    best = -1
+    for entry in domains:
+        for glob in entry['globs']:
+            if _glob_matches(path, glob) and len(glob) > best:
+                best = len(glob)
+                chosen = entry
+    if chosen is not None:
+        return chosen, 'file_glob'
+    if module:
+        if module not in applicable:
+            applicable[module] = _applicable_domains(module)
+        for key in applicable[module]:
+            for entry in domains:
+                if entry['domain'] == key:
+                    return entry, 'module_domain'
+    return None, ''
+
+
+def cmd_corpus_spec_skills(args: argparse.Namespace) -> dict[str, Any]:
+    """Report a spec's skills declaration, its suggested fill, and its emit verdict.
+
+    Read-only. Three facts, each with its own source:
+
+    - the DECLARATION, read through the shared ``spec_skills`` reader (the same
+      one the runbook lane loads), with every named skill probed for existence;
+    - the SUGGESTION, derived from the spec's declared surface paths mapped to
+      modules through the architecture client and placed in a configured domain
+      by the project's own domain knowledge (see the block above) — a path no rung
+      places is reported ``unmapped``, never guessed;
+    - the EMIT VERDICT, ``emit_allowed``: false exactly when a declared skill does
+      not exist, so ``next`` can refuse to emit the spec and name what is missing.
+
+    A spec that declares nothing is legal — ``declaration: none named`` — and still
+    emits; the template asks for the lines, it does not make them load-bearing.
+    """
+    invalid = _validate_slug(args.slug)
+    if invalid:
+        return _error(args.slug, 'invalid_slug', invalid)
+    plan = args.plan
+    spec, refusal = _resolve_corpus_spec(args.slug, plan)
+    if refusal is not None:
+        return refusal
+    assert spec is not None
+    try:
+        declaration = spec_skills.resolve_deliverable_skills(spec)
+    except ValueError as exc:
+        return _error(args.slug, str(exc), 'a bare skill name has no bundle to resolve in')
+    try:
+        derivation_status, claim = _surface_state(spec, Path(cwd_checkout_root()))
+    except Exception:
+        derivation_status, claim = SURFACE_UNREADABLE, None
+    surface_unreadable = ''
+    if derivation_status == SURFACE_UNREADABLE:
+        surface_unreadable = _read_spec(spec)[1] or 'the surface could not be classified'
+
+    domains = _configured_domains()
+    applicable: dict[str, list[str]] = {}
+    path_rows: list[dict[str, Any]] = []
+    for entry in claim.claimed if claim is not None else ():
+        module = _module_for_path(entry.path)
+        domain, rung = _domain_for_path(entry.path, module, domains, applicable)
+        mapped = domain is not None
+        reason = ''
+        if not mapped:
+            reason = (
+                'unmapped: no module owns the path' if not module else 'unmapped: no configured domain matches the path'
+            )
+        path_rows.append(
+            {
+                'path': entry.path,
+                'module': module,
+                'domain': domain['domain'] if domain is not None else '',
+                'domain_source': rung if domain is not None else '',
+                'kind': _spec_path_kind(entry.path),
+                'persona': SPEC_SKILLS_PERSONA_BY_KIND[_spec_path_kind(entry.path)],
+                'mapped': mapped,
+                'reason': reason,
+                'skills': _profile_skills(domain['profiles']) if domain is not None else [],
+            }
+        )
+    for raw in claim.unresolved if claim is not None else ():
+        kind = _spec_path_kind(raw)
+        path_rows.append(
+            {
+                'path': raw,
+                'module': '',
+                'domain': '',
+                'domain_source': '',
+                'kind': kind,
+                'persona': SPEC_SKILLS_PERSONA_BY_KIND[kind],
+                'mapped': False,
+                'reason': 'unmapped: not a resolvable repo path',
+                'skills': [],
+            }
+        )
+    kinds = {row['kind'] for row in path_rows}
+    suggested_persona = next(
+        (SPEC_SKILLS_PERSONA_BY_KIND[kind] for kind in SPEC_SKILLS_KIND_ORDER if kind in kinds), ''
+    )
+    suggested = sorted({skill for row in path_rows for skill in row['skills']})
+    deliverables = [
+        {
+            'number': row['number'],
+            'title': row['title'],
+            'declared_skills': spec_skills.declared_skills(row['skills']),
+            'declared_persona': row['persona'],
+            'suggested_persona': suggested_persona,
+            'skills': suggested,
+        }
+        for row in declaration['deliverables']
+    ]
+    unmapped = [row['path'] for row in path_rows if not row['mapped']]
+    return {
+        'status': 'success',
+        'operation': 'corpus-spec-skills',
+        'slug': args.slug,
+        'store': ORCHESTRATOR_STORE,
+        'plan': plan,
+        'spec': spec.name,
+        'skill_source': 'skill_domains.{domain}.profiles.implementation.defaults (project configuration)',
+        'configured_domains_total': len(domains),
+        'declaration': declaration['skills_note'],
+        'deliverables_total': len(deliverables),
+        'deliverables': deliverables,
+        'surface_derivation_status': derivation_status,
+        'surface_unreadable_reason': surface_unreadable,
+        'surface_paths_total': len(path_rows),
+        'paths': path_rows,
+        'suggested_skills': suggested,
+        'suggested_persona': suggested_persona,
+        'unmapped_count': len(unmapped),
+        'unmapped': unmapped,
+        'missing_skills': declaration['missing_skills'],
+        'missing_probed': declaration['missing_probed'],
+        'emit_allowed': not declaration['missing_skills'],
     }
 
 
@@ -7404,9 +7730,9 @@ def _add_land_group(subparsers: Any) -> None:
 def _add_corpus_group(subparsers: Any) -> None:
     """Register the ``corpus`` verb group.
 
-    Sub-verbs: ``epics``, ``enumerate``, ``read``, ``cross-check``, ``surfaces``,
-    ``declaration-currency``, ``verdicts``, ``lint-done-whens``, ``set-verdict``.
-    All but ``set-verdict`` are read-only; ``set-verdict``
+    Sub-verbs: ``epics``, ``enumerate``, ``read``, ``spec-skills``, ``cross-check``,
+    ``surfaces``, ``declaration-currency``, ``verdicts``, ``lint-done-whens``,
+    ``set-verdict``. All but ``set-verdict`` are read-only; ``set-verdict``
     is the group's single write action, and the only surface in the tree that
     formats a ``verdict:`` line. ``epics`` is the only one that takes no
     ``--slug``: its subject is the whole store rather than one epic in it.
@@ -7453,6 +7779,18 @@ def _add_corpus_group(subparsers: Any) -> None:
     _add_slug_arg(read_spec)
     read_spec.add_argument('--plan', required=True, metavar='PLAN-NN', help='Plan id whose spec body is returned.')
     read_spec.set_defaults(handler=cmd_corpus_read)
+
+    skills_verb = actions.add_parser(
+        'spec-skills',
+        help=(
+            "Report one staged spec's Skills/Persona declaration, the domain skills its surface maps to, "
+            'and the emit verdict (read-only).'
+        ),
+        allow_abbrev=False,
+    )
+    _add_slug_arg(skills_verb)
+    skills_verb.add_argument('--plan', required=True, metavar='PLAN-NN', help='Plan id whose declaration is read.')
+    skills_verb.set_defaults(handler=cmd_corpus_spec_skills)
 
     cross_check = actions.add_parser(
         'cross-check',

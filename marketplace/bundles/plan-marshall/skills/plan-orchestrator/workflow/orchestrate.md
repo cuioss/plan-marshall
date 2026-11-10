@@ -96,11 +96,20 @@ Count `R`, the plans currently in `launched` status, and select up to `N − R` 
     --slug {slug}
   ```
 
-  A candidate passes the test **iff** ALL THREE hold:
+  A candidate passes the test **iff** ALL FOUR hold:
 
   1. its `corpus surfaces` row carries `admits_disjointness_check: true`;
   2. its own `spec_comparisons[]` row in the `corpus cross-check` payload carries `overlap_prompt_required: false` — or carries `true` and the operator answered that the overlap is not a problem (see **The overlap prompt** below);
-  3. that same `spec_comparisons[]` row carries `comparison_determinate: true`.
+  3. that same `spec_comparisons[]` row carries `comparison_determinate: true`;
+  4. its `corpus spec-skills --plan {plan_id}` payload carries `emit_allowed: true` — an EMPTY `missing_skills[]`.
+
+  **Conjunct 4 is the declaration gate.** Run
+  `plan-marshall:plan-orchestrator:orchestrator corpus spec-skills --slug {slug} --plan {plan_id}`
+  before emitting and refuse the candidate when `emit_allowed` is `false`, naming each entry of
+  its `missing_skills[]`: a spec whose deliverable names a skill or persona the installed bundles
+  do not ship would launch a run told to apply a standard that is not there, and the lane stops on
+  it anyway. A spec that declares nothing is legal (`declaration: none named`) and passes — the
+  template asks for the lines, it does not make them load-bearing.
 
   Each read supplies exactly the half the other cannot: `corpus surfaces` publishes only THIS epic's own declarations — per-spec `derivation_status`, `admits_disjointness_check` and `claimed_count`, plus a flat `claimed[]` list — and carries no launched-plan surface and no intersection; `corpus cross-check` is the sole producer of the intersection and of the per-candidate verdict over it. Asking `corpus surfaces` alone for the overlap half asks it for a field it does not emit.
 

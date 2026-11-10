@@ -129,6 +129,16 @@ class TestDoneWhenAuthoringRules:
             'the template must say what happens to a bare filename, not only that it is wrong'
         )
 
+    def test_the_deliverables_section_requires_the_skills_and_persona_lines(self) -> None:
+        """Every deliverable declares the two lines the runbook lane reads."""
+        section = _section('## Deliverables')
+
+        assert 'Skills:' in section
+        assert 'Persona:' in section
+        assert 'corpus spec-skills' in section, 'the template must name the verb that fills them'
+        for kind in ('implementer', 'module-tester', 'integration-tester', 'security-expert', 'documenter'):
+            assert kind in section, kind
+
     def test_both_documents_name_the_lint_verb(self) -> None:
         assert 'corpus lint-done-whens' in _section('## Deliverables')
         assert 'corpus lint-done-whens' in _decompose_step_four()

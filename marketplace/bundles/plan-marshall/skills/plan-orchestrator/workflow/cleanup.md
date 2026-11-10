@@ -121,6 +121,15 @@ Flag every `findings[]` row and read `rule_counts[]` beside `specs_total`/`specs
 
 Correct the spec, or record why the wording stands. A spec carrying no Done-when at all contributes no row and is not a finding of this verb; an unreadable spec is named in `unreadable[]` rather than silently skipped.
 
+**The per-deliverable declaration is the third check, and it is a script read too.** Run
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator corpus spec-skills \
+  --slug {slug} --plan PLAN-NN
+```
+
+per staged spec (or read the same `declaration` field the emission gate saw). Flag `declaration: none named` — a staged spec whose deliverables carry no `Skills:` / `Persona:` lines — and flag `emit_allowed: false`, whose `missing_skills[]` names each declared skill or persona the installed bundles do not ship. The declaration is filled at staging from this verb's `suggested_skills` / `suggested_persona` (see [`decompose.md`](decompose.md) Step 4), so a spec that declares nothing is an authoring omission rather than a project that configured no domain skills — a project with no skills for the module still records the line as `Skills: none`.
+
 ### Step 6 (A4): Duplication
 
 ```bash

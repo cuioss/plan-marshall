@@ -7714,3 +7714,251 @@ class TestCleanupConsumesTheLint:
         # Non-vacuity: the two names asserted above are the production constants,
         # so a rule renamed in the code fails the doc-contract check above.
         assert DONE_WHEN_RULES == (DONE_WHEN_RULE_FAILS_AT, DONE_WHEN_RULE_HOLDS_AT)
+
+
+# =============================================================================
+# corpus spec-skills — the declaration, its suggested fill, and the emit verdict
+# =============================================================================
+#
+# The verb is the orchestrator half of the per-deliverable declaration: it reads
+# the lines through the SAME shared reader the runbook lane loads, maps the
+# declared surface to modules through the project's architecture, and reports the
+# domain skills those modules carry. Its `emit_allowed` is the conjunct `next`
+# refuses on. The fixtures name REAL repository paths, because the module mapping
+# is a read of this repository's architecture data rather than a stub.
+
+cmd_corpus_spec_skills = _orch.cmd_corpus_spec_skills
+
+_SPEC_SKILLS_ARGS = parse_ns(
+    _ORCH_BUNDLE,
+    _ORCH_SKILL,
+    _ORCH_SCRIPT,
+    'corpus',
+    'spec-skills',
+    '--slug',
+    SLUG,
+    '--plan',
+    'PLAN-01',
+    register=False,
+)
+
+#: Source paths owned by a Python-domain and a Java-domain bundle module.
+_PYTHON_SURFACE = 'marketplace/bundles/pm-dev-python/skills/plan-marshall-plugin/extension.py'
+_JAVA_SURFACE = 'marketplace/bundles/pm-dev-java/skills/plan-marshall-plugin/extension.py'
+
+
+def _write_skills_spec(
+    plan_context,
+    surface_lines: list,
+    *,
+    skills: str = '',
+    persona: str = '',
+    name: str = 'PLAN-01-alpha.md',
+) -> Path:
+    """Write a staged spec carrying a declaration and the supplied surface."""
+    lines = [
+        '# PLAN-01: Fixture',
+        '',
+        '## Deliverables',
+        '',
+        '1. **A deliverable.**',
+        '   *Done when:* it holds at `abc1234`.',
+    ]
+    if skills:
+        lines.append(f'   - Skills: {skills}')
+    if persona:
+        lines.append(f'   - Persona: {persona}')
+    lines += ['', '## Expected Surface', '', *surface_lines]
+    path = _epic_dir(plan_context) / 'plans' / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+    return path
+
+
+class TestCorpusSpecSkills:
+    def test_a_python_spec_yields_the_python_domain_skills(self, plan_context):
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_skills_spec(
+            plan_context,
+            [f'- OBSERVED: `{_PYTHON_SURFACE}`'],
+            skills='plan-marshall:ref-toon-format',
+            persona='implementer',
+        )
+
+        result = cmd_corpus_spec_skills(_SPEC_SKILLS_ARGS)
+
+        assert result['status'] == 'success'
+        assert result['configured_domains_total'] >= 1, 'the project configuration was not read'
+        row = result['paths'][0]
+        assert row['path'] == _PYTHON_SURFACE
+        assert row['module'] == 'pm-dev-python'
+        assert row['domain'] == 'python', 'the path file type did not place it in the python domain'
+        assert row['domain_source'] == 'file_glob'
+        assert row['mapped'] is True
+        assert row['kind'] == 'source'
+        assert row['skills'] == ['pm-dev-python:python-core', 'plan-marshall:ref-code-quality'], (
+            f"the python domain's configured implementation defaults were not returned: {row['skills']}"
+        )
+        assert result['suggested_skills'] == sorted(row['skills'])
+        assert result['suggested_persona'] == 'implementer'
+        assert result['skill_source'] == (
+            'skill_domains.{domain}.profiles.implementation.defaults (project configuration)'
+        )
+        assert result['emit_allowed'] is True
+        assert result['declaration'] == 'declared'
+
+    def test_a_java_path_yields_the_java_domain_skills_when_the_project_configures_one(self, plan_context, monkeypatch):
+        """The Maven/Java arm, over a project that configures a java domain.
+
+        This repository configures NO java domain and holds no Maven module, so the
+        live configuration cannot exhibit it. The fixture supplies the java domain
+        through the same seam the production read uses, and the mapping under test
+        is the real one: a ``.java`` path resolves to the java domain and its
+        configured implementation defaults are returned verbatim.
+        """
+        _write_status(plan_context, [_row('PLAN-01')])
+        java_surface = 'test/plan-marshall/plan-orchestrator/Sample.java'
+        _write_skills_spec(plan_context, [f'- OBSERVED: `{java_surface}`'], persona='implementer')
+        java_domain = {
+            'domain': 'java',
+            'globs': ['**/*.java'],
+            'profiles': {
+                'implementation': {
+                    'defaults': [
+                        {'skill': 'pm-dev-java:java-core', 'description': 'Core Java standards'},
+                        {'skill': 'pm-dev-java:javadoc', 'description': 'JavaDoc standards'},
+                    ]
+                }
+            },
+        }
+        monkeypatch.setattr(_orch, '_configured_domains', lambda: [java_domain])
+
+        result = cmd_corpus_spec_skills(_SPEC_SKILLS_ARGS)
+
+        row = result['paths'][0]
+        assert row['domain'] == 'java'
+        assert row['domain_source'] == 'file_glob'
+        assert row['skills'] == ['pm-dev-java:java-core', 'pm-dev-java:javadoc']
+
+    def test_an_unmapped_path_is_reported_never_guessed(self, plan_context):
+        # A bare filename is not a resolvable repo path: the surface reader reports
+        # it unresolved, and the verb surfaces it as unmapped rather than mapping
+        # it against a sibling the author never wrote.
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_skills_spec(plan_context, [f'- OBSERVED: `{_PYTHON_SURFACE}` and `b.py`'])
+
+        result = cmd_corpus_spec_skills(_SPEC_SKILLS_ARGS)
+
+        assert result['unmapped'] == ['b.py']
+        assert result['unmapped_count'] == 1
+        assert any(row['path'] == 'b.py' and row['mapped'] is False for row in result['paths'])
+
+    def test_a_declared_skill_that_does_not_exist_refuses_the_emission(self, plan_context):
+        """The `next` fixture: a spec naming a skill the bundles do not ship."""
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_skills_spec(plan_context, [f'- OBSERVED: `{_PYTHON_SURFACE}`'], skills='plan-marshall:does-not-exist')
+
+        result = cmd_corpus_spec_skills(_SPEC_SKILLS_ARGS)
+
+        assert result['emit_allowed'] is False
+        assert result['missing_skills'] == ['plan-marshall:does-not-exist']
+        assert result['missing_probed'], 'a missing skill must name the paths that were probed'
+
+    def test_skills_none_declares_an_answered_absence_and_still_emits(self, plan_context):
+        # The template's `Skills: none` states that the project configures no domain
+        # skills; it is a declaration, never a skill named `none` to probe.
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_skills_spec(plan_context, [f'- OBSERVED: `{_PYTHON_SURFACE}`'], skills='none', persona='implementer')
+
+        result = cmd_corpus_spec_skills(_SPEC_SKILLS_ARGS)
+
+        assert result['declaration'] == 'declared', 'the persona line is a declaration; the skills line said none'
+        assert result['missing_skills'] == []
+        assert result['emit_allowed'] is True
+
+    def test_a_spec_declaring_nothing_still_emits(self, plan_context):
+        # The preserved half: the lines are optional, so an undeclared spec still
+        # reaches the queue and the lane resolves `none named`.
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_skills_spec(plan_context, [f'- OBSERVED: `{_PYTHON_SURFACE}`'])
+
+        result = cmd_corpus_spec_skills(_SPEC_SKILLS_ARGS)
+
+        assert result['declaration'] == 'none named'
+        assert result['missing_skills'] == []
+        assert result['emit_allowed'] is True
+
+    def test_a_resolvable_persona_kind_resolves_and_a_missing_one_does_not(self, plan_context):
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_skills_spec(plan_context, [f'- OBSERVED: `{_PYTHON_SURFACE}`'], persona='implementer')
+        resolved = cmd_corpus_spec_skills(_SPEC_SKILLS_ARGS)
+
+        _write_skills_spec(plan_context, [f'- OBSERVED: `{_PYTHON_SURFACE}`'], persona='astronaut')
+        missing = cmd_corpus_spec_skills(_SPEC_SKILLS_ARGS)
+
+        assert resolved['emit_allowed'] is True
+        assert missing['emit_allowed'] is False
+        assert missing['missing_skills'] == ['persona-astronaut']
+
+    def test_the_surface_is_read_through_the_single_reader(self, plan_context):
+        # A spec with no `## Expected Surface` at all: the verb reports the
+        # reader's own state and suggests nothing, rather than inventing a surface.
+        _write_status(plan_context, [_row('PLAN-01')])
+        path = _epic_dir(plan_context) / 'plans' / 'PLAN-01-alpha.md'
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text('# PLAN-01\n\n## Deliverables\n\n1. **A deliverable.**\n', encoding='utf-8')
+
+        result = cmd_corpus_spec_skills(_SPEC_SKILLS_ARGS)
+
+        assert result['surface_derivation_status'] == SURFACE_ABSENT
+        assert result['surface_paths_total'] == 0
+        assert result['suggested_skills'] == []
+        assert result['emit_allowed'] is True
+
+    def test_an_unsafe_slug_is_refused(self):
+        result = cmd_corpus_spec_skills(_variant(_SPEC_SKILLS_ARGS, slug='../escape'))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'invalid_slug'
+
+    def test_an_absent_spec_is_refused_with_the_available_specs(self, plan_context):
+        _write_status(plan_context, [_row('PLAN-09')])
+
+        result = cmd_corpus_spec_skills(_variant(_SPEC_SKILLS_ARGS, plan='PLAN-77'))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'spec_not_found'
+        assert 'available_specs' in result
+
+    def test_the_verb_leaves_the_tree_byte_identical(self, plan_context):
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_skills_spec(plan_context, [f'- OBSERVED: `{_PYTHON_SURFACE}`'], skills='plan-marshall:ref-toon-format')
+        root = _epic_dir(plan_context)
+        before = {path: path.read_bytes() for path in sorted(root.rglob('*')) if path.is_file()}
+        assert before, 'fixture tree did not materialize'
+
+        result = cmd_corpus_spec_skills(_SPEC_SKILLS_ARGS)
+
+        after = {path: path.read_bytes() for path in sorted(root.rglob('*')) if path.is_file()}
+        assert after == before
+        assert result['surface_paths_total'] == 1, (
+            'the read-only claim must be proven on a read that actually RESOLVED a path'
+        )
+
+
+class TestNextConsumesTheDeclarationGate:
+    """Step 4 of ``orchestrate.md`` refuses a candidate whose declaration is missing."""
+
+    def test_step_four_names_the_emit_verdict_as_a_conjunct(self):
+        step = _step_4_section()
+
+        assert 'corpus spec-skills' in step
+        assert 'emit_allowed' in step
+        assert 'missing_skills' in step
+
+    def test_cleanup_step_five_flags_a_spec_with_no_declaration(self):
+        body = section_lines(_CLEANUP_DOC.read_text(encoding='utf-8'), '### Step 5 (A3): Ambiguity')
+        step = '\n'.join(body)
+
+        assert 'corpus spec-skills' in step
+        assert 'none named' in step
