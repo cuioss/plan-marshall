@@ -879,6 +879,28 @@ class TestTheParticipationGuardEscalatesAStructuralRefusal:
         # stated, beside the measured size that hit it.
         assert guard['cap'] == '150000 diff characters'
         assert guard['measured_diff_size'] == '210000 diff characters'
+        # Accepting the gap authorizes past EVERY unproven required bot, so the set
+        # travels with the escalation rather than leaving the prompt to name one.
+        assert guard['unproven_bots'] == ['sourcery']
+
+    def test_an_absent_required_bot_rides_along_with_the_refusing_one(self, plan_context):
+        """The escalation names the whole gap, not only the bot that refused structurally.
+
+        A bot that merely never answered is covered by the same authorization, so an
+        operator choosing to accept the gap must be shown that it covers it.
+        """
+        plan_id = 'structural-guard-with-absent'
+        plan_context.plan_dir_for(plan_id)
+
+        result = rc.check_completeness(
+            plan_id,
+            ['coderabbit', 'sourcery'],
+            refused_bots=['sourcery'],
+            refused_causes={'sourcery': 'size'},
+        )
+
+        assert _state_of(result, 'coderabbit') == rc.STATE_ABSENT
+        assert result['guard_action']['unproven_bots'] == ['coderabbit', 'sourcery']
 
     def test_the_escalation_offers_two_or_three_options_and_never_a_wait(self, plan_context):
         """⛔ The non-option the member exists to remove is the assertion.
@@ -998,6 +1020,7 @@ class TestTheParticipationGuardEscalatesAStructuralRefusal:
         assert emitted['guard_refusal_class'], 'the envelope requires refusal_class'
         assert emitted['guard_refused_diff_size'] == '210000 diff characters'
         assert emitted['store_scope'] == 'pr'
+        assert emitted['guard_unproven_bots'] == ['sourcery']
         options = emitted['guard_prompt_options']
         assert 2 <= len(options) <= 3
         assert not [option for option in options if _WAIT_OFFER.search(option)]

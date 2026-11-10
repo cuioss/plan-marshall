@@ -256,6 +256,9 @@ Return TOON shape (check):
                                          # of the refused diff (a DIFFERENT field from
                                          # measured_diff_size, which the refusal_causes
                                          # overlay prints)
+    guard_unproven_bots[N]:              # escalation only — EVERY unproven REQUIRED bot,
+      - bot                              # not only the one that refused: accepting the
+                                         # gap authorizes past all of them
     guard_prompt_options[N]:             # escalation only — never contains a wait
       - <operator option>
     store_scope: pr|unscoped             # whether the findings read was PR-scoped
@@ -1304,6 +1307,15 @@ def guard_disposition(
     """
     required = set(required_bots)
     caps = {record['bot_kind']: record.get('cap') or '' for record in refusal_causes or []}
+    # EVERY unproven required bot travels with the escalation, not only the one that
+    # refused structurally. Accepting the gap authorizes past all of them, so a prompt
+    # naming only the refusing bot would let an operator accept an absence they were
+    # never shown — the same rule the pre-merge barrier's structural prompt states.
+    unproven = [
+        record['bot_kind']
+        for record in bot_states
+        if record['bot_kind'] in required and record['state'] in _UNPROVEN_STATES
+    ]
     for record in bot_states:
         bot = record['bot_kind']
         if record['state'] != STATE_REFUSED_STRUCTURAL or bot not in required:
@@ -1321,6 +1333,7 @@ def guard_disposition(
             'cap': caps.get(bot) or 'unknown',
             'measured_diff_size': measured_diff_size or 'unknown',
             'prompt_options': list(GUARD_STRUCTURAL_OPTIONS),
+            'unproven_bots': unproven,
         }
     return {'action': GUARD_ACTION_LOOP_BACK}
 
@@ -1807,6 +1820,7 @@ def _emit_toon(payload: dict) -> None:
         emitted['guard_refusal_class'] = guard.get('refusal_class', '')
         emitted['guard_cap'] = guard.get('cap') or 'unknown'
         emitted['guard_refused_diff_size'] = guard.get('measured_diff_size') or 'unknown'
+        emitted['guard_unproven_bots'] = list(guard.get('unproven_bots') or [])
         emitted['guard_prompt_options'] = list(guard.get('prompt_options') or [])
 
     # The store scope travels with every verdict: a read scoped to one PR and a read of
