@@ -515,6 +515,28 @@ class TestOpenCodeOneMapWrites:
         assert result['action'] == 'not_found'
         assert json.loads(config.read_text())['permission']['webfetch'] == {'a.com': 'allow'}
 
+    def test_add_keeps_a_pattern_map_when_the_grant_is_category_wide(self, monkeypatch, tmp_path, in_tmp_cwd):
+        """A category-wide grant becomes the map's own ``*`` row; the deny rows stay."""
+        config = tmp_path / 'opencode.json'
+        config.write_text(json.dumps({'permission': {'bash': {}, 'webfetch': {'evil.com': 'deny'}}}), encoding='utf-8')
+        force_opencode(monkeypatch)
+
+        result = pf.cmd_add(
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'add',
+                '--permission',
+                'webfetch',
+                '--target',
+                'project',
+            )
+        )
+
+        assert result['action'] == 'added'
+        assert json.loads(config.read_text())['permission']['webfetch'] == {'evil.com': 'deny', '*': 'allow'}
+
 
 class TestOpenCodeUnreadableInputIsReported:
     """A file that does not parse is reported by every writing verb, and never overwritten."""

@@ -405,17 +405,28 @@ def _opencode_add(settings_path: Path, settings: dict[str, Any], permission: str
         bash_map[pat] = act
     else:
         if pat and pat != '*':
-            cat_map = existing if isinstance(existing, dict) else {}
+            if isinstance(existing, dict):
+                cat_map = existing
+            elif isinstance(existing, str):
+                cat_map = {'*': existing}
+            else:
+                cat_map = {}
             if cat_map.get(pat) == act:
                 result.update({'success': True, 'action': 'already_exists', 'status': 'success'})
                 return result
             cat_map[pat] = act
             perm[map_key] = cat_map
         else:
-            if existing == act:
-                result.update({'success': True, 'action': 'already_exists', 'status': 'success'})
-                return result
-            perm[map_key] = act
+            if isinstance(existing, dict):
+                if existing.get('*') == act:
+                    result.update({'success': True, 'action': 'already_exists', 'status': 'success'})
+                    return result
+                existing['*'] = act
+            else:
+                if existing == act:
+                    result.update({'success': True, 'action': 'already_exists', 'status': 'success'})
+                    return result
+                perm[map_key] = act
     result['success'] = save_settings(str(settings_path), settings)
     result['status'] = 'success' if result['success'] else 'error'
     if result['success']:
@@ -506,11 +517,13 @@ def _opencode_remove(settings_path: Path, settings: dict[str, Any], permission: 
                 return result
             result.update({'success': True, 'action': 'not_found', 'status': 'success'})
             return result
-        result['action'] = 'removed'
         result['success'] = save_settings(str(settings_path), settings)
-        if not result['success']:
-            result['error'] = 'Failed to save settings'
         result['status'] = 'success' if result['success'] else 'error'
+        if result['success']:
+            result['action'] = 'removed'
+        else:
+            result['action'] = 'not_saved'
+            result['error'] = 'Failed to save settings'
         return result
 
     not_found = {'success': True, 'action': 'not_found', 'status': 'success'}
@@ -665,7 +678,13 @@ def cmd_ensure(args: argparse.Namespace) -> dict:
                         cat_map[pat] = act
                         added.append(f'{map_key}({pat})')
                 else:
-                    if cat_val == act:
+                    if isinstance(cat_val, dict):
+                        if cat_val.get('*') == act:
+                            already_exists.append(map_key)
+                        else:
+                            cat_val['*'] = act
+                            added.append(map_key)
+                    elif cat_val == act:
                         already_exists.append(map_key)
                     else:
                         perm[map_key] = act

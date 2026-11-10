@@ -536,16 +536,21 @@ def _later_rule_is_broader(later_rule: dict[str, Any], action: str, resource: st
 
     A broader later rule is what a move to the end is FOR: the caller asks for
     the specific outcome and the broader rule keeps deciding everything else.
-    A wildcard action is broader than any named action; otherwise the resource
-    patterns decide it.
+    Breadth must hold in BOTH dimensions — the action and the resource — or a
+    later rule that is broader in one and narrower in the other would be
+    crossed, silently changing a more specific outcome.
     """
     later_action = later_rule.get('action')
-    if later_action == '*' and action != '*':
-        return True
     later_pattern = later_rule.get('resource')
     if not isinstance(later_pattern, str):
         return False
-    return _resource_matches(later_pattern, resource) and not _resource_matches(resource, later_pattern)
+    if not _action_matches(later_action, action):
+        return False
+    if not _resource_matches(later_pattern, resource):
+        return False
+    action_broader = later_action == '*' and action != '*'
+    resource_broader = not _resource_matches(resource, later_pattern)
+    return action_broader or resource_broader
 
 
 class PermissionRuleWrite(NamedTuple):
@@ -679,7 +684,7 @@ def _upsert_permission_rule(rules: list[Any], action: str, resource: str, effect
     for index, rule in enumerate(rules):
         if isinstance(rule, dict) and _action_matches(rule.get('action'), action) and rule.get('resource') == '*':
             insert_at = index + 1
-    conflict = _conflicting_later_rule(rules, insert_at, action, resource, effect)
+    conflict = _conflicting_later_rule(rules, 0, action, resource, effect)
     if conflict is not None:
         return PermissionRuleWrite(False, _conflict_detail(action, resource, effect, conflict))
     rules.insert(insert_at, new_rule)
@@ -1717,7 +1722,11 @@ class OpenCodeRuntime(Runtime):
                         cat_map[pat] = act
                         added += 1
                 else:
-                    if cat_val != act:
+                    if isinstance(cat_val, dict):
+                        if cat_val.get('*') != act:
+                            cat_val['*'] = act
+                            added += 1
+                    elif cat_val != act:
                         perm[cat] = act
                         added += 1
 
@@ -1879,6 +1888,7 @@ class OpenCodeRuntime(Runtime):
 
         if rules is not None and operation == 'remove':
             removed = 0
+            unresolved: list[str] = []
             for item in arguments:
                 cat, pat, _ = to_opencode_grant(str(item))
                 action = _permission_action(cat)
@@ -1888,21 +1898,18 @@ class OpenCodeRuntime(Runtime):
                         for rule in rules
                     ):
                         removed += 1
+                    else:
+                        unresolved.append(str(item))
                 elif _remove_permission_rule(rules, action, pat):
                     removed += 1
+                else:
+                    unresolved.append(str(item))
             if not dry_run:
-                # A grant the removal could not take down is reported even when
-                # a sibling argument was removed, so no part of the request
-                # silently stays in force.
-                for item in arguments:
-                    cat, pat, _ = to_opencode_grant(str(item))
-                    action = _permission_action(cat)
-                    if any(
-                        isinstance(rule, dict) and rule.get('action') == action and rule.get('resource') == pat
-                        for rule in rules
-                    ):
-                        continue
-                    blocker = _wildcard_action_rule(rules, action, pat)
+                # Only a grant the removal could not take down is reported; a
+                # sibling that was removed is never turned into an error.
+                for item in unresolved:
+                    cat, pat, _ = to_opencode_grant(item)
+                    blocker = _wildcard_action_rule(rules, _permission_action(cat), pat)
                     if blocker is not None:
                         return toon_error(
                             'permission fix',
@@ -1952,7 +1959,14 @@ class OpenCodeRuntime(Runtime):
                     cat = _permission_map_key(cat)
                     existing = perm.get(cat)
                     if pat and pat != '*':
-                        cat_map = existing if isinstance(existing, dict) else {}
+                        if isinstance(existing, dict):
+                            cat_map = existing
+                        elif isinstance(existing, str):
+                            # A category-wide value is the map's own ``*`` row;
+                            # seeding it keeps the row the caller set.
+                            cat_map = {'*': existing}
+                        else:
+                            cat_map = {}
                         if cat_map.get(pat) == act:
                             continue
                         if not dry_run:

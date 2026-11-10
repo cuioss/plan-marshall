@@ -584,6 +584,63 @@ def test_the_action_wildcard_decides_the_effective_effect():
     assert _effective_rule_effect(rules, 'shell', 'git status') == 'deny'
 
 
+def test_ensure_refuses_a_wildcard_action_deny_that_is_more_specific(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    """An action-wildcard rule is not broader when its resource is more specific."""
+    monkeypatch.chdir(tmp_path)
+    config = tmp_path / 'opencode.json'
+    config.write_text(
+        json.dumps(
+            {
+                'permissions': [
+                    {'action': 'shell', 'resource': 'git push *', 'effect': 'ask'},
+                    {'action': 'shell', 'resource': '*', 'effect': 'allow'},
+                    {'action': '*', 'resource': 'git push --force *', 'effect': 'deny'},
+                ]
+            },
+            indent=2,
+        )
+        + '\n',
+        encoding='utf-8',
+    )
+    before = config.read_bytes()
+
+    result = parse_toon(runtime.permission_fix('project', 'ensure', ['ask(git push *)'], False))
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'permission_conflict'
+    assert config.read_bytes() == before
+
+
+def test_remove_succeeds_while_a_wildcard_action_rule_stands(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    """A removable grant is removed; the wildcard rule only blocks the grants it decides."""
+    monkeypatch.chdir(tmp_path)
+    config = tmp_path / 'opencode.json'
+    config.write_text(
+        json.dumps(
+            {
+                'permissions': [
+                    {'action': '*', 'resource': '*', 'effect': 'ask'},
+                    {'action': 'shell', 'resource': 'git push *', 'effect': 'deny'},
+                ]
+            },
+            indent=2,
+        )
+        + '\n',
+        encoding='utf-8',
+    )
+
+    result = parse_toon(runtime.permission_fix('project', 'remove', ['deny(git push *)'], False))
+
+    assert result['status'] == 'success'
+    assert result['removed'] == 1
+    rules = _load(config)['permissions']
+    assert not [rule for rule in rules if rule.get('action') == 'shell' and rule.get('resource') == 'git push *']
+
+
 def test_remove_reports_the_wildcard_action_rule_it_cannot_remove(
     runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ):
