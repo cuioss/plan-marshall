@@ -107,6 +107,20 @@ A spec may be marked already-fixed only on a **positive account of what closed t
 
 Over the population `corpus enumerate` published — never over an ad-hoc re-scan — flag each spec missing an Objective, an Expected Surface, or a claim label, and apply the action the apply-policy table assigns to the ambiguity class (see [§ Cleanup Contract](../../persona-plan-orchestrator/standards/orchestration-model.md#cleanup-contract)).
 
+The two Done-when authoring contradictions are a SCRIPT check, not a judgement:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator corpus lint-done-whens \
+  --slug {slug}
+```
+
+Flag every `findings[]` row and read `rule_counts[]` beside `specs_total`/`specs_scanned`/`specs_with_done_when`, so a zero states which zero it is:
+
+- `fails_at_beside_preservation` — a Done-when asks for a "fails at" observation of behaviour it also calls still, keeps, or unchanged. The behaviour is not new, so the criterion cannot be met as written: reword it to "holds at", or drop the failing clause.
+- `holds_at_over_hypothesis` — a "holds at" Done-when rests on a symbol a `HYPOTHESIS` claim of the SAME spec also names. Settle the claim first; a Done-when may not assume an unsettled one.
+
+Correct the spec, or record why the wording stands. A spec carrying no Done-when at all contributes no row and is not a finding of this verb; an unreadable spec is named in `unreadable[]` rather than silently skipped.
+
 ### Step 6 (A4): Duplication
 
 ```bash

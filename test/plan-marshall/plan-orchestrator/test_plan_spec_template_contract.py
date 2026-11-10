@@ -80,6 +80,60 @@ def test_the_deliverables_section_requires_the_consumer_visible_set() -> None:
     assert 'cannot enumerate the set says so' in section, 'an unenumerable set must be declared, not implied'
 
 
+# =============================================================================
+# The Done-when and Expected Surface authoring rules
+# =============================================================================
+#
+# A Done-when labelled "fails at" a sha where the behaviour already holds cannot
+# be met, and one labelled "holds at" over an unsettled HYPOTHESIS assumes what
+# the spec has not established. Both defects reached shipped specs because no
+# document stated the rule; the template and `decompose.md` Step 4 state it now,
+# and `corpus lint-done-whens` checks it.
+
+DECOMPOSE: Path = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-orchestrator' / 'workflow' / 'decompose.md'
+
+#: The three Done-when rules, as the phrases every stating document must carry.
+_DONE_WHEN_RULE_PHRASES = (
+    'only for behaviour that is NEW at that sha',
+    'preservation or coverage clause says "holds at `{sha}`"',
+    'never labelled "holds at" while a claim it rests on is still a `HYPOTHESIS`',
+)
+
+
+def _decompose_step_four() -> str:
+    """Step 4 of ``decompose.md`` with its whitespace collapsed."""
+    text = DECOMPOSE.read_text(encoding='utf-8')
+    match = re.search(r'^### Step 4:.*?(?=^### |\Z)', text, re.MULTILINE | re.DOTALL)
+    assert match is not None, 'decompose.md carries no "### Step 4:" section'
+    return ' '.join(match.group(0).split())
+
+
+class TestDoneWhenAuthoringRules:
+    def test_the_template_states_the_three_done_when_rules(self) -> None:
+        section = _section('## Deliverables')
+
+        for phrase in _DONE_WHEN_RULE_PHRASES:
+            assert phrase in section, phrase
+
+    def test_the_decompose_step_states_the_three_done_when_rules(self) -> None:
+        step = _decompose_step_four()
+
+        for phrase in _DONE_WHEN_RULE_PHRASES:
+            assert phrase in step, phrase
+
+    def test_the_template_requires_a_full_repo_relative_surface_entry(self) -> None:
+        section = _section('## Expected Surface')
+
+        assert 'FULL repo-relative path' in section
+        assert 'reported as unresolved' in section, (
+            'the template must say what happens to a bare filename, not only that it is wrong'
+        )
+
+    def test_both_documents_name_the_lint_verb(self) -> None:
+        assert 'corpus lint-done-whens' in _section('## Deliverables')
+        assert 'corpus lint-done-whens' in _decompose_step_four()
+
+
 def test_the_template_asks_both_obligations_of_a_deliverable() -> None:
     """The two obligations are independent: neither stands in for the other."""
     deliverables = _section('## Deliverables')

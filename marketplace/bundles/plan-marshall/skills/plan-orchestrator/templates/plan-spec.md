@@ -35,6 +35,14 @@ open new-code findings — issues plus the security hotspots still to review —
 with `unknown` for a failed read and never `0`), and the Standing Constraints below say how a dismissal
 is obtained.
 
+⛔ **Every Done-when is authored against the sha it names.** A Done-when may say "fails at
+`{sha}`" only for behaviour that is NEW at that sha — behaviour this plan's own change introduces.
+A preservation or coverage clause says "holds at `{sha}`" instead, because nothing about it is
+expected to fail before the change. And a Done-when is never labelled "holds at" while a claim it
+rests on is still a `HYPOTHESIS` in this spec's Claim Labels: an unsettled claim is not something a
+Done-when may assume. `plan-marshall:plan-orchestrator:orchestrator corpus lint-done-whens` is the
+script that flags both contradictions in `cleanup` Step 5.
+
 1. {deliverable}
 2. {deliverable}
 
@@ -115,6 +123,11 @@ PARTITION, and no admission decision consults it. An unswept entry therefore sti
 gate silently rather than being refused there.}
 
 - {OBSERVED|HYPOTHESIS}: `{path}`:{line} — `{symbol}` (verify-at-outline when HYPOTHESIS)
+
+⛔ **An entry is a FULL repo-relative path.** A bare filename (`b.py`) is reported as unresolved by
+the reader rather than resolved against a sibling: write `marketplace/bundles/x/b.py`, never
+`b.py`. The same reader drops nothing in silence any more — an unresolvable entry reaches
+`unresolved` instead.
 
 ## Dependencies and Sequencing
 

@@ -7507,3 +7507,192 @@ class TestDeclarationCurrencyReadOnlyBoundary:
         assert result.returncode == 0
         assert 'status: success' in result.stdout
         assert 'collision_detected: true' in result.stdout
+
+
+# =============================================================================
+# corpus lint-done-whens — the two Done-when authoring contradictions
+# =============================================================================
+#
+# The template and `decompose.md` Step 4 state the rules; this verb is the script
+# that applies them. Both rules are string facts over one spec's own text, so
+# neither is left to a reader's judgement at cleanup. Every detector carries a
+# matched negative: a Done-when that says "fails at" WITHOUT a preservation word,
+# and one that says "holds at" over a symbol no HYPOTHESIS claim names.
+
+cmd_corpus_lint_done_whens = _orch.cmd_corpus_lint_done_whens
+DONE_WHEN_RULE_FAILS_AT = _orch.DONE_WHEN_RULE_FAILS_AT
+DONE_WHEN_RULE_HOLDS_AT = _orch.DONE_WHEN_RULE_HOLDS_AT
+DONE_WHEN_RULES = _orch.DONE_WHEN_RULES
+
+_LINT_ARGS = parse_ns(
+    _ORCH_BUNDLE,
+    _ORCH_SKILL,
+    _ORCH_SCRIPT,
+    'corpus',
+    'lint-done-whens',
+    '--slug',
+    SLUG,
+    register=False,
+)
+
+_CLEANUP_DOC = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-orchestrator' / 'workflow' / 'cleanup.md'
+
+#: A claim naming the symbol the "holds at" control rests on.
+_HYPOTHESIS_CLAIM = '- HYPOTHESIS: the reader parses `fence_marker` today — confirm at `fence_marker`'
+
+
+def _lint_spec(plan_context, *, done_when: str, claims: list | None = None, name: str = 'PLAN-01-alpha.md') -> Path:
+    """Write one staged spec carrying a Done-when paragraph and the supplied claims."""
+    lines = [
+        '# PLAN-01: Fixture',
+        '',
+        '## Deliverables',
+        '',
+        '1. **A deliverable.**',
+        f'   *Done when:* {done_when}',
+        '',
+        '## Claim Labels',
+        '',
+        *(claims if claims is not None else [_DEFAULT_CLAIM]),
+        '',
+        '## Expected Surface',
+        '',
+        *_DEFAULT_SURFACE,
+    ]
+    path = _epic_dir(plan_context) / 'plans' / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+    return path
+
+
+def _lint_rules(result: Any) -> set:
+    return {finding['rule'] for finding in result['findings']}
+
+
+class TestLintDoneWhens:
+    def test_a_fails_at_beside_a_preservation_word_is_reported(self, plan_context):
+        _write_status(plan_context, [_row('PLAN-01')])
+        _lint_spec(plan_context, done_when='the parser fails at `abc1234` while the old path still holds.')
+
+        result = cmd_corpus_lint_done_whens(_LINT_ARGS)
+
+        assert _lint_rules(result) == {DONE_WHEN_RULE_FAILS_AT}
+        assert result['specs_with_done_when'] == 1
+        assert result['rule_counts'] == [
+            {'rule': DONE_WHEN_RULE_FAILS_AT, 'count': 1},
+            {'rule': DONE_WHEN_RULE_HOLDS_AT, 'count': 0},
+        ]
+
+    @pytest.mark.parametrize('word', ['still', 'keeps', 'unchanged'])
+    def test_each_preservation_word_fires_the_rule(self, plan_context, word):
+        _write_status(plan_context, [_row('PLAN-01')])
+        _lint_spec(plan_context, done_when=f'the parser fails at `abc1234` and it {word} the old behaviour.')
+
+        assert _lint_rules(cmd_corpus_lint_done_whens(_LINT_ARGS)) == {DONE_WHEN_RULE_FAILS_AT}
+
+    def test_a_fails_at_without_a_preservation_word_is_silent(self, plan_context):
+        # The matched negative: the same clause shape, no claim that the
+        # behaviour already holds.
+        _write_status(plan_context, [_row('PLAN-01')])
+        _lint_spec(plan_context, done_when='the parser fails at `abc1234` today.')
+
+        result = cmd_corpus_lint_done_whens(_LINT_ARGS)
+
+        assert result['findings'] == []
+        assert result['findings_count'] == 0
+
+    def test_a_holds_at_over_a_hypothesis_symbol_is_reported(self, plan_context):
+        _write_status(plan_context, [_row('PLAN-01')])
+        _lint_spec(
+            plan_context,
+            done_when='the existing form holds at `abc1234` over `fence_marker`.',
+            claims=[_HYPOTHESIS_CLAIM],
+        )
+
+        result = cmd_corpus_lint_done_whens(_LINT_ARGS)
+
+        assert _lint_rules(result) == {DONE_WHEN_RULE_HOLDS_AT}
+        assert result['findings'][0]['symbol'] == 'fence_marker'
+
+    def test_a_holds_at_over_a_settled_symbol_is_silent(self, plan_context):
+        # The matched negative: the symbol is named by an OBSERVED claim, not a
+        # HYPOTHESIS one, so the Done-when rests on nothing unsettled.
+        _write_status(plan_context, [_row('PLAN-01')])
+        _lint_spec(
+            plan_context,
+            done_when='the existing form holds at `abc1234` over `fence_marker`.',
+            claims=['- OBSERVED: the reader parses `fence_marker` — read at `x.py` § `f`'],
+        )
+
+        assert cmd_corpus_lint_done_whens(_LINT_ARGS)['findings'] == []
+
+    def test_a_spec_with_no_done_when_contributes_no_row(self, plan_context):
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md')
+
+        result = cmd_corpus_lint_done_whens(_LINT_ARGS)
+
+        assert result['specs_total'] == 1
+        assert result['specs_with_done_when'] == 0
+        assert result['findings'] == []
+
+    def test_an_unreadable_spec_is_named_rather_than_skipped(self, plan_context):
+        _write_status(plan_context, [_row('PLAN-01'), _row('PLAN-02')])
+        _lint_spec(plan_context, done_when='the parser fails at `abc1234` while it still holds.')
+        broken = _epic_dir(plan_context) / 'plans' / 'PLAN-02-broken.md'
+        broken.write_bytes(_UNDECODABLE)
+
+        result = cmd_corpus_lint_done_whens(_LINT_ARGS)
+
+        assert result['specs_total'] == 2
+        assert result['specs_scanned'] == 1
+        assert result['unreadable_count'] == 1
+        assert result['unreadable'][0]['spec'] == 'PLAN-02-broken.md'
+
+    def test_an_unsafe_slug_is_refused(self):
+        result = cmd_corpus_lint_done_whens(_variant(_LINT_ARGS, slug='../escape'))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'invalid_slug'
+
+    def test_an_epic_with_no_store_tree_is_refused(self, plan_context):
+        result = cmd_corpus_lint_done_whens(_variant(_LINT_ARGS, slug='no-such-epic'))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'not_found'
+
+    def test_the_verb_leaves_the_tree_byte_identical(self, plan_context):
+        _write_status(plan_context, [_row('PLAN-01')])
+        _lint_spec(plan_context, done_when='the parser fails at `abc1234` while it still holds.')
+        root = _epic_dir(plan_context)
+        before = {path: path.read_bytes() for path in sorted(root.rglob('*')) if path.is_file()}
+        assert before, 'fixture tree did not materialize'
+
+        result = cmd_corpus_lint_done_whens(_LINT_ARGS)
+
+        after = {path: path.read_bytes() for path in sorted(root.rglob('*')) if path.is_file()}
+        assert after == before
+        assert result['findings_count'] == 1, (
+            'the read-only claim must be proven on a scan that actually HIT — a scan finding '
+            'nothing would leave the tree untouched vacuously'
+        )
+
+
+class TestCleanupConsumesTheLint:
+    """``cleanup`` Step 5 runs the verb and names both rules it reports."""
+
+    def _step_five(self) -> str:
+        body = section_lines(_CLEANUP_DOC.read_text(encoding='utf-8'), '### Step 5 (A3): Ambiguity')
+        return '\n'.join(body)
+
+    def test_step_five_names_the_verb_and_both_rules(self):
+        step = self._step_five()
+
+        assert 'corpus lint-done-whens' in step
+        for rule in DONE_WHEN_RULES:
+            assert f'`{rule}`' in step, rule
+
+    def test_the_rule_vocabulary_is_the_verbs_own(self):
+        # Non-vacuity: the two names asserted above are the production constants,
+        # so a rule renamed in the code fails the doc-contract check above.
+        assert DONE_WHEN_RULES == (DONE_WHEN_RULE_FAILS_AT, DONE_WHEN_RULE_HOLDS_AT)

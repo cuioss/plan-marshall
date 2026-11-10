@@ -59,7 +59,7 @@ per-concern layout; no code path here opens a queue row or the anchor itself.
   makes no ``epic.md`` write. Refuses a closed epic (``refused_closed``):
   compaction is a live-epic operation only. The narrative-versus-settled
   RELOCATION judgement is NOT here; it stays LLM.
-- ``corpus {epics,enumerate,read,cross-check,surfaces,declaration-currency,verdicts,set-verdict}`` — the
+- ``corpus {epics,enumerate,read,cross-check,surfaces,declaration-currency,verdicts,lint-done-whens,set-verdict}`` — the
   epic population and the epic's staged
   spec corpus: enumerate every epic slug in the store (``epics`` — the one
   slug-free verb, partitioned into active and archived, publishing the roots it
@@ -2756,6 +2756,152 @@ def cmd_corpus_surfaces(args: argparse.Namespace) -> dict[str, Any]:
         'excluded': excluded,
         'unresolved_count': len(unresolved),
         'unresolved': unresolved,
+    }
+
+
+# --- the Done-when authoring lint --------------------------------------------
+#
+# ``corpus lint-done-whens`` is the script half of the Done-when rules the
+# plan-spec template and ``decompose.md`` Step 4 state. Both rules are string
+# facts over one spec's own text, so neither is left to a reader's judgement: the
+# check IS the rule, and the docs name the verb that applies it.
+
+DONE_WHEN_RULE_FAILS_AT = 'fails_at_beside_preservation'
+DONE_WHEN_RULE_HOLDS_AT = 'holds_at_over_hypothesis'
+DONE_WHEN_RULES = (DONE_WHEN_RULE_FAILS_AT, DONE_WHEN_RULE_HOLDS_AT)
+
+#: A Done-when unit opens with its label: the italic/bold ``*Done when:*`` form
+#: the corpus writes, or a heading that names it. Only a LABEL opens a unit —
+#: prose that merely mentions a Done-when is not one.
+_DONE_WHEN_LABEL = re.compile(r'^done[\s-]+when\b', re.IGNORECASE)
+_DONE_WHEN_HEADING = re.compile(r'^#{1,6}[ \t]+.*done[\s-]+when', re.IGNORECASE)
+
+_FAILS_AT = re.compile(r'fails at', re.IGNORECASE)
+_HOLDS_AT = re.compile(r'holds at', re.IGNORECASE)
+#: The words that state behaviour ALREADY holds. A Done-when carrying one of them
+#: beside ``fails at`` asks for a failing observation of something it also says is
+#: unchanged.
+_PRESERVATION_WORD = re.compile(r'\b(?:still|keeps|unchanged)\b', re.IGNORECASE)
+#: A commit id, or the template's own placeholder — never a code symbol.
+_SHA_TOKEN = re.compile(r'^(?:[0-9a-f]{7,40}|\{sha\})$', re.IGNORECASE)
+#: Clause boundaries inside one Done-when unit.
+_CLAUSE_SPLIT = re.compile(r'(?<=[.;:])\s+')
+_CODE_SPAN = re.compile(r'`([^`]+)`')
+
+
+def _done_when_units(text: str) -> list[str]:
+    """Every Done-when unit in a spec body, whitespace-collapsed.
+
+    A unit opens with the Done-when label at the start of a line and runs to the
+    next blank line, or with a Done-when heading whose body runs to the next
+    heading. Both shapes occur in the corpus, so both are read.
+    """
+    lines = text.splitlines()
+    units: list[str] = []
+    index = 0
+    while index < len(lines):
+        stripped = lines[index].strip()
+        if _DONE_WHEN_HEADING.match(stripped):
+            collected: list[str] = []
+            index += 1
+            while index < len(lines) and not lines[index].lstrip().startswith('#'):
+                collected.append(lines[index])
+                index += 1
+            units.append(' '.join(' '.join(collected).split()))
+            continue
+        if _DONE_WHEN_LABEL.match(stripped.lstrip('*_ ')):
+            collected = [stripped]
+            index += 1
+            while index < len(lines) and lines[index].strip():
+                collected.append(lines[index].strip())
+                index += 1
+            units.append(' '.join(' '.join(collected).split()))
+            continue
+        index += 1
+    return [unit for unit in units if unit]
+
+
+def _hypothesis_symbols(text: str) -> dict[str, str]:
+    """Every code symbol a HYPOTHESIS claim of the spec names, with its claim line."""
+    symbols: dict[str, str] = {}
+    for line in text.splitlines():
+        if not re.match(r'^\s*-\s*HYPOTHESIS:', line):
+            continue
+        for span in _CODE_SPAN.findall(line):
+            token = span.strip()
+            if token and not _SHA_TOKEN.match(token):
+                symbols.setdefault(token, line.strip())
+    return symbols
+
+
+def _done_when_findings(spec: str, text: str) -> list[dict[str, str]]:
+    """The two Done-when contradictions one spec carries, clause by clause."""
+    findings: list[dict[str, str]] = []
+    symbols = _hypothesis_symbols(text)
+    for unit in _done_when_units(text):
+        for clause in (part.strip() for part in _CLAUSE_SPLIT.split(unit)):
+            if not clause:
+                continue
+            if _FAILS_AT.search(clause) and _PRESERVATION_WORD.search(clause):
+                findings.append({'spec': spec, 'rule': DONE_WHEN_RULE_FAILS_AT, 'clause': clause, 'symbol': ''})
+                continue
+            if not _HOLDS_AT.search(clause):
+                continue
+            for span in (token.strip() for token in _CODE_SPAN.findall(clause)):
+                if span in symbols:
+                    findings.append({'spec': spec, 'rule': DONE_WHEN_RULE_HOLDS_AT, 'clause': clause, 'symbol': span})
+    return findings
+
+
+def cmd_corpus_lint_done_whens(args: argparse.Namespace) -> dict[str, Any]:
+    """Flag the two Done-when authoring contradictions across the corpus. Read-only.
+
+    Rule :data:`DONE_WHEN_RULE_FAILS_AT` fires on a Done-when that asks for a
+    "fails at" observation of behaviour it also calls still/keeps/unchanged: the
+    behaviour is not new, so the criterion cannot be met as written. Rule
+    :data:`DONE_WHEN_RULE_HOLDS_AT` fires on a "holds at" Done-when resting on a
+    symbol a HYPOTHESIS claim of the same spec also names: the claim is unsettled,
+    so the Done-when assumes what the spec has not established.
+
+    ``specs_total``/``specs_scanned``/``specs_with_done_when`` ride with the
+    findings so a zero count states which zero it is. A spec with no Done-when at
+    all contributes no row, and an unreadable spec is named rather than silently
+    skipped.
+    """
+    invalid = _validate_slug(args.slug)
+    if invalid:
+        return _error(args.slug, 'invalid_slug', invalid)
+    root = _epic_root(args.slug, allow_archived=True)
+    if not root.is_dir():
+        return _error(args.slug, 'not_found', f'epic {args.slug!r} has no store tree')
+
+    spec_paths = _spec_paths(root)
+    findings: list[dict[str, str]] = []
+    unreadable: list[dict[str, str]] = []
+    with_done_when = 0
+    for path in spec_paths:
+        text, error = _read_spec(path)
+        if error or text is None:
+            unreadable.append({'spec': path.name, 'error': error or 'unreadable'})
+            continue
+        if _done_when_units(text):
+            with_done_when += 1
+        findings.extend(_done_when_findings(path.name, text))
+
+    counts = {rule: sum(1 for finding in findings if finding['rule'] == rule) for rule in DONE_WHEN_RULES}
+    return {
+        'status': 'success',
+        'operation': 'corpus-lint-done-whens',
+        'slug': args.slug,
+        'store': ORCHESTRATOR_STORE,
+        'specs_total': len(spec_paths),
+        'specs_scanned': len(spec_paths) - len(unreadable),
+        'specs_with_done_when': with_done_when,
+        'unreadable_count': len(unreadable),
+        'unreadable': unreadable,
+        'findings_count': len(findings),
+        'rule_counts': [{'rule': rule, 'count': counts[rule]} for rule in DONE_WHEN_RULES],
+        'findings': findings,
     }
 
 
@@ -7253,8 +7399,8 @@ def _add_corpus_group(subparsers: Any) -> None:
     """Register the ``corpus`` verb group.
 
     Sub-verbs: ``epics``, ``enumerate``, ``read``, ``cross-check``, ``surfaces``,
-    ``declaration-currency``, ``verdicts``, ``set-verdict``. The first seven are
-    read-only; ``set-verdict``
+    ``declaration-currency``, ``verdicts``, ``lint-done-whens``, ``set-verdict``.
+    All but ``set-verdict`` are read-only; ``set-verdict``
     is the group's single write action, and the only surface in the tree that
     formats a ``verdict:`` line. ``epics`` is the only one that takes no
     ``--slug``: its subject is the whole store rather than one epic in it.
@@ -7361,6 +7507,18 @@ def _add_corpus_group(subparsers: Any) -> None:
     )
     _add_slug_arg(verdicts)
     verdicts.set_defaults(handler=cmd_corpus_verdicts)
+
+    lint_done_whens = actions.add_parser(
+        'lint-done-whens',
+        help=(
+            'Flag each Done-when that asks a "fails at" observation of behaviour it calls '
+            'still/keeps/unchanged, and each "holds at" Done-when resting on a symbol a '
+            'HYPOTHESIS claim names (read-only).'
+        ),
+        allow_abbrev=False,
+    )
+    _add_slug_arg(lint_done_whens)
+    lint_done_whens.set_defaults(handler=cmd_corpus_lint_done_whens)
 
     set_verdict = actions.add_parser(
         'set-verdict',
