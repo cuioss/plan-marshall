@@ -2316,6 +2316,11 @@ _REVIEW_BODY_SECTIONS = (
 _NON_FINDING_SECTION_LABELS = (
     'files selected for processing',
     'files ignored due to path filters',
+    # OBSERVED on ``cuioss/plan-marshall#1952`` in an INCREMENTAL review: the files the
+    # reviewer skipped because they are unchanged since its previous review, posted as a
+    # counted ``<details>`` block with a ``<picture>`` icon wrapper. It is a diagnostic
+    # about what was NOT re-read, so it is neither a findings section nor a stop.
+    'files skipped from review as they are similar to previous changes',
     'review details',
     'review info',
     'run configuration',

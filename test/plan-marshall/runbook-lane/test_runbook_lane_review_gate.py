@@ -371,6 +371,29 @@ def test_a_captured_counted_non_finding_title_is_not_a_finding() -> None:
     assert verdict['review_body_findings_total'] == 0
 
 
+def test_a_captured_incremental_skip_notice_is_not_a_finding() -> None:
+    """OBSERVED #1952: an incremental review's "Files skipped …" block is a diagnostic.
+
+    The block carries a declared count (``: 1``) inside a ``<picture>``-wrapped
+    ``<summary>``, which is why the counted-title rule refused it as unreadable on the
+    PR this title was captured from. It states what the reviewer did NOT re-read, so it
+    is neither a findings section nor a stop.
+    """
+    body = (
+        '<details>\n<summary><picture><source media="(prefers-color-scheme: dark)" '
+        'srcset="x-dark.svg"><img src="x.svg" width="16" height="16" align="absmiddle" '
+        'alt=""></picture> Files skipped from review as they are similar to previous '
+        'changes: 1</summary>\n<dl><dd>\n'
+        '* `marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/branch-cleanup.md`\n'
+        '</dd></dl>\n</details>\n'
+    )
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['merge_allowed'] is True, verdict
+    assert verdict['review_body_findings_total'] == 0
+
+
 def test_a_captured_body_with_counted_non_finding_sections_reads_one_nitpick() -> None:
     """CONSTRUCTED body from OBSERVED #1940 titles beside one nitpick.
 
