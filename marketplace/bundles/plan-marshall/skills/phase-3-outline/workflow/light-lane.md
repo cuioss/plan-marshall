@@ -277,7 +277,10 @@ python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-sol
   snapshot-criteria --plan-id {plan_id}
 ```
 
-The freeze is the same one the deep lane writes at its own approval step and the same record every later review and gate reads, so the lane is not exempt from it. On a non-`success` result nothing was frozen: apply the refused-transition halt rule and return the refusal as this envelope's `status: error` return rather than advancing without a freeze.
+The freeze is the same one the deep lane writes at its own approval step and the same record every later review and gate reads, so the lane is not exempt from it. On a non-`success` result, branch on `error`:
+
+- `refreeze_requires_decision` — the criteria were already frozen, so a re-freeze needs an operator decision rather than a phase rollback. **Do NOT read this result as an unreadable outline.** This lane runs as a dispatched envelope and cannot ask the operator itself, so return an `outline_prompt` **prompt-required envelope** carrying the re-freeze question (see § Output): the main-context orchestrator fires the `AskUserQuestion` over it and, only on the operator's approval, runs `criteria-refreeze-authorize` and re-dispatches this lane once, which retries `snapshot-criteria` and continues past this step.
+- Any other error — nothing was frozen: apply the refused-transition halt rule and return the refusal as this envelope's `status: error` return rather than advancing without a freeze.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status transition \
@@ -313,6 +316,8 @@ domain_narrow_report: {the domain-narrow report, verbatim; see Step 5c}
 `domain_narrow_report` carries the `report` string returned by `manage-config domain-narrow`, verbatim and unedited, on **both** of the verb's success outcomes — a `narrowed: false` run reports too. It exists because `display_detail`'s fixed shape above and its 80-character ASCII cap cannot carry the report itself. The orchestrator reads it: `plan-marshall/workflow/planning.md` (light-lane branch) prints it to the operator verbatim as one line; the decision-log entry at Step 5c keeps it with the plan. The field is **omitted** when the verb returned `status: error` — nothing was evaluated, so there is no report, and an empty string would render a pass that could not look as one that looked and found nothing. It is **omitted on the domain-alphabet refusal branch too** (Step 5c step 2b): there the verb did produce a report and the step withheld it, so carrying the field while its decision-log sink was refused would leave the two sinks disagreeing about whether the step reported. It is absent from the escalate shape below by construction: the ratchet returns at Step 4, before Step 5c ever runs.
 
 `qgate_validation_required` is always `false` on the light lane — the bounded read set + premise-check + escalation ratchet are the light lane's verification, and the deep-lane q-gate-validation is reached only via escalation.
+
+`outline_prompt` is the batched prompt-required envelope described in [`../SKILL.md`](../SKILL.md) § "Operator-input contract". The lane emits it — alongside an otherwise-`status: success` return, before Step 6's transition — only on that step's `refreeze_requires_decision` branch, which is the one decision the lane cannot make and cannot ask about itself. It carries the re-freeze question, whose options name the branch each one selects. The main-context orchestrator fires ONE `AskUserQuestion` over it and, on the operator's approval, runs `criteria-refreeze-authorize` and re-dispatches this lane at most once with the answer baked in; the lane performs none of the operator-facing interaction. The field is omitted on every other path.
 
 ### escalate (DQ3 ratchet fired)
 
