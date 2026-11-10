@@ -80,7 +80,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metada
   --plan-id {slug} --get --field parallelization_scope --store orchestrator
 ```
 
-Count `R`, the plans currently in `launched` status, and select up to `N − R` candidates — a block sized by the scope knob rather than a hardcoded single (at the default `N = 1` that block is exactly one). Walk `staged` plans in queue order whose dependencies (sequencing notes in their `{epic_dir}/plans/PLAN-NN-{plan_slug}.md` spec) are satisfied, and admit a candidate ONLY when both admission tests and the declaration gate below pass — the two tests decide overlap and readiness, and the gate decides whether the spec can be launched at all:
+Count `R`, the plans currently in `launched` status, and select up to `N − R` candidates — a block sized by the scope knob rather than a hardcoded single (at the default `N = 1` that block is exactly one). Walk `staged` plans in queue order whose dependencies (sequencing notes in their `{epic_dir}/plans/PLAN-NN-{plan_slug}.md` spec) are satisfied, and admit a candidate ONLY when all three admission tests below pass — **Disjoint**, **Prep-ready** and **Declared**:
 
 - **Disjoint** — decided from the PARSER, not from a reader's judgement over the rendered `Surface (expected)` cell. The test has two halves and they come from **two different reads**, because no single verb produces both. Read the corpus's declared surfaces once:
 
@@ -101,15 +101,6 @@ Count `R`, the plans currently in `launched` status, and select up to `N − R` 
   1. its `corpus surfaces` row carries `admits_disjointness_check: true`;
   2. its own `spec_comparisons[]` row in the `corpus cross-check` payload carries `overlap_prompt_required: false` — or carries `true` and the operator answered that the overlap is not a problem (see **The overlap prompt** below);
   3. that same `spec_comparisons[]` row carries `comparison_determinate: true`.
-
-  **The declaration gate is a THIRD admission test, not a disjointness fact.** Run
-  `plan-marshall:plan-orchestrator:orchestrator corpus spec-skills --slug {slug} --plan {plan_id}`
-  before emitting. It passes exactly when the payload carries `emit_allowed: true` — an EMPTY
-  `missing_skills[]`. Refuse the candidate otherwise, naming each entry of `missing_skills[]`: a
-  spec whose deliverable names a skill or persona the installed bundles do not ship would launch a
-  run told to apply a standard that is not there, and the lane stops on it anyway. A spec that
-  declares nothing is legal (`declaration: none named`) and passes — the template asks for the
-  lines, it does not make them load-bearing.
 
   Each read supplies exactly the half the other cannot: `corpus surfaces` publishes only THIS epic's own declarations — per-spec `derivation_status`, `admits_disjointness_check` and `claimed_count`, plus a flat `claimed[]` list — and carries no launched-plan surface and no intersection; `corpus cross-check` is the sole producer of the intersection and of the per-candidate verdict over it. Asking `corpus surfaces` alone for the overlap half asks it for a field it does not emit.
 
@@ -146,6 +137,22 @@ Count `R`, the plans currently in `launched` status, and select up to `N − R` 
 Four rules govern the outcome, every one of them decided by the parser rather than by a reader: an **OPEN (absent) clause does NOT fail the test** — settling it is the LAUNCHED plan's own job per [orchestration-model.md § Verify-First Contract for Inferred Claims](../../persona-plan-orchestrator/standards/orchestration-model.md#verify-first-contract-for-inferred-claims), so blocking on an unchecked clause would make the verifying phase unreachable and the spec permanently unemittable; **only a refutation the spec has not absorbed blocks**; an **`unverifiable` verdict never blocks**, because an unreachable population is not a refutation; and a **malformed field blocks**, reported as `indeterminate` with the offending line quoted, so a typo can never hide a refutation.
 
 **Staleness is reported, never promoted.** A row's `stale` flag says the spec's own declared surface moved between the sha the verdict was checked at and HEAD — or that the comparison could not be made, which its `staleness_basis` names. Either way the row rides into the report alongside the admission outcome and does not change it — neither silently promoted to blocking when a declared surface moves, nor silently dropped. The derivation and the closed basis vocabulary are defined once at [orchestration-model.md § Re-Grounding Verdict Field](../../persona-plan-orchestrator/standards/orchestration-model.md#re-grounding-verdict-field).
+
+- **Declared** — decided from the `corpus spec-skills` payload, and the only admission test about the
+  spec's own contents rather than about overlap or readiness. Read it once per candidate:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator corpus spec-skills \
+    --slug {slug} --plan {plan_id}
+  ```
+
+  A candidate is declared-ready **iff** the payload carries `emit_allowed: true` — an EMPTY
+  `missing_skills[]`. Refuse it otherwise, naming each entry (`missing skill: {notation}`, with the
+  probes that failed in `missing_probed[]`): a spec whose deliverable names a skill or persona the
+  installed bundles do not ship would launch a run told to apply a standard that is not there, and
+  the lane stops on it anyway. A spec that declares nothing is legal (`declaration: none named`) and
+  passes — the template asks for the lines, it does not make them load-bearing. An unreadable spec is
+  refused as `unreadable` by the verb itself, never passed as a declaration-less one.
 
 A candidate failing any admission test or the declaration gate is sequenced, not emitted. **Never emit, merely to fill a slot, a candidate the gate did not admit** — one whose multi-file overlap the operator declined, one whose surface or comparison is indeterminate, one that is unprepared, or one whose declaration names a skill the installed bundles do not ship. When fewer than `N − R` candidates qualify, report the shortfall with the blocking reason per candidate instead. Every reason is **derived from the blocking row**, never hand-typed:
 

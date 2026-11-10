@@ -83,24 +83,33 @@ def spec_deliverables(spec: Path) -> list[dict[str, Any]]:
     Each row carries its number, title, raw ``Skills:`` value and raw
     ``Persona:`` value. Only lines INSIDE the section and outside a fenced block
     are read, so a spec that quotes the declaration format in prose or in an
-    example does not declare anything by it.
+    example does not declare anything by it. The fence decision is the ONE the
+    surface and claim readers use (:func:`epic_spec_parser._fenced_mask`), so all
+    three readers of a staged spec agree about what is an example.
+
+    Raises:
+        ValueError: ``spec_unreadable`` when the file cannot be read or decoded —
+            the two failures of a text read, the second being a
+            :class:`UnicodeDecodeError` (a ``ValueError``, not an ``OSError``). A
+            failed read must never resolve to "declares nothing", which would pass
+            the emission gate over a spec nobody read.
     """
     try:
         lines = spec.read_text(encoding='utf-8').splitlines()
-    except OSError:
-        return []
+    except (OSError, UnicodeDecodeError) as error:
+        raise ValueError('spec_unreadable') from error
     start = next((i for i, line in enumerate(lines) if line.strip() == DELIVERABLES_HEADING), None)
     if start is None:
         return []
+    from epic_spec_parser import _fenced_mask
+
+    fenced = _fenced_mask(lines)
     rows: list[dict[str, Any]] = []
     current: dict[str, Any] | None = None
-    in_fence = False
-    for line in lines[start + 1 :]:
-        if line.strip().startswith('```'):
-            in_fence = not in_fence
+    for index in range(start + 1, len(lines)):
+        if fenced[index]:
             continue
-        if in_fence:
-            continue
+        line = lines[index]
         if line.startswith('## '):
             break
         head = DELIVERABLE_HEAD_RE.match(line)

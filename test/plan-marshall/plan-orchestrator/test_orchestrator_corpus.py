@@ -7681,6 +7681,33 @@ class TestLintDoneWhens:
 
         assert cmd_corpus_lint_done_whens(_LINT_ARGS)['findings'] == []
 
+    def test_a_settled_hypothesis_claim_is_not_flagged(self, plan_context):
+        """A claim carrying a `corroborated` verdict is settled, label notwithstanding."""
+        _write_status(plan_context, [_row('PLAN-01')])
+        _lint_spec(
+            plan_context,
+            done_when='the existing form holds at `abc1234` over `fence_marker`.',
+            claims=[_HYPOTHESIS_CLAIM],
+        )
+        assert _lint_rules(cmd_corpus_lint_done_whens(_LINT_ARGS)) == {DONE_WHEN_RULE_HOLDS_AT}
+
+        stamped = cmd_corpus_set_verdict(_set_verdict_args('PLAN-01', 0))
+        result = cmd_corpus_lint_done_whens(_LINT_ARGS)
+
+        assert stamped['status'] == 'success'
+        assert result['findings'] == [], 'a settled claim is no longer the unsettled premise the rule names'
+
+    def test_a_contradicted_hypothesis_claim_is_still_flagged(self, plan_context):
+        _write_status(plan_context, [_row('PLAN-01')])
+        _lint_spec(
+            plan_context,
+            done_when='the existing form holds at `abc1234` over `fence_marker`.',
+            claims=[_HYPOTHESIS_CLAIM],
+        )
+        cmd_corpus_set_verdict(_set_verdict_args('PLAN-01', 0, verdict='contradicted', rescoped='no'))
+
+        assert _lint_rules(cmd_corpus_lint_done_whens(_LINT_ARGS)) == {DONE_WHEN_RULE_HOLDS_AT}
+
     def test_a_spec_with_no_done_when_contributes_no_row(self, plan_context):
         _write_status(plan_context, [_row('PLAN-01')])
         _write_spec(plan_context, 'PLAN-01-alpha.md')
@@ -7941,6 +7968,19 @@ class TestCorpusSpecSkills:
         assert result['suggestion_unavailable'] == 'project_configuration_unreadable'
         assert result['paths'][0]['mapped'] is False
         assert 'configuration' in result['paths'][0]['reason']
+
+    def test_an_unreadable_spec_is_refused_rather_than_passed_as_undeclared(self, plan_context):
+        # A failed read must never resolve to "declares nothing": that would pass the
+        # emission gate over a spec nobody read.
+        _write_status(plan_context, [_row('PLAN-01')])
+        path = _epic_dir(plan_context) / 'plans' / 'PLAN-01-alpha.md'
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b'\xff\xfe not valid utf-8 \xff')
+
+        result = cmd_corpus_spec_skills(_SPEC_SKILLS_ARGS)
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'unreadable'
 
     def test_a_declared_skill_that_does_not_exist_refuses_the_emission(self, plan_context):
         """The `next` fixture: a spec naming a skill the bundles do not ship."""

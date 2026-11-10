@@ -2796,31 +2796,17 @@ _SHA_TOKEN = re.compile(r'^(?:[0-9a-f]{7,40}|\{sha\})$', re.IGNORECASE)
 _CLAUSE_SPLIT = re.compile(r'(?<=[.;:])\s+')
 _CODE_SPAN = re.compile(r'`([^`]+)`')
 
-#: A fenced-block delimiter line (CommonMark allows up to three spaces of indent).
-#: A Done-when or HYPOTHESIS line inside a fence is an EXAMPLE, exactly as the
-#: surface reader treats a fenced path: it is never read as a declaration.
-_FENCE_LINE = re.compile(r'^ {0,3}(`{3,}|~{3,})(?P<rest>.*)$')
-
 
 def _fenced_line_indices(lines: list[str]) -> set[int]:
-    """The indices of the lines that sit inside (or delimit) a fenced block."""
-    masked: set[int] = set()
-    opening = ''
-    for index, line in enumerate(lines):
-        match = _FENCE_LINE.match(line)
-        if match:
-            masked.add(index)
-            marker = match.group(1)
-            if not opening:
-                opening = marker
-            elif marker[0] == opening[0] and len(marker) >= len(opening) and not match.group('rest').strip():
-                # Only a bare fence CLOSES a block; a delimiter carrying trailing
-                # text is body text, exactly as CommonMark reads it.
-                opening = ''
-            continue
-        if opening:
-            masked.add(index)
-    return masked
+    """The indices of the lines that sit inside a fenced block.
+
+    Delegates to the module's OWN CommonMark fence mask — the reader the surface and
+    claim scans already use — so a Done-when or HYPOTHESIS line inside an example is
+    masked exactly as a fenced path is. A second scanner here would drift from it,
+    and already had: it opened a fence on a backtick delimiter carrying a backtick in
+    its info string, which the mask correctly reads as prose.
+    """
+    return {index for index, fenced in enumerate(_fenced_mask(lines)) if fenced}
 
 
 def _done_when_units(text: str) -> list[str]:
@@ -2863,15 +2849,24 @@ def _done_when_units(text: str) -> list[str]:
 
 
 def _hypothesis_symbols(text: str) -> dict[str, str]:
-    """Every code symbol a HYPOTHESIS claim of the spec names, with its claim line."""
+    """Every code symbol an UNSETTLED ``HYPOTHESIS`` claim names, with its line.
+
+    A claim that already carries a ``corroborated`` verdict is SETTLED — the
+    template keeps the ``HYPOTHESIS`` label after settlement and adds one nested
+    ``verdict:`` bullet — so the label alone is not the test. The claims are read
+    through the one claim-section parser, which pairs each claim with its verdict.
+    """
     lines = text.splitlines()
-    fenced = _fenced_line_indices(lines)
     symbols: dict[str, str] = {}
-    for index, line in enumerate(lines):
-        if index in fenced:
+    for claim in _parse_claim_section(lines)['claims']:
+        if not str(claim['text']).startswith('HYPOTHESIS:'):
             continue
-        if not re.match(r'^\s*-\s*HYPOTHESIS:', line):
+        raw_verdict = str(claim['verdict_text'])
+        parsed = _parse_verdict_text(raw_verdict) if raw_verdict else None
+        if parsed is not None and parsed.get('verdict') == 'corroborated':
             continue
+        index = int(claim['line'])
+        line = lines[index] if 0 <= index < len(lines) else ''
         for span in _CODE_SPAN.findall(line):
             token = span.strip()
             if token and not _SHA_TOKEN.match(token):
@@ -4237,7 +4232,10 @@ def cmd_corpus_spec_skills(args: argparse.Namespace) -> dict[str, Any]:
     try:
         declaration = spec_skills.resolve_deliverable_skills(spec)
     except ValueError as exc:
-        return _error(args.slug, str(exc), 'a bare skill name has no bundle to resolve in')
+        code = str(exc)
+        if code == 'spec_unreadable':
+            return _error(args.slug, 'unreadable', f'spec {spec.name!r} could not be read', spec=spec.name)
+        return _error(args.slug, code, 'a bare skill name has no bundle to resolve in')
     try:
         derivation_status, claim = _surface_state(spec, Path(cwd_checkout_root()))
     except Exception:
