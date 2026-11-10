@@ -420,18 +420,18 @@ decides the credit, **ahead of every ledger arm**:
 The coverage marker is read by `_github_pr.review_coverage_verdict`, the single parser of
 `sourceCommitId`, `coveredCommitId` and `kind`; no consumer restates those fields.
 
-**An in-place edit alone never credits evidence that names its commit.** This is the absorbed
-"participation credit ignores an in-progress review" defect: the fresh-edit arm measures
-`updated_at` movement, which a bot produces by editing its comment without re-reviewing. Where the
-evidence names a commit, the named-commit arm answers first, so the edit cannot credit a commit the
-comment does not name. Evidence that names no commit keeps the ledger arms unchanged.
+**An in-place edit alone never credits.** There is no fresh-edit arm: `updated_at` movement proves a
+bot touched its comment, not which commit the comment now reviews. A bot edits its persistent summary
+for many reasons — a typo, a re-worded footer, its own in-progress state — and crediting the edit
+scored a review of the new head that nothing in the comment claimed. Evidence that names a commit is
+decided by that commit (§ above); evidence that names none is decided by the ledger, and the ledger
+credits only a row whose recorded commit IS the merge candidate.
 
-**Why it outranks the ledger.** The ledger arms infer the reviewed commit from when the plan saw the
-comment and whether it moved. A fresh edit is their strongest signal, and it is still an inference: a
-bot that edits its comment without re-reviewing — or re-reviews an older commit — moves `updated_at`
-exactly as a review of the merge candidate does. A comment that names the previous HEAD after such an
-edit says in its own text that the merge candidate is unreviewed, and an inference must not overrule
-the statement it is an inference about.
+**Why the ledger does not infer from movement.** A fresh edit was once read as the ledger's strongest
+signal, and it is still an inference: a bot that edits without re-reviewing moves `updated_at` exactly
+as a review of the merge candidate does. The two are indistinguishable from the timestamp alone, so the
+inference is removed rather than narrowed. What replaces it is the comment's own statement — a named
+commit, or a coverage marker — which is evidence rather than an inference.
 
 **What counts as naming a commit.** Only a FULL commit id, bare or inside a permalink, read through
 the one commit recogniser (`_github_pr.commit_tokens`, narrowed by `_github_pr.named_commits`). An
