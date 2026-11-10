@@ -921,7 +921,15 @@ def resolve_recovery_action(
     7. **An OPEN claim resolves ``await_window``.** ⛔ A re-trigger inside the
        window RESETS it rather than shortening it — an advertised wait was
        observed going from 50 to 59 minutes — and spends quota doing so.
-    8. **An ELAPSED claim resolves by the bot's ``trigger_semantics``**, with one
+    8. **A flagged bot with a review on record SETTLES, before any window or
+       budget arm.** A bot declaring
+       :meth:`bot_registry.BotRegistry.review_complete_after_handling` whose review
+       is ``credited`` or ``stale`` has nothing to request and nothing to wait for:
+       pending findings route to triage (``await_triage``), an unobserved findings
+       state is ``unmeasured``, and everything else accepts the review on record
+       (``accept_review_on_record``, reason ``review_on_record_done``). None of the
+       three posts, so the done rule also removes the wait.
+    9. **An ELAPSED claim resolves by the bot's ``trigger_semantics``**, with one
        exception for a bot that reviews only when explicitly asked: ``close_and_reopen``
        for that bot **only when no review by it is on record**
        (``review_on_record`` is not ``credited``/``stale``), and ``generate_trigger``
@@ -1024,6 +1032,26 @@ def resolve_recovery_action(
     stale_unheld = notice_stale and not attempt_held
     if stale_unheld and review_on_record != REVIEW_ON_RECORD_ABSENT:
         return {**verdict, 'action': RECOVERY_ACTION_SETTLE_STALE_NOTICE, 'reason': 'notice_window_elapsed'}
+    if bot_registry.review_complete_after_handling(bot_kind) and review_on_record in (
+        REVIEW_ON_RECORD_CREDITED,
+        REVIEW_ON_RECORD_STALE,
+    ):
+        # A flagged bot's one handled review is the review: with it on record there
+        # is nothing to request and nothing to wait for, so the elapsed window
+        # settles instead of triggering — before the budget and window arms, which
+        # would otherwise burn attempts and hold a wait for a review nobody owes.
+        # Pending findings are still handling, never a reason to re-request, so they
+        # route to triage; an unobserved findings state is unmeasured rather than a
+        # pass.
+        if pending_findings is None:
+            return {**verdict, 'action': RECOVERY_ACTION_UNMEASURED, 'reason': 'no_findings_observation'}
+        if pending_findings > 0:
+            return {
+                **verdict,
+                'action': RECOVERY_ACTION_AWAIT_TRIAGE,
+                'reason': 'review_on_record_done_findings_pending',
+            }
+        return {**verdict, 'action': RECOVERY_ACTION_ACCEPT_REVIEW_ON_RECORD, 'reason': 'review_on_record_done'}
     if attempts_remaining <= 0 and not attempt_held:
         return {**verdict, 'action': RECOVERY_ACTION_ESCALATE_EXHAUSTED, 'reason': 'attempt_cap_exhausted'}
     if not window_expired:
@@ -1040,7 +1068,9 @@ def resolve_recovery_action(
         # candidate moved on — so re-delivering the whole PR buys nothing and the
         # operator policy bounds close-and-reopen to the no-review-on-record case.
         # Such a bot is re-triggered instead (`generate_trigger`), which is what the
-        # caller's fallback path posts when no rebase can produce an event.
+        # caller's fallback path posts when no rebase can produce an event. A bot
+        # declaring `review_complete_after_handling` never reaches this line: its
+        # branch above settles before any window arm.
         if review_on_record in (REVIEW_ON_RECORD_CREDITED, REVIEW_ON_RECORD_STALE):
             return {
                 **verdict,
@@ -1188,8 +1218,34 @@ class _ReReviewStrategy:
         then is :meth:`_escalated_post_refusal` consulted, which refuses a second
         post of a command the bot has not answered yet. Both commands leave
         through the one ``post_pr_comment`` call below.
+
+        **A flagged bot's review on record refuses both commands.** Before either
+        guard, a bot declaring
+        :meth:`bot_registry.BotRegistry.review_complete_after_handling` is refused
+        with ``reason: review_on_record_done`` when this pull request already holds
+        a qualifying review by it, because one handled review is the review and a
+        further request spends the bot's allowance for nothing. A pull request with
+        no qualifying review is untouched: the first trigger posts exactly as
+        before, and so does every bot that does not declare the flag.
         """
         reader = read_rate_window if window_reader is None else window_reader
+        if bot_registry.review_complete_after_handling(self.bot_kind):
+            # The done rule, enforced at the one post chokepoint so it cannot be
+            # bypassed by a caller that skipped its own check. The read answers
+            # three ways and only a POSITIVE "the review is on record" refuses:
+            # an unreadable history permits the post for the same reason the rate
+            # window does — refusing there would take the whole re-review path
+            # down whenever the fetch is unreachable, a far larger failure than
+            # the redundant comment it would prevent.
+            if _qualifying_review_on_record(pr_number, self.bot_kind) is True:
+                return {
+                    'status': 'refused',
+                    'operation': 'request_fresh_review',
+                    'reason': 'review_on_record_done',
+                    'bot_kind': self.bot_kind,
+                    'pr_number': pr_number,
+                    'escalated': escalated,
+                }
         observation = reader(plan_id or _GUARD_PLAN_SENTINEL, self.bot_kind, pr_number)
         if observation.get('expired') is False:
             return {
@@ -1811,6 +1867,40 @@ def bot_kind_for_author(author_login: str | None) -> str | None:
     if normalized.endswith('[bot]'):
         normalized = normalized[: -len('[bot]')]
     return _AUTHOR_LOGIN_TO_BOT_KIND.get(normalized)
+
+
+def _qualifying_review_on_record(pr_number: int | str, bot_kind: str) -> bool | None:
+    """Whether ``bot_kind`` holds a qualifying review on this pull request.
+
+    The done rule's read, and the one question it asks: is a review by this bot on
+    record here AT ALL — never whether that review covers the current head. A
+    qualifying review is either
+
+    - a formal review record of this bot carrying a commit id (the producer's
+      ``review_body`` record), or
+    - an issue comment of this bot carrying a finished review-coverage marker
+      (``review_coverage_is_finished``: a readable ``kind: reviewed`` payload naming
+      a commit, read through ``_github_pr``'s one parser).
+
+    Three answers, matching the fetch's own: ``True`` when qualifying evidence
+    exists, ``False`` when the bot published none, and ``None`` when the pull
+    request's history could not be read. ``None`` is the caller's fail-open to the
+    pre-existing path for a POST decision — never a claim that no review exists.
+    """
+    envelope = _github.fetch_pr_comments_data(int(pr_number))
+    if envelope.get('status') != 'success':
+        return None
+    for comment in envelope.get('comments') or []:
+        if not isinstance(comment, dict):
+            continue
+        if bot_kind_for_author(comment.get('author')) != bot_kind:
+            continue
+        kind = str(comment.get('kind') or '')
+        if kind == 'review_body' and str(comment.get('commit_id') or '').strip():
+            return True
+        if kind == 'issue_comment' and review_coverage_is_finished(str(comment.get('body') or '')):
+            return True
+    return False
 
 
 # ---------------------------------------------------------------------------
