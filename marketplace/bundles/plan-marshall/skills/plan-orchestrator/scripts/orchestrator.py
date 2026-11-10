@@ -2798,7 +2798,7 @@ _CODE_SPAN = re.compile(r'`([^`]+)`')
 #: A fenced-block delimiter line (CommonMark allows up to three spaces of indent).
 #: A Done-when or HYPOTHESIS line inside a fence is an EXAMPLE, exactly as the
 #: surface reader treats a fenced path: it is never read as a declaration.
-_FENCE_LINE = re.compile(r'^ {0,3}(`{3,}|~{3,})')
+_FENCE_LINE = re.compile(r'^ {0,3}(`{3,}|~{3,})(?P<rest>.*)$')
 
 
 def _fenced_line_indices(lines: list[str]) -> set[int]:
@@ -2812,7 +2812,9 @@ def _fenced_line_indices(lines: list[str]) -> set[int]:
             marker = match.group(1)
             if not opening:
                 opening = marker
-            elif marker[0] == opening[0] and len(marker) >= len(opening):
+            elif marker[0] == opening[0] and len(marker) >= len(opening) and not match.group('rest').strip():
+                # Only a bare fence CLOSES a block; a delimiter carrying trailing
+                # text is body text, exactly as CommonMark reads it.
                 opening = ''
             continue
         if opening:
@@ -2840,7 +2842,7 @@ def _done_when_units(text: str) -> list[str]:
         if _DONE_WHEN_HEADING.match(stripped):
             collected: list[str] = []
             index += 1
-            while index < len(lines) and not lines[index].lstrip().startswith('#'):
+            while index < len(lines) and (index in fenced or not lines[index].lstrip().startswith('#')):
                 if index not in fenced:
                     collected.append(lines[index])
                 index += 1
@@ -2881,13 +2883,17 @@ def _done_when_findings(spec: str, text: str) -> list[dict[str, str]]:
     findings: list[dict[str, str]] = []
     symbols = _hypothesis_symbols(text)
     for unit in _done_when_units(text):
+        # Rule 1 is judged over the WHOLE Done-when: its text says a "fails at"
+        # clause BESIDE the preservation words, and the destructive shape spans two
+        # clauses ("X fails at `sha`; Y is still unchanged"). The report quotes the
+        # unit for that reason.
+        asserted_unit = _QUOTED_SEGMENT.sub('', unit)
+        if _FAILS_AT.search(asserted_unit) and _PRESERVATION_WORD.search(asserted_unit):
+            findings.append({'spec': spec, 'rule': DONE_WHEN_RULE_FAILS_AT, 'clause': unit, 'symbol': ''})
         for clause in (part.strip() for part in _CLAUSE_SPLIT.split(unit)):
             if not clause:
                 continue
             asserted = _QUOTED_SEGMENT.sub('', clause)
-            if _FAILS_AT.search(asserted) and _PRESERVATION_WORD.search(asserted):
-                findings.append({'spec': spec, 'rule': DONE_WHEN_RULE_FAILS_AT, 'clause': clause, 'symbol': ''})
-                continue
             if not _HOLDS_AT.search(asserted):
                 continue
             for span in (token.strip() for token in _CODE_SPAN.findall(asserted)):
@@ -3932,12 +3938,19 @@ def cmd_corpus_read(args: argparse.Namespace) -> dict[str, Any]:
 # spec's declared surface to modules through the project's architecture, and
 # reports the domain skills the PROJECT CONFIGURES for those paths.
 #
-# The SKILL SOURCE is ``marshal.json``'s ``skill_domains.{domain}.profiles`` —
-# read through ``manage-config skill-domains get``, the configuration's own read
-# verb. The module record carries a ``skills_by_profile`` map too, but it is a
-# PERSISTED enrichment that can be stale (this repository's own ``pm-dev-python``
-# record carries another domain's skills), so re-deriving from the configuration
-# is the only source that cannot disagree with what the project declares.
+# The SKILL SOURCE is the project's configured skill domains, read through
+# ``manage-config skill-domains get`` — the configuration's own read verb, which
+# merges the owning bundle's extension profiles with the operator's inclusion and
+# veto configuration. The configured profile blocks and ``file_globs`` are served
+# by that verb; the profiles themselves live in the bundle's extension, so this
+# verb never re-derives them. The module record carries a ``skills_by_profile`` map
+# too, but it is a PERSISTED enrichment that can be stale (this repository's own
+# ``pm-dev-python`` record carries another domain's skills), so the configuration
+# is the source that cannot disagree with what the project declares.
+#
+# The suggestion is the domain's ``core`` and ``implementation`` defaults, with the
+# project's ``excluded_skills`` veto APPLIED through the one shared filter every
+# other seam uses — an exclusion wins whichever producer surfaced the skill.
 #
 # WHICH domain applies is decided in two rungs, most specific first: the path's
 # own file type against each domain's configured ``file_globs`` (the project's
@@ -3962,6 +3975,24 @@ _ARCHITECTURE_NOTATION = 'plan-marshall:manage-architecture:architecture'
 _CONFIG_NOTATION = 'plan-marshall:manage-config:manage-config'
 
 
+def _executor_path() -> str:
+    """The checkout's own executor, absolute when it resolves.
+
+    The sibling verbs are launched from any working directory this process was
+    started in, so a cwd-relative ``.plan/execute-script.py`` would turn every read
+    into a failure the moment the cwd is not the repository root. The registry's
+    own resolver is the one seam that knows where the executor lives; the relative
+    form stays the fallback for a checkout it cannot resolve.
+    """
+    try:
+        from plugin_registry import default_executor_path
+
+        resolved = default_executor_path(Path(cwd_checkout_root()))
+    except Exception:
+        resolved = None
+    return str(resolved) if resolved is not None else '.plan/execute-script.py'
+
+
 def _script_payload(
     notation: str,
     arguments: list[str],
@@ -3982,7 +4013,7 @@ def _script_payload(
     env = None
     if project_config:
         env = {key: value for key, value in os.environ.items() if key != 'PLAN_BASE_DIR'}
-    argv = [sys.executable, '.plan/execute-script.py', notation, *arguments]
+    argv = [sys.executable, _executor_path(), notation, *arguments]
     try:
         completed = subprocess.run(argv, capture_output=True, text=True, timeout=120, env=env)
     except (OSError, subprocess.SubprocessError):
@@ -4012,7 +4043,7 @@ def _spec_path_kind(path: str) -> str:
     return 'source'
 
 
-def _profile_skills(profiles: Any, profile: str = 'implementation') -> list[str]:
+def _profile_default_skills(profiles: Any, profile: str) -> list[str]:
     """The ``{profile}.defaults`` skill list of one configured profile block."""
     block = profiles.get(profile) if isinstance(profiles, dict) else None
     rows = block.get('defaults') if isinstance(block, dict) else None
@@ -4026,28 +4057,60 @@ def _profile_skills(profiles: Any, profile: str = 'implementation') -> list[str]
     return skills
 
 
-def _configured_domains() -> tuple[list[dict[str, Any]], bool]:
+def _suggested_skills(domain: dict[str, Any]) -> list[str]:
+    """A configured domain's ``core`` + ``implementation`` defaults, after the veto.
+
+    The project's ``excluded_skills`` list removes a skill whichever producer
+    surfaced it, so the veto is applied through the ONE shared filter every other
+    seam uses (:func:`extension_base.filter_skill_map`) rather than re-implemented
+    here. ``core`` comes first because it is always merged into the profiles a
+    task loads; a skill both blocks name appears once.
+    """
+    config = domain['config']
+    profiles = {
+        key: value
+        for key, value in config.items()
+        if isinstance(value, dict) and ('defaults' in value or 'optionals' in value)
+    }
+    raw_exclusions = config.get('excluded_skills')
+    exclusions = {str(item) for item in raw_exclusions} if isinstance(raw_exclusions, list) else set()
+    bundle = config.get('bundle')
+    from extension_base import filter_skill_map
+
+    filtered = filter_skill_map(profiles, exclusions, bundle if isinstance(bundle, str) else '')
+    combined: list[str] = []
+    for profile in ('core', 'implementation'):
+        for skill in _profile_default_skills(filtered, profile):
+            if skill not in combined:
+                combined.append(skill)
+    return combined
+
+
+def _configured_domains() -> tuple[list[dict[str, Any]], bool, list[str]]:
     """Every configured domain with its ``file_globs`` and its profile blocks.
 
-    Returns ``(domains, readable)``. ``readable`` is false when the DOMAIN KEY list
-    could not be read at all: an unreadable configuration is a failed read, never a
-    project that configures no domains, and the caller reports it as one.
+    Returns ``(domains, readable, unreadable_keys)``. ``readable`` is false when the
+    DOMAIN KEY list could not be read at all — an unreadable configuration is a
+    failed read, never a project that configures no domains. A single key whose
+    block cannot be read is named in ``unreadable_keys`` rather than reported as a
+    domain with no skills: partial unreadability is published, not hidden.
 
     The domain keys come from ``skill-domains list``; each key's block comes from
     ``skill-domains get``, whose payload carries ``file_globs`` and one key per
-    profile. A key whose block cannot be read is skipped rather than reported as a
-    domain with no skills — a failed read is not an empty configuration.
+    profile.
     """
     listing = _script_payload(_CONFIG_NOTATION, ['skill-domains', 'list'], project_config=True)
     keys = listing.get('domains') if isinstance(listing, dict) else None
     if not isinstance(keys, list):
-        return [], False
+        return [], False, []
     domains: list[dict[str, Any]] = []
+    unreadable: list[str] = []
     for key in keys:
         if not isinstance(key, str):
             continue
         payload = _script_payload(_CONFIG_NOTATION, ['skill-domains', 'get', '--domain', key], project_config=True)
         if payload is None or payload.get('status') != 'success':
+            unreadable.append(key)
             continue
         globs = payload.get('file_globs')
         domains.append(
@@ -4057,7 +4120,7 @@ def _configured_domains() -> tuple[list[dict[str, Any]], bool]:
                 'config': payload,
             }
         )
-    return domains, True
+    return domains, True, unreadable
 
 
 def _glob_matches(path: str, glob: str) -> bool:
@@ -4072,13 +4135,19 @@ def _glob_matches(path: str, glob: str) -> bool:
     return glob.startswith('**/') and fnmatch.fnmatch(path, glob[3:])
 
 
-def _module_for_path(path: str) -> str:
-    """The module the architecture says owns *path*, or ``''`` when none does."""
+def _module_for_path(path: str) -> tuple[str, bool]:
+    """The module owning *path* and whether the lookup was TRUNCATED.
+
+    ``('', True)`` states a lookup that could not see the whole inventory and
+    resolved nothing — an unread scan is not "no module owns this path", and the
+    caller reports it as the failed read it is. A truncated lookup that DID resolve
+    a module is still a resolved module, so the flag only decides the empty case.
+    """
     payload = _script_payload(_ARCHITECTURE_NOTATION, ['which-module', '--path', path])
     if payload is None or payload.get('status') != 'success':
-        return ''
+        return '', False
     module = payload.get('module')
-    return module if isinstance(module, str) else ''
+    return (module if isinstance(module, str) else ''), bool(payload.get('truncated'))
 
 
 def _applicable_domains(module: str) -> list[str]:
@@ -4161,17 +4230,19 @@ def cmd_corpus_spec_skills(args: argparse.Namespace) -> dict[str, Any]:
     if derivation_status == SURFACE_UNREADABLE:
         surface_unreadable = _read_spec(spec)[1] or 'the surface could not be classified'
 
-    domains, domains_readable = _configured_domains()
+    domains, domains_readable, domains_unreadable = _configured_domains()
     applicable: dict[str, list[str]] = {}
     path_rows: list[dict[str, Any]] = []
     for entry in claim.claimed if claim is not None else ():
-        module = _module_for_path(entry.path)
+        module, module_truncated = _module_for_path(entry.path)
         domain, rung = _domain_for_path(entry.path, module, domains, applicable) if domains_readable else (None, '')
         mapped = domain is not None
         reason = ''
         if not mapped:
             if not domains_readable:
                 reason = 'unmapped: the project configuration could not be read'
+            elif not module and module_truncated:
+                reason = 'unmapped: the module lookup was truncated'
             elif not module:
                 reason = 'unmapped: no module owns the path'
             else:
@@ -4186,7 +4257,7 @@ def cmd_corpus_spec_skills(args: argparse.Namespace) -> dict[str, Any]:
                 'persona': SPEC_SKILLS_PERSONA_BY_KIND[_spec_path_kind(entry.path)],
                 'mapped': mapped,
                 'reason': reason,
-                'skills': _profile_skills(domain['config']) if domain is not None else [],
+                'skills': _suggested_skills(domain) if domain is not None else [],
             }
         )
     for raw in claim.unresolved if claim is not None else ():
@@ -4228,10 +4299,13 @@ def cmd_corpus_spec_skills(args: argparse.Namespace) -> dict[str, Any]:
         'store': ORCHESTRATOR_STORE,
         'plan': plan,
         'spec': spec.name,
-        'skill_source': 'skill_domains.{domain}.implementation.defaults (project configuration)',
+        'skill_source': (
+            'skill_domains.{domain}.core+implementation.defaults, excluded_skills applied (project configuration)'
+        ),
         'suggestion_scope': 'spec',
         'configured_domains_total': len(domains),
         'configured_domains_readable': domains_readable,
+        'configured_domains_unreadable': domains_unreadable,
         'suggestion_unavailable': '' if domains_readable else 'project_configuration_unreadable',
         'declaration': declaration['skills_note'],
         'deliverables_total': len(deliverables),

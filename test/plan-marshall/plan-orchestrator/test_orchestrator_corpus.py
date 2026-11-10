@@ -7822,7 +7822,9 @@ class TestCorpusSpecSkills:
         )
         assert result['suggested_skills'] == sorted(row['skills'])
         assert result['suggested_persona'] == 'implementer'
-        assert result['skill_source'] == ('skill_domains.{domain}.implementation.defaults (project configuration)')
+        assert result['skill_source'] == (
+            'skill_domains.{domain}.core+implementation.defaults, excluded_skills applied (project configuration)'
+        )
         assert result['emit_allowed'] is True
         assert result['declaration'] == 'declared'
 
@@ -7850,7 +7852,7 @@ class TestCorpusSpecSkills:
                 }
             },
         }
-        monkeypatch.setattr(_orch, '_configured_domains', lambda: ([java_domain], True))
+        monkeypatch.setattr(_orch, '_configured_domains', lambda: ([java_domain], True, []))
 
         result = cmd_corpus_spec_skills(_SPEC_SKILLS_ARGS)
 
@@ -7858,6 +7860,46 @@ class TestCorpusSpecSkills:
         assert row['domain'] == 'java'
         assert row['domain_source'] == 'file_glob'
         assert row['skills'] == ['pm-dev-java:java-core', 'pm-dev-java:javadoc']
+
+    def test_a_path_no_file_glob_places_falls_back_to_the_modules_domain(self, plan_context):
+        """The SECOND rung, live: a .java path in this repository.
+
+        This project configures no java domain and holds no Maven module, so the file
+        type places nothing. The path's module (plan-marshall) reports a configured
+        applicable domain, and that domain's skills are returned — the fallback rung
+        exercised against the real repository data, not a stub.
+        """
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_skills_spec(plan_context, ['- OBSERVED: `test/plan-marshall/plan-orchestrator/Sample.java`'])
+
+        result = cmd_corpus_spec_skills(_SPEC_SKILLS_ARGS)
+
+        row = result['paths'][0]
+        assert row['domain_source'] == 'module_domain'
+        assert row['module'] == 'plan-marshall'
+        assert row['domain'] == 'plan-marshall-plugin-dev'
+        assert row['mapped'] is True
+
+    def test_the_suggestion_takes_core_and_implementation_after_the_project_veto(self):
+        """The veto is the project's, applied through the one shared filter."""
+        domain = {
+            'domain': 'java',
+            'globs': [],
+            'config': {
+                'bundle': 'pm-dev-java',
+                'excluded_skills': ['pm-dev-java:javadoc', 'lombok'],
+                'core': {'defaults': [{'skill': 'pm-dev-java:java-core', 'description': ''}]},
+                'implementation': {
+                    'defaults': [
+                        {'skill': 'pm-dev-java:java-core', 'description': ''},
+                        {'skill': 'pm-dev-java:javadoc', 'description': ''},
+                        {'skill': 'pm-dev-java:lombok', 'description': ''},
+                    ]
+                },
+            },
+        }
+
+        assert _orch._suggested_skills(domain) == ['pm-dev-java:java-core']
 
     def test_an_unmapped_path_is_reported_never_guessed(self, plan_context):
         # A bare filename is not a resolvable repo path: the surface reader reports
@@ -7878,7 +7920,7 @@ class TestCorpusSpecSkills:
         # `none`. The payload names the failed read instead.
         _write_status(plan_context, [_row('PLAN-01')])
         _write_skills_spec(plan_context, [f'- OBSERVED: `{_PYTHON_SURFACE}`'])
-        monkeypatch.setattr(_orch, '_configured_domains', lambda: ([], False))
+        monkeypatch.setattr(_orch, '_configured_domains', lambda: ([], False, []))
 
         result = cmd_corpus_spec_skills(_SPEC_SKILLS_ARGS)
 
