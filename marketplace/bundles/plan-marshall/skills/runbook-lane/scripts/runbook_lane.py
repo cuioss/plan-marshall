@@ -1017,6 +1017,10 @@ def _resolve_bots(marshal: dict[str, Any]) -> tuple[list[dict[str, Any]], list[d
     current head"; see ``runbook-lane/SKILL.md`` § merge gate. Because the flag
     resolves ``False`` when a record declares nothing, the authorization stays off
     for every reviewer the project has not positively marked.
+
+    The row carries ``review_complete_after_handling`` beside it, from the same
+    record, so the lane reads one source for both: a flagged reviewer is done once
+    its qualifying review is handled, with no re-trigger, wait or currency demand.
     """
     plan_block = marshal.get('plan')
     steps = plan_block.get('phase-6-finalize', {}).get('steps', {}) if isinstance(plan_block, dict) else {}
@@ -1033,6 +1037,7 @@ def _resolve_bots(marshal: dict[str, Any]) -> tuple[list[dict[str, Any]], list[d
                 'trigger_comment': bot_registry.trigger_comment(bot),
                 'escalated_trigger_comment': bot_registry.escalated_trigger_comment(bot),
                 'quota_limited': bot_registry.quota_limited(bot),
+                'review_complete_after_handling': bot_registry.review_complete_after_handling(bot),
             }
             for bot in names
         ]

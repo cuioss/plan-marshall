@@ -792,7 +792,9 @@ whether to continue at the limit. Record every finding and its disposition.
    in the progress file, `finding: {reviewer} {section} {id} — {sha|reason}`, and each line is handed
    to the merge gate's `review-gate` call (section 7) as one `--disposition` value, with the
    `finding: ` prefix dropped and `{reviewer}`/`{section}`/`{id}` exactly as the verb reports them.
-6. **After every push, re-trigger** a reviewer whose last review predates the head. Re-read the open
+6. **After every push, re-trigger** a reviewer whose last review predates the head, **except a
+   reviewer the resolve result marks `review_complete_after_handling`**: its review on record is
+   the review, so a later head raises no obligation and no trigger is posted. Re-read the open
    Sonar findings after every push too, on the same condition as step 4.
 7. **Reviewer quota policy** ("review limit reached" or similar), for ANY required reviewer that
    refuses on quota **while no qualifying review exists** (see section 7):
@@ -814,9 +816,14 @@ whether to continue at the limit. Record every finding and its disposition.
 
 Merge only when all of these hold:
 
-- Every required reviewer reviewed the **current head**. **Exception — standing review
-  authorization, quota-limited reviewers only.** For a required reviewer that the resolve result
-  marks `quota_limited`, "reviewed the current head" may be replaced by ALL of:
+- Every required reviewer reviewed the **current head**. **Satisfied by done for a reviewer the
+  resolve result marks `review_complete_after_handling`.** Such a reviewer's qualifying review of
+  ANY head of this PR is the review once every finding of it is handled: the currency demand does
+  not apply to it, no re-trigger is posted for a later head, and the "which head it last reviewed"
+  fact reports the head that one review covered. **Exception — standing review authorization,
+  quota-limited reviewers only.** For a required reviewer that the resolve result marks
+  `quota_limited` and does NOT mark `review_complete_after_handling`, "reviewed the current head"
+  may be replaced by ALL of:
   1. **a qualifying review exists** — a formal review by that reviewer on one of this PR's heads,
      listed by `ci pr reviews` with its commit id, or, where the reviewer publishes a clean review
      only as a summary comment, the marker-bearing summary comment whose `sourceCommitId` /
@@ -857,7 +864,8 @@ Merge only when all of these hold:
 
 The reviewer quota policy (§ 6 step 7) applies only while no qualifying review exists. The standing
 authorization never applies to a reviewer that is not quota-limited, and never to a PR without a
-qualifying review.
+qualifying review. A `review_complete_after_handling` reviewer's own review on record is that
+qualifying review, so the quota policy does not apply to it either: nothing is asked of it again.
 
 **An unresolved review thread or an unhandled review-body finding on the merge head blocks the
 standing authorization.** A reviewer's thread that is still open, or a finding from any review-body
@@ -883,8 +891,9 @@ enqueue**, whatever else the gates say.
 `git -C {worktree} fetch origin {base_branch}`, then
 `git -C {worktree} merge origin/{base_branch} -m "merge: origin/{base_branch} into {branch}" -m "{commit_trailer}"`,
 so the merge commit it creates ends with the resolved `{commit_trailer}` line the Commit trailer rule
-requires. Run the build gate again, push, re-trigger the reviewers, re-read the Sonar findings, re-run
-the review gate, and repeat the reviewer quota policy (§ 6 step 7).
+requires. Run the build gate again, push, re-trigger the reviewers (leaving out every reviewer marked
+`review_complete_after_handling`), re-read the Sonar findings, re-run the review gate, and repeat the
+reviewer quota policy (§ 6 step 7).
 
 **Before enqueue, re-check the authorization rule:** merge only when every condition above holds, or
 when the operator **selected** an option in a question-tool call that names the exact gap (which

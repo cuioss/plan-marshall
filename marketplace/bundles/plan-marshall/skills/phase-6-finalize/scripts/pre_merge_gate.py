@@ -1149,6 +1149,15 @@ def _participation_verdict(
     while a bot that never reviewed anything resolves ``absent`` and a bot whose
     review predates this head resolves ``participated_stale``. Both of the latter
     are members of the predicate's unproven set and are refused here.
+
+    A bot declaring ``review_complete_after_handling`` also lands in the FIRST case
+    on a review of an EARLIER head: the predicate reads its stale participation as
+    a qualifying review on record and classifies it ``participated`` /
+    ``participated_but_empty``, because one handled review is the review. No
+    ``review-barrier-gap`` authorization is involved and none is weakened — the
+    predicate still refuses on a pending finding, an unreadable state and an
+    unresolved merge candidate. ``review-gate`` is a separate condition and is
+    never overridden here.
     """
     verdict = (participation_check or _check_participation)(plan_id, pr_number, project_dir)
     if verdict.get('status') == 'success' and verdict.get('participation_complete') is True:
