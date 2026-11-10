@@ -40,12 +40,16 @@ _ACKNOWLEDGMENT_BODY = 'Review triggered'
 _SKIP_BODY = '## Review skipped\n\nDraft pull request.'
 
 
-def _history(monkeypatch, comments, *, status: str = 'success') -> None:
+def _history(monkeypatch, comments, *, status: str = 'success', complete: bool = True) -> None:
     """Serve ``comments`` as the pull request's history the done read consumes."""
     monkeypatch.setattr(
         github_re_review._github,
         'fetch_pr_comments_data',
-        lambda pr_number, unresolved_only=False: {'status': status, 'comments': list(comments)},
+        lambda pr_number, unresolved_only=False: {
+            'status': status,
+            'complete': complete,
+            'comments': list(comments),
+        },
     )
 
 
@@ -212,6 +216,56 @@ def test_an_unreadable_history_permits_the_post(monkeypatch):
 
     assert result['status'] == 'success'
     assert posted == [(_PR, '@coderabbitai review')]
+
+
+def test_a_capped_history_is_not_read_as_no_review(monkeypatch):
+    """A partial fetch may hide the review, so it permits the post like a failed read."""
+    posted = _record_posts(monkeypatch)
+    _history(monkeypatch, [], complete=False)
+
+    result = _request('coderabbit', monkeypatch)
+
+    assert result['status'] == 'success'
+    assert posted == [(_PR, '@coderabbitai review')]
+
+
+def test_a_marker_naming_no_commit_is_not_a_review(monkeypatch):
+    """``kind: reviewed`` without a covered commit is a claim nobody can evaluate."""
+    posted = _record_posts(monkeypatch)
+    _history(
+        monkeypatch,
+        [_comment('issue_comment', '<!-- final_review_risk_coverage:{"kind":"reviewed"} -->')],
+    )
+
+    result = _request('coderabbit', monkeypatch)
+
+    assert result['status'] == 'success'
+    assert posted == [(_PR, '@coderabbitai review')]
+
+
+def test_an_inline_comment_proves_a_review(monkeypatch):
+    """An inline comment is published BY a review, so it is evidence one happened."""
+    posted = _record_posts(monkeypatch)
+    _history(monkeypatch, [_comment('inline', 'a line comment', commit_id='')])
+
+    result = _request('coderabbit', monkeypatch)
+
+    assert posted == []
+    assert result['status'] == 'refused'
+    assert result['reason'] == 'review_on_record_done'
+
+
+def test_a_bot_with_a_review_on_record_settles_a_no_unreviewed_commit_reply():
+    """The done arm is the same under the bot's 'nothing new to review' reply."""
+    verdict = github_re_review.resolve_recovery_action(
+        'coderabbit',
+        condition=github_re_review.REFUSAL_CONDITION_NO_UNREVIEWED_COMMIT,
+        review_on_record='stale',
+        pending_findings=0,
+    )
+
+    assert verdict['action'] == 'accept_review_on_record'
+    assert verdict['reason'] == 'review_on_record_done'
 
 
 # ---------------------------------------------------------------------------

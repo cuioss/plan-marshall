@@ -287,6 +287,7 @@ from _github_pr import (
     refusal_size_cap,
     review_coverage_is_finished,
     review_coverage_marker_present,
+    review_coverage_names_commit,
     review_coverage_verdict,
 )
 from ci_base import (
@@ -1003,6 +1004,20 @@ def resolve_recovery_action(
             return {**verdict, 'action': RECOVERY_ACTION_UNMEASURED, 'reason': 'review_state_undecidable'}
         if pending_findings is None:
             return {**verdict, 'action': RECOVERY_ACTION_UNMEASURED, 'reason': 'no_findings_observation'}
+        if bot_registry.review_complete_after_handling(bot_kind) and review_on_record in (
+            REVIEW_ON_RECORD_CREDITED,
+            REVIEW_ON_RECORD_STALE,
+        ):
+            # Same done rule as the elapsed arm: the bot's own reply that nothing is
+            # unreviewed is a statement about REQUESTS, and its review on record is
+            # the review. Pending findings are triaged; nothing is posted either way.
+            if pending_findings > 0:
+                return {
+                    **verdict,
+                    'action': RECOVERY_ACTION_AWAIT_TRIAGE,
+                    'reason': 'review_on_record_done_findings_pending',
+                }
+            return {**verdict, 'action': RECOVERY_ACTION_ACCEPT_REVIEW_ON_RECORD, 'reason': 'review_on_record_done'}
         if review_on_record == REVIEW_ON_RECORD_STALE:
             return {
                 **verdict,
@@ -1874,21 +1889,29 @@ def _qualifying_review_on_record(pr_number: int | str, bot_kind: str) -> bool | 
 
     The done rule's read, and the one question it asks: is a review by this bot on
     record here AT ALL — never whether that review covers the current head. A
-    qualifying review is either
+    qualifying review is any of these, all of them artifacts a review publishes:
 
     - a formal review record of this bot carrying a commit id (the producer's
-      ``review_body`` record), or
-    - an issue comment of this bot carrying a finished review-coverage marker
-      (``review_coverage_is_finished``: a readable ``kind: reviewed`` payload naming
-      a commit, read through ``_github_pr``'s one parser).
+      ``review_body`` record);
+    - one of the bot's own inline comments — an inline comment is published BY a
+      review, so its existence proves a review happened even when that review's body
+      was filtered or carries no commit;
+    - an issue comment of this bot carrying a finished review-coverage marker that
+      NAMES a commit (``review_coverage_names_commit``: a readable ``kind: reviewed``
+      payload, read through ``_github_pr``'s one parser). A marker that names no
+      commit is a claim nobody can evaluate, so it is not a review.
 
     Three answers, matching the fetch's own: ``True`` when qualifying evidence
     exists, ``False`` when the bot published none, and ``None`` when the pull
-    request's history could not be read. ``None`` is the caller's fail-open to the
-    pre-existing path for a POST decision — never a claim that no review exists.
+    request's history could not be read IN FULL — a failed fetch, or a successful one
+    whose connection was capped (``complete: false``), because a review may sit in
+    the part that was not read. ``None`` is the caller's fail-open to the pre-existing
+    path for a POST decision — never a claim that no review exists.
     """
     envelope = _github.fetch_pr_comments_data(int(pr_number))
     if envelope.get('status') != 'success':
+        return None
+    if envelope.get('complete') is not True:
         return None
     for comment in envelope.get('comments') or []:
         if not isinstance(comment, dict):
@@ -1896,9 +1919,11 @@ def _qualifying_review_on_record(pr_number: int | str, bot_kind: str) -> bool | 
         if bot_kind_for_author(comment.get('author')) != bot_kind:
             continue
         kind = str(comment.get('kind') or '')
+        if kind == 'inline':
+            return True
         if kind == 'review_body' and str(comment.get('commit_id') or '').strip():
             return True
-        if kind == 'issue_comment' and review_coverage_is_finished(str(comment.get('body') or '')):
+        if kind == 'issue_comment' and review_coverage_names_commit(str(comment.get('body') or '')):
             return True
     return False
 

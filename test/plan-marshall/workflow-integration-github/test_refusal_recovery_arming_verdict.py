@@ -580,17 +580,17 @@ class TestTheRecoveryActionSelectorDerivesItsVerdict:
             (
                 _no_unreviewed_verdict(awaitable, github_re_review.REVIEW_ON_RECORD_CREDITED, 0),
                 github_re_review.RECOVERY_ACTION_ACCEPT_REVIEW_ON_RECORD,
-                'review_on_record_findings_handled',
+                'review_on_record_done',
             ),
             (
                 _no_unreviewed_verdict(awaitable, github_re_review.REVIEW_ON_RECORD_CREDITED, 2),
                 github_re_review.RECOVERY_ACTION_AWAIT_TRIAGE,
-                'findings_pending',
+                'review_on_record_done_findings_pending',
             ),
             (
                 _no_unreviewed_verdict(awaitable, github_re_review.REVIEW_ON_RECORD_STALE, 0),
-                github_re_review.RECOVERY_ACTION_LEAVE_TO_STALE_REVIEW,
-                'merge_candidate_newer_than_reply',
+                github_re_review.RECOVERY_ACTION_ACCEPT_REVIEW_ON_RECORD,
+                'review_on_record_done',
             ),
             (
                 _no_unreviewed_verdict(awaitable, github_re_review.REVIEW_ON_RECORD_ABSENT, 0),
@@ -638,11 +638,17 @@ class TestTheRecoveryActionSelectorDerivesItsVerdict:
 
         reached = {verdict['action'] for verdict, _a, _r in arms}
         # ``generate_trigger`` is unreachable without re-declaring a bot's trigger
-        # semantics, which is the neighbouring test's subject; it is named here so
-        # the coverage claim states its one exclusion rather than hiding it.
-        assert reached | {github_re_review.RECOVERY_ACTION_GENERATE_TRIGGER} == set(
-            github_re_review.RECOVERY_ACTIONS
-        ), f'arms reached {sorted(reached)} of {sorted(github_re_review.RECOVERY_ACTIONS)}'
+        # semantics, which is the neighbouring test's subject; ``leave_to_stale_review``
+        # is unreachable for the awaitable bot because it declares
+        # ``review_complete_after_handling`` (its stale review is done), and is pinned
+        # for an unflagged bot in the neighbouring module's matched control. Both are
+        # named here so the coverage claim states its exclusions rather than hiding them.
+        assert reached | {
+            github_re_review.RECOVERY_ACTION_GENERATE_TRIGGER,
+            github_re_review.RECOVERY_ACTION_LEAVE_TO_STALE_REVIEW,
+        } == set(github_re_review.RECOVERY_ACTIONS), (
+            f'arms reached {sorted(reached)} of {sorted(github_re_review.RECOVERY_ACTIONS)}'
+        )
 
 
 class TestBothProducersCarryOneObservationShape:
