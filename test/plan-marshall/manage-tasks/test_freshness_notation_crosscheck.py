@@ -1141,8 +1141,10 @@ def test_the_executor_run_flag_registry_names_the_flags_after_the_payload() -> N
             for option in action.option_strings:
                 if option in {'--command-args', '-h', '--help'}:
                     continue
-                # Every run flag takes exactly one value; ``--env``'s documented
-                # value is a space-separated list, handled apart in the reader.
+                # ``nargs is None`` is argparse's "exactly one value"; anything else
+                # (``?``, ``*``, ``+``, an explicit count) is an arity this reader
+                # does not model, so the test refuses rather than guessing.
+                assert action.nargs is None or action.nargs == 1, (option, action.nargs)
                 mapping[option] = 1
         return mapping
 
