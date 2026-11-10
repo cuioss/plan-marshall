@@ -439,9 +439,10 @@ def _write_status(
     return write_ledger(_epic_dir(plan_context, slug) if epic_dir is None else epic_dir, doc)
 
 
-#: The default ``## Expected Surface`` body. ``a.py`` carries no ``/`` segment,
-#: so the path extractor never sees a path here — a spec written without an
-#: explicit surface contributes NOTHING to the file-overlap class.
+#: The default ``## Expected Surface`` body. ``a.py`` is a bare FILE NAME, so the
+#: reader reports it as an unresolved entry rather than a claimed path — a spec
+#: written without an explicit surface contributes NOTHING to the file-overlap
+#: class, and its one unresolved entry is the report D2's parser change added.
 _DEFAULT_SURFACE = ['- OBSERVED: `a.py` — `f`']
 
 _DEFAULT_CLAIM = '- OBSERVED: a claim — read at `a.py` § `f`'
@@ -7507,3 +7508,602 @@ class TestDeclarationCurrencyReadOnlyBoundary:
         assert result.returncode == 0
         assert 'status: success' in result.stdout
         assert 'collision_detected: true' in result.stdout
+
+
+# =============================================================================
+# corpus lint-done-whens — the two Done-when authoring contradictions
+# =============================================================================
+#
+# The template and `decompose.md` Step 4 state the rules; this verb is the script
+# that applies them. Both rules are string facts over one spec's own text, so
+# neither is left to a reader's judgement at cleanup. Every detector carries a
+# matched negative: a Done-when that says "fails at" WITHOUT a preservation word,
+# and one that says "holds at" over a symbol no HYPOTHESIS claim names.
+
+cmd_corpus_lint_done_whens = _orch.cmd_corpus_lint_done_whens
+DONE_WHEN_RULE_FAILS_AT = _orch.DONE_WHEN_RULE_FAILS_AT
+DONE_WHEN_RULE_HOLDS_AT = _orch.DONE_WHEN_RULE_HOLDS_AT
+DONE_WHEN_RULES = _orch.DONE_WHEN_RULES
+
+_LINT_ARGS = parse_ns(
+    _ORCH_BUNDLE,
+    _ORCH_SKILL,
+    _ORCH_SCRIPT,
+    'corpus',
+    'lint-done-whens',
+    '--slug',
+    SLUG,
+    register=False,
+)
+
+_CLEANUP_DOC = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-orchestrator' / 'workflow' / 'cleanup.md'
+
+#: A claim naming the symbol the "holds at" control rests on.
+_HYPOTHESIS_CLAIM = '- HYPOTHESIS: the reader parses `fence_marker` today — confirm at `fence_marker`'
+
+
+def _lint_spec(plan_context, *, done_when: str, claims: list | None = None, name: str = 'PLAN-01-alpha.md') -> Path:
+    """Write one staged spec carrying a Done-when paragraph and the supplied claims."""
+    lines = [
+        '# PLAN-01: Fixture',
+        '',
+        '## Deliverables',
+        '',
+        '1. **A deliverable.**',
+        f'   *Done when:* {done_when}',
+        '',
+        '## Claim Labels',
+        '',
+        *(claims if claims is not None else [_DEFAULT_CLAIM]),
+        '',
+        '## Expected Surface',
+        '',
+        *_DEFAULT_SURFACE,
+    ]
+    path = _epic_dir(plan_context) / 'plans' / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+    return path
+
+
+def _lint_rules(result: Any) -> set:
+    return {finding['rule'] for finding in result['findings']}
+
+
+class TestLintDoneWhens:
+    def test_a_fails_at_beside_a_preservation_word_is_reported(self, plan_context):
+        _write_status(plan_context, [_row('PLAN-01')])
+        _lint_spec(plan_context, done_when='the parser fails at `abc1234` while the old path still holds.')
+
+        result = cmd_corpus_lint_done_whens(_LINT_ARGS)
+
+        assert _lint_rules(result) == {DONE_WHEN_RULE_FAILS_AT}
+        assert result['specs_with_done_when'] == 1
+        assert result['rule_counts'] == [
+            {'rule': DONE_WHEN_RULE_FAILS_AT, 'count': 1},
+            {'rule': DONE_WHEN_RULE_HOLDS_AT, 'count': 0},
+        ]
+
+    @pytest.mark.parametrize('word', ['still', 'keeps', 'unchanged'])
+    def test_each_preservation_word_fires_the_rule(self, plan_context, word):
+        _write_status(plan_context, [_row('PLAN-01')])
+        _lint_spec(plan_context, done_when=f'the parser fails at `abc1234` and it {word} the old behaviour.')
+
+        assert _lint_rules(cmd_corpus_lint_done_whens(_LINT_ARGS)) == {DONE_WHEN_RULE_FAILS_AT}
+
+    def test_a_fails_at_without_a_preservation_word_is_silent(self, plan_context):
+        # The matched negative: the same clause shape, no claim that the
+        # behaviour already holds.
+        _write_status(plan_context, [_row('PLAN-01')])
+        _lint_spec(plan_context, done_when='the parser fails at `abc1234` today.')
+
+        result = cmd_corpus_lint_done_whens(_LINT_ARGS)
+
+        assert result['findings'] == []
+        assert result['findings_count'] == 0
+
+    def test_a_quoted_rule_vocabulary_is_not_read_as_the_defect(self, plan_context):
+        """A spec DESCRIBING the rule quotes its words; a quoted word is named, not asserted."""
+        _write_status(plan_context, [_row('PLAN-01')])
+        _lint_spec(
+            plan_context,
+            done_when='a Done-when that carries a "fails at" clause beside "still" or "keeps" is flagged.',
+        )
+
+        assert cmd_corpus_lint_done_whens(_LINT_ARGS)['findings'] == []
+
+    def test_a_single_quoted_rule_vocabulary_is_not_read_as_the_defect(self, plan_context):
+        # Single quotes are NOT stripped: an ordinary contraction would pair with
+        # them and swallow the clause. A spec quoting the rule in single quotes is
+        # reported, which is the safe direction — a triaged false positive beats a
+        # silently missed defect.
+        _write_status(plan_context, [_row('PLAN-01')])
+        _lint_spec(plan_context, done_when="a rule naming a 'fails at' clause beside 'still' is flagged.")
+
+        assert _lint_rules(cmd_corpus_lint_done_whens(_LINT_ARGS)) == {DONE_WHEN_RULE_FAILS_AT}
+
+    def test_an_apostrophe_in_a_contraction_does_not_swallow_the_clause(self, plan_context):
+        _write_status(plan_context, [_row('PLAN-01')])
+        _lint_spec(
+            plan_context,
+            done_when="the parser's reader fails at `abc1234` while it's still broken.",
+        )
+
+        assert _lint_rules(cmd_corpus_lint_done_whens(_LINT_ARGS)) == {DONE_WHEN_RULE_FAILS_AT}
+
+    def test_a_done_when_inside_a_fenced_example_is_not_read(self, plan_context):
+        _write_status(plan_context, [_row('PLAN-01')])
+        body = (
+            '# PLAN-01\n\n## Deliverables\n\n1. **A deliverable.**\n\n'
+            '   ```text\n'
+            '   *Done when:* the parser fails at `abc1234` while it still holds.\n'
+            '   ```\n'
+        )
+        path = _epic_dir(plan_context) / 'plans' / 'PLAN-01-alpha.md'
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(body, encoding='utf-8')
+
+        result = cmd_corpus_lint_done_whens(_LINT_ARGS)
+
+        assert result['specs_with_done_when'] == 0
+        assert result['findings'] == []
+
+    def test_a_hyphenated_compound_is_not_a_preservation_claim(self, plan_context):
+        # ``statement-keeps-default`` names a rule; the hyphenated compound never
+        # asserts that a behaviour still holds.
+        _write_status(plan_context, [_row('PLAN-01')])
+        _lint_spec(plan_context, done_when='a doc test asserts the statement-keeps-`default` rule and fails at HEAD.')
+
+        assert cmd_corpus_lint_done_whens(_LINT_ARGS)['findings'] == []
+
+    def test_a_holds_at_over_a_hypothesis_symbol_is_reported(self, plan_context):
+        _write_status(plan_context, [_row('PLAN-01')])
+        _lint_spec(
+            plan_context,
+            done_when='the existing form holds at `abc1234` over `fence_marker`.',
+            claims=[_HYPOTHESIS_CLAIM],
+        )
+
+        result = cmd_corpus_lint_done_whens(_LINT_ARGS)
+
+        assert _lint_rules(result) == {DONE_WHEN_RULE_HOLDS_AT}
+        assert result['findings'][0]['symbol'] == 'fence_marker'
+
+    def test_a_holds_at_over_a_settled_symbol_is_silent(self, plan_context):
+        # The matched negative: the symbol is named by an OBSERVED claim, not a
+        # HYPOTHESIS one, so the Done-when rests on nothing unsettled.
+        _write_status(plan_context, [_row('PLAN-01')])
+        _lint_spec(
+            plan_context,
+            done_when='the existing form holds at `abc1234` over `fence_marker`.',
+            claims=['- OBSERVED: the reader parses `fence_marker` — read at `x.py` § `f`'],
+        )
+
+        assert cmd_corpus_lint_done_whens(_LINT_ARGS)['findings'] == []
+
+    def test_a_settled_hypothesis_claim_is_not_flagged(self, plan_context):
+        """A claim carrying a `corroborated` verdict is settled, label notwithstanding."""
+        _write_status(plan_context, [_row('PLAN-01')])
+        _lint_spec(
+            plan_context,
+            done_when='the existing form holds at `abc1234` over `fence_marker`.',
+            claims=[_HYPOTHESIS_CLAIM],
+        )
+        assert _lint_rules(cmd_corpus_lint_done_whens(_LINT_ARGS)) == {DONE_WHEN_RULE_HOLDS_AT}
+
+        stamped = cmd_corpus_set_verdict(_set_verdict_args('PLAN-01', 0))
+        result = cmd_corpus_lint_done_whens(_LINT_ARGS)
+
+        assert stamped['status'] == 'success'
+        assert result['findings'] == [], 'a settled claim is no longer the unsettled premise the rule names'
+
+    def test_a_contradicted_hypothesis_claim_is_still_flagged(self, plan_context):
+        _write_status(plan_context, [_row('PLAN-01')])
+        _lint_spec(
+            plan_context,
+            done_when='the existing form holds at `abc1234` over `fence_marker`.',
+            claims=[_HYPOTHESIS_CLAIM],
+        )
+        cmd_corpus_set_verdict(_set_verdict_args('PLAN-01', 0, verdict='contradicted', rescoped='no'))
+
+        assert _lint_rules(cmd_corpus_lint_done_whens(_LINT_ARGS)) == {DONE_WHEN_RULE_HOLDS_AT}
+
+    def test_a_hypothesis_symbol_on_a_continuation_line_is_still_read(self, plan_context):
+        """The claim's symbol may wrap; the whole claim block is scanned."""
+        _write_status(plan_context, [_row('PLAN-01')])
+        _lint_spec(
+            plan_context,
+            done_when='the existing form holds at `abc1234` over `fence_marker`.',
+            claims=[
+                '- HYPOTHESIS: the shared fence reader is owned by',
+                '  `fence_marker` today — confirm at outline',
+            ],
+        )
+
+        assert _lint_rules(cmd_corpus_lint_done_whens(_LINT_ARGS)) == {DONE_WHEN_RULE_HOLDS_AT}
+
+    def test_a_spec_with_no_done_when_contributes_no_row(self, plan_context):
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md')
+
+        result = cmd_corpus_lint_done_whens(_LINT_ARGS)
+
+        assert result['specs_total'] == 1
+        assert result['specs_with_done_when'] == 0
+        assert result['findings'] == []
+
+    def test_an_unreadable_spec_is_named_rather_than_skipped(self, plan_context):
+        _write_status(plan_context, [_row('PLAN-01'), _row('PLAN-02')])
+        _lint_spec(plan_context, done_when='the parser fails at `abc1234` while it still holds.')
+        broken = _epic_dir(plan_context) / 'plans' / 'PLAN-02-broken.md'
+        broken.write_bytes(_UNDECODABLE)
+
+        result = cmd_corpus_lint_done_whens(_LINT_ARGS)
+
+        assert result['specs_total'] == 2
+        assert result['specs_scanned'] == 1
+        assert result['unreadable_count'] == 1
+        assert result['unreadable'][0]['spec'] == 'PLAN-02-broken.md'
+
+    def test_an_unsafe_slug_is_refused(self):
+        result = cmd_corpus_lint_done_whens(_variant(_LINT_ARGS, slug='../escape'))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'invalid_slug'
+
+    def test_an_epic_with_no_store_tree_is_refused(self, plan_context):
+        result = cmd_corpus_lint_done_whens(_variant(_LINT_ARGS, slug='no-such-epic'))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'not_found'
+
+    def test_the_verb_leaves_the_tree_byte_identical(self, plan_context):
+        _write_status(plan_context, [_row('PLAN-01')])
+        _lint_spec(plan_context, done_when='the parser fails at `abc1234` while it still holds.')
+        root = _epic_dir(plan_context)
+        before = {path: path.read_bytes() for path in sorted(root.rglob('*')) if path.is_file()}
+        assert before, 'fixture tree did not materialize'
+
+        result = cmd_corpus_lint_done_whens(_LINT_ARGS)
+
+        after = {path: path.read_bytes() for path in sorted(root.rglob('*')) if path.is_file()}
+        assert after == before
+        assert result['findings_count'] == 1, (
+            'the read-only claim must be proven on a scan that actually HIT — a scan finding '
+            'nothing would leave the tree untouched vacuously'
+        )
+
+
+class TestCleanupConsumesTheLint:
+    """``cleanup`` Step 5 runs the verb and names both rules it reports."""
+
+    def _step_five(self) -> str:
+        body = section_lines(_CLEANUP_DOC.read_text(encoding='utf-8'), '### Step 5 (A3): Ambiguity')
+        return '\n'.join(body)
+
+    def test_step_five_names_the_verb_and_both_rules(self):
+        step = self._step_five()
+
+        assert 'corpus lint-done-whens' in step
+        for rule in DONE_WHEN_RULES:
+            assert f'`{rule}`' in step, rule
+
+
+# =============================================================================
+# corpus spec-skills — the declaration, its suggested fill, and the emit verdict
+# =============================================================================
+#
+# The verb is the orchestrator half of the per-deliverable declaration: it reads
+# the lines through the SAME shared reader the runbook lane loads, maps the
+# declared surface to the project's CONFIGURED domains (file type first, then the
+# module's applicable domains), and reports each domain's configured implementation
+# skills. Its `emit_allowed` is the gate `next` refuses on. The fixtures name REAL
+# repository paths, because the module mapping is a read of this repository's
+# architecture data rather than a stub.
+
+cmd_corpus_spec_skills = _orch.cmd_corpus_spec_skills
+
+_SPEC_SKILLS_ARGS = parse_ns(
+    _ORCH_BUNDLE,
+    _ORCH_SKILL,
+    _ORCH_SCRIPT,
+    'corpus',
+    'spec-skills',
+    '--slug',
+    SLUG,
+    '--plan',
+    'PLAN-01',
+    register=False,
+)
+
+#: A source path owned by a Python-domain module.
+_PYTHON_SURFACE = 'marketplace/bundles/pm-dev-python/skills/plan-marshall-plugin/extension.py'
+
+
+def _write_skills_spec(
+    plan_context,
+    surface_lines: list,
+    *,
+    skills: str = '',
+    persona: str = '',
+    name: str = 'PLAN-01-alpha.md',
+) -> Path:
+    """Write a staged spec carrying a declaration and the supplied surface."""
+    lines = [
+        '# PLAN-01: Fixture',
+        '',
+        '## Deliverables',
+        '',
+        '1. **A deliverable.**',
+        '   *Done when:* it holds at `abc1234`.',
+    ]
+    if skills:
+        lines.append(f'   - Skills: {skills}')
+    if persona:
+        lines.append(f'   - Persona: {persona}')
+    lines += ['', '## Expected Surface', '', *surface_lines]
+    path = _epic_dir(plan_context) / 'plans' / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+    return path
+
+
+class TestCorpusSpecSkills:
+    def test_a_python_spec_yields_the_python_domain_skills(self, plan_context):
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_skills_spec(
+            plan_context,
+            [f'- OBSERVED: `{_PYTHON_SURFACE}`'],
+            skills='plan-marshall:ref-toon-format',
+            persona='implementer',
+        )
+
+        result = cmd_corpus_spec_skills(_SPEC_SKILLS_ARGS)
+
+        assert result['status'] == 'success'
+        assert result['configured_domains_total'] >= 1, 'the project configuration was not read'
+        assert result['configured_domains_readable'] is True
+        assert result['suggestion_scope'] == 'spec'
+        row = result['paths'][0]
+        assert row['path'] == _PYTHON_SURFACE
+        assert row['module'] == 'pm-dev-python'
+        assert row['domain'] == 'python', 'the path file type did not place it in the python domain'
+        assert row['domain_source'] == 'file_glob'
+        assert row['mapped'] is True
+        assert row['kind'] == 'source'
+        assert row['skills'] == ['pm-dev-python:python-core', 'plan-marshall:ref-code-quality'], (
+            f"the python domain's configured implementation defaults were not returned: {row['skills']}"
+        )
+        assert result['suggested_skills'] == sorted(row['skills'])
+        assert result['suggested_persona'] == 'implementer'
+        assert result['skill_source'] == (
+            'skill_domains.{domain}.core+implementation.defaults, excluded_skills applied (project configuration)'
+        )
+        assert result['emit_allowed'] is True
+        assert result['declaration'] == 'declared'
+
+    def test_a_java_path_yields_the_java_domain_skills_when_the_project_configures_one(self, plan_context, monkeypatch):
+        """The Maven/Java arm, over a project that configures a java domain.
+
+        This repository configures NO java domain and holds no Maven module, so the
+        live configuration cannot exhibit it. The fixture supplies the java domain
+        through the same seam the production read uses, and the mapping under test
+        is the real one: a ``.java`` path resolves to the java domain and its
+        configured implementation defaults are returned verbatim.
+        """
+        _write_status(plan_context, [_row('PLAN-01')])
+        java_surface = 'test/plan-marshall/plan-orchestrator/Sample.java'
+        _write_skills_spec(plan_context, [f'- OBSERVED: `{java_surface}`'], persona='implementer')
+        java_domain = {
+            'domain': 'java',
+            'globs': ['**/*.java'],
+            'config': {
+                'implementation': {
+                    'defaults': [
+                        {'skill': 'pm-dev-java:java-core', 'description': 'Core Java standards'},
+                        {'skill': 'pm-dev-java:javadoc', 'description': 'JavaDoc standards'},
+                    ]
+                }
+            },
+        }
+        monkeypatch.setattr(_orch, '_configured_domains', lambda: ([java_domain], True, []))
+
+        result = cmd_corpus_spec_skills(_SPEC_SKILLS_ARGS)
+
+        row = result['paths'][0]
+        assert row['domain'] == 'java'
+        assert row['domain_source'] == 'file_glob'
+        assert row['skills'] == ['pm-dev-java:java-core', 'pm-dev-java:javadoc']
+
+    def test_a_path_no_file_glob_places_falls_back_to_the_modules_domain(self, plan_context):
+        """The SECOND rung, live: a .java path in this repository.
+
+        This project configures no java domain and holds no Maven module, so the file
+        type places nothing. The path's module (plan-marshall) reports a configured
+        applicable domain, and that domain's skills are returned — the fallback rung
+        exercised against the real repository data, not a stub.
+        """
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_skills_spec(plan_context, ['- OBSERVED: `test/plan-marshall/plan-orchestrator/Sample.java`'])
+
+        result = cmd_corpus_spec_skills(_SPEC_SKILLS_ARGS)
+
+        row = result['paths'][0]
+        assert row['domain_source'] == 'module_domain'
+        assert row['module'] == 'plan-marshall'
+        assert row['domain'] == 'plan-marshall-plugin-dev'
+        assert row['mapped'] is True
+
+    def test_the_suggestion_takes_core_and_implementation_after_the_project_veto(self):
+        """The veto is the project's, applied through the one shared filter."""
+        domain = {
+            'domain': 'java',
+            'globs': [],
+            'config': {
+                'bundle': 'pm-dev-java',
+                'excluded_skills': ['pm-dev-java:javadoc', 'lombok'],
+                'core': {'defaults': [{'skill': 'pm-dev-java:java-core', 'description': ''}]},
+                'implementation': {
+                    'defaults': [
+                        {'skill': 'pm-dev-java:java-core', 'description': ''},
+                        {'skill': 'pm-dev-java:javadoc', 'description': ''},
+                        {'skill': 'pm-dev-java:lombok', 'description': ''},
+                    ]
+                },
+            },
+        }
+
+        assert _orch._suggested_skills(domain) == ['pm-dev-java:java-core']
+
+    def test_an_unmapped_path_is_reported_never_guessed(self, plan_context):
+        # A bare filename is not a resolvable repo path: the surface reader reports
+        # it unresolved, and the verb surfaces it as unmapped rather than mapping
+        # it against a sibling the author never wrote.
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_skills_spec(plan_context, [f'- OBSERVED: `{_PYTHON_SURFACE}` and `b.py`'])
+
+        result = cmd_corpus_spec_skills(_SPEC_SKILLS_ARGS)
+
+        assert result['unmapped'] == ['b.py']
+        assert result['unmapped_count'] == 1
+        assert any(row['path'] == 'b.py' and row['mapped'] is False for row in result['paths'])
+
+    def test_an_unreadable_configuration_is_not_a_zero_domain_count(self, plan_context, monkeypatch):
+        # A failed configuration read must not read as "the project configures no
+        # domains": every path would be unmapped and the author told to record
+        # `none`. The payload names the failed read instead.
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_skills_spec(plan_context, [f'- OBSERVED: `{_PYTHON_SURFACE}`'])
+        monkeypatch.setattr(_orch, '_configured_domains', lambda: ([], False, []))
+
+        result = cmd_corpus_spec_skills(_SPEC_SKILLS_ARGS)
+
+        assert result['configured_domains_readable'] is False
+        assert result['suggestion_unavailable'] == 'project_configuration_unreadable'
+        assert result['paths'][0]['mapped'] is False
+        assert 'configuration' in result['paths'][0]['reason']
+
+    def test_an_unreadable_spec_is_refused_rather_than_passed_as_undeclared(self, plan_context):
+        # A failed read must never resolve to "declares nothing": that would pass the
+        # emission gate over a spec nobody read.
+        _write_status(plan_context, [_row('PLAN-01')])
+        path = _epic_dir(plan_context) / 'plans' / 'PLAN-01-alpha.md'
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b'\xff\xfe not valid utf-8 \xff')
+
+        result = cmd_corpus_spec_skills(_SPEC_SKILLS_ARGS)
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'unreadable'
+
+    def test_a_declared_skill_that_does_not_exist_refuses_the_emission(self, plan_context):
+        """The `next` fixture: a spec naming a skill the bundles do not ship."""
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_skills_spec(plan_context, [f'- OBSERVED: `{_PYTHON_SURFACE}`'], skills='plan-marshall:does-not-exist')
+
+        result = cmd_corpus_spec_skills(_SPEC_SKILLS_ARGS)
+
+        assert result['emit_allowed'] is False
+        assert result['missing_skills'] == ['plan-marshall:does-not-exist']
+        assert result['missing_probed'], 'a missing skill must name the paths that were probed'
+
+    def test_skills_none_declares_an_answered_absence_and_still_emits(self, plan_context):
+        # The template's `Skills: none` states that the project configures no domain
+        # skills; it is a declaration (the author looked), never a skill named `none`
+        # to probe — and never the same reading as a deliverable with no line at all.
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_skills_spec(plan_context, [f'- OBSERVED: `{_PYTHON_SURFACE}`'], skills='none')
+
+        result = cmd_corpus_spec_skills(_SPEC_SKILLS_ARGS)
+
+        assert result['declaration'] == 'declared', 'a Skills line is present, so the spec declared'
+        assert result['missing_skills'] == []
+        assert result['emit_allowed'] is True
+        assert result['deliverables'][0]['declared_skills'] == []
+
+    def test_a_spec_declaring_nothing_still_emits(self, plan_context):
+        # The preserved half: the lines are optional, so an undeclared spec still
+        # reaches the queue and the lane resolves `none named`.
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_skills_spec(plan_context, [f'- OBSERVED: `{_PYTHON_SURFACE}`'])
+
+        result = cmd_corpus_spec_skills(_SPEC_SKILLS_ARGS)
+
+        assert result['declaration'] == 'none named'
+        assert result['missing_skills'] == []
+        assert result['emit_allowed'] is True
+
+    def test_a_resolvable_persona_kind_resolves_and_a_missing_one_does_not(self, plan_context):
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_skills_spec(plan_context, [f'- OBSERVED: `{_PYTHON_SURFACE}`'], persona='implementer')
+        resolved = cmd_corpus_spec_skills(_SPEC_SKILLS_ARGS)
+
+        _write_skills_spec(plan_context, [f'- OBSERVED: `{_PYTHON_SURFACE}`'], persona='astronaut')
+        missing = cmd_corpus_spec_skills(_SPEC_SKILLS_ARGS)
+
+        assert resolved['emit_allowed'] is True
+        assert missing['emit_allowed'] is False
+        assert missing['missing_skills'] == ['persona-astronaut']
+
+    def test_the_surface_is_read_through_the_single_reader(self, plan_context):
+        # A spec with no `## Expected Surface` at all: the verb reports the
+        # reader's own state and suggests nothing, rather than inventing a surface.
+        _write_status(plan_context, [_row('PLAN-01')])
+        path = _epic_dir(plan_context) / 'plans' / 'PLAN-01-alpha.md'
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text('# PLAN-01\n\n## Deliverables\n\n1. **A deliverable.**\n', encoding='utf-8')
+
+        result = cmd_corpus_spec_skills(_SPEC_SKILLS_ARGS)
+
+        assert result['surface_derivation_status'] == SURFACE_ABSENT
+        assert result['surface_paths_total'] == 0
+        assert result['suggested_skills'] == []
+        assert result['emit_allowed'] is True
+
+    def test_an_unsafe_slug_is_refused(self):
+        result = cmd_corpus_spec_skills(_variant(_SPEC_SKILLS_ARGS, slug='../escape'))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'invalid_slug'
+
+    def test_an_absent_spec_is_refused_with_the_available_specs(self, plan_context):
+        _write_status(plan_context, [_row('PLAN-09')])
+
+        result = cmd_corpus_spec_skills(_variant(_SPEC_SKILLS_ARGS, plan='PLAN-77'))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'spec_not_found'
+        assert 'available_specs' in result
+
+    def test_the_verb_leaves_the_tree_byte_identical(self, plan_context):
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_skills_spec(plan_context, [f'- OBSERVED: `{_PYTHON_SURFACE}`'], skills='plan-marshall:ref-toon-format')
+        root = _epic_dir(plan_context)
+        before = {path: path.read_bytes() for path in sorted(root.rglob('*')) if path.is_file()}
+        assert before, 'fixture tree did not materialize'
+
+        result = cmd_corpus_spec_skills(_SPEC_SKILLS_ARGS)
+
+        after = {path: path.read_bytes() for path in sorted(root.rglob('*')) if path.is_file()}
+        assert after == before
+        assert result['surface_paths_total'] == 1, (
+            'the read-only claim must be proven on a read that actually RESOLVED a path'
+        )
+
+
+class TestNextConsumesTheDeclarationGate:
+    """Step 4 of ``orchestrate.md`` refuses a candidate whose declaration is missing."""
+
+    def test_step_four_names_the_emit_verdict_as_a_conjunct(self):
+        step = _step_4_section()
+
+        assert 'corpus spec-skills' in step
+        assert 'emit_allowed' in step
+        assert 'missing_skills' in step
+
+    def test_cleanup_step_five_flags_a_spec_with_no_declaration(self):
+        body = section_lines(_CLEANUP_DOC.read_text(encoding='utf-8'), '### Step 5 (A3): Ambiguity')
+        step = '\n'.join(body)
+
+        assert 'corpus spec-skills' in step
+        assert 'none named' in step
