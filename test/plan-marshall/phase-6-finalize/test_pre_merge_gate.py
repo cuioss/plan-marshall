@@ -726,6 +726,9 @@ def test_the_production_chain_reads_the_roster_the_producer_and_the_predicate(mo
 
     predicate_argv = calls[2][1]
     assert predicate_argv[0] == 'check'
+    # The findings store is PLAN-scoped: the merge-deciding predicate must be scoped to the
+    # PR being merged, or an earlier PR of this plan joins its verdict.
+    assert predicate_argv[predicate_argv.index('--pr-number') + 1] == '42'
     assert predicate_argv[-1] == '--triage-ran', 'the merge runs after triage, so a pending finding must block'
     # The producer emits RECORDS; the predicate consumes PAIRS. One conversion site.
     assert 'coderabbit:review_body' in predicate_argv

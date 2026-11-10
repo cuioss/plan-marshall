@@ -248,6 +248,9 @@ Return TOON shape (check):
     guard_reason: refused_structural     # escalation only — the member that selected it
     guard_bot_kind: bot                  # escalation only — the REQUIRED bot that refused
     guard_refusal_cause: size            # escalation only
+    guard_refusal_class: <bot's rate_limit_class>  # escalation only — the declared class,
+                                         # reported because the refusal_structural envelope
+                                         # carries refusal_class; never consulted for routing
     guard_cap: <ceiling its notice stated|unknown>       # escalation only
     guard_refused_diff_size: <measured diff|unknown>     # escalation only — the size
                                          # of the refused diff (a DIFFERENT field from
@@ -414,10 +417,10 @@ CAUSE_SIZE = 'size'
 _REVIEWED_STATES = frozenset({STATE_PARTICIPATED, STATE_PARTICIPATED_BUT_EMPTY})
 
 # The two actions the participation guard can take on a ``participation_complete:
-# false`` verdict. ``LOOP_BACK`` is the default the guard has always taken: treat the
-# unproven participation as an un-surfaced review and re-enter FIND. ``ESCALATE_ASK``
-# is the STRUCTURAL exception — a required bot whose refusal is a ceiling on the DIFF
-# gets asked about, because no loop-back can change its answer.
+# false`` verdict. ``LOOP_BACK`` is the ordinary default: treat the unproven
+# participation as an un-surfaced review and re-enter FIND. ``ESCALATE_ASK`` is the
+# STRUCTURAL exception — a required bot whose refusal is a ceiling on the DIFF gets
+# asked about, because no loop-back can change its answer.
 GUARD_ACTION_LOOP_BACK = 'loop_back'
 GUARD_ACTION_ESCALATE_ASK = 'escalate_ask'
 
@@ -1141,12 +1144,20 @@ def _scope_findings(findings: list[dict], pr_number: int | None) -> dict:
     - a row whose PR is some OTHER number is foreign and is dropped — the caller is
       asking about one PR, and another PR's review says nothing about it;
     - a row with NO number is LEGACY (written before the producer stamped one). It
-      joins only when the store cannot be shown to span more than one PR — because
-      then, and only then, "the plan's other PR" does not exist. The known population
-      is the distinct numbers the rows DO carry plus ``pr_number`` itself: a store
-      holding only PR 5's rows while PR 5 is asked about has one PR, so its legacy
+      joins only when the store cannot be shown to span more than one PR. The known
+      population is the distinct numbers the rows DO carry plus ``pr_number`` itself: a
+      store holding only PR 5's rows while PR 5 is asked about has one PR, so its legacy
       rows are that PR's; a store holding PR 4's rows while PR 5 is asked about spans
       two, so its legacy rows are reported as ``unscoped`` rather than assigned.
+
+    ⚠ **The test is the STORE's evidence, not a plan-level PR registry — and no such
+    registry exists** (``manage-status`` carries no PR field). A plan whose every legacy
+    row belongs to a *different* PR therefore reads as single-PR and joins, which is the
+    fail-open direction. It is the only reachable reading: the alternative — treating
+    every legacy row as unscoped — would drop the genuinely single-PR plan's findings,
+    which is the behaviour this scoping must preserve. Both producers have stamped the
+    PR since the field existed, so the population it affects is the pre-stamp tail of a
+    plan that has since worked a second PR.
 
     ⛔ **Unscoped is REPORTED, never joined silently.** A legacy row on a multi-PR plan
     is a real finding nobody can place, and assigning it to the current PR is exactly
@@ -1263,8 +1274,7 @@ def guard_disposition(
     arrive, so the step re-enters the FIND pipeline and waits. That default is wrong
     for exactly one member. A required bot on ``refused_structural`` refused because
     the DIFF is over a ceiling its own notice stated, so no loop-back and no wait can
-    change its answer — the guard text says so in as many words — yet the branch it
-    reached looped back anyway, and the loop could only ask the same question again.
+    change its answer — a point the guard text makes in as many words.
 
     ``refused_structural`` therefore escalates instead, with Branch 0's envelope and
     Branch 0's option set (split the diff, or accept the gap under a recorded merge
@@ -1272,8 +1282,7 @@ def guard_disposition(
     the states the predicate just classified, rather than re-derived by a reader of
     the document: the refusal can be observed on EITHER surface — a rate-limit notice
     carrying a ``size`` cause, or a ``refused_causes`` entry the findings fetch
-    reported — and a document that routed it from only the first would loop back for
-    the second.
+    reported — and both reach this one verdict through the same classification.
 
     ⛔ **The knob is not an input, and that is the point.** ``review_rate_window_await``
     arms the rate-limit RECOVERY sequence; it says nothing about whether a structural
@@ -1301,6 +1310,11 @@ def guard_disposition(
             'reason': STATE_REFUSED_STRUCTURAL,
             'bot_kind': bot,
             'refusal_cause': CAUSE_SIZE,
+            # The bot's DECLARED rate-limit class travels with the escalation because
+            # the ``refusal_structural`` envelope shape carries ``refusal_class``, and
+            # this path has no other source for it. It is reported, never consulted: the
+            # ceiling on the diff, not the class, is what selected this route.
+            'refusal_class': bot_registry.rate_limit_class(bot),
             'cap': caps.get(bot) or 'unknown',
             'measured_diff_size': measured_diff_size or 'unknown',
             'prompt_options': list(GUARD_STRUCTURAL_OPTIONS),
@@ -1562,7 +1576,7 @@ def check_completeness(
         # The CAUSE axis per refusing bot with the ceiling its notice stated. Names the
         # remedy; state-determining for ``size``, advisory for every other value.
         'refusal_causes': refusal_causes_out,
-        # What the guard DOES with this verdict. ``loop_back`` is the historical default;
+        # What the guard DOES with this verdict. ``loop_back`` is the ordinary default;
         # ``escalate_ask`` with ``reason: refused_structural`` is the structural
         # exception, decided from the states just classified so a reader of the document
         # never has to re-derive it — and so the decision is identical whichever surface
@@ -1649,6 +1663,16 @@ def check_deficit(
     # skipping it here would make the two commands report different states for one
     # refusal — the disagreement the docstring above forbids.
     causes_in = recover_causes_from_caps(refused_causes, refusal_size_caps)
+
+    # The findings read here is NOT PR-scoped, deliberately. This signal measures a
+    # reviewer's YIELD across the plan's whole record — how much a required reviewer
+    # produced against a baseline — so narrowing it to one pull request would compare a
+    # reviewer's output against a baseline drawn from a different population. The
+    # consequence is stated rather than hidden: on a plan that spans several PRs, a bot
+    # can read ``participated`` here (an earlier PR filed findings) and
+    # ``participated_but_empty`` from a PR-scoped ``check``. The two verdicts answer
+    # different questions — yield over the plan vs participation in one PR — and the
+    # scoped one is the one that gates a merge.
 
     reviewers: list[dict] = []
     for bot in classified:
@@ -1777,6 +1801,7 @@ def _emit_toon(payload: dict) -> None:
         emitted['guard_reason'] = guard.get('reason', '')
         emitted['guard_bot_kind'] = guard.get('bot_kind', '')
         emitted['guard_refusal_cause'] = guard.get('refusal_cause', '')
+        emitted['guard_refusal_class'] = guard.get('refusal_class', '')
         emitted['guard_cap'] = guard.get('cap') or 'unknown'
         emitted['guard_refused_diff_size'] = guard.get('measured_diff_size') or 'unknown'
         emitted['guard_prompt_options'] = list(guard.get('prompt_options') or [])
@@ -2307,10 +2332,14 @@ def cmd_trigger_bot(args: argparse.Namespace) -> int:
         stored_findings_stale=bool(reviewed_sha and head_sha and reviewed_sha != head_sha),
     )
     # The scope travels with the list: a caller must be able to tell that the join it
-    # got was scoped to its PR, and which rows nobody can place.
+    # got was scoped to its PR, and which rows nobody can place. The unscoped fields are
+    # emitted only when there IS such a row — a permanent ``0`` beside a clean list is
+    # noise, and the return shape documents them as conditional.
     payload['store_scope'] = read.get('store_scope', 'unscoped')
-    payload['unscoped_stored_findings'] = read.get('unscoped_stored_findings', 0)
-    payload['unscoped_stored_finding_ids'] = list(read.get('unscoped_stored_finding_ids') or [])
+    unscoped_ids = list(read.get('unscoped_stored_finding_ids') or [])
+    if unscoped_ids:
+        payload['unscoped_stored_findings'] = len(unscoped_ids)
+        payload['unscoped_stored_finding_ids'] = unscoped_ids
     print(serialize_toon(payload))
     return 0
 

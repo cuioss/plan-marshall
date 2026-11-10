@@ -1350,7 +1350,7 @@ Read `participation_complete`, `pending_bots`, `unproven_bots`, `bot_states`, `k
 
   ⛔ **Read `guard_action` from the return FIRST, and take it as the decision.** The predicate decides what this verdict DOES, from the states it has just classified, so no reader re-derives it: `guard_action: loop_back` (the ordinary case) falls through to path 1 below; `guard_action: escalate_ask` with `guard_reason: refused_structural` is the STRUCTURAL exception and takes path 1a.
 
-  **1a. Escalate a STRUCTURAL refusal — do NOT record a loop-back.** When `guard_action` is `escalate_ask` with `refused_structural`, a REQUIRED bot refused because the DIFF is over a ceiling its notice stated, so no loop-back and no wait can change its answer. Decision-log, then return `status: escalate_ask` with `reason: refusal_structural` — **Branch 0's envelope**, whose field set is defined once in "Output" below and is NOT restated here. Render `prompt_options[]` from the return's `guard_prompt_options` verbatim, which is **exactly TWO options — split the diff, or accept the coverage gap under a recorded merge authorization — and NEVER a wait and never a demotion** (Branch 0 states why). Carry the return's `guard_bot_kind`, `guard_refusal_cause`, `guard_cap` and `guard_refused_diff_size` as the envelope's `{bot_kind}`, `refusal_cause`, `cap` and `measured_diff_size`; each is the literal `unknown` when unmeasured, never a default.
+  **1a. Escalate a STRUCTURAL refusal — do NOT record a loop-back.** When `guard_action` is `escalate_ask` with `refused_structural`, a REQUIRED bot refused because the DIFF is over a ceiling its notice stated, so no loop-back and no wait can change its answer. Decision-log, then return `status: escalate_ask` with `reason: refusal_structural` — **Branch 0's envelope**, whose field set is defined once in "Output" below and is NOT restated here. Render `prompt_options[]` from the return's `guard_prompt_options` verbatim, which is **exactly TWO options — split the diff, or accept the coverage gap under a recorded merge authorization — and NEVER a wait and never a demotion** (Branch 0 states why). Carry the return's `guard_bot_kind`, `guard_refusal_class`, `guard_refusal_cause`, `guard_cap` and `guard_refused_diff_size` as the envelope's `{bot_kind}`, `refusal_class`, `refusal_cause`, `cap` and `measured_diff_size`; each is the literal `unknown` when unmeasured, never a default. Set `timed_out: false` (nothing was awaited) and compose `display_detail` from the same fields, exactly as the variant's shape in "Output" below prescribes.
 
   ```bash
   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -1567,7 +1567,7 @@ This step returns `status: escalate_ask` instead of `success`/`loop_back` on fiv
 - **`reason: rate_window_timeout`** — **not returned by this step.** It has ONE entry path: the main-context wait that follows a `rate_window_await` return spent `review_rate_window_timeout_seconds` with the window still open. Item 7a then releases the claim and takes this reason's handling itself, building the envelope below from the `rate_window_await` return it was waiting on. A wait call that fails is not this reason — see [`../phase-6-finalize/SKILL.md`](../phase-6-finalize/SKILL.md) Step 3 item 7a, which owns the rule.
 - **`reason: rate_window_not_awaitable`** — the "Rate-limit refusal recovery" Branch 1 fired: the refusing bot's `rate_limit_class` is `hard_quota` or `unknown`, so no await and no event generation is productive. Escalates immediately without claiming a window.
 - **`reason: rate_window_exhausted`** — the "Rate-limit refusal recovery" Branch 2 claim returned `recovery_cap_exhausted`: this PR has already spent its `attempt_cap` recovery events for this bot. Cap exhaustion is an explicit escalation, never a silent give-up.
-- **`reason: refusal_structural`** — the "Rate-limit refusal recovery" Branch 0 fired: the refusal's cause is `size`, so the bot resolved to `refused_structural` and the limit is a ceiling on the diff rather than a window. Escalates immediately, awaiting nothing, and its `prompt_options[]` offer no wait — the only escalation here for which waiting is not merely unproductive but unavailable.
+- **`reason: refusal_structural`** — a REQUIRED bot resolved to `refused_structural`: the refusal's cause is `size`, so the limit is a ceiling on the diff rather than a window. **TWO sites return it** — the "Rate-limit refusal recovery" Branch 0 (the refusal was observed on the rate-limit surface) and the step-done participation guard's path 1a (it was observed on the findings surface, e.g. a `refused_causes[]` entry); both are the same finding and both build the envelope below. Escalates immediately, awaiting nothing, and its `prompt_options[]` offer no wait — the only escalation here for which waiting is not merely unproductive but unavailable.
 
 In all cases the dispatched leaf does NOT fire `AskUserQuestion` itself — it returns this envelope and the inline orchestrator (phase-6-finalize SKILL.md Step 3 item 7a) owns the continuation: a prompt for every asking reason, a wait for `rate_window_await`.
 
@@ -1640,8 +1640,9 @@ prompt_options[3]:
   - "Defer merge"
 ```
 
-The STRUCTURAL variant (`refusal_structural`, Branch 0) is a **third shape, not a fifth `reason` on
-the one above**, because its option set is disjoint from theirs:
+The STRUCTURAL variant (`refusal_structural`, returned by Branch 0 and by the participation guard's
+path 1a) is a **third shape, not a fifth `reason` on the one above**, because its option set is
+disjoint from theirs:
 
 ```toon
 status: escalate_ask

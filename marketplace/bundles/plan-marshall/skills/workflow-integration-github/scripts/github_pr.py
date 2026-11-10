@@ -1143,13 +1143,11 @@ def _stored_pr_comment_hashes(findings: list[dict]) -> dict[tuple[str, str], str
 # dropped as noise (a clean summary with no concern) are treated identically — the
 # ledger records the credit regardless of whether the comment produced a finding.
 #
-# Recording BOTH the SHA and the ``updated_at`` is load-bearing. Anchoring on the SHA
-# alone leaves the edit-movement arm a permanent "was ever edited" flag: once a
-# comment is edited at some commit, ``updated_at != created_at`` stays true forever,
-# so every later HEAD advance would keep crediting it even though the bot never
-# reviewed those commits. Comparing ``updated_at`` against the value recorded at the
-# LAST credit instead ("edited since we last credited it") closes that hole: an edit
-# at commit N credits N, but not N+1, N+2 unless a FURTHER edit lands.
+# Recording BOTH the SHA and the ``updated_at`` keeps the ledger a complete record of
+# each credit: the SHA is what the currency test compares against the merge candidate,
+# and the timestamp is the provenance of the observation that produced it — which credit
+# landed when, and against what. Neither is read as a movement test: a comment's own
+# ``updated_at`` says the bot touched its comment, never which commit it reviewed.
 #
 # It sits BESIDE the findings store (the same ``artifacts/`` root) rather than
 # inside ``artifacts/findings/``, and that placement is load-bearing: these are
@@ -1219,12 +1217,12 @@ def _recorded_currency_records(plan_id: str) -> dict[tuple[str, str], CurrencyRe
 
     The currency ledger the currency test reads. Each entry is the ``(sha,
     updated_at)`` at which a ``participation_requires_update`` comment was LAST
-    credited — the SHA to compare against the merge candidate, and the ``updated_at``
-    to compare against the comment's current value so a fresh in-place edit
-    (``updated_at`` moved past the recorded one) re-credits it while an old edit does
-    not. Only prior fetches contribute — the current fetch's credits are appended
-    after the participation loop has read this map, so a comment observed for the
-    first time still takes the first-observation arm on the run that observed it.
+    credited — the SHA is what the test compares against the merge candidate, and the
+    ``updated_at`` records when that credit was observed. The timestamp is provenance,
+    not a credit test: a comment's own ``updated_at`` moving is not evidence about the
+    commit it reviewed. Only prior fetches contribute — the current fetch's credits are
+    appended after the participation loop has read this map, so a comment observed for
+    the first time still takes the first-observation arm on the run that observed it.
     Last row wins per key, so a re-credit at a new HEAD supersedes the old record.
 
     A missing ledger reads as the empty map (no fetch has run for this plan yet).
@@ -1390,9 +1388,6 @@ def _reviewed_at_merge_candidate(
       read the arm keeps its SHA-only behaviour, because an unreadable timestamp is
       not an ordering claim; that unresolved read is disclosed by the caller rather
       than turned into a new blocking state here.
-    - **Fresh edit** — REMOVED, deliberately, and not to be reintroduced as a credit
-      arm. A moved ``updated_at`` proves the bot touched its comment, not which commit
-      the comment now reviews. See the closing paragraph below.
     - **Invalid legacy record** — a row that exists but carries no usable reviewed
       SHA (:data:`INVALID_LEGACY_RECORD`) yields False outright. It is neither a
       first observation nor a usable anchor, and reading it as either is how a
@@ -1402,19 +1397,16 @@ def _reviewed_at_merge_candidate(
     A comment last credited against an EARLIER commit yields False: stale evidence,
     which is neither absence nor participation.
 
-    ⛔ **AN EDIT ALONE IS NOT EVIDENCE, and there is no fresh-edit arm.** A moved
+    ⛔ **An EDIT is not evidence, and ``updated_at`` is never a credit test.** A moved
     ``updated_at`` says the bot touched its comment; it does not say what the comment
-    now claims. Crediting it was the defect this arm's removal closes: a bot that
-    edited its marker-bearing summary for any reason at all — a typo, a re-worded
-    footer, its own in-progress state — after the head advanced was scored as having
-    reviewed the new commit, although nothing in the comment named it. Credit now
-    requires what the neighbouring arms already require: the comment's OWN evidence
-    must name the merge candidate (the named-commit arm, which the caller evaluates
-    first and which covers a coverage marker, a provider-reported ``commit_id`` and a
-    full id written into the body), or the ledger must place it at that commit
-    (``recorded_sha == merge_candidate_sha``). A comment whose evidence names no
-    commit AND whose recorded SHA is an earlier commit is therefore STALE, which is
-    the honest verdict — the remedy is a re-review, not a manufactured credit.
+    now claims, so a marker-bearing summary re-worded, corrected or flipped to its own
+    in-progress state cannot be scored as a review of the current commit. Credit comes
+    from exactly two sources: the comment's OWN evidence naming the merge candidate (the
+    named-commit arm the caller evaluates first, which covers a coverage marker, a
+    provider-reported ``commit_id`` and a full id written into the body), or a ledger row
+    anchored at that commit (``recorded_sha == merge_candidate_sha``). A comment whose
+    evidence names no commit and whose recorded SHA is an earlier commit is STALE — the
+    honest verdict, whose remedy is a re-review.
     """
     comment_id = str(comment.get('id') or 'unknown')
     record = currency_records.get((bot_kind, comment_id))

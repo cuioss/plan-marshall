@@ -961,3 +961,43 @@ class TestTheParticipationGuardEscalatesAStructuralRefusal:
 
         assert _state_of(result, 'sourcery') in {rc.STATE_REFUSED_HARD, rc.STATE_REFUSED_AWAITABLE}
         assert result['guard_action']['action'] == rc.GUARD_ACTION_LOOP_BACK
+
+    def test_the_escalation_is_emitted_in_the_check_toon(self, plan_context):
+        """The escalation reaches a READER, not only the Python payload.
+
+        Every assertion above reads the dict. A mis-spelled emitted key — the copy a
+        consumer actually sees — would pass all of them, so the TOON is parsed here and
+        held to the names the documented shape uses.
+        """
+        plan_id = 'structural-guard-toon'
+        plan_context.plan_dir_for(plan_id)
+
+        result = run_script(
+            SCRIPT_PATH,
+            'check',
+            '--plan-id',
+            plan_id,
+            '--pr-number',
+            '132',
+            '--required-bots',
+            'sourcery',
+            '--refused-bots',
+            'sourcery',
+            '--refused-causes',
+            'sourcery:size',
+            '--measured-diff-size',
+            '210000 diff characters',
+        )
+
+        assert result.returncode == 0, result.stderr
+        emitted = result.toon()
+        assert emitted['guard_action'] == 'escalate_ask'
+        assert emitted['guard_reason'] == 'refused_structural'
+        assert emitted['guard_bot_kind'] == 'sourcery'
+        assert emitted['guard_refusal_cause'] == 'size'
+        assert emitted['guard_refusal_class'], 'the envelope requires refusal_class'
+        assert emitted['guard_refused_diff_size'] == '210000 diff characters'
+        assert emitted['store_scope'] == 'pr'
+        options = emitted['guard_prompt_options']
+        assert 2 <= len(options) <= 3
+        assert not [option for option in options if _WAIT_OFFER.search(option)]

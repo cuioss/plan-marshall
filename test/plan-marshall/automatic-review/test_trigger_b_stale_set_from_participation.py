@@ -455,3 +455,44 @@ def _state(result: dict, bot: str) -> str:
         if record['bot_kind'] == bot:
             return str(record['state'])
     raise AssertionError(f'{bot} missing from bot_states: {result["bot_states"]}')
+
+
+#: Detail shapes the two recognisers must classify identically: the producer's own
+#: stamp, a legacy row, a line that is NOT first (which must not be read as the origin),
+#: and a non-numeric value.
+_PR_RECOGNISER_SAMPLES = (
+    'pr_number: 132\nkind: inline\n',
+    'pr_number: 7',
+    'kind: inline\npr_number: 132\n',
+    'pr_number: not-a-number\n',
+    'pr_number: 1320\n',
+    '',
+)
+
+
+def test_the_two_pr_recognisers_agree_on_every_shape():
+    """One fact, two readers — held to the same answer on the producer's own shapes.
+
+    The store's PR line is read by the producer verbatim
+    (``github_pr._PR_NUMBER_DETAIL``, which routes ``post_responses``) and by this
+    consumer (``review_completeness._FINDING_PR_NUMBER``, which scopes the quorum read).
+    A recogniser that drifted would split one review's provenance across two answers, so
+    the shapes below are run through both. ``importlib`` resolves ``github_ops`` first:
+    importing ``github_pr`` ahead of it closes an import cycle on a partially
+    initialised module.
+    """
+    import importlib
+
+    importlib.import_module('github_ops')
+    github_pr = importlib.import_module('github_pr')
+
+    for detail in _PR_RECOGNISER_SAMPLES:
+        producer = github_pr._PR_NUMBER_DETAIL.match(detail)
+        consumer = rc._FINDING_PR_NUMBER.match(detail)
+        assert (producer is None) == (consumer is None), f'recognisers disagree on presence for {detail!r}'
+        if producer is not None and consumer is not None:
+            assert producer.group('id') == consumer.group('id'), f'recognisers disagree on the id for {detail!r}'
+
+    # The samples must actually exercise both answers, or the parity is vacuous.
+    assert sum(1 for detail in _PR_RECOGNISER_SAMPLES if rc._FINDING_PR_NUMBER.match(detail)) >= 3
+    assert sum(1 for detail in _PR_RECOGNISER_SAMPLES if not rc._FINDING_PR_NUMBER.match(detail)) >= 2
