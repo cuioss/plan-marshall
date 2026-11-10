@@ -1034,6 +1034,30 @@ def _check_participation(plan_id: str, pr_number: int, project_dir: str) -> dict
                 'an unknown verdict is never a pass'
             ),
         }
+    # The scope the predicate read under, and the rows it could not place. A legacy
+    # (pre-stamp) row on a store that spans several PRs is EXCLUDED from the read, so it
+    # never reaches the pending-finding input — which makes it a silent hole in a gate
+    # that decides a merge. It is named and refused rather than forwarded as a clean
+    # verdict: assigning such a row to this PR would be the silent join the scoping
+    # exists to prevent, and ignoring it would hide a pending finding.
+    unscoped_ids = list(checked.get('unscoped_stored_finding_ids') or [])
+    if unscoped_ids:
+        return {
+            'status': 'error',
+            'error': 'participation_scope_ambiguous',
+            'roster_read': True,
+            'required_bots': required,
+            'optional_bots': optional,
+            'store_scope': checked.get('store_scope'),
+            'unscoped_stored_findings': len(unscoped_ids),
+            'unscoped_stored_finding_ids': unscoped_ids,
+            'reason': (
+                f'{len(unscoped_ids)} stored finding(s) could not be placed at any one PR '
+                f'({", ".join(unscoped_ids)}); the store spans more than one PR and these rows '
+                'predate the PR stamp, so neither joining them to this PR nor ignoring them is '
+                'an answer the gate may choose'
+            ),
+        }
     return {
         'status': 'success',
         'participation_complete': checked.get('participation_complete') is True,
@@ -1043,6 +1067,7 @@ def _check_participation(plan_id: str, pr_number: int, project_dir: str) -> dict
         'unproven_bots': list(checked.get('unproven_bots') or []),
         'bot_states': list(checked.get('bot_states') or []),
         'proves': checked.get('proves'),
+        'store_scope': checked.get('store_scope'),
         # The predicate can answer ``participation_complete: false`` with every bot a
         # proofed participant — that is a required finding still ``pending`` once triage
         # has run (see ``review_completeness``). Name it here, so a refusal built from

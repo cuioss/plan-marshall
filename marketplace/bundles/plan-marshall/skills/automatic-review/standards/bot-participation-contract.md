@@ -429,9 +429,10 @@ assumption.
 
 **Why the ledger does not infer from movement.** A review the bot edited in place is indistinguishable
 from one it merely re-worded when only the timestamp is consulted: both move `updated_at` exactly as a
-review of the merge candidate does. What places such a review is therefore either the comment's own
-statement — a named commit, or a coverage marker — or the first-observation arm's bounded assumption,
-and neither is read off the comment's edit history.
+review of the merge candidate does. What places such a review is therefore the comment's own statement
+— a named commit, or a coverage marker — or a ledger row whose recorded commit IS the merge candidate,
+or the first-observation arm's bounded assumption. None of the three is read off the comment's edit
+history.
 
 **What counts as naming a commit.** Only a FULL commit id, bare or inside a permalink, read through
 the one commit recogniser (`_github_pr.commit_tokens`, narrowed by `_github_pr.named_commits`). An

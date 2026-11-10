@@ -403,7 +403,8 @@ presence proves only that the bot reviewed at some *earlier* commit; after a for
 loop-back an unedited comment would silently credit CodeRabbit with reviewing code it never saw.
 That is the false-positive direction, and `participation_requires_update: true` closes it: every
 declared-shape comment must clear the currency test, which anchors the credit to the merge candidate
-through the plan-scoped **currency ledger** — the sole source that test reads. The credit holds when
+through the plan-scoped **currency ledger** — the sole source that test reads for a comment whose own
+text names no commit (a named commit is decided by that commit, ahead of any ledger arm). The credit holds when
 the SHA the ledger recorded for this comment IS the merge candidate, or when the ledger holds no row
 for it and this fetch observes it at a resolvable merge candidate the comment does not demonstrably
 predate. An in-place edit credits nothing on its own: a moved `updated_at` says the comment was

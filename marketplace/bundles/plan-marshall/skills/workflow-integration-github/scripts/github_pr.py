@@ -1404,12 +1404,14 @@ def _reviewed_at_merge_candidate(
     comment is one of: its OWN evidence naming the merge candidate (the named-commit arm
     the caller evaluates first, which covers a coverage marker, a provider-reported
     ``commit_id`` and a full id written into the body); a ledger row anchored at that
-    commit (``recorded_sha == merge_candidate_sha``); the first-observation assumption,
-    available only when nothing is recorded and bounded by the comment not predating the
-    commit; or — for a comment the test placed at an EARLIER commit — the bot's own
-    ``no_unreviewed_commit`` reply written after that commit existed. A comment whose
-    evidence names no commit and whose recorded SHA is an earlier commit, with no such
-    reply, is STALE — the honest verdict, whose remedy is a re-review.
+    commit (``recorded_sha == merge_candidate_sha``); or the first-observation assumption,
+    available only when nothing is recorded, bounded by the comment not predating the
+    commit, and withheld entirely on the refusal path (``allow_first_observation=False``,
+    where an unanchored comment beside a refusal proves only that it existed). A comment
+    whose evidence names no commit and whose recorded SHA is an earlier commit is STALE
+    here — the honest verdict for THIS comment. Lifting a bot's stale verdict needs the
+    bot's own later statement, which is a BOT-level arm applied after this predicate:
+    :func:`_stale_review_covered_by_reply`.
     """
     comment_id = str(comment.get('id') or 'unknown')
     record = currency_records.get((bot_kind, comment_id))
@@ -1840,7 +1842,9 @@ def cmd_fetch_findings(args):
     refutes the unconditional claim — a fetch at the SAME HEAD whose head-SHA read fails
     yields the undecidable outcome instead of the credit, so the answer changed without
     any observation state being consumed. An in-place EDIT is not a credit: it moves the
-    comment, not the ledger's anchor, so only a recorded SHA equal to the merge candidate
+    comment, not the ledger's anchor: an edit adds nothing on top of the arms that
+    already place a comment (its own named commit, or a recorded SHA equal to the merge
+    candidate), and it never places one those arms reject.
     places the comment at that commit.
 
     One arm outranks the ledger: a comment of such a bot whose OWN EVIDENCE names a

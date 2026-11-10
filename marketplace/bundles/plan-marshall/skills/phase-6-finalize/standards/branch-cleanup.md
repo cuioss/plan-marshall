@@ -1041,7 +1041,9 @@ python3 .plan/execute-script.py plan-marshall:automatic-review:review_completene
 
 `--pr-number` scopes the findings read to this pull request. The plan's findings store is
 plan-scoped, so without it an EARLIER PR's stored review joins this PR's verdict — and this is the
-call that decides a merge.
+call that decides a merge. A row the predicate could not place at any one PR (a pre-stamp row on a
+store that spans more than one) travels in `unscoped_stored_findings`; the `pre_merge_gate merge`
+dispatch refuses such a verdict with `participation_scope_ambiguous` rather than reading it as clean.
 
 Append the bare `--not-triggered` flag to that call when and only when the read above reported `has_pull_request_run: false`. It is a `store_true` bool carrying no value of its own, so it is never interpolated and never quoted — the quoting discipline below governs the list flags only.
 
