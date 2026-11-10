@@ -420,6 +420,35 @@ def test_fix_remove_maps_subagent_to_the_map_task_key(
     assert 'task' not in _load(config)['permission']
 
 
+def test_fix_remove_drops_only_the_named_map_pattern(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    """A map's other rows survive a removal that names one pattern."""
+    monkeypatch.chdir(tmp_path)
+    config = tmp_path / 'opencode.json'
+    config.write_text(
+        json.dumps({'permission': {'read': {'old.md': 'allow', '/etc/shadow': 'deny'}}}), encoding='utf-8'
+    )
+
+    result = parse_toon(runtime.permission_fix('project', 'remove', ['Read(old.md)'], False))
+
+    assert result['removed'] == 1
+    assert _load(config)['permission']['read'] == {'/etc/shadow': 'deny'}
+
+
+def test_fix_ensure_keeps_a_pattern_map(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    """A category catch-all becomes the map's own ``*`` row, never a replacement map."""
+    monkeypatch.chdir(tmp_path)
+    config = tmp_path / 'opencode.json'
+    config.write_text(json.dumps({'permission': {'read': {'/etc/shadow': 'deny'}}}), encoding='utf-8')
+
+    runtime.permission_fix('project', 'ensure', ['read'], False)
+
+    assert _load(config)['permission']['read'] == {'/etc/shadow': 'deny', '*': 'allow'}
+
+
 def test_a_bare_task_grant_on_a_map_file_writes_task(
     runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ):

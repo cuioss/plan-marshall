@@ -348,10 +348,11 @@ def cmd_add(args: argparse.Namespace) -> dict:
 def _opencode_add(settings_path: Path, settings: dict[str, Any], permission: str) -> dict:
     """Add one grant to an OpenCode file in whichever shape the file carries.
 
-    The OpenCode 2 list is written through the runtime's own upsert, and the
-    OpenCode 1 map through its map branch, so this subcommand cannot index a
-    shape the file does not have. A conflict from the upsert is reported as an
-    error rather than as a silent no-op.
+    The OpenCode 2 list is written through the runtime's own upsert. The
+    OpenCode 1 map keeps its pattern entries and gains the grant as a pattern
+    row, or as the map's own ``*`` row, so this subcommand cannot index a shape
+    the file does not have. A conflict from the upsert is reported as an error
+    rather than as a silent no-op.
     """
     from opencode_runtime import (
         _permission_action,
@@ -530,23 +531,23 @@ def _opencode_remove(settings_path: Path, settings: dict[str, Any], permission: 
     else:
         existing = perm[map_key]
         if isinstance(existing, dict):
-            if pat in existing:
-                del existing[pat]
-            elif pat == '*' and '*' in existing:
-                del existing['*']
-            else:
+            entry = pat if pat in existing else ('*' if pat == '*' and '*' in existing else None)
+            if entry is None:
                 result.update(not_found)
                 return result
+            del existing[entry]
         elif pat != '*':
             result.update(not_found)
             return result
         else:
             del perm[map_key]
-    result['action'] = 'removed'
     result['success'] = save_settings(str(settings_path), settings)
-    if not result['success']:
-        result['error'] = 'Failed to save settings'
     result['status'] = 'success' if result['success'] else 'error'
+    if result['success']:
+        result['action'] = 'removed'
+    else:
+        result['action'] = 'not_saved'
+        result['error'] = 'Failed to save settings'
     return result
 
 

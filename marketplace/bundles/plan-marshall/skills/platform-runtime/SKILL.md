@@ -77,13 +77,18 @@ evaluated last-match-wins). A settings file still in the OpenCode 1 `permission`
 map shape keeps being read and written through that map, so an operator's file
 is never converted behind their back.
 
-* The project-level list keeps the shell catch-all (`resource "*"`) FIRST and
-  follows it with never-legitimate deny rows, rare-legitimate ask rows and the
-  final allow rows. Specific rules therefore override the catch-all; a catch-all
-  written last would override everything before it. The executor agent is
-  confined to the `python3 .plan/execute-script.py *` permit plus deny on the
-  hard rules; the orchestrator agent preserves the small-ops carve-out
-  (read-only file ops, `git status/log` seen as information lookups) under ask.
+* The order matters more than the position within one list: the agent's rules
+  are appended after the global ones, so an agent rule a global `deny` already
+  decided re-decides it. An emitted agent therefore carries no shell catch-all,
+  and the list the tooling creates for a new project carries no shell catch-all
+  either — a project catch-all cannot be shown to sit before or after the global
+  rows, and leaving it out keeps every global deny decisive. The checked-in
+  project list keeps its shell catch-all (`resource "*"`) FIRST and follows it
+  with never-legitimate deny rows, rare-legitimate ask rows and the final allow
+  rows. The executor agent is confined to the `python3 .plan/execute-script.py *`
+  permit plus deny on the hard rules; the orchestrator agent preserves the
+  small-ops carve-out (read-only file ops, `git status/log` seen as information
+  lookups) under ask.
 * `to_opencode_grant` carries `allow`/`ask`/`deny` actions via the
   `allow(...)` / `ask(...)` / `deny(...)` wrapper grammar; bare forms
   default to `allow`, and the wrapper verb is peeled first so a deny

@@ -646,8 +646,8 @@ def _upsert_permission_rule(rules: list[Any], action: str, resource: str, effect
     An exact ``(action, resource)`` rule is updated in place. A new specific
     rule is inserted AFTER that action's catch-all (``resource == "*"``, under
     an exact or wildcard action), so last-match-wins lets the specific rule
-    override it. A new catch-all goes after that same catch-all, because a
-    wildcard-action catch-all ordering it would otherwise re-decide it.
+    override it. A new catch-all goes after that same catch-all when one
+    exists, and at the front of the list when none does.
 
     Inserting after the catch-all is necessary but not sufficient: an existing
     later rule can still match the same resource and win. A requested effect
@@ -733,16 +733,15 @@ def installed_opencode_version() -> tuple[int | None, str]:
 def _opencode2_skeleton() -> dict[str, Any]:
     """Return a fresh OpenCode 2 ``opencode.json`` skeleton.
 
-    The skeleton carries the baseline command allows and nothing else. It used
-    to lead with a shell catch-all ``ask``, which is exactly the shape that
-    cannot survive the evaluation order: project rules are appended AFTER the
-    global ones and before the agent's, so a catch-all there re-decides every
-    command a global ``deny`` already decided. No rule matches a command the
-    skeleton does not name, and OpenCode 2 answers ``ask`` for that case by
-    itself, so the catch-all bought nothing and cost the global denies.
+    The skeleton carries the baseline command allows and nothing else. A shell
+    catch-all ``ask`` there cannot survive the evaluation order: a project list
+    is combined with the global one before the agent's, so a catch-all decides
+    every command the global list already decided. No rule matches a command
+    the skeleton does not name, and OpenCode 2 answers ``ask`` for that case by
+    itself.
 
     No ``permission`` map is written either — the normalizer concatenates that
-    map ahead of the list, which is what turned written deny rules into dead
+    map ahead of the list, which is what turns written deny rules into dead
     letters in the OpenCode 1 shape.
     """
     rules: list[dict[str, str]] = [
@@ -1659,7 +1658,7 @@ class OpenCodeRuntime(Runtime):
                     return toon_error(
                         'permission configure',
                         'permission_conflict',
-                        f'{write.conflict}; nothing was written to {settings_path}',
+                        f'{write.conflict}; no rule was written to {settings_path}',
                     )
                 if write.changed:
                     added += 1
@@ -1856,7 +1855,7 @@ class OpenCodeRuntime(Runtime):
                     return toon_error(
                         'permission fix',
                         'permission_conflict',
-                        f'{write.conflict}; nothing was written to {settings_path}',
+                        f'{write.conflict}; no rule was written to {settings_path}',
                     )
                 if write.changed:
                     added += 1
@@ -1891,10 +1890,19 @@ class OpenCodeRuntime(Runtime):
                         removed += 1
                 elif _remove_permission_rule(rules, action, pat):
                     removed += 1
-            if removed == 0 and not dry_run:
+            if not dry_run:
+                # A grant the removal could not take down is reported even when
+                # a sibling argument was removed, so no part of the request
+                # silently stays in force.
                 for item in arguments:
                     cat, pat, _ = to_opencode_grant(str(item))
-                    blocker = _wildcard_action_rule(rules, _permission_action(cat), pat)
+                    action = _permission_action(cat)
+                    if any(
+                        isinstance(rule, dict) and rule.get('action') == action and rule.get('resource') == pat
+                        for rule in rules
+                    ):
+                        continue
+                    blocker = _wildcard_action_rule(rules, action, pat)
                     if blocker is not None:
                         return toon_error(
                             'permission fix',
@@ -1942,7 +1950,24 @@ class OpenCodeRuntime(Runtime):
                         added += 1
                 else:
                     cat = _permission_map_key(cat)
-                    if perm.get(cat) != act:
+                    existing = perm.get(cat)
+                    if pat and pat != '*':
+                        cat_map = existing if isinstance(existing, dict) else {}
+                        if cat_map.get(pat) == act:
+                            continue
+                        if not dry_run:
+                            cat_map[pat] = act
+                            perm[cat] = cat_map
+                        added += 1
+                    elif isinstance(existing, dict):
+                        # A pattern map keeps its entries: the catch-all is the
+                        # map's own ``*`` row, never a replacement of the map.
+                        if existing.get('*') == act:
+                            continue
+                        if not dry_run:
+                            existing['*'] = act
+                        added += 1
+                    elif existing != act:
                         if not dry_run:
                             perm[cat] = act
                         added += 1
@@ -1972,7 +1997,17 @@ class OpenCodeRuntime(Runtime):
                     if not dry_run:
                         del bash_map[pat]
                     removed += 1
-                elif map_key in perm:
+                    continue
+                existing = perm.get(map_key)
+                if isinstance(existing, dict):
+                    # The named pattern, or the map's own ``*`` row — never the
+                    # whole category, which may carry denies nobody named.
+                    entry = pat if pat in existing else ('*' if pat == '*' and '*' in existing else None)
+                    if entry is not None:
+                        if not dry_run:
+                            del existing[entry]
+                        removed += 1
+                elif existing is not None and pat == '*':
                     if not dry_run:
                         del perm[map_key]
                     removed += 1
@@ -2082,7 +2117,7 @@ class OpenCodeRuntime(Runtime):
                         return toon_error(
                             'permission fix',
                             'permission_conflict',
-                            f'{write.conflict}; nothing was written to {settings_path}',
+                            f'{write.conflict}; no rule was written to {settings_path}',
                         )
                     if write.changed:
                         changes_applied += 1
@@ -2248,7 +2283,7 @@ class OpenCodeRuntime(Runtime):
                         return toon_error(
                             'permission web-apply',
                             'permission_conflict',
-                            f'{write.conflict}; nothing was written to {settings_path}',
+                            f'{write.conflict}; no rule was written to {settings_path}',
                         )
                 changed = True
             elif remove and current == 'allow':
@@ -2485,9 +2520,10 @@ class OpenCodeRuntime(Runtime):
         """Ensure default Plan Marshall executor permissions exist in OpenCode settings.
 
         A file in the OpenCode 2 shape gains ``allow`` rules inside its
-        ``permissions`` list, after the catch-all, and never a ``permission``
-        map beside it — the normalizer would concatenate that map ahead of the
-        list, where the list's catch-all overrides it.
+        ``permissions`` list, after that action's catch-all when the list has
+        one, and never a ``permission`` map beside it — the normalizer would
+        concatenate that map ahead of the list, where the list's catch-all
+        overrides it.
         """
         if 'error' in settings:
             return {
@@ -2524,6 +2560,10 @@ class OpenCodeRuntime(Runtime):
                 'permission_shape': 'permissions',
             }
             if conflicts:
+                # Nothing is saved on a conflict, so no addition may be
+                # reported as if it had been.
+                result['defaults_added'] = []
+                result['defaults_added_count'] = 0
                 result['conflicts'] = conflicts
                 result['error'] = 'permission_conflict: ' + '; '.join(conflicts)
                 return result
