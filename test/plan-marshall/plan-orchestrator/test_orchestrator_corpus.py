@@ -7613,10 +7613,23 @@ class TestLintDoneWhens:
         assert cmd_corpus_lint_done_whens(_LINT_ARGS)['findings'] == []
 
     def test_a_single_quoted_rule_vocabulary_is_not_read_as_the_defect(self, plan_context):
+        # Single quotes are NOT stripped: an ordinary contraction would pair with
+        # them and swallow the clause. A spec quoting the rule in single quotes is
+        # reported, which is the safe direction — a triaged false positive beats a
+        # silently missed defect.
         _write_status(plan_context, [_row('PLAN-01')])
         _lint_spec(plan_context, done_when="a rule naming a 'fails at' clause beside 'still' is flagged.")
 
-        assert cmd_corpus_lint_done_whens(_LINT_ARGS)['findings'] == []
+        assert _lint_rules(cmd_corpus_lint_done_whens(_LINT_ARGS)) == {DONE_WHEN_RULE_FAILS_AT}
+
+    def test_an_apostrophe_in_a_contraction_does_not_swallow_the_clause(self, plan_context):
+        _write_status(plan_context, [_row('PLAN-01')])
+        _lint_spec(
+            plan_context,
+            done_when="the parser's reader fails at `abc1234` while it's still broken.",
+        )
+
+        assert _lint_rules(cmd_corpus_lint_done_whens(_LINT_ARGS)) == {DONE_WHEN_RULE_FAILS_AT}
 
     def test_a_done_when_inside_a_fenced_example_is_not_read(self, plan_context):
         _write_status(plan_context, [_row('PLAN-01')])

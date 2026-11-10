@@ -2785,10 +2785,11 @@ _HOLDS_AT = re.compile(r'holds at', re.IGNORECASE)
 #: unchanged. The look-arounds keep a HYPHENATED compound out: the word in
 #: ``statement-keeps-default`` names a rule, it does not assert a state.
 _PRESERVATION_WORD = re.compile(r'(?<![\w-])(?:still|keeps|unchanged)(?![\w-])', re.IGNORECASE)
-#: A quoted segment, double or single. A word inside one is NAMED, not asserted — a
-#: spec that quotes this rule's own vocabulary (``beside the words "still"``) is
-#: describing the defect, not committing it.
-_QUOTED_SEGMENT = re.compile(r'"[^"]*"|\'[^\']*\'')
+#: A DOUBLE-quoted segment. A word inside one is NAMED, not asserted — a spec that
+#: quotes this rule's own vocabulary (``beside the words "still"``) is describing
+#: the defect, not committing it. Single quotes are deliberately NOT stripped: an
+#: ordinary contraction's apostrophes would pair up and swallow the clause.
+_QUOTED_SEGMENT = re.compile(r'"[^"]*"')
 #: A commit id, or the template's own placeholder — never a code symbol.
 _SHA_TOKEN = re.compile(r'^(?:[0-9a-f]{7,40}|\{sha\})$', re.IGNORECASE)
 #: Clause boundaries inside one Done-when unit.
@@ -2848,7 +2849,7 @@ def _done_when_units(text: str) -> list[str]:
                 index += 1
             units.append(' '.join(' '.join(collected).split()))
             continue
-        if _DONE_WHEN_LABEL.match(stripped.lstrip('*_ ')):
+        if _DONE_WHEN_LABEL.match(stripped.lstrip('*_- \t')):
             collected = [stripped]
             index += 1
             while index < len(lines) and lines[index].strip():
@@ -2883,17 +2884,17 @@ def _done_when_findings(spec: str, text: str) -> list[dict[str, str]]:
     findings: list[dict[str, str]] = []
     symbols = _hypothesis_symbols(text)
     for unit in _done_when_units(text):
-        # Rule 1 is judged over the WHOLE Done-when: its text says a "fails at"
-        # clause BESIDE the preservation words, and the destructive shape spans two
-        # clauses ("X fails at `sha`; Y is still unchanged"). The report quotes the
-        # unit for that reason.
-        asserted_unit = _QUOTED_SEGMENT.sub('', unit)
-        if _FAILS_AT.search(asserted_unit) and _PRESERVATION_WORD.search(asserted_unit):
-            findings.append({'spec': spec, 'rule': DONE_WHEN_RULE_FAILS_AT, 'clause': unit, 'symbol': ''})
+        # Rule 1 is judged over ONE CLAUSE — the destructive shape is "X fails at
+        # `sha` … still/keeps/unchanged" asserting the SAME behaviour. A unit that
+        # states a "fails at" arm and a separate "holds at … must keep holding" arm
+        # is the CORRECT shape the rule asks for, and unit scope would flag it.
         for clause in (part.strip() for part in _CLAUSE_SPLIT.split(unit)):
             if not clause:
                 continue
             asserted = _QUOTED_SEGMENT.sub('', clause)
+            if _FAILS_AT.search(asserted) and _PRESERVATION_WORD.search(asserted):
+                findings.append({'spec': spec, 'rule': DONE_WHEN_RULE_FAILS_AT, 'clause': clause, 'symbol': ''})
+                continue
             if not _HOLDS_AT.search(asserted):
                 continue
             for span in (token.strip() for token in _CODE_SPAN.findall(asserted)):
@@ -4072,6 +4073,12 @@ def _suggested_skills(domain: dict[str, Any]) -> list[str]:
         for key, value in config.items()
         if isinstance(value, dict) and ('defaults' in value or 'optionals' in value)
     }
+    flat_defaults = config.get('defaults')
+    if not profiles and isinstance(flat_defaults, list):
+        # A FLAT-configured domain keeps its defaults at the top level rather than
+        # under a profile key; reading only nested blocks would report it as a
+        # domain with no skills.
+        profiles = {'flat': {'defaults': flat_defaults}}
     raw_exclusions = config.get('excluded_skills')
     exclusions = {str(item) for item in raw_exclusions} if isinstance(raw_exclusions, list) else set()
     bundle = config.get('bundle')
@@ -4079,7 +4086,7 @@ def _suggested_skills(domain: dict[str, Any]) -> list[str]:
 
     filtered = filter_skill_map(profiles, exclusions, bundle if isinstance(bundle, str) else '')
     combined: list[str] = []
-    for profile in ('core', 'implementation'):
+    for profile in ('core', 'implementation', 'flat'):
         for skill in _profile_default_skills(filtered, profile):
             if skill not in combined:
                 combined.append(skill)
@@ -4135,19 +4142,21 @@ def _glob_matches(path: str, glob: str) -> bool:
     return glob.startswith('**/') and fnmatch.fnmatch(path, glob[3:])
 
 
-def _module_for_path(path: str) -> tuple[str, bool]:
-    """The module owning *path* and whether the lookup was TRUNCATED.
+def _module_for_path(path: str) -> tuple[str, str]:
+    """The module owning *path*, and how the lookup went.
 
-    ``('', True)`` states a lookup that could not see the whole inventory and
-    resolved nothing — an unread scan is not "no module owns this path", and the
-    caller reports it as the failed read it is. A truncated lookup that DID resolve
-    a module is still a resolved module, so the flag only decides the empty case.
+    The state is one of ``resolved``, ``truncated``, ``failed`` and ``absent``. A
+    ``failed`` read and an ``absent`` ownership are different facts: a subprocess
+    that could not run must never be published as "no module owns this path", which
+    would tell the author to record ``none`` over a lookup that never happened.
     """
     payload = _script_payload(_ARCHITECTURE_NOTATION, ['which-module', '--path', path])
     if payload is None or payload.get('status') != 'success':
-        return '', False
+        return '', 'failed'
     module = payload.get('module')
-    return (module if isinstance(module, str) else ''), bool(payload.get('truncated'))
+    if not isinstance(module, str) or not module:
+        return '', 'truncated' if payload.get('truncated') else 'absent'
+    return module, 'resolved'
 
 
 def _applicable_domains(module: str) -> list[str]:
@@ -4234,16 +4243,18 @@ def cmd_corpus_spec_skills(args: argparse.Namespace) -> dict[str, Any]:
     applicable: dict[str, list[str]] = {}
     path_rows: list[dict[str, Any]] = []
     for entry in claim.claimed if claim is not None else ():
-        module, module_truncated = _module_for_path(entry.path)
+        module, module_state = _module_for_path(entry.path)
         domain, rung = _domain_for_path(entry.path, module, domains, applicable) if domains_readable else (None, '')
         mapped = domain is not None
         reason = ''
         if not mapped:
             if not domains_readable:
                 reason = 'unmapped: the project configuration could not be read'
-            elif not module and module_truncated:
+            elif module_state == 'failed':
+                reason = 'unmapped: the module lookup failed'
+            elif module_state == 'truncated':
                 reason = 'unmapped: the module lookup was truncated'
-            elif not module:
+            elif module_state == 'absent':
                 reason = 'unmapped: no module owns the path'
             else:
                 reason = 'unmapped: no configured domain matches the path'

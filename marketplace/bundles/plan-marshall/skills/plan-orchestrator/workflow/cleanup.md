@@ -116,7 +116,7 @@ python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator cor
 
 Flag every `findings[]` row and read `rule_counts[]` beside `specs_total`/`specs_scanned`/`specs_with_done_when`, so a zero states which zero it is:
 
-- `fails_at_beside_preservation` — a Done-when asks for a "fails at" observation of behaviour it also calls still, keeps, or unchanged. The behaviour is not new, so the criterion cannot be met as written: reword it to "holds at", or drop the failing clause.
+- `fails_at_beside_preservation` — a Done-when asks, IN THE SAME CLAUSE, for a "fails at" observation of behaviour it also calls still, keeps, or unchanged. The behaviour is not new, so the criterion cannot be met as written: reword it to "holds at", or drop the failing clause. A Done-when that states a "fails at" arm and a separate "holds at … must keep holding" arm is the CORRECT shape and is not flagged.
 - `holds_at_over_hypothesis` — a "holds at" Done-when rests on a symbol a `HYPOTHESIS` claim of the SAME spec also names. Settle the claim first; a Done-when may not assume an unsettled one.
 
 Correct the spec, or record why the wording stands. A spec carrying no Done-when at all contributes no row and is not a finding of this verb; an unreadable spec is named in `unreadable[]` rather than silently skipped.
