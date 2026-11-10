@@ -2,10 +2,10 @@
   "id": "PLAN-LB-129",
   "slug": "review-gate-thread-and-count-truth",
   "workstream": "WS-04",
-  "status": "running",
+  "status": "shipped",
   "lane": "runbook",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "plan_marshall_plan_id": "rb-lb-129-review-gate-thread-and-count-truth",
+  "pr": "1947",
+  "landing": "landings/PLAN-LB-129.md",
   "seq": 129
 }
