@@ -908,13 +908,18 @@ def _quiet_guard_result(tmp_path: Path, fixture_name: str) -> dict:
     }
 
 
-def _write_surefire_report(root: Path, tests: int, *, module: str = '') -> Path:
-    """Write one Surefire per-class XML report, as a real run leaves behind."""
+def _write_surefire_report(root: Path, tests: int, *, skipped: int = 0, module: str = '') -> Path:
+    """Write one Surefire per-class XML report, as a real run leaves behind.
+
+    ``skipped`` states how many of the ``tests`` the run collected were skipped
+    rather than executed; a fully skipped class is what a green zero-execution run
+    leaves on disk.
+    """
     report_dir = root / module / 'target' / 'surefire-reports'
     report_dir.mkdir(parents=True, exist_ok=True)
     report = report_dir / 'TEST-com.example.SampleTest.xml'
     report.write_text(
-        f'<testsuite name="com.example.SampleTest" tests="{tests}" failures="0" errors="0" skipped="0"/>\n',
+        f'<testsuite name="com.example.SampleTest" tests="{tests}" failures="0" errors="0" skipped="{skipped}"/>\n',
         encoding='utf-8',
     )
     return report
@@ -971,6 +976,98 @@ def test_a_report_with_no_executed_test_does_not_credit_the_run(tmp_path):
     guarded = apply_zero_test_guard(result, 'test', project_dir=str(tmp_path))
 
     assert guarded['status'] == 'indeterminate'
+
+
+def test_a_report_whose_whole_population_was_skipped_does_not_credit_the_run(tmp_path):
+    """The credit counts EXECUTED tests, so a fully skipped class credits nothing.
+
+    ``tests`` counts every collected test, skipped ones included, and a green run
+    that skipped its whole population executed none of it. Crediting that would
+    let a ``@Disabled``-only class or a selector that skips everything certify a
+    tree whose tests never ran.
+    """
+    result = _quiet_guard_result(tmp_path, 'maven-quiet-green-no-summary.log')
+    _write_surefire_report(tmp_path, 3, skipped=3)
+
+    guarded = apply_zero_test_guard(result, 'test', project_dir=str(tmp_path))
+
+    assert guarded['status'] == 'indeterminate'
+    assert TEST_RUN_EXECUTED_NOTHING in guarded['message']
+
+
+def test_a_report_with_a_negative_count_credits_nothing(tmp_path):
+    """A negative count is impossible, so it is no evidence either.
+
+    ``skipped="-1"`` beside ``tests="0"`` would otherwise compute one executed
+    test out of a report that collected none.
+    """
+    report_dir = tmp_path / 'target' / 'surefire-reports'
+    report_dir.mkdir(parents=True)
+    (report_dir / 'TEST-com.example.SampleTest.xml').write_text(
+        '<testsuite name="com.example.SampleTest" tests="0" failures="0" errors="0" skipped="-1"/>\n',
+        encoding='utf-8',
+    )
+    result = _quiet_guard_result(tmp_path, 'maven-quiet-green-no-summary.log')
+
+    guarded = apply_zero_test_guard(result, 'test', project_dir=str(tmp_path))
+
+    assert guarded['status'] == 'indeterminate'
+    assert TEST_RUN_EXECUTED_NOTHING in guarded['message']
+
+
+def test_a_measured_summary_that_skipped_its_whole_population_is_not_a_green():
+    """The summary path counts executed tests too, not only the report credit.
+
+    ``Tests run: 3, Failures: 0, Errors: 0, Skipped: 3`` is a visible summary of
+    three collected tests and zero executed ones. Reading its COLLECTED total as
+    evidence credited a green run that ran nothing.
+    """
+    result = _run_result('maven-all-skipped-summary.log', status='success', exit_code=0, command='mvnw test')
+
+    guarded = apply_zero_test_guard(result, 'test')
+
+    assert guarded['status'] == 'indeterminate'
+    assert TEST_RUN_EXECUTED_NOTHING in guarded['message']
+
+
+def test_control_a_measured_summary_with_executed_tests_keeps_its_green():
+    """MATCHED CONTROL: a measured summary with executed tests stays green."""
+    result = _run_result('maven-success-real.log', status='success', exit_code=0, command='mvnw test')
+
+    guarded = apply_zero_test_guard(result, 'test')
+
+    assert guarded['status'] == 'success'
+
+
+def test_control_a_report_with_executed_tests_still_credits_the_run(tmp_path):
+    """MATCHED CONTROL: the same report shape with nothing skipped still credits."""
+    result = _quiet_guard_result(tmp_path, 'maven-quiet-green-no-summary.log')
+    _write_surefire_report(tmp_path, 3, skipped=0)
+
+    guarded = apply_zero_test_guard(result, 'test', project_dir=str(tmp_path))
+
+    assert guarded['status'] == 'success'
+
+
+def test_a_report_without_a_skipped_count_credits_nothing(tmp_path):
+    """An unstated skip count is not zero skips — the report must STATE both counts.
+
+    A ``TEST-*.xml`` that names ``tests`` but omits ``skipped`` (or carries a
+    non-integer there) cannot show that any test executed, and reading the absence
+    as zero would credit the run on a count the report never gave.
+    """
+    report_dir = tmp_path / 'target' / 'surefire-reports'
+    report_dir.mkdir(parents=True)
+    (report_dir / 'TEST-com.example.SampleTest.xml').write_text(
+        '<testsuite name="com.example.SampleTest" tests="3" failures="0" errors="0"/>\n',
+        encoding='utf-8',
+    )
+    result = _quiet_guard_result(tmp_path, 'maven-quiet-green-no-summary.log')
+
+    guarded = apply_zero_test_guard(result, 'test', project_dir=str(tmp_path))
+
+    assert guarded['status'] == 'indeterminate'
+    assert TEST_RUN_EXECUTED_NOTHING in guarded['message']
 
 
 def test_a_module_with_no_test_class_keeps_its_green(tmp_path):

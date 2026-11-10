@@ -422,27 +422,54 @@ def _report_files(root: Path) -> Iterator[Path]:
                 yield Path(dirpath) / name
 
 
-def _report_collected_tests(report: Path) -> int:
-    """Return the collected test count a Surefire/Failsafe report records, or 0.
+def _report_executed_tests(report: Path) -> int:
+    """Return the EXECUTED test count a Surefire/Failsafe report records, or 0.
 
-    A malformed or unreadable report is 0 rather than an error: this reader only
-    ever ADDS evidence, so an unreadable one must not manufacture any.
+    Surefire's ``tests`` attribute counts every collected test, skipped ones
+    included, so a class whose whole population was ``@Disabled`` reports a
+    non-zero ``tests`` while the run executed nothing. Executed is therefore
+    ``tests - skipped``, clamped at 0 for a report that claims more skips than
+    tests.
+
+    A report that states neither count is no evidence: an absent or unparseable
+    ``skipped`` is NEVER read as zero skips, because that would credit tests the
+    report does not say ran. A malformed or unreadable report is 0 rather than an
+    error: this reader only ever ADDS evidence, so an unreadable one must not
+    manufacture any.
 
     Args:
         report: One ``TEST-*.xml`` file.
 
     Returns:
-        The ``tests`` attribute of the report's root element, or 0.
+        The number of tests the report's root element says were executed, or 0.
     """
     try:
         root = ET.parse(report).getroot()
     except (ET.ParseError, OSError):
         return 0
-    raw = root.get('tests')
-    try:
-        return int(raw) if raw is not None else 0
-    except (TypeError, ValueError):
+    collected = _report_attribute_as_int(root, 'tests')
+    skipped = _report_attribute_as_int(root, 'skipped')
+    if collected is None or skipped is None:
         return 0
+    return max(collected - skipped, 0)
+
+
+def _report_attribute_as_int(root: ET.Element, name: str) -> int | None:
+    """Return the integer value of ``root``'s ``name`` attribute, or ``None``.
+
+    ``None`` is the "absent, unparseable or impossible" answer, never 0: the three
+    are different facts, and only a STATED count may credit a run. A negative
+    count is refused for the same reason — a report claiming ``skipped="-1"``
+    would otherwise turn a zero-collection report into one executed test.
+    """
+    raw = root.get(name)
+    if raw is None:
+        return None
+    try:
+        count = int(raw)
+    except (TypeError, ValueError):
+        return None
+    return count if count >= 0 else None
 
 
 def _run_start_time(log_file: str | None, duration_seconds: object) -> float | None:
@@ -482,8 +509,8 @@ def _reports_show_executed_tests(
     """Whether a Surefire/Failsafe report written by THIS run reported executed tests.
 
     A quiet run — ``-q`` supplied through ``.mvn/maven.config`` or ``MAVEN_OPTS``,
-    or Surefire's ``printSummary=false`` — still writes one ``TEST-*.xml`` per
-    executed test class; only the LOG's summary line is hidden. Those reports are
+    or Surefire's ``printSummary=false`` — still writes one ``TEST-*.xml`` per test
+    class it processed; only the LOG's summary line is hidden. Those reports are
     therefore the evidence a hidden summary leaves behind, and reading them is
     what tells "the summary was suppressed" from "nothing was collected".
 
@@ -501,8 +528,8 @@ def _reports_show_executed_tests(
         duration_seconds: The wrapper's measured run duration, when it reported one.
 
     Returns:
-        True only when a report written by this run reports one or more collected
-        tests.
+        True only when a report written by this run reports one or more EXECUTED
+        tests — Surefire's ``tests`` attribute less its ``skipped`` count.
     """
     if not project_dir:
         return False
@@ -521,7 +548,7 @@ def _reports_show_executed_tests(
             continue
         if modified < started:
             continue
-        if _report_collected_tests(report) > 0:
+        if _report_executed_tests(report) > 0:
             return True
     return False
 
@@ -534,8 +561,9 @@ def apply_zero_test_guard(result: dict, args: str, *, project_dir: str | None = 
     reactor root that builds no test module — collects nothing, and no gate may
     credit that. Such a run is neither a failure nor a green:
 
-    - a parsed summary reporting zero COLLECTED tests is evidence of an empty
-      population;
+    - a parsed, MEASURED summary that reports zero EXECUTED tests — either no
+      test collected, or a population that was skipped in full — is evidence of
+      an empty population;
     - no summary on a leading ``test`` goal is EITHER an empty population OR a
       summary the run's log level hid, and the evidence tells them apart: a
       Surefire/Failsafe report this run wrote with executed tests,
@@ -562,7 +590,7 @@ def apply_zero_test_guard(result: dict, args: str, *, project_dir: str | None = 
             no-summary case then stays indeterminate.
 
     Returns:
-        The same result unchanged when the run collected a test, when it is no
+        The same result unchanged when the run executed a test, when it is no
         test-phase run, when it was not green, when an empty population was a
         requested skip, when Surefire matched no test class at all, or when a
         report this run wrote shows executed tests — otherwise an
@@ -582,10 +610,19 @@ def apply_zero_test_guard(result: dict, args: str, *, project_dir: str | None = 
             'nothing establishes that a test ran — not a green.',
         )
     collected = collected_test_count(log_text)
-    if collected:
+    executed = executed_test_count(log_text)
+    if collected and executed != 0:
+        # A MEASURED summary that executed nothing (``executed == 0``) is a
+        # non-empty population that still credits no gate: the suite collected
+        # tests and skipped every one. An UNMEASURED summary (``executed is
+        # None``) keeps the plain collected-count evidence it has always had —
+        # its executed count is not a measurement, so it cannot refute one.
         return result
-    if collected == 0:
-        evidence = "the run's log reports zero collected tests, so nothing executed"
+    if collected == 0 or executed == 0:
+        if collected:
+            evidence = f"the run's log reports {collected} collected test(s) of which none executed"
+        else:
+            evidence = "the run's log reports zero collected tests, so nothing executed"
     elif _reports_show_executed_tests(project_dir, result.get('log_file'), result.get('duration_seconds')):
         # The summary was hidden (a quiet run, or Surefire's printSummary=false),
         # not absent: the reports this run wrote name executed test classes.
