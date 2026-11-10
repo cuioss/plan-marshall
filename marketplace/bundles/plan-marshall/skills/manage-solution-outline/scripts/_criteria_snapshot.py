@@ -142,9 +142,9 @@ PARSER_KEY = 'parser'
 CURRENT_PARSER = 3
 #: The functional verdict that retires a deliverable: its criteria are not open.
 SUPERSEDED = 'superseded'
-#: The deliverable references a ``superseded_by`` value may carry: the outline's
-#: own ``D<n>`` form and the spelled ``deliverable <n>`` form. Only a number that
-#: names one of the outline's deliverable numbers closes the criteria.
+#: The deliverable references that a ``superseded_by`` value may carry: the
+#: outline's own ``D<n>`` form and the spelled ``deliverable <n>`` form. Only a
+#: number that names one of the outline's deliverable numbers closes the criteria.
 _DELIVERABLE_REFERENCE = re.compile(r'\b[dD]\s?(\d+)\b|\bdeliverables?\s+#?(\d+)\b')
 CRITERION_UNPARSED = 'criterion_unparsed'
 #: The named state an unterminated fenced block leaves in ``unparsed``. It is a
