@@ -346,13 +346,17 @@ def _seed_comment(plan_id: str, bot: str, pr_number: str | None, reviewed: str =
 
 
 def _trigger_bots(plan_id: str, pr_number: int | None) -> dict:
-    return rc.list_bots_for_trigger(
+    # ``rc`` is an untyped dynamically-loaded module, so the call's value is ``Any``;
+    # binding it to a declared ``dict`` is what keeps this helper's own signature
+    # honest rather than returning ``Any`` from a ``-> dict`` (``./pw compile``).
+    payload: dict = rc.list_bots_for_trigger(
         [],
         [str(f.get('bot_kind') or '') for f in rc._read_pr_comment_findings(plan_id, pr_number)['findings']],
         ['coderabbit'],
         optional_bots=['sourcery'],
         stored_findings_stale=True,
     )
+    return payload
 
 
 class TestTheStoredFindingJoinIsScopedToOnePullRequest:
