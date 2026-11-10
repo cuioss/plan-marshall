@@ -39,10 +39,16 @@ def _outline(criteria: list[str]) -> str:
     )
 
 
-def _plan(plan_context: Any, criteria: list[str], *, freeze_from: list[str] | None = None) -> Path:
+def _plan(
+    plan_context: Any,
+    criteria: list[str],
+    *,
+    freeze_from: list[str] | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> Path:
     plan_dir = Path(plan_context.plan_dir_for(PLAN_ID))
     # The freeze binds its digest in the status record, so the plan must have one.
-    _status(plan_dir)
+    _status(plan_dir, metadata)
     (plan_dir / 'references.json').write_text(json.dumps({'base_branch': 'main'}), encoding='utf-8')
     (plan_dir / 'solution_outline.md').write_text(_outline(criteria), encoding='utf-8')
     if freeze_from is not None:
@@ -170,6 +176,50 @@ def test_a_reviewed_plan_records_no_criteria_gate_note(plan_context, tmp_path, m
 
     assert result is not None and result['status'] == 'success', result
     assert 'criteria_gate' not in result, result
+    record = json.loads((plan_dir / 'status.json').read_text(encoding='utf-8'))
+    assert 'criteria_gate' not in record['metadata'], record
+
+
+def test_a_graded_completion_clears_a_stale_criteria_gate_note(plan_context, tmp_path, monkeypatch) -> None:
+    """A note left by an earlier attempt does not survive a graded completion.
+
+    The write is a decision, not an append: a plan whose review is scheduled and
+    graded carries no note, whatever the record said before.
+    """
+    plan_dir = _plan(
+        plan_context,
+        ['parser accepts input'],
+        freeze_from=['parser accepts input'],
+        metadata={'use_worktree': False, 'criteria_gate': 'not_applicable (stale attempt)'},
+    )
+    _manifest(plan_dir, ['functional-review', 'pre-push-quality-gate'])
+    _sealed_live(
+        plan_dir,
+        tmp_path,
+        {
+            'deliverables': [
+                {
+                    'number': 1,
+                    'verdict': 'met',
+                    'criteria': [
+                        {'criterion': 'parser accepts input', 'status': 'met', 'evidence': ['src/parser.py:1']}
+                    ],
+                }
+            ],
+            'unrequested_changes': [],
+            'self_reports': [],
+            'files_read': ['src/parser.py'],
+        },
+    )
+    monkeypatch.setattr(_lifecycle, 'assert_finalize_findings_clean', lambda *_a, **_k: 0)
+    monkeypatch.setattr(_lifecycle, 'log_entry', lambda *_a, **_k: None)
+    monkeypatch.setattr(_lifecycle, '_surface_drive', lambda *_a, **_k: None)
+
+    result = _lifecycle.cmd_transition(
+        argparse.Namespace(plan_id=PLAN_ID, completed='6-finalize', allow_bare_transition=False, bare_reason=None)
+    )
+
+    assert result is not None and result['status'] == 'success', result
     record = json.loads((plan_dir / 'status.json').read_text(encoding='utf-8'))
     assert 'criteria_gate' not in record['metadata'], record
 

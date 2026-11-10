@@ -1842,8 +1842,12 @@ def superseded_by_names_deliverable(cited: object, outline_numbers: Iterable[obj
     / ``deliverables 3`` — and the cited number has to be one of the outline's own
     deliverable numbers.
 
-    The ONE rule the validator and :func:`open_criteria` share, so the two cannot
-    decide the same verdict differently.
+    The ONE rule the validator and :func:`open_criteria` share. Each applies it to
+    its own population — the validator to the CURRENT outline's deliverable
+    numbers, ``open_criteria`` to the numbers the frozen snapshot carries — so a
+    citation naming a deliverable only one of them holds is closed by that consumer
+    and reported as an error by the other. The RULE never differs; the population
+    it reads does, by design.
     """
     text = str(cited or '').strip()
     if not text:
@@ -1886,7 +1890,7 @@ def open_criteria(plan_id: str, verdict_file: Path | None = None) -> dict[str, A
       text. Position alone is never a match: a paraphrased row without its id
       leaves the criterion ungraded and open.
 
-    Anything else is open, which is the fail-closed direction. Five deliberate
+    Anything else is open, which is the fail-closed direction. Four deliberate
     states additionally close criteria rather than reading them as open work:
 
     * an operator decision authorizes the exact change (``authorized_changes``);
@@ -1895,11 +1899,13 @@ def open_criteria(plan_id: str, verdict_file: Path | None = None) -> dict[str, A
     * the operator closed the review past its round cap (:func:`_review_closed_reason`);
     * the manifest dropped the functional review (:func:`functional_review_drop_reason`)
       — the completion gate exempts exactly this case, and ``source: review_dropped``
-      says so to the triage source;
-    * ``state`` reports a snapshot the status record froze but which is now deleted
-      or edited — the snapshot's own absence is the open criterion, and every check
-      refuses rather than falling back to the legacy path. This state is reported
-      open REGARDLESS of a dropped review, because the freeze is independent of it.
+      says so to the triage source.
+
+    One further state is NOT a closing: ``state`` reports a snapshot the status
+    record froze but which is now deleted or edited — the snapshot's own absence is
+    the open criterion, and every check refuses rather than falling back to the
+    legacy path. It is reported open REGARDLESS of a dropped review, because the
+    freeze is independent of it.
     """
     state = snapshot_state(plan_id)
     if state in ('deleted', 'tampered'):

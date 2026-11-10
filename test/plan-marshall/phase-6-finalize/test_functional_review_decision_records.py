@@ -28,5 +28,6 @@ def test_the_functional_review_workflow_records_the_d3e_decision() -> None:
 
     assert 'PLAN-LB-70 D3e' in text, 'the D3e decision is recorded nowhere'
     assert 'criteria-authorize' in text, 'the wired authorization verb is not named'
+    assert 'criteria-refreeze-authorize' in text, 'the re-freeze verb the record is about is not named'
     assert 'verify-first' in text, 'the removed alternative is not named'
     assert 'PLAN-LB-70 D4c' in text, 'the D4c record the D3e record sits beside was dropped'

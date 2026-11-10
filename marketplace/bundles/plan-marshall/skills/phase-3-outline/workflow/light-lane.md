@@ -311,6 +311,7 @@ deliverable_count: {N}
 discovery_bound_hit: false
 qgate_validation_required: false
 domain_narrow_report: {the domain-narrow report, verbatim; see Step 5c}
+outline_prompt: {the re-freeze question; present only on Step 6's refreeze_requires_decision branch}
 ```
 
 `domain_narrow_report` carries the `report` string returned by `manage-config domain-narrow`, verbatim and unedited, on **both** of the verb's success outcomes — a `narrowed: false` run reports too. It exists because `display_detail`'s fixed shape above and its 80-character ASCII cap cannot carry the report itself. The orchestrator reads it: `plan-marshall/workflow/planning.md` (light-lane branch) prints it to the operator verbatim as one line; the decision-log entry at Step 5c keeps it with the plan. The field is **omitted** when the verb returned `status: error` — nothing was evaluated, so there is no report, and an empty string would render a pass that could not look as one that looked and found nothing. It is **omitted on the domain-alphabet refusal branch too** (Step 5c step 2b): there the verb did produce a report and the step withheld it, so carrying the field while its decision-log sink was refused would leave the two sinks disagreeing about whether the step reported. It is absent from the escalate shape below by construction: the ratchet returns at Step 4, before Step 5c ever runs.

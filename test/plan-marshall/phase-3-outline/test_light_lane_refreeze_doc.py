@@ -49,3 +49,18 @@ def test_the_refreeze_result_is_not_read_as_an_unreadable_outline() -> None:
 
     assert 'Do NOT read this result as an unreadable outline' in text
     assert 'status: error' in text, 'the other non-success results still need the halt branch'
+
+
+def test_the_light_lane_dispatcher_consumes_the_refreeze_envelope() -> None:
+    """The documented path reaches a consumer: planning.md's light-lane branch owns it.
+
+    A prompt-required envelope no dispatcher reads is a path a reader is promised
+    and cannot take, so the branch that fires the operator question and runs the
+    authorization verb lives in the same document set as the lane that returns it.
+    """
+    text = _normalized(get_skill_dir('plan-marshall', 'plan-marshall') / 'workflow' / 'planning.md')
+    branch = text[text.index('**Light-lane branch**') : text.index('**Light-lane capture-source matrix**')]
+
+    assert 'outline_prompt' in branch, 'the light-lane branch never reads the envelope it is promised'
+    assert 'criteria-refreeze-authorize' in branch, 'the branch names no re-freeze authorization verb'
+    assert 'AskUserQuestion' in branch, 'the branch never fires the operator question'
