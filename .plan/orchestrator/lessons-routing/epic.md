@@ -507,6 +507,22 @@ No new plan-marshall high or critical defect turned up apart from the operator-g
 
 ⚠ **Coverage gap:** the store set rests on probing sibling names by hand, because no wildcard listing was possible in this session. ⚠ **Unreconciled:** ids the 2026-11-01 run recorded as left in place, for example API `2026-10-12-07-002` and TokenSheriff `2026-10-31-12-001`, are no longer at those paths.
 
+### 2026-11-10 — eleventh `ingest` run (`gather`, cross-repo)
+
+Run as the epic-local `gather` command (RULING 2026-11-02). All 36 entries under `/Users/oliver/git/` were probed. Two stores were new since the tenth run: `plan-marshall-mcp` (19 lessons) and `cui-open-rewrite` (2). 21 lessons in all; 13 are about plan-marshall tooling and were moved into the archive, 8 are project-only and stay in their stores. Per-lesson dispositions and the full probe list: `lessons-archive/INDEX.md` § Sweep 2026-11-10.
+
+| Disposition | Lessons | Where |
+|---|---|---|
+| filed to `live-blockers` | 0 | — (nothing high or critical; its inbox was empty) |
+| already-covered | 3 | `lessons-archive/low/plan-marshall-mcp/` |
+| medium | 8 | `lessons-archive/medium/plan-marshall-mcp/` |
+| stale | 2 | `lessons-archive/stale/plan-marshall-mcp/` |
+| not applicable, left in source | 8 | `plan-marshall-mcp` 6, `cui-open-rewrite` 2 |
+
+Checked at `64907fa3b`: the `ci-verify` producer vocabulary is pinned by a contract test, `foreign_pr_gate.py:67-86` no longer assumes `feature/{plan_id}`, and `adr-propose.md:110` still prompts through `AskUserQuestion` from a dispatched leaf. Both fixed subjects had been recorded as still present at the 2026-10-12 sweep. No borderline grade, no operator ruling needed. Lessons were moved with `mv -n` and all 13 destinations verified; no source-repo tombstone or commit.
+
+⚠ **Coverage gap:** `other-llm-projects` and `other-test-projects` are plain directories that may hold checkouts one level deeper, and were not listed. ⚠ **Watch:** `API-Sheriff` now holds tombstones only. The 25 project-only lessons the tenth run left there are gone from the store and not in this archive. Who removed them is not established: the store carries tombstones, the newest `2026-11-03-08-001`, but no tombstone was matched to those ids. The "Unreconciled" note above stays open.
+
 ## START HERE
 
 ### Annotations

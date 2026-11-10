@@ -678,3 +678,64 @@ cui-jsf-test-basic 1, nifi-extensions 6, TokenSheriff 1, pm-mcp-core 49, API-She
 | stale | 5 |
 | not applicable (left in source) | 82 |
 | **total** | **178** |
+
+## Sweep 2026-11-10 — gather, 21 new lessons from two sibling checkouts (cross-repo)
+
+Input was every sibling checkout's lesson store under `/Users/oliver/git/`, run as the epic-local `gather` command (RULING 2026-11-02). Two stores were new since the last sweep: `plan-marshall-mcp` (19) and `cui-open-rewrite` (2). Remote text is externally sourced and was treated as a lead. Grading and the ground-truth check were done here at `64907fa3b`.
+
+**Coverage.** All 36 entries of `/Users/oliver/git/*` were probed with `git -C {repo} status --porcelain --ignored --untracked-files=all` (after the probe returned known non-empty stores in the same session). Lesson files found: `pm-mcp-core` 49, `nifi-extensions` 6, `plan-marshall-mcp` 19, `cui-open-rewrite` 2, `TokenSheriff` 1, `cui-jsf-test-basic` 1. `API-Sheriff` holds tombstones only (0 lessons; its 25 project-only lessons of the 2026-11-02 run are gone from the store, see Watches in `epic.md`). Probed with no lesson files: plan-marshall-business, plan-marshall-documentation (and its two follow-up checkouts), plan-marshall-telemetry (and its follow-up), pm-mcp-parent, pm-mcp-clients, cuioss-organization, cuioss-review-bot, coderabbit, cuioss-parent-pom, cuioss.github.io, playwright-test-artifacts, and every other `cui-*` checkout. Sibling worktrees probed with no store: API-Sheriff `_orchestrator` and `plan-sec-05-…`, pm-mcp-core `_orchestrator` and its `.plan/temp/` worktree. Not git repositories, so not probed: `doc`, `worktrees`. **Gap:** `other-llm-projects` and `other-test-projects` are plain directories that may hold checkouts one level deeper; not listed.
+
+**Left in source (unchanged by count from the 2026-11-02 run):** pm-mcp-core 49, nifi-extensions 6, TokenSheriff 1, cui-jsf-test-basic 1. Ids were not re-compared.
+
+**Operator rulings this run.** None needed: no item was borderline medium/high.
+
+**Checked at `64907fa3b`:** the `ci-verify` producer vocabulary is now pinned by `test/plan-marshall/plan-marshall/test_verification_feedback_producer_vocab.py:14-70` (accept-set parsed from `verification-feedback.md`, producers swept from `ci_verify.classify_check`); `foreign_pr_gate.py:67-86` classifies on the declared `foreign_branch` or the checked-out branch and states there is no fall-back to `feature/{plan_id}`; `adr-propose.md:110` still calls `AskUserQuestion` from a step dispatched as a leaf (`:42`). Everything else rests on the lesson text.
+
+### Filed to `live-blockers` (0)
+
+Nothing reached high or critical. `live-blockers` inbox was empty (0 live, 0 invalid) at this run.
+
+### `stale/` (2)
+
+| Lesson | Why |
+|---|---|
+| pmmcp `2026-10-20-15-001` | `ci-verify` producers outside the `verification-feedback` accept-set: fixed, contract test above |
+| pmmcp `2026-11-05-15-005` | `foreign_pr_gate` assumed `feature/{plan_id}`: fixed, `foreign_pr_gate.py:67-86`. Residual asks (a PR-less evidence-store landing form, a recorded operator override) are not stated at HEAD; low, not filed |
+
+### `low/` (3, already covered)
+
+| Lesson | Covered by |
+|---|---|
+| pmmcp `2026-10-17-14-002`, `2026-10-21-05-003` | Invented or under-specified script flags: `-044` script surface drift |
+| pmmcp `2026-10-20-15-003` | `-031`/`-058` Maven module-tests DEGRADED |
+
+### `medium/` (8, not filed — message text only unless noted)
+
+| Cluster | Lessons |
+|---|---|
+| Q-Gate mechanical-check false positives, each needs a manual disposition | pmmcp `2026-10-17-14-001` (`declared_set_closure`: absolute vs repo-relative paths), `2026-10-20-15-005` (`declared_scope_reconciliation`: survey-only glob read as write scope), `2026-10-21-05-002` (`files_exist`: a delete target an earlier task creates) |
+| Outline authoring | pmmcp `2026-11-06-16-002` (transient cherry-picked file and sibling files with the same defect left out of Affected files) |
+| Leaf and consumer-repo contract gaps | pmmcp `2026-10-20-15-002` (`adr-propose` Step 5 prompts via `AskUserQuestion` in a leaf; present at `adr-propose.md:110`), `2026-10-20-15-004` (`marketplace/bundles/...` paths shown to leaves and operator in a consumer repo) |
+| Finalize | pmmcp `2026-11-05-15-003` (PR stays mergeable while finalize re-runs pre-merge reviews after a rebase; related to `-060`) |
+| `git-workflow commit` | pmmcp `2026-11-06-16-003` (`FETCH_FAILURE` for an unstaged change; a recurrence of v12-001 and v46-003 of the 2026-11-02 inbox sweep, now four sources) |
+
+### Not applicable — left in the source checkout (8)
+
+| Lessons | Why |
+|---|---|
+| pmmcp `2026-10-17-14-003`, `2026-10-21-05-001`, `2026-11-05-15-002`, `2026-11-06-16-001` | `plan-marshall-mcp` project documents and experiments: work-package wording, a paired-experiment report, a terminology sweep over a run command, roadmap milestones |
+| pmmcp `2026-11-05-15-001`, `2026-11-05-15-004` | `pm-mcp-clients` SNAPSHOT deploy gating; owed `pm-e2e` architecture hints for that module |
+| cui-open-rewrite `2026-07-20-23-001`, `-23-002` | The OpenRewrite recipe library's own code (marker scoping, LST node identity); not a plan-marshall bundle |
+
+### Dispositions
+
+| Disposition | Count |
+|---|---|
+| filed | 0 |
+| already-covered (stored in `low/`) | 3 |
+| medium | 8 |
+| stale | 2 |
+| not applicable (left in source) | 8 |
+| **total** | **21** |
+
+The 13 lessons taken in were moved with `mv -n` to `{level}/plan-marshall-mcp/`; all 13 destinations were verified present with `git status`, and 6 `plan-marshall-mcp` plus 2 `cui-open-rewrite` lessons remain in their stores. No tombstone and no commit was made in either source repository.

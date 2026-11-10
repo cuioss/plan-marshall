@@ -4,7 +4,7 @@
 
 ## START HERE
 
-**Resume anchor**: R40 (2026-11-02) GATHER COMMAND PERSISTED (RULING 2026-11-02 in epic.md Standing Rule): the R39 cross-repo sweep is now the epic-local 'gather' command. R39 record unchanged: 5 sibling stores, 178 lessons, 96 moved into lessons-archive (filed 10 / already-covered 33 / medium 18 / low 30 / stale 5), 82 project-only left in source; pm-mcp-clients checked, no store. Filed to live-blockers (undrained): 060 (amended), 064..074. Open: 2026-11-01 left-in-place ids missing from source unreconciled. Queue unchanged: PLAN-LR-01..05 parked, nothing emittable. Ledger landed via /plan-orchestrator land at R40. Next: (1) confirm live-blockers drains 058..074; (2) gather / ingest again on refill.
+**Resume anchor**: R41 (2026-11-10) GATHER RUN 11: probed all 36 entries of /Users/oliver/git/*; 21 new lessons (plan-marshall-mcp 19, cui-open-rewrite 2). 13 in scope moved into lessons-archive (stale 2, already-covered 3, medium 8), 8 project-only left in source, 0 filed to live-blockers (nothing high/critical; its inbox was empty). R39/R40 record unchanged: 5 sibling stores, 178 lessons, 96 moved, 82 project-only left. Open: (a) 2026-11-01 left-in-place ids missing from source still unreconciled; API-Sheriff store now tombstones-only, cause not established; (b) coverage gap: other-llm-projects and other-test-projects not listed one level deeper. Queue unchanged: PLAN-LR-01..05 parked, nothing emittable. Ledger NOT landed since R40: this run's INDEX.md and epic.md edits and 13 archive files are uncommitted in the ledger worktree. Next: land when the operator asks; gather / ingest again on refill.
 **Phase**: orchestrating
 **Parked**:
 - PLAN-LR-01 (WS-01)
