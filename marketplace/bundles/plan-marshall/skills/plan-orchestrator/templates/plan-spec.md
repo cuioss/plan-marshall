@@ -47,12 +47,13 @@ script that flags both contradictions in `cleanup` Step 5.
 project, not guessed.** The two lines are child lines of the deliverable, in exactly the shape the
 runbook lane reads (`Skills:` / `Persona:` optionally after a bullet marker, both optional). Fill them
 with `plan-marshall:plan-orchestrator:orchestrator corpus spec-skills --slug {slug} --plan PLAN-NN`:
-its `suggested_skills` are the domain skills of the modules the declared surface maps to (an
-`unmapped` path is named, never guessed — then name the skills explicitly or record `none`), and its
-`suggested_persona` follows the path kind (source → `implementer`, test → `module-tester`, document →
-`documenter`). `Persona:` names one of `implementer`, `module-tester`, `integration-tester`,
-`security-expert`, `documenter`. A project that configures no domain skills for the module records
-`Skills: none`; the spec then declares the line and the lane still resolves `none named`.
+its `suggested_skills` are the domain skills the project configures for the declared surface's files
+(an `unmapped` path is named, never guessed — then name the skills explicitly or record `none`), and
+its `suggested_persona` follows the path kind (source → `implementer`, test → `module-tester`,
+document → `documenter`). `Persona:` names one of `implementer`, `module-tester`,
+`integration-tester`, `security-expert`, `documenter`. A project that configures no domain skills for
+the module records `Skills: none`; the line is present, so the declaration is the author's answered
+absence rather than a missing line.
 
 1. {deliverable}
    - Skills: {bundle:skill, …}
