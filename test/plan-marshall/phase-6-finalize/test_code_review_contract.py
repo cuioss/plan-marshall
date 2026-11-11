@@ -542,6 +542,30 @@ def test_a_heading_between_the_citation_and_the_block_ends_the_lead_in():
     assert _templates_without_the_quoting_rule(under_a_heading)
 
 
+def test_a_heading_without_blank_line_boundaries_ends_the_lead_in():
+    """A heading directly after the citation and directly before the block still ends the lead-in."""
+    no_blank_boundary = f'Quoted per [§ Shell-safe free text]{_QUOTING_RULE_ANCHOR}.\n## A heading\n{_FIXTURE_TEMPLATE}'
+    assert _templates_without_the_quoting_rule(no_blank_boundary)
+
+
+def test_an_empty_heading_ends_the_lead_in():
+    """An ATX heading of markers alone is a heading, so it ends the lead-in."""
+    empty_heading = f'Quoted per [§ Shell-safe free text]{_QUOTING_RULE_ANCHOR}.\n##\n\n{_FIXTURE_TEMPLATE}'
+    assert _templates_without_the_quoting_rule(empty_heading)
+
+
+def test_a_block_clears_the_paragraph_it_interrupts():
+    """Prose after a block is not appended to the paragraph that introduced it."""
+    interrupted = (
+        f'Quoted per [§ Shell-safe free text]{_QUOTING_RULE_ANCHOR}.\n'
+        f'{_FIXTURE_TEMPLATE}\n\n'
+        'Ordinary prose, with no citation.\n\n'
+        f'{_FIXTURE_TEMPLATE}'
+    )
+    unreferenced = _templates_without_the_quoting_rule(interrupted)
+    assert len(unreferenced) == 1, 'only the first template is introduced by the citation'
+
+
 # ---------------------------------------------------------------------------
 # An advisory line that was not written halts the record
 # ---------------------------------------------------------------------------

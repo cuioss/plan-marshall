@@ -33,7 +33,8 @@ ONE_SINGLE_QUOTED_WORD_RE = re.compile(r"'[^'\n]*'")
 #: A fence at any indentation — a template inside a list item is indented.
 ANY_FENCE_RE = re.compile(r'^\s*```(\w*)\s*$')
 #: A markdown ATX heading, indented at most three spaces; it is a paragraph of its own.
-HEADING_RE = re.compile(r'^ {0,3}#{1,6}\s')
+#: A heading may be empty (``##`` alone), so the end of the line closes one too.
+HEADING_RE = re.compile(r'^ {0,3}#{1,6}(?:\s|$)')
 
 #: The halt rule that must sit between an advisory decision-log template and the
 #: ``mark-step-done`` that records the outcome after it.
@@ -51,10 +52,10 @@ def bash_blocks_with_lead_in(text: str) -> list[tuple[str, str]]:
     """Every ``bash`` block, indented ones included, paired with the paragraph that introduces it.
 
     Only the immediately preceding paragraph introduces a block: a blank line ends
-    the paragraph it separates, and an ATX heading is a paragraph of its own, so a
-    citation further up the document does not reach a block it does not sit above.
-    Blocks separated only by blank lines share one lead-in: the paragraph before the
-    first of them introduces the whole run.
+    the paragraph it separates, a block ends the paragraph it interrupts, and an ATX
+    heading is a paragraph of its own, so a citation further up the document does not
+    reach a block it does not sit above. Blocks separated only by blank lines share
+    one lead-in: the paragraph before the first of them introduces the whole run.
     """
     pairs: list[tuple[str, str]] = []
     paragraph: list[str] = []
@@ -67,6 +68,7 @@ def bash_blocks_with_lead_in(text: str) -> list[tuple[str, str]]:
         if fence and block is None:
             block, language = [], fence.group(1)
             lead_in = paragraph or introducing
+            paragraph = []
             continue
         if fence and block is not None:
             if language == 'bash':
