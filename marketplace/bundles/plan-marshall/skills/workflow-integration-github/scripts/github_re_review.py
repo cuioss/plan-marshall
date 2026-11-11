@@ -1884,6 +1884,24 @@ def bot_kind_for_author(author_login: str | None) -> str | None:
     return _AUTHOR_LOGIN_TO_BOT_KIND.get(normalized)
 
 
+def _is_refusal_body(body: str, bot_kind: str) -> bool:
+    """Whether ``body`` is a refusal notice, by the same layered arms the producer runs.
+
+    The producer's ``_is_refusal_notice`` lives in ``github_pr``, which imports this
+    module, so the arms are composed from the shared ``_github_pr`` primitives instead
+    of importing it. The three layers are the ones ``_github_pr.REFUSAL_LAYERS`` names:
+    the structural rate-limit recogniser, the bot's own declared ``refusal_patterns``,
+    and the enumerative arm for a notice no earlier layer could read. Any one is
+    enough; a body no layer reads is not a refusal.
+    """
+    if _is_rate_limit_notice(body):
+        return True
+    lowered = (body or '').casefold()
+    if any(pattern.casefold() in lowered for pattern in bot_registry.refusal_patterns(bot_kind) if pattern):
+        return True
+    return _is_unrecognised_refusal(body)
+
+
 def _qualifying_review_on_record(pr_number: int | str, bot_kind: str) -> bool | None:
     """Whether ``bot_kind`` holds a qualifying review on this pull request.
 
@@ -1923,9 +1941,18 @@ def _qualifying_review_on_record(pr_number: int | str, bot_kind: str) -> bool | 
         if bot_kind_for_author(comment.get('author')) != bot_kind:
             continue
         kind = str(comment.get('kind') or '')
+        body = str(comment.get('body') or '')
         if kind == 'review_body':
-            return True
-        if kind == 'issue_comment' and review_coverage_names_commit(str(comment.get('body') or '')):
+            # A review OBJECT can carry a refusal notice instead of a review. The
+            # producer excludes such a body from participation (and so from
+            # ``finished_review_bots``), so this read must too — otherwise a
+            # refusal-as-review would make the first trigger unreachable. A body that
+            # is a refusal AND carries a readable finished marker is the one case both
+            # sites admit (CodeRabbit keeps the marker beside a later limit notice).
+            if not _is_refusal_body(body, bot_kind) or review_coverage_names_commit(body):
+                return True
+            continue
+        if kind == 'issue_comment' and review_coverage_names_commit(body):
             return True
     return False
 

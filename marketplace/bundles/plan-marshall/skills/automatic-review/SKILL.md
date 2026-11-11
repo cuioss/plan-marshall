@@ -1882,12 +1882,14 @@ python3 .plan/execute-script.py plan-marshall:automatic-review:review_completene
   --plan-id PLAN_ID [--pr-number PR_NUMBER] \
   [--required-bots [REQUIRED_BOTS]] [--optional-bots [OPTIONAL_BOTS]] \
   [--stale-participation-bots [STALE_PARTICIPATION_BOTS]] \
+  [--finished-review-bots [FINISHED_REVIEW_BOTS]] \
   [--reviewed-commit-sha [REVIEWED_COMMIT_SHA]] [--head-sha [HEAD_SHA]]
 ```
 
 Lists every bot trigger B must request a fresh review from. It returns `trigger_bots[]` — required
 bots first, in `--required-bots` order, then the optional ones by name — together with
-`required_stale_bots[]`, `stored_finding_bots[]`, `stored_findings_stale`, `unclassified_bots[]`, and
+`required_stale_bots[]`, `stored_finding_bots[]`, `stored_findings_stale`, `review_complete_bots[]`,
+`unclassified_bots[]`, and
 the scope fields `store_scope` / `unscoped_stored_findings` / `unscoped_stored_finding_ids`.
 
 `--pr-number` scopes the stored-finding population to one pull request. The plan's findings store is

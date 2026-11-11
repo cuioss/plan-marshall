@@ -211,6 +211,35 @@ def test_an_unflagged_bot_is_never_refused_by_the_done_rule(monkeypatch):
     assert posted == [(_PR, '@sourcery-ai review')]
 
 
+def test_a_review_body_that_is_a_refusal_is_not_a_finished_review(monkeypatch):
+    """A review OBJECT can carry a refusal notice — the producer excludes it, so must this."""
+    posted = _record_posts(monkeypatch)
+    _history(
+        monkeypatch,
+        [
+            _comment(
+                'review_body', '> ## Review limit reached > Please wait 12 minutes before requesting another review.'
+            )
+        ],
+    )
+
+    result = _request('coderabbit', monkeypatch)
+
+    assert result['status'] == 'success'
+    assert posted == [(_PR, '@coderabbitai review')]
+
+
+def test_a_refusal_review_body_carrying_a_finished_marker_is_a_review(monkeypatch):
+    """Both sites admit the review CodeRabbit publishes with a later limit notice beside it."""
+    posted = _record_posts(monkeypatch)
+    _history(monkeypatch, [_comment('review_body', f'Review limit reached\n{_COVERAGE_BODY}')])
+
+    result = _request('coderabbit', monkeypatch)
+
+    assert posted == []
+    assert result['status'] == 'refused'
+
+
 def test_an_unreadable_history_permits_the_post(monkeypatch):
     """A failed read is not evidence of a review on record; refusing would be fail-worse.
 
