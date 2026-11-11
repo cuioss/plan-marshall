@@ -59,7 +59,7 @@ per-concern layout; no code path here opens a queue row or the anchor itself.
   makes no ``epic.md`` write. Refuses a closed epic (``refused_closed``):
   compaction is a live-epic operation only. The narrative-versus-settled
   RELOCATION judgement is NOT here; it stays LLM.
-- ``corpus {epics,enumerate,read,cross-check,surfaces,declaration-currency,verdicts,set-verdict}`` — the
+- ``corpus {epics,enumerate,read,spec-skills,cross-check,surfaces,declaration-currency,verdicts,lint-done-whens,set-verdict}`` — the
   epic population and the epic's staged
   spec corpus: enumerate every epic slug in the store (``epics`` — the one
   slug-free verb, partitioned into active and archived, publishing the roots it
@@ -151,6 +151,7 @@ ledger. No implementation-side capability (no build/CI/source verbs) exists here
 """
 
 import argparse
+import fnmatch
 import importlib.util
 import json
 import os
@@ -166,6 +167,7 @@ from pathlib import Path
 from typing import Any
 
 import plugin_registry
+import spec_skills
 from _cmd_sibling_collision import (
     _OVERLAP_JOIN,
     _iter_active_plan_dirs,
@@ -2759,6 +2761,197 @@ def cmd_corpus_surfaces(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
+# --- the Done-when authoring lint --------------------------------------------
+#
+# ``corpus lint-done-whens`` is the script half of the Done-when rules the
+# plan-spec template and ``decompose.md`` Step 4 state. Both rules are string
+# facts over one spec's own text, so neither is left to a reader's judgement: the
+# check IS the rule, and the docs name the verb that applies it.
+
+DONE_WHEN_RULE_FAILS_AT = 'fails_at_beside_preservation'
+DONE_WHEN_RULE_HOLDS_AT = 'holds_at_over_hypothesis'
+DONE_WHEN_RULES = (DONE_WHEN_RULE_FAILS_AT, DONE_WHEN_RULE_HOLDS_AT)
+
+#: A Done-when unit opens with its label: the italic/bold ``*Done when:*`` form
+#: the corpus writes, or a heading that names it. Only a LABEL opens a unit —
+#: prose that merely mentions a Done-when is not one.
+_DONE_WHEN_LABEL = re.compile(r'^done[\s-]+when\b', re.IGNORECASE)
+_DONE_WHEN_HEADING = re.compile(r'^#{1,6}[ \t]+.*done[\s-]+when', re.IGNORECASE)
+
+_FAILS_AT = re.compile(r'fails at', re.IGNORECASE)
+_HOLDS_AT = re.compile(r'holds at', re.IGNORECASE)
+#: The words that state behaviour ALREADY holds. A Done-when carrying one of them
+#: beside ``fails at`` asks for a failing observation of something it also says is
+#: unchanged. The look-arounds keep a HYPHENATED compound out: the word in
+#: ``statement-keeps-default`` names a rule, it does not assert a state.
+_PRESERVATION_WORD = re.compile(r'(?<![\w-])(?:still|keeps|unchanged)(?![\w-])', re.IGNORECASE)
+#: A DOUBLE-quoted segment. A word inside one is NAMED, not asserted — a spec that
+#: quotes this rule's own vocabulary (``beside the words "still"``) is describing
+#: the defect, not committing it. Single quotes are deliberately NOT stripped: an
+#: ordinary contraction's apostrophes would pair up and swallow the clause.
+_QUOTED_SEGMENT = re.compile(r'"[^"]*"')
+#: A commit id, or the template's own placeholder — never a code symbol.
+_SHA_TOKEN = re.compile(r'^(?:[0-9a-f]{7,40}|\{sha\})$', re.IGNORECASE)
+#: Clause boundaries inside one Done-when unit.
+_CLAUSE_SPLIT = re.compile(r'(?<=[.;:])\s+')
+_CODE_SPAN = re.compile(r'`([^`]+)`')
+
+
+def _fenced_line_indices(lines: list[str]) -> set[int]:
+    """The indices of the lines that sit inside a fenced block.
+
+    Delegates to the module's OWN CommonMark fence mask — the reader the surface and
+    claim scans already use — so a Done-when or HYPOTHESIS line inside an example is
+    masked exactly as a fenced path is. A second scanner here would drift from it,
+    and already had: it opened a fence on a backtick delimiter carrying a backtick in
+    its info string, which the mask correctly reads as prose.
+    """
+    return {index for index, fenced in enumerate(_fenced_mask(lines)) if fenced}
+
+
+def _done_when_units(text: str) -> list[str]:
+    """Every Done-when unit in a spec body, whitespace-collapsed.
+
+    A unit opens with the Done-when label at the start of a line and runs to the
+    next blank line, or with a Done-when heading whose body runs to the next
+    heading. Both shapes occur in the corpus, so both are read. A fenced block is
+    a SAMPLE: no line inside one opens or extends a unit.
+    """
+    lines = text.splitlines()
+    fenced = _fenced_line_indices(lines)
+    units: list[str] = []
+    index = 0
+    while index < len(lines):
+        if index in fenced:
+            index += 1
+            continue
+        stripped = lines[index].strip()
+        if _DONE_WHEN_HEADING.match(stripped):
+            collected: list[str] = []
+            index += 1
+            while index < len(lines) and (index in fenced or not lines[index].lstrip().startswith('#')):
+                if index not in fenced:
+                    collected.append(lines[index])
+                index += 1
+            units.append(' '.join(' '.join(collected).split()))
+            continue
+        if _DONE_WHEN_LABEL.match(stripped.lstrip('*_- \t')):
+            collected = [stripped]
+            index += 1
+            while index < len(lines) and lines[index].strip():
+                if index not in fenced:
+                    collected.append(lines[index].strip())
+                index += 1
+            units.append(' '.join(' '.join(collected).split()))
+            continue
+        index += 1
+    return [unit for unit in units if unit]
+
+
+def _hypothesis_symbols(text: str) -> dict[str, str]:
+    """Every code symbol an UNSETTLED ``HYPOTHESIS`` claim names, with its line.
+
+    A claim that already carries a ``corroborated`` verdict is SETTLED — the
+    template keeps the ``HYPOTHESIS`` label after settlement and adds one nested
+    ``verdict:`` bullet — so the label alone is not the test. The claims are read
+    through the one claim-section parser, which pairs each claim with its verdict.
+    """
+    lines = text.splitlines()
+    symbols: dict[str, str] = {}
+    for claim in _parse_claim_section(lines)['claims']:
+        if not str(claim['text']).startswith('HYPOTHESIS:'):
+            continue
+        raw_verdict = str(claim['verdict_text'])
+        parsed = _parse_verdict_text(raw_verdict) if raw_verdict else None
+        if parsed is not None and parsed.get('verdict') == 'corroborated':
+            continue
+        index = int(claim['line'])
+        end = int(claim['block_end'])
+        line = lines[index] if 0 <= index < len(lines) else ''
+        block = ' '.join(part.strip() for part in lines[index:end])
+        for span in _CODE_SPAN.findall(block):
+            token = span.strip()
+            if token and not _SHA_TOKEN.match(token):
+                symbols.setdefault(token, line.strip())
+    return symbols
+
+
+def _done_when_findings(spec: str, text: str) -> list[dict[str, str]]:
+    """The two Done-when contradictions one spec carries, clause by clause."""
+    findings: list[dict[str, str]] = []
+    symbols = _hypothesis_symbols(text)
+    for unit in _done_when_units(text):
+        # Rule 1 is judged over ONE CLAUSE — the destructive shape is "X fails at
+        # `sha` … still/keeps/unchanged" asserting the SAME behaviour. A unit that
+        # states a "fails at" arm and a separate "holds at … must keep holding" arm
+        # is the CORRECT shape the rule asks for, and unit scope would flag it.
+        for clause in (part.strip() for part in _CLAUSE_SPLIT.split(unit)):
+            if not clause:
+                continue
+            asserted = _QUOTED_SEGMENT.sub('', clause)
+            if _FAILS_AT.search(asserted) and _PRESERVATION_WORD.search(asserted):
+                findings.append({'spec': spec, 'rule': DONE_WHEN_RULE_FAILS_AT, 'clause': clause, 'symbol': ''})
+                continue
+            if not _HOLDS_AT.search(asserted):
+                continue
+            for span in (token.strip() for token in _CODE_SPAN.findall(asserted)):
+                if span in symbols:
+                    findings.append({'spec': spec, 'rule': DONE_WHEN_RULE_HOLDS_AT, 'clause': clause, 'symbol': span})
+    return findings
+
+
+def cmd_corpus_lint_done_whens(args: argparse.Namespace) -> dict[str, Any]:
+    """Flag the two Done-when authoring contradictions across the corpus. Read-only.
+
+    Rule :data:`DONE_WHEN_RULE_FAILS_AT` fires on a Done-when that asks for a
+    "fails at" observation of behaviour it also calls still/keeps/unchanged: the
+    behaviour is not new, so the criterion cannot be met as written. Rule
+    :data:`DONE_WHEN_RULE_HOLDS_AT` fires on a "holds at" Done-when resting on a
+    symbol a HYPOTHESIS claim of the same spec also names: the claim is unsettled,
+    so the Done-when assumes what the spec has not established.
+
+    ``specs_total``/``specs_scanned``/``specs_with_done_when`` ride with the
+    findings so a zero count states which zero it is. A spec with no Done-when at
+    all contributes no row, and an unreadable spec is named rather than silently
+    skipped.
+    """
+    invalid = _validate_slug(args.slug)
+    if invalid:
+        return _error(args.slug, 'invalid_slug', invalid)
+    root = _epic_root(args.slug, allow_archived=True)
+    if not root.is_dir():
+        return _error(args.slug, 'not_found', f'epic {args.slug!r} has no store tree')
+
+    spec_paths = _spec_paths(root)
+    findings: list[dict[str, str]] = []
+    unreadable: list[dict[str, str]] = []
+    with_done_when = 0
+    for path in spec_paths:
+        text, error = _read_spec(path)
+        if error or text is None:
+            unreadable.append({'spec': path.name, 'error': error or 'unreadable'})
+            continue
+        if _done_when_units(text):
+            with_done_when += 1
+        findings.extend(_done_when_findings(path.name, text))
+
+    counts = {rule: sum(1 for finding in findings if finding['rule'] == rule) for rule in DONE_WHEN_RULES}
+    return {
+        'status': 'success',
+        'operation': 'corpus-lint-done-whens',
+        'slug': args.slug,
+        'store': ORCHESTRATOR_STORE,
+        'specs_total': len(spec_paths),
+        'specs_scanned': len(spec_paths) - len(unreadable),
+        'specs_with_done_when': with_done_when,
+        'unreadable_count': len(unreadable),
+        'unreadable': unreadable,
+        'findings_count': len(findings),
+        'rule_counts': [{'rule': rule, 'count': counts[rule]} for rule in DONE_WHEN_RULES],
+        'findings': findings,
+    }
+
+
 def _parse_footprint_paths(raw: str | None) -> frozenset[str]:
     """Normalize the ``--footprint-paths`` CSV into a comparable set.
 
@@ -3634,6 +3827,66 @@ def _spec_within_corpus(path: Path, plans_dir: Path) -> bool:
     return True
 
 
+def _resolve_corpus_spec(slug: str, plan: str) -> tuple[Path | None, dict[str, Any] | None]:
+    """Resolve one plan id to its staged spec file, or the refusal naming why not.
+
+    The ONE resolution seam every corpus verb that addresses a single spec uses —
+    ``corpus read`` and ``corpus spec-skills`` — so the two cannot disagree about
+    which file a plan id names. ``--plan`` is validated against the anchored
+    settled plan-id grammar before any match; an exact stem match wins outright, a
+    single prefix match resolves, zero matches return ``spec_not_found`` carrying
+    ``available_specs``, several prefix matches return ``ambiguous_spec`` carrying
+    ``candidates``, and a match resolving outside ``plans/`` (symlink escape)
+    returns ``spec_escapes_corpus``. Returns ``(spec, None)`` on success and
+    ``(None, error_envelope)`` otherwise.
+    """
+    if not _ADD_ROW_PLAN_ID_RE.match(plan):
+        return None, _error(slug, 'invalid_plan', f'--plan must be a plan id ({PLAN_ID_SEGMENT}), got: {plan!r}')
+    root = _epic_root(slug, allow_archived=True)
+    if not root.is_dir():
+        return None, _error(slug, 'not_found', f'epic {slug!r} has no store tree')
+    specs = _spec_paths(root)
+    try:
+        plans_dir = (root / PLANS_SUBDIR).resolve()
+    except (OSError, RuntimeError):
+        return None, _error(slug, 'not_found', f'epic {slug!r} has no resolvable plans tree')
+    candidates: list[Path] = []
+    for path in specs:
+        if not _spec_matches_row(path, plan):
+            continue
+        if not _spec_within_corpus(path, plans_dir):
+            try:
+                path.resolve()
+            except (OSError, RuntimeError):
+                return None, _error(slug, 'unreadable', f'spec {path.name!r} could not be read', spec=path.name)
+            return None, _error(
+                slug,
+                'spec_escapes_corpus',
+                f'spec {path.name!r} resolves outside {PLANS_SUBDIR}/ and is refused',
+                spec=path.name,
+            )
+        candidates.append(path)
+    matches = sorted(candidates)
+    exact = next((path for path in matches if path.stem == plan), None)
+    if exact is not None:
+        return exact, None
+    if len(matches) == 1:
+        return matches[0], None
+    if not matches:
+        return None, _error(
+            slug,
+            'spec_not_found',
+            f'no spec file for plan {plan!r} in {PLANS_SUBDIR}/',
+            available_specs=[path.name for path in specs],
+        )
+    return None, _error(
+        slug,
+        'ambiguous_spec',
+        f'plan {plan!r} matches several spec files; pass the exact spec stem',
+        candidates=[path.name for path in matches],
+    )
+
+
 def cmd_corpus_read(args: argparse.Namespace) -> dict[str, Any]:
     """Return one staged spec's body through the sanctioned read path.
 
@@ -3645,71 +3898,19 @@ def cmd_corpus_read(args: argparse.Namespace) -> dict[str, Any]:
     uses (cwd-relative — a worktree reads its own branch's copy, not main's),
     reads the single matching spec file, and writes nothing.
 
-    The match reuses :func:`_spec_matches_row` (exact-or-prefix on the stem
-    with the separating hyphen), so ``--plan PLAN-03`` resolves
-    ``PLAN-03-compliant-paths.md``. The ``--plan`` value itself is validated
-    against the anchored settled plan-id grammar
-    (:data:`_ADD_ROW_PLAN_ID_RE`) — a bare ``PLAN`` without its digits never
-    reaches matching. An exact stem match wins outright; a single prefix
-    match resolves; zero matches return ``spec_not_found`` carrying
-    ``available_specs``; several prefix matches return ``ambiguous_spec``
-    carrying ``candidates`` rather than silently returning the first file.
-    A match resolving outside ``plans/`` (symlink escape) returns
-    ``spec_escapes_corpus`` naming the spec.
-    An unreadable file returns ``unreadable``; an unsafe slug returns
-    ``invalid_slug``; a slug with no store tree returns ``not_found``. An
-    absent spec is never rendered as an empty body.
+    The match is :func:`_resolve_corpus_spec`'s — the same resolution
+    ``corpus spec-skills`` uses. An unreadable file returns ``unreadable``; an
+    unsafe slug returns ``invalid_slug``; a slug with no store tree returns
+    ``not_found``. An absent spec is never rendered as an empty body.
     """
     invalid = _validate_slug(args.slug)
     if invalid:
         return _error(args.slug, 'invalid_slug', invalid)
     plan = args.plan
-    if not _ADD_ROW_PLAN_ID_RE.match(plan):
-        return _error(args.slug, 'invalid_plan', f'--plan must be a plan id ({PLAN_ID_SEGMENT}), got: {plan!r}')
-    root = _epic_root(args.slug, allow_archived=True)
-    if not root.is_dir():
-        return _error(args.slug, 'not_found', f'epic {args.slug!r} has no store tree')
-    specs = _spec_paths(root)
-    try:
-        plans_dir = (root / PLANS_SUBDIR).resolve()
-    except (OSError, RuntimeError):
-        return _error(args.slug, 'not_found', f'epic {args.slug!r} has no resolvable plans tree')
-    candidates: list[Path] = []
-    for path in specs:
-        if not _spec_matches_row(path, plan):
-            continue
-        if not _spec_within_corpus(path, plans_dir):
-            try:
-                path.resolve()
-            except (OSError, RuntimeError):
-                return _error(args.slug, 'unreadable', f'spec {path.name!r} could not be read', spec=path.name)
-            return _error(
-                args.slug,
-                'spec_escapes_corpus',
-                f'spec {path.name!r} resolves outside {PLANS_SUBDIR}/ and is refused',
-                spec=path.name,
-            )
-        candidates.append(path)
-    matches = sorted(candidates)
-    exact = next((path for path in matches if path.stem == plan), None)
-    if exact is not None:
-        spec = exact
-    elif len(matches) == 1:
-        spec = matches[0]
-    elif not matches:
-        return _error(
-            args.slug,
-            'spec_not_found',
-            f'no spec file for plan {plan!r} in {PLANS_SUBDIR}/',
-            available_specs=[path.name for path in specs],
-        )
-    else:
-        return _error(
-            args.slug,
-            'ambiguous_spec',
-            f'plan {plan!r} matches several spec files; pass the exact spec stem',
-            candidates=[path.name for path in matches],
-        )
+    spec, refusal = _resolve_corpus_spec(args.slug, plan)
+    if refusal is not None:
+        return refusal
+    assert spec is not None
     text, error = _read_spec(spec)
     if text is None:
         return _error(args.slug, error, f'spec {spec.name!r} could not be read', spec=spec.name)
@@ -3724,6 +3925,420 @@ def cmd_corpus_read(args: argparse.Namespace) -> dict[str, Any]:
         'size_bytes': len(text.encode('utf-8')),
         'line_count': len(lines),
         'body': text,
+    }
+
+
+# --- the spec-skills suggestion verb -----------------------------------------
+#
+# ``corpus spec-skills`` is the orchestrator side of the per-deliverable
+# ``Skills:`` / ``Persona:`` declaration the plan-spec template asks for. It reads
+# the declaration through the SAME shared reader the runbook lane uses, maps the
+# spec's declared surface to modules through the project's architecture, and
+# reports the domain skills the PROJECT CONFIGURES for those paths.
+#
+# The SKILL SOURCE is the project's configured skill domains, read through
+# ``manage-config skill-domains get`` — the configuration's own read verb, which
+# merges the owning bundle's extension profiles with the operator's inclusion and
+# veto configuration. The configured profile blocks and ``file_globs`` are served
+# by that verb; the profiles themselves live in the bundle's extension, so this
+# verb never re-derives them. The module record carries a ``skills_by_profile`` map
+# too, but it is a PERSISTED enrichment that can be stale (this repository's own
+# ``pm-dev-python`` record carries another domain's skills), so the configuration
+# is the source that cannot disagree with what the project declares.
+#
+# The suggestion is the domain's ``core`` and ``implementation`` defaults, with the
+# project's ``excluded_skills`` veto APPLIED through the one shared filter every
+# other seam uses — an exclusion wins whichever producer surfaced the skill.
+#
+# WHICH domain applies is decided in two rungs, most specific first: the path's
+# own file type against each domain's configured ``file_globs`` (the project's
+# domain-detection knowledge, so a ``.py`` path gets the python domain's skills
+# even inside a plugin bundle), and failing that the domains the architecture
+# reports as applicable to the module owning the path. A path neither rung places
+# is reported ``unmapped`` and its skills are never guessed.
+
+#: The persona each path KIND suggests, from the template's closed set. The set
+#: itself is authored once in `templates/plan-spec.md` and pinned by the template
+#: test; this map names only the three kinds a path can take.
+SPEC_SKILLS_PERSONA_BY_KIND = {'source': 'implementer', 'test': 'module-tester', 'document': 'documenter'}
+#: The kind order a mixed surface resolves its ONE suggested persona in.
+SPEC_SKILLS_KIND_ORDER = ('source', 'test', 'document')
+
+#: Suffixes that make a path a DOCUMENT. Matched case-insensitively.
+_DOCUMENT_PATH_SUFFIXES = frozenset({'.adoc', '.md', '.rst', '.txt'})
+
+#: The two clients this verb reads through, addressed the way every script
+#: addresses a sibling.
+_ARCHITECTURE_NOTATION = 'plan-marshall:manage-architecture:architecture'
+_CONFIG_NOTATION = 'plan-marshall:manage-config:manage-config'
+
+
+def _executor_path() -> str:
+    """The checkout's own executor, absolute when it resolves.
+
+    The sibling verbs are launched from any working directory this process was
+    started in, so a cwd-relative ``.plan/execute-script.py`` would turn every read
+    into a failure the moment the cwd is not the repository root. The registry's
+    own resolver is the one seam that knows where the executor lives; the relative
+    form stays the fallback for a checkout it cannot resolve.
+    """
+    try:
+        from plugin_registry import default_executor_path
+
+        resolved = default_executor_path(Path(cwd_checkout_root()))
+    except Exception:
+        resolved = None
+    return str(resolved) if resolved is not None else '.plan/execute-script.py'
+
+
+def _script_payload(
+    notation: str,
+    arguments: list[str],
+    *,
+    project_config: bool = False,
+) -> dict[str, Any] | None:
+    """Run one sibling script verb and return its parsed TOON payload.
+
+    ``None`` when the call could not run, exited non-zero, or returned something
+    that is not a TOON object — a failed read is reported as one, never guessed at.
+
+    ``project_config`` reads the CHECKOUT's configuration: it drops the
+    ``PLAN_BASE_DIR`` override from the child environment, because that variable
+    redirects a *store* (a test fixture's, a plan-local one), and the domain
+    configuration this verb reports is the one in the checkout's ``.plan/`` —
+    never a store's.
+    """
+    env = None
+    if project_config:
+        env = {key: value for key, value in os.environ.items() if key != 'PLAN_BASE_DIR'}
+    argv = [sys.executable, _executor_path(), notation, *arguments]
+    try:
+        completed = subprocess.run(argv, capture_output=True, text=True, timeout=120, env=env)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if completed.returncode != 0 or not completed.stdout.strip():
+        return None
+    try:
+        parsed = parse_toon(completed.stdout)
+    except Exception:
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def _spec_path_kind(path: str) -> str:
+    """Classify one declared path as ``source``, ``test`` or ``document``."""
+    lowered = path.casefold()
+    name = lowered.rsplit('/', 1)[-1]
+    if (
+        name.startswith('test_')
+        or lowered.startswith(('test/', 'tests/'))
+        or '/test/' in lowered
+        or '/tests/' in lowered
+    ):
+        return 'test'
+    if Path(name).suffix in _DOCUMENT_PATH_SUFFIXES or lowered.startswith('doc/'):
+        return 'document'
+    return 'source'
+
+
+def _profile_default_skills(profiles: Any, profile: str) -> list[str]:
+    """The ``{profile}.defaults`` skill list of one configured profile block."""
+    block = profiles.get(profile) if isinstance(profiles, dict) else None
+    rows = block.get('defaults') if isinstance(block, dict) else None
+    if not isinstance(rows, list):
+        return []
+    skills: list[str] = []
+    for row in rows:
+        skill = row.get('skill') if isinstance(row, dict) else None
+        if isinstance(skill, str) and skill:
+            skills.append(skill)
+    return skills
+
+
+def _suggested_skills(domain: dict[str, Any]) -> list[str]:
+    """A configured domain's ``core`` + ``implementation`` defaults, after the veto.
+
+    The project's ``excluded_skills`` list removes a skill whichever producer
+    surfaced it, so the veto is applied through the ONE shared filter every other
+    seam uses (:func:`extension_base.filter_skill_map`) rather than re-implemented
+    here. ``core`` comes first because it is always merged into the profiles a
+    task loads; a skill both blocks name appears once.
+    """
+    config = domain['config']
+    profiles = {
+        key: value
+        for key, value in config.items()
+        if isinstance(value, dict) and ('defaults' in value or 'optionals' in value)
+    }
+    flat_defaults = config.get('defaults')
+    if not profiles and isinstance(flat_defaults, list):
+        # A FLAT-configured domain keeps its defaults at the top level rather than
+        # under a profile key; reading only nested blocks would report it as a
+        # domain with no skills.
+        profiles = {'flat': {'defaults': flat_defaults}}
+    raw_exclusions = config.get('excluded_skills')
+    exclusions = {str(item) for item in raw_exclusions} if isinstance(raw_exclusions, list) else set()
+    bundle = config.get('bundle')
+    from extension_base import filter_skill_map
+
+    filtered = filter_skill_map(profiles, exclusions, bundle if isinstance(bundle, str) else '')
+    combined: list[str] = []
+    for profile in ('core', 'implementation', 'flat'):
+        for skill in _profile_default_skills(filtered, profile):
+            if skill not in combined:
+                combined.append(skill)
+    return combined
+
+
+#: ``skill_domains`` siblings that are bookkeeping rather than domains, so
+#: ``skill-domains get`` cannot read them and they are not "unreadable domains".
+_CONFIG_BOOKKEEPING_KEYS = frozenset({'active_profiles'})
+
+
+def _configured_domains() -> tuple[list[dict[str, Any]], bool, list[str]]:
+    """Every configured domain with its ``file_globs`` and its profile blocks.
+
+    Returns ``(domains, readable, unreadable_keys)``. ``readable`` is false when the
+    DOMAIN KEY list could not be read at all — an unreadable configuration is a
+    failed read, never a project that configures no domains. A single key whose
+    block cannot be read is named in ``unreadable_keys`` rather than reported as a
+    domain with no skills: partial unreadability is published, not hidden.
+
+    The domain keys come from ``skill-domains list``; each key's block comes from
+    ``skill-domains get``, whose payload carries ``file_globs`` and one key per
+    profile.
+    """
+    listing = _script_payload(_CONFIG_NOTATION, ['skill-domains', 'list'], project_config=True)
+    keys = listing.get('domains') if isinstance(listing, dict) else None
+    if not isinstance(keys, list):
+        return [], False, []
+    domains: list[dict[str, Any]] = []
+    unreadable: list[str] = []
+    for key in keys:
+        if not isinstance(key, str):
+            continue
+        if key in _CONFIG_BOOKKEEPING_KEYS:
+            continue
+        payload = _script_payload(_CONFIG_NOTATION, ['skill-domains', 'get', '--domain', key], project_config=True)
+        if payload is None or payload.get('status') != 'success':
+            unreadable.append(key)
+            continue
+        globs = payload.get('file_globs')
+        domains.append(
+            {
+                'domain': key,
+                'globs': [entry for entry in globs if isinstance(entry, str)] if isinstance(globs, list) else [],
+                'config': payload,
+            }
+        )
+    return domains, True, unreadable
+
+
+def _glob_matches(path: str, glob: str) -> bool:
+    """Whether *path* matches one configured domain glob.
+
+    A leading ``**/`` means "any directory", so the remainder also matches the path
+    as a whole (``*.py`` matches ``a/b.py``): the project writes its globs for a
+    filesystem walker, and a repo-relative path is what this verb holds.
+    """
+    if fnmatch.fnmatch(path, glob):
+        return True
+    return glob.startswith('**/') and fnmatch.fnmatch(path, glob[3:])
+
+
+def _module_for_path(path: str) -> tuple[str, str]:
+    """The module owning *path*, and how the lookup went.
+
+    The state is one of ``resolved``, ``truncated``, ``failed`` and ``absent``. A
+    ``failed`` read and an ``absent`` ownership are different facts: a subprocess
+    that could not run must never be published as "no module owns this path", which
+    would tell the author to record ``none`` over a lookup that never happened.
+    """
+    payload = _script_payload(_ARCHITECTURE_NOTATION, ['which-module', '--path', path])
+    if payload is None or payload.get('status') != 'success':
+        return '', 'failed'
+    module = payload.get('module')
+    if not isinstance(module, str) or not module:
+        return '', 'truncated' if payload.get('truncated') else 'absent'
+    return module, 'resolved'
+
+
+def _applicable_domains(module: str) -> list[str]:
+    """The domain keys the architecture reports as applicable to *module*."""
+    payload = _script_payload(_ARCHITECTURE_NOTATION, ['suggest-domains', '--module', module])
+    rows = payload.get('domains') if isinstance(payload, dict) else None
+    if not isinstance(rows, list):
+        return []
+    keys: list[str] = []
+    for row in rows:
+        key = row.get('domain') if isinstance(row, dict) else None
+        if isinstance(key, str) and key:
+            keys.append(key)
+    return keys
+
+
+def _domain_for_path(
+    path: str,
+    module: str,
+    domains: list[dict[str, Any]],
+    applicable: dict[str, list[str]],
+) -> tuple[dict[str, Any] | None, str]:
+    """The configured domain *path* resolves to, with the rung that placed it."""
+    chosen: dict[str, Any] | None = None
+    best = -1
+    for entry in domains:
+        for glob in entry['globs']:
+            if _glob_matches(path, glob) and len(glob) > best:
+                best = len(glob)
+                chosen = entry
+    if chosen is not None:
+        return chosen, 'file_glob'
+    if module:
+        if module not in applicable:
+            applicable[module] = _applicable_domains(module)
+        for key in applicable[module]:
+            for entry in domains:
+                if entry['domain'] == key:
+                    return entry, 'module_domain'
+    return None, ''
+
+
+def cmd_corpus_spec_skills(args: argparse.Namespace) -> dict[str, Any]:
+    """Report a spec's skills declaration, its suggested fill, and its emit verdict.
+
+    Read-only. Three facts, each with its own source:
+
+    - the DECLARATION, read through the shared ``spec_skills`` reader (the same
+      one the runbook lane loads), with every named skill probed for existence;
+    - the SUGGESTION, derived from the spec's declared surface paths mapped to
+      modules through the architecture client and placed in a configured domain
+      by the project's own domain knowledge (see the block above) — a path no rung
+      places is reported ``unmapped``, never guessed. The surface is a SPEC-level
+      section, so the suggestion is ONE spec-wide list applied to every
+      deliverable; ``suggestion_scope: spec`` states that, and a deliverable that
+      touches only part of the surface narrows by hand;
+    - the EMIT VERDICT, ``emit_allowed``: false exactly when a declared skill does
+      not exist, so ``next`` can refuse to emit the spec and name what is missing.
+
+    A spec that declares nothing is legal — ``declaration: none named`` — and still
+    emits; the template asks for the lines, it does not make them load-bearing.
+    """
+    invalid = _validate_slug(args.slug)
+    if invalid:
+        return _error(args.slug, 'invalid_slug', invalid)
+    plan = args.plan
+    spec, refusal = _resolve_corpus_spec(args.slug, plan)
+    if refusal is not None:
+        return refusal
+    assert spec is not None
+    try:
+        declaration = spec_skills.resolve_deliverable_skills(spec)
+    except ValueError as exc:
+        code = str(exc)
+        if code == 'spec_unreadable':
+            return _error(args.slug, 'unreadable', f'spec {spec.name!r} could not be read', spec=spec.name)
+        return _error(args.slug, code, 'a bare skill name has no bundle to resolve in')
+    try:
+        derivation_status, claim = _surface_state(spec, Path(cwd_checkout_root()))
+    except Exception:
+        derivation_status, claim = SURFACE_UNREADABLE, None
+    surface_unreadable = ''
+    if derivation_status == SURFACE_UNREADABLE:
+        surface_unreadable = _read_spec(spec)[1] or 'the surface could not be classified'
+
+    domains, domains_readable, domains_unreadable = _configured_domains()
+    applicable: dict[str, list[str]] = {}
+    path_rows: list[dict[str, Any]] = []
+    for entry in claim.claimed if claim is not None else ():
+        module, module_state = _module_for_path(entry.path)
+        domain, rung = _domain_for_path(entry.path, module, domains, applicable) if domains_readable else (None, '')
+        mapped = domain is not None
+        reason = ''
+        if not mapped:
+            if not domains_readable:
+                reason = 'unmapped: the project configuration could not be read'
+            elif module_state == 'failed':
+                reason = 'unmapped: the module lookup failed'
+            elif module_state == 'truncated':
+                reason = 'unmapped: the module lookup was truncated'
+            elif module_state == 'absent':
+                reason = 'unmapped: no module owns the path'
+            else:
+                reason = 'unmapped: no configured domain matches the path'
+        path_rows.append(
+            {
+                'path': entry.path,
+                'module': module,
+                'domain': domain['domain'] if domain is not None else '',
+                'domain_source': rung if domain is not None else '',
+                'kind': _spec_path_kind(entry.path),
+                'persona': SPEC_SKILLS_PERSONA_BY_KIND[_spec_path_kind(entry.path)],
+                'mapped': mapped,
+                'reason': reason,
+                'skills': _suggested_skills(domain) if domain is not None else [],
+            }
+        )
+    for raw in claim.unresolved if claim is not None else ():
+        kind = _spec_path_kind(raw)
+        path_rows.append(
+            {
+                'path': raw,
+                'module': '',
+                'domain': '',
+                'domain_source': '',
+                'kind': kind,
+                'persona': SPEC_SKILLS_PERSONA_BY_KIND[kind],
+                'mapped': False,
+                'reason': 'unmapped: not a resolvable repo path',
+                'skills': [],
+            }
+        )
+    kinds = {row['kind'] for row in path_rows}
+    suggested_persona = next(
+        (SPEC_SKILLS_PERSONA_BY_KIND[kind] for kind in SPEC_SKILLS_KIND_ORDER if kind in kinds), ''
+    )
+    suggested = sorted({skill for row in path_rows for skill in row['skills']})
+    deliverables = [
+        {
+            'number': row['number'],
+            'title': row['title'],
+            'declared_skills': row.get('declared_skills', []),
+            'declared_persona': row['persona'],
+            'suggested_persona': suggested_persona,
+            'skills': suggested,
+        }
+        for row in declaration['deliverables']
+    ]
+    unmapped = [row['path'] for row in path_rows if not row['mapped']]
+    return {
+        'status': 'success',
+        'operation': 'corpus-spec-skills',
+        'slug': args.slug,
+        'store': ORCHESTRATOR_STORE,
+        'plan': plan,
+        'spec': spec.name,
+        'skill_source': (
+            'skill_domains.{domain}.core+implementation.defaults, excluded_skills applied (project configuration)'
+        ),
+        'suggestion_scope': 'spec',
+        'configured_domains_total': len(domains),
+        'configured_domains_readable': domains_readable,
+        'configured_domains_unreadable': domains_unreadable,
+        'suggestion_unavailable': '' if domains_readable else 'project_configuration_unreadable',
+        'declaration': declaration['skills_note'],
+        'deliverables_total': len(deliverables),
+        'deliverables': deliverables,
+        'surface_derivation_status': derivation_status,
+        'surface_unreadable_reason': surface_unreadable,
+        'surface_paths_total': len(path_rows),
+        'paths': path_rows,
+        'suggested_skills': suggested,
+        'suggested_persona': suggested_persona,
+        'unmapped_count': len(unmapped),
+        'unmapped': unmapped,
+        'missing_skills': declaration['missing_skills'],
+        'missing_probed': declaration['missing_probed'],
+        'emit_allowed': not declaration['missing_skills'],
     }
 
 
@@ -7252,9 +7867,9 @@ def _add_land_group(subparsers: Any) -> None:
 def _add_corpus_group(subparsers: Any) -> None:
     """Register the ``corpus`` verb group.
 
-    Sub-verbs: ``epics``, ``enumerate``, ``read``, ``cross-check``, ``surfaces``,
-    ``declaration-currency``, ``verdicts``, ``set-verdict``. The first seven are
-    read-only; ``set-verdict``
+    Sub-verbs: ``epics``, ``enumerate``, ``read``, ``spec-skills``, ``cross-check``,
+    ``surfaces``, ``declaration-currency``, ``verdicts``, ``lint-done-whens``,
+    ``set-verdict``. All but ``set-verdict`` are read-only; ``set-verdict``
     is the group's single write action, and the only surface in the tree that
     formats a ``verdict:`` line. ``epics`` is the only one that takes no
     ``--slug``: its subject is the whole store rather than one epic in it.
@@ -7301,6 +7916,18 @@ def _add_corpus_group(subparsers: Any) -> None:
     _add_slug_arg(read_spec)
     read_spec.add_argument('--plan', required=True, metavar='PLAN-NN', help='Plan id whose spec body is returned.')
     read_spec.set_defaults(handler=cmd_corpus_read)
+
+    skills_verb = actions.add_parser(
+        'spec-skills',
+        help=(
+            "Report one staged spec's Skills/Persona declaration, the domain skills its surface maps to, "
+            'and the emit verdict (read-only).'
+        ),
+        allow_abbrev=False,
+    )
+    _add_slug_arg(skills_verb)
+    skills_verb.add_argument('--plan', required=True, metavar='PLAN-NN', help='Plan id whose declaration is read.')
+    skills_verb.set_defaults(handler=cmd_corpus_spec_skills)
 
     cross_check = actions.add_parser(
         'cross-check',
@@ -7361,6 +7988,18 @@ def _add_corpus_group(subparsers: Any) -> None:
     )
     _add_slug_arg(verdicts)
     verdicts.set_defaults(handler=cmd_corpus_verdicts)
+
+    lint_done_whens = actions.add_parser(
+        'lint-done-whens',
+        help=(
+            'Flag each Done-when that asks a "fails at" observation of behaviour it calls '
+            'still/keeps/unchanged, and each "holds at" Done-when resting on a symbol a '
+            'HYPOTHESIS claim names (read-only).'
+        ),
+        allow_abbrev=False,
+    )
+    _add_slug_arg(lint_done_whens)
+    lint_done_whens.set_defaults(handler=cmd_corpus_lint_done_whens)
 
     set_verdict = actions.add_parser(
         'set-verdict',

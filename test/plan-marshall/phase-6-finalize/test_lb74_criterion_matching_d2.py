@@ -180,7 +180,7 @@ def test_a_superseded_deliverables_rows_are_not_reported_unmatched(plan_context,
                 {
                     'number': 1,
                     'verdict': 'superseded',
-                    'superseded_by': 'operator decision: the deliverable was dropped',
+                    'superseded_by': 'D1',
                     'criteria': [{'criterion': 'an unrelated row', 'status': 'not_met', 'evidence': []}],
                 }
             ],

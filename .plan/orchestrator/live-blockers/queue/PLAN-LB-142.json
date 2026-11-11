@@ -2,10 +2,10 @@
   "id": "PLAN-LB-142",
   "slug": "coderabbit-review-done-after-handling",
   "workstream": "WS-05",
-  "status": "staged",
+  "status": "running",
   "lane": "runbook",
-  "plan_marshall_plan_id": "",
-  "pr": "",
+  "plan_marshall_plan_id": "rb-lb-142-coderabbit-review-done-after-handling",
+  "pr": "1959",
   "landing": "",
   "seq": 142
 }

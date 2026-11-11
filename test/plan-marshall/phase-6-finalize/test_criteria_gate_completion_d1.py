@@ -17,13 +17,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from pathlib import Path
 from typing import Any
 
 import _criteria_snapshot as _snap
 import review_support
 
-from conftest import get_skill_dir, load_script_module
+from conftest import PROJECT_ROOT, get_skill_dir, load_script_module
 
 PLAN_ID = 'lb70-criteria-gate-d1'
 _lifecycle = load_script_module('plan-marshall', 'manage-status', '_cmd_lifecycle.py', '_lb70_d1_lifecycle')
@@ -38,10 +39,16 @@ def _outline(criteria: list[str]) -> str:
     )
 
 
-def _plan(plan_context: Any, criteria: list[str], *, freeze_from: list[str] | None = None) -> Path:
+def _plan(
+    plan_context: Any,
+    criteria: list[str],
+    *,
+    freeze_from: list[str] | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> Path:
     plan_dir = Path(plan_context.plan_dir_for(PLAN_ID))
     # The freeze binds its digest in the status record, so the plan must have one.
-    _status(plan_dir)
+    _status(plan_dir, metadata)
     (plan_dir / 'references.json').write_text(json.dumps({'base_branch': 'main'}), encoding='utf-8')
     (plan_dir / 'solution_outline.md').write_text(_outline(criteria), encoding='utf-8')
     if freeze_from is not None:
@@ -58,10 +65,14 @@ def _manifest(plan_dir: Path, steps: list[str]) -> None:
     (plan_dir / 'execution.toon').write_text(head + body, encoding='utf-8')
 
 
-def _status(plan_dir: Path, metadata: dict[str, Any] | None = None) -> None:
+def _status(
+    plan_dir: Path,
+    metadata: dict[str, Any] | None = None,
+    phases: list[dict[str, str]] | None = None,
+) -> None:
     status = {
         'title': 'fixture',
-        'phases': [{'name': '6-finalize', 'status': 'pending'}],
+        'phases': phases if phases is not None else [{'name': '6-finalize', 'status': 'pending'}],
         'current_phase': '6-finalize',
         'metadata': metadata if metadata is not None else {'use_worktree': False},
     }
@@ -105,6 +116,159 @@ def test_surgical_plan_without_a_review_completes_finalize(plan_context, tmp_pat
 
     assert result is not None and result['status'] == 'success', result
     assert result['criteria_gate'].startswith('not_applicable'), result
+
+
+# --- D1 (a): the criteria-gate note is persisted on the plan's status record -------------
+
+
+def test_dropped_review_completion_persists_the_criteria_gate_note(plan_context, tmp_path, monkeypatch) -> None:
+    """A dropped-review completion records the note, so a later read still sees it.
+
+    The transition payload is transient; the status record is what an archive,
+    a landing read or an audit sees afterwards, so the note has to land there.
+    """
+    plan_dir = _plan(plan_context, ['parser accepts input'], freeze_from=['parser accepts input'])
+    _manifest(plan_dir, ['pre-push-quality-gate', 'sonar-roundtrip'])
+    _status(plan_dir, {'use_worktree': False, 'scope_estimate': 'surgical'})
+    monkeypatch.setattr(_lifecycle, 'assert_finalize_findings_clean', lambda *_a, **_k: 0)
+    monkeypatch.setattr(_lifecycle, 'log_entry', lambda *_a, **_k: None)
+    monkeypatch.setattr(_lifecycle, '_surface_drive', lambda *_a, **_k: None)
+
+    result = _lifecycle.cmd_transition(
+        argparse.Namespace(plan_id=PLAN_ID, completed='6-finalize', allow_bare_transition=False, bare_reason=None)
+    )
+
+    assert result is not None and result['status'] == 'success', result
+    record = json.loads((plan_dir / 'status.json').read_text(encoding='utf-8'))
+    assert record['metadata']['criteria_gate'] == result['criteria_gate'], record
+    assert record['metadata']['criteria_gate'].startswith('not_applicable'), record
+
+
+def test_a_reviewed_plan_records_no_criteria_gate_note(plan_context, tmp_path, monkeypatch) -> None:
+    """Control: a plan whose review graded every criterion carries no note.
+
+    An absence is the answer here — the note exists only to say "there was
+    nothing to grade", so a graded plan must not carry one.
+    """
+    plan_dir = _plan(plan_context, ['parser accepts input'], freeze_from=['parser accepts input'])
+    _manifest(plan_dir, ['functional-review', 'pre-push-quality-gate'])
+    _sealed_live(
+        plan_dir,
+        tmp_path,
+        {
+            'deliverables': [
+                {
+                    'number': 1,
+                    'verdict': 'met',
+                    'criteria': [
+                        {'criterion': 'parser accepts input', 'status': 'met', 'evidence': ['src/parser.py:1']}
+                    ],
+                }
+            ],
+            'unrequested_changes': [],
+            'self_reports': [],
+            'files_read': ['src/parser.py'],
+        },
+    )
+    monkeypatch.setattr(_lifecycle, 'assert_finalize_findings_clean', lambda *_a, **_k: 0)
+    monkeypatch.setattr(_lifecycle, 'log_entry', lambda *_a, **_k: None)
+    monkeypatch.setattr(_lifecycle, '_surface_drive', lambda *_a, **_k: None)
+
+    result = _lifecycle.cmd_transition(
+        argparse.Namespace(plan_id=PLAN_ID, completed='6-finalize', allow_bare_transition=False, bare_reason=None)
+    )
+
+    assert result is not None and result['status'] == 'success', result
+    assert 'criteria_gate' not in result, result
+    record = json.loads((plan_dir / 'status.json').read_text(encoding='utf-8'))
+    assert 'criteria_gate' not in record['metadata'], record
+
+
+def test_a_graded_completion_clears_a_stale_criteria_gate_note(plan_context, tmp_path, monkeypatch) -> None:
+    """A note left by an earlier attempt does not survive a graded completion.
+
+    The write is a decision, not an append: a plan whose review is scheduled and
+    graded carries no note, whatever the record said before.
+    """
+    plan_dir = _plan(
+        plan_context,
+        ['parser accepts input'],
+        freeze_from=['parser accepts input'],
+        metadata={'use_worktree': False, 'criteria_gate': 'not_applicable (stale attempt)'},
+    )
+    _manifest(plan_dir, ['functional-review', 'pre-push-quality-gate'])
+    _sealed_live(
+        plan_dir,
+        tmp_path,
+        {
+            'deliverables': [
+                {
+                    'number': 1,
+                    'verdict': 'met',
+                    'criteria': [
+                        {'criterion': 'parser accepts input', 'status': 'met', 'evidence': ['src/parser.py:1']}
+                    ],
+                }
+            ],
+            'unrequested_changes': [],
+            'self_reports': [],
+            'files_read': ['src/parser.py'],
+        },
+    )
+    monkeypatch.setattr(_lifecycle, 'assert_finalize_findings_clean', lambda *_a, **_k: 0)
+    monkeypatch.setattr(_lifecycle, 'log_entry', lambda *_a, **_k: None)
+    monkeypatch.setattr(_lifecycle, '_surface_drive', lambda *_a, **_k: None)
+
+    result = _lifecycle.cmd_transition(
+        argparse.Namespace(plan_id=PLAN_ID, completed='6-finalize', allow_bare_transition=False, bare_reason=None)
+    )
+
+    assert result is not None and result['status'] == 'success', result
+    record = json.loads((plan_dir / 'status.json').read_text(encoding='utf-8'))
+    assert 'criteria_gate' not in record['metadata'], record
+
+
+def test_a_completion_archive_records_the_criteria_gate_note(plan_context, tmp_path, monkeypatch) -> None:
+    """The archive — the production finalize completion — records the note too.
+
+    ``archive-plan`` is the step that closes ``6-finalize`` in production, and
+    after its single move no second write can reach the live path, so the note
+    has to ride the same write that closes the phases.
+    """
+    plan_dir = _plan(plan_context, ['parser accepts input'], freeze_from=['parser accepts input'])
+    _manifest(plan_dir, ['pre-push-quality-gate'])
+    _status(
+        plan_dir,
+        {'use_worktree': False, 'scope_estimate': 'surgical'},
+        phases=[{'name': '6-finalize', 'status': 'in_progress'}],
+    )
+    monkeypatch.setattr(_lifecycle, 'assert_finalize_findings_clean', lambda *_a, **_k: 0)
+    monkeypatch.setattr(_lifecycle, 'log_entry', lambda *_a, **_k: None)
+    monkeypatch.setattr(_lifecycle, '_surface_drive', lambda *_a, **_k: None)
+
+    result = _lifecycle.cmd_archive(argparse.Namespace(plan_id=PLAN_ID, dry_run=False, reason=None))
+
+    assert result is not None and result['status'] == 'success', result
+    archived = json.loads((Path(result['archived_to']) / 'status.json').read_text(encoding='utf-8'))
+    assert archived['metadata']['criteria_gate'].startswith('not_applicable'), archived
+
+
+def test_the_retired_drop_reason_key_has_no_reader() -> None:
+    """The dead ``functional_review_drop_reason`` metadata key is read by no module.
+
+    No producer ever wrote it, so the read could only ever fall through to the
+    scope and not-scheduled fallbacks. The population is every ``*.py`` under the
+    shipped bundles: a module is what can read a metadata key.
+    """
+    marker = re.compile(r"""['"]functional_review_drop_reason['"]""")
+    bundles = PROJECT_ROOT / 'marketplace' / 'bundles'
+    offenders = [
+        str(path.relative_to(PROJECT_ROOT))
+        for path in sorted(bundles.rglob('*.py'))
+        if marker.search(path.read_text(encoding='utf-8', errors='replace'))
+    ]
+
+    assert offenders == [], offenders
 
 
 def test_plan_whose_review_is_scheduled_still_refuses_an_open_criterion(plan_context, tmp_path, monkeypatch) -> None:
@@ -223,7 +387,7 @@ def test_superseded_deliverable_criteria_do_not_block(plan_context, tmp_path) ->
         plan_dir,
         tmp_path,
         {
-            'deliverables': [{'number': 1, 'verdict': 'superseded', 'superseded_by': 'operator decision X'}],
+            'deliverables': [{'number': 1, 'verdict': 'superseded', 'superseded_by': 'D1'}],
             'unrequested_changes': [],
             'self_reports': [],
             'files_read': [],

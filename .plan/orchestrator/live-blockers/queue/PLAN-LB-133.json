@@ -2,10 +2,10 @@
   "id": "PLAN-LB-133",
   "slug": "criteria-gate-reach",
   "workstream": "WS-03",
-  "status": "running",
+  "status": "shipped",
   "lane": "runbook",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "plan_marshall_plan_id": "rb-lb-133-criteria-gate-reach",
+  "pr": "1953",
+  "landing": "landings/PLAN-LB-133.md",
   "seq": 132
 }

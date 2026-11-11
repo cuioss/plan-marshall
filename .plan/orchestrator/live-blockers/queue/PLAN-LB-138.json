@@ -2,10 +2,10 @@
   "id": "PLAN-LB-138",
   "slug": "orchestrator-staging-and-landing-read-hygiene",
   "workstream": "WS-04",
-  "status": "running",
+  "status": "shipped",
   "lane": "runbook",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "plan_marshall_plan_id": "rb-lb-138-orchestrator-staging-and-landing-read-hygiene",
+  "pr": "1957",
+  "landing": "landings/PLAN-LB-138.md",
   "seq": 136
 }
