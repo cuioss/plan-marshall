@@ -535,7 +535,55 @@ class TestOpenCodeOneMapWrites:
         )
 
         assert result['action'] == 'added'
-        assert json.loads(config.read_text())['permission']['webfetch'] == {'evil.com': 'deny', '*': 'allow'}
+        rows = json.loads(config.read_text())['permission']['webfetch']
+        assert rows == {'evil.com': 'deny', '*': 'allow'}
+        assert list(rows) == ['*', 'evil.com'], 'the catch-all must precede the specific row'
+
+    def test_a_category_wide_grant_to_bash_sorts_before_the_specific_rows(self, monkeypatch, tmp_path, in_tmp_cwd):
+        """The map's ``*`` row goes first, so a specific deny still wins."""
+        config = tmp_path / 'opencode.json'
+        config.write_text(json.dumps({'permission': {'bash': {'git push *': 'deny'}}}), encoding='utf-8')
+        force_opencode(monkeypatch)
+
+        result = pf.cmd_add(
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'add',
+                '--permission',
+                'bash',
+                '--target',
+                'project',
+            )
+        )
+
+        assert result['action'] == 'added'
+        rows = json.loads(config.read_text())['permission']['bash']
+        assert list(rows) == ['*', 'git push *']
+        assert rows['git push *'] == 'deny'
+
+    def test_remove_matches_the_effect_on_the_map_path(self, monkeypatch, tmp_path, in_tmp_cwd):
+        """Naming an allow never deletes a deny row that shares the pattern."""
+        config = tmp_path / 'opencode.json'
+        config.write_text(json.dumps({'permission': {'bash': {'git push *': 'deny'}}}), encoding='utf-8')
+        force_opencode(monkeypatch)
+
+        result = pf.cmd_remove(
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'remove',
+                '--permission',
+                'allow(git push *)',
+                '--target',
+                'project',
+            )
+        )
+
+        assert result['action'] == 'not_found'
+        assert json.loads(config.read_text())['permission']['bash'] == {'git push *': 'deny'}
 
 
 class TestOpenCodeUnreadableInputIsReported:

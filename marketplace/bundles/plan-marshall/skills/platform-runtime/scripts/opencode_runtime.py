@@ -470,6 +470,20 @@ def _permission_map_key(category: str) -> str:
     return _CATEGORY_TO_MAP_KEY.get(category, category)
 
 
+def _set_map_catch_all(container: dict[str, Any], effect: str) -> None:
+    """Set a permission map's ``*`` row FIRST, leaving the other rows after it.
+
+    The OpenCode 1 map is evaluated with the last matching pattern winning, so
+    the category-wide ``*`` row only stays harmless while it precedes the
+    specific rows. Writing it last would make it override the very deny rows an
+    operator put there, which is the override this writer exists to prevent.
+    """
+    rows = {key: value for key, value in container.items() if key != '*'}
+    container.clear()
+    container['*'] = effect
+    container.update(rows)
+
+
 def _permission_rules(settings: dict[str, Any], *, create: bool = False) -> list[Any] | None:
     """Return the ``permissions`` list when the settings carry one, else ``None``.
 
@@ -560,22 +574,24 @@ class PermissionRuleWrite(NamedTuple):
     conflict: str | None = None
 
 
-def _conflicting_later_rule(
+def _conflicting_rule(
     rules: list[Any],
     start: int,
+    stop: int | None,
     action: str,
     resource: str,
     effect: str,
 ) -> dict[str, Any] | None:
-    """Return the first later rule the requested write must not override.
+    """Return the first rule in ``rules[start:stop]`` the requested write must not override.
 
-    A later rule that is strictly BROADER than the requested one is what a move
-    to the end is for: the caller asks for the specific outcome and the broader
-    rule keeps deciding everything else. A later rule the requested pattern
-    covers, with a DIFFERENT effect, decides a more specific outcome the caller
-    did not ask to change — overriding it is the named conflict.
+    Only the rules the write actually OVERRIDES matter: a rule that ends up after
+    the requested rule still decides its own resources, so it is not crossed. A
+    rule the requested pattern covers, with a DIFFERENT effect, decides a more
+    specific outcome the caller did not ask to change — overriding it is the
+    named conflict. A strictly BROADER rule is what the specific rule exists to
+    narrow, so it is never a conflict.
     """
-    for rule in rules[max(start, 0) :]:
+    for rule in rules[max(start, 0) : stop]:
         if not isinstance(rule, dict) or not _action_matches(rule.get('action'), action):
             continue
         later_pattern = rule.get('resource')
@@ -629,8 +645,12 @@ def _wildcard_action_rule(rules: list[Any], action: str, resource: str, effect: 
     Such a rule decides every action, so removing a grant for one named action
     cannot take it down: the caller is told the named reason instead of being
     handed a ``not_found`` while the effect is still in force. A wildcard rule
-    carrying a DIFFERENT effect decides something else, so it never blocks.
+    carrying a DIFFERENT effect decides something else, so it never blocks, and
+    neither does one a later rule already overrides — the reason names an effect
+    only when that effect is the one last-match-wins actually produces.
     """
+    if _effective_rule_effect(rules, action, resource) != effect:
+        return None
     for rule in rules:
         if not isinstance(rule, dict) or rule.get('action') != '*' or action == '*':
             continue
@@ -661,8 +681,12 @@ def _upsert_permission_rule(rules: list[Any], action: str, resource: str, effect
     later rule can still match the same resource and win. A requested effect
     the list does not already produce is made effective by moving the rule to
     the end — but never past a later, more specific rule with a different
-    effect the caller did not ask to change. That case is a named conflict: the
-    rule is restored and nothing is saved.
+    effect the caller did not ask to change. The rules a write crosses are the
+    ones that end up BEFORE the requested rule: after the insertion point when
+    it moves to the end, and before the insertion point when it does not. A
+    crossing is a named conflict: the list is restored and nothing is saved. So
+    is a rule that a later, broader row with the same effect already shadows —
+    writing it would decide nothing.
     """
     for index, rule in enumerate(rules):
         if isinstance(rule, dict) and rule.get('action') == action and rule.get('resource') == resource:
@@ -671,7 +695,7 @@ def _upsert_permission_rule(rules: list[Any], action: str, resource: str, effect
             changed = _rule_effect(rule) != effect
             rule['effect'] = effect
             if _effective_rule_effect(rules, action, resource) != effect:
-                conflict = _conflicting_later_rule(rules, index + 1, action, resource, effect)
+                conflict = _conflicting_rule(rules, index + 1, None, action, resource, effect)
                 if conflict is not None:
                     if had_effect:
                         rule['effect'] = previous
@@ -687,12 +711,29 @@ def _upsert_permission_rule(rules: list[Any], action: str, resource: str, effect
     for index, rule in enumerate(rules):
         if isinstance(rule, dict) and _action_matches(rule.get('action'), action) and rule.get('resource') == '*':
             insert_at = index + 1
-    conflict = _conflicting_later_rule(rules, 0, action, resource, effect)
-    if conflict is not None:
-        return PermissionRuleWrite(False, _conflict_detail(action, resource, effect, conflict))
     rules.insert(insert_at, new_rule)
     if _effective_rule_effect(rules, action, resource) != effect:
+        # Only a move can cross the rules that stay after the insertion point.
+        conflict = _conflicting_rule(rules, insert_at + 1, None, action, resource, effect)
+        if conflict is not None:
+            del rules[insert_at]
+            return PermissionRuleWrite(False, _conflict_detail(action, resource, effect, conflict))
         _move_rule_to_end(rules, new_rule, insert_at)
+        return PermissionRuleWrite(True)
+    # No move: the new rule overrides only the rules that precede it.
+    conflict = _conflicting_rule(rules, 0, insert_at, action, resource, effect)
+    if conflict is not None:
+        del rules[insert_at]
+        return PermissionRuleWrite(False, _conflict_detail(action, resource, effect, conflict))
+    hits = _matching_rules(rules, action, resource)
+    if hits and hits[-1] is not new_rule:
+        shadow = hits[-1].get('resource')
+        del rules[insert_at]
+        return PermissionRuleWrite(
+            False,
+            f'{action}({resource}) is shadowed by the later rule {action}({shadow}) with the same '
+            'effect, so writing it would decide nothing',
+        )
     return PermissionRuleWrite(True)
 
 
@@ -1737,7 +1778,7 @@ class OpenCodeRuntime(Runtime):
                 else:
                     if isinstance(cat_val, dict):
                         if cat_val.get('*') != act:
-                            cat_val['*'] = act
+                            _set_map_catch_all(cat_val, act)
                             added += 1
                     elif cat_val != act:
                         perm[cat] = act
@@ -1968,7 +2009,10 @@ class OpenCodeRuntime(Runtime):
                 if cat == 'bash':
                     if bash_map.get(pat) != act:
                         if not dry_run:
-                            bash_map[pat] = act
+                            if pat == '*':
+                                _set_map_catch_all(bash_map, act)
+                            else:
+                                bash_map[pat] = act
                         added += 1
                 else:
                     cat = _permission_map_key(cat)
@@ -1990,11 +2034,12 @@ class OpenCodeRuntime(Runtime):
                         added += 1
                     elif isinstance(existing, dict):
                         # A pattern map keeps its entries: the catch-all is the
-                        # map's own ``*`` row, never a replacement of the map.
+                        # map's own ``*`` row, written FIRST so the specific rows
+                        # after it still decide.
                         if existing.get('*') == act:
                             continue
                         if not dry_run:
-                            existing['*'] = act
+                            _set_map_catch_all(existing, act)
                         added += 1
                     elif existing != act:
                         if not dry_run:

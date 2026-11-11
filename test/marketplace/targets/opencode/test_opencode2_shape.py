@@ -88,8 +88,8 @@ def _frontmatter_block(path: Path) -> str:
     return text[4:end]
 
 
-def _permissions(path: Path) -> list[dict[str, str]]:
-    """Parse the emitted ``permissions`` list from an agent frontmatter block.
+def _permissions(path: Path) -> list[dict[str, str]] | None:
+    """Return the emitted ``permissions`` list, or ``None`` when none is emitted.
 
     Parsed as YAML, not by line matching: the document OpenCode consumes is a
     mapping, and a line matcher would accept a block that is not one.
@@ -97,13 +97,13 @@ def _permissions(path: Path) -> list[dict[str, str]]:
     parsed = yaml.safe_load(_frontmatter_block(path))
     assert isinstance(parsed, dict), f'{path} frontmatter is not a mapping'
     rules = parsed.get('permissions')
-    assert isinstance(rules, list), f'{path} carries no permissions list'
+    assert rules is None or isinstance(rules, list), f'{path} permissions is not a list'
     return rules
 
 
-def _effect(rules: list[dict[str, str]], action: str) -> str:
+def _effect(rules: list[dict[str, str]] | None, action: str) -> str:
     """OpenCode 2 evaluation: last matching rule wins, no match means ``ask``."""
-    hits = [rule for rule in rules if rule['action'] == action]
+    hits = [rule for rule in (rules or []) if rule['action'] == action]
     return hits[-1]['effect'] if hits else 'ask'
 
 
@@ -145,45 +145,35 @@ def test_global_config_skills_entry_names_the_installed_directory(
 
 
 # ---------------------------------------------------------------------------
-# D1 — the emitted agent carries a permissions LIST, never a permission MAP
+# D1 — the emitted agent carries NO permission rule of any kind
 # ---------------------------------------------------------------------------
 
 
-def test_emitted_agent_permissions_carry_action_resource_effect(
-    bundle_root: Path, tmp_path: Path, opencode_config_dir: Path
-):
-    """Each rule is an OpenCode 2 ``{action, resource, effect}`` object."""
-    out = tmp_path / 'out'
-    emit_bundles(bundle_root, out, opencode_config_dir)
+def test_emitted_agent_carries_no_permission_rules(bundle_root: Path, tmp_path: Path, opencode_config_dir: Path):
+    """No rule of any action is emitted for an agent.
 
-    rules = _permissions(out / 'agent' / 'demo-agent.md')
-    assert rules, 'the emitted agent must carry a permissions list'
-    for rule in rules:
-        assert set(rule) == {'action', 'resource', 'effect'}, f'not an OpenCode 2 rule: {rule}'
-        assert rule['effect'] in {'allow', 'ask', 'deny'}
-
-
-def test_emitted_agent_permissions_evaluate_like_the_source_tool_grants(
-    bundle_root: Path, tmp_path: Path, opencode_config_dir: Path
-):
-    """Every granted tool is allowed, and no shell catch-all overrides a global deny.
-
-    The source grants ``Read, Write, Bash, Task``. Under OpenCode 2's tool names
-    that is ``read``, ``edit`` (Write and Edit both map to ``edit``), ``shell``
-    and ``subagent``. Agent rules are appended after the global ones, so a
-    ``{shell, *, allow}`` here would re-decide a command the global list denied;
-    the shell grant is therefore not emitted and OpenCode's own base policy
-    decides it. A tool the source did NOT grant must not evaluate to ``allow``.
+    OpenCode 2 appends the agent's rules after the global ones, and an agent
+    rule can only be a ``resource: "*"`` catch-all for one action — which
+    re-decides every resource a global deny already decided, protected-path read
+    denies included. The agent's own base policy already decides the rest.
     """
     out = tmp_path / 'out'
     emit_bundles(bundle_root, out, opencode_config_dir)
 
     rules = _permissions(out / 'agent' / 'demo-agent.md')
-    for granted in ('read', 'edit', 'subagent'):
-        assert _effect(rules, granted) == 'allow', f'{granted} is granted in source but not allowed after emit'
-    assert not [rule for rule in rules if rule['action'] == 'shell'], 'no agent shell rule may be emitted'
-    for ungranted in ('webfetch', 'websearch', 'glob', 'grep'):
-        assert _effect(rules, ungranted) != 'allow', f'{ungranted} is not granted in source but evaluates allow'
+    assert rules is None, f'the emitted agent must carry no permission rule, found {rules}'
+
+
+def test_emitted_agent_keeps_the_source_description_and_mode(
+    bundle_root: Path, tmp_path: Path, opencode_config_dir: Path
+):
+    """Dropping the rules leaves the frontmatter the client needs intact."""
+    out = tmp_path / 'out'
+    emit_bundles(bundle_root, out, opencode_config_dir)
+
+    parsed = yaml.safe_load(_frontmatter_block(out / 'agent' / 'demo-agent.md'))
+    assert parsed['description'] == 'an agent'
+    assert parsed['mode'] == 'subagent'
 
 
 def test_emitted_files_carry_no_legacy_permission_map(bundle_root: Path, tmp_path: Path, opencode_config_dir: Path):

@@ -359,6 +359,7 @@ def _opencode_add(settings_path: Path, settings: dict[str, Any], permission: str
         _permission_map_key,
         _permission_rules,
         _rule_exists,
+        _set_map_catch_all,
         _upsert_permission_rule,
         to_opencode_grant,
     )
@@ -402,7 +403,10 @@ def _opencode_add(settings_path: Path, settings: dict[str, Any], permission: str
         if bash_map.get(pat) == act:
             result.update({'success': True, 'action': 'already_exists', 'status': 'success'})
             return result
-        bash_map[pat] = act
+        if pat == '*':
+            _set_map_catch_all(bash_map, act)
+        else:
+            bash_map[pat] = act
     else:
         if pat and pat != '*':
             if isinstance(existing, dict):
@@ -421,7 +425,7 @@ def _opencode_add(settings_path: Path, settings: dict[str, Any], permission: str
                 if existing.get('*') == act:
                     result.update({'success': True, 'action': 'already_exists', 'status': 'success'})
                     return result
-                existing['*'] = act
+                _set_map_catch_all(existing, act)
             else:
                 if existing == act:
                     result.update({'success': True, 'action': 'already_exists', 'status': 'success'})
@@ -534,7 +538,7 @@ def _opencode_remove(settings_path: Path, settings: dict[str, Any], permission: 
     map_key = _permission_map_key(cat)
     if cat == 'bash':
         bash_map = perm.get('bash')
-        if not isinstance(bash_map, dict) or pat not in bash_map:
+        if not isinstance(bash_map, dict) or bash_map.get(pat) != act:
             result.update(not_found)
             return result
         del bash_map[pat]
@@ -544,12 +548,12 @@ def _opencode_remove(settings_path: Path, settings: dict[str, Any], permission: 
     else:
         existing = perm[map_key]
         if isinstance(existing, dict):
-            entry = pat if pat in existing else ('*' if pat == '*' and '*' in existing else None)
+            entry = pat if existing.get(pat) == act else None
             if entry is None:
                 result.update(not_found)
                 return result
             del existing[entry]
-        elif pat != '*':
+        elif pat != '*' or existing != act:
             result.update(not_found)
             return result
         else:
@@ -588,6 +592,7 @@ def cmd_ensure(args: argparse.Namespace) -> dict:
             _permission_map_key,
             _permission_rules,
             _rule_exists,
+            _set_map_catch_all,
             _upsert_permission_rule,
             to_opencode_grant,
         )
@@ -657,7 +662,10 @@ def cmd_ensure(args: argparse.Namespace) -> dict:
                     if bash_map.get(pat) == act:
                         already_exists.append(pat)
                     else:
-                        bash_map[pat] = act
+                        if pat == '*':
+                            _set_map_catch_all(bash_map, act)
+                        else:
+                            bash_map[pat] = act
                         added.append(pat)
                 else:
                     already_exists.append(pat)
@@ -682,7 +690,7 @@ def cmd_ensure(args: argparse.Namespace) -> dict:
                         if cat_val.get('*') == act:
                             already_exists.append(map_key)
                         else:
-                            cat_val['*'] = act
+                            _set_map_catch_all(cat_val, act)
                             added.append(map_key)
                     elif cat_val == act:
                         already_exists.append(map_key)

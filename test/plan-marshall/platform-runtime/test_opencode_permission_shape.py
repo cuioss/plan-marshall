@@ -584,6 +584,38 @@ def test_the_action_wildcard_decides_the_effective_effect():
     assert _effective_rule_effect(rules, 'shell', 'git status') == 'deny'
 
 
+def test_ensure_accepts_a_grant_a_narrower_later_deny_does_not_cover(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    """A narrower later deny is not crossed by a rule inserted before it.
+
+    The new rule lands before ``git restore *``, so that deny keeps deciding its
+    own commands and the write is not a conflict.
+    """
+    monkeypatch.chdir(tmp_path)
+    config = tmp_path / 'opencode.json'
+    config.write_text(
+        json.dumps(
+            {
+                'permissions': [
+                    {'action': 'shell', 'resource': '*', 'effect': 'allow'},
+                    {'action': 'shell', 'resource': 'git restore *', 'effect': 'deny'},
+                ]
+            },
+            indent=2,
+        )
+        + '\n',
+        encoding='utf-8',
+    )
+
+    result = parse_toon(runtime.permission_fix('project', 'ensure', ['allow(git *)'], False))
+
+    assert result['status'] == 'success'
+    rules = _load(config)['permissions']
+    assert _effective_effect(rules, 'shell', 'git status') == 'allow'
+    assert _effective_effect(rules, 'shell', 'git restore .') == 'deny'
+
+
 def test_ensure_refuses_a_wildcard_action_deny_that_is_more_specific(
     runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ):
@@ -703,3 +735,48 @@ def test_remove_reports_the_wildcard_action_rule_it_cannot_remove(
     assert result['status'] == 'error'
     assert result['error'] == 'wildcard_action_rule'
     assert config.read_bytes() == before
+
+
+def test_remove_does_not_report_a_wildcard_block_the_write_never_decided(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    """A wildcard allow that a later catch-all deny overrides blocks nothing.
+
+    The effect the caller asked about is not in force — the deny decides it — so
+    the honest answer is ``not_found``, not the wildcard reason.
+    """
+    monkeypatch.chdir(tmp_path)
+    config = tmp_path / 'opencode.json'
+    config.write_text(
+        json.dumps(
+            {
+                'permissions': [
+                    {'action': '*', 'resource': '*', 'effect': 'allow'},
+                    {'action': 'shell', 'resource': '*', 'effect': 'deny'},
+                ]
+            },
+            indent=2,
+        )
+        + '\n',
+        encoding='utf-8',
+    )
+
+    result = parse_toon(runtime.permission_fix('project', 'remove', ['shell'], False))
+
+    assert result['status'] == 'success'
+    assert result['removed'] == 0
+
+
+def test_a_category_wide_grant_is_written_before_the_specific_rows(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    """The map's ``*`` row sorts first, so the specific deny after it still decides."""
+    monkeypatch.chdir(tmp_path)
+    config = tmp_path / 'opencode.json'
+    config.write_text(json.dumps({'permission': {'bash': {'git push *': 'deny'}}}), encoding='utf-8')
+
+    runtime.permission_fix('project', 'ensure', ['bash'], False)
+
+    rows = _load(config)['permission']['bash']
+    assert list(rows) == ['*', 'git push *']
+    assert rows['git push *'] == 'deny'

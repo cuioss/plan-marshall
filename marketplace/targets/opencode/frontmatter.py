@@ -60,12 +60,6 @@ LIST_PERMISSION_TOOLS: frozenset[str] = frozenset()
 # target-absent marker (an explicit ``null``) does not.
 _TOOL_KEY_MISSING = object()
 
-#: The OpenCode 2 action that runs shell commands. An agent rule on this action
-#: with ``resource: "*"`` re-decides every command a global deny already
-#: decided, because agent rules are appended last, so the emitter never writes
-#: one.
-_SHELL_ACTION = 'shell'
-
 
 class UnmappedFrontmatterError(RuntimeError):
     """Raised when a required frontmatter field is missing from a source file."""
@@ -308,21 +302,18 @@ def transform_agent_frontmatter(
 ) -> str:
     """Transform Claude agent frontmatter into OpenCode 2 form.
 
-    Maps Claude ``tools`` declarations into an OpenCode 2 ``permissions``
-    LIST of ``{action, resource, effect}`` rules via
-    ``mapping['tool_permissions']``. OpenCode 2 evaluates that list
-    last-match-wins and appends the agent's rules AFTER the global ones, so
-    this transform emits no catch-all of its own: an agent rule with
-    ``resource: "*"`` re-decides every command a global ``deny`` already
-    decided, and for the shell action that is a security regression (a global
-    ``gh *`` or ``rm *`` deny becomes an allow). A shell grant is therefore
-    deliberately not emitted at all; OpenCode 2's own base policy decides what
-    an unlisted action may do.
+    Claude ``tools`` declarations are validated against
+    ``mapping['tool_permissions']`` and then deliberately emit NO permission
+    rule. OpenCode 2 appends an agent's rules AFTER the global ones, and a rule
+    there can only be a ``resource: "*"`` catch-all for one action — which
+    re-decides every resource a global ``deny`` already decided, including the
+    protected-path denies `permission fix protect-path` writes. The agent's own
+    base policy already decides what an unlisted action may do, so an emitted
+    grant adds no capability and costs the global denies.
 
     A tool with no key in ``tool_permissions`` raises ``UnmappedToolError``
     so the CLI exits with code 2; a key present with ``null`` is the
-    target-absent sentinel (the Claude tool has no OpenCode analog) and
-    contributes no rule.
+    target-absent sentinel (the Claude tool has no OpenCode analog).
     """
     _ensure_required(fm, rules, source_label)
 
@@ -337,30 +328,13 @@ def transform_agent_frontmatter(
 
     tools_raw = fm.get('tools', '')
     if tools_raw:
-        actions: list[str] = []
         unknown: list[str] = []
-        seen: set[str] = set()
         for tool in _split_tools(tools_raw):
             mapped = mapping['tool_permissions'].get(tool, _TOOL_KEY_MISSING)
             if mapped is _TOOL_KEY_MISSING:
                 unknown.append(tool)
-                continue
-            if mapped is None:
-                # Target-absent sentinel: no OpenCode analog, no rule.
-                continue
-            if mapped in seen:
-                continue
-            seen.add(mapped)
-            actions.append(mapped)
         if unknown:
             raise UnmappedToolError(f'{source_label}: unmapped tool(s) in frontmatter: {", ".join(unknown)}')
-        granted = [action for action in sorted(actions) if action != _SHELL_ACTION]
-        if granted:
-            lines.append('permissions:')
-            for action in granted:
-                lines.append(f'  - action: {action}')
-                lines.append('    resource: "*"')
-                lines.append('    effect: allow')
 
     lines.append('---')
     return '\n'.join(lines)

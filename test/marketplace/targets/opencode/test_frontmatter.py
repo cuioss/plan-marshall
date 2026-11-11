@@ -114,27 +114,32 @@ class TestParseFrontmatter:
 
 
 class TestToolPermissionMapping:
-    def test_known_tools_map_to_permissions(self, mapping: dict[str, dict], rules: dict[str, list[str]]):
+    def test_known_tools_are_validated_and_emit_no_rule(self, mapping: dict[str, dict], rules: dict[str, list[str]]):
+        """A mapped tool is accepted, and no grant is emitted for it.
+
+        A grant can only be a ``resource: "*"`` catch-all for one action, and
+        agent rules are appended after the global ones, so any such grant
+        re-decides a resource a global deny already decided.
+        """
         fm = {
             'description': 'agent',
             'tools': 'Read, Write, Bash',
         }
         result = transform_agent_frontmatter(fm, mapping, rules, source_label='agents/x.md')
-        assert 'action: read' in result
-        assert 'action: edit' in result  # Write maps to edit
-        assert 'action: shell' not in result, 'a shell catch-all would override a global deny'
-        assert result.count('effect: allow') == 2
+        assert 'description: agent' in result
+        assert 'permissions:' not in result
+        assert 'effect: allow' not in result
 
-    def test_duplicate_permissions_deduplicated(self, mapping: dict[str, dict], rules: dict[str, list[str]]):
+    def test_a_duplicate_tool_mapping_does_not_change_the_result(
+        self, mapping: dict[str, dict], rules: dict[str, list[str]]
+    ):
         fm = {
             'description': 'agent',
             # Write and Edit both map to 'edit'
             'tools': 'Write, Edit',
         }
         result = transform_agent_frontmatter(fm, mapping, rules, source_label='agents/x.md')
-        # The edit rule appears exactly once
-        assert result.count('action: edit') == 1
-        assert result.count('effect: allow') == 1
+        assert 'permissions:' not in result
 
     def test_unmapped_tool_raises(self, mapping: dict[str, dict], rules: dict[str, list[str]]):
         fm = {'description': 'agent', 'tools': 'Read, BogusTool'}
@@ -166,16 +171,14 @@ class TestTargetAbsentToolDisposition:
         assert 'permissions:' not in result
         assert 'Monitor' not in result
 
-    def test_target_absent_tool_alongside_mapped_tools_emits_only_mapped(
+    def test_target_absent_tool_alongside_mapped_tools_emits_no_rule(
         self, mapping: dict[str, dict], rules: dict[str, list[str]]
     ):
         fm = {'description': 'agent', 'tools': 'Read, Monitor, Bash'}
         result = transform_agent_frontmatter(fm, mapping, rules, source_label='agents/x.md')
-        assert 'action: read' in result
-        assert 'action: shell' not in result
-        # Exactly the one emitted rule — the sentinel contributes none, and the
-        # shell grant is left to OpenCode's base policy.
-        assert result.count('effect: allow') == 1
+        assert 'description: agent' in result
+        assert 'permissions:' not in result
+        assert 'effect: allow' not in result
 
     def test_genuinely_unknown_tool_still_raises(self, mapping: dict[str, dict], rules: dict[str, list[str]]):
         """The fail-closed guard survives: a MISSING key still raises."""
