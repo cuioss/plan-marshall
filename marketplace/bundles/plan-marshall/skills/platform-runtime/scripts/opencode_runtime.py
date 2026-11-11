@@ -2820,9 +2820,11 @@ class OpenCodeRuntime(Runtime):
             skeleton_rules = _opencode2_skeleton()['permissions']
             extra = [rule for rule in settings['permissions'] if rule not in skeleton_rules]
             payload = {**settings, 'permissions': skeleton_rules + extra}
+        content = json.dumps(payload, indent=2) + '\n'
         try:
             p.parent.mkdir(parents=True, exist_ok=True)
-            p.write_text(json.dumps(payload, indent=2) + '\n', encoding='utf-8')
+            with p.open('w', encoding='utf-8') as handle:
+                handle.write(content)
             return True
         except OSError:
             return False
