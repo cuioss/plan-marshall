@@ -435,11 +435,13 @@ def _protect_path_deny_entries(protected_dir: str) -> dict[str, dict[str, str]]:
 # ----------------------------------------------------------------------
 #
 # OpenCode 2 stores permissions as an ordered ``permissions`` list of
-# ``{action, resource, effect}`` rules evaluated last-match-wins, with no match
-# meaning ``ask``. The OpenCode 1 ``permission`` map is still READ so an
-# operator's existing file is not rewritten behind their back, but nothing is
-# ever written into a map beside a list: the normalizer concatenates the map
-# BEFORE the list, so a rule added there is overridden by the list's catch-all.
+# ``{action, resource, effect}`` rules evaluated last-match-wins, over a base
+# policy that is allow-all (OBSERVED at ``opencode v2.2.7``: the ruleset begins
+# ``{action: "*", resource: "*", effect: allow}``). The OpenCode 1 ``permission``
+# map is still READ so an operator's existing file is not rewritten behind their
+# back, but nothing is ever written into a map beside a list: the normalizer
+# concatenates the map BEFORE the list, so a rule added there is overridden by
+# the list's catch-all.
 #
 # ``to_opencode_grant`` keeps its internal ``bash`` category; the OpenCode 2
 # action for that category is ``shell``. Keeping the rename in ONE place means
@@ -482,6 +484,41 @@ def _set_map_catch_all(container: dict[str, Any], effect: str) -> None:
     container.clear()
     container['*'] = effect
     container.update(rows)
+
+
+def _permission_map(settings: dict[str, Any]) -> dict[str, Any] | None:
+    """Return the OpenCode 1 ``permission`` map, creating it when absent.
+
+    ``None`` reports a ``permission`` value that is not an object. It is never
+    reset: overwriting it would discard whatever the operator wrote, so the
+    caller refuses with ``invalid_settings`` instead.
+    """
+    if 'permission' not in settings:
+        created: dict[str, Any] = {}
+        settings['permission'] = created
+        return created
+    value = settings['permission']
+    return value if isinstance(value, dict) else None
+
+
+def _bash_rows(perm: dict[str, Any]) -> dict[str, Any] | None:
+    """Return the ``bash`` pattern map, seeding a scalar as its ``*`` row.
+
+    ``None`` means the category is the bare ``allow`` string: every command is
+    already allowed, so a grant adds nothing and the value is left untouched.
+    Any other scalar is a category-wide effect and becomes the map's ``*`` row,
+    so a deny or ask the operator set survives the write instead of being
+    replaced by an empty map. A writer that does not concern ``bash`` never
+    calls this, so an untouched scalar stays exactly as it was.
+    """
+    value = perm.get('bash')
+    if isinstance(value, dict):
+        return value
+    if value == 'allow':
+        return None
+    rows: dict[str, Any] = {'*': value} if 'bash' in perm else {}
+    perm['bash'] = rows
+    return rows
 
 
 def _permission_rules(settings: dict[str, Any], *, create: bool = False) -> list[Any] | None:
@@ -538,11 +575,88 @@ def _matching_rules(rules: list[Any], action: str, resource: str) -> list[dict[s
     ]
 
 
+def _glob_tokens(pattern: str) -> list[str | None]:
+    """Split a glob into single-character literals and ``None`` for each ``*``."""
+    return [None if char == '*' else char for char in pattern]
+
+
+def _glob_step(tokens: list[str | None], index: int, char: str) -> list[int]:
+    """Return the states reachable from *index* after consuming *char*.
+
+    A literal consumes itself and advances; a ``*`` consumes anything and stays
+    put (its exit is an epsilon move the caller closes over).
+    """
+    if index >= len(tokens):
+        return []
+    token = tokens[index]
+    if token is None:
+        return [index]
+    return [index + 1] if token == char else []
+
+
+def _glob_epsilon_closure(tokens: list[str | None], index: int) -> list[int]:
+    """Return every state reachable from *index* by consuming nothing."""
+    reachable = {index}
+    pending = [index]
+    while pending:
+        current = pending.pop()
+        if current < len(tokens) and tokens[current] is None and current + 1 not in reachable:
+            reachable.add(current + 1)
+            pending.append(current + 1)
+    return sorted(reachable)
+
+
+def _globs_intersect(first: str, second: str) -> bool:
+    """True when some string matches both globs.
+
+    Both globs denote regular languages over single-character literals and the
+    ``*`` wildcard, so their intersection is decided exactly by a product
+    construction: walk both token sequences together, following epsilon moves
+    out of ``*``, and ask whether the accepting pair is reachable. A fresh
+    character outside both alphabets stands in for "some character neither glob
+    names", which is what makes ``*`` vs ``*`` intersect.
+    """
+    tokens_a = _glob_tokens(first)
+    tokens_b = _glob_tokens(second)
+    literals = {token for token in tokens_a + tokens_b if token is not None}
+    fresh = next((char for char in ('\x00', '\x01', '\x02') if char not in literals), '\x03')
+
+    seen: set[tuple[int, int]] = set()
+    queue: list[tuple[int, int]] = []
+    for index_a in _glob_epsilon_closure(tokens_a, 0):
+        for index_b in _glob_epsilon_closure(tokens_b, 0):
+            seen.add((index_a, index_b))
+            queue.append((index_a, index_b))
+
+    while queue:
+        index_a, index_b = queue.pop()
+        if index_a == len(tokens_a) and index_b == len(tokens_b):
+            return True
+        for char in [*literals, fresh]:
+            for next_a in _glob_step(tokens_a, index_a, char):
+                for next_b in _glob_step(tokens_b, index_b, char):
+                    for closed_a in _glob_epsilon_closure(tokens_a, next_a):
+                        for closed_b in _glob_epsilon_closure(tokens_b, next_b):
+                            pair = (closed_a, closed_b)
+                            if pair not in seen:
+                                seen.add(pair)
+                                queue.append(pair)
+    return False
+
+
 def _patterns_overlap(first: Any, second: Any) -> bool:
-    """True when two resource patterns can decide a common resource."""
-    return _resource_matches(first, second if isinstance(second, str) else '') or _resource_matches(
-        second, first if isinstance(first, str) else ''
-    )
+    """True when two resource patterns can decide a common resource.
+
+    Two globs whose matched sets intersect overlap even when neither is a
+    literal resource of the other — ``*--force*`` and ``git push *`` both match
+    ``git push --force x``. Treating only literal containment as an overlap let
+    the writer cross such a rule without reporting it, so the sets are compared
+    as sets. A resource that is not a string cannot be shown disjoint, so it is
+    treated as overlapping (the fail-closed direction).
+    """
+    if not isinstance(first, str) or not isinstance(second, str):
+        return True
+    return _globs_intersect(first, second)
 
 
 def _later_rule_is_broader(later_rule: dict[str, Any], action: str, resource: str) -> bool:
@@ -586,10 +700,12 @@ def _conflicting_rule(
 
     Only the rules the write actually OVERRIDES matter: a rule that ends up after
     the requested rule still decides its own resources, so it is not crossed. A
-    rule the requested pattern covers, with a DIFFERENT effect, decides a more
-    specific outcome the caller did not ask to change — overriding it is the
-    named conflict. A strictly BROADER rule is what the specific rule exists to
-    narrow, so it is never a conflict.
+    rule whose matched set overlaps the requested pattern, with a DIFFERENT
+    effect, decides a more specific outcome the caller did not ask to change —
+    overriding it is the named conflict. Overlap is set intersection, not
+    literal containment: ``*--force*`` and ``git push *`` share
+    ``git push --force x``. A strictly BROADER rule is what the specific rule
+    exists to narrow, so it is never a conflict.
     """
     for rule in rules[max(start, 0) : stop]:
         if not isinstance(rule, dict) or not _action_matches(rule.get('action'), action):
@@ -680,11 +796,12 @@ def _upsert_permission_rule(rules: list[Any], action: str, resource: str, effect
     Inserting after the catch-all is necessary but not sufficient: an existing
     later rule can still match the same resource and win. A requested effect
     the list does not already produce is made effective by moving the rule to
-    the end — but never past a later, more specific rule with a different
-    effect the caller did not ask to change. Only that move can cross a rule,
-    so only then is a conflict reported: the list is restored and nothing is
-    saved. A rule a later, broader row with the same effect already shadows is
-    refused too — writing it would decide nothing.
+    the end — but never past a later rule whose matched set intersects the
+    requested one with a different effect the caller did not ask to change.
+    Only that move can cross a rule, so only then is a conflict reported: the
+    list is restored and nothing is saved. A request the list already satisfies
+    — the effect holds through a later row, broader or not — adds nothing and
+    reports no change; it is never a conflict.
     """
     for index, rule in enumerate(rules):
         if isinstance(rule, dict) and rule.get('action') == action and rule.get('resource') == resource:
@@ -720,16 +837,21 @@ def _upsert_permission_rule(rules: list[Any], action: str, resource: str, effect
         return PermissionRuleWrite(True)
     # No move: the new rule is the last match for its own resource, so every
     # earlier rule it matches is one the caller asked to narrow. Nothing can be
-    # crossed here.
+    # crossed here. A later row that already produces the requested effect makes
+    # the write decide nothing, which is an idempotent success — the row is not
+    # added and the caller is not handed a conflict for a request that already
+    # holds.
     hits = _matching_rules(rules, action, resource)
     if hits and hits[-1] is not new_rule:
-        shadow = hits[-1].get('resource')
+        # The effect already holds through a later row. That is an idempotent
+        # success UNLESS a later rule with a different effect overlaps the
+        # request: such a row is a crossing hazard, and dropping it silently
+        # would hide the tension the caller has to resolve.
+        conflict = _conflicting_rule(rules, insert_at + 1, None, action, resource, effect)
         del rules[insert_at]
-        return PermissionRuleWrite(
-            False,
-            f'{action}({resource}) is shadowed by the later rule {action}({shadow}) with the same '
-            'effect, so writing it would decide nothing',
-        )
+        if conflict is not None:
+            return PermissionRuleWrite(False, _conflict_detail(action, resource, effect, conflict))
+        return PermissionRuleWrite(False)
     return PermissionRuleWrite(True)
 
 
@@ -1734,32 +1856,26 @@ class OpenCodeRuntime(Runtime):
                 },
             )
 
-        perm = settings.setdefault('permission', {})
-        if not isinstance(perm, dict):
-            perm = {}
-            settings['permission'] = perm
-
-        bash_val = perm.get('bash')
-        if isinstance(bash_val, dict):
-            bash_map = bash_val
-        elif bash_val == 'allow':
-            bash_map = None
-        else:
-            bash_map = {}
-            perm['bash'] = bash_map
+        perm = _permission_map(settings)
+        if perm is None:
+            return toon_error(
+                'permission configure',
+                'invalid_settings',
+                'the `permission` value is not an object; refusing to reset it',
+            )
 
         added = 0
         for g in grants:
             rule = g.get('rule') or g.get('command') or str(g)
             cat, pat, act = to_opencode_grant(str(rule))
             if cat == 'bash':
-                if bash_map is not None:
-                    if bash_map.get(pat) != act:
-                        if pat == '*':
-                            _set_map_catch_all(bash_map, act)
-                        else:
-                            bash_map[pat] = act
-                        added += 1
+                bash_map = _bash_rows(perm)
+                if bash_map is not None and bash_map.get(pat) != act:
+                    if pat == '*':
+                        _set_map_catch_all(bash_map, act)
+                    else:
+                        bash_map[pat] = act
+                    added += 1
             else:
                 cat = _permission_map_key(cat)
                 cat_val = perm.get(cat)
@@ -1991,28 +2107,28 @@ class OpenCodeRuntime(Runtime):
                 },
             )
 
-        perm = settings.setdefault('permission', {})
-        if not isinstance(perm, dict):
-            perm = {}
-            settings['permission'] = perm
-
-        bash_map = perm.setdefault('bash', {})
-        if not isinstance(bash_map, dict):
-            bash_map = {}
-            perm['bash'] = bash_map
+        perm = _permission_map(settings)
+        if perm is None:
+            return toon_error(
+                'permission fix',
+                'invalid_settings',
+                'the `permission` value is not an object; refusing to reset it',
+            )
 
         if operation in ('ensure', 'add'):
             added = 0
             for item in arguments:
                 cat, pat, act = to_opencode_grant(str(item))
                 if cat == 'bash':
-                    if bash_map.get(pat) != act:
-                        if not dry_run:
-                            if pat == '*':
-                                _set_map_catch_all(bash_map, act)
-                            else:
-                                bash_map[pat] = act
-                        added += 1
+                    bash_map = _bash_rows(perm)
+                    if bash_map is None or bash_map.get(pat) == act:
+                        continue
+                    if not dry_run:
+                        if pat == '*':
+                            _set_map_catch_all(bash_map, act)
+                        else:
+                            bash_map[pat] = act
+                    added += 1
                 else:
                     cat = _permission_map_key(cat)
                     existing = perm.get(cat)
@@ -2064,23 +2180,17 @@ class OpenCodeRuntime(Runtime):
         if operation == 'remove':
             removed = 0
             for item in arguments:
-                cat, pat, _ = to_opencode_grant(str(item))
+                cat, pat, act = to_opencode_grant(str(item))
                 map_key = _permission_map_key(cat)
-                if cat == 'bash' and pat in bash_map:
-                    if not dry_run:
-                        del bash_map[pat]
-                    removed += 1
-                    continue
                 existing = perm.get(map_key)
+                # The effect is part of the identity: naming an allow must never
+                # delete a deny or ask row that shares the pattern.
                 if isinstance(existing, dict):
-                    # The named pattern, or the map's own ``*`` row — never the
-                    # whole category, which may carry denies nobody named.
-                    entry = pat if pat in existing else ('*' if pat == '*' and '*' in existing else None)
-                    if entry is not None:
+                    if existing.get(pat) == act:
                         if not dry_run:
-                            del existing[entry]
+                            del existing[pat]
                         removed += 1
-                elif existing is not None and pat == '*':
+                elif pat == '*' and isinstance(existing, str) and existing == act:
                     if not dry_run:
                         del perm[map_key]
                     removed += 1
@@ -2364,16 +2474,31 @@ class OpenCodeRuntime(Runtime):
                     _remove_permission_rule(rules, 'webfetch', '*', 'allow')
                 changed = True
         else:
-            perm = settings.setdefault('permission', {})
-            if not isinstance(perm, dict):
-                perm = {}
-                settings['permission'] = perm
+            perm = _permission_map(settings)
+            if perm is None:
+                return toon_error(
+                    'permission web-apply',
+                    'invalid_settings',
+                    'the `permission` value is not an object; refusing to reset it',
+                )
 
-            if add and perm.get('webfetch') != 'allow':
+            current = perm.get('webfetch')
+            if isinstance(current, dict):
+                # A pattern map keeps its rows: the grant is the map's ``*`` row,
+                # written FIRST so a specific deny after it still decides.
+                if add and current.get('*') != 'allow':
+                    if not dry_run:
+                        _set_map_catch_all(current, 'allow')
+                    changed = True
+                elif remove and current.get('*') == 'allow':
+                    if not dry_run:
+                        del current['*']
+                    changed = True
+            elif add and current != 'allow':
                 if not dry_run:
                     perm['webfetch'] = 'allow'
                 changed = True
-            elif remove and perm.get('webfetch') == 'allow':
+            elif remove and current == 'allow':
                 if not dry_run:
                     del perm['webfetch']
                 changed = True
@@ -2649,23 +2774,28 @@ class OpenCodeRuntime(Runtime):
             result['applied'] = bool(list_added and not dry_run and saved)
             return result
 
-        perm = settings.setdefault('permission', {})
-        if not isinstance(perm, dict):
-            perm = {}
-            settings['permission'] = perm
+        perm = _permission_map(settings)
+        if perm is None:
+            return {
+                'defaults_added': [],
+                'defaults_added_count': 0,
+                'defaults_removed': [],
+                'defaults_removed_count': 0,
+                'applied': False,
+                'error': 'the `permission` value is not an object; refusing to reset it',
+            }
 
-        bash_map = perm.get('bash')
-        if not isinstance(bash_map, dict):
-            if bash_map == 'allow':
-                return {
-                    'defaults_added': [],
-                    'defaults_added_count': 0,
-                    'defaults_removed': [],
-                    'defaults_removed_count': 0,
-                    'applied': False,
-                }
-            bash_map = {}
-            perm['bash'] = bash_map
+        bash_map = _bash_rows(perm)
+        if bash_map is None:
+            # A bare ``allow`` already permits every command, so there is nothing
+            # to add and the value is left as written.
+            return {
+                'defaults_added': [],
+                'defaults_added_count': 0,
+                'defaults_removed': [],
+                'defaults_removed_count': 0,
+                'applied': False,
+            }
 
         added: list[str] = []
         for cmd in OPENCODE_DEFAULT_PERMISSIONS:

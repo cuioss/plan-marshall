@@ -586,6 +586,104 @@ class TestOpenCodeOneMapWrites:
         assert json.loads(config.read_text())['permission']['bash'] == {'git push *': 'deny'}
 
 
+class TestOpenCodeMapWritersPreserveAScalarBash:
+    """A blanket scalar ``bash`` value is a row, not something to overwrite."""
+
+    def _config(self, tmp_path):
+        config = tmp_path / 'opencode.json'
+        config.write_text(json.dumps({'permission': {'bash': 'deny'}}), encoding='utf-8')
+        return config
+
+    def test_ensure_leaves_a_scalar_bash_it_does_not_concern(self, monkeypatch, tmp_path, in_tmp_cwd):
+        """A ``webfetch`` grant never rewrites ``bash``."""
+        config = self._config(tmp_path)
+        force_opencode(monkeypatch)
+
+        pf.cmd_ensure(
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'ensure',
+                '--permissions',
+                'webfetch',
+                '--target',
+                'project',
+            )
+        )
+
+        assert json.loads(config.read_text())['permission']['bash'] == 'deny'
+
+    def test_ensure_keeps_a_scalar_deny_as_the_catch_all(self, monkeypatch, tmp_path, in_tmp_cwd):
+        """A ``bash`` grant lands beside the blanket deny, which becomes the ``*`` row."""
+        config = self._config(tmp_path)
+        force_opencode(monkeypatch)
+
+        pf.cmd_ensure(
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'ensure',
+                '--permissions',
+                'allow(git status *)',
+                '--target',
+                'project',
+            )
+        )
+
+        rows = json.loads(config.read_text())['permission']['bash']
+        assert rows['*'] == 'deny'
+        assert rows['git status *'] == 'allow'
+        assert list(rows) == ['*', 'git status *']
+
+    def test_ensure_wildcards_keeps_a_scalar_deny(self, monkeypatch, tmp_path, in_tmp_cwd):
+        """``ensure-wildcards`` seeds the scalar deny as ``*`` and installs the defaults."""
+        config = self._config(tmp_path)
+        marketplace_file = tmp_path / 'marketplace.json'
+        marketplace_file.write_text(json.dumps({'bundles': {}}))
+        force_opencode(monkeypatch)
+
+        result = pf.cmd_ensure_wildcards(
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'ensure-wildcards',
+                '--settings',
+                str(config),
+                '--marketplace-json',
+                str(marketplace_file),
+            )
+        )
+
+        assert result['status'] == 'success'
+        rows = json.loads(config.read_text())['permission']['bash']
+        assert rows['*'] == 'deny', 'the blanket deny must survive as the catch-all'
+        assert len(rows) > 1, 'the defaults must be installed beside the catch-all'
+
+    def test_ensure_executor_keeps_a_scalar_deny(self, monkeypatch, tmp_path, in_tmp_cwd):
+        """``ensure-executor`` seeds the scalar deny as ``*`` and adds the permit beside it."""
+        config = self._config(tmp_path)
+        force_opencode(monkeypatch)
+
+        result = pf.cmd_ensure_executor(
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'ensure-executor',
+                '--target',
+                'project',
+            )
+        )
+
+        assert result['success'] is True
+        rows = json.loads(config.read_text())['permission']['bash']
+        assert rows['*'] == 'deny', 'the blanket deny must survive as the catch-all'
+        assert 'python3 .plan/execute-script.py *' in rows
+
+
 class TestOpenCodeUnreadableInputIsReported:
     """A file that does not parse is reported by every writing verb, and never overwritten."""
 

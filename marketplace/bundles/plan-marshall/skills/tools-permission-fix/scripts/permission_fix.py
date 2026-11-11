@@ -588,6 +588,7 @@ def cmd_ensure(args: argparse.Namespace) -> dict:
 
     if is_opencode_target():
         from opencode_runtime import (
+            _bash_rows,
             _permission_action,
             _permission_map_key,
             _permission_rules,
@@ -639,36 +640,32 @@ def cmd_ensure(args: argparse.Namespace) -> dict:
             result['status'] = 'success' if result.get('success', True) else 'error'
             return result
 
-        perm = settings.setdefault('permission', {})
+        perm = settings.get('permission')
+        if 'permission' in settings and not isinstance(perm, dict):
+            return {
+                'settings_file': str(settings_path),
+                'status': 'error',
+                'success': False,
+                'error': 'the `permission` value is not an object; refusing to reset it',
+            }
         if not isinstance(perm, dict):
             perm = {}
             settings['permission'] = perm
-
-        bash_val = perm.get('bash')
-        if isinstance(bash_val, dict):
-            bash_map = bash_val
-        elif bash_val == 'allow':
-            bash_map = None
-        else:
-            bash_map = {}
-            perm['bash'] = bash_map
 
         added = []
         already_exists = []
         for p in permissions:
             cat, pat, act = to_opencode_grant(p)
             if cat == 'bash':
-                if bash_map is not None:
-                    if bash_map.get(pat) == act:
-                        already_exists.append(pat)
-                    else:
-                        if pat == '*':
-                            _set_map_catch_all(bash_map, act)
-                        else:
-                            bash_map[pat] = act
-                        added.append(pat)
-                else:
+                bash_map = _bash_rows(perm)
+                if bash_map is None or bash_map.get(pat) == act:
                     already_exists.append(pat)
+                else:
+                    if pat == '*':
+                        _set_map_catch_all(bash_map, act)
+                    else:
+                        bash_map[pat] = act
+                    added.append(pat)
             else:
                 map_key = _permission_map_key(cat)
                 cat_val = perm.get(map_key)
@@ -698,12 +695,13 @@ def cmd_ensure(args: argparse.Namespace) -> dict:
                         perm[map_key] = act
                         added.append(map_key)
 
+        bash_rows = perm.get('bash')
         result = {
             'settings_file': str(settings_path),
             'added': added,
             'already_exists': already_exists,
             'added_count': len(added),
-            'total_permissions': len(bash_map) if bash_map is not None else 1,
+            'total_permissions': len(bash_rows) if isinstance(bash_rows, dict) else 1,
         }
         if added:
             result['success'] = save_settings(str(settings_path), settings)
@@ -1004,6 +1002,7 @@ def cmd_ensure_wildcards(args: argparse.Namespace) -> dict:
     if is_opencode_target():
         from opencode_runtime import (
             OPENCODE_DEFAULT_PERMISSIONS,
+            _bash_rows,
             _effective_rule_effect,
             _permission_rules,
             _upsert_permission_rule,
@@ -1044,31 +1043,33 @@ def cmd_ensure_wildcards(args: argparse.Namespace) -> dict:
                 'dry_run': args.dry_run,
             }
 
-        perm = settings.setdefault('permission', {})
+        perm = settings.get('permission')
+        if 'permission' in settings and not isinstance(perm, dict):
+            return {'status': 'error', 'error': 'the `permission` value is not an object; refusing to reset it'}
         if not isinstance(perm, dict):
             perm = {}
             settings['permission'] = perm
-        bash_val = perm.get('bash')
-        if isinstance(bash_val, dict):
-            bash_map = bash_val
-        elif bash_val == 'allow':
-            bash_map = None
-        else:
-            bash_map = {}
-            perm['bash'] = bash_map
+        bash_map = _bash_rows(perm)
+        if bash_map is None:
+            # A bare ``allow`` already permits every command.
+            return {
+                'status': 'success',
+                'settings_file': settings_path,
+                'added': [],
+                'already_exists': list(OPENCODE_DEFAULT_PERMISSIONS),
+                'added_count': 0,
+                'dry_run': args.dry_run,
+            }
 
         added = []
         already_exists = []
         for grant in OPENCODE_DEFAULT_PERMISSIONS:
-            if bash_map is not None:
-                if bash_map.get(grant) == 'allow':
-                    already_exists.append(grant)
-                else:
-                    added.append(grant)
-                    if not args.dry_run:
-                        bash_map[grant] = 'allow'
-            else:
+            if bash_map.get(grant) == 'allow':
                 already_exists.append(grant)
+            else:
+                added.append(grant)
+                if not args.dry_run:
+                    bash_map[grant] = 'allow'
         if added and not args.dry_run:
             if not save_settings(settings_path, settings):
                 return {'status': 'error', 'error': f'Failed to write settings to {settings_path}'}
@@ -1624,6 +1625,7 @@ def cmd_ensure_executor(args: argparse.Namespace) -> dict:
 
     if is_opencode_target():
         from opencode_runtime import (
+            _bash_rows,
             _effective_rule_effect,
             _permission_rules,
             _upsert_permission_rule,
@@ -1666,19 +1668,14 @@ def cmd_ensure_executor(args: argparse.Namespace) -> dict:
             result['status'] = 'success' if result.get('success', True) else 'error'
             return result
 
-        perm = settings.setdefault('permission', {})
+        perm = settings.get('permission')
+        if 'permission' in settings and not isinstance(perm, dict):
+            return {'status': 'error', 'error': 'the `permission` value is not an object; refusing to reset it'}
         if not isinstance(perm, dict):
             perm = {}
             settings['permission'] = perm
 
-        bash_map = perm.get('bash')
-        if not isinstance(bash_map, dict):
-            if bash_map == 'allow':
-                bash_map = None
-            else:
-                bash_map = {}
-                perm['bash'] = bash_map
-
+        bash_map = _bash_rows(perm)
         result = {
             'executor_permission': f'bash({opencode_executor})',
             'settings_file': str(settings_path),

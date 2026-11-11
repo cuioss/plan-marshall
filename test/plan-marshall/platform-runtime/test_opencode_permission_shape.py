@@ -826,3 +826,203 @@ def test_a_category_wide_grant_is_written_before_the_specific_rows(
     rows = _load(config)['permission']['bash']
     assert list(rows) == ['*', 'git push *']
     assert rows['git push *'] == 'deny'
+
+
+# ---------------------------------------------------------------------------
+# idempotence: a satisfied request is a success, a crossing is a conflict
+# ---------------------------------------------------------------------------
+
+
+def _write_rules(path: pathlib.Path, rules: list[dict[str, str]]) -> None:
+    path.write_text(json.dumps({'permissions': rules}, indent=2) + '\n', encoding='utf-8')
+
+
+def test_ensure_is_a_success_when_a_later_broader_row_already_produces_the_effect(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    """The requested effect already holds, so nothing is added and nothing is written.
+
+    ``git *`` is broader than ``git push *`` and carries the requested ``ask``;
+    writing the narrower row would decide nothing. That is an idempotent
+    success, never the ``permission_conflict`` the older writer reported.
+    """
+    monkeypatch.chdir(tmp_path)
+    config = tmp_path / 'opencode.json'
+    _write_rules(
+        config,
+        [
+            {'action': 'shell', 'resource': '*', 'effect': 'allow'},
+            {'action': 'shell', 'resource': 'git *', 'effect': 'ask'},
+        ],
+    )
+    before = config.read_bytes()
+
+    result = parse_toon(runtime.permission_fix('project', 'ensure', ['ask(git push *)'], False))
+
+    assert result['status'] == 'success'
+    assert result['added'] == 0
+    assert config.read_bytes() == before
+
+
+def test_ensure_refuses_to_cross_a_partially_overlapping_later_deny(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    """``*--force*`` and ``git push *`` intersect although neither is a literal of the other.
+
+    The patterns match a common resource (``git push --force x``), so the write
+    must treat them as overlapping: moving the requested allow past that deny
+    would silently widen it, and a conflict is reported instead.
+    """
+    monkeypatch.chdir(tmp_path)
+    config = tmp_path / 'opencode.json'
+    _write_rules(
+        config,
+        [
+            {'action': 'shell', 'resource': '*', 'effect': 'allow'},
+            {'action': 'shell', 'resource': 'git *', 'effect': 'ask'},
+            {'action': 'shell', 'resource': '*--force*', 'effect': 'deny'},
+        ],
+    )
+    before = config.read_bytes()
+
+    result = parse_toon(runtime.permission_fix('project', 'ensure', ['allow(git push *)'], False))
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'permission_conflict'
+    assert config.read_bytes() == before
+
+
+def test_patterns_overlap_sees_through_a_shared_prefix_and_suffix():
+    """The overlap reader is a glob-intersection test, not literal containment."""
+    from opencode_runtime import _patterns_overlap
+
+    assert _patterns_overlap('*--force*', 'git push *') is True
+    assert _patterns_overlap('git push *', '*--force*') is True
+    assert _patterns_overlap('git *', 'git push *') is True
+    assert _patterns_overlap('read', '/etc/shadow') is False
+    assert _patterns_overlap('git push *', 'git pull *') is False
+
+
+def test_protect_path_completes_on_a_list_that_already_denies_a_vector(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    """An already-denied vector does not abort the whole protection.
+
+    ``cat *`` already denies the ``cat`` vector for every directory, so the
+    rendering for ``/home/u/.plan-x`` is shadowed by it and adds nothing. That
+    is not a conflict: the remaining vectors and the read denies are installed,
+    and the run reports what it added.
+    """
+    monkeypatch.chdir(tmp_path)
+    config = tmp_path / 'opencode.json'
+    _write_rules(
+        config,
+        [
+            {'action': 'shell', 'resource': '*', 'effect': 'allow'},
+            {'action': 'shell', 'resource': 'cat *', 'effect': 'deny'},
+        ],
+    )
+
+    result = parse_toon(runtime.permission_fix('project', 'protect-path', ['/home/u/.plan-x'], False))
+
+    assert result['status'] == 'success', result
+    assert result['changes_applied'] > 0
+    rules = _load(config)['permissions']
+    resources = {rule['resource'] for rule in rules if rule['effect'] == 'deny'}
+    for vector in ('less', 'more', 'cp', 'grep', 'base64', 'head', 'tail'):
+        assert any(rule.startswith(f'{vector} ') for rule in resources), f'{vector} vector missing'
+    assert any(rule.startswith('/home/u/.plan-x') for rule in resources), 'the read deny is missing'
+
+
+# ---------------------------------------------------------------------------
+# the OpenCode 1 map writers preserve what they hold
+# ---------------------------------------------------------------------------
+
+#: A map-shaped fixture whose ``bash`` value is a blanket deny. A writer that
+#: does not concern ``bash`` must leave it exactly as it is, and one that does
+#: must keep the deny as the map's own ``*`` row.
+SCALAR_DENY = {'permission': {'bash': 'deny'}}
+
+
+def _scalar_config(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, payload: dict) -> pathlib.Path:
+    monkeypatch.chdir(tmp_path)
+    config = tmp_path / 'opencode.json'
+    config.write_text(json.dumps(payload), encoding='utf-8')
+    return config
+
+
+def _run_opencode_defaults(runtime: OpenCodeRuntime, config: pathlib.Path) -> None:
+    settings = runtime.permission_load_settings(str(config))
+    runtime.permission_ensure_defaults(settings, str(config), dry_run=False)
+
+
+@pytest.mark.parametrize('writer', ['configure', 'fix-ensure', 'fix-add'])
+def test_a_writer_that_does_not_concern_bash_leaves_it_alone(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, writer: str
+):
+    """A scalar ``bash`` deny survives an operation that never names ``bash``."""
+    config = _scalar_config(tmp_path, monkeypatch, SCALAR_DENY)
+
+    if writer == 'configure':
+        runtime.permission_configure('project', [{'rule': 'webfetch'}])
+    else:
+        runtime.permission_fix('project', 'ensure' if writer == 'fix-ensure' else 'add', ['webfetch'], False)
+
+    assert _load(config)['permission']['bash'] == 'deny'
+
+
+@pytest.mark.parametrize('writer', ['configure', 'fix-ensure', 'fix-add'])
+def test_a_writer_that_adds_a_bash_row_keeps_the_scalar_deny_as_the_catch_all(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, writer: str
+):
+    """A scalar deny becomes the map's ``*`` row, never an empty map."""
+    config = _scalar_config(tmp_path, monkeypatch, SCALAR_DENY)
+
+    if writer == 'configure':
+        runtime.permission_configure('project', [{'rule': 'allow(git status *)'}])
+    else:
+        runtime.permission_fix('project', 'ensure' if writer == 'fix-ensure' else 'add', ['allow(git status *)'], False)
+
+    rows = _load(config)['permission']['bash']
+    assert rows['*'] == 'deny', 'the blanket deny must survive as the catch-all'
+    assert rows['git status *'] == 'allow'
+    assert list(rows) == ['*', 'git status *']
+
+
+def test_ensure_defaults_keeps_a_scalar_deny_as_the_catch_all(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    """The defaults writer seeds a scalar ``bash`` as ``*`` instead of resetting it."""
+    config = _scalar_config(tmp_path, monkeypatch, SCALAR_DENY)
+
+    _run_opencode_defaults(runtime, config)
+
+    rows = _load(config)['permission']['bash']
+    assert rows['*'] == 'deny'
+    assert len(rows) > 1, 'the defaults must be installed beside the catch-all'
+
+
+def test_fix_remove_matches_the_effect_on_the_map_path(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Naming an allow never deletes a deny row that shares the pattern."""
+    config = _scalar_config(tmp_path, monkeypatch, {'permission': {'bash': {'git push *': 'deny'}}})
+
+    result = parse_toon(runtime.permission_fix('project', 'remove', ['allow(git push *)'], False))
+
+    assert result['status'] == 'success'
+    assert result['removed'] == 0
+    assert _load(config)['permission']['bash'] == {'git push *': 'deny'}
+
+
+def test_web_apply_keeps_a_webfetch_pattern_map(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    """The grant becomes the map's ``*`` row beside the patterns, never a replacement."""
+    config = _scalar_config(tmp_path, monkeypatch, {'permission': {'webfetch': {'evil.com': 'deny'}}})
+
+    runtime.permission_web_apply('project', add=['example.com'], remove=[], dry_run=False)
+
+    rows = _load(config)['permission']['webfetch']
+    assert rows == {'*': 'allow', 'evil.com': 'deny'}
+    assert list(rows) == ['*', 'evil.com'], 'the catch-all must precede the specific deny'
