@@ -272,8 +272,9 @@ def test_render_variant_frontmatter_unpinned_shape() -> None:
     assert 'model:' not in block
     assert 'reasoningEffort' not in block
     assert 'implements' not in block
-    assert 'permissions:' in block
-    assert 'permission:' not in block.replace('permissions:', '')
+    assert 'permissions:' not in block, (
+        'an agent carries no permission rule: agent rules are appended after the global ones'
+    )
 
 
 def test_selected_levels_defaults_to_all() -> None:

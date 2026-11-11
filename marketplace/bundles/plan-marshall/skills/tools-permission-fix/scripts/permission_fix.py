@@ -232,11 +232,14 @@ def cmd_apply_fixes(args: argparse.Namespace) -> dict:
         if error:
             return {'status': 'error', 'error': error}
         defaults = ensure_default_permissions(settings, settings_path, args.dry_run)
+        if defaults.get('error'):
+            return {'status': 'error', 'error': str(defaults['error']), 'settings_file': settings_path}
         return {
             'status': 'success',
             'settings_file': settings_path,
             'duplicates_removed': 0,
             'paths_fixed': 0,
+            'applied': defaults.get('applied', False),
             'defaults_added': defaults.get('defaults_added', []),
             'defaults_added_count': defaults.get('defaults_added_count', 0),
             'defaults_removed': defaults.get('defaults_removed', []),
@@ -312,6 +315,12 @@ def cmd_add(args: argparse.Namespace) -> dict:
     """Handle add subcommand."""
     settings_path = get_settings_path(args.target)
     settings = load_settings_path(settings_path)
+    if 'error' in settings:
+        return {'status': 'error', 'error': f'Invalid settings in {settings_path}: {settings["error"]}'}
+
+    if is_opencode_target():
+        return _opencode_add(settings_path, settings, args.permission)
+
     allow_list = settings['permissions']['allow']
 
     result: dict[str, Any] = {'settings_file': str(settings_path)}
@@ -336,6 +345,102 @@ def cmd_add(args: argparse.Namespace) -> dict:
     return result
 
 
+def _opencode_add(settings_path: Path, settings: dict[str, Any], permission: str) -> dict:
+    """Add one grant to an OpenCode file in whichever shape the file carries.
+
+    The OpenCode 2 list is written through the runtime's own upsert. The
+    OpenCode 1 map keeps its pattern entries and gains the grant as a pattern
+    row, or as the map's own ``*`` row, so this subcommand cannot index a shape
+    the file does not have. A conflict from the upsert is reported as an error
+    rather than as a silent no-op.
+    """
+    from opencode_runtime import (
+        _permission_action,
+        _permission_map_key,
+        _permission_rules,
+        _rule_exists,
+        _set_map_catch_all,
+        _upsert_permission_rule,
+        to_opencode_grant,
+    )
+
+    result: dict[str, Any] = {'settings_file': str(settings_path)}
+    cat, pat, act = to_opencode_grant(permission)
+
+    rules = _permission_rules(settings, create=True)
+    if rules is not None:
+        action = _permission_action(cat)
+        label = f'{action}({pat})' if pat != '*' else action
+        result['permission_shape'] = 'permissions'
+        if _rule_exists(rules, action, pat, act):
+            result.update({'success': True, 'action': 'already_exists', 'status': 'success'})
+            return result
+        write = _upsert_permission_rule(rules, action, pat, act)
+        if write.conflict:
+            result.update({'success': False, 'status': 'error', 'error': write.conflict})
+            return result
+        result['success'] = save_settings(str(settings_path), settings)
+        result['status'] = 'success' if result['success'] else 'error'
+        if result['success']:
+            result['action'] = 'added'
+            result['added'] = [label]
+        else:
+            result['action'] = 'not_saved'
+            result['error'] = 'Failed to save settings'
+        return result
+
+    perm = settings.setdefault('permission', {})
+    if not isinstance(perm, dict):
+        perm = {}
+        settings['permission'] = perm
+    map_key = _permission_map_key(cat)
+    existing = perm.get(map_key)
+    if cat == 'bash':
+        bash_map = existing
+        if not isinstance(bash_map, dict):
+            bash_map = {} if existing is None else {'*': str(existing)}
+            perm['bash'] = bash_map
+        if bash_map.get(pat) == act:
+            result.update({'success': True, 'action': 'already_exists', 'status': 'success'})
+            return result
+        if pat == '*':
+            _set_map_catch_all(bash_map, act)
+        else:
+            bash_map[pat] = act
+    else:
+        if pat and pat != '*':
+            if isinstance(existing, dict):
+                cat_map = existing
+            elif isinstance(existing, str):
+                cat_map = {'*': existing}
+            else:
+                cat_map = {}
+            if cat_map.get(pat) == act:
+                result.update({'success': True, 'action': 'already_exists', 'status': 'success'})
+                return result
+            cat_map[pat] = act
+            perm[map_key] = cat_map
+        else:
+            if isinstance(existing, dict):
+                if existing.get('*') == act:
+                    result.update({'success': True, 'action': 'already_exists', 'status': 'success'})
+                    return result
+                _set_map_catch_all(existing, act)
+            else:
+                if existing == act:
+                    result.update({'success': True, 'action': 'already_exists', 'status': 'success'})
+                    return result
+                perm[map_key] = act
+    result['success'] = save_settings(str(settings_path), settings)
+    result['status'] = 'success' if result['success'] else 'error'
+    if result['success']:
+        result['action'] = 'added'
+    else:
+        result['action'] = 'not_saved'
+        result['error'] = 'Failed to save settings'
+    return result
+
+
 # =============================================================================
 # remove subcommand
 # =============================================================================
@@ -345,6 +450,12 @@ def cmd_remove(args: argparse.Namespace) -> dict:
     """Handle remove subcommand."""
     settings_path = get_settings_path(args.target)
     settings = load_settings_path(settings_path)
+    if 'error' in settings:
+        return {'status': 'error', 'error': f'Invalid settings in {settings_path}: {settings["error"]}'}
+
+    if is_opencode_target():
+        return _opencode_remove(settings_path, settings, args.permission)
+
     allow_list = settings['permissions']['allow']
 
     result: dict[str, Any] = {'settings_file': str(settings_path)}
@@ -368,6 +479,95 @@ def cmd_remove(args: argparse.Namespace) -> dict:
     return result
 
 
+def _opencode_remove(settings_path: Path, settings: dict[str, Any], permission: str) -> dict:
+    """Remove one grant from an OpenCode file in whichever shape it carries.
+
+    A grant decided by a wildcard-action rule reports that as the named reason:
+    deleting the named rule would leave the effect in force, so ``not_found``
+    would be a false answer. A map whose value is a pattern map loses only the
+    named pattern — never the whole category.
+    """
+    from opencode_runtime import (
+        _permission_action,
+        _permission_map_key,
+        _permission_rules,
+        _remove_permission_rule,
+        _rule_effect,
+        _wildcard_action_rule,
+        to_opencode_grant,
+    )
+
+    result: dict[str, Any] = {'settings_file': str(settings_path)}
+    cat, pat, act = to_opencode_grant(permission)
+
+    rules = _permission_rules(settings, create=False)
+    if rules is not None:
+        result['permission_shape'] = 'permissions'
+        action = _permission_action(cat)
+        if not _remove_permission_rule(rules, action, pat, act):
+            blocker = _wildcard_action_rule(rules, action, pat, act)
+            if blocker is not None:
+                result.update(
+                    {
+                        'success': False,
+                        'status': 'error',
+                        'error': (
+                            f'{permission!r} is decided by the wildcard-action rule '
+                            f'({blocker.get("resource")!r}, effect {_rule_effect(blocker)}); '
+                            'removing the named grant would not remove the effect'
+                        ),
+                    }
+                )
+                return result
+            result.update({'success': True, 'action': 'not_found', 'status': 'success'})
+            return result
+        result['success'] = save_settings(str(settings_path), settings)
+        result['status'] = 'success' if result['success'] else 'error'
+        if result['success']:
+            result['action'] = 'removed'
+        else:
+            result['action'] = 'not_saved'
+            result['error'] = 'Failed to save settings'
+        return result
+
+    not_found = {'success': True, 'action': 'not_found', 'status': 'success'}
+    perm = settings.get('permission')
+    if not isinstance(perm, dict):
+        result.update(not_found)
+        return result
+    map_key = _permission_map_key(cat)
+    if cat == 'bash':
+        bash_map = perm.get('bash')
+        if not isinstance(bash_map, dict) or bash_map.get(pat) != act:
+            result.update(not_found)
+            return result
+        del bash_map[pat]
+    elif map_key not in perm:
+        result.update(not_found)
+        return result
+    else:
+        existing = perm[map_key]
+        if isinstance(existing, dict):
+            entry = pat if existing.get(pat) == act else None
+            if entry is None:
+                result.update(not_found)
+                return result
+            del existing[entry]
+        elif pat != '*' or existing != act:
+            result.update(not_found)
+            return result
+        else:
+            del perm[map_key]
+    result['success'] = save_settings(str(settings_path), settings)
+    result['status'] = 'success' if result['success'] else 'error'
+    if result['success']:
+        result['action'] = 'removed'
+    else:
+        result['action'] = 'not_saved'
+        result['error'] = 'Failed to save settings'
+    return result
+
+
 # =============================================================================
 # ensure subcommand
 # =============================================================================
@@ -377,6 +577,8 @@ def cmd_ensure(args: argparse.Namespace) -> dict:
     """Handle ensure subcommand."""
     settings_path = get_settings_path(args.target)
     settings = load_settings_path(settings_path)
+    if 'error' in settings:
+        return {'status': 'error', 'error': f'Invalid settings in {settings_path}: {settings["error"]}'}
 
     permissions = [p.strip() for p in args.permissions.split(',')]
     if is_antigravity_target():
@@ -387,8 +589,10 @@ def cmd_ensure(args: argparse.Namespace) -> dict:
     if is_opencode_target():
         from opencode_runtime import (
             _permission_action,
+            _permission_map_key,
             _permission_rules,
             _rule_exists,
+            _set_map_catch_all,
             _upsert_permission_rule,
             to_opencode_grant,
         )
@@ -403,9 +607,20 @@ def cmd_ensure(args: argparse.Namespace) -> dict:
                 label = f'{action}({pat})' if pat != '*' else action
                 if _rule_exists(rules, action, pat, act):
                     already_exists.append(label)
-                else:
-                    _upsert_permission_rule(rules, action, pat, act)
+                    continue
+                write = _upsert_permission_rule(rules, action, pat, act)
+                if write.conflict:
+                    return {
+                        'settings_file': str(settings_path),
+                        'permission_shape': 'permissions',
+                        'status': 'error',
+                        'success': False,
+                        'error': write.conflict,
+                    }
+                if write.changed:
                     added.append(label)
+                else:
+                    already_exists.append(label)
 
             result = {
                 'settings_file': str(settings_path),
@@ -447,31 +662,41 @@ def cmd_ensure(args: argparse.Namespace) -> dict:
                     if bash_map.get(pat) == act:
                         already_exists.append(pat)
                     else:
-                        bash_map[pat] = act
+                        if pat == '*':
+                            _set_map_catch_all(bash_map, act)
+                        else:
+                            bash_map[pat] = act
                         added.append(pat)
                 else:
                     already_exists.append(pat)
             else:
-                cat_val = perm.get(cat)
+                map_key = _permission_map_key(cat)
+                cat_val = perm.get(map_key)
                 if pat and pat != '*':
                     if not isinstance(cat_val, dict):
                         cat_map: dict[str, str] = {}
                         if isinstance(cat_val, str):
                             cat_map['*'] = cat_val
-                        perm[cat] = cat_map
+                        perm[map_key] = cat_map
                     else:
                         cat_map = cat_val
                     if cat_map.get(pat) == act:
-                        already_exists.append(f'{cat}({pat})')
+                        already_exists.append(f'{map_key}({pat})')
                     else:
                         cat_map[pat] = act
-                        added.append(f'{cat}({pat})')
+                        added.append(f'{map_key}({pat})')
                 else:
-                    if cat_val == act:
-                        already_exists.append(cat)
+                    if isinstance(cat_val, dict):
+                        if cat_val.get('*') == act:
+                            already_exists.append(map_key)
+                        else:
+                            _set_map_catch_all(cat_val, act)
+                            added.append(map_key)
+                    elif cat_val == act:
+                        already_exists.append(map_key)
                     else:
-                        perm[cat] = act
-                        added.append(cat)
+                        perm[map_key] = act
+                        added.append(map_key)
 
         result = {
             'settings_file': str(settings_path),
@@ -486,6 +711,7 @@ def cmd_ensure(args: argparse.Namespace) -> dict:
                 result['error'] = 'Failed to save settings'
         else:
             result['success'] = True
+        result['status'] = 'success' if result.get('success', True) else 'error'
         return result
 
     added = []
@@ -798,7 +1024,13 @@ def cmd_ensure_wildcards(args: argparse.Namespace) -> dict:
                 else:
                     added.append(grant)
                     if not args.dry_run:
-                        _upsert_permission_rule(rules, 'shell', grant, 'allow')
+                        write = _upsert_permission_rule(rules, 'shell', grant, 'allow')
+                        if write.conflict:
+                            return {
+                                'status': 'error',
+                                'permission_conflict': write.conflict,
+                                'error': write.conflict,
+                            }
             if added and not args.dry_run:
                 if not save_settings(settings_path, settings):
                     return {'status': 'error', 'error': f'Failed to write settings to {settings_path}'}
@@ -1400,6 +1632,8 @@ def cmd_ensure_executor(args: argparse.Namespace) -> dict:
         opencode_executor = 'python3 .plan/execute-script.py *'
         settings_path = get_settings_path(args.target)
         settings = load_settings_path(settings_path)
+        if 'error' in settings:
+            return {'status': 'error', 'error': f'Invalid settings in {settings_path}: {settings["error"]}'}
 
         result = {
             'executor_permission': f'shell({opencode_executor})',
@@ -1414,8 +1648,12 @@ def cmd_ensure_executor(args: argparse.Namespace) -> dict:
                 result['action'] = 'already_exists'
                 result['success'] = True
             elif not args.dry_run:
-                _upsert_permission_rule(rules, 'shell', opencode_executor, 'allow')
-                if save_settings(str(settings_path), settings):
+                write = _upsert_permission_rule(rules, 'shell', opencode_executor, 'allow')
+                if write.conflict:
+                    result['action'] = 'conflict'
+                    result['success'] = False
+                    result['error'] = write.conflict
+                elif save_settings(str(settings_path), settings):
                     result['action'] = 'added'
                     result['success'] = True
                 else:

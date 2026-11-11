@@ -704,8 +704,9 @@ def test_permission_settings_path_project_creates_when_writing(
     assert pathlib.Path(target_path).is_file()
     data = json.loads(pathlib.Path(target_path).read_text(encoding='utf-8'))
     assert 'permission' not in data, 'a new file must be created in the OpenCode 2 shape'
-    assert data['permissions'][0]['action'] == 'shell'
-    assert data['permissions'][0]['resource'] == '*'
+    rules = data['permissions']
+    assert rules, 'the skeleton carries the baseline allows'
+    assert all(rule['action'] == 'shell' and rule['resource'] != '*' for rule in rules)
 
 
 def test_permission_load_and_save_settings(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
@@ -1888,7 +1889,13 @@ def test_health_check_all_healthy_false_when_display_or_hook(runtime: OpenCodeRu
 # =============================================================================
 
 
-def _stub_opencode_version(monkeypatch: pytest.MonkeyPatch, output: str | None) -> None:
+def _stub_opencode_version(
+    monkeypatch: pytest.MonkeyPatch,
+    output: str | None,
+    *,
+    stderr: str = '',
+    returncode: int = 0,
+) -> None:
     """Stub ``opencode --version``; ``None`` stubs an absent executable."""
     import opencode_runtime
 
@@ -1898,10 +1905,14 @@ def _stub_opencode_version(monkeypatch: pytest.MonkeyPatch, output: str | None) 
         (lambda _name: None) if output is None else (lambda _name: '/usr/bin/opencode'),
     )
 
+    captured_stdout = output or ''
+    captured_stderr = stderr
+    captured_returncode = returncode
+
     class _Completed:
-        stdout = output or ''
-        stderr = ''
-        returncode = 0
+        stdout = captured_stdout
+        stderr = captured_stderr
+        returncode = captured_returncode
 
     monkeypatch.setattr(opencode_runtime.subprocess, 'run', lambda *args, **kwargs: _Completed())
 
@@ -1932,6 +1943,22 @@ def test_health_version_absent_binary_is_not_checkable(
     _stub_opencode_version(monkeypatch, None)
     result = _parse(runtime.health_check('version'))
     check = next(item for item in result['results'] if item['check'] == 'version')
+    assert check['healthy'] is False
+    assert 'not checkable' in check['detail'].lower()
+
+
+def test_a_failed_version_probe_is_not_checkable(runtime: OpenCodeRuntime, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A failed ``--version`` is never read as a version.
+
+    A runtime bootstrap that exits non-zero writes ``Node 20.11 required`` to
+    stderr; reading that number as the OpenCode major would report a mismatch
+    for a client whose version was never measured.
+    """
+    _stub_opencode_version(monkeypatch, '', stderr='Node 20.11 required', returncode=1)
+
+    result = _parse(runtime.health_check('version'))
+    check = next(item for item in result['results'] if item['check'] == 'version')
+
     assert check['healthy'] is False
     assert 'not checkable' in check['detail'].lower()
 
