@@ -22,6 +22,8 @@ must keep the first trigger reachable.
 
 from __future__ import annotations
 
+from typing import Any
+
 import bot_registry
 import github_re_review
 import pytest
@@ -84,9 +86,16 @@ def _comment(kind: str, body: str, *, author: str = 'coderabbitai', commit_id: s
     }
 
 
-def _request(bot_kind: str, monkeypatch) -> dict:
+def _strategy(bot_kind: str) -> Any:
+    strategy = github_re_review.resolve_strategy(bot_kind)
+    assert strategy is not None, f'{bot_kind} resolves no strategy'
+    return strategy
+
+
+def _request(bot_kind: str, monkeypatch) -> dict[str, Any]:
     _free_window(monkeypatch)
-    return github_re_review.resolve_strategy(bot_kind).request_fresh_review(_PR, _PUSH_TIME)
+    result: dict[str, Any] = _strategy(bot_kind).request_fresh_review(_PR, _PUSH_TIME)
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -144,7 +153,7 @@ def test_the_escalated_command_is_refused_too(monkeypatch):
     _history(monkeypatch, [_comment('issue_comment', _COVERAGE_BODY)])
     _free_window(monkeypatch)
 
-    result = github_re_review.resolve_strategy('coderabbit').request_fresh_review(_PR, _PUSH_TIME, escalated=True)
+    result = _strategy('coderabbit').request_fresh_review(_PR, _PUSH_TIME, escalated=True)
 
     assert posted == []
     assert result['status'] == 'refused'
