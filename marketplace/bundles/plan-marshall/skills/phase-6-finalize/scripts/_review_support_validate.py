@@ -437,7 +437,7 @@ def _superseded_rejection_message(reason: str, cited: str, number: int) -> str:
     if reason == REFERENCE_UNREADABLE:
         return (
             f'superseded_by {cited!r} carries no deliverable reference at its head '
-            '(expected D2, Deliverable 2, Deliverable #2, Deliverable D2, `D2`, **D2** or (D2))'
+            '(expected D2, D 2, Deliverable 2, Deliverable #2, Deliverable D2, `D2`, **D2** or (D2))'
         )
     if reason == REFERENCE_UNKNOWN:
         return f'superseded_by {cited!r} names no deliverable of the outline'

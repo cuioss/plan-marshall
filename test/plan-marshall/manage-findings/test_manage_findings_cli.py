@@ -505,6 +505,24 @@ def test_main_stamp_pr_refuses_a_stamp_that_is_not_at_the_head(plan_context, mon
     assert _stored_finding('mf-cli-stamp-pr-mid', hid)['detail'] == detail
 
 
+def test_main_stamp_pr_refuses_the_same_number_below_the_head(plan_context, monkeypatch, capsys):
+    """Even the SAME number below the head is refused: the readers only parse the head."""
+    detail = 'kind: inline\npr_number: 102\nauthor: coderabbit\n'
+    hid = _seed_pr_comment('mf-cli-stamp-pr-mid', detail=detail)
+
+    code, out = _run_main(
+        monkeypatch,
+        capsys,
+        ['stamp-pr', '--plan-id', 'mf-cli-stamp-pr-mid', '--hash-id', hid, '--pr-number', '102'],
+    )
+
+    assert code == 0
+    data = parse_toon(out)
+    assert data['status'] == 'error'
+    assert data['error'] == 'pr_number_conflict'
+    assert _stored_finding('mf-cli-stamp-pr-mid', hid)['detail'] == detail
+
+
 def test_main_resolve_with_task_number_records_the_fix_task(plan_context, monkeypatch, capsys):
     """``resolve --resolution fixed --task-number N`` stores the owning fix task."""
     hid = _seed_finding('mf-cli-taskflag', 'Owned by a task')

@@ -2415,9 +2415,10 @@ def cmd_trigger_bot(args: argparse.Namespace) -> int:
     - ``--pr-number`` scopes that stored-finding population to the pull request being
       worked. This plan's findings store is plan-scoped, so without it a bot whose
       finding was filed for an EARLIER PR of the same plan is joined and triggered
-      here although nothing about it is out of date for this PR. Unplaceable (legacy,
-      no recorded PR) rows are reported in ``unscoped_stored_findings`` rather than
-      joined when the store spans more than one PR — see :func:`_scope_findings`.
+      here although nothing about it is out of date for this PR. Unplaceable PENDING
+      (legacy, no recorded PR) rows are reported in ``unscoped_stored_findings`` rather
+      than joined when the store spans more than one PR; a settled legacy row is
+      excluded too but is not reported — see :func:`_scope_findings`.
 
     The stored-finding bots are read from the plan's findings store here, not
     supplied by the caller. A store that cannot be read is the same structured
@@ -2741,9 +2742,9 @@ def main(argv: list[str] | None = None) -> int:
             "read to THAT PR's stored findings; the plan's findings store is plan-scoped, "
             'so an earlier PR of the same plan would otherwise join the current one. '
             'Omitted, every stored finding joins and the payload reports '
-            'store_scope: unscoped. A legacy row (no recorded PR) is reported in '
+            'store_scope: unscoped. A PENDING legacy row (no recorded PR) is reported in '
             'unscoped_stored_findings rather than joined when the store spans more than '
-            'one PR.'
+            'one PR; a settled legacy row is excluded too but is not reported.'
         ),
     )
     check_parser.set_defaults(func=cmd_check)

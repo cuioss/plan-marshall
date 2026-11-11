@@ -803,13 +803,16 @@ def test_the_chain_does_not_refuse_a_settled_legacy_row(plan_context, monkeypatc
 
     def fake_run_verb(notation, argv, **_kwargs):
         if notation == gate._COMPLETENESS_NOTATION:
+            # Read the flags the gate FORWARDS, so a dropped/wrong --pr-number fails here.
+            assert '--triage-ran' in argv, argv
+            pr_number = int(argv[argv.index('--pr-number') + 1])
             return _rc.check_completeness(
                 _PLAN_ID,
                 ['coderabbit'],
                 optional_bots=['sourcery'],
                 participated_bots={'coderabbit': 'review_body'},
                 stale_participation_bots=['sourcery'],
-                pr_number=42,
+                pr_number=pr_number,
                 triage_ran=True,
             )
         return dict(responses[notation])

@@ -701,7 +701,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings as
 | `fix_stamp_selector_required` | `stamp-fix-commit` was given neither `--task-number` nor `--hash-id`, or both. |
 | `finding_not_fixed` | `stamp-fix-commit --hash-id` named a finding whose resolution is not `fixed`. The payload carries its `resolution`. |
 | `invalid_pr_number` | `stamp-pr` was given a `--pr-number` that is not a POSITIVE integer. A non-numeric value never reaches the handler (argparse refuses it with exit 2); this code covers zero and negatives. Nothing is written. |
-| `pr_number_conflict` | `stamp-pr` named a `pr-comment` finding already stamped for a DIFFERENT pull request. The payload carries `existing_pr_number`; the row is left byte-identical. |
+| `pr_number_conflict` | `stamp-pr` named a `pr-comment` finding that already carries a `pr_number` line — a different number at the head, or any number below the head (the readers only parse the head, so stamping over it would leave two origins). The payload carries `existing_pr_number`; the row is left byte-identical. |
 | `not_pr_comment` | `stamp-pr` named a finding that is not a `pr-comment` row. The payload carries its `type`; the row is left byte-identical. |
 | `findings_store_unresolved` | `plans/{plan_id}/` is absent under the resolved root (`findings_store_state: plan_absent`), or no runtime-state root resolved at all (`unknown`). Returned by every surface — read, write and `add` — instead of a clean zero or a manufactured store. |
 | `finding_in_other_store` | The `hash_id` is absent from the plan-findings file set but present in a sibling store. The payload names the store (`found_in`) and the verb that owns it (`use_verb`); the sibling record is left byte-identical. |

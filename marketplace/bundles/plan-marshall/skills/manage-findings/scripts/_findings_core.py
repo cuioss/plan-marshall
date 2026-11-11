@@ -1277,7 +1277,10 @@ def stamp_finding_pr_number(plan_id: str, hash_id: str, pr_number: int) -> dict[
     - a finding that is not a ``pr-comment`` row is ``not_pr_comment``;
     - a row already stamped with a DIFFERENT number is ``pr_number_conflict`` — the
       verb places an unplaced row, it never rewrites one PR's finding as another's;
-    - a row already stamped with the SAME number answers ``outcome: unchanged``.
+    - a row whose ``pr_number:`` line sits BELOW the head is also ``pr_number_conflict``
+      whatever its number: the readers only parse the head, so stamping over it would
+      leave two origins in one row;
+    - a row already stamped with the SAME number AT THE HEAD answers ``outcome: unchanged``.
     """
     if isinstance(pr_number, bool) or not isinstance(pr_number, int) or pr_number <= 0:
         return {

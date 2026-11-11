@@ -68,6 +68,15 @@ def _verdict(superseded_by: str) -> dict[str, Any]:
     }
 
 
+def _outline_with_two_successors() -> str:
+    """Three deliverables, so a supersede CHAIN has a real row at every hop."""
+    return (
+        _outline()
+        + '\n### 3. Retire the parser\n\n**Affected files:**\n- `src/retired.py` (write-new)\n\n'
+        + '**Success Criteria:**\n- the parser is retired\n'
+    )
+
+
 def _write_verdict(plan_dir: Path, tmp_path: Path, document: dict[str, Any]) -> str:
     """Seal ``document`` through the reviewer's own verb, then place it in the plan's slot.
 
@@ -231,8 +240,10 @@ def test_a_successor_graded_not_met_leaves_the_criteria_open(plan_context, tmp_p
 
 
 def test_a_successor_that_is_itself_superseded_is_refused(plan_context, tmp_path) -> None:
-    """D2 is superseded by a met D3: D1's citation names an assistant, not a closing successor."""
-    plan_dir = _plan(plan_context, freeze=True)
+    """D2 is superseded by a met D3: D1's citation names an intermediate, not a closing successor."""
+    plan_dir = _plan(plan_context)
+    (plan_dir / 'solution_outline.md').write_text(_outline_with_two_successors(), encoding='utf-8')
+    assert _snap.write_snapshot(PLAN_ID)['status'] == 'success'
     path = _write_verdict(
         plan_dir,
         tmp_path,
@@ -244,7 +255,7 @@ def test_a_successor_that_is_itself_superseded_is_refused(plan_context, tmp_path
                     'number': 3,
                     'verdict': 'met',
                     'criteria': [
-                        {'criterion': 'usage is documented', 'status': 'met', 'evidence': ['doc/parser.md:1']}
+                        {'criterion': 'the parser is retired', 'status': 'met', 'evidence': ['src/retired.py:1']}
                     ],
                 },
             ],
