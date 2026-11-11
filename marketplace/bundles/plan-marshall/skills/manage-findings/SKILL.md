@@ -536,8 +536,10 @@ mutation of a finding's PROVENANCE — a resolution changes its disposition and
 leaves its origin untouched.
 
 Return `outcome` is `stamped`, or `unchanged` when the row already carries the same
-number. A row already stamped for a DIFFERENT pull request is refused
-(`error: pr_number_conflict`) and left byte-identical: provenance is written once.
+number AS ITS FIRST `detail` line. A row already carrying a `pr_number:` line is
+otherwise refused (`error: pr_number_conflict`) and left byte-identical: a different
+number at the head, and any number below the head, are both conflicts because the
+readers only parse the head. Provenance is written once.
 A finding that is not a `pr-comment` row is refused (`error: not_pr_comment`), and a
 non-positive number is `error: invalid_pr_number`.
 

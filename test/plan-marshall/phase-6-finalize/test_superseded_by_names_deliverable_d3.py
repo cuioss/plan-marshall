@@ -274,7 +274,7 @@ def test_a_successor_that_is_itself_superseded_is_refused(plan_context, tmp_path
 
 @pytest.mark.parametrize(
     'cited',
-    ['Deliverable 2', 'Deliverable #2', 'Deliverable D2', '`D2`', '**D2**', '(D2)', 'D2 - the operator decision'],
+    ['Deliverable 2', 'Deliverable #2', 'Deliverable D2', '`D2`', '**D2**', '(D2)', 'D 2', 'D2 - the operator decision'],
 )
 def test_the_natural_reference_spellings_name_a_closing_successor(plan_context, tmp_path, monkeypatch, cited) -> None:
     # The evidence-existence leg is not this clause's subject; the closed criteria are.
