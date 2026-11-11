@@ -510,7 +510,7 @@ def main() -> int:
         required=True,
         type=int,
         dest='pr_number',
-        help='Pull request number to stamp as the finding detail\'s first line',
+        help="Pull request number to stamp as the finding detail's first line",
     )
     stamp_pr_parser.set_defaults(func=cmd_stamp_pr)
 

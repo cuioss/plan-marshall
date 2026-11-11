@@ -815,9 +815,7 @@ def test_the_scope_remedy_names_a_command_the_verb_parser_accepts():
     }
 
     payload = gate._participation_refusal(_PLAN_ID, None, verdict)
-    namespace = parse_ns(
-        'plan-marshall', 'manage-findings', 'manage-findings.py', *_stamp_pr_argv(payload['message'])
-    )
+    namespace = parse_ns('plan-marshall', 'manage-findings', 'manage-findings.py', *_stamp_pr_argv(payload['message']))
 
     assert namespace.command == 'stamp-pr'
     assert namespace.plan_id == _PLAN_ID
