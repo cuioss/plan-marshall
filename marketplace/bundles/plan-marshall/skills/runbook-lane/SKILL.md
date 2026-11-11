@@ -489,8 +489,9 @@ All commands run from the main checkout (the repository root).
 4. `git -C {worktree} push -u origin {branch}`. Make no edit before this push.
 5. **Check every named skill and persona exists.** The resolve result carries one row per spec
    deliverable with its `Skills:` and `Persona:` declarations. A `Skills:` entry is a
-   `bundle:skill` notation (comma-separated for several); a `Persona:` entry is the persona kind
-   (`implementer`) or its full skill name. Every named skill and persona must
+   `bundle:skill` notation (comma-separated for several); the literal `none` is an ANSWERED
+   absence ("the project configures no domain skills") and is never probed; a `Persona:` entry is
+   the persona kind (`implementer`) or its full skill name. Every other named skill and persona must
    exist in the installed bundles; `resolve` reports a name that does not as a
    `named_skill_not_found` error, and the run then **stops and asks the operator**. A bare name in a
    flat install whose `SKILL.md` records no bundle identity is the

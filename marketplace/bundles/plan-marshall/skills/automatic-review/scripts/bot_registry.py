@@ -951,20 +951,23 @@ class BotRegistry:
         return {key: self.participation_evidence_marker(bot_kind, key) for key in value}
 
     def participation_requires_update(self, bot_kind: str) -> bool:
-        """Return whether ``bot_kind``'s evidence additionally requires update movement.
+        """Return whether ``bot_kind``'s evidence additionally requires a CURRENCY test.
 
         True for a bot that re-reviews by EDITING its single persistent comment in
         place rather than posting a new one (CodeRabbit's summary comment). For such a bot
         the mere continued existence of the comment proves only that it reviewed ONCE,
         at some earlier HEAD, so its credit has to clear the producer's CURRENCY TEST.
 
-        That test reads ONE source — the plan-scoped currency ledger beside the
-        findings store, which records per ``(bot_kind, comment_id)`` the
+        That test reads ONE source for a comment whose own text names no commit (a
+        named commit decides the credit ahead of any ledger arm) — the plan-scoped
+        currency ledger beside the findings store, which records per
+        ``(bot_kind, comment_id)`` the
         merge-candidate SHA and the ``updated_at`` at the fetch that LAST credited the
-        comment. The credit holds when the recorded SHA is the merge candidate, when
+        comment. The credit holds when the recorded SHA is the merge candidate, or when
         the ledger holds no row for the comment and this fetch observes it at a
-        resolvable merge candidate the comment does not demonstrably predate, or when
-        its ``updated_at`` differs from the recorded value. An unresolvable
+        resolvable merge candidate the comment does not demonstrably predate. Movement
+        of the comment's own ``updated_at`` is not a credit: it says the comment was
+        edited, not which commit it reviewed. An unresolvable
         merge-candidate SHA withholds the credit on every arm. See
         ``github_pr._reviewed_at_merge_candidate`` for the predicate this flag gates
         and ``standards/bot-participation-contract.md`` § "The currency rule".
@@ -1199,7 +1202,7 @@ def participation_evidence_markers(bot_kind: str) -> dict[str, str]:
 
 
 def participation_requires_update(bot_kind: str) -> bool:
-    """Whether ``bot_kind``'s participation evidence requires observed update movement."""
+    """Whether ``bot_kind``'s participation evidence requires the currency test."""
     return REGISTRY.participation_requires_update(bot_kind)
 
 

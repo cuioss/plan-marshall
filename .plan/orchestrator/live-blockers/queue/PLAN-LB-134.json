@@ -2,10 +2,10 @@
   "id": "PLAN-LB-134",
   "slug": "opencode-permission-writer",
   "workstream": "WS-04",
-  "status": "staged",
+  "status": "running",
   "lane": "runbook",
-  "plan_marshall_plan_id": "",
-  "pr": "",
+  "plan_marshall_plan_id": "rb-lb-134-opencode-permission-writer",
+  "pr": "1954",
   "landing": "",
   "seq": 133
 }

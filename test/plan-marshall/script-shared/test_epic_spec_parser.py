@@ -159,6 +159,49 @@ def test_relative_entry_without_a_base_is_recorded_unresolved(repo: Path, plans:
     assert paths(claim.claimed) == {'test/alpha/test_one.py'}
 
 
+def test_bare_filename_after_a_rooted_entry_is_reported_unresolved(repo: Path, plans: Path) -> None:
+    """A bare filename reaches ``unresolved`` instead of being dropped in silence.
+
+    The single-segment filter admitted only a glob or an entry that already exists
+    at the repository root, so ``b.py`` was neither claimed nor reported: the
+    declared surface silently lost an entry. Joining it to the bullet's base would
+    claim a path the author never wrote, which is why it is REPORTED rather than
+    guessed at.
+    """
+    body = '# PLAN-104\n\n## Expected Surface\n\n- Touches `marketplace/x/a.py` and `b.py`\n'
+
+    claim = claim_for(plans, repo, 'PLAN-104.md', body)
+
+    assert claim.unresolved == ('b.py',)
+    assert paths(claim.claimed) == {'marketplace/x/a.py'}
+
+
+def test_a_dotted_symbol_is_not_read_as_a_bare_filename(repo: Path, plans: Path) -> None:
+    """``monkeypatch.delitem`` carries a suffix no file carries, so it is no candidate.
+
+    This is the negative control for the widened filter: the vocabulary that admits
+    ``b.py`` must not admit an attribute path, or the parser invents a surface
+    entry for every symbol a spec mentions.
+    """
+    body = '# PLAN-105\n\n## Expected Surface\n\n- Touches `monkeypatch.delitem` behaviour only.\n'
+
+    claim = claim_for(plans, repo, 'PLAN-105.md', body)
+
+    assert claim.unresolved == ()
+    assert claim.claimed == ()
+    assert claim.spec_class == spec_parser.CLASS_PROSE
+
+
+def test_a_root_level_file_name_and_a_sibling_glob_still_resolve(repo: Path, plans: Path) -> None:
+    """The preserved half: ``pyproject.toml`` and ``test_*.py`` resolve as before."""
+    body = '# PLAN-106\n\n## Expected Surface\n\n- Touches `pyproject.toml`\n- Adds `test/**` and its `test_*.py` modules\n'
+
+    claim = claim_for(plans, repo, 'PLAN-106.md', body)
+
+    assert claim.unresolved == ()
+    assert paths(claim.claimed) == {'pyproject.toml', 'test/**', 'test/test_*.py'}
+
+
 # --- entry shape: rule (a), the lead marker ----------------------------------
 #
 # A HYPOTHESIS label or the verify-at-outline deferral phrase marks a path the

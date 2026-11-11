@@ -59,6 +59,8 @@ FUNCTION_LEVEL_MODULES: frozenset[str] = frozenset(
         'marketplace/bundles/plan-marshall/skills/extension-api/scripts/extension_discovery.py',
         # ``runbook_lane resolve`` / its skill probe.
         'marketplace/bundles/plan-marshall/skills/runbook-lane/scripts/runbook_lane.py',
+        # the shared per-deliverable declaration reader's existence probe.
+        'marketplace/bundles/plan-marshall/skills/script-shared/scripts/spec_skills.py',
         # persona resolution, metrics, recipe scoring.
         'marketplace/bundles/plan-marshall/skills/manage-personas/scripts/manage_personas.py',
         'marketplace/bundles/plan-marshall/skills/manage-metrics/scripts/manage-metrics.py',

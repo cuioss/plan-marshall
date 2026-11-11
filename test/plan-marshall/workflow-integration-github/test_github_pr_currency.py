@@ -842,16 +842,15 @@ def test_currency_anchor_is_recorded_in_the_ledger_on_credit(plan_context, monke
 
 
 @pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
-def test_edit_at_one_commit_does_not_credit_a_later_commit(bot_kind, plan_context, monkeypatch):
-    """An in-place edit credits the commit it was made against, NOT every later HEAD.
+def test_an_in_place_edit_that_names_no_commit_credits_no_later_commit(bot_kind, plan_context, monkeypatch):
+    """An edit credits NOTHING on its own — not the commit it was made at, not a later one.
 
-    The defect this forbids: with the edit arm keyed on
-    ``updated_at != created_at`` (a permanent "was ever edited" flag), a comment edited
-    at commit N was credited at N+1, N+2, ... even without re-review, defeating the
-    currency check for the edit case. The ledger fix measures a fresh edit against the
-    recorded ``updated_at`` instead, so the edit at N credits N (and its re-fetches),
-    the re-review edit at N+1 credits N+1, but a further HEAD advance with NO new edit is
-    stale.
+    The old edit arm credited the edit at the commit it was made against and then
+    dropped to stale on the next advance. An edit alone never named a commit, so the
+    credit was an inference: the comment had moved, so it must have reviewed the tree
+    it moved over. Both halves of that inference are removed — a comment whose own
+    evidence names no commit is stale at B and stays stale at C, and the remedy is a
+    re-review rather than a manufactured credit.
     """
     plan_id = f'gh-pr-edit-once-{bot_kind}'
     # HEAD_A: first observation, credited.
@@ -859,14 +858,15 @@ def test_edit_at_one_commit_does_not_credit_a_later_commit(bot_kind, plan_contex
     _patch_provider(monkeypatch, [base], head_sha=_HEAD_A)
     _run_fetch(135, plan_id)
 
-    # HEAD_B: the bot edits its comment in place — a genuine re-review, credited.
+    # HEAD_B: the bot edits its comment in place, naming no commit. An edit is not a
+    # review of anything, so nothing is credited.
     edited = _publish_comment(bot_kind, 'guide-1', created_at=_at(1), updated_at=_at(9))
     _patch_provider(monkeypatch, [edited], head_sha=_HEAD_B)
     at_b = _run_fetch(135, plan_id)
-    assert at_b['participated_bots'] == [{'bot_kind': bot_kind, 'evidence_kind': edited['kind']}]
+    assert at_b['participated_bots'] == []
+    assert at_b['stale_participation_bots'] == [{'bot_kind': bot_kind, 'evidence_kind': edited['kind']}]
 
-    # HEAD_C: the SAME edited comment (no NEW edit since B) must NOT credit the later
-    # commit — the false positive PR-Agent found, now closed.
+    # HEAD_C: the SAME edited comment (no NEW edit since B) stays stale.
     _patch_provider(monkeypatch, [edited], head_sha=_HEAD_C)
     at_c = _run_fetch(135, plan_id)
     assert at_c['participated_bots'] == []
@@ -900,22 +900,27 @@ def test_review_predating_the_merge_candidate_is_stale(bot_kind, plan_context, m
 
 
 @pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
-def test_in_place_edit_credits_participation_after_a_head_advance(bot_kind, plan_context, monkeypatch):
-    """An in-place EDIT re-credits the bot even after HEAD advances past the recorded commit.
+def test_an_in_place_edit_credits_when_its_marker_names_the_new_head(bot_kind, plan_context, monkeypatch):
+    """A re-review edit credits when it NAMES this HEAD — the shape that survives.
 
-    The edit-movement arm of the currency test, exercised where it actually matters:
-    HEAD has advanced, so the SHA arm misses, and only the edit (``updated_at`` moved
-    since the comment was posted) can credit the bot. This is PR-Agent's real
-    re-review shape — it edits its one persistent comment rather than posting a new
-    one — so without this arm every genuine re-review after a loop-back would resolve
-    stale forever.
+    PR-Agent edits its one persistent comment rather than posting a new one, so the
+    edit is still the observable. What decides it is the marker the edited body
+    carries: a coverage marker naming the merge candidate is head-bound evidence in the
+    comment's own text, and it is credited with no ledger arm at all. The edit is
+    therefore not ignored — it is simply no longer sufficient on its own.
     """
     plan_id = f'gh-pr-moved-{bot_kind}'
     comment = _publish_comment(bot_kind, 'guide-1', created_at=_at(1))
     _patch_provider(monkeypatch, [comment], head_sha=_HEAD_A)
     _run_fetch(132, plan_id)
 
-    edited = _publish_comment(bot_kind, 'guide-1', created_at=_at(1), updated_at=_at(9))
+    edited = _publish_comment(
+        bot_kind,
+        'guide-1',
+        created_at=_at(1),
+        updated_at=_at(9),
+        body=f'{_GUIDE_FINDING_BODY}\n\n{_coverage_marker(_HEAD_B)}',
+    )
     _patch_provider(monkeypatch, [edited], head_sha=_HEAD_B)
     second = _run_fetch(132, plan_id)
 
@@ -1626,10 +1631,8 @@ def _credit_then_fetch_an_edited_comment(monkeypatch, plan_id, bot_kind, edited_
     """Credit a comment naming HEAD_A at HEAD_A, then fetch it EDITED at a later head.
 
     Returns the second fetch's result and the edited comment. The edit moves
-    ``updated_at`` past the value recorded at the credit, which is the ledger's
-    strongest signal: on the ledger arms alone the edited comment is credited at the
-    later head whatever its body says. Every case below starts from that state and
-    varies only what the edited body names.
+    ``updated_at`` past the value recorded at the credit — which the ledger no longer
+    treats as a credit arm, so each case below varies only what the edited body says.
     """
     original = _publish_comment(bot_kind, 'guide-1', created_at=_at(1), body=_review_naming(_HEAD_A))
     _patch_provider(monkeypatch, [original], head_sha=_HEAD_A)
@@ -1683,19 +1686,23 @@ def test_the_same_edit_naming_the_merge_candidate_is_credited(bot_kind, plan_con
 
 
 @pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
-def test_the_same_edit_naming_no_commit_is_decided_by_the_ledger(bot_kind, plan_context, monkeypatch):
-    """A comment naming no commit keeps the ledger rules: the fresh edit credits it.
+def test_an_edited_comment_that_names_no_commit_credits_nothing(bot_kind, plan_context, monkeypatch):
+    """An edit alone is not evidence of a review of this HEAD.
 
-    The third outcome of the arm. A long number and an abbreviated id are both
-    commit-shaped and neither names a commit, so the arm gives no verdict and the
-    stale case above cannot be the arm reporting every edited comment stale.
+    The third outcome of the arm, and the defect this plan closes: a marker-bearing
+    comment whose body names no commit was credited because ``updated_at`` moved after
+    the head advanced — although nothing in the comment said which commit it reviewed.
+    Credit now requires what every neighbouring arm requires: evidence naming the
+    merge candidate, or a ledger row anchored at it. This comment has neither, so it is
+    STALE and the remedy is a re-review.
     """
     body = f'{_GUIDE_FINDING_BODY}\n\nRun 12345678 compared {_HEAD_A[:7]} against the base.'
 
     result, edited = _credit_then_fetch_an_edited_comment(monkeypatch, f'gh-pr-named-none-{bot_kind}', bot_kind, body)
 
-    assert result['participated_bots'] == [{'bot_kind': bot_kind, 'evidence_kind': edited['kind']}]
-    assert result['stale_participation_bots'] == []
+    assert result['participated_bots'] == []
+    assert result['stale_participation_bots'] == [{'bot_kind': bot_kind, 'evidence_kind': edited['kind']}]
+    assert result['undecidable_participation_bots'] == []
 
 
 @pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)

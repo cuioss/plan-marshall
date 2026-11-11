@@ -302,18 +302,18 @@ def transform_agent_frontmatter(
 ) -> str:
     """Transform Claude agent frontmatter into OpenCode 2 form.
 
-    Maps Claude ``tools`` declarations into an OpenCode 2 ``permissions``
-    LIST of ``{action, resource, effect}`` rules via
-    ``mapping['tool_permissions']``. OpenCode 2 evaluates that list
-    last-match-wins, so the rules are written specific-after-any-catch-all:
-    this transform emits no catch-all of its own (a tool the source does not
-    grant matches nothing and falls through to OpenCode's ``ask`` default),
-    and every emitted grant is a specific rule that must come after one.
+    Claude ``tools`` declarations are validated against
+    ``mapping['tool_permissions']`` and then deliberately emit NO permission
+    rule. OpenCode 2 appends an agent's rules AFTER the global ones, and a rule
+    there can only be a ``resource: "*"`` catch-all for one action — which
+    re-decides every resource a global ``deny`` already decided, including the
+    protected-path denies `permission fix protect-path` writes. The agent's own
+    base policy already decides what an unlisted action may do, so an emitted
+    grant adds no capability and costs the global denies.
 
     A tool with no key in ``tool_permissions`` raises ``UnmappedToolError``
     so the CLI exits with code 2; a key present with ``null`` is the
-    target-absent sentinel (the Claude tool has no OpenCode analog) and
-    contributes no rule.
+    target-absent sentinel (the Claude tool has no OpenCode analog).
     """
     _ensure_required(fm, rules, source_label)
 
@@ -328,29 +328,13 @@ def transform_agent_frontmatter(
 
     tools_raw = fm.get('tools', '')
     if tools_raw:
-        actions: list[str] = []
         unknown: list[str] = []
-        seen: set[str] = set()
         for tool in _split_tools(tools_raw):
             mapped = mapping['tool_permissions'].get(tool, _TOOL_KEY_MISSING)
             if mapped is _TOOL_KEY_MISSING:
                 unknown.append(tool)
-                continue
-            if mapped is None:
-                # Target-absent sentinel: no OpenCode analog, no rule.
-                continue
-            if mapped in seen:
-                continue
-            seen.add(mapped)
-            actions.append(mapped)
         if unknown:
             raise UnmappedToolError(f'{source_label}: unmapped tool(s) in frontmatter: {", ".join(unknown)}')
-        if actions:
-            lines.append('permissions:')
-            for action in sorted(actions):
-                lines.append(f'  - action: {action}')
-                lines.append('    resource: "*"')
-                lines.append('    effect: allow')
 
     lines.append('---')
     return '\n'.join(lines)

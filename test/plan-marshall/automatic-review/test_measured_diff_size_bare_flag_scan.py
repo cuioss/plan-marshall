@@ -84,7 +84,13 @@ _EXEC_CALL = re.compile(r'python3\s+\.plan/execute-script\.py\s+plan-marshall:au
 _ADVERTISED_FORM = re.compile(r'[\[(]\s*-{1,2}[a-zA-Z]')
 
 
-_SUBSTITUTIONS = {'plan_id': 'mds-parse-probe'}
+#: Placeholder → the value the executor would deliver. Every OTHER placeholder
+#: (``{required_bots}``, ``{measured_diff_size}``, …) substitutes to the empty string,
+#: which is the transport's own unmeasured/absent case. A placeholder whose flag takes a
+#: TYPED value must appear here: an empty value for an ``int`` flag is an argparse
+#: rejection, and the rejection would be reported as a defect in the document rather
+#: than in this model.
+_SUBSTITUTIONS = {'plan_id': 'mds-parse-probe', 'pr_number': '132'}
 
 
 _PLACEHOLDER = re.compile(r'\{[a-zA-Z_][a-zA-Z0-9_]*\}')
