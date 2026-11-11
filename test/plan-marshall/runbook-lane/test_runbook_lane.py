@@ -1243,6 +1243,24 @@ def test_optional_reviewers_also_carry_the_flag(tmp_path: Path) -> None:
     assert data['optional_bots'][0]['quota_limited'] is True
 
 
+def test_resolve_reports_the_done_flag_beside_quota_limited(tmp_path: Path) -> None:
+    """The lane reads ONE source for both flags, so the done rule is a row field too."""
+    spec = _seed_fixture(tmp_path, executable=_PYPROJECT_EXEC, required_bots='coderabbit')
+    data = _run_resolve(spec, tmp_path)
+    row = next(row for row in data['required_bots'] if row['bot'] == 'coderabbit')
+
+    assert row['review_complete_after_handling'] is True
+
+
+def test_a_bot_without_the_done_declaration_resolves_false(tmp_path: Path) -> None:
+    """Fail-closed: the done rule stays OFF for a reviewer that does not declare it."""
+    spec = _seed_fixture(tmp_path, executable=_PYPROJECT_EXEC, required_bots='sourcery')
+    data = _run_resolve(spec, tmp_path)
+    row = next(row for row in data['required_bots'] if row['bot'] == 'sourcery')
+
+    assert row['review_complete_after_handling'] is False
+
+
 # =============================================================================
 # D3 — engineering personas, loaded as standards
 # =============================================================================

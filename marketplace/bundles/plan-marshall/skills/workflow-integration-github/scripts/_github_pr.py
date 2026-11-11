@@ -565,25 +565,6 @@ def review_coverage_is_finished(body: str) -> bool:
     return str(fields.get('kind') or '').strip().lower() == _REVIEW_COVERAGE_REVIEWED_KIND
 
 
-def review_coverage_names_commit(body: str) -> bool:
-    """Whether ``body``'s coverage marker is a READABLE, FINISHED review that NAMES a commit.
-
-    The head-free companion to :func:`review_coverage_verdict`, for the one question a
-    caller can ask before any head is known: does this comment claim a finished review
-    of some commit? ``kind: reviewed`` alone is not enough — a marker whose payload the
-    parser could not read, and one that names no covered commit, are claims nobody can
-    evaluate, and PLAN-LB-132 established that such an edit credits nothing. Both
-    therefore answer ``False``, on the same parser as every other reader of the marker.
-    """
-    present, fields = _coverage_payload(body)
-    if not present or fields is None:
-        return False
-    if str(fields.get('kind') or '').strip().lower() != _REVIEW_COVERAGE_REVIEWED_KIND:
-        return False
-    covered = str(fields.get('coveredCommitId') or '').strip() or str(fields.get('sourceCommitId') or '').strip()
-    return bool(covered)
-
-
 def review_coverage_verdict(body: str, head_sha: str) -> bool | None:
     """Return what a review-coverage marker says about ``head_sha``, or no verdict.
 

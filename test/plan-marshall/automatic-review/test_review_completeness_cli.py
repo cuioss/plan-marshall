@@ -774,11 +774,12 @@ class TestTriggerBot:
             'b' * 40,
         )
 
-        assert parsed['trigger_bots'] == ['retired-bot', 'coderabbit']
+        assert parsed['trigger_bots'] == ['retired-bot']
         assert parsed['stored_finding_bots'] == ['coderabbit']
         assert parsed['stored_findings_stale'] is True
-        # The stored-finding bot is listed, but it is not a required bot whose
-        # participation is stale.
+        # The stored-finding bot is read but not triggered: it declares the done rule,
+        # so its recorded review completes it.
+        assert parsed['review_complete_bots'] == ['coderabbit']
         assert parsed['required_stale_bots'] == ['retired-bot']
 
     def test_a_stored_finding_bot_is_not_joined_when_head_is_the_reviewed_commit(self, plan_context):

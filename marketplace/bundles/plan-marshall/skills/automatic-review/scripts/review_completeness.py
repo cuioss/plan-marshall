@@ -473,12 +473,12 @@ def list_bots_for_trigger(
 
     A flagged bot's stale participation is a QUALIFYING REVIEW ON RECORD, not an
     out-of-date obligation. For a bot declaring ``review_complete_after_handling``
-    the handled review completes it, so it is removed from the stale set before the
-    join and never reaches a trigger list. It is reported in
-    ``review_complete_bots`` so a caller can tell "done, no trigger owed" from
-    "silent, trigger owed". The done filter reads only the participation source:
-    a flagged bot with no admitted review keeps its place, so a pull request with
-    no qualifying review is triggered exactly as before.
+    the handled review completes it, so it is removed from the whole candidate
+    population — the stale source AND the stored-finding join — and never reaches a
+    trigger list. It is reported in ``review_complete_bots`` so a caller can tell
+    "done, no trigger owed" from "silent, trigger owed". A flagged bot with no
+    admitted review keeps its place, so a pull request with no qualifying review is
+    triggered exactly as before.
 
     Only a bot the configuration classifies is triggered: a candidate in neither
     ``required_bots`` nor ``optional_bots`` is reported in ``unclassified_bots``
@@ -503,13 +503,16 @@ def list_bots_for_trigger(
     required_set = set(required)
     optional_set = set(optional_bots or [])
     stale_all = set(stale_participation_bots)
-    done_set = {bot for bot in stale_all if bot_registry.review_complete_after_handling(bot)}
-    stale_set = stale_all - done_set
     stored_set = set(stored_finding_bots)
-
-    candidates = set(stale_set)
+    candidates = set(stale_all)
     if stored_findings_stale:
         candidates |= stored_set
+    # Applied to the WHOLE candidate population: a stored finding and an admitted
+    # stale review are both evidence the bot reviewed, and a flagged bot owes no
+    # later head once either is on record.
+    done_set = {bot for bot in candidates if bot_registry.review_complete_after_handling(bot)}
+    stale_set = stale_all - done_set
+    candidates -= done_set
 
     trigger_bots = [bot for bot in required if bot in candidates]
     trigger_bots += sorted(bot for bot in candidates if bot in optional_set and bot not in required_set)

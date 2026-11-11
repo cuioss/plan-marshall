@@ -12,10 +12,12 @@ both halves of that rule at the two places a request can originate:
   a credited or stale review instead of returning the trigger arm, while leaving
   every other bot's derivation unchanged.
 
-A qualifying review is a formal review record naming a commit, or the bot's summary
-comment carrying a readable ``kind: reviewed`` coverage marker. A refusal, an
-acknowledgment, a skip notice or an in-progress summary is NOT one: those are the
-shapes that must keep the first trigger reachable.
+A qualifying review is the producer's own admitted evidence: a comment in one of the
+bot's declared ``participation_evidence`` publish shapes, carrying that shape's
+declared content marker where one is declared. A walkthrough posted before a review
+completes carries no declared marker and is not admitted; a refusal, an acknowledgment
+and a skip notice are not declared publish shapes at all. Those are the shapes that
+must keep the first trigger reachable.
 """
 
 from __future__ import annotations
@@ -33,8 +35,6 @@ _COVERAGE_BODY = (
     '<!-- final_review_risk_coverage:'
     f'{{"sourceCommitId":"{_EARLIER}","coveredCommitId":"{_EARLIER}","kind":"reviewed"}} -->'
 )
-#: The same marker in its in-progress / unreadable states — present but not a review.
-_IN_PROGRESS_BODY = '<!-- final_review_risk_coverage:{"kind":"reviewing"} -->'
 _REFUSAL_BODY = '> [!WARNING] > ## Review limit reached > Please wait 12 minutes before requesting another review.'
 _ACKNOWLEDGMENT_BODY = 'Review triggered'
 _SKIP_BODY = '## Review skipped\n\nDraft pull request.'
@@ -127,9 +127,9 @@ def test_a_marker_bearing_finished_review_refuses_the_trigger(monkeypatch):
 
 
 def test_a_formal_review_record_refuses_the_trigger(monkeypatch):
-    """The other qualifying shape: a review record of the bot that names a commit."""
+    """A review record is admitted evidence whatever commit it names — the head is not asked."""
     posted = _record_posts(monkeypatch)
-    _history(monkeypatch, [_comment('review_body', 'findings here', commit_id=_EARLIER)])
+    _history(monkeypatch, [_comment('review_body', 'findings here', commit_id='')])
 
     result = _request('coderabbit', monkeypatch)
 
@@ -173,14 +173,14 @@ def test_a_pull_request_with_no_review_is_triggered_once(monkeypatch):
         ('refusal', _REFUSAL_BODY),
         ('acknowledgment', _ACKNOWLEDGMENT_BODY),
         ('skip_notice', _SKIP_BODY),
-        ('in_progress_marker', _IN_PROGRESS_BODY),
     ],
 )
 def test_a_non_review_shape_is_not_a_review_on_record(case_id, body, monkeypatch):
-    """A refusal, an acknowledgment, a skip notice or an in-progress marker is not done.
+    """A refusal, an acknowledgment or a skip notice is not done.
 
-    These are precisely the shapes that must keep the FIRST trigger reachable — a
-    pull request whose only bot output is one of them still has no review.
+    None is a declared ``participation_evidence`` publish shape, so none is admitted
+    evidence — precisely the shapes that must keep the FIRST trigger reachable on a
+    pull request whose only bot output is one of them.
     """
     posted = _record_posts(monkeypatch)
     _history(monkeypatch, [_comment('issue_comment', body)])
@@ -229,8 +229,13 @@ def test_a_capped_history_is_not_read_as_no_review(monkeypatch):
     assert posted == [(_PR, '@coderabbitai review')]
 
 
-def test_a_marker_naming_no_commit_is_not_a_review(monkeypatch):
-    """``kind: reviewed`` without a covered commit is a claim nobody can evaluate."""
+def test_a_marker_without_a_commit_is_still_admitted_evidence(monkeypatch):
+    """The marker is the producer's admission test; the head is never asked at this site.
+
+    A marker naming no commit is not HEAD-BOUND evidence — it cannot credit a review of
+    the current tree — but it IS an admitted review artifact, which is the only question
+    the done rule asks before suppressing a request.
+    """
     posted = _record_posts(monkeypatch)
     _history(
         monkeypatch,
@@ -239,8 +244,30 @@ def test_a_marker_naming_no_commit_is_not_a_review(monkeypatch):
 
     result = _request('coderabbit', monkeypatch)
 
+    assert posted == []
+    assert result['status'] == 'refused'
+
+
+def test_a_summary_without_a_declared_marker_is_not_a_review(monkeypatch):
+    """A pre-review walkthrough carries no declared marker, so it credits nothing."""
+    posted = _record_posts(monkeypatch)
+    _history(monkeypatch, [_comment('issue_comment', '## Walkthrough\n\nsome prose')])
+
+    result = _request('coderabbit', monkeypatch)
+
     assert result['status'] == 'success'
     assert posted == [(_PR, '@coderabbitai review')]
+
+
+def test_the_retired_review_wrapper_is_still_admitted_evidence(monkeypatch):
+    """Both declared markers are the producer's admission test, so both suppress a request."""
+    posted = _record_posts(monkeypatch)
+    _history(monkeypatch, [_comment('issue_comment', '<!-- recent_review_start -->\nNo findings.')])
+
+    result = _request('coderabbit', monkeypatch)
+
+    assert posted == []
+    assert result['status'] == 'refused'
 
 
 def test_an_inline_comment_proves_a_review(monkeypatch):

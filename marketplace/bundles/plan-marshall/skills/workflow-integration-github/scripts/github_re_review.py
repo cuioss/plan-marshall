@@ -287,7 +287,6 @@ from _github_pr import (
     refusal_size_cap,
     review_coverage_is_finished,
     review_coverage_marker_present,
-    review_coverage_names_commit,
     review_coverage_verdict,
 )
 from ci_base import (
@@ -1888,42 +1887,52 @@ def _qualifying_review_on_record(pr_number: int | str, bot_kind: str) -> bool | 
     """Whether ``bot_kind`` holds a qualifying review on this pull request.
 
     The done rule's read, and the one question it asks: is a review by this bot on
-    record here AT ALL — never whether that review covers the current head. A
-    qualifying review is any of these, all of them artifacts a review publishes:
+    record here AT ALL — never whether that review covers the current head. The test
+    is the PRODUCER'S OWN ADMISSION, read from the same registry data the producer
+    reads, so the two cannot disagree:
 
-    - a formal review record of this bot carrying a commit id (the producer's
-      ``review_body`` record);
-    - one of the bot's own inline comments — an inline comment is published BY a
-      review, so its existence proves a review happened even when that review's body
-      was filtered or carries no commit;
-    - an issue comment of this bot carrying a finished review-coverage marker that
-      NAMES a commit (``review_coverage_names_commit``: a readable ``kind: reviewed``
-      payload, read through ``_github_pr``'s one parser). A marker that names no
-      commit is a claim nobody can evaluate, so it is not a review.
+    - the record's ``kind`` is one of the bot's declared ``participation_evidence``
+      publish shapes, and
+    - where that shape declares a ``participation_evidence_markers`` entry, the body
+      carries one of the declared literals.
 
-    Three answers, matching the fetch's own: ``True`` when qualifying evidence
-    exists, ``False`` when the bot published none, and ``None`` when the pull
-    request's history could not be read IN FULL — a failed fetch, or a successful one
-    whose connection was capped (``complete: false``), because a review may sit in
-    the part that was not read. ``None`` is the caller's fail-open to the pre-existing
-    path for a POST decision — never a claim that no review exists.
+    A shape with no declared marker credits on presence alone, exactly as it does at
+    the producer. A walkthrough posted before a review completes carries no declared
+    marker and is not admitted; a refusal, an acknowledgment and a skip notice are
+    not declared publish shapes at all. The head-bound ``review_coverage_verdict`` is
+    deliberately NOT consulted here: it answers "does this review cover the current
+    head", which is the currency question this rule removes.
+
+    Three answers, matching the fetch's own: ``True`` when admitted evidence exists,
+    ``False`` when the bot published none, and ``None`` when the pull request's
+    history could not be read IN FULL — a failed fetch, or a successful one whose
+    connection was capped (``complete: false``), because a review may sit in the part
+    that was not read. ``None`` is the caller's fail-open to the pre-existing path for
+    a POST decision — never a claim that no review exists.
     """
     envelope = _github.fetch_pr_comments_data(int(pr_number))
     if envelope.get('status') != 'success':
         return None
     if envelope.get('complete') is not True:
         return None
+    shapes = set(bot_registry.participation_evidence(bot_kind))
+    if not shapes:
+        # A bot proving participation through no declared shape can never be shown to
+        # have reviewed; never suppress a trigger on a population that cannot exist.
+        return False
     for comment in envelope.get('comments') or []:
         if not isinstance(comment, dict):
             continue
         if bot_kind_for_author(comment.get('author')) != bot_kind:
             continue
         kind = str(comment.get('kind') or '')
-        if kind == 'inline':
+        if kind not in shapes:
+            continue
+        markers = bot_registry.participation_evidence_markers_for(bot_kind, kind)
+        if not markers:
             return True
-        if kind == 'review_body' and str(comment.get('commit_id') or '').strip():
-            return True
-        if kind == 'issue_comment' and review_coverage_names_commit(str(comment.get('body') or '')):
+        body = str(comment.get('body') or '')
+        if any(marker in body for marker in markers):
             return True
     return False
 

@@ -228,12 +228,11 @@ def test_trigger_bot_still_lists_an_unflagged_stale_bot():
     assert payload['review_complete_bots'] == []
 
 
-def test_trigger_bot_leaves_a_flagged_bot_whose_review_is_not_admitted_in_the_join():
-    """A stored finding alone is not the stale observation: the bot stays in the join.
+def test_trigger_bot_withholds_a_flagged_bot_whose_stored_finding_is_joined():
+    """A stored finding is evidence the bot reviewed, so the done filter covers the join.
 
-    The exclusion keys on the stale report (the producer's admitted review), so a
-    flagged bot with only an older stored finding is triggered exactly as today —
-    the fail-closed direction for a pull request whose review nobody admitted.
+    The exclusion keys on the registry flag, not on which source named the bot: a
+    flagged bot owes no later head once ANY admitted evidence of its review exists.
     """
     payload = rc.list_bots_for_trigger(
         [],
@@ -243,9 +242,9 @@ def test_trigger_bot_leaves_a_flagged_bot_whose_review_is_not_admitted_in_the_jo
         stored_findings_stale=True,
     )
 
-    assert payload['trigger_bots'] == ['coderabbit']
+    assert payload['trigger_bots'] == []
     assert payload['required_stale_bots'] == []
-    assert payload['review_complete_bots'] == []
+    assert payload['review_complete_bots'] == ['coderabbit']
 
 
 def test_a_flagged_candidate_in_neither_roster_list_is_still_reported_unclassified():
