@@ -1112,11 +1112,12 @@ def bootstrap_executor(
     except Exception:
         runtime_harness = None
     state, current = read_executor_version(executor_path, target=runtime_harness, fallback_on_empty=True)
-    executor_version = current if state == EXECUTOR_VERSION_FOUND else None
-    if executor_version == _UNVERSIONED_EXECUTOR_STAMP:
-        # An ANSWERED absence, not a version: the generator could not read one.
-        # It is the version-less case the ungated recovery covers.
-        executor_version = None
+    # The generator's ``unversioned`` stamp is an ANSWERED absence, not a version:
+    # it must not be compared against the cache. It is kept apart from a MISSING
+    # stamp on purpose — see ``needs_recovery`` below: an executor that merely
+    # could not state a version, but imports, needs consent before it is rewritten.
+    unversioned_stamp = state == EXECUTOR_VERSION_FOUND and current == _UNVERSIONED_EXECUTOR_STAMP
+    executor_version = None if unversioned_stamp else (current if state == EXECUTOR_VERSION_FOUND else None)
 
     # An executor can exist and carry the newest stamp and still fail to IMPORT:
     # the stamp is read as text, so the version comparison alone cannot see a
@@ -1142,7 +1143,14 @@ def bootstrap_executor(
     # absent, unreadable or version-less executor (executor_version is None) and
     # one whose probe observed an import failure (import_failure) — no plan can
     # run against a tool that cannot start.
-    needs_recovery = executor_version is None or bool(import_failure)
+    #
+    # An importable executor stamped ``unversioned`` is NOT in that class: it
+    # runs, it merely could not state a version at generation time. Rewriting it
+    # unasked would regenerate on every call on a machine with no readable
+    # manifest, so it takes the CONSENT gate — reported as regenerate_required and
+    # left untouched — while a missing/unreadable executor and an import failure
+    # keep the ungated recovery.
+    needs_recovery = (executor_version is None and not unversioned_stamp) or bool(import_failure)
     if action == 'regenerate_required' and not needs_recovery and not allow_regenerate:
         return {
             'status': 'success',
