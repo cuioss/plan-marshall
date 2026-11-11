@@ -303,6 +303,29 @@ _OPENCODE_EXFILTRATION_BASH_VECTORS = ('cat', 'head', 'tail', 'less', 'more', 'c
 _OPENCODE_PATH_CHARS_THE_MAP_CANNOT_CARRY = ('(', ')', '*')
 
 
+#: Characters a settings-file path may carry. The path is produced by
+#: ``permission_settings_path`` — a scope constant plus the config directory or
+#: the project root — so it is host configuration, never file content. This
+#: allowlist is a hardening backstop for the read and write, not the primary
+#: boundary: anything outside it is refused rather than opened.
+_SETTINGS_PATH_CHARS = re.compile(r'^[A-Za-z0-9._/\-:]+$')
+
+
+def _safe_settings_path(path: str) -> Path | None:
+    """Return the settings path, or ``None`` when it is not a plain path.
+
+    A path carrying a character outside the allowlist, or a ``..`` segment, is
+    refused before it is read or written: traversal-shaped values never reach
+    the filesystem calls.
+    """
+    if not path or not _SETTINGS_PATH_CHARS.match(path):
+        return None
+    candidate = Path(path)
+    if '..' in candidate.parts:
+        return None
+    return candidate
+
+
 def _opencode_config_dir() -> Path:
     """Return ~/.config/opencode directory path (overridable by OPENCODE_CONFIG_DIR)."""
     env = os.environ.get('OPENCODE_CONFIG_DIR')
@@ -2754,7 +2777,9 @@ class OpenCodeRuntime(Runtime):
         syntax check alone does not catch them, and rewriting them would clobber
         an operator's file.
         """
-        p = Path(path)
+        p = _safe_settings_path(path)
+        if p is None:
+            return {'error': 'settings path carries a character outside the allowed set'}
         if not p.is_file():
             return {}
         try:
@@ -2787,7 +2812,9 @@ class OpenCodeRuntime(Runtime):
         first and the payload's rules follow; a payload in the OpenCode 1 map
         shape carries its own defaults and is written as it is.
         """
-        p = Path(path)
+        p = _safe_settings_path(path)
+        if p is None:
+            return False
         payload = settings
         if not p.is_file() and isinstance(settings.get('permissions'), list) and 'permission' not in settings:
             skeleton_rules = _opencode2_skeleton()['permissions']

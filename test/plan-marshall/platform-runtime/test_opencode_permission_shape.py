@@ -1224,6 +1224,19 @@ def test_the_shadowed_rule_branch_reports_no_change(
     ]
 
 
+def test_a_traversal_shaped_settings_path_is_refused(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    """A path carrying ``..`` is never read or written."""
+    monkeypatch.chdir(tmp_path)
+
+    loaded = runtime.permission_load_settings(str(tmp_path / '..' / 'opencode.json'))
+    saved = runtime.permission_save_settings(str(tmp_path / '..' / 'opencode.json'), {'permissions': []})
+
+    assert 'error' in loaded
+    assert saved is False
+
+
 def test_project_initial_setup_reports_a_failed_permission_write(
     runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ):
