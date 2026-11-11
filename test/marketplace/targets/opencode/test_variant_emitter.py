@@ -167,6 +167,44 @@ def test_opencode_json_indexes_variants(role_bundle: Path, tmp_path: Path) -> No
         assert f'execution-context-{level}' in agents
 
 
+def test_variant_of_a_restricted_agent_stays_restricted(tmp_path: Path) -> None:
+    """The reader's restriction is evaluated on the ``-level-N`` output too.
+
+    Same evaluation as the canonical test: behind the base policy's allow-all,
+    ``edit`` and ``shell`` evaluate to ``deny`` on a variant file while the four
+    granted actions do not.
+    """
+    marketplace = tmp_path / 'bundles'
+    bundle = marketplace / 'demo'
+    _write(
+        bundle / '.claude-plugin' / 'plugin.json',
+        json.dumps({'name': 'demo', 'agents': ['./agents/execution-context-reader.md']}) + '\n',
+    )
+    _write(
+        bundle / 'agents' / 'execution-context-reader.md',
+        '---\n'
+        'description: a reader\n'
+        'tools: WebSearch, WebFetch, Read, Grep\n'
+        f'implements: {EXTENSION_POINT}\n'
+        '---\nreader body\n',
+    )
+
+    out = tmp_path / 'out'
+    emit_bundles(marketplace, out, CONFIG_DIR)
+
+    base = {'action': '*', 'resource': '*', 'effect': 'allow'}
+    for level in ALL_LEVELS:
+        rules = yaml.safe_load((out / 'agent' / f'execution-context-reader-{level}.md').read_text().split('---')[1])[
+            'permissions'
+        ]
+        assert all(rule['effect'] == 'deny' for rule in rules), f'{level}: {rules}'
+        by_action = {rule['action']: rule['effect'] for rule in [base, *rules]}
+        assert by_action['edit'] == 'deny'
+        assert by_action['shell'] == 'deny'
+        for action in ('webfetch', 'websearch', 'read', 'grep'):
+            assert by_action.get(action, 'allow') == 'allow', f'{level}: {action} is granted'
+
+
 def test_levels_subset_limits_emitted_variants(tmp_path: Path) -> None:
     marketplace = tmp_path / 'bundles'
     bundle = marketplace / 'demo'

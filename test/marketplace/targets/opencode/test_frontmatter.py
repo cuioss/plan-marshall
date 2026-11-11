@@ -159,6 +159,7 @@ class TestToolRestrictionExpression:
         fm = {'description': 'agent', 'tools': 'Read, Write, Bash'}
         emitted_rules = _rules(transform_agent_frontmatter(fm, mapping, rules, source_label='agents/x.md'))
 
+        assert emitted_rules, 'the emitter must express the restriction, not emit nothing'
         assert _effect(emitted_rules, 'shell') == 'allow'
         assert not [rule for rule in emitted_rules if rule['action'] == 'shell']
 
@@ -181,6 +182,7 @@ class TestToolRestrictionExpression:
             )
         )
 
+        assert emitted_rules, 'the emitter must express the restriction, not emit nothing'
         assert all(rule['effect'] == 'deny' for rule in emitted_rules), emitted_rules
 
     def test_a_duplicate_tool_mapping_emits_one_row_per_action(
@@ -224,7 +226,7 @@ class TestTargetAbsentToolDisposition:
     def test_target_absent_tool_adds_no_row_of_its_own(self, mapping: dict[str, dict], rules: dict[str, list[str]]):
         fm = {'description': 'agent', 'tools': 'Monitor'}
         result = transform_agent_frontmatter(fm, mapping, rules, source_label='agents/x.md')
-        assert 'Monitor' not in result.lower()
+        assert 'monitor' not in result.lower()
         assert all(rule['action'] != 'monitor' for rule in _rules(result))
 
     def test_target_absent_tool_alongside_mapped_tools_adds_no_grant(

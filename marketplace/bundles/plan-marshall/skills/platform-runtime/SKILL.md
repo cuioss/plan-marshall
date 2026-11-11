@@ -179,7 +179,7 @@ No-op policy and caller obligations: `standards/no-op-policy.md`
 | `prompt_not_found` | `subagent dispatch` prompt file not found |
 | `unknown_target` | `runtime.target` not in registry |
 | `hook_not_configured` | SessionStart hook missing; `$CLAUDE_CODE_SESSION_ID` unset |
-| `invalid_settings` | Settings file cannot be used as settings: a root that is not an object, or a `permissions` value that is neither a list nor an object (a `permission` map must be an object). Valid JSON, wrong shape — fail-closed before write — `permission configure/fix/ensure-wildcards/ensure-steps/web-apply` |
+| `invalid_settings` | Settings file cannot be used as settings: a root that is not an object, a `permissions` value that is not a list, or a `permission` value that is not an object. Valid JSON, wrong shape — fail-closed before write — `permission configure/fix/ensure-wildcards/web-apply` |
 | `load_error` | The OpenCode settings file could not be read at all (unparseable JSON or non-UTF-8 bytes); this is the one code every unparseable-JSON case carries — `permission configure/fix/ensure-wildcards/web-apply` |
 | `permission_conflict` | The requested effect cannot be made effective without crossing a later rule whose matched set overlaps it with a different effect; nothing is written — `permission configure/fix/ensure-wildcards/web-apply` |
 | `wildcard_action_rule` | The grant to remove is decided by an `action: "*"` rule, so deleting the named rule would not remove the effect — `permission fix remove` |

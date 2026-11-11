@@ -286,6 +286,7 @@ OPENCODE_PERMISSION_ERROR_CODES = frozenset(
         'wildcard_action_rule',
         'io_error',
         'permission_write_failed',
+        'marshal_not_found',
     }
 )
 
@@ -521,21 +522,28 @@ def _permission_map(settings: dict[str, Any]) -> dict[str, Any] | None:
 def _bash_rows(perm: dict[str, Any]) -> dict[str, Any] | None:
     """Return the ``bash`` pattern map, seeding a scalar as its ``*`` row.
 
-    ``None`` means the category is the bare ``allow`` string: every command is
-    already allowed, so a grant adds nothing and the value is left untouched.
-    Any other scalar is a category-wide effect and becomes the map's ``*`` row,
-    so a deny or ask the operator set survives the write instead of being
-    replaced by an empty map. A writer that does not concern ``bash`` never
-    calls this, so an untouched scalar stays exactly as it was.
+    Any string scalar is a category-wide effect and becomes the map's ``*``
+    row, whatever it is — ``allow`` included, so a requested ``deny`` or
+    ``ask`` is installed beside it instead of being discarded as "already
+    allowed". A writer that does not concern ``bash`` never calls this, so an
+    untouched scalar stays exactly as it was.
+
+    ``None`` means the value is neither an object nor a string (a JSON
+    ``null``, a number, a list): it cannot be preserved as a row, so the caller
+    refuses with ``invalid_settings`` rather than replacing it with a map.
     """
     value = perm.get('bash')
     if isinstance(value, dict):
         return value
-    if value == 'allow':
+    if 'bash' not in perm:
+        rows: dict[str, Any] = {}
+        perm['bash'] = rows
+        return rows
+    if not isinstance(value, str):
         return None
-    rows: dict[str, Any] = {'*': value} if 'bash' in perm else {}
-    perm['bash'] = rows
-    return rows
+    seeded: dict[str, Any] = {'*': value}
+    perm['bash'] = seeded
+    return seeded
 
 
 def _permission_rules(settings: dict[str, Any], *, create: bool = False) -> list[Any] | None:
@@ -650,7 +658,7 @@ def _globs_intersect(first: str, second: str) -> bool:
     tokens_a = _glob_tokens(first)
     tokens_b = _glob_tokens(second)
     literals = {token for token in tokens_a + tokens_b if token is not None}
-    fresh = next((char for char in ('\x00', '\x01', '\x02') if char not in literals), '\x03')
+    fresh = next(chr(code) for code in range(1, 0x10000) if chr(code) not in literals)
 
     seen: set[tuple[int, int]] = set()
     queue: list[tuple[int, int]] = []
@@ -945,8 +953,9 @@ def _opencode2_skeleton() -> dict[str, Any]:
     catch-all ``ask`` there cannot survive the evaluation order: a project list
     is combined with the global one before the agent's, so a catch-all decides
     every command the global list already decided. No rule matches a command
-    the skeleton does not name, and OpenCode 2 answers ``ask`` for that case by
-    itself.
+    the skeleton does not name, and the client's base policy — OBSERVED at
+    ``opencode v2.2.7`` as ``{action: "*", resource: "*", effect: allow}`` —
+    allows it.
 
     No ``permission`` map is written either — the normalizer concatenates that
     map ahead of the list, which is what turns written deny rules into dead
@@ -1903,7 +1912,13 @@ class OpenCodeRuntime(Runtime):
             cat, pat, act = to_opencode_grant(str(rule))
             if cat == 'bash':
                 bash_map = _bash_rows(perm)
-                if bash_map is not None and bash_map.get(pat) != act:
+                if bash_map is None:
+                    return toon_error(
+                        'permission configure',
+                        'invalid_settings',
+                        'the `bash` value is neither an object nor a string; refusing to replace it',
+                    )
+                if bash_map.get(pat) != act:
                     if pat == '*':
                         _set_map_catch_all(bash_map, act)
                     else:
@@ -2156,7 +2171,13 @@ class OpenCodeRuntime(Runtime):
                 cat, pat, act = to_opencode_grant(str(item))
                 if cat == 'bash':
                     bash_map = _bash_rows(perm)
-                    if bash_map is None or bash_map.get(pat) == act:
+                    if bash_map is None:
+                        return toon_error(
+                            'permission fix',
+                            'invalid_settings',
+                            'the `bash` value is neither an object nor a string; refusing to replace it',
+                        )
+                    if bash_map.get(pat) == act:
                         continue
                     if not dry_run:
                         if pat == '*':
@@ -2342,10 +2363,13 @@ class OpenCodeRuntime(Runtime):
                     if write.changed:
                         changes_applied += 1
         else:
-            perm = settings.setdefault('permission', {})
-            if not isinstance(perm, dict):
-                perm = {}
-                settings['permission'] = perm
+            perm = _permission_map(settings)
+            if perm is None:
+                return toon_error(
+                    'permission fix',
+                    'invalid_settings',
+                    'the `permission` value is not an object; refusing to reset it',
+                )
 
             for tool, tool_entries in rendered.items():
                 # A blanket string action (``'allow'``) is OpenCode's catch-all; a
@@ -2420,11 +2444,13 @@ class OpenCodeRuntime(Runtime):
             )
         res = self.permission_ensure_defaults(settings, settings_path, dry_run=dry_run)
         if res.get('error'):
-            return toon_error(
-                'permission ensure-wildcards',
-                'permission_conflict' if res.get('conflicts') else 'io_error',
-                str(res['error']),
-            )
+            if res.get('error_code'):
+                code = str(res['error_code'])
+            elif res.get('conflicts'):
+                code = 'permission_conflict'
+            else:
+                code = 'io_error'
+            return toon_error('permission ensure-wildcards', code, str(res['error']))
         return toon_success('permission ensure-wildcards', res)
 
     def permission_ensure_steps(self, marshal_path: str, scope: str, dry_run: bool) -> str:
@@ -2852,14 +2878,15 @@ class OpenCodeRuntime(Runtime):
 
         bash_map = _bash_rows(perm)
         if bash_map is None:
-            # A bare ``allow`` already permits every command, so there is nothing
-            # to add and the value is left as written.
+            # A non-string, non-object ``bash`` cannot be preserved as a row.
             return {
                 'defaults_added': [],
                 'defaults_added_count': 0,
                 'defaults_removed': [],
                 'defaults_removed_count': 0,
                 'applied': False,
+                'error': 'the `bash` value is neither an object nor a string; refusing to replace it',
+                'error_code': 'invalid_settings',
             }
 
         added: list[str] = []

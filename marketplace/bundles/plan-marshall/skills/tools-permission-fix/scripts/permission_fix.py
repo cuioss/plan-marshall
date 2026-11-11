@@ -658,7 +658,14 @@ def cmd_ensure(args: argparse.Namespace) -> dict:
             cat, pat, act = to_opencode_grant(p)
             if cat == 'bash':
                 bash_map = _bash_rows(perm)
-                if bash_map is None or bash_map.get(pat) == act:
+                if bash_map is None:
+                    return {
+                        'settings_file': str(settings_path),
+                        'status': 'error',
+                        'success': False,
+                        'error': 'the `bash` value is neither an object nor a string; refusing to replace it',
+                    }
+                if bash_map.get(pat) == act:
                     already_exists.append(pat)
                 else:
                     if pat == '*':
@@ -1051,14 +1058,10 @@ def cmd_ensure_wildcards(args: argparse.Namespace) -> dict:
             settings['permission'] = perm
         bash_map = _bash_rows(perm)
         if bash_map is None:
-            # A bare ``allow`` already permits every command.
+            # A non-string, non-object ``bash`` cannot be preserved as a row.
             return {
-                'status': 'success',
-                'settings_file': settings_path,
-                'added': [],
-                'already_exists': list(OPENCODE_DEFAULT_PERMISSIONS),
-                'added_count': 0,
-                'dry_run': args.dry_run,
+                'status': 'error',
+                'error': 'the `bash` value is neither an object nor a string; refusing to replace it',
             }
 
         added = []
@@ -1682,7 +1685,14 @@ def cmd_ensure_executor(args: argparse.Namespace) -> dict:
             'dry_run': args.dry_run,
         }
 
-        if bash_map is None or bash_map.get(opencode_executor) == 'allow':
+        if bash_map is None:
+            result['action'] = 'conflict'
+            result['success'] = False
+            result['error'] = 'the `bash` value is neither an object nor a string; refusing to replace it'
+            result['status'] = 'error'
+            return result
+
+        if bash_map.get(opencode_executor) == 'allow':
             result['action'] = 'already_exists'
             result['success'] = True
             result.setdefault('status', 'success')

@@ -1030,6 +1030,40 @@ def test_fix_remove_matches_the_effect_on_the_map_path(
     assert _load(config)['permission']['bash'] == {'git push *': 'deny'}
 
 
+def test_a_deny_is_installed_beside_a_scalar_allow(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    """A deny request on a blanket ``allow`` is written, never reported as satisfied.
+
+    The scalar becomes the map's ``*`` allow row and the deny is added after it,
+    so the request is honoured instead of being dropped as "already allowed".
+    """
+    config = _scalar_config(tmp_path, monkeypatch, {'permission': {'bash': 'allow'}})
+
+    result = parse_toon(runtime.permission_fix('project', 'ensure', ['deny(git push *)'], False))
+
+    assert result['status'] == 'success'
+    assert result['added'] == 1
+    rows = _load(config)['permission']['bash']
+    assert rows['*'] == 'allow'
+    assert rows['git push *'] == 'deny'
+    assert list(rows) == ['*', 'git push *']
+
+
+def test_a_non_string_bash_value_is_refused(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    """A ``null`` (or any non-string, non-object) ``bash`` is not preserved as a row."""
+    config = _scalar_config(tmp_path, monkeypatch, {'permission': {'bash': None}})
+    before = config.read_bytes()
+
+    result = parse_toon(runtime.permission_configure('project', [{'rule': 'allow(git status *)'}]))
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'invalid_settings'
+    assert config.read_bytes() == before
+
+
 def test_web_apply_keeps_a_webfetch_pattern_map(
     runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ):

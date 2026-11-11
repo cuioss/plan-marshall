@@ -215,8 +215,8 @@ The matrix below resolves every relevant (role, surface, path) cell. Rows are ve
 [cols="2,4,2,3", options="header"]
 |===
 | Surface | Path | Resolution | Source (landed artifact)
-| Executor | `python3 .plan/execute-script.py *` | ask | global allow, then the reader block's `"*": "ask"` fallback — the source declares no `Bash`, so the block carries no allow
-| Git read | `git status/log/diff *` | ask | global allow, then the reader block's `"*": "ask"` fallback — no per-agent allow
+| Executor | `python3 .plan/execute-script.py *` | ask or deny, never allow | the block carries no allow; its `"*": "ask"` fallback decides, and the emitted agent's `shell: deny` is appended after the global list — either way the reader never reaches `allow`
+| Git read | `git status/log/diff *` | ask or deny, never allow | same as the executor row: global allow, then the reader's own catch-all and/or the emitted shell deny
 | Everything else | `"*"` fallback | ask | per-agent `"*": "ask"`
 | Read probes | `find/grep/cat/head/tail *`, `git grep *` | deny | per-agent deny rows
 | Git write | `git add/commit/push *` | deny | per-agent deny rows
@@ -226,6 +226,8 @@ The matrix below resolves every relevant (role, surface, path) cell. Rows are ve
 |===
 
 The matrix is the authoritative record of the carve-out as implemented: the orchestrator keeps read-only file ops and git status/log as information lookups under `ask` (never silently suppressed, never auto-allowed), and the executor is confined to the `python3 .plan/execute-script.py` permit plus deny on the hard rules. Rows that carry a guard rule in the `Source` column are enforced twice — once by the map, once by the throw-to-block plugin — so a mis-merged `opencode.json` cannot silently widen a hard-rule class.
+
+**Agent rule order, observed.** At `opencode v2.2.7`, `opencode debug agents --standalone` in a scratch project returns a ruleset that begins with the base policy (`{action: "*", resource: "*", effect: "allow"}`), then the global `permissions` list, then the agent's own rules. Both agent-level sources — the `agents.*` block in `opencode.json` and the agent markdown's frontmatter — are appended after the global list. That is why a reader resolves to `ask` or `deny` and never to `allow`: its block carries no allow row and its emitted frontmatter adds `shell: deny`, whichever of the two is evaluated last.
 
 == Runtime Abstraction & Platform Integration
 
