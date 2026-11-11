@@ -3044,3 +3044,63 @@ def test_the_landing_report_grades_a_claim_by_the_artifact_rule() -> None:
     assert 'not evidenced' in landing
     assert 'section 1' in landing, '§8 does not point at the grading rule'
     assert '`test-first` is met' not in landing, '§8 restates the §1 grading rule'
+
+
+# =============================================================================
+# PLAN-LB-137 D1 — one base-sha evidence recipe, and the base copy is removed
+# =============================================================================
+
+
+#: The four ways to obtain a base-sha run the lane forbids. Each one either
+#: writes into another checkout or leaves evidence that dies with the base copy.
+_FORBIDDEN_BASE_RUN_FORMS = (
+    'a `git clone`',
+    'a raw `git worktree add` into `.plan/temp`',
+    'a hand-run `generate_executor`',
+    'an edit of a harness file in the base copy',
+)
+
+
+def test_the_lane_states_the_one_base_sha_evidence_recipe() -> None:
+    """§1 names the sanctioned recipe, the four forbidden forms, and where the evidence lives.
+
+    A Done-when that must fail at a base sha needs a run at that sha. Before this
+    rule the lane said only "capture their evidence", so a run reinvented the
+    recipe per session — a clone under `.plan/temp`, a hand-run generator, a
+    harness-file edit — and the last one overwrote the main checkout's executor.
+    """
+    rules = _section('## 1. Rules (every one binds; breaking one fails the run)')
+
+    # The recipe: one verb, a detached tree, built through the build seam.
+    assert 'worktree-create --detach' in rules, 'the lane names no detached base-worktree recipe'
+    assert '{plan}-base' in rules, 'the base worktree has no derived name'
+    assert '--project-dir {plan}-base' in rules, 'the recipe does not build through the build seam'
+    assert 'git worktree remove' in rules, 'the recipe never says how the base copy is removed'
+    assert 'no branch' in rules, 'the recipe does not say the base worktree carries no branch'
+
+    for form in _FORBIDDEN_BASE_RUN_FORMS:
+        assert form in rules, f'the lane does not forbid {form!r}'
+
+    # Where the evidence lives — an artifact that survives the base copy.
+    assert 'in the PR body' in rules, 'the lane does not say where the failing log goes'
+    assert "committed under the plan's test tree" in rules, 'a probe file has no surviving home'
+    assert 'a path that exists only in the removed base copy is not evidence' in rules
+    assert 'not evidenced' in rules, 'a forbidden form carries no grading consequence'
+
+
+def test_the_landing_requires_the_base_copy_removal_or_the_owed_fact() -> None:
+    """§8 removes the base copy or reports `cleanup_owed=true`; no blind operator question.
+
+    Deleting a tree the lane created is the lane's own step, so a question about it
+    may only follow a read of that tree — never a bare "shall I delete it?".
+    """
+    landing = _section('## 8. Landing message (the last step, after the merge)')
+
+    assert 'base worktree' in landing, 'the landing names no base copy'
+    assert 'git worktree remove' in landing, 'the landing names no removal step'
+    assert 'When it is still on disk' in landing, 'the landing has no owed-cleanup branch'
+    assert 'cleanup_owed=true' in landing, 'the landing cannot report the owed cleanup fact'
+    assert 'read from the tree' in landing, 'the owed fact names nothing it read'
+    assert 'never asks how to delete what it created before that read' in landing, (
+        'the landing permits an operator question before the tree was read'
+    )

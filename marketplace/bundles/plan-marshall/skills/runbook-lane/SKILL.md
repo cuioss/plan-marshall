@@ -390,6 +390,21 @@ so git alone shows which deliverables are committed.
     not count toward `deliverables_done`: it is graded exactly as a not-met Done-when, because a
     Done-when the run cannot show is a Done-when it did not meet as written.
   - Never cite a test, file or log you have not just read or run.
+- **Base-sha evidence (needs no clone).** A Done-when that says "fails at `{sha}`" is proved on a
+  detached base worktree, never by copying the repository: `git-workflow worktree-create --detach
+  --plan-id {plan} --base {base_sha}` materializes `{plan}-base` at that commit with no branch,
+  carrying its own `.plan/local` and executor so the base tree's own test bootstrap cannot resolve
+  into another checkout, and the build seam runs against it like any other checkout —
+  `{build.module-tests} --project-dir {plan}-base`, or the gate canonical, with the shell in the main
+  checkout. Four forms are NOT allowed, and a Done-when whose failing run used one is reported
+  `not evidenced`: a `git clone`; a raw `git worktree add` into `.plan/temp`; a hand-run
+  `generate_executor`; and an edit of a harness file in the base copy. The evidence must survive the
+  base copy: the failing log identifier and the file that produced it go in the PR body, and a probe
+  file a Done-when cites by path is committed under the plan's test tree or its content is in the PR
+  body — a path that exists only in the removed base copy is not evidence. Remove the base worktree
+  with `git worktree remove`, never with force, before the landing is written; when it is still on
+  disk the landing reports `cleanup_owed=true` with what remains, read from the tree, and no operator
+  question about deleting it is asked before that read has been stated.
 - **Executor only.**
   - Every script: `python3 .plan/execute-script.py {bundle}:{skill}:{script} …`.
   - Every build: the `build` commands the resolve result supplies (step 4).
@@ -555,7 +570,9 @@ For each deliverable, in the spec's order:
    landing report then says `skills: none named`.
 1. Confirm the spec's HYPOTHESIS lines for this deliverable by reading the code. Write down
    confirmed or refuted, with `file:line`.
-2. Write the Done-when tests and capture their evidence under the `order` §1 defines.
+2. Write the Done-when tests and capture their evidence under the `order` §1 defines — for a
+   Done-when whose clause fails at a base sha, that is §1's base-sha recipe: a detached `{plan}-base`
+   worktree, built through the build seam, never a clone.
 3. Implement. Run the tests; record them passing.
 4. If any `*.py` changed, run the quality gate (step 4) until clean.
 5. **Refresh the worktree executor after adding, removing or renaming a script verb**, before running
@@ -969,6 +986,11 @@ sonar_open_new_issues={measured count|n/a|unknown}
 step.sonar-roundtrip.open_issue_rules={rules left open|none|unknown|n/a}
 ```
 
+- **Base copy (cleanup_owed):** a base worktree a Done-when's evidence used is removed with
+  `git worktree remove`, never with force, before this landing is written. When it is still on disk,
+  set `cleanup_owed=true` and name what remains, read from the tree. An operator question about
+  removing it states first what exists, read from the tree; the lane never asks how to delete what it
+  created before that read.
 - **Values:** for a required key, write `unknown` for anything you could not read, never `n/a` and
   never a guess. `deliverables_done` counts only fully met deliverables. The optional per-step facts
   below carry their own two sentinels, where `n/a` is a legal answered absence.

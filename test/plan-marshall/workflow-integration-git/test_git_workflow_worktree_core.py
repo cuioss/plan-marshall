@@ -661,3 +661,99 @@ class TestWorktreeRemoveReservedKey:
         git_calls = [call for call in calls if call[0] == 'git']
         assert len(git_calls) == 1
         assert 'worktree' in git_calls[0] and 'remove' in git_calls[0]
+
+
+# =============================================================================
+# worktree-create --detach — the base-sha evidence tree
+# =============================================================================
+
+
+def _git_stdout(repo: Path, *args: str) -> str:
+    """Run one real ``git -C`` query and return its stripped stdout."""
+    completed = subprocess.run(
+        ['git', '-C', str(repo), *args],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return completed.stdout.strip()
+
+
+def _stub_executor_production(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Stub the executor seam: a base probe needs no generated surface here.
+
+    The seam spawns a full generation, which is minutes of parser-surface
+    derivation and irrelevant to what this class observes. The real seam is
+    covered by its own tests; what matters here is that creation still reports
+    its on-disk verdict.
+    """
+
+    def fake(worktree: Path, plan_id: str, **kwargs) -> dict:
+        return {
+            'executor_in_worktree': 'absent',
+            'executor_produced': False,
+            'executor_detail': 'stubbed for the detach test',
+            'executor_reason': 'stubbed for the detach test',
+        }
+
+    monkeypatch.setattr(git_workflow, '_produce_worktree_executor', fake)
+
+
+class TestWorktreeCreateDetached:
+    """``worktree-create --detach`` materialises the base-sha probe tree.
+
+    A Done-when that must fail at a base sha is proved on a detached worktree
+    named ``{plan}-base``: no branch is created, and the plan's own worktree
+    bookkeeping is left untouched — this tree is not the plan's worktree, so
+    recording ``worktree_path`` for it would point every later verb at the probe.
+    """
+
+    def test_detach_creates_a_worktree_with_no_branch(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        repo = tmp_path / 'repo'
+        _init_repo(repo)
+        root = tmp_path / 'worktrees-root'
+        root.mkdir()
+
+        monkeypatch.setattr(git_workflow, 'get_worktree_root', lambda: root)
+        monkeypatch.setattr(git_workflow, '_find_plan_root_from_cwd', lambda: repo)
+        _stub_executor_production(monkeypatch)
+        calls = _stub_manage_status_call(monkeypatch, {})
+
+        result = cmd_worktree_create(Namespace(plan_id='my-plan', branch=None, base='HEAD', detach=True))
+
+        assert result['status'] == 'success', result
+        target = root / 'my-plan-base'
+        assert result['detached'] is True
+        assert result['worktree_path'] == str(target)
+        assert 'branch' not in result, 'a detached worktree reports a branch'
+        assert (target / 'README.md').is_file(), 'the base worktree was not checked out'
+
+        # The two observations the Done-when names: no branch, and a real
+        # detached HEAD in the created tree.
+        assert _git_stdout(target, 'rev-parse', '--abbrev-ref', 'HEAD') == 'HEAD', 'the worktree is not detached'
+        assert _git_stdout(repo, 'branch', '--list', 'my-plan-base') == '', 'a branch was created for a detached tree'
+
+        # Not the plan's worktree: no plan-status bookkeeping may be written for it.
+        assert calls == [], f'detached creation wrote plan worktree metadata: {calls}'
+        # The base tree carries its own .plan/local boundary, so its own test
+        # bootstrap cannot resolve the walk into another checkout.
+        assert (target / '.plan' / 'local').is_dir(), 'the base tree has no .plan/local boundary'
+
+    def test_detach_is_on_the_parser_surface(self) -> None:
+        result = run_script(SCRIPT_PATH, 'worktree-create', '--help')
+
+        assert result.returncode == 0, result.stderr
+        assert '--detach' in result.stdout, 'the verb parser carries no --detach flag'
+
+    def test_create_without_a_branch_and_without_detach_is_refused(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        root = tmp_path / 'worktrees-root'
+        root.mkdir()
+        monkeypatch.setattr(git_workflow, 'get_worktree_root', lambda: root)
+
+        result = cmd_worktree_create(Namespace(plan_id='my-plan', branch=None, base=None, detach=False))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'branch_required'
+        assert not (root / 'my-plan').exists()

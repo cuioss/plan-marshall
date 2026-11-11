@@ -2501,7 +2501,36 @@ def cmd_worktree_create(args):
     path resolution, filesystem touch, or git call: that tree is a non-plan
     worktree no ``worktree-*`` verb may materialize, so a ``--plan-id`` naming it
     returns ``reserved_worktree_name`` instead of running ``git worktree add``.
+
+    **``--detach`` creates the base-sha evidence tree, not a plan worktree.** A
+    Done-when that must fail at a base commit needs a run at that commit. The
+    detached mode materializes ``{plan_id}-base`` at ``--base`` (``HEAD`` when it
+    is omitted) with NO branch, and writes NO plan-status bookkeeping: this tree
+    is not the plan's worktree, so recording ``worktree_path`` for it would point
+    every later verb at the probe. It still gets the real ``.plan/local``
+    boundary and the executor seam, because both are what keep the base tree's
+    own test bootstrap from resolving its writes into another checkout. The
+    payload reports ``detached: true`` and names the ref it was created from; a
+    ``--branch`` given beside ``--detach`` is refused, and a missing ``--branch``
+    without it is refused before any git call.
     """
+    detach = bool(getattr(args, 'detach', False))
+    branch = getattr(args, 'branch', None)
+    if detach and branch:
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'detach_takes_no_branch',
+            'message': '--detach creates a branchless base-sha worktree; --branch cannot be combined with it',
+        }
+    if not detach and not branch:
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'branch_required',
+            'message': '--branch is required unless --detach is given',
+        }
+
     if args.plan_id == ORCHESTRATOR_WORKTREE_KEY:
         return {
             'status': 'error',
@@ -2515,7 +2544,7 @@ def cmd_worktree_create(args):
         }
 
     try:
-        target = get_worktree_root() / args.plan_id
+        target = get_worktree_root() / (f'{args.plan_id}-base' if detach else args.plan_id)
     except RuntimeError as exc:
         return {
             'status': 'error',
@@ -2561,19 +2590,23 @@ def cmd_worktree_create(args):
         }
 
     git_args = ['-C', str(main_root), 'worktree', 'add']
-    if args.base:
-        git_args += ['-b', args.branch, str(target), args.base]
+    if detach:
+        git_args += ['--detach', str(target), args.base or 'HEAD']
+    elif args.base:
+        git_args += ['-b', branch, str(target), args.base]
     else:
-        git_args += ['-b', args.branch, str(target)]
+        git_args += ['-b', branch, str(target)]
     rc, _stdout, stderr = run_git(git_args)
     if rc != 0:
-        return {
+        failure: dict[str, Any] = {
             'status': 'error',
             'plan_id': args.plan_id,
             'error': 'worktree_add_failed',
             'message': f'git worktree add failed: {stderr}',
-            'branch': args.branch,
         }
+        if branch:
+            failure['branch'] = branch
+        return failure
 
     ok, link_err = _ensure_worktree_plan_local_real(target)
     if not ok:
@@ -2592,6 +2625,25 @@ def cmd_worktree_create(args):
     # copy exactly as before), same on-disk verdict, non-fatal by contract.
     executor_verdict = _produce_worktree_executor(target, args.plan_id)
 
+    if detach:
+        # A base-sha evidence tree is NOT the plan's worktree: it has no branch
+        # and no plan-status record, so a later verb still resolves the plan's
+        # real worktree. Only the two facts the caller needs travel.
+        payload_detached: dict[str, Any] = {
+            'status': 'success',
+            'plan_id': args.plan_id,
+            'detached': True,
+            'worktree_path': str(target),
+            'base_ref': args.base or 'HEAD',
+            'bootstrap': bootstrap_status,
+            'executor_in_worktree': executor_verdict['executor_in_worktree'],
+        }
+        if 'executor_reason' in executor_verdict:
+            payload_detached['executor_reason'] = executor_verdict['executor_reason']
+        if bootstrap_status == 'warning':
+            payload_detached['bootstrap_warning'] = bootstrap_detail
+        return payload_detached
+
     # Project-state bookkeeping: persist the resolved path/branch via
     # manage-status so subsequent verbs can resolve through the canonical
     # channel. The ``use_worktree`` field is a string here (manage-status
@@ -2601,7 +2653,7 @@ def cmd_worktree_create(args):
     for field, value in (
         ('use_worktree', 'true'),
         ('worktree_path', str(target)),
-        ('worktree_branch', args.branch),
+        ('worktree_branch', branch),
     ):
         rc, _out, err = _manage_status_call(
             'metadata',
@@ -2622,7 +2674,7 @@ def cmd_worktree_create(args):
         'status': 'success',
         'plan_id': args.plan_id,
         'worktree_path': str(target),
-        'branch': args.branch,
+        'branch': branch,
         'plan_symlink': str(target / _PLAN_DIR_NAME),
         'bootstrap': bootstrap_status,
         'executor_in_worktree': executor_verdict['executor_in_worktree'],
@@ -4065,8 +4117,16 @@ Examples:
                     },
                     {
                         'flags': ['--branch'],
-                        'required': True,
-                        'help': 'Feature branch name to create',
+                        'help': 'Feature branch name to create (omit with --detach)',
+                    },
+                    {
+                        'flags': ['--detach'],
+                        'dest': 'detach',
+                        'action': 'store_true',
+                        'help': (
+                            'Create a detached, branchless base-sha worktree named {plan-id}-base '
+                            '(the base-sha evidence tree); no branch and no plan-status bookkeeping'
+                        ),
                     },
                     {
                         'flags': ['--base'],
