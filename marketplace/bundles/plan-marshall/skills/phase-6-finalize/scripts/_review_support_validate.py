@@ -24,14 +24,19 @@ from _criteria_snapshot import (
     AUTHORSHIP_SCHEMA,
     CRITERION_UNPARSED,
     PARSER_EXTENDED,
+    REFERENCE_CYCLE,
+    REFERENCE_SELF,
+    REFERENCE_UNKNOWN,
+    REFERENCE_UNREADABLE,
     REQUEST_MISSING,
     SPEC_MISSING,
+    SUCCESSOR_SUPERSEDED,
     SUPERSEDED,
     authorship_problem,
     canonical_digest,
+    deliverable_reference_rejection,
     normalize_criterion,
     seal_verdict,
-    superseded_by_names_deliverable,
     verdict_row_matches,
 )
 from file_ops import cwd_checkout_root, get_build_results_dir
@@ -424,6 +429,27 @@ def _grade_criteria(
             grading.add('unevidenced_criterion', f'D{number}.C{index}', title, True, fix_kind, where)
 
 
+def _superseded_rejection_message(reason: str, cited: str, number: int) -> str:
+    """The WHY a refused ``superseded_by`` value names, one sentence per reason."""
+    if reason == REFERENCE_UNREADABLE:
+        return (
+            f'superseded_by {cited!r} carries no deliverable reference at its head '
+            '(expected D2, Deliverable 2, `D2`, **D2** or (D2))'
+        )
+    if reason == REFERENCE_UNKNOWN:
+        return f'superseded_by {cited!r} names no deliverable of the outline'
+    if reason == REFERENCE_SELF:
+        return (
+            f'superseded_by {cited!r} names the deliverable itself; a deliverable cannot '
+            'supersede itself — retire it through the criteria-authorize route instead'
+        )
+    if reason == REFERENCE_CYCLE:
+        return f'superseded_by {cited!r} closes a supersede cycle back to deliverable {number}'
+    if reason == SUCCESSOR_SUPERSEDED:
+        return f'superseded_by {cited!r} names a deliverable that is itself superseded'
+    return f'superseded_by {cited!r} names a deliverable whose verdict is not met or met_with_residuals'
+
+
 def _grade_row(
     grading: Grading,
     row: dict[str, Any],
@@ -431,6 +457,7 @@ def _grade_row(
     facts: dict[str, int],
     plan_id: str,
     outline_numbers: frozenset[int] | set[int],
+    verdicts: dict[Any, Any],
     evidence_root: Path | None = None,
 ) -> None:
     number = expected['number']
@@ -445,8 +472,12 @@ def _grade_row(
         cited = str(row.get('superseded_by') or '').strip()
         if not cited:
             grading.errors.append(f'{where}: superseded without a superseded_by')
-        elif not superseded_by_names_deliverable(cited, outline_numbers):
-            grading.errors.append(f'{where}: superseded_by {cited!r} names no deliverable of the outline')
+        else:
+            rejection = deliverable_reference_rejection(
+                cited, outline_numbers, own_number=number, verdicts=verdicts
+            )
+            if rejection is not None:
+                grading.errors.append(f'{where}: {_superseded_rejection_message(rejection, cited, number)}')
         return
     _grade_criteria(grading, row, expected, facts, plan_id, evidence_root)
     if verdict == 'not_met':
@@ -596,8 +627,9 @@ def validate_functional(
     Requires exactly one row per outline deliverable. Each ``deliverables``
     entry of ``deliverables`` carries ``number``, ``title`` and
     ``success_criteria`` (the outline's criterion bullets). A ``superseded`` row
-    must cite a deliverable this outline carries — free text names nothing, and a
-    supersede that names nothing would close ungraded work. When
+    must cite a CLOSING successor this outline carries — not itself, not a cycle,
+    and with a ``met`` / ``met_with_residuals`` verdict — because free text, a
+    self-citation or an unmet successor would close ungraded work. When
     ``evidence_root`` is given, every path and test name a ``met`` criterion
     cites is checked against the tree at the graded head; ``plan_id`` names the
     plan whose own ``build-results`` tree a ``.plan/`` citation is confined to.
@@ -617,7 +649,9 @@ def validate_functional(
         grading.errors.append(f'deliverable {number}: not an outline deliverable')
     outline_numbers = frozenset(expected)
     for number in sorted(set(expected) & set(by_number)):
-        _grade_row(grading, by_number[number], expected[number], facts, plan_id, outline_numbers, evidence_root)
+        _grade_row(
+            grading, by_number[number], expected[number], facts, plan_id, outline_numbers, by_number, evidence_root
+        )
 
     for index, change in enumerate(_list_field(verdict, 'unrequested_changes', grading, False), start=1):
         path = str(change.get('path') or '').strip() if isinstance(change, dict) else ''
