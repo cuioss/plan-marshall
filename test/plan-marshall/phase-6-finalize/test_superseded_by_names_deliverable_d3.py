@@ -215,6 +215,42 @@ def test_a_supersede_cycle_leaves_both_deliverables_open_and_is_named(plan_conte
     assert any('superseded_by' in error and 'cycle' in error for error in validated['errors']), validated
 
 
+def test_a_rejected_self_citation_keeps_even_a_graded_criterion_open(plan_context, tmp_path) -> None:
+    """The completion gate never runs the validator, so a graded criterion cannot rescue a bad verdict."""
+    plan_dir = _plan(plan_context, freeze=True)
+    _write_verdict(
+        plan_dir,
+        tmp_path,
+        {
+            'deliverables': [
+                {
+                    'number': 1,
+                    'verdict': 'superseded',
+                    'superseded_by': 'D1',
+                    'criteria': [
+                        {'criterion': 'parser accepts input', 'status': 'met', 'evidence': ['src/parser.py:1']}
+                    ],
+                },
+                {
+                    'number': 2,
+                    'verdict': 'met',
+                    'criteria': [
+                        {'criterion': 'usage is documented', 'status': 'met', 'evidence': ['doc/parser.md:1']}
+                    ],
+                },
+            ],
+            'unrequested_changes': [],
+            'self_reports': [],
+            'files_read': [],
+        },
+    )
+
+    payload = _snap.open_criteria(PLAN_ID)
+
+    assert payload['open_count'] == 1, payload
+    assert payload['open'][0]['deliverable'] == 1, payload
+
+
 def test_a_successor_graded_not_met_leaves_the_criteria_open(plan_context, tmp_path) -> None:
     plan_dir = _plan(plan_context, freeze=True)
     path = _write_verdict(

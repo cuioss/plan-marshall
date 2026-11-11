@@ -447,9 +447,10 @@ _PYPROJECT_NOTATION = 'plan-marshall:build-pyproject:pyproject_build'
 #: discoverer prefixes every task with the subproject path (``:core:test``,
 #: ``:core:test :core:jacocoTestReport``), so those tokens name a real blast
 #: radius. A MULTI-task list therefore keeps its positionals and reads as the
-#: narrow scoped row it was, while a LONE ``:module:``-prefixed task reads as a
-#: readable canonical-unknown inability (there is no second positional to narrow
-#: with). Dropping either shape would read a one-subproject run as whole-tree —
+#: narrow scoped row it was — its scope is the SUBPROJECT PATH derived from those
+#: task tokens — while a LONE ``:module:``-prefixed task reads as a readable
+#: canonical-unknown inability (there is no second positional to narrow with).
+#: Dropping either shape would read a one-subproject run as whole-tree —
 #: the false green this dimension exists to close. npm is exempt from that guard:
 #: a script name may begin with a colon, but it selects no project path, so
 #: dropping it keeps the row's real ``--workspace`` scope.
@@ -731,6 +732,25 @@ def _row_payload_tokens(entry: dict[str, Any]) -> list[str] | None:
     return None
 
 
+def _gradle_subproject_scope(payload: list[str]) -> tuple[str, ...]:
+    """The distinct subproject paths a Gradle ``:``-prefixed task list names.
+
+    The discoverer builds each task as ``:{module}:{task}``, so the project path is the
+    token's head without the task name. Reading the raw task strings as scope made a
+    submodule row narrow against a change its own subproject requires — it could never
+    be adequate for any change. The derived names, in first-seen order, are what
+    :func:`_scope_adequate` compares with the change's module set.
+    """
+    modules: list[str] = []
+    for token in payload:
+        if not token.startswith(':'):
+            continue
+        module = token.strip(':').rsplit(':', 1)[0]
+        if module and module not in modules:
+            modules.append(module)
+    return tuple(modules)
+
+
 def parse_row_scope(entry: dict[str, Any]) -> RowScope | None:
     """Read the canonical and scope a ``kind=build`` row records, or ``None``.
 
@@ -849,7 +869,8 @@ def parse_row_scope(entry: dict[str, Any]) -> RowScope | None:
         #
         #   * a MULTI-task ``:``-prefixed payload keeps its positionals, so the
         #     row reads as the narrow scoped row the subproject run was — the head
-        #     task token is the canonical and the remaining tasks are its scope;
+        #     task token is the canonical and the subproject path derived from the
+        #     task tokens is its scope;
         #   * a LONE ``:``-prefixed task has no second positional to narrow with,
         #     so it reads as a readable canonical-unknown inability (the token is
         #     a task, not an analysis). Returning ``None`` for it made the whole-
@@ -860,9 +881,8 @@ def parse_row_scope(entry: dict[str, Any]) -> RowScope | None:
         # the drop and its ``--workspace`` scope stands.
         prefixed = any(token.startswith(':') for token in payload)
         if notation != 'plan-marshall:build-npm:npm' and prefixed and len(payload) > 1:
-            pass
-        else:
-            payload = payload[:1]
+            return RowScope(canonical=payload[0], scope_tokens=_gradle_subproject_scope(payload) + tuple(scope))
+        payload = payload[:1]
     elif notation != _PYPROJECT_NOTATION and len(payload) > 1:
         return None
     if saw_neutral and not scope and len(payload) == 1:

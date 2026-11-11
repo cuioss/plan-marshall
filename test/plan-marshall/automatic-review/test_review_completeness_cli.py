@@ -670,6 +670,19 @@ class TestLoadFailure:
         assert 'detail:' in captured.out
 
 
+def test_the_serialized_check_response_carries_the_foreign_findings_count(plan_context, capsys):
+    """The gate reads the SERIALIZED check response, so the disclosure must be emitted."""
+    plan_id = 'rc-check-foreign-emitted'
+    plan_context.plan_dir_for(plan_id)
+    _seed(plan_id, 'sourcery', detail='pr_number: 101\nkind: inline\nauthor: sourcery\n')
+
+    exit_code = rc.main(['check', '--plan-id', plan_id, '--required-bots', 'coderabbit', '--pr-number', '102'])
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert 'foreign_stored_findings: 1' in captured.out, captured.out
+
+
 def _trigger_bot(*argv: str) -> dict:
     """Run ``trigger-bot`` through the real CLI and return its parsed TOON.
 

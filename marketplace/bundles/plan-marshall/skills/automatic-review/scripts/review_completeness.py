@@ -270,6 +270,8 @@ Return TOON shape (check):
     unscoped_stored_findings: <n>        # emitted only when non-empty — PENDING stored
     unscoped_stored_finding_ids[N]:      # rows whose PR could not be placed (legacy rows
       - hash_id                          # on a plan that spans more than one PR)
+    foreign_stored_findings: <n>         # emitted only when non-zero — rows filed for
+                                         # OTHER pull requests (a disclosure, never a gate)
 
 Return TOON shape (size-caps):
     status: success
@@ -1923,6 +1925,13 @@ def _emit_toon(payload: dict) -> None:
         # nothing to place, and a permanent ``0`` beside a clean verdict is noise.
         emitted['unscoped_stored_findings'] = len(unscoped)
         emitted['unscoped_stored_finding_ids'] = unscoped
+    # The provenance disclosure, emitted only when the store holds rows filed for
+    # OTHER pull requests. ``pre_merge_gate`` reads this SERIALIZED response through
+    # the executor, so a count held only in the in-process dict would arrive as zero
+    # there and the merge record could never show it.
+    foreign = int(payload.get('foreign_stored_findings') or 0)
+    if foreign:
+        emitted['foreign_stored_findings'] = foreign
 
     print(serialize_toon(emitted))
 

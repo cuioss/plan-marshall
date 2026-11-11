@@ -1194,12 +1194,22 @@ def test_a_multi_task_gradle_submodule_row_reads_as_a_narrow_scoped_row(monkeypa
 
     parsed = crosscheck.parse_row_scope(row)
     assert parsed is not None
-    assert (parsed.canonical, parsed.scope_tokens) == (':core:test', (':core:jacocoTestReport',))
+    assert (parsed.canonical, parsed.scope_tokens) == (':core:test', ('core',))
 
     outcome = crosscheck.cross_check_candidates([row], '/nonexistent-project-dir', _required())
 
     assert outcome['scope_verdict'] == crosscheck.NARROW
     assert outcome['joint_reason'] == crosscheck.REASON_SCOPE_NARROW
+
+    # The derived subproject path makes the row adequate for a change of ITS OWN module,
+    # so it is no longer "narrow against everything".
+    own_module = crosscheck.cross_check_candidates(
+        [row],
+        '/nonexistent-project-dir',
+        _required(whole_tree=False, modules={'core'}),
+    )
+    assert own_module['scope_verdict'] != crosscheck.NARROW, own_module
+    assert crosscheck.ROW_SCOPE_TOO_NARROW not in own_module['row_scopes']
 
 
 def _whole_tree_submodule_ledger() -> list[dict]:

@@ -847,6 +847,8 @@ def test_the_scope_refusal_points_the_operator_at_the_store(monkeypatch):
 
     assert payload['reason'] == 'participation_scope_ambiguous'
     assert 'stamp-pr' in payload['message']
+    assert 'Resolving the row also settles it' in payload['message']
+    assert 'cannot clear this' not in payload['message']
     assert 'must be made readable' not in payload['message']
 
 

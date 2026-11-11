@@ -2050,12 +2050,18 @@ def open_criteria(plan_id: str, verdict_file: Path | None = None) -> dict[str, A
             continue
         number = row.get('number')
         graded_row = verdict.get(number) or {}
-        if str(graded_row.get('verdict') or '') == SUPERSEDED and superseded_by_names_deliverable(
-            graded_row.get('superseded_by'),
-            snapshot_numbers,
-            own_number=number,
-            verdicts=verdict,
-        ):
+        superseded = str(graded_row.get('verdict') or '') == SUPERSEDED
+        rejection = (
+            deliverable_reference_rejection(
+                graded_row.get('superseded_by'),
+                snapshot_numbers,
+                own_number=number,
+                verdicts=verdict,
+            )
+            if superseded
+            else None
+        )
+        if superseded and rejection is None:
             continue
         graded = graded_row.get('criteria') or []
         for index, criterion in enumerate(row.get('criteria') or [], start=1):
@@ -2063,7 +2069,11 @@ def open_criteria(plan_id: str, verdict_file: Path | None = None) -> dict[str, A
             text = normalize_criterion(raw)
             if _authorization(snapshot, number, text):
                 continue
-            status = _graded_status(graded, text, index, number)
+            # A REJECTED supersede closes nothing: the verdict itself is invalid, so
+            # its criteria stay open even where the reviewer graded one ``met``. The
+            # completion gate reads this answer without running the validator, so
+            # trusting those grades would let a self-citation release ungraded work.
+            status = 'ungraded' if superseded else _graded_status(graded, text, index, number)
             if status == 'met':
                 continue
             rows.append(

@@ -1235,10 +1235,10 @@ def _participation_refusal(plan_id: str, head: str | None, verdict: dict[str, An
     whose rows belong to no known PR (``code: participation_scope_ambiguous``). The
     roster, provider and predicate all answered, so pointing the operator at making the
     gate readable would name work already done; the fault is in the STORE. The remedy is
-    to PLACE those rows — stamp the pull request into each row's ``detail`` with the
-    ``stamp-pr`` verb, or remove the row — because disposition does not place a finding:
-    resolving one changes its state and leaves its provenance untouched, so no
-    resolution clears this refusal.
+    to PLACE those rows — stamp the pull request into the row's ``detail`` with the
+    ``stamp-pr`` verb, or remove the row. Resolving a PENDING row also settles it out of
+    this refusal, because only a pending legacy row is reported; stamping is what keeps a
+    finding that must remain pending placeable.
 
     A gap that IS authorizable advertises the labels the remedy accepts, in
     ``override_options``. They are :data:`BARRIER_OVERRIDE_LABELS` itself — the one
@@ -1259,9 +1259,10 @@ def _participation_refusal(plan_id: str, head: str | None, verdict: dict[str, An
             'carries pending rows with no PR stamp, so a pending finding may exist here that the '
             'gate could neither place nor ignore. Stamp each such row with the pull request it '
             'belongs to — `python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings '
-            'stamp-pr --plan-id {plan_id} --hash-id {hash_id} --pr-number {N}` — or remove the row; '
-            "a resolution changes a finding's disposition, never its provenance, so it cannot "
-            'clear this — before this merge can proceed.'
+            'stamp-pr --plan-id {plan_id} --hash-id {hash_id} --pr-number {N}` — or remove it. '
+            'Resolving the row also settles it out of this refusal (only PENDING rows are '
+            'reported), but it leaves the finding unplaced for this PR; stamp it when the finding '
+            'must stay pending. '
         )
     elif authorizable:
         remedy = (
