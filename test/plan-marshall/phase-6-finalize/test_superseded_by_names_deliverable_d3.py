@@ -240,7 +240,13 @@ def test_a_successor_that_is_itself_superseded_is_refused(plan_context, tmp_path
             'deliverables': [
                 {'number': 1, 'verdict': 'superseded', 'superseded_by': 'D2'},
                 {'number': 2, 'verdict': 'superseded', 'superseded_by': 'D3'},
-                {'number': 3, 'verdict': 'met', 'criteria': [{'criterion': 'usage is documented', 'status': 'met', 'evidence': ['doc/parser.md:1']}]},
+                {
+                    'number': 3,
+                    'verdict': 'met',
+                    'criteria': [
+                        {'criterion': 'usage is documented', 'status': 'met', 'evidence': ['doc/parser.md:1']}
+                    ],
+                },
             ],
             'unrequested_changes': [],
             'self_reports': [],

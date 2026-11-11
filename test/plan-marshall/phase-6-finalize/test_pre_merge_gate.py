@@ -16,10 +16,9 @@ import subprocess
 import sys
 from argparse import Namespace
 
+import _findings_core as fc
 import pytest
 from _dispatch_roster import parse_roster_rows
-
-import _findings_core as fc
 
 from conftest import MARKETPLACE_ROOT, load_script_module, parse_ns
 
@@ -792,7 +791,9 @@ def test_the_chain_does_not_refuse_a_settled_legacy_row(plan_context, monkeypatc
         detail = f'kind: inline\nauthor: {bot}\nthread_id: t\ncomment_id: c\n'
         if pr_number is not None:
             detail = f'pr_number: {pr_number}\n{detail}'
-        added = fc.add_finding(_PLAN_ID, 'pr-comment', title=f'{bot} comment', detail=detail, bot_kind=bot, kind='inline')
+        added = fc.add_finding(
+            _PLAN_ID, 'pr-comment', title=f'{bot} comment', detail=detail, bot_kind=bot, kind='inline'
+        )
         assert added['status'] == 'success', added
         if pr_number is None:
             resolved = fc.resolve_finding(_PLAN_ID, added['hash_id'], 'fixed', 'addressed')
