@@ -19,6 +19,7 @@ stale claim turns this module red.
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 from conftest import get_skill_dir
 
@@ -30,7 +31,7 @@ _GITHUB_PR = get_skill_dir('plan-marshall', 'workflow-integration-github') / 'sc
 _HEADING = re.compile(r'^(#{1,6})\s+(.*)$')
 
 
-def _text(path) -> str:
+def _text(path: Path) -> str:
     return path.read_text(encoding='utf-8')
 
 
