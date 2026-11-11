@@ -31,6 +31,7 @@ from _criteria_snapshot import (
     canonical_digest,
     normalize_criterion,
     seal_verdict,
+    superseded_by_names_deliverable,
     verdict_row_matches,
 )
 from file_ops import cwd_checkout_root, get_build_results_dir
@@ -429,6 +430,7 @@ def _grade_row(
     expected: dict[str, Any],
     facts: dict[str, int],
     plan_id: str,
+    outline_numbers: frozenset[int] | set[int],
     evidence_root: Path | None = None,
 ) -> None:
     number = expected['number']
@@ -440,8 +442,11 @@ def _grade_row(
     facts['deliverables_reviewed'] += 1
     facts[f'deliverables_{verdict}'] += 1
     if verdict == 'superseded':
-        if not str(row.get('superseded_by') or '').strip():
-            grading.errors.append(f'{where}: superseded without a cited operator decision or refutation')
+        cited = str(row.get('superseded_by') or '').strip()
+        if not cited:
+            grading.errors.append(f'{where}: superseded without a superseded_by')
+        elif not superseded_by_names_deliverable(cited, outline_numbers):
+            grading.errors.append(f'{where}: superseded_by {cited!r} names no deliverable of the outline')
         return
     _grade_criteria(grading, row, expected, facts, plan_id, evidence_root)
     if verdict == 'not_met':
@@ -590,7 +595,9 @@ def validate_functional(
 
     Requires exactly one row per outline deliverable. Each ``deliverables``
     entry of ``deliverables`` carries ``number``, ``title`` and
-    ``success_criteria`` (the outline's criterion bullets). When
+    ``success_criteria`` (the outline's criterion bullets). A ``superseded`` row
+    must cite a deliverable this outline carries — free text names nothing, and a
+    supersede that names nothing would close ungraded work. When
     ``evidence_root`` is given, every path and test name a ``met`` criterion
     cites is checked against the tree at the graded head; ``plan_id`` names the
     plan whose own ``build-results`` tree a ``.plan/`` citation is confined to.
@@ -608,8 +615,9 @@ def validate_functional(
         grading.errors.append(f'deliverable {number}: no verdict row')
     for number in sorted(set(by_number) - set(expected)):
         grading.errors.append(f'deliverable {number}: not an outline deliverable')
+    outline_numbers = frozenset(expected)
     for number in sorted(set(expected) & set(by_number)):
-        _grade_row(grading, by_number[number], expected[number], facts, plan_id, evidence_root)
+        _grade_row(grading, by_number[number], expected[number], facts, plan_id, outline_numbers, evidence_root)
 
     for index, change in enumerate(_list_field(verdict, 'unrequested_changes', grading, False), start=1):
         path = str(change.get('path') or '').strip() if isinstance(change, dict) else ''

@@ -319,6 +319,18 @@ Extract `value` (`light` or `deep`). When the field is absent or unresolved, tre
        --message "(plan-marshall:planning) light-lane returned escalate_to_deep (trigger={escalation_trigger}) — re-opened 2-refine and re-dispatching the deep refine→outline→plan pipeline"
      ```
 
+   - **`outline_prompt` carrying a re-freeze question** — the envelope could not freeze the criteria: `snapshot-criteria` answered `refreeze_requires_decision`, so `3-outline` did NOT advance and the `status: success` branch below does not apply. This orchestrator runs in the main context and can reach the operator, which a dispatched leaf cannot (see [`ref-workflow-architecture/standards/agents.md`](../../ref-workflow-architecture/standards/agents.md) § "Leaf cannot fire AskUserQuestion — return a prompt-required envelope"): print the return's `domain_narrow_report` verbatim as one line when it carries one (the same rule as the `status: success` branch below; print nothing when the field is absent), then fire ONE `AskUserQuestion` over the envelope's question and act only on the option the operator SELECTS.
+     - **Approved** — run `criteria-refreeze-authorize` with the operator's decision, then re-dispatch:
+
+       ```bash
+       python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-solution-outline \
+         criteria-refreeze-authorize --plan-id {plan_id} --decision "{operator decision}"
+       ```
+
+       Re-dispatch the SAME light-lane envelope exactly ONCE through the resolve + `Task` shape of step 3, so its retried `snapshot-criteria` succeeds and the envelope transitions `3-outline`.
+     - **Refused** — STOP: nothing was frozen, so the phase must not advance. Emit the `[ERROR]` work-log line naming the operator's refusal and surface it; record no boundary.
+     - A re-dispatch that returns `outline_prompt` again is the same decision asked twice: STOP and report it rather than looping.
+
    - **`status: success`** (deliverables derived, no escalation): the light lane has already written `solution_outline.md`, derived the deliverables, and transitioned `3-outline`. When the return carries `domain_narrow_report`, print it to the operator verbatim as one line of plain output before continuing (the same rule as `planning-outline.md` § "Post-return `domain_narrow_report`"); when the field is absent, print nothing. Record ONLY the `3-outline → 4-plan` boundary from the returned `<usage>` — the `2-refine → 3-outline` half was already stamped pre-dispatch at step 2 and MUST NOT be recorded again here. Then proceed to **Action: outline** Step 4-plan (task derivation) — the light lane self-derived the outline, so the Complex-Track + q-gate-validation sibling dispatch is skipped (see `planning-outline.md` § lane branch).
 
 **Light-lane capture-source matrix.** On the deep lane, phase-2-refine Step 13 produces the values later phases read at and after the `2-refine` boundary; the light lane never runs that step, so each value needs a producer of its own. The matrix names one per product — one row per Step 13 persist item, plus the artifact the `2-refine` transition gate checks. A product added to Step 13 needs a light-lane row here in the same change.
