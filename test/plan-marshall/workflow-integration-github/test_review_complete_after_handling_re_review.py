@@ -404,6 +404,20 @@ def test_a_finished_review_outranks_a_later_size_refusal():
     assert verdict['reason'] == 'review_on_record_done'
 
 
+def test_a_finished_review_settles_even_when_the_head_is_unreadable():
+    """The done rule does not need the head: a finished review is on record."""
+    verdict = github_re_review.resolve_recovery_action(
+        'coderabbit',
+        cause='quota',
+        review_on_record='undecidable',
+        pending_findings=0,
+        finished_review=True,
+    )
+
+    assert verdict['action'] == 'accept_review_on_record'
+    assert verdict['reason'] == 'review_on_record_done'
+
+
 def test_a_size_refusal_without_a_finished_review_still_escalates():
     """MATCHED CONTROL — the structural escalation is unchanged for a bot with no review."""
     verdict = github_re_review.resolve_recovery_action(

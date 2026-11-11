@@ -2691,12 +2691,18 @@ def _required_reviewers_without_a_review(comments: list[dict[str, Any]], require
         """
         return review_coverage_names_commit((body or '').replace('<!--', '\n<!--'))
 
+    import bot_registry
+
     present: set[str] = set()
     for comment in comments:
         bot = _bot_of(comment)
         if not bot or bot not in required_reviewers:
             continue
         kind = comment.get('kind')
+        if kind not in set(bot_registry.participation_evidence(bot)):
+            # The producer admits evidence only in the bot's OWN declared publish
+            # shapes; a shape this bot does not publish is not evidence for it.
+            continue
         body = str(comment.get('body') or '')
         commit = str(comment.get('commit_id') or '').strip()
         marker_names_commit = _marker_names_commit(body)

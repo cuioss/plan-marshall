@@ -1004,7 +1004,7 @@ def resolve_recovery_action(
     if (
         bot_registry.review_complete_after_handling(bot_kind)
         and finished_review is True
-        and review_on_record in (REVIEW_ON_RECORD_CREDITED, REVIEW_ON_RECORD_STALE)
+        and review_on_record in (REVIEW_ON_RECORD_CREDITED, REVIEW_ON_RECORD_STALE, REVIEW_ON_RECORD_UNDECIDABLE)
     ):
         if pending_findings is None:
             return {**verdict, 'action': RECOVERY_ACTION_UNMEASURED, 'reason': 'no_findings_observation'}

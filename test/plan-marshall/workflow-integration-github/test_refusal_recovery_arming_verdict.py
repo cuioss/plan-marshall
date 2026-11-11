@@ -578,9 +578,16 @@ class TestTheRecoveryActionSelectorDerivesItsVerdict:
             # The no_unreviewed_commit arms: one per review-on-record state, the
             # credited state split on whether a finding is pending, one unmeasured
             # arm per missing observation, and one for a review state the producer
-            # could not decide.
+            # could not decide. The undecidable arm carries NO finished-review
+            # observation, because a finished review settles that state under the
+            # done rule (its own arm).
             (
-                _no_unreviewed_verdict(awaitable, github_re_review.REVIEW_ON_RECORD_UNDECIDABLE, 0),
+                _no_unreviewed_verdict(
+                    awaitable,
+                    github_re_review.REVIEW_ON_RECORD_UNDECIDABLE,
+                    0,
+                    finished_review=None,
+                ),
                 github_re_review.RECOVERY_ACTION_UNMEASURED,
                 'review_state_undecidable',
             ),

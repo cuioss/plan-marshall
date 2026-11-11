@@ -219,6 +219,18 @@ SITE_EXPECTATIONS: dict[str, SiteExpectation] = {
         'PR’s heads and whose kind is reviewed. It points at review_coverage_verdict as the ONE '
         'parser of those fields and evaluates nothing itself.',
     ),
+    f'{_SKILLS}/runbook-lane/scripts/runbook_lane.py': SiteExpectation(
+        'live_comment_scan',
+        'commit_sha',
+        'yes',
+        'The `review-gate` verb’s required-reviewer check reads the PR comment surface it '
+        'already fetches and asks, per named required reviewer, whether that bot holds a '
+        'qualifying review: a formal review record naming a commit, or a summary marker read '
+        'through review_coverage_names_commit. It anchors on the commit those artifacts name '
+        '(the head they covered is deliberately not compared — the done rule consumes any PR '
+        'head), is idempotent over one read, and is a REJECT check: a reviewer without such an '
+        'artifact refuses the merge, it never credits one.',
+    ),
     f'{_SKILLS}/phase-6-finalize/SKILL.md': SiteExpectation(
         'normative_text',
         'commit_sha',

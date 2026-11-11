@@ -2212,7 +2212,13 @@ def cmd_fetch_findings(args):
         if not _is_participation_evidence(_comment, _bot_kind):
             continue
         _kind = _comment.get('kind') or 'inline'
-        if _kind == 'review_body' or (_kind == 'issue_comment' and review_coverage_names_commit(_body)):
+        if _kind == 'review_body':
+            # A formal review counts only with the commit it reviewed, or with a
+            # finished marker that names one: an empty commit names no head, and the
+            # merge gate (and the lane's own check) rejects that same artifact.
+            if str(_comment.get('commit_id') or '').strip() or review_coverage_names_commit(_body):
+                finished_review.setdefault(_bot_kind, _kind)
+        elif _kind == 'issue_comment' and review_coverage_names_commit(_body):
             finished_review.setdefault(_bot_kind, _kind)
         # THE INLINE RULE, decided before every other arm. An inline comment is
         # credited only when the provider PLACES it (or the review it belongs to) at

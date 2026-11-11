@@ -162,9 +162,13 @@ def _args_with_reviewers(*reviewers: str):
 
 
 def _verdict(read: dict, *dispositions: str, reviewers: tuple[str, ...] = ()) -> Any:
-    args = _args_with_reviewers(*reviewers) if reviewers else _args(*dispositions)
+    argv = ['review-gate', '--pr-number', '7']
+    for disposition in dispositions:
+        argv += ['--disposition', disposition]
+    for reviewer in reviewers:
+        argv += ['--required-reviewer', reviewer]
     with patch.object(lane, '_read_review_surfaces', return_value=read):
-        return cmd_review_gate(args)
+        return cmd_review_gate(parse_ns('plan-marshall', 'runbook-lane', 'runbook_lane.py', *argv))
 
 
 def _finished_marker_body() -> str:
@@ -962,6 +966,24 @@ def test_a_marker_beside_a_refusal_notice_is_still_a_finished_review() -> None:
     verdict = _verdict(_read(_review_body(body, commit_id='')), reviewers=('coderabbit',))
 
     assert verdict['merge_allowed'] is True
+
+
+def test_a_marker_in_a_shape_the_bot_does_not_publish_is_not_evidence() -> None:
+    """The producer admits only the bot's own declared shapes; Sourcery publishes no summary."""
+    verdict = _verdict(_read(_issue_comment(_finished_marker_body(), author='sourcery-ai')), reviewers=('sourcery',))
+
+    assert verdict['merge_allowed'] is False
+    assert verdict['reason'] == 'required_review_missing'
+
+
+def test_a_required_reviewer_with_findings_and_dispositions_is_admitted() -> None:
+    """Both inputs travel together: the reviewer check does not bypass finding dispositions."""
+    read = _read(_review_body(_NITPICK_BODY))
+    verdict = _verdict(read, 'coderabbit nitpick nitpick-1 — f1670af19', reviewers=('coderabbit',))
+
+    assert verdict['review_body_findings_total'] == 3
+    assert verdict['merge_allowed'] is False
+    assert verdict['reason'] == 'body_findings_undisposed'
 
 
 def test_an_unnamed_reviewer_population_leaves_the_verdict_unchanged() -> None:
