@@ -142,10 +142,11 @@ PARSER_KEY = 'parser'
 CURRENT_PARSER = 3
 #: The functional verdict that retires a deliverable: its criteria are not open.
 SUPERSEDED = 'superseded'
-#: The deliverable references that a ``superseded_by`` value may carry: the
-#: outline's own ``D<n>`` form and the spelled ``deliverable <n>`` form. Only a
-#: number that names one of the outline's deliverable numbers closes the criteria.
-_DELIVERABLE_REFERENCE = re.compile(r'\b[dD]\s?(\d+)\b|\bdeliverables?\s+#?(\d+)\b')
+#: The deliverable reference a ``superseded_by`` value must OPEN with: the outline's
+#: own ``D<n>`` form or the spelled ``deliverable <n>`` form. Anchoring at the head
+#: is what separates a citation from a token that merely appears in prose ("see d3
+#: notes"), and prose may still follow it ("D3 — the operator decision").
+_DELIVERABLE_REFERENCE = re.compile(r'^\s*(?:[dD]\s?(\d+)|deliverables?\s+#?(\d+))\b')
 CRITERION_UNPARSED = 'criterion_unparsed'
 #: The named state an unterminated fenced block leaves in ``unparsed``. It is a
 #: coalesced marker (not the raw line) so a gate reads a state rather than text.
@@ -1837,10 +1838,11 @@ def superseded_by_names_deliverable(cited: object, outline_numbers: Iterable[obj
 
     A ``superseded`` verdict closes a deliverable's criteria, so the value has to
     point somewhere: free text closed them, which let a typo or a stray marker
-    release ungraded work. The accepted reference forms are the ones the outline
-    and the review vocabulary already use — ``D3`` / ``d3`` and ``deliverable 3``
-    / ``deliverables 3`` — and the cited number has to be one of the outline's own
-    deliverable numbers.
+    release ungraded work. The value must OPEN with the reference — ``D3`` / ``d3``
+    or ``deliverable 3`` / ``deliverables 3`` — and the cited number has to be one
+    of the outline's own deliverable numbers. Prose may follow the reference, which
+    is where the rubric asks for the operator decision or the refutation; prose may
+    not precede it, so a stray ``d3`` inside a sentence is not a citation.
 
     The ONE rule the validator and :func:`open_criteria` share. Each applies it to
     its own population — the validator to the CURRENT outline's deliverable
@@ -1858,11 +1860,11 @@ def superseded_by_names_deliverable(cited: object, outline_numbers: Iterable[obj
             numbers.add(number)
         elif isinstance(number, str) and number.strip().isdigit():
             numbers.add(int(number.strip()))
-    for match in _DELIVERABLE_REFERENCE.finditer(text):
-        raw = match.group(1) or match.group(2)
-        if raw is not None and int(raw) in numbers:
-            return True
-    return False
+    match = _DELIVERABLE_REFERENCE.match(text)
+    if match is None:
+        return False
+    raw = match.group(1) or match.group(2)
+    return raw is not None and int(raw) in numbers
 
 
 def open_criteria(plan_id: str, verdict_file: Path | None = None) -> dict[str, Any]:
