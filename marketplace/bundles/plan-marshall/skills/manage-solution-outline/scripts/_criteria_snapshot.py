@@ -147,9 +147,7 @@ SUPERSEDED = 'superseded'
 #: the punctuation the documents invite (a backtick, bold/italic markers, a parenthesis).
 #: Anchoring at the head is what separates a citation from a token that merely appears
 #: in prose ("see d3 notes"), and prose may still follow it ("D3 — the operator decision").
-_DELIVERABLE_REFERENCE = re.compile(
-    r'^\s*[`*_(\s]*(?:[dD]\s?#?(\d+)|(?:[dD]eliverables?)\s+#?(?:[dD]\s?)?(\d+))\b'
-)
+_DELIVERABLE_REFERENCE = re.compile(r'^\s*[`*_(\s]*(?:[dD]\s?#?(\d+)|(?:[dD]eliverables?)\s+#?(?:[dD]\s?)?(\d+))\b')
 #: Why :func:`deliverable_reference_rejection` refused a ``superseded_by`` value.
 REFERENCE_UNREADABLE = 'reference_unreadable'
 REFERENCE_UNKNOWN = 'unknown_deliverable'
@@ -1962,10 +1960,7 @@ def superseded_by_names_deliverable(
     reported as an error by the other. The RULE never differs; the population it
     reads does, by design.
     """
-    return (
-        deliverable_reference_rejection(cited, outline_numbers, own_number=own_number, verdicts=verdicts)
-        is None
-    )
+    return deliverable_reference_rejection(cited, outline_numbers, own_number=own_number, verdicts=verdicts) is None
 
 
 def open_criteria(plan_id: str, verdict_file: Path | None = None) -> dict[str, Any]:

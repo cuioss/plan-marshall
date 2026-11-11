@@ -473,9 +473,7 @@ def _grade_row(
         if not cited:
             grading.errors.append(f'{where}: superseded without a superseded_by')
         else:
-            rejection = deliverable_reference_rejection(
-                cited, outline_numbers, own_number=number, verdicts=verdicts
-            )
+            rejection = deliverable_reference_rejection(cited, outline_numbers, own_number=number, verdicts=verdicts)
             if rejection is not None:
                 grading.errors.append(f'{where}: {_superseded_rejection_message(rejection, cited, number)}')
         return
