@@ -793,7 +793,7 @@ class TestWorktreeCreateDetached:
             capture_output=True,
         )
         monkeypatch.setattr(git_workflow, 'get_worktree_root', lambda: root)
-        _stub_executor_production(monkeypatch)
+        executor_calls = _stub_executor_production(monkeypatch)
         _stub_manage_status_call(monkeypatch, {})
 
         result = cmd_worktree_create(Namespace(plan_id='my-plan', branch=None, base=None, detach=True))
@@ -801,6 +801,35 @@ class TestWorktreeCreateDetached:
         assert result['status'] == 'error', result
         assert result['error'] == 'worktree_target_conflict'
         assert 'feature/my-plan-base' in result['message']
+        assert executor_calls == [], 'a conflicting target must be refused before any repair'
+
+    def test_detach_refuses_a_plain_directory_inside_the_repository(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A bare directory must not be read as a base tree.
+
+        `git -C` searches parent directories, so a plain directory under the
+        worktree root answers with the ENCLOSING checkout's toplevel. Without the
+        toplevel comparison the reuse path would report that checkout as a
+        detached base tree and hand back its HEAD.
+        """
+        repo = tmp_path / 'repo'
+        for name in _INHERITED_GIT_LOCATIONS:
+            monkeypatch.delenv(name, raising=False)
+        _init_repo(repo)
+        root = repo / '.plan' / 'local' / 'worktrees'
+        root.mkdir(parents=True)
+        (root / 'my-plan-base').mkdir()
+        monkeypatch.setattr(git_workflow, 'get_worktree_root', lambda: root)
+        executor_calls = _stub_executor_production(monkeypatch)
+        _stub_manage_status_call(monkeypatch, {})
+
+        result = cmd_worktree_create(Namespace(plan_id='my-plan', branch=None, base=None, detach=True))
+
+        assert result['status'] == 'error', result
+        assert result['error'] == 'worktree_target_conflict'
+        assert 'not a worktree root' in result['message']
+        assert executor_calls == [], 'a conflicting target must be refused before any repair'
 
     def test_detach_reuse_reports_the_actual_head_and_regenerates(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

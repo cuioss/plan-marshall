@@ -407,7 +407,11 @@ so git alone shows which deliverables are committed.
   bootstrap short-circuits instead of resolving its walk into another checkout. The build seam runs
   against the returned path like any other checkout:
   `{build.module-tests} --project-dir` with that `worktree_path`, or the gate canonical, with the
-  shell in the main checkout. Four forms are NOT allowed, and a Done-when whose failing run used one
+  shell in the main checkout. The tree at the base commit does NOT contain the test the Done-when
+  just added, so copy that committed test file from the plan's worktree into the same path in the
+  base tree before the run — it is the plan's own test, not a harness file — and record the failing
+  output that names it; the copy dies with the base tree, the committed test does not. Four forms are
+  NOT allowed, and a Done-when whose failing run used one
   is reported `not evidenced`: a `git clone`; a raw `git worktree add` into `.plan/temp`; a hand-run
   `generate_executor`; and an edit of a harness file in the base copy. The evidence must survive the
   base copy: the failing log identifier and the file that produced it go in the PR body, and a probe

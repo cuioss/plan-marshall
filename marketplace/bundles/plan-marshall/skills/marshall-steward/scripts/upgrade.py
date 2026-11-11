@@ -1220,10 +1220,14 @@ def bootstrap_executor(
             # unconfirmed version rather than as a version split.
             executor_version = ''
             stamp_fact = f'the {_UNVERSIONED_EXECUTOR_STAMP} absence' if reread_absence else reread_state
-            warning = (
+            # JOIN, never replace: a version split reported by
+            # ``resolve_bootstrap_action`` is an independent fact, and a fresh
+            # assignment here would hide it behind the stamp warning.
+            warning = _join_warnings(
+                warning,
                 f'executor regenerated from the newest cache at {newest} but its version '
                 f'stamp is {stamp_fact} — the regenerated version could not be confirmed. '
-                f'{_VERSION_SPLIT_REMEDY}'
+                f'{_VERSION_SPLIT_REMEDY}',
             )
         action = 'regenerated'
 

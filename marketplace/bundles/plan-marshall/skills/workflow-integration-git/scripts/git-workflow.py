@@ -2586,19 +2586,31 @@ def cmd_worktree_create(args):
         # its own test bootstrap relies on, and keep saying which tree this is.
         head_sha: str | None = None
         if detach:
-            ok, link_err = _ensure_worktree_plan_local_real(target)
-            if not ok:
+            # Read the tree's IDENTITY before touching it. A conflicting target —
+            # a branch worktree, or an ordinary directory that merely sits inside
+            # this repository (``git -C`` searches parent directories) — must be
+            # refused UNCHANGED, so no repair may run ahead of these checks.
+            rc, top, top_err = run_git(['-C', str(target), 'rev-parse', '--show-toplevel'])
+            if rc != 0:
                 return {
                     'status': 'error',
                     'plan_id': args.plan_id,
-                    'error': 'plan_local_failed',
-                    'message': f'Base worktree exists but {_PLAN_DIR_NAME}/local materialization failed: {link_err}',
+                    'error': 'worktree_state_unreadable',
+                    'message': f'Cannot read the worktree root of the existing tree at {target}: {top_err.strip()}',
                     'worktree_path': str(target),
                     'detached': True,
                 }
-            # A base tree is DETACHED. A branch worktree whose plan id happens to
-            # end in `-base` shares this path but is not it: claiming it would
-            # report a branch as detached and its content as base-sha evidence.
+            if Path(top.strip()).resolve() != target.resolve():
+                return {
+                    'status': 'error',
+                    'plan_id': args.plan_id,
+                    'error': 'worktree_target_conflict',
+                    'message': (
+                        f'{target} is not a worktree root (git resolves it to {top.strip()}), so it is not '
+                        f'the detached base-sha tree --detach names'
+                    ),
+                    'worktree_path': str(target),
+                }
             rc, head_ref, head_err = run_git(['-C', str(target), 'rev-parse', '--abbrev-ref', 'HEAD'])
             if rc != 0:
                 return {
@@ -2623,6 +2635,17 @@ def cmd_worktree_create(args):
                 }
             rc, sha_out, _ = run_git(['-C', str(target), 'rev-parse', 'HEAD'])
             head_sha = sha_out.strip() if rc == 0 else None
+            # Only NOW heal the boundary: the tree is the detached base tree.
+            ok, link_err = _ensure_worktree_plan_local_real(target)
+            if not ok:
+                return {
+                    'status': 'error',
+                    'plan_id': args.plan_id,
+                    'error': 'plan_local_failed',
+                    'message': f'Base worktree exists but {_PLAN_DIR_NAME}/local materialization failed: {link_err}',
+                    'worktree_path': str(target),
+                    'detached': True,
+                }
             # Provenance: regenerate through the seam with the copy fallback
             # DISABLED, so the executor's embedded paths are this tree's. An
             # inherited main executor would make a base run cite main's code.

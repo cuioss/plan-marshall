@@ -1774,8 +1774,8 @@ def resolve_generated_version(
     if version:
         return version, None
     return UNVERSIONED_SENTINEL, (
-        'no readable version: no harness roster entry published a manifest version and no target '
-        f'manifest in this checkout published one either, so the executor is stamped {UNVERSIONED_SENTINEL}'
+        'no readable version: no version was readable from any harness manifest and none was readable '
+        f"from this checkout's target manifests, so the executor is stamped {UNVERSIONED_SENTINEL}"
     )
 
 
