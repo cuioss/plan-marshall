@@ -2675,8 +2675,10 @@ def _required_reviewers_without_a_review(comments: list[dict[str, Any]], require
     commit. A refusal submitted as a review object is not one. Nothing here decides
     what to do with the review — only that a review exists to be done.
     """
-    import _github_pr
-    from github_re_review import _is_refusal_body
+    # `github_re_review` owns the import-order-safe entry into `_github_pr` (it
+    # imports `github_ops` first, which breaks that module's import cycle) and
+    # re-exports the one marker reader, so the lane never imports the cycle itself.
+    from github_re_review import _is_refusal_body, review_coverage_names_commit
 
     present: set[str] = set()
     for comment in comments:
@@ -2687,7 +2689,7 @@ def _required_reviewers_without_a_review(comments: list[dict[str, Any]], require
         body = str(comment.get('body') or '')
         if kind == 'review_body' and not _is_refusal_body(body, bot):
             present.add(bot)
-        elif kind == 'issue_comment' and _github_pr.review_coverage_names_commit(body):
+        elif kind == 'issue_comment' and review_coverage_names_commit(body):
             present.add(bot)
     return sorted(set(required_reviewers) - present)
 
