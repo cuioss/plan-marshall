@@ -112,7 +112,7 @@ def _inline(
     }
 
 
-def _review_body(body: str, author: str = 'coderabbitai') -> dict:
+def _review_body(body: str, author: str = 'coderabbitai', commit_id: str = 'a' * 40) -> dict:
     return {
         'kind': 'review_body',
         'id': 'review-1',
@@ -124,7 +124,7 @@ def _review_body(body: str, author: str = 'coderabbitai') -> dict:
         'resolved': False,
         'created_at': '2026-11-07T10:00:00Z',
         'updated_at': '2026-11-07T10:00:00Z',
-        'commit_id': 'a' * 40,
+        'commit_id': commit_id,
         'reply_to_id': '',
         'thread_reply': False,
     }
@@ -936,6 +936,32 @@ def test_a_named_required_reviewer_with_only_a_refusal_is_refused() -> None:
 
     assert verdict['merge_allowed'] is False
     assert verdict['reason'] == 'required_review_missing'
+
+
+def test_a_review_body_without_a_commit_and_without_a_marker_is_refused() -> None:
+    """§ 7 requires a formal review WITH a commit id: an empty one proves no head."""
+    verdict = _verdict(
+        _read(_review_body('No actionable comments were generated', commit_id='')), reviewers=('coderabbit',)
+    )
+
+    assert verdict['merge_allowed'] is False
+    assert verdict['reason'] == 'required_review_missing'
+
+
+def test_a_flattened_summary_marker_names_its_commit() -> None:
+    """`ci pr comments` flattens newlines; the marker opener is restored before parsing."""
+    flattened = 'Some prose first. ' + _finished_marker_body()
+    verdict = _verdict(_read(_issue_comment(flattened)), reviewers=('coderabbit',))
+
+    assert verdict['merge_allowed'] is True
+
+
+def test_a_marker_beside_a_refusal_notice_is_still_a_finished_review() -> None:
+    """The producer admits this combination; the lane's check must agree with it."""
+    body = '> ## Review limit reached\n' + _finished_marker_body()
+    verdict = _verdict(_read(_review_body(body, commit_id='')), reviewers=('coderabbit',))
+
+    assert verdict['merge_allowed'] is True
 
 
 def test_an_unnamed_reviewer_population_leaves_the_verdict_unchanged() -> None:

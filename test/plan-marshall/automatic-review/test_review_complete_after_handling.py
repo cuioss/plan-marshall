@@ -88,6 +88,21 @@ def test_a_flagged_stale_bot_with_no_findings_is_participated_but_empty():
     assert state == rc.STATE_PARTICIPATED_BUT_EMPTY
 
 
+def test_a_flagged_bot_with_a_finished_review_outranks_a_later_refusal():
+    """A done bot's later refusal is about a request it no longer owes."""
+    state = rc.classify_bot(
+        'coderabbit',
+        proven_participants={},
+        has_findings=False,
+        in_progress=set(),
+        refused={'coderabbit'},
+        stale_participants={'coderabbit'},
+        finished_review_bots={'coderabbit'},
+    )
+
+    assert state == rc.STATE_PARTICIPATED_BUT_EMPTY
+
+
 def test_a_flagged_stale_bot_without_a_finished_review_stays_stale():
     """⛔ The B1 control: a marker-bearing comment is evidence, not a finished review.
 

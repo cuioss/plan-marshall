@@ -2680,6 +2680,17 @@ def _required_reviewers_without_a_review(comments: list[dict[str, Any]], require
     # re-exports the one marker reader, so the lane never imports the cycle itself.
     from github_re_review import _is_refusal_body, review_coverage_names_commit
 
+    def _marker_names_commit(body: str) -> bool:
+        """The one marker reader, on a body this read's DISPLAY path flattened.
+
+        ``ci pr comments`` flattens comment bodies (newlines become spaces), while
+        the marker parser requires its opener at the start of a line. Restoring the
+        HTML-comment boundaries is a presentation fix only — the grammar stays the
+        parser's — and without it a summary carrying prose before its marker loses
+        its qualifying evidence on this read while the producer sees it.
+        """
+        return review_coverage_names_commit((body or '').replace('<!--', '\n<!--'))
+
     present: set[str] = set()
     for comment in comments:
         bot = _bot_of(comment)
@@ -2687,9 +2698,16 @@ def _required_reviewers_without_a_review(comments: list[dict[str, Any]], require
             continue
         kind = comment.get('kind')
         body = str(comment.get('body') or '')
-        if kind == 'review_body' and not _is_refusal_body(body, bot):
-            present.add(bot)
-        elif kind == 'issue_comment' and review_coverage_names_commit(body):
+        commit = str(comment.get('commit_id') or '').strip()
+        marker_names_commit = _marker_names_commit(body)
+        if kind == 'review_body':
+            # A formal review qualifies on a named commit, or on a finished coverage
+            # marker that names one. A refusal submitted as a review object is not a
+            # review — unless it also carries that marker, which the producer admits
+            # too (a review summary may carry a later limit notice beside its verdict).
+            if marker_names_commit or (commit and not _is_refusal_body(body, bot)):
+                present.add(bot)
+        elif kind == 'issue_comment' and marker_names_commit:
             present.add(bot)
     return sorted(set(required_reviewers) - present)
 

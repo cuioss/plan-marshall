@@ -972,6 +972,20 @@ def classify_bot(
     # PARTICIPATION THAT DOES COVER THE CANDIDATE STILL WINS. A review of the exact
     # tree being merged is the evidence the quorum exists to obtain, and a later
     # quota notice about a redundant re-trigger does not contradict it.
+    #
+    # THE DONE RULE OUTRANKS THE REFUSAL. A flagged bot whose FINISHED review the
+    # producer reports, and whose only review evidence is stale (an earlier head), is
+    # done: a later refusal is a statement about a request it no longer owes, so it
+    # must not re-block the quorum. Pending findings still block through the triage
+    # arm of ``check_completeness``, and a flagged bot with NO finished review keeps
+    # every refusal arm below.
+    if (
+        bot not in proven_participants
+        and bot in (stale_participants or set())
+        and bot_registry.review_complete_after_handling(bot)
+        and bot in (finished_review_bots or set())
+    ):
+        return STATE_PARTICIPATED if has_findings else STATE_PARTICIPATED_BUT_EMPTY
     participation_is_current = bot in proven_participants and bot not in (stale_participants or set())
     refusal_observed = bot in refused or bot in (unrecognised_refusal or set())
     if refusal_observed and not participation_is_current:
@@ -1013,8 +1027,10 @@ def classify_bot(
         # Pending findings still block through the ``triage_ran`` arm below, and a
         # refusal or decline observed on this candidate still outranks this branch —
         # the done rule removes the demand for a later review, never the handling.
-        if bot_registry.review_complete_after_handling(bot) and bot in (finished_review_bots or set()):
-            return STATE_PARTICIPATED if has_findings else STATE_PARTICIPATED_BUT_EMPTY
+        #
+        # The done check itself runs BEFORE the refusal branch above, because a
+        # finished review's bot that refuses a REDUNDANT later request must still be
+        # done; the branch is left here as the plain stale state.
         return STATE_PARTICIPATED_STALE
     if bot in in_progress:
         return STATE_IN_PROGRESS

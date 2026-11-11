@@ -817,10 +817,11 @@ RE-CONSULT the selector, now that both observations exist, and route on the `act
 python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_re_review recovery-action \
   --bot-kind {bot_kind} [--cause {cause}] --window-expired true \
   --attempts-remaining {attempts_remaining} --attempt-held true \
+  --pending-findings {pending_findings} \
   [--review-on-record {review_on_record}] [--finished-review {finished_review}] --plan-id {plan_id}
 ```
 
-`{review_on_record}` is the observation the selector's elapsed arm needs to tell "re-deliver a dropped request" from "re-trigger a bot whose review already exists". `{finished_review}` is the producer's own done-rule observation — `true` exactly when `{bot_kind}` is named in `finished_review_bots[]`, `false` when the fetch reported the list without it; pass it whenever the fetch succeeded, because the done arm requires the positive observation. This pass has NOT reached FIND yet, so there is no producer return to read: issue the producer call here, with the same flags the FIND step uses (it is idempotent — cross-iteration duplicates are pre-filtered), and derive `{review_on_record}` from its three participation lists by the same rule Branch 6's Part 2 defines:
+`{review_on_record}` is the observation the selector's elapsed arm needs to tell "re-deliver a dropped request" from "re-trigger a bot whose review already exists". `{finished_review}` is the producer's own done-rule observation — `true` exactly when `{bot_kind}` is named in `finished_review_bots[]`, `false` when the fetch reported the list without it; pass it whenever the fetch succeeded, because the done arm requires the positive observation. `--pending-findings {pending_findings}` is the count of this bot's findings still pending: the done arm needs it, and the producer call you issue below is where it comes from. The done arm then answers `accept_review_on_record` or `await_triage`, and this branch routes both like its other settle arms — post nothing and continue, releasing the held claim as Branch 2 does for a settle. This pass has NOT reached FIND yet, so there is no producer return to read: issue the producer call here, with the same flags the FIND step uses (it is idempotent — cross-iteration duplicates are pre-filtered), and derive `{review_on_record}` from its three participation lists by the same rule Branch 6's Part 2 defines:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_pr \
