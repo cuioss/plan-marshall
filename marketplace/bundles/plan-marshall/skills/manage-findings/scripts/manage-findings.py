@@ -9,6 +9,7 @@ Usage:
     python3 manage-findings.py get --plan-id <plan_id> --hash-id <hash_id> [--any-checkout]
     python3 manage-findings.py resolve --plan-id <plan_id> --hash-id <hash_id> --resolution <resolution> [options]
     python3 manage-findings.py stamp-fix-commit --plan-id <plan_id> --commit-sha <sha> (--task-number <n> | --hash-id <hash_id>)
+    python3 manage-findings.py stamp-pr --plan-id <plan_id> --hash-id <hash_id> --pr-number <n>
     python3 manage-findings.py promote --plan-id <plan_id> --hash-id <hash_id> --promoted-to <promoted_to>
     python3 manage-findings.py ingest --plan-id <plan_id>
 
@@ -75,6 +76,7 @@ from _findings_core import (
     resolve_qgate_finding,
     resolve_qgate_findings_by_evidence,
     resolve_qgate_findings_by_rule,
+    stamp_finding_pr_number,
     stamp_fix_commit,
 )
 from _findings_ingest import ingest_findings
@@ -234,6 +236,15 @@ def cmd_stamp_fix_commit(args: argparse.Namespace) -> dict:
         commit_sha=args.commit_sha,
         fix_task_number=args.task_number,
         hash_id=args.hash_id,
+    )
+
+
+def cmd_stamp_pr(args: argparse.Namespace) -> dict:
+    """Handle: stamp-pr"""
+    return stamp_finding_pr_number(
+        plan_id=args.plan_id,
+        hash_id=args.hash_id,
+        pr_number=args.pr_number,
     )
 
 
@@ -482,6 +493,26 @@ def main() -> int:
     add_task_number_arg(stamp_parser, required=False)
     add_hash_id_arg(stamp_parser, required=False)
     stamp_parser.set_defaults(func=cmd_stamp_fix_commit)
+
+    # stamp-pr — place an unplaced ``pr-comment`` finding: write the pull request it
+    # was filed for as the first ``detail`` line (the producer's own shape). This is
+    # the mutation of PROVENANCE only; a resolution changes a finding's disposition
+    # and leaves its origin untouched.
+    stamp_pr_parser = subparsers.add_parser(
+        'stamp-pr',
+        help='Stamp the pull request a stored pr-comment finding belongs to',
+        allow_abbrev=False,
+    )
+    add_plan_id_arg(stamp_pr_parser)
+    add_hash_id_arg(stamp_pr_parser)
+    stamp_pr_parser.add_argument(
+        '--pr-number',
+        required=True,
+        type=int,
+        dest='pr_number',
+        help='Pull request number to stamp as the finding detail\'s first line',
+    )
+    stamp_pr_parser.set_defaults(func=cmd_stamp_pr)
 
     # promote
     promote_parser = subparsers.add_parser('promote', help='Promote a finding', allow_abbrev=False)

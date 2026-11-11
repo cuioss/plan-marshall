@@ -1224,7 +1224,10 @@ def _scope_findings(findings: list[dict], pr_number: int | None) -> dict:
       population is the distinct numbers the rows DO carry plus ``pr_number`` itself: a
       store holding only PR 5's rows while PR 5 is asked about has one PR, so its legacy
       rows are that PR's; a store holding PR 4's rows while PR 5 is asked about spans
-      two, so its legacy rows are reported as ``unscoped`` rather than assigned.
+      two, so its legacy rows are reported as ``unscoped`` rather than assigned. On a
+      multi-PR store only a ``pending`` legacy row is reported: a resolved or rejected
+      legacy row has already been dispositioned, so it can neither hide a pending
+      finding nor decide this merge.
 
     ⚠ **The test is the STORE's evidence, not a plan-level PR registry — and no such
     registry exists** (``manage-status`` carries no PR field). A plan whose every legacy
@@ -1235,10 +1238,10 @@ def _scope_findings(findings: list[dict], pr_number: int | None) -> dict:
     PR since the field existed, so the population it affects is the pre-stamp tail of a
     plan that has since worked a second PR.
 
-    ⛔ **Unscoped is REPORTED, never joined silently.** A legacy row on a multi-PR plan
-    is a real finding nobody can place, and assigning it to the current PR is exactly
-    the silent join this function exists to stop. It travels back as its hash id so
-    the caller's envelope names it and an operator can act on it.
+    ⛔ **Unscoped is REPORTED, never joined silently.** A PENDING legacy row on a
+    multi-PR plan is a real finding nobody can place, and assigning it to the current PR
+    is exactly the silent join this function exists to stop. It travels back as its hash
+    id so the caller's envelope names it and an operator can act on it.
 
     ``pr_number is None`` means the caller asked no PR-scoped question at all: every
     row joins, and the scope is reported as ``unscoped`` so a reader can see the read
@@ -1269,10 +1272,18 @@ def _scope_findings(findings: list[dict], pr_number: int | None) -> dict:
     legacy_join = len(known_prs) <= 1
     if legacy_join:
         joined.extend(legacy)
+        unscoped: list[str] = []
+    else:
+        # Only a PENDING legacy row can still decide this merge. A resolved or
+        # rejected legacy row has already been dispositioned, so it cannot hide a
+        # pending finding — reporting it unscoped would refuse a merge the store
+        # does not hold a finding against. It is neither joined (its PR is
+        # unknown) nor reported as ambiguous.
+        unscoped = [str(row.get('hash_id') or '') for row in legacy if row.get('resolution') == 'pending']
     return {
         'joined': joined,
         'foreign_count': foreign,
-        'unscoped': [] if legacy_join else [str(row.get('hash_id') or '') for row in legacy],
+        'unscoped': unscoped,
         'known_prs': known_prs,
         'scope': 'pr',
     }

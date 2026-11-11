@@ -1245,6 +1245,98 @@ def stamp_fix_commit(
     }
 
 
+#: The finding type whose ``detail`` carries a pull-request provenance stamp.
+PR_COMMENT_FINDING_TYPE = 'pr-comment'
+#: The provenance stamp a ``pr-comment`` finding's ``detail`` carries as its FIRST
+#: line — the same shape the producer writes and ``review_completeness`` reads.
+_PR_NUMBER_DETAIL = re.compile(r'\Apr_number:[ \t]*(?P<id>[0-9]+)[ \t]*(?:\n|\Z)')
+
+
+def stamp_finding_pr_number(plan_id: str, hash_id: str, pr_number: int) -> dict[str, Any]:
+    """Stamp the pull request a stored ``pr-comment`` finding belongs to.
+
+    A plan's findings store is PLAN-scoped, so a plan that works several pull
+    requests keeps every earlier PR's rows. A consumer asking about ONE pull request
+    places a row by the ``pr_number:`` line at the HEAD of its ``detail``; a row
+    written before the producer stamped one carries no origin and is reported as
+    unscoped rather than guessed. This verb is the mutation of that provenance: a
+    resolution changes a finding's disposition and leaves its origin untouched, so no
+    disposition can clear an unplaced row.
+
+    The stamp is written as the FIRST ``detail`` line in the producer's own shape
+    (``pr_number: N``); the rest of the detail is preserved verbatim.
+
+    Refusals, each leaving the record byte-identical:
+
+    - a hash that names no finding is ``finding_not_found`` (or the sibling-store
+      identification ``_not_found`` returns);
+    - a finding that is not a ``pr-comment`` row is ``not_pr_comment``;
+    - a row already stamped with a DIFFERENT number is ``pr_number_conflict`` — the
+      verb places an unplaced row, it never rewrites one PR's finding as another's;
+    - a row already stamped with the SAME number answers ``outcome: unchanged``.
+    """
+    if isinstance(pr_number, bool) or not isinstance(pr_number, int) or pr_number <= 0:
+        return {
+            'status': 'error',
+            'error': 'invalid_pr_number',
+            'message': f'Invalid pull-request number: {pr_number!r}. Must be a positive integer',
+        }
+    store = resolve_findings_store(plan_id)
+    if store_unreached(store):
+        return unresolved_store_error(plan_id, store)
+
+    parent = get_finding(plan_id, hash_id)
+    if not parent or parent.get('status') != 'success':
+        return _not_found(plan_id, store, hash_id, 'Finding')
+    if parent.get('type') != PR_COMMENT_FINDING_TYPE:
+        return {
+            'status': 'error',
+            'error': 'not_pr_comment',
+            'hash_id': hash_id,
+            'type': parent.get('type'),
+            'message': (
+                f'Finding {hash_id} is a {parent.get("type")!r} row, not a '
+                f'{PR_COMMENT_FINDING_TYPE} row; a pull-request stamp is provenance only a '
+                f'{PR_COMMENT_FINDING_TYPE} finding carries'
+            ),
+            **store_state_fields(store),
+        }
+
+    detail = str(parent.get('detail') or '')
+    existing = _PR_NUMBER_DETAIL.match(detail)
+    if existing is not None:
+        if existing.group('id') == str(pr_number):
+            return {
+                'status': 'success',
+                'hash_id': hash_id,
+                'pr_number': pr_number,
+                'outcome': 'unchanged',
+                **store_state_fields(store),
+            }
+        return {
+            'status': 'error',
+            'error': 'pr_number_conflict',
+            'hash_id': hash_id,
+            'existing_pr_number': int(existing.group('id')),
+            'message': (
+                f'Finding {hash_id} is already stamped for pull request {existing.group("id")}; '
+                f'refusing to restamp it as {pr_number} — a provenance stamp is written once'
+            ),
+            **store_state_fields(store),
+        }
+
+    stamped_detail = f'pr_number: {pr_number}\n{detail}'
+    if not _update_in_finding_files(store, hash_id, {'detail': stamped_detail}):
+        return _not_found(plan_id, store, hash_id, 'Finding')
+    return {
+        'status': 'success',
+        'hash_id': hash_id,
+        'pr_number': pr_number,
+        'outcome': 'stamped',
+        **store_state_fields(store),
+    }
+
+
 def resolve_findings_by_type(
     plan_id: str,
     finding_types: tuple[str, ...] | list[str],

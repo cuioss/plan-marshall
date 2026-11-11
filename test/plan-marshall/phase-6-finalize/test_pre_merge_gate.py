@@ -11,6 +11,7 @@ both routes.
 """
 
 import re
+import shlex
 import subprocess
 import sys
 from argparse import Namespace
@@ -18,7 +19,7 @@ from argparse import Namespace
 import pytest
 from _dispatch_roster import parse_roster_rows
 
-from conftest import MARKETPLACE_ROOT, load_script_module
+from conftest import MARKETPLACE_ROOT, load_script_module, parse_ns
 
 gate = load_script_module('plan-marshall', 'phase-6-finalize', 'pre_merge_gate.py', 'pre_merge_gate')
 
@@ -782,8 +783,81 @@ def test_the_scope_refusal_points_the_operator_at_the_store(monkeypatch):
     payload = gate._participation_refusal(_PLAN_ID, None, verdict)
 
     assert payload['reason'] == 'participation_scope_ambiguous'
-    assert 'Write the PR stamp into those rows' in payload['message']
+    assert 'stamp-pr' in payload['message']
     assert 'must be made readable' not in payload['message']
+
+
+def _stamp_pr_argv(message: str) -> list[str]:
+    """The ``stamp-pr`` command a refusal names, ready for the real parser.
+
+    Extracts the backticked command, drops the executor prefix, and substitutes the
+    remedy's placeholders — so the test proves the SYNTAX the refusal advertises is
+    one the live parser accepts, not that it accepts a hand-built equivalent.
+    """
+    match = re.search(r'`([^`]*\bstamp-pr\b[^`]*)`', message)
+    assert match is not None, message
+    tokens = shlex.split(match.group(1))
+    argv = tokens[tokens.index('stamp-pr') :]
+    substitutions = {'{plan_id}': _PLAN_ID, '{hash_id}': 'deadbeef', '{N}': '42'}
+    return [substitutions.get(token, token) for token in argv]
+
+
+def test_the_scope_remedy_names_a_command_the_verb_parser_accepts():
+    """A remedy nobody can carry out is not a remedy: parse the command it advertises."""
+    verdict = {
+        'code': 'participation_scope_ambiguous',
+        'detail': 'one stored finding could not be placed',
+        'authorizable': False,
+        'roster_read': True,
+        'required_bots': ['coderabbit'],
+        'unproven_bots': [],
+        'bot_states': [],
+    }
+
+    payload = gate._participation_refusal(_PLAN_ID, None, verdict)
+    namespace = parse_ns(
+        'plan-marshall', 'manage-findings', 'manage-findings.py', *_stamp_pr_argv(payload['message'])
+    )
+
+    assert namespace.command == 'stamp-pr'
+    assert namespace.plan_id == _PLAN_ID
+    assert namespace.hash_id == 'deadbeef'
+    assert namespace.pr_number == 42
+
+
+def test_the_participation_verdict_discloses_earlier_pr_findings(monkeypatch):
+    """Earlier-PR findings are a disclosure on the verdict, never a silent drop."""
+    predicate = dict(
+        _PREDICATE_PAYLOAD,
+        store_scope='pr',
+        foreign_stored_findings=2,
+        unscoped_stored_findings=0,
+        unscoped_stored_finding_ids=[],
+    )
+
+    verdict, _calls = _participation_chain(
+        monkeypatch, _full_chain_responses(**{gate._COMPLETENESS_NOTATION: predicate})
+    )
+
+    assert verdict['status'] == 'success', verdict
+    assert verdict['participation_complete'] is True
+    assert verdict['foreign_stored_findings'] == 2
+
+
+def test_the_complete_participation_verdict_carries_the_foreign_disclosure(monkeypatch):
+    """The normalised verdict keeps the disclosure, so a caller reads it beside ``allowed``."""
+    participation = dict(_PARTICIPATION_COMPLETE, foreign_stored_findings=3)
+
+    normalised = gate._participation_verdict(
+        _PLAN_ID,
+        42,
+        _PROJECT_DIR,
+        head=_HEAD,
+        participation_check=lambda _plan, _pr, _dir: dict(participation),
+    )
+
+    assert normalised['allowed'] is True
+    assert normalised['foreign_stored_findings'] == 3
 
 
 def test_the_participation_verdict_normalises_the_scope_cause_to_code(monkeypatch):

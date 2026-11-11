@@ -409,6 +409,26 @@ class TestTheStoredFindingJoinIsScopedToOnePullRequest:
         assert read['unscoped_stored_finding_ids'] == [legacy]
         assert sorted(read['known_stored_prs']) == ['101', '102']
 
+    def test_a_resolved_legacy_row_on_a_two_pr_plan_is_not_reported_unscoped(self, plan_context):
+        """A SETTLED legacy row cannot hide a pending finding, so it does not block.
+
+        The store spans two PRs, but the unplaced row has already been dispositioned:
+        it can neither be joined silently nor decide this merge, so the refusal that
+        exists for an unplaceable PENDING row does not fire for it.
+        """
+        plan_id = 'trigger-b-legacy-resolved-two-prs'
+        plan_context.plan_dir_for(plan_id)
+        _seed_comment(plan_id, 'coderabbit', '101')
+        legacy = _seed_comment(plan_id, 'sourcery', None)
+        resolved = fc.resolve_finding(plan_id, legacy, 'fixed', 'addressed in the current PR')
+        assert resolved['status'] == 'success', resolved
+
+        read = rc._read_pr_comment_findings(plan_id, 102)
+
+        assert read['unscoped_stored_findings'] == 0
+        assert read['unscoped_stored_finding_ids'] == []
+        assert sorted(read['known_stored_prs']) == ['101', '102']
+
     def test_a_single_pr_plan_still_joins_its_legacy_rows(self, plan_context):
         """This holds at the base and must keep holding: one PR means no ambiguity.
 

@@ -822,6 +822,37 @@ class TestTriggerBot:
         assert not parsed.get('trigger_bots')
         assert parsed['stored_findings_stale'] is False
 
+    def test_pr_number_scopes_the_stored_finding_join_end_to_end(self, plan_context):
+        """The wiring under test is ``args.pr_number``, exercised through the real CLI.
+
+        Two PRs' findings sit in one plan-scoped store. Asking about PR 102 must join
+        only PR 102's bot; if ``cmd_trigger_bot`` drops the argument (reads the store
+        unscoped), both bots join and this assertion fails.
+        """
+        plan_id = 'rc-trigger-pr-scope'
+        plan_context.plan_dir_for(plan_id)
+        _seed(plan_id, 'sourcery', detail='pr_number: 101\nkind: inline\nauthor: sourcery\n')
+        _seed(plan_id, 'coderabbit', detail='pr_number: 102\nkind: inline\nauthor: coderabbit\n')
+
+        parsed = _trigger_bot(
+            '--plan-id',
+            plan_id,
+            '--required-bots',
+            'coderabbit',
+            '--optional-bots',
+            'sourcery',
+            '--reviewed-commit-sha',
+            'a' * 40,
+            '--head-sha',
+            'b' * 40,
+            '--pr-number',
+            '102',
+        )
+
+        assert parsed['stored_finding_bots'] == ['coderabbit']
+        assert parsed['trigger_bots'] == ['coderabbit']
+        assert parsed['store_scope'] == 'pr'
+
     def test_a_bot_in_neither_list_is_reported_and_not_triggered(self, plan_context):
         plan_id = 'rc-trigger-unclassified'
         plan_context.plan_dir_for(plan_id)
