@@ -2204,10 +2204,17 @@ def _ensure_worktree_plan_local_real(worktree: Path) -> tuple[bool, str]:
     ``.plan/local`` symlink and the ``execute-script.py`` symlink that earlier
     revisions created here are gone.
 
-    Returns ``(success, error_message)`` — ``error_message`` is non-empty only on
-    a genuine mkdir / OS failure.
+    Returns ``(success, error_message)`` — ``error_message`` is non-empty on a
+    genuine mkdir / OS failure, and on a ``.plan`` that is a symlink or whose
+    ``local`` entry resolves outside the worktree: either would let this "real
+    directory" guarantee hand back a boundary in another checkout.
     """
-    plan_local = worktree / _PLAN_DIR_NAME / 'local'
+    plan_dir = worktree / _PLAN_DIR_NAME
+    if plan_dir.is_symlink():
+        return False, (
+            f'refusing to materialize {plan_dir}: it is a symlink, so the boundary it names can live outside {worktree}'
+        )
+    plan_local = plan_dir / 'local'
     # A pre-existing symlink (a worktree created by an older symlinking revision,
     # or manual intervention) would let mkdir(exist_ok=True) succeed while leaving
     # the symlink in place — violating the fully-REAL guarantee. Unlink it first;
@@ -2221,6 +2228,8 @@ def _ensure_worktree_plan_local_real(worktree: Path) -> tuple[bool, str]:
         plan_local.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
         return False, f'failed to create real {_PLAN_DIR_NAME}/local directory: {exc}'
+    if plan_local.is_symlink() or not plan_local.resolve().is_relative_to(worktree.resolve()):
+        return False, f'{plan_local} resolves to {plan_local.resolve()}, outside {worktree}'
     return True, ''
 
 
@@ -2575,6 +2584,7 @@ def cmd_worktree_create(args):
         # A detach target that already exists is a base tree a previous run left
         # behind (the ``cleanup_owed`` state): heal the ``.plan/local`` boundary
         # its own test bootstrap relies on, and keep saying which tree this is.
+        head_sha: str | None = None
         if detach:
             ok, link_err = _ensure_worktree_plan_local_real(target)
             if not ok:
@@ -2586,15 +2596,39 @@ def cmd_worktree_create(args):
                     'worktree_path': str(target),
                     'detached': True,
                 }
-        if executor_landed(worktree_executor_path(target)):
-            executor_verdict: dict[str, Any] = {'executor_in_worktree': 'present'}
-        elif detach:
-            # A base tree must not inherit MAIN's executor: the copy fallback
-            # carries the main checkout's embedded paths, so a base test that
-            # dispatches through it would run main's scripts and report the
-            # result as base-sha evidence. Generation against the base tree, or
-            # an absent verdict, are the only honest outcomes here.
+            # A base tree is DETACHED. A branch worktree whose plan id happens to
+            # end in `-base` shares this path but is not it: claiming it would
+            # report a branch as detached and its content as base-sha evidence.
+            rc, head_ref, head_err = run_git(['-C', str(target), 'rev-parse', '--abbrev-ref', 'HEAD'])
+            if rc != 0:
+                return {
+                    'status': 'error',
+                    'plan_id': args.plan_id,
+                    'error': 'worktree_state_unreadable',
+                    'message': f'Cannot read the HEAD of the existing tree at {target}: {head_err.strip()}',
+                    'worktree_path': str(target),
+                    'detached': True,
+                }
+            head_ref = head_ref.strip()
+            if head_ref != 'HEAD':
+                return {
+                    'status': 'error',
+                    'plan_id': args.plan_id,
+                    'error': 'worktree_target_conflict',
+                    'message': (
+                        f'{target} is a worktree on branch {head_ref}, not the detached base-sha tree '
+                        f'--detach names; remove it or use another plan id'
+                    ),
+                    'worktree_path': str(target),
+                }
+            rc, sha_out, _ = run_git(['-C', str(target), 'rev-parse', 'HEAD'])
+            head_sha = sha_out.strip() if rc == 0 else None
+            # Provenance: regenerate through the seam with the copy fallback
+            # DISABLED, so the executor's embedded paths are this tree's. An
+            # inherited main executor would make a base run cite main's code.
             executor_verdict = _produce_worktree_executor(target, args.plan_id, allow_copy=False)
+        elif executor_landed(worktree_executor_path(target)):
+            executor_verdict: dict[str, Any] = {'executor_in_worktree': 'present'}
         else:
             executor_verdict = _produce_worktree_executor(target, args.plan_id)
         payload_exists: dict[str, Any] = {
@@ -2612,6 +2646,9 @@ def cmd_worktree_create(args):
         if detach:
             payload_exists['detached'] = True
             payload_exists['base_ref'] = args.base or 'HEAD'
+            # The tree's ACTUAL head, not the requested ref: the caller compares
+            # the two before citing a run as evidence for that base sha.
+            payload_exists['head_sha'] = head_sha or ''
         return payload_exists
     target.parent.mkdir(parents=True, exist_ok=True)
 

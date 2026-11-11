@@ -773,6 +773,65 @@ class TestWorktreeCreateDetached:
         assert result.returncode == 0, result.stderr
         assert '--detach' in result.stdout, 'the verb parser carries no --detach flag'
 
+    def test_detach_refuses_a_branch_worktree_at_the_same_path(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """`{plan}-base` can name ANOTHER plan's worktree; a branch is not a base tree.
+
+        Reporting it as `detached` would let a run cite a branch worktree's content
+        as base-sha evidence.
+        """
+        repo = tmp_path / 'repo'
+        for name in _INHERITED_GIT_LOCATIONS:
+            monkeypatch.delenv(name, raising=False)
+        _init_repo(repo)
+        root = tmp_path / 'worktrees-root'
+        root.mkdir()
+        subprocess.run(
+            ['git', '-C', str(repo), 'worktree', 'add', '-b', 'feature/my-plan-base', str(root / 'my-plan-base')],
+            check=True,
+            capture_output=True,
+        )
+        monkeypatch.setattr(git_workflow, 'get_worktree_root', lambda: root)
+        _stub_executor_production(monkeypatch)
+        _stub_manage_status_call(monkeypatch, {})
+
+        result = cmd_worktree_create(Namespace(plan_id='my-plan', branch=None, base=None, detach=True))
+
+        assert result['status'] == 'error', result
+        assert result['error'] == 'worktree_target_conflict'
+        assert 'feature/my-plan-base' in result['message']
+
+    def test_detach_reuse_reports_the_actual_head_and_regenerates(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A reused base tree reports its real HEAD and never inherits main's executor."""
+        repo = tmp_path / 'repo'
+        for name in _INHERITED_GIT_LOCATIONS:
+            monkeypatch.delenv(name, raising=False)
+        _init_repo(repo)
+        root = tmp_path / 'worktrees-root'
+        root.mkdir()
+        target = root / 'my-plan-base'
+        subprocess.run(
+            ['git', '-C', str(repo), 'worktree', 'add', '--detach', str(target), 'HEAD'],
+            check=True,
+            capture_output=True,
+        )
+        expected_head = _git_stdout(repo, 'rev-parse', 'HEAD')
+        monkeypatch.setattr(git_workflow, 'get_worktree_root', lambda: root)
+        executor_calls = _stub_executor_production(monkeypatch)
+        _stub_manage_status_call(monkeypatch, {})
+
+        result = cmd_worktree_create(Namespace(plan_id='my-plan', branch=None, base=None, detach=True))
+
+        assert result['status'] == 'error', result
+        assert result['error'] == 'worktree_exists'
+        assert result['detached'] is True
+        assert result['head_sha'] == expected_head, 'the reuse answer does not name the tree HEAD'
+        assert [call['worktree'] for call in executor_calls] == [target]
+        assert executor_calls[0]['allow_copy'] is False, "a reused base tree may inherit main's executor"
+
     def test_create_without_a_branch_and_without_detach_is_refused(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

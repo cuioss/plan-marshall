@@ -395,9 +395,12 @@ so git alone shows which deliverables are committed.
   `python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree-create --detach --plan-id {plan} --base {base_sha}`
   materializes `{plan}-base` under the project's worktree root at that commit, with no branch, and
   returns its absolute path as `worktree_path`. `error: worktree_exists` means the base tree already
-  exists: reuse it only when `git -C` at that path reports the same HEAD as `{base_sha}`, and remove
-  it first when it does not, because the payload that answers `worktree_exists` carries
-  `detached: true` and `base_ref` but never a branch. That tree carries its own
+  exists: reuse it only when `git -C` at that path reports the same HEAD as `{base_sha}` **and** a
+  clean `status --porcelain`, and remove it first when either differs — the answer carries
+  `detached: true`, `base_ref` and the tree's actual `head_sha`, refuses a tree that is on a branch
+  (`worktree_target_conflict`), and re-produces the executor from that tree, never from main's copy.
+  A reuse answer whose `executor_in_worktree` is `absent` is not evidence: remove the tree and report
+  the blocker. That tree carries its own
   `.plan/local` boundary and the executor the same seam produces — best effort, and the payload reports
   `executor_in_worktree`; the copy-from-main fallback is disabled for it, because a copied executor
   carries main's paths and would make a base run cite main's code — so the base tree's own test

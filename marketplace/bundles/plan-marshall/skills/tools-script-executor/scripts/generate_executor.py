@@ -1745,6 +1745,18 @@ def newest_version(versions: list[tuple[str, str]]) -> str:
 #: generator writes beside it names the reads that came back empty.
 UNVERSIONED_SENTINEL = 'unversioned'
 
+#: The payload keys carrying the provisioning stamp and, when it is an absence,
+#: its reason. Declared ONCE: :func:`version_payload` builds the map from it and
+#: ``cmd_generate`` forwards exactly these keys, so a field added here reaches the
+#: CLI response too instead of stopping at the module boundary.
+VERSION_PAYLOAD_KEYS = ('version', 'version_reason')
+
+
+def version_payload(stamp: str, reason: str | None) -> dict[str, Any]:
+    """Return the publishable version fields for ``stamp``, omitting a ``None`` reason."""
+    values = {'version': stamp, 'version_reason': reason}
+    return {key: values[key] for key in VERSION_PAYLOAD_KEYS if values[key] is not None}
+
 
 def resolve_generated_version(
     harness_versions: list[tuple[str, str]],
@@ -2119,9 +2131,7 @@ def generate_executor(
     # fresh install has no manifest yet: the answer is the answered absence
     # ``unversioned`` plus the reason, never an empty assignment and never an error.
     generated_version, version_reason = resolve_generated_version(harness_versions, tree_published_versions(base_path))
-    version_fields: dict[str, Any] = {'version': generated_version}
-    if version_reason is not None:
-        version_fields['version_reason'] = version_reason
+    version_fields = version_payload(generated_version, version_reason)
     manifest: dict = {}
     for _harness, _root in harness_roots:
         if not _root:
@@ -3151,8 +3161,9 @@ def cmd_generate(args: argparse.Namespace) -> dict:
     surface_stats = gen_result.get('surface_stats') or dict(_EMPTY_SURFACE_STATS)
     # The provisioning stamp and, when nothing was readable, WHY. Forwarded on
     # every success path — a reason only a preview carries is a reason the run
-    # that actually stamped the file never reports.
-    version_fields = {key: gen_result[key] for key in ('version', 'version_reason') if key in gen_result}
+    # that actually stamped the file never reports. The key set is the generator's
+    # own declaration, so a new version field reaches this payload too.
+    version_fields = {key: gen_result[key] for key in VERSION_PAYLOAD_KEYS if key in gen_result}
 
     if args.dry_run:
         print('\nDry run complete. No files written.')

@@ -6129,6 +6129,20 @@ def _cache_parity_signal(rows: list[dict[str, str | None]], version: str, popula
     )
 
 
+def _executor_stamp_note(executor_state: str, executor_version: str | None) -> str:
+    """The executor-side absence to append when the registry read cannot answer.
+
+    The registry branches return before the stamp branches, so without this a run
+    whose registry is unreadable never learns that its executor could not state a
+    version. ``''`` when the stamp is an ordinary version (nothing to add).
+    """
+    if executor_state == plugin_registry.EXECUTOR_VERSION_EMPTY:
+        return '; the executor also carries an empty version stamp (a generator that could not read one)'
+    if executor_version == _UNVERSIONED_STAMP:
+        return f'; the executor is also stamped {_UNVERSIONED_STAMP} (no version was readable when it was generated)'
+    return ''
+
+
 def _registry_parity_signal() -> dict[str, Any]:
     """Whether a restarted session would load the version the executor was generated at.
 
@@ -6154,13 +6168,15 @@ def _registry_parity_signal() -> dict[str, Any]:
     if registry_state == plugin_registry.REGISTRY_NO_PLAN_MARSHALL_ENTRY:
         return _parity_signal(
             READINESS_INDETERMINATE,
-            'plan-marshall is not installed through the plugin registry so there is no pin to compare',
+            'plan-marshall is not installed through the plugin registry so there is no pin to compare'
+            + _executor_stamp_note(executor_state, executor_version),
             population,
         )
     if registry_state != plugin_registry.REGISTRY_OK:
         return _parity_signal(
             READINESS_INDETERMINATE,
-            f'the plugin registry could not be read ({registry_state})',
+            f'the plugin registry could not be read ({registry_state})'
+            + _executor_stamp_note(executor_state, executor_version),
             population,
         )
     if executor_state == plugin_registry.EXECUTOR_VERSION_EMPTY:

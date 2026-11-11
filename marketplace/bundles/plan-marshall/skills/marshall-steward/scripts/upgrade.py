@@ -1208,18 +1208,21 @@ def bootstrap_executor(
                 'detail': 'regeneration attempted and failed; Stage 1 regenerate-executor remains the repair',
             }
         reread_state, reread = read_executor_version(executor_path, target=runtime_harness, fallback_on_empty=True)
-        if reread_state == EXECUTOR_VERSION_FOUND:
+        reread_absence = reread_state == EXECUTOR_VERSION_FOUND and reread == _UNVERSIONED_EXECUTOR_STAMP
+        if reread_state == EXECUTOR_VERSION_FOUND and not reread_absence:
             executor_version = reread
         else:
             # The regeneration succeeded but the stamp cannot confirm it: the
-            # reread state (unreadable / not_found / empty) is the fact, and
-            # the stale pre-regeneration version must not survive as if it
-            # were re-observed. Report unknown with a warning instead of a
-            # silent regenerated-with-empty-version.
+            # reread state (unreadable / not_found / empty / the unversioned
+            # absence) is the fact, and the stale pre-regeneration version must
+            # not survive as if it were re-observed. The absence is normalized
+            # here exactly as it is on the first read, so it is reported as an
+            # unconfirmed version rather than as a version split.
             executor_version = ''
+            stamp_fact = f'the {_UNVERSIONED_EXECUTOR_STAMP} absence' if reread_absence else reread_state
             warning = (
                 f'executor regenerated from the newest cache at {newest} but its version '
-                f'stamp is {reread_state} — the regenerated version could not be confirmed. '
+                f'stamp is {stamp_fact} — the regenerated version could not be confirmed. '
                 f'{_VERSION_SPLIT_REMEDY}'
             )
         action = 'regenerated'
