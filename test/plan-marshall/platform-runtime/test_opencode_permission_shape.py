@@ -971,7 +971,7 @@ def _run_opencode_defaults(runtime: OpenCodeRuntime, config: pathlib.Path) -> No
     runtime.permission_ensure_defaults(settings, str(config), dry_run=False)
 
 
-@pytest.mark.parametrize('writer', ['configure', 'fix-ensure', 'fix-add'])
+@pytest.mark.parametrize('writer', ['configure', 'fix-ensure', 'fix-add', 'fix-remove'])
 def test_a_writer_that_does_not_concern_bash_leaves_it_alone(
     runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, writer: str
 ):
@@ -980,6 +980,8 @@ def test_a_writer_that_does_not_concern_bash_leaves_it_alone(
 
     if writer == 'configure':
         runtime.permission_configure('project', [{'rule': 'webfetch'}])
+    elif writer == 'fix-remove':
+        runtime.permission_fix('project', 'remove', ['webfetch'], False)
     else:
         runtime.permission_fix('project', 'ensure' if writer == 'fix-ensure' else 'add', ['webfetch'], False)
 

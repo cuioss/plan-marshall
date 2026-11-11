@@ -189,12 +189,23 @@ class TestToolRestrictionExpression:
         self, mapping: dict[str, dict], rules: dict[str, list[str]]
     ):
         """``Write`` and ``Edit`` share the ``edit`` action, so a deny appears once."""
-        fm = {'description': 'agent', 'tools': 'Read'}
-        emitted_rules = _rules(transform_agent_frontmatter(fm, mapping, rules, source_label='agents/x.md'))
-        actions = [rule['action'] for rule in emitted_rules]
-
-        assert actions.count('edit') == 1
+        # Neither tool is granted, so the shared action is denied exactly once.
+        ungranted = _rules(
+            transform_agent_frontmatter(
+                {'description': 'agent', 'tools': 'Read'}, mapping, rules, source_label='agents/x.md'
+            )
+        )
+        actions = [rule['action'] for rule in ungranted]
+        assert actions.count('edit') == 1, 'Write and Edit must not emit two edit rows'
         assert len(actions) == len(set(actions))
+
+        # Granting both shared-mapping tools leaves the shared action out entirely.
+        granted = _rules(
+            transform_agent_frontmatter(
+                {'description': 'agent', 'tools': 'Write, Edit'}, mapping, rules, source_label='agents/x.md'
+            )
+        )
+        assert 'edit' not in [rule['action'] for rule in granted]
 
     def test_unmapped_tool_raises(self, mapping: dict[str, dict], rules: dict[str, list[str]]):
         fm = {'description': 'agent', 'tools': 'Read, BogusTool'}

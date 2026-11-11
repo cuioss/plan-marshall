@@ -764,8 +764,8 @@ def _conflict_detail(action: str, resource: str, effect: str, rule: dict[str, An
     later_pattern = rule.get('resource')
     later_effect = _rule_effect(rule)
     return (
-        f'{action}({resource}) cannot be ensured as {effect}: the more specific later rule '
-        f'{action}({later_pattern}) decides {later_effect}, and changing it was not requested'
+        f'{action}({resource}) cannot be ensured as {effect}: the later rule '
+        f'{action}({later_pattern}) overlaps it and decides {later_effect}, and changing it was not requested'
     )
 
 
@@ -2717,8 +2717,8 @@ class OpenCodeRuntime(Runtime):
         Resolution only: this does not create the file. The skeleton is laid
         down by the FIRST successful write (``permission_save_settings``), so a
         refusal, a conflict or a dry run that says "no rule was written" leaves
-        no file behind. ``write`` still selects the write-side project target
-        (the ``.opencode/`` copy when that directory exists).
+        no file behind. A project path prefers an existing file, then the
+        ``.opencode/`` copy when that directory exists.
         """
         if scope == 'global':
             return str(_opencode_config_dir() / 'opencode.json')
