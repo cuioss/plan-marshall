@@ -322,6 +322,37 @@ def _deny_rows(tool_permissions: dict[str, str | None], tools_raw: str) -> list[
     return [{'action': action, 'resource': '*', 'effect': 'deny'} for action in universe if action not in granted]
 
 
+def _permission_block(fm: dict[str, str], mapping: dict[str, dict], source_label: str) -> list[str]:
+    """Return the frontmatter lines that express an agent's declared ``tools``.
+
+    An empty list means there is nothing to express: no ``tools`` field, or a
+    field whose every mapped action is granted. An unmapped tool raises
+    ``UnmappedToolError`` so the CLI exits with code 2.
+    """
+    tools_raw = fm.get('tools', '')
+    if not tools_raw:
+        return []
+    tool_permissions = mapping['tool_permissions']
+    unknown = [tool for tool in _split_tools(tools_raw) if tool not in tool_permissions]
+    if unknown:
+        raise UnmappedToolError(f'{source_label}: unmapped tool(s) in frontmatter: {", ".join(unknown)}')
+    denies = _deny_rows(tool_permissions, tools_raw)
+    if not denies:
+        return []
+    lines = ['permissions:']
+    lines.extend(
+        '\n'.join(
+            [
+                f'  - action: {row["action"]}',
+                '    resource: "' + row['resource'] + '"',
+                f'    effect: {row["effect"]}',
+            ]
+        )
+        for row in denies
+    )
+    return lines
+
+
 def transform_agent_frontmatter(
     fm: dict[str, str],
     mapping: dict[str, dict],
@@ -355,23 +386,7 @@ def transform_agent_frontmatter(
         if resolved:
             lines.append(f'model: {resolved}')
 
-    tools_raw = fm.get('tools', '')
-    if tools_raw:
-        unknown: list[str] = []
-        for tool in _split_tools(tools_raw):
-            mapped = mapping['tool_permissions'].get(tool, _TOOL_KEY_MISSING)
-            if mapped is _TOOL_KEY_MISSING:
-                unknown.append(tool)
-        if unknown:
-            raise UnmappedToolError(f'{source_label}: unmapped tool(s) in frontmatter: {", ".join(unknown)}')
-
-        denies = _deny_rows(mapping['tool_permissions'], tools_raw)
-        if denies:
-            lines.append('permissions:')
-            for row in denies:
-                lines.append(f'  - action: {row["action"]}')
-                lines.append('    resource: "' + row['resource'] + '"')
-                lines.append(f'    effect: {row["effect"]}')
+    lines.extend(_permission_block(fm, mapping, source_label))
 
     lines.append('---')
     return '\n'.join(lines)

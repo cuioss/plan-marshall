@@ -276,6 +276,14 @@ _OPENCODE_GRANT_ACTIONS = ('allow', 'ask', 'deny')
 #: the vocabulary `standards/contract.md` and `SKILL.md` must list, and a doc
 #: test compares the two documents against it so a code the code emits cannot
 #: go undocumented.
+#: Why a settings ``permission`` value cannot be written: it is not an object,
+#: and replacing it would discard whatever the operator wrote.
+PERMISSION_NOT_OBJECT_MESSAGE = 'the `permission` value is not an object; refusing to reset it'
+
+#: Why a ``bash`` value cannot be written: it is neither a pattern map nor a
+#: category-wide effect string.
+BASH_NOT_PRESERVABLE_MESSAGE = 'the `bash` value is neither an object nor a string; refusing to replace it'
+
 OPENCODE_PERMISSION_ERROR_CODES = frozenset(
     {
         'invalid_scope',
@@ -1926,7 +1934,7 @@ class OpenCodeRuntime(Runtime):
             return toon_error(
                 'permission configure',
                 'invalid_settings',
-                'the `permission` value is not an object; refusing to reset it',
+                PERMISSION_NOT_OBJECT_MESSAGE,
             )
 
         added = 0
@@ -1939,7 +1947,7 @@ class OpenCodeRuntime(Runtime):
                     return toon_error(
                         'permission configure',
                         'invalid_settings',
-                        'the `bash` value is neither an object nor a string; refusing to replace it',
+                        BASH_NOT_PRESERVABLE_MESSAGE,
                     )
                 if bash_map.get(pat) != act:
                     if pat == '*':
@@ -2185,7 +2193,7 @@ class OpenCodeRuntime(Runtime):
             return toon_error(
                 'permission fix',
                 'invalid_settings',
-                'the `permission` value is not an object; refusing to reset it',
+                PERMISSION_NOT_OBJECT_MESSAGE,
             )
 
         if operation in ('ensure', 'add'):
@@ -2198,7 +2206,7 @@ class OpenCodeRuntime(Runtime):
                         return toon_error(
                             'permission fix',
                             'invalid_settings',
-                            'the `bash` value is neither an object nor a string; refusing to replace it',
+                            BASH_NOT_PRESERVABLE_MESSAGE,
                         )
                     if bash_map.get(pat) == act:
                         continue
@@ -2391,7 +2399,7 @@ class OpenCodeRuntime(Runtime):
                 return toon_error(
                     'permission fix',
                     'invalid_settings',
-                    'the `permission` value is not an object; refusing to reset it',
+                    PERMISSION_NOT_OBJECT_MESSAGE,
                 )
 
             for tool, tool_entries in rendered.items():
@@ -2569,7 +2577,7 @@ class OpenCodeRuntime(Runtime):
                 return toon_error(
                     'permission web-apply',
                     'invalid_settings',
-                    'the `permission` value is not an object; refusing to reset it',
+                    PERMISSION_NOT_OBJECT_MESSAGE,
                 )
 
             current = perm.get('webfetch')
@@ -2902,7 +2910,7 @@ class OpenCodeRuntime(Runtime):
                 'defaults_removed': [],
                 'defaults_removed_count': 0,
                 'applied': False,
-                'error': 'the `permission` value is not an object; refusing to reset it',
+                'error': PERMISSION_NOT_OBJECT_MESSAGE,
             }
 
         bash_map = _bash_rows(perm)
@@ -2914,7 +2922,7 @@ class OpenCodeRuntime(Runtime):
                 'defaults_removed': [],
                 'defaults_removed_count': 0,
                 'applied': False,
-                'error': 'the `bash` value is neither an object nor a string; refusing to replace it',
+                'error': BASH_NOT_PRESERVABLE_MESSAGE,
                 'error_code': 'invalid_settings',
             }
 

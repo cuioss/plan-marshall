@@ -588,6 +588,8 @@ def cmd_ensure(args: argparse.Namespace) -> dict:
 
     if is_opencode_target():
         from opencode_runtime import (
+            BASH_NOT_PRESERVABLE_MESSAGE,
+            PERMISSION_NOT_OBJECT_MESSAGE,
             _bash_rows,
             _permission_action,
             _permission_map_key,
@@ -646,7 +648,7 @@ def cmd_ensure(args: argparse.Namespace) -> dict:
                 'settings_file': str(settings_path),
                 'status': 'error',
                 'success': False,
-                'error': 'the `permission` value is not an object; refusing to reset it',
+                'error': PERMISSION_NOT_OBJECT_MESSAGE,
             }
         if not isinstance(perm, dict):
             perm = {}
@@ -663,7 +665,7 @@ def cmd_ensure(args: argparse.Namespace) -> dict:
                         'settings_file': str(settings_path),
                         'status': 'error',
                         'success': False,
-                        'error': 'the `bash` value is neither an object nor a string; refusing to replace it',
+                        'error': BASH_NOT_PRESERVABLE_MESSAGE,
                     }
                 if bash_map.get(pat) == act:
                     already_exists.append(pat)
@@ -1008,7 +1010,9 @@ def cmd_ensure_wildcards(args: argparse.Namespace) -> dict:
 
     if is_opencode_target():
         from opencode_runtime import (
+            BASH_NOT_PRESERVABLE_MESSAGE,
             OPENCODE_DEFAULT_PERMISSIONS,
+            PERMISSION_NOT_OBJECT_MESSAGE,
             _bash_rows,
             _effective_rule_effect,
             _permission_rules,
@@ -1052,7 +1056,7 @@ def cmd_ensure_wildcards(args: argparse.Namespace) -> dict:
 
         perm = settings.get('permission')
         if 'permission' in settings and not isinstance(perm, dict):
-            return {'status': 'error', 'error': 'the `permission` value is not an object; refusing to reset it'}
+            return {'status': 'error', 'error': PERMISSION_NOT_OBJECT_MESSAGE}
         if not isinstance(perm, dict):
             perm = {}
             settings['permission'] = perm
@@ -1061,7 +1065,7 @@ def cmd_ensure_wildcards(args: argparse.Namespace) -> dict:
             # A non-string, non-object ``bash`` cannot be preserved as a row.
             return {
                 'status': 'error',
-                'error': 'the `bash` value is neither an object nor a string; refusing to replace it',
+                'error': BASH_NOT_PRESERVABLE_MESSAGE,
             }
 
         added = []
@@ -1628,6 +1632,8 @@ def cmd_ensure_executor(args: argparse.Namespace) -> dict:
 
     if is_opencode_target():
         from opencode_runtime import (
+            BASH_NOT_PRESERVABLE_MESSAGE,
+            PERMISSION_NOT_OBJECT_MESSAGE,
             _bash_rows,
             _effective_rule_effect,
             _permission_rules,
@@ -1673,7 +1679,7 @@ def cmd_ensure_executor(args: argparse.Namespace) -> dict:
 
         perm = settings.get('permission')
         if 'permission' in settings and not isinstance(perm, dict):
-            return {'status': 'error', 'error': 'the `permission` value is not an object; refusing to reset it'}
+            return {'status': 'error', 'error': PERMISSION_NOT_OBJECT_MESSAGE}
         if not isinstance(perm, dict):
             perm = {}
             settings['permission'] = perm
@@ -1688,7 +1694,7 @@ def cmd_ensure_executor(args: argparse.Namespace) -> dict:
         if bash_map is None:
             result['action'] = 'conflict'
             result['success'] = False
-            result['error'] = 'the `bash` value is neither an object nor a string; refusing to replace it'
+            result['error'] = BASH_NOT_PRESERVABLE_MESSAGE
             result['status'] = 'error'
             return result
 
