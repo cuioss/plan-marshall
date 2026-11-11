@@ -961,15 +961,21 @@ class AntigravityRuntime(Runtime):
         seam — the payload carries invocation parameters, not a run — so
         ``usage`` reports ``unknown`` rather than a measured zero.
 
-        Verify-first clause 1: the dispatch fires only when the
-        ``invoke_subagent`` tool is available in this envelope. A caller that
-        knows the tool is absent passes ``spawning_tool_available: False``
-        inside *context*; the explicit ``False`` declines — the decline takes
-        the explicit logged inline branch (a ``no-op`` naming the inline
-        fallback) instead of a faux success the harness cannot honour. The
-        flag defaults explicitly to available: an absent flag (or an absent
-        *context*) reads as ``True``. The flag is consumed here and never
-        merged into the prompt.
+        Verify-first clause 1: the ``invoke_subagent`` tool is available in this
+        envelope. A caller that knows the tool is absent passes
+        ``spawning_tool_available: False`` inside *context*; the explicit
+        ``False`` declines — the decline takes the explicit logged inline
+        branch (a ``no-op`` naming the inline fallback) instead of a faux
+        success the harness cannot honour. The flag defaults explicitly to
+        available: an absent flag (or an absent *context*) reads as ``True``.
+        The caller can also pin the inline branch outright with
+        ``dispatch_mode: inline`` inside *context*, whether or not the tool is
+        available; any other ``dispatch_mode`` value is rejected as
+        ``invalid_argument``. Every inline-branch ``no-op`` carries
+        ``dispatch_mode: inline`` and ``dispatch_boundary_rows: 1``: the caller
+        records that one dispatch-boundary row for the inline envelope when it
+        returns. Both context keys are consumed here and never merged into the
+        prompt.
 
         Verify-first clause 2: the requested agent's frontmatter tools must
         map onto the Antigravity tool set
@@ -982,12 +988,28 @@ class AntigravityRuntime(Runtime):
         spawning_tool_available = (
             True if not isinstance(context, dict) else context.get('spawning_tool_available', True)
         )
+        dispatch_mode = None if not isinstance(context, dict) else context.get('dispatch_mode')
+        if dispatch_mode not in (None, 'inline'):
+            return toon_error(
+                'subagent dispatch',
+                'invalid_argument',
+                f"dispatch_mode must be 'inline' when set; got {dispatch_mode!r}",
+            )
+        if dispatch_mode == 'inline':
+            return toon_noop(
+                'subagent dispatch',
+                'The caller pinned dispatch_mode=inline for this envelope — run the envelope '
+                'inline and record one dispatch-boundary row for it when it returns',
+                'Run the agent logic in-turn in the main context and propagate usage as unknown',
+                extra={'dispatch_mode': 'inline', 'dispatch_boundary_rows': 1},
+            )
         if spawning_tool_available is False:
             return toon_noop(
                 'subagent dispatch',
                 "Antigravity 'invoke_subagent' tool is not available in this envelope — "
                 'take the explicit logged inline branch instead of dispatching',
                 'Inline the agent logic in-turn and propagate usage as unknown',
+                extra={'dispatch_mode': 'inline', 'dispatch_boundary_rows': 1},
             )
 
         if prompt_file is not None and not Path(prompt_file).exists():
@@ -1018,7 +1040,7 @@ class AntigravityRuntime(Runtime):
 
         if context:
             for key, value in context.items():
-                if key == 'spawning_tool_available':
+                if key in ('spawning_tool_available', 'dispatch_mode'):
                     continue
                 prompt_body = prompt_body.replace(f'{{{key}}}', str(value))
 

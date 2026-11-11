@@ -1677,6 +1677,25 @@ def test_subagent_dispatch_neutral_flag_unavailable_takes_inline_branch(runtime:
     assert 'unknown' in result['alternative']
 
 
+def test_subagent_dispatch_explicit_inline_dispatch_mode_writes_one_boundary_row(runtime: OpenCodeRuntime) -> None:
+    """An explicit ``dispatch_mode: inline`` reaches the inline branch with one boundary row.
+
+    The spawning-tool flag is unset — the tool is available — so the inline
+    branch here is the caller's explicit choice, not a fallback.
+    """
+    result = _parse(
+        runtime.subagent_dispatch(
+            'execution-context-level-3',
+            None,
+            {'plan_id': 'test-plan', 'dispatch_mode': 'inline'},
+        )
+    )
+
+    assert result['status'] == 'no-op'
+    assert result['dispatch_mode'] == 'inline'
+    assert result['dispatch_boundary_rows'] == 1
+
+
 def test_subagent_dispatch_attestation_flags_stripped_from_prompt(
     runtime: OpenCodeRuntime, tmp_path: pathlib.Path
 ) -> None:

@@ -21,9 +21,6 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
-
-# conftest.py sets up PYTHONPATH so cross-skill imports resolve without
-# manual sys.path manipulation.
 from platform_runtime import (
     _build_operation,
     _dispatch,
@@ -37,6 +34,10 @@ from platform_runtime import (
 )
 from runtime_base import toon_success
 from toon_parser import parse_toon
+
+# conftest.py sets up PYTHONPATH so cross-skill imports resolve without
+# manual sys.path manipulation.
+from conftest import PROJECT_ROOT
 
 
 @pytest.fixture()
@@ -1333,3 +1334,62 @@ class TestSeamRoutingOutcomes:
         assert parsed['status'] == 'success'
         assert 'task_tool_available' not in parsed['invocation']['prompt']
         assert parsed['invocation']['agent'] == 'execution-context'
+
+
+# =============================================================================
+# The orchestrator's per-harness dispatch branch (PLAN-LB-140 D2)
+#
+# The seam is resolved ONCE, by the main-context orchestrator, before the
+# envelope is dispatched. A dispatched leaf cannot dispatch, so the leaf
+# documents must not carry a seam resolve of their own — the branch that does
+# carries the resolved target and the spawning-tool signal, names the inline
+# branch explicitly, and ties it to exactly one dispatch-boundary row.
+# =============================================================================
+
+_SKILLS_ROOT = Path(PROJECT_ROOT) / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills'
+_EXECUTION_WORKFLOW = _SKILLS_ROOT / 'plan-marshall' / 'workflow' / 'execution.md'
+
+_BRANCH_MARKER = '**Orchestrator per-harness dispatch branch.**'
+_BRANCH_END_MARKER = 'The dispatch unit is the **execution envelope'
+
+#: Every document that used to resolve the seam from inside a leaf.
+_LEAF_DOCUMENTS = (
+    _SKILLS_ROOT / 'phase-5-execute' / 'SKILL.md',
+    _SKILLS_ROOT / 'phase-5-execute' / 'standards' / 'operations.md',
+    _SKILLS_ROOT / 'execute-task' / 'SKILL.md',
+)
+
+
+def _dispatch_branch() -> str:
+    text = _EXECUTION_WORKFLOW.read_text(encoding='utf-8')
+    start = text.index(_BRANCH_MARKER)
+    end = text.index(_BRANCH_END_MARKER, start)
+    return text[start:end]
+
+
+def test_the_dispatch_branch_calls_the_seam_with_the_resolved_target_and_the_spawning_signal() -> None:
+    """The seam call names the resolved target and tells the runtime whether the tool exists."""
+    branch = _dispatch_branch()
+
+    assert 'platform_runtime subagent dispatch' in branch, 'the branch carries no seam call'
+    assert '--agent plan-marshall:{target}' in branch, 'the seam call drops the resolved dispatch target'
+    assert 'spawning_tool_available' in branch, 'the seam call drops the spawning-tool signal'
+
+
+def test_the_inline_branch_is_explicit_and_writes_one_boundary_row() -> None:
+    """The inline branch names its dispatch mode and owes exactly one boundary row per envelope."""
+    branch = _dispatch_branch()
+
+    assert 'dispatch_mode: inline' in branch, 'the inline branch is unnamed'
+    assert branch.count('record-dispatch-boundary') == 1, 'the inline branch and its boundary row are not one call'
+
+
+@pytest.mark.parametrize('document', _LEAF_DOCUMENTS, ids=[p.parent.name + '/' + p.name for p in _LEAF_DOCUMENTS])
+def test_a_leaf_document_does_not_resolve_the_subagent_seam(document: Path) -> None:
+    """A leaf cannot dispatch, so no leaf document resolves the seam itself."""
+    text = document.read_text(encoding='utf-8')
+
+    assert 'platform_runtime subagent dispatch' not in text, (
+        'a leaf document resolves the seam — a leaf cannot dispatch'
+    )
+    assert 'Orchestrator per-harness dispatch branch' in text, 'the leaf does not name where the seam is resolved'

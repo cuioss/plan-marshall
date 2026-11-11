@@ -262,13 +262,15 @@ def toon_error(operation: str, code: str, message: str) -> str:
     return serialize_toon(data)
 
 
-def toon_noop(operation: str, reason: str, alternative: str) -> str:
+def toon_noop(operation: str, reason: str, alternative: str, extra: dict[str, Any] | None = None) -> str:
     """Build a TOON no-op response.
 
     Args:
         operation: The operation name.
         reason: Why the operation is a no-op on this target.
         alternative: What the caller can do instead.
+        extra: Optional additional fields to merge into the response, for a
+            no-op whose caller reads more than the two prose fields.
 
     Returns:
         Serialized TOON string.
@@ -279,6 +281,8 @@ def toon_noop(operation: str, reason: str, alternative: str) -> str:
         'reason': reason,
         'alternative': alternative,
     }
+    if extra:
+        data.update(extra)
     return serialize_toon(data)
 
 
@@ -1522,6 +1526,17 @@ class Runtime(ABC):
         ``spawning_tool_available: False`` inside *context* when the spawning
         tool is absent, and the implementor declines; the flag is consumed at
         this seam and never merged into the prompt.
+
+        The inline branch is also reachable on the caller's explicit request:
+        ``dispatch_mode: inline`` inside *context* selects it whether or not the
+        tool is available, which is how the orchestrator states the per-harness
+        branch it took rather than leaving it to be inferred. Such a ``no-op``
+        carries ``dispatch_mode: inline`` and ``dispatch_boundary_rows: 1`` —
+        the caller records that one dispatch-boundary row for the envelope when
+        the inline run returns, so an inline envelope is as visible in the
+        metrics ledger as a dispatched one. Any other ``dispatch_mode`` value is
+        rejected as ``invalid_argument`` rather than silently dispatched. Both
+        context keys are consumed at this seam and never merged into the prompt.
 
         Usage propagation: success payloads carry ``usage`` (``unknown`` — no
         dispatch has happened yet at this seam, so there is nothing measured
