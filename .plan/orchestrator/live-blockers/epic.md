@@ -65,7 +65,45 @@ derive, for rows still live.
   current pull request only; an edit naming no commit credits nothing; an optional bot never asks. Open: the declined inline-2 is not
   sound (no verb stamps or removes a findings row), the surface drift is partly undisclosed, and the minors are Watches.
 
-- **PLAN-LB-142** (staged, runbook lane, WS-05; staged on the operator's word of 2026-11-10) — a handled CodeRabbit review is the
+- **PLAN-LB-138** (shipped #1957, 2026-11-10, runbook lane, `deepseek-v4.1-flash/high`) — see `landings/PLAN-LB-138.md`. Merge commit
+  `27f4e4b96`, a squash commit with one parent `eacede16c` (the #1958 ledger land). One three-layer leaf read it with the lane's
+  claims passed one by one and ran four read-only orchestrator verbs against the live store; the orchestrator re-read the `next`
+  workflow's declaration gate, the lane's call sites of the lifted reader and the unreadable-spec handler. Not re-read: the fence
+  regex, the parser and lint code, the test bodies and every build log. `complete: false` on `total_tokens` alone (out of scope). A
+  harness sync is owed; no executor change from it beyond the new `corpus` verbs. **No blocker and no major.** The anchor's check is
+  answered: the declaration reader lifted out of `runbook_lane.py` is the single reader (the two names that remain delegate and have
+  no non-test caller), and a spec with no `Skills:` line is NOT refused, so PLAN-LB-135 to 142 still emit. Minors and watches: the
+  lint's only live finding is a false positive; `Persona:` takes one token and `Skills:` splits on commas, so annotate nothing and
+  write one persona per line; the lift made an unreadable spec fail closed in the lane and the report does not say so; five paths
+  outside the Expected Surface and six untouched, never disclosed.
+
+- **PLAN-LB-134** (shipped #1954, 2026-11-11, runbook lane, `deepseek-v4.1-flash/high`) — see `landings/PLAN-LB-134.md`. Merge commit
+  `b09bf3197`, a squash commit with one parent `27f4e4b96` (the PLAN-LB-138 squash). Two messages: the mid-flight read of 2026-11-10
+  was archived, which stopped the lane from amending it, so the merged state came as a second message. One three-layer leaf read it
+  with an explicit hunt on the emitter claim; the orchestrator re-read the emitter diff, the rule upsert and its shadow refusal, the
+  map-removal branch, the scalar handling in `configure` and the `web-apply` map branch. Not re-read: the writer call sites by line,
+  the deny reader, the OpenCode 2 base-policy fact, build logs and the mutation runs. **No blocker; three majors reported to the
+  operator and NOT staged** (Open Defects): the emitter now expresses no tool restriction at all, the shadow refusal aborts
+  `protect-path`, and a scalar `bash` or `permission` value is replaced by an empty map in six writers (the lane's own residue). The
+  lane's D4 evidence names tests that no longer exist at the merge, its mutation run predates the final code, and it understates its
+  surface drift (four paths against one). PLAN-LB-135 is admissible; its spec should be re-read against the shadow refusal and the
+  emitter change first.
+
+- **PLAN-LB-133** (shipped #1953, 2026-11-11, runbook lane, `deepseek-v4.1-flash/high`) — see `landings/PLAN-LB-133.md`. Merge commit
+  `4959c5530`, a squash commit with one parent `b09bf3197` (the PLAN-LB-134 squash). One three-layer leaf read it with the lane's
+  claims passed one by one; the orchestrator re-read the `superseded_by` rule and the control test the lane calls unchanged. Not
+  re-read: the lifecycle persistence, the documents and every build log. `complete: false` on `total_tokens` alone (out of scope). A
+  harness sync is owed. **No blocker; one major reported to the operator and NOT staged** (Open Defects): the new `superseded_by`
+  rule accepts a deliverable's own number and a cycle, so a one-token verdict closes criteria with no evidence. Not a regression (the
+  base closed on any free text). The lane's report undercounts its surface drift and edits one control fixture to a self-citation
+  without saying so. PLAN-LB-139 (shares `functional-review.md`) is admissible. The lane spent nine CodeRabbit triggers and seven
+  quota refusals to get one review of its merge head, which is the cost PLAN-LB-142 removes.
+
+- **PLAN-LB-142** (running, PR #1959 open, runbook lane, WS-05; staged on the operator's word of 2026-11-10, launched and running on
+  the operator's word of 2026-11-10) — a mid-flight report, not a landing: all four deliverables are implemented, self-review is clear
+  and the pull request is open on head `88b6d2695` with no CodeRabbit review (it refused on quota twice, the next trigger was due at
+  05:59Z on 2026-11-11). Its message is left live on purpose so the lane can amend it at the merge. Its branch predates the merges of
+  PLAN-LB-133, 134 and 138 and will need the base merged in. A handled CodeRabbit review is the
   review. After one qualifying review on a pull request and all handling of it, no path posts a CodeRabbit trigger, waits for another,
   or demands a review of the later head, and the plan or lane proceeds to merge; a pull request with no qualifying review keeps the
   first trigger and the quota policy. The rule is per pull request and per bot behind a new registry flag, set for CodeRabbit only, so
@@ -1344,6 +1382,20 @@ derive, for rows still live.
 
 ## Decisions
 
+- 2026-11-11 — **PLAN-LB-133, PLAN-LB-134 and PLAN-LB-138 are analysed from the inbox on the operator's word ("analyze landed, do not
+  emit yet, after analyze land, after that report"); nothing is emitted.** Each landing was read by its own three-layer leaf with the
+  lane's claims passed one by one; every squash parent was read with git (`eacede16c`, `27f4e4b96`, `b09bf3197`) and named in the leaf
+  prompts; the orchestrator re-read the points recorded as re-read in each report and says which it did not. The `review-gate`
+  re-runs agree with the landings' counted thread and finding numbers (three, eight and six body findings; the handled count is not
+  re-verified). All three messages are `complete: false` on `total_tokens` alone, out of scope. No blocker. **Four majors, reported to
+  the operator and NOT staged** (Open Defects): the OpenCode emitter expresses no tool restriction, the shadow refusal aborts
+  `protect-path`, a scalar `bash` is replaced by an empty map in six writers, and `superseded_by` accepts a deliverable's own number.
+  PLAN-LB-138 has no major: the lifted declaration reader is the single reader, and a spec with no `Skills:` line is not refused, so
+  nothing the queue holds is blocked from emission. The mid-flight message of PLAN-LB-142 (PR open, CodeRabbit refused on quota) is
+  read as a mid-flight report: the row stays `running` with its pull request and plan id stamped, and its message is left LIVE, not
+  archived, because archiving the earlier PLAN-LB-134 message is what stopped that lane from amending it. The ledger is landed
+  after the analysis. Slots: PLAN-LB-142 holds one; three are free, and the held plans are PLAN-LB-135, 136, 137, 139 and 140.
+
 - 2026-11-10 — **PLAN-LB-132 is analysed from the inbox, PLAN-LB-142 is staged on the operator's word, and PLAN-LB-134 is read as a mid-flight
   report.** PLAN-LB-132 (#1952, merge commit `3ed0888ea`, one parent `64907fa3b`) was read by one three-layer leaf with the lane's seven
   claims passed one by one; the orchestrator re-read the coverage-marker arm of `_reviewed_at_merge_candidate`, the scope-ambiguous
@@ -2276,6 +2328,41 @@ derive, for rows still live.
 
 ## Open Defects
 
+- **MAJOR — the OpenCode emitter expresses no tool restriction for any agent, and the effect rests on one unread fact (PLAN-LB-134
+  landing, 2026-11-11; NOT STAGED, reported to the operator, a fix plan only on the operator's word).** `transform_agent_frontmatter`
+  now only validates an agent's `tools:` and emits no permission rule (the diff was re-read); before the change it emitted `allow`
+  rows only, so the restriction of an agent such as `execution-context-reader` (WebSearch, WebFetch, Read, Grep, the containment
+  boundary for untrusted web content) was never expressed in the OpenCode artifact either. What the change does depends on the base
+  policy of an OpenCode 2 agent, which neither the lane nor the leaf read from the binary: if every agent starts `{*,*,allow}` (the
+  lane's own recorded evidence) the reader can edit, write and run shell on the OpenCode target before and after; if no match means
+  `ask` (the repository's documented model) every previously granted read, grep, web and edit becomes `ask` and headless dispatched
+  subagents stall. No test asserts that a restricted agent stays restricted. The cheap check is `opencode api GET /api/agent` for the
+  reader agent. A deny for an ungranted action cannot override a global deny, so the override hazard that justified dropping the
+  allows does not apply to denies. Retire when the base policy is read and the emitter either expresses the restriction or the
+  documents state what is true.
+- **MAJOR — `permission fix protect-path` and `ensure` refuse a request a later broader row of the same effect already satisfies
+  (PLAN-LB-134 landing, 2026-11-11; NOT STAGED).** The new shadow refusal (`opencode_runtime.py:721-733`, re-read) returns
+  `permission_conflict` and saves nothing when the requested effect already holds through a later broader row, because the exact
+  resource is absent so `_rule_exists` does not short-circuit (`:623-639`, re-read). On a list that holds a `cat *` deny after the
+  shell catch-all, the first `protect-path` vector aborts the whole batch and the remaining vectors are not installed; `ensure ask(git
+  push *)` beside a later `git *` ask errors instead of reporting zero added. The lane defended the branch as spec-required; the leaf
+  reads the spec's `ask` counter-example as already `ask` at the base (not re-read). Loud, fails closed, but a hardening command that
+  aborts on a plausible configuration. Retire when an already-satisfied request is idempotent.
+- **MAJOR — a scalar `permission.bash` (or scalar `permission`) value is replaced by an empty map in six writers (PLAN-LB-134
+  landing, 2026-11-11; pre-existing at the base, the lane's own residue; NOT STAGED).** At the re-read site (`configure`,
+  `opencode_runtime.py:1742-1749`) only a scalar `"allow"` survives; any other scalar becomes `{}` before the grant is typed, so a
+  conservative `"deny"` or `"ask"` is lost, and the leaf says OpenCode 1's default is allow (not re-read). The leaf names the other
+  five: `permission fix` ensure and add, ensure-defaults, `cmd_ensure_wildcards`, `cmd_ensure_executor` and `cmd_ensure`. The same
+  class, minor each and OpenCode 1 map shape only: the runtime map removal ignores the effect (`:2064-2086`, re-read) and `web-apply`
+  replaces a `webfetch` pattern map (`:2372-2375`, re-read). One small plan could close the class.
+- **MAJOR — a deliverable can supersede itself, or two can supersede each other, and its criteria close with no evidence
+  (PLAN-LB-133 landing, 2026-11-11; NOT STAGED, reported to the operator, a fix plan only on the operator's word).**
+  `superseded_by_names_deliverable` (`_criteria_snapshot.py:1836-1867`, re-read) checks that the cited number is one of the
+  outline's own, never that it differs from the deliverable's own, and the validator (`_review_support_validate.py:444-450`, leaf)
+  and `open_criteria` share it. Not a regression (the base closed on any free text) and the lane recorded it as spec-literal, but the
+  rule now forces a reviewer who retires a deliverable by operator decision, with no successor, to name some deliverable, so naming
+  itself is the easy workaround, and one shipped fixture already does (`test_lb74_criterion_matching_d2.py`, re-read). A successor that
+  is itself unmet is accepted too. Retire when the rule rejects the deliverable's own number and a cycle.
 - **MEDIUM — the PLAN-LB-127 landing message is incomplete (2026-11-08).** `inbox landing-check` reports `complete: false` for
   `rb-lb-127-coderabbit-registry-summary-concerns-and-file-limit-001.md`, missing `total_tokens` (out of scope) and
   `unresolved_review_threads`, `review_body_findings_total`, `review_body_findings_handled`, `sonar_open_new_issues`. The lane text that
@@ -3076,6 +3163,25 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
 
 ## Watches
 
+- **The minors of the PLAN-LB-133, PLAN-LB-134 and PLAN-LB-138 landings (2026-11-11; recorded, not staged).** None fails open on an
+  observed shape beyond the Open Defects above. PLAN-LB-133: a capital-D `Deliverable 2`, a backticked `D2` or a bold `**D2**` is
+  rejected as naming no deliverable, and `author-verdict` without `validate` leaves the criteria open as ungraded with no cause named
+  (leaf, run on a copy of the regex); the validator and `open_criteria` disagree by design for a deliverable added or removed after the
+  freeze; the `planning.md` re-freeze branch does not say to apply the success handling to the re-dispatch; a `criteria_gate` note
+  survives a rolled-back plan; the D4 doc test has two assertions that were already true; the lane edited one control fixture to a
+  self-citation and undercounts its surface drift. PLAN-LB-134: `_patterns_overlap` treats one glob as a literal of the other, so
+  `[*, git * ask, *--force* deny]` then `ensure allow(git push *)` ends with `git push --force x` allowed while the write reports
+  `added: 1` (the leaf traced it and graded it major; it was not executed or re-read, so it is a Watch with the cheap check of running
+  that input); a non-object root loads as `{}` and a writer saves a skeleton over it while `contract.md` says fail-closed; three
+  documented error codes disagree with the returned ones; the adoc matrix still cites the per-agent `"*": "ask"` override the PR calls
+  the hazard and the root `opencode.json` still carries those rows; the lane's D4 evidence names tests that no longer exist; no
+  unparsable-file test for `cmd_add`, `cmd_remove` or `cmd_apply_fixes`. PLAN-LB-138: the Done-when lint's only live finding
+  (PLAN-LB-119) is a false positive and its word list misses "continues to hold", "remains" and "already"; `_is_bare_file_name`
+  treats `threading.Lock` as a bare `.lock` filename; `orchestrate.md:193, :209` and the Output section still say "both admission
+  tests" beside the declaration gate; `Persona:` is one token and `Skills:` splits on commas, so a comma-separated persona list or an
+  annotated value is refused as a missing skill (write one persona per line, no annotation); `_BARE_FILE_SUFFIXES` is a closed
+  vocabulary; `parse_landing_facts` is first-match and unreadable on CRLF; `cleanup.md` Step 5 would flag every spec with no
+  declaration; `spec-skills` costs a subprocess per path.
 - **The minors of the PLAN-LB-132 landing (2026-11-10; recorded, not staged).** None fails open on an observed shape. They ride the
   next plan on these surfaces, which is PLAN-LB-142 (it changes the same participation verdict). Layer 3: a pre-stamp legacy row on
   a plan that worked a second pull request makes `participation_scope_ambiguous` refuse the merge for good, resolved rows included,
