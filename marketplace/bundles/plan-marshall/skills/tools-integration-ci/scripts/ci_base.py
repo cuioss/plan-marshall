@@ -183,6 +183,19 @@ VALID_BODY_KINDS = frozenset(
     }
 )
 
+# The ONE command that allocates a scratch path for each body kind. A consumer
+# that finds no prepared body names the command for ITS kind: "call the matching
+# prepare-body subcommand" is unfollowable for a thread reply, which no
+# prepare-body slot serves — `pr prepare-comment` carries the `--for` flag.
+BODY_PREPARE_COMMANDS = {
+    BODY_KIND_PR_CREATE: 'ci pr prepare-body --for create',
+    BODY_KIND_PR_EDIT: 'ci pr prepare-body --for edit',
+    BODY_KIND_PR_REPLY: 'ci pr prepare-comment --for reply',
+    BODY_KIND_PR_THREAD_REPLY: 'ci pr prepare-comment --for thread-reply',
+    BODY_KIND_ISSUE_CREATE: 'ci issue prepare-body',
+    BODY_KIND_ISSUE_COMMENT: 'ci issue prepare-comment',
+}
+
 _BODY_SLOT_RE = re.compile(r'^[a-z0-9][a-z0-9-]{0,63}$')
 
 
@@ -322,8 +335,8 @@ def read_and_consume_body(
             'path': str(path),
             'message': (
                 f'No prepared body for kind={kind} plan_id={plan_id}. '
-                f'Call the matching prepare-body subcommand first and write the '
-                f'body content to the returned path.'
+                f'Allocate one with `{BODY_PREPARE_COMMANDS.get(kind, "the matching prepare verb")}` '
+                f'and write the body content to the path it returns.'
             ),
         }
 

@@ -657,3 +657,34 @@ def test_poll_until_eventual_success():
 # =============================================================================
 # --head flag registration tests
 # =============================================================================
+
+
+# =============================================================================
+# body_not_prepared names the prepare command for its KIND
+# =============================================================================
+
+
+@pytest.mark.parametrize(
+    ('kind', 'prepare_command'),
+    [
+        (BODY_KIND_PR_CREATE, 'ci pr prepare-body --for create'),
+        (BODY_KIND_PR_EDIT, 'ci pr prepare-body --for edit'),
+        (BODY_KIND_PR_REPLY, 'ci pr prepare-comment --for reply'),
+        (BODY_KIND_PR_THREAD_REPLY, 'ci pr prepare-comment --for thread-reply'),
+        (BODY_KIND_ISSUE_CREATE, 'ci issue prepare-body'),
+        (BODY_KIND_ISSUE_COMMENT, 'ci issue prepare-comment'),
+    ],
+)
+def test_body_not_prepared_names_the_prepare_command_for_its_kind(plan_base_env, kind, prepare_command):
+    """Each kind's refusal names the ONE command that allocates its body.
+
+    The retired message said "call the matching prepare-body subcommand", which is
+    unfollowable for a thread reply: no ``prepare-body`` slot serves it, and the
+    reader is left to discover that ``prepare-comment`` carries a ``--for`` flag.
+    """
+    content, error = read_and_consume_body('my-plan', kind, slot='absent')
+
+    assert content is None
+    assert error is not None
+    assert error['error'] == 'body_not_prepared'
+    assert prepare_command in error['message'], error['message']

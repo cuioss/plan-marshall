@@ -3104,3 +3104,25 @@ def test_the_landing_requires_the_base_copy_removal_or_the_owed_fact() -> None:
     assert 'never asks how to delete what it created before that read' in landing, (
         'the landing permits an operator question before the tree was read'
     )
+
+
+# =============================================================================
+# PLAN-LB-137 D3 — the thread-reply prepare flag is named; no body is hand-written
+# =============================================================================
+
+
+def test_the_lane_names_the_thread_reply_prepare_flag_and_forbids_a_hand_written_body() -> None:
+    """§6 names `--for thread-reply`, and §1 ties a body slot to a prepare verb.
+
+    The lane named `ci pr thread-reply` without the flag that allocates its body,
+    so a run wrote the body by hand into the ci-bodies path and the consumer
+    refused it as unprepared. The default `--for` is `reply`, which is right for
+    the reviewer trigger and wrong for a thread reply.
+    """
+    pr = _section('## 6. Pull request and reviews')
+    assert 'ci pr prepare-comment --for thread-reply' in pr, 'a thread reply names no prepare flag'
+    assert 'ci pr prepare-comment --for reply' in pr, 'the reviewer trigger names no prepare flag'
+
+    rules = _section('## 1. Rules (every one binds; breaking one fails the run)')
+    assert '`prepare-*`' in rules, 'the body-slot permission is not tied to a prepare verb'
+    assert 'never a path written by hand' in rules, 'a hand-written body slot is still permitted'

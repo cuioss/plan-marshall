@@ -421,9 +421,10 @@ so git alone shows which deliverables are committed.
   - Temp files go only under `.plan/temp/`.
   - Repository files (source, tests, docs) are created and edited **only inside the worktree**,
     never in the main checkout — not even a draft.
-- **`.plan/` state.** Write nothing under `.plan/` except `.plan/temp/`, the `ci` body slots under
-  `.plan/local/plans/NO_PLAN/work/ci-bodies/` that step 6 prescribes, and your one inbox message
-  (step 8). Never edit the spec or any file under `.plan/orchestrator/`.
+- **`.plan/` state.** Write nothing under `.plan/` except `.plan/temp/`, a `ci` body slot at a path a
+  `prepare-*` verb returned under `.plan/local/plans/NO_PLAN/work/ci-bodies/` (never a path written by
+  hand — the slot must come back from `ci pr prepare-body` or `ci pr prepare-comment`), and your one
+  inbox message (step 8). Never edit the spec or any file under `.plan/orchestrator/`.
 - **Stay inside the repository.** Never read, list or print anything outside the repository root:
   no credential files, config directories or environment dumps. Those hold secrets, and anything
   you read is sent to the model provider.
@@ -745,8 +746,8 @@ whether to continue at the limit. Record every finding and its disposition.
      carries, per Done-when, the `order` and verdict §1 defines, the test name, and the failing
      run's commit and output identifier only where the order is not `none`. No footer.
    - Then: `python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr create --plan-id NO_PLAN --head {branch} --base {base_branch} --title "{conventional title}"`
-2. **Trigger each reviewer** with a PR comment (`ci pr prepare-comment` + `ci pr reply`), posting
-   its resolved `trigger_comment`.
+2. **Trigger each reviewer** with a PR comment (`ci pr prepare-comment --for reply` + `ci pr reply`),
+   posting its resolved `trigger_comment`.
 3. **Wait for CI:** `python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci checks wait --pr-number {N} --timeout 540`.
 4. **Read the pull request's open Sonar findings** — after CI is green on the head and before the
    pull request is reported ready. Skip nothing when `sonar` is `configured`:
@@ -801,8 +802,8 @@ whether to continue at the limit. Record every finding and its disposition.
    or load-bearing, real or false-positive drift, and severity — before deciding whether it applies.
    Handle every comment:
    - fix it, commit and push; or
-   - answer it with `ci pr thread-reply` (the reason it does not apply), then close it with
-     `ci pr resolve-thread`.
+   - answer it with `ci pr prepare-comment --for thread-reply`, write the reason into the returned
+     path, and post it with `ci pr thread-reply`; then close it with `ci pr resolve-thread`.
 
    **A thread is resolved only after a reply that names a commit or a stated reason** — never to
    silence it: `ci pr thread-reply` first, `ci pr resolve-thread` second, in that order. Every
