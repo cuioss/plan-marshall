@@ -42,6 +42,13 @@ is handled, no later head needs another review from it. The declaration is a pro
 `quota_limited` — a quota-limited bot still reviews the current head when its allowance permits,
 whereas a flagged bot's recorded review completes it.
 
+"Qualifying" is the producer's own `finished_review_bots[]`: a bot with an admitted formal review
+record, or with a summary whose coverage marker is readable, `kind: reviewed` and names a covered
+commit. The head it names is not compared — a finished review of another commit is exactly what the
+rule consumes. A marker-bearing comment that is not a finished review (an unreadable payload, a
+non-`reviewed` kind, a marker naming no commit) is admissible evidence but NOT a review, so it never
+counts; and a stale report or a stored finding alone proves only that the bot published something.
+
 What the flag changes, in one place each:
 
 - the classifier reads a flagged bot the producer reports stale — which is a qualifying review of an

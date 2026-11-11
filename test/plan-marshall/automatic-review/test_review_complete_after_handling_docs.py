@@ -57,7 +57,7 @@ _SURFACE = {
     'phase-6-finalize/standards/branch-cleanup.md': (
         _doc('phase-6-finalize', 'standards', 'branch-cleanup.md'),
         '#### Predicate 2 — required-bot participation against this HEAD',
-        'that appears in this set is DONE',
+        'appears in BOTH sets is DONE',
     ),
     'runbook-lane/SKILL.md': (
         _doc('runbook-lane', 'SKILL.md'),
@@ -135,11 +135,9 @@ def test_each_surface_document_states_the_done_rule_in_its_section(label):
 
 #: Real sentences the plan retired, quoted exactly as the old documents carried them.
 #: None may reappear anywhere in the tree. Unlike an invented literal, a hit on one of
-#: these IS the old behaviour coming back — the sweep would have caught the stale-set
-#: descriptions this plan itself had to fix.
+#: these IS the old behaviour coming back.
 _RETIRED = (
-    'The elapsed arm re-triggers `trigger_comment` for a bot that already has a review on record;',
-    "Branch 3 sends that case down Branch 4's trigger path instead.",
+    'Without such a reply the bot stays stale and is re-triggered. See',
     'its review is on record for the merge candidate and pending_findings',
 )
 _OLD = _RETIRED[0]

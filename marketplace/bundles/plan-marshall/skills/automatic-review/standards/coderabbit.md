@@ -569,7 +569,10 @@ above.
 `review_complete_after_handling: true`, the first qualifying review of a pull request settles the
 bot's obligation for that pull request: once every finding of it is fixed in a pushed commit or
 answered with a stated reason, and each of its threads is resolved, no later head is re-triggered,
-awaited or demanded. The review need not cover the current head — that is the point. `re-review`
+awaited or demanded. "Qualifying" is a finished review the producer reports in
+`finished_review_bots[]` — a formal review record, or a summary marker that is readable,
+`kind: reviewed` and names a covered commit; the head it names is not compared. The review need not
+cover the current head — that is the point. `re-review`
 refuses a flagged bot whose qualifying review is on record rather than posting a second request, and
 the merge gates accept that review for the later head. The done rule stops requests, never handling:
 a comment that arrives after done, a thread left open, or a finding an edit reset to pending still

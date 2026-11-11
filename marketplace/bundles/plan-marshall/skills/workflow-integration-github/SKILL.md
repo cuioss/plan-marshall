@@ -341,12 +341,16 @@ The refusal is a **returned envelope, never an exception** — a caller branches
 #### The one handled review
 
 A bot whose registry record declares `review_complete_after_handling: true` owes a pull request ONE
-review. Once a qualifying review — a formal review record naming a commit, one of the bot's inline
-comments, or the bot's summary comment carrying a readable `kind: reviewed` coverage marker that
-names a commit — is on record, every finding of it is handled and its threads are resolved, the
-review is DONE at any later head: no trigger is posted, no review is awaited, and no gate asks that
-the recorded review cover the current head. The recorded review may predate the head by any number of
-fix commits, a merge of the base branch or a branch-cleanup rebase, and that is the point.
+review. Once a qualifying review — a formal review record, or the bot's summary comment carrying a
+readable `kind: reviewed` coverage marker that names a commit; the producer reports these bots in
+`finished_review_bots[]` — is on record, every finding of it is handled and its threads are resolved,
+the review is DONE at any later head: no trigger is posted, no review is awaited, and no gate asks
+that the recorded review cover the current head. The recorded review may predate the head by any
+number of fix commits, a merge of the base branch or a branch-cleanup rebase, and that is the point.
+
+A marker-bearing comment that is not a finished review — an unreadable payload, a non-`reviewed` kind,
+a marker naming no commit — is evidence the bot published, never a review, so it neither completes the
+bot nor suppresses the first trigger.
 
 The rule is enforced where the post happens rather than left to prose: `request_fresh_review` reads
 the pull request's comments for a qualifying review by a flagged bot and returns `status: refused` /
