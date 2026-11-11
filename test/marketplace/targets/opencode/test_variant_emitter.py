@@ -22,6 +22,7 @@ import json
 from pathlib import Path
 
 import pytest
+import yaml
 
 from conftest import PROJECT_ROOT
 from marketplace.targets.claude.variant_emitter import EXTENSION_POINT, LEVEL_TABLE
@@ -128,6 +129,32 @@ def test_variant_body_matches_canonical_body(role_bundle: Path, tmp_path: Path) 
     _, canon_body = parse_frontmatter((agent_dir / 'execution-context.md').read_text(encoding='utf-8'))
     _, var_body = parse_frontmatter((agent_dir / 'execution-context-level-4.md').read_text(encoding='utf-8'))
     assert canon_body == var_body
+
+
+def test_variant_carries_the_canonical_tool_restriction(role_bundle: Path, tmp_path: Path) -> None:
+    """Every level variant expresses the same tool restriction as its canonical.
+
+    The restriction travels through ``transform_agent_frontmatter``, so a level
+    pin changes the model and never the tools: an action the source does not
+    grant is denied in the canonical and in all seven variants alike.
+    """
+    out = tmp_path / 'out'
+    emit_bundles(role_bundle, out, CONFIG_DIR)
+    agent_dir = out / 'agent'
+
+    emitted = {}
+    for name, path in [('canonical', agent_dir / 'execution-context.md')] + [
+        (level, agent_dir / f'execution-context-{level}.md') for level in ALL_LEVELS
+    ]:
+        block = path.read_text(encoding='utf-8').split('---')[1]
+        emitted[name] = yaml.safe_load(block)['permissions']
+
+    assert emitted['canonical'], 'the canonical must express the restriction'
+    for name in ALL_LEVELS:
+        assert emitted[name] == emitted['canonical'], f'{name}: variant restriction drifted from the canonical'
+        denied = {rule['action'] for rule in emitted[name]}
+        assert 'shell' not in denied, 'the source grants Bash, so shell is not denied'
+        assert 'webfetch' in denied, 'the source grants no WebFetch, so webfetch is denied'
 
 
 def test_opencode_json_indexes_variants(role_bundle: Path, tmp_path: Path) -> None:
@@ -272,9 +299,10 @@ def test_render_variant_frontmatter_unpinned_shape() -> None:
     assert 'model:' not in block
     assert 'reasoningEffort' not in block
     assert 'implements' not in block
-    assert 'permissions:' not in block, (
-        'an agent carries no permission rule: agent rules are appended after the global ones'
-    )
+    assert 'permissions:' in block, 'an agent declaring tools expresses its restriction as deny rows'
+    assert 'effect: deny' in block
+    assert 'effect: allow' not in block
+    assert 'effect: ask' not in block
 
 
 def test_selected_levels_defaults_to_all() -> None:
