@@ -744,11 +744,13 @@ def parse_row_scope(entry: dict[str, Any]) -> RowScope | None:
       tool's own goals, tasks or script names, never module names: its remaining
       positionals are dropped and contribute no scope, exactly as
       ``_build_examined.examined_analyses`` reads only the first token. The one
-      exception is a Gradle submodule row, whose ``:module:``-prefixed task list
-      DOES name one subproject: its project paths are not recoverable here, so
-      such a row is unreadable rather than widened to whole-tree. npm is exempt
-      from that exception: a script name may begin with a colon without naming any
-      project path, so it is dropped and the row's ``--workspace`` scope stands;
+      exception is the Gradle submodule row, whose ``:module:``-prefixed task list
+      DOES name one subproject: a multi-task list keeps its positionals and reads
+      as the narrow scoped row it was, while a lone ``:``-prefixed task reads as a
+      readable canonical-unknown inability (there is no second positional to
+      narrow with). npm is exempt from that exception: a script name may begin
+      with a colon without naming any project path, so it is dropped and the
+      row's ``--workspace`` scope stands;
     * any other notation — absent or unknown — is read only when it carries ONE
       positional token; two or more return ``None``, because the reader cannot
       tell a module from a goal and either guess would manufacture a coverage
@@ -837,18 +839,28 @@ def parse_row_scope(entry: dict[str, Any]) -> RowScope | None:
         # The remaining positionals are the tool's own goals, tasks or script
         # names. They narrow nothing, so they are dropped rather than read as a
         # module scope: ``run test`` is a whole-tree run, and only the tool's own
-        # scope flag can narrow it. The one exception is a ``:module:``-prefixed
-        # token — the Gradle submodule shape, whose discoverer embeds the module
-        # in EVERY task (``:core:test``, ``:core:test :core:jacocoTestReport``).
-        # Those tokens DO name a blast radius, and dropping them would assert
-        # whole-tree over a run that built one subproject. No other
-        # goal-positional tool emits that shape — an npm script name may also
-        # begin with a colon, but it selects no project path — and if one did the
-        # same reading is the safe one: the project paths are not recoverable
-        # here, so such a row is unreadable rather than widened.
-        if notation != 'plan-marshall:build-npm:npm' and any(token.startswith(':') for token in payload):
-            return None
-        payload = payload[:1]
+        # scope flag can narrow it. The one exception is the Gradle submodule
+        # shape, whose discoverer embeds the module in EVERY task
+        # (``:core:test``, ``:core:test :core:jacocoTestReport``). Those tokens
+        # DO name a blast radius, and dropping them would assert whole-tree over a
+        # run that built one subproject:
+        #
+        #   * a MULTI-task ``:``-prefixed payload keeps its positionals, so the
+        #     row reads as the narrow scoped row the subproject run was — ``core``
+        #     is the canonical token here and the remaining tasks are its scope;
+        #   * a LONE ``:``-prefixed task has no second positional to narrow with,
+        #     so it reads as a readable canonical-unknown inability (the token is
+        #     a task, not an analysis). Returning ``None`` for it made the whole-
+        #     tree joint selection refuse a ledger it could actually read.
+        #
+        # No other goal-positional tool emits that shape — an npm script name may
+        # also begin with a colon, but it selects no project path, so npm keeps
+        # the drop and its ``--workspace`` scope stands.
+        prefixed = any(token.startswith(':') for token in payload)
+        if notation != 'plan-marshall:build-npm:npm' and prefixed and len(payload) > 1:
+            pass
+        else:
+            payload = payload[:1]
     elif notation != _PYPROJECT_NOTATION and len(payload) > 1:
         return None
     if saw_neutral and not scope and len(payload) == 1:
