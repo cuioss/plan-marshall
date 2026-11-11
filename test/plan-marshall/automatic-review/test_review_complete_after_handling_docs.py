@@ -64,6 +64,11 @@ _SURFACE = {
         '## 7. Merge gate',
         'Satisfied by done',
     ),
+    'runbook-lane/SKILL.md#section-6-step-6': (
+        _doc('runbook-lane', 'SKILL.md'),
+        '6. **After every push, re-trigger**',
+        _FLAG,
+    ),
     'manage-config/standards/data-model.md': (
         _doc('manage-config', 'standards', 'data-model.md'),
         '`re_review_on_loopback`',
@@ -128,32 +133,33 @@ def test_each_surface_document_states_the_done_rule_in_its_section(label):
     )
 
 
-#: One representative per document family, with the sentence the planted copy removes.
-_FAMILY_CONTROLS = {
-    'bot-rule': ('automatic-review/standards/coderabbit.md', 'One handled review is the review.'),
-    'bot-contract': (
-        'automatic-review/standards/bot-participation-contract.md',
-        'What the flag changes, in one place each:',
-    ),
-    'integration-skill': ('workflow-integration-github/SKILL.md', '`reason: review_on_record_done`'),
-    'lane': ('runbook-lane/SKILL.md', 'Satisfied by done for a reviewer the'),
-    'user-doc': (
-        'doc/user/parallelism-and-locking.adoc',
-        f'unless it declares `{_FLAG}`, in which case its review on record is the review and no later HEAD is re-triggered',
-    ),
-}
+#: Real sentences the plan retired, quoted exactly as the old documents carried them.
+#: None may reappear anywhere in the tree. Unlike an invented literal, a hit on one of
+#: these IS the old behaviour coming back — the sweep would have caught the stale-set
+#: descriptions this plan itself had to fix.
+_RETIRED = (
+    'The elapsed arm re-triggers `trigger_comment` for a bot that already has a review on record;',
+    "Branch 3 sends that case down Branch 4's trigger path instead.",
+    'its review is on record for the merge candidate and pending_findings',
+)
+_OLD = _RETIRED[0]
 
 
-@pytest.mark.parametrize('family', sorted(_FAMILY_CONTROLS))
-def test_a_planted_copy_of_the_old_wording_fails_in_every_document_family(family):
-    """Plant the old sentence IN the real document and prove the pin now fails."""
-    label, sentence = _FAMILY_CONTROLS[family]
+@pytest.mark.parametrize('label', sorted(_SURFACE))
+def test_a_planted_copy_of_the_old_wording_fails_in_every_document(label):
+    """Mutation control per pinned document: remove the rule, the pin must go red.
+
+    The mutation replaces the rule sentence the pin searches for with the retired
+    wording, so the control proves the pin is anchored to the rule text rather than to
+    the flag's presence elsewhere in the file. It is a mutation by construction — the
+    mutation IS what the pin is meant to catch.
+    """
     path, marker, snippet = _SURFACE[label]
     text = path.read_text(encoding='utf-8')
-    assert _states_done_rule(text, marker, snippet), f'{label} does not carry the sentence to plant against'
+    assert _states_done_rule(text, marker, snippet), f'{label} does not carry the rule sentence to mutate'
 
-    planted = text.replace(sentence, _OLD, 1)
-    assert planted != text, f'the transcribed sentence is not in {label} — the control would be vacuous'
+    planted = text.replace(snippet, _OLD)
+    assert planted != text, f'the rule sentence is not in {label} — the control would be vacuous'
     assert not _states_done_rule(planted, marker, snippet), (
         f'a planted copy of the old sentence still passes for {label}: the pin is too loose'
     )
@@ -172,11 +178,11 @@ def _documents_under(root):
 
 
 def _states_old_sentence(text: str) -> bool:
-    return _OLD in text
+    return any(sentence in text for sentence in _RETIRED)
 
 
-def test_no_document_states_the_old_sentence():
-    """No document outside the surface may claim a stale CodeRabbit review is re-triggered."""
+def test_no_document_states_the_retired_wording():
+    """No document anywhere may still say a stale CodeRabbit review is re-triggered."""
     documents = _documents_under(_SKILLS) + _documents_under(PROJECT_ROOT / 'doc')
     assert documents, 'no documents were discovered — the sweep would be vacuous'
     offenders = [
@@ -185,13 +191,17 @@ def test_no_document_states_the_old_sentence():
         if _states_old_sentence(path.read_text(encoding='utf-8'))
     ]
 
-    assert offenders == [], f'documents state the retired sentence: {offenders}'
+    assert offenders == [], f'documents state the retired wording: {offenders}'
 
 
-def test_the_old_sentence_sweep_detects_a_planted_document(tmp_path):
-    """Positive control for the sweep above: a planted document IS reported."""
+@pytest.mark.parametrize('sentence', _RETIRED)
+def test_the_retired_wording_sweep_detects_each_planted_sentence(sentence, tmp_path):
+    """Positive control: every retired sentence IS reported when planted."""
+    assert sentence not in ''.join(path.read_text(encoding='utf-8') for path in _documents_under(_SKILLS)), (
+        f'the retired sentence is still in the tree: {sentence!r}'
+    )
     planted = tmp_path / 'planted.md'
-    planted.write_text(f'## Re-review\n\n{_OLD}\n', encoding='utf-8')
+    planted.write_text(f'## Re-review\n\n{sentence}\n', encoding='utf-8')
 
     assert _states_old_sentence(planted.read_text(encoding='utf-8'))
 

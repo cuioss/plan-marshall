@@ -45,7 +45,7 @@ configurable:
     description: "Timeout policy applied at both re-review triggers (A and B) when the await budget expires with no fresh bot review (timed_out: true, matched: false). One of ask|defer|proceed. ask halts and asks the operator (interactive); defer auto-skips the merge without prompting (safe default-action); proceed is the explicit opt-in to advance the unreviewed HEAD, decision-logged at WARNING."
   - key: review_rate_window_await
     default: true
-    description: "Bool (default-ON) arming the rate-limit refusal recovery sequence instead of proceeding on a detected refusal. It is ON by default because the operator's review policy is that a REQUIRED reviewer's quota refusal is waited out rather than routed around (automatic-review/standards/coderabbit.md § 'Operator review policy'), and a project that wants the old settle-on-refusal posture sets it false. Close-and-reopen is chosen only when NO review by that bot is on record; a bot whose review is already on record is re-triggered instead, because re-delivering a request it already answered buys nothing. When armed and a refusal is detected on a REQUIRED bot (a non-empty rate_limited_bots[] on the pr wait-for-comments return, or refusal_detected on the github_re_review await), the step consults github_re_review recovery-action and branches on the refusal's CONDITION first, then on its CAUSE, and only then on the bot's rate_limit_class. Condition no_unreviewed_commit is not a limit — the bot replied that every commit is already reviewed — so no window is claimed and nothing is waited for: after FIND the step accepts the review on record, leaves its pending findings to triage, leaves a review the reply does not cover to the stale-review re-trigger, or posts the bot's escalated_trigger_comment once when no review is on record at all. Cause size is STRUCTURAL — the diff exceeds a ceiling the reviewer declares, so nothing reopens by waiting: it escalates immediately with reason refusal_structural, carrying the stated cap and the measured diff size, and its operator options are split the diff / accept the gap under a recorded merge authorization — never a wait and never a demotion. Otherwise: awaitable_window claims the bot's rate window via merge_lock rate-window claim, then STOPS and returns escalate_ask with reason rate_window_await — the step itself never waits. The main context holds the wait (phase-6-finalize item 7a re-issues the bounded merge_lock rate-window wait, asking the operator nothing) and re-dispatches this step, which finds its own elapsed claim and delivers the event by the bot's trigger_semantics — for a bot that re-reviews on push it GENERATES one (rebase onto base and push; the registry trigger_comment only as a fallback when main is unchanged and only after the window elapsed), and for a bot that reviews only when explicitly asked it closes and re-opens the PR; a notice whose stated window had already elapsed when it was read claims no window at all, unless the bot has no review on record — then the step posts its ordinary trigger once and claims the window after it, within the same attempt cap; hard_quota and unknown escalate immediately without awaiting; cap exhaustion escalates with reason rate_window_exhausted. A refusal from a bot outside required_bots is an ordinary settle, never an escalation — its silence cannot block, so escalating it asks the operator a question they do not need. When false, a detected refusal is treated as an ordinary settle and the step proceeds."
+    description: "Bool (default-ON) arming the rate-limit refusal recovery sequence instead of proceeding on a detected refusal. It is ON by default because the operator's review policy is that a REQUIRED reviewer's quota refusal is waited out rather than routed around (automatic-review/standards/coderabbit.md § 'Operator review policy'), and a project that wants the old settle-on-refusal posture sets it false. Close-and-reopen is chosen only when NO review by that bot is on record; a bot whose review is already on record is re-triggered instead, because re-delivering a request it already answered buys nothing — and a bot declaring review_complete_after_handling is neither re-triggered nor re-delivered, because its review on record is the review. When armed and a refusal is detected on a REQUIRED bot (a non-empty rate_limited_bots[] on the pr wait-for-comments return, or refusal_detected on the github_re_review await), the step consults github_re_review recovery-action and branches on the refusal's CONDITION first, then on its CAUSE, and only then on the bot's rate_limit_class. Condition no_unreviewed_commit is not a limit — the bot replied that every commit is already reviewed — so no window is claimed and nothing is waited for: after FIND the step accepts the review on record, leaves its pending findings to triage, leaves a review the reply does not cover to the stale-review re-trigger, or posts the bot's escalated_trigger_comment once when no review is on record at all. Cause size is STRUCTURAL — the diff exceeds a ceiling the reviewer declares, so nothing reopens by waiting: it escalates immediately with reason refusal_structural, carrying the stated cap and the measured diff size, and its operator options are split the diff / accept the gap under a recorded merge authorization — never a wait and never a demotion. Otherwise: awaitable_window claims the bot's rate window via merge_lock rate-window claim, then STOPS and returns escalate_ask with reason rate_window_await — the step itself never waits. The main context holds the wait (phase-6-finalize item 7a re-issues the bounded merge_lock rate-window wait, asking the operator nothing) and re-dispatches this step, which finds its own elapsed claim and delivers the event by the bot's trigger_semantics — for a bot that re-reviews on push it GENERATES one (rebase onto base and push; the registry trigger_comment only as a fallback when main is unchanged and only after the window elapsed), and for a bot that reviews only when explicitly asked it closes and re-opens the PR; a notice whose stated window had already elapsed when it was read claims no window at all, unless the bot has no review on record — then the step posts its ordinary trigger once and claims the window after it, within the same attempt cap; hard_quota and unknown escalate immediately without awaiting; cap exhaustion escalates with reason rate_window_exhausted. A refusal from a bot outside required_bots is an ordinary settle, never an escalation — its silence cannot block, so escalating it asks the operator a question they do not need. When false, a detected refusal is treated as an ordinary settle and the step proceeds."
   - key: review_rate_window_timeout_seconds
     default: 5400
     description: Total budget (seconds) for the main-context wait for the claimed rate window to expire, which follows a rate_window_await return; defaults to 5400 to match the operator policy's ONE window (90 minutes) in standards/coderabbit.md § "Operator review policy". The wait is held by phase-6-finalize item 7a, not by this step, and it is the whole wait - item 7a dispatches this step again as soon as the window has expired. When the budget is spent with the window still open, item 7a releases the claim and proceeds as the rate_window_timeout reason does, which asks the operator. Only consulted when review_rate_window_await is true.
@@ -997,7 +997,9 @@ Entered on `action: close_and_reopen` from the Branch 3 re-entry consult above: 
 elapsed, the bot declares `trigger_semantics: requires_explicit_trigger`, AND **no review by it is on
 record**. All three are required. The no-review condition is what the operator policy adds: a bot whose
 review is already on record did not drop the request, so re-delivering the whole PR buys nothing
-and Branch 3 sends that case down Branch 4's trigger path instead. A `requires_explicit_trigger` bot
+and Branch 3 sends that case down Branch 4's trigger path instead — except a bot declaring
+`review_complete_after_handling`, whose review on record IS the review: Branch 3 settles it on
+`accept_review_on_record` and it reaches neither branch. A `requires_explicit_trigger` bot
 with no review at all answers no push, so Branch 4's rebase would recover nothing for it.
 
 ⛔ **Close-and-reopen buys back NO quota — the limit is ACCOUNT-scoped.** No PR-level move touches it:
@@ -1043,6 +1045,7 @@ The branch decides between four outcomes, and only one of them posts anything:
 |------------------------------------------|--------------|---------|
 | on record | all handled | (a) accept — post nothing |
 | on record | some pending | (b) post nothing — the triage that follows handles them |
+| done — a flagged bot's review on record at any head | all handled / some pending | (a) or (b), reason `review_on_record_done` / `review_on_record_done_findings_pending` — post nothing, never re-trigger |
 | stale — the bot's reply does not cover the merge candidate | — | (c) post nothing — the participation guard re-triggers the stale review |
 | none on record | — | (d) post the bot's escalated command, once |
 
@@ -1111,29 +1114,33 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github
 Both flags are supplied because both were observed; omitting either returns `action: unmeasured`,
 which authorizes nothing. Route on the returned `action`:
 
-- **`action: accept_review_on_record`** (case a) — a review by this bot is counted for the merge
-  candidate and none of its findings is pending. Post nothing. Decision-log, then continue to "Mark
-  Step Complete":
+- **`action: accept_review_on_record`** (case a) — a review by this bot is on record and none of its
+  findings is pending. Post nothing. The reason says which reading produced it: `review_on_record_done`
+  means the bot declares `review_complete_after_handling` and its review on record IS the review even
+  when the head has moved on; `review_on_record_findings_handled` means the ordinary credited review for
+  the merge candidate. Decision-log, then continue to "Mark Step Complete":
 
   ```bash
   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
     decision --plan-id {plan_id} --level INFO \
-    --message "(plan-marshall:automatic-review) refusal recovery ACCEPTED — bot {bot_kind} reports no unreviewed commit, its review is on record for the merge candidate and pending_findings=0; nothing posted"
+    --message "(plan-marshall:automatic-review) refusal recovery ACCEPTED — bot {bot_kind} reports no unreviewed commit, its review is on record (reason={reason}) and pending_findings=0; nothing posted"
   ```
 
-  Nothing is forced here. The participation guard runs as on any pass, and it counts the bot because
-  `participated_bots[]` names it — proven participation is evaluated before the refusal the reply
-  also registers in `refused_bots[]`.
+  Nothing is forced here. The participation guard runs as on any pass: for the ordinary case it counts
+  the bot because `participated_bots[]` names it — proven participation is evaluated before the refusal
+  the reply also registers in `refused_bots[]` — and for the done case because the bot declares
+  `review_complete_after_handling`, so its `stale_participation_bots[]` entry resolves `participated`.
 
-- **`action: await_triage`** (case b) — a review by this bot is counted for the merge candidate and
-  `{pending_findings}` of its findings are still pending. Post nothing: the review exists, so asking
-  for another one is not what the open findings need. Decision-log, then continue to "Mark Step
-  Complete"; the unified triage that follows this step handles the findings.
+- **`action: await_triage`** (case b) — a review by this bot is on record and `{pending_findings}` of
+  its findings are still pending. Post nothing: the review exists, so asking for another one is not
+  what the open findings need. The same two reasons as case (a) say which reading produced it.
+  Decision-log, then continue to "Mark Step Complete"; the unified triage that follows this step
+  handles the findings.
 
   ```bash
   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
     decision --plan-id {plan_id} --level INFO \
-    --message "(plan-marshall:automatic-review) refusal recovery AWAIT TRIAGE — bot {bot_kind} reports no unreviewed commit, its review is on record for the merge candidate and pending_findings={pending_findings}; nothing posted"
+    --message "(plan-marshall:automatic-review) refusal recovery AWAIT TRIAGE — bot {bot_kind} reports no unreviewed commit, its review is on record (reason={reason}) and pending_findings={pending_findings}; nothing posted"
   ```
 
 - **`action: leave_to_stale_review`** (case c) — the bot has a review, but its reply does not cover

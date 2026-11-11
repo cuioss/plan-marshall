@@ -445,8 +445,9 @@ nothing has to be enabled. Two steps differ from the wording above, each deliber
 
 - **Which event re-triggers.** The elapsed arm re-triggers `trigger_comment` for a bot that already has
   a review on record; it closes and re-opens the PR only when the bot has NO review on record, because
-  re-delivering a request a bot already answered buys nothing. The policy's per-window "re-trigger" is
-  therefore satisfied by the ordinary trigger in the common case.
+  re-delivering a request a bot already answered buys nothing — and for a bot declaring
+  `review_complete_after_handling` it does neither, because that review on record is the review. The
+  policy's per-window "re-trigger" is therefore satisfied by the ordinary trigger in the common case.
 - **What happens at the cap.** The tenth window escalates `rate_window_exhausted` to the operator
   instead of closing and re-opening the PR automatically. The escalation is a prompt with the
   review-wide choices (wait another budget, defer, or merge past the gap under a recorded

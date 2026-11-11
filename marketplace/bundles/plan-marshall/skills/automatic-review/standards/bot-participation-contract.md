@@ -476,8 +476,9 @@ names several commits is current when any of them is the merge candidate.
   **bot**: its own `no_unreviewed_commit` reply, strictly newer than the merge-candidate commit,
   credits a bot that is stale on this ground exactly as it credits one that failed a ledger test. The
   comment still names the commit it names; the reply says every commit on the PR is reviewed, the
-  merge candidate included. Without such a reply the bot stays stale and is re-triggered. See § "The
-  reply-covered credit".
+  merge candidate included. Without such a reply the bot stays stale and is re-triggered — unless it
+  declares `review_complete_after_handling`, whose review on record completes it, so it is never
+  re-triggered. See § "The reply-covered credit".
 
 #### The checks surface carries no currency verdict
 
