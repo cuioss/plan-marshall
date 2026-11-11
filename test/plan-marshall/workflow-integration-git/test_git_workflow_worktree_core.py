@@ -679,19 +679,20 @@ def _git_stdout(repo: Path, *args: str) -> str:
     return completed.stdout.strip()
 
 
-def _stub_executor_production(monkeypatch: pytest.MonkeyPatch) -> list[Path]:
-    """Stub the executor seam and record the tree it was asked to produce into.
+def _stub_executor_production(monkeypatch: pytest.MonkeyPatch) -> list[dict]:
+    """Stub the executor seam and record how it was asked.
 
     The seam spawns a full generation, which is minutes of parser-surface
     derivation and irrelevant to what this class observes. The real seam is
     covered by its own tests; what matters here is that creation still reports
-    its on-disk verdict AND asks the seam for the detached tree rather than
-    silently skipping it.
+    its on-disk verdict AND asks the seam for the detached tree — with the
+    copy-from-main fallback DISABLED, since a copied executor carries main's
+    paths and would make a base run cite main's code.
     """
-    calls: list[Path] = []
+    calls: list[dict] = []
 
     def fake(worktree: Path, plan_id: str, **kwargs) -> dict:
-        calls.append(worktree)
+        calls.append({'worktree': worktree, 'plan_id': plan_id, **kwargs})
         return {
             'executor_in_worktree': 'present',
             'executor_produced': True,
@@ -700,6 +701,19 @@ def _stub_executor_production(monkeypatch: pytest.MonkeyPatch) -> list[Path]:
 
     monkeypatch.setattr(git_workflow, '_produce_worktree_executor', fake)
     return calls
+
+
+#: Git location variables that would redirect every git call in this module into
+#: the CALLER's repository — the fixture repo would then be bypassed entirely.
+_INHERITED_GIT_LOCATIONS = (
+    'GIT_DIR',
+    'GIT_WORK_TREE',
+    'GIT_COMMON_DIR',
+    'GIT_INDEX_FILE',
+    'GIT_OBJECT_DIRECTORY',
+    'GIT_ALTERNATE_OBJECT_DIRECTORIES',
+    'GIT_PREFIX',
+)
 
 
 class TestWorktreeCreateDetached:
@@ -713,6 +727,8 @@ class TestWorktreeCreateDetached:
 
     def test_detach_creates_a_worktree_with_no_branch(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         repo = tmp_path / 'repo'
+        for name in _INHERITED_GIT_LOCATIONS:
+            monkeypatch.delenv(name, raising=False)
         _init_repo(repo)
         root = tmp_path / 'worktrees-root'
         root.mkdir()
@@ -742,8 +758,13 @@ class TestWorktreeCreateDetached:
         # bootstrap cannot resolve the walk into another checkout.
         assert (target / '.plan' / 'local').is_dir(), 'the base tree has no .plan/local boundary'
         # The detached tree gets the executor too — the recipe's guarantee that
-        # its bootstrap short-circuits is not a promise the verb does not keep.
-        assert executor_calls == [target], 'the detached tree was not handed to the executor seam'
+        # its bootstrap short-circuits is not a promise the verb does not keep —
+        # and the copy-from-main fallback is disabled so it cannot carry main's
+        # paths into a base-sha claim.
+        assert [call['worktree'] for call in executor_calls] == [target], (
+            'the detached tree was not handed to the executor seam'
+        )
+        assert executor_calls[0]['allow_copy'] is False, "a base tree may inherit main's executor"
         assert result['executor_in_worktree'] == 'present', 'the executor verdict is not reported'
 
     def test_detach_is_on_the_parser_surface(self) -> None:

@@ -1325,10 +1325,10 @@ def test_find_installed_manifest_path_resolves_marketplace_clone_root(tmp_path, 
     # Companion: the value the executor stamps as MARSHALL_VERSION is
     # manifest['version'] (read via read_installed_manifest at generation time),
     # so a resolvable clone-root manifest yields the real, non-empty version —
-    # never the empty sentinel a fresh install produces.
+    # never the `unversioned` absence a fresh install produces.
     stamped = module.read_installed_manifest(cache_base)
     assert stamped.get('version') == '0.1.1200', (
-        'the executor must stamp the real manifest version on a marketplace-cache install, not the empty sentinel'
+        'the executor must stamp the real manifest version on a marketplace-cache install, not the unversioned absence'
     )
 
 

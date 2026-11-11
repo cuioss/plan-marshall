@@ -1762,9 +1762,8 @@ def resolve_generated_version(
     if version:
         return version, None
     return UNVERSIONED_SENTINEL, (
-        f'no readable version: {len(harness_versions)} installed harness root(s) carried no readable manifest '
-        f'and this checkout published {len(tree_versions)} target manifest version(s), so the executor is '
-        f'stamped {UNVERSIONED_SENTINEL}'
+        'no readable version: no harness roster entry published a manifest version and no target '
+        f'manifest in this checkout published one either, so the executor is stamped {UNVERSIONED_SENTINEL}'
     )
 
 
@@ -3150,6 +3149,10 @@ def cmd_generate(args: argparse.Namespace) -> dict:
     # residual (registered minus emitted), so the three buckets always sum to
     # ``scripts_registered``.
     surface_stats = gen_result.get('surface_stats') or dict(_EMPTY_SURFACE_STATS)
+    # The provisioning stamp and, when nothing was readable, WHY. Forwarded on
+    # every success path — a reason only a preview carries is a reason the run
+    # that actually stamped the file never reports.
+    version_fields = {key: gen_result[key] for key in ('version', 'version_reason') if key in gen_result}
 
     if args.dry_run:
         print('\nDry run complete. No files written.')
@@ -3160,6 +3163,7 @@ def cmd_generate(args: argparse.Namespace) -> dict:
             'target_source': ctx['target_source'],
             'dry_run': True,
             **surface_stats,
+            **version_fields,
         }
 
     # Cleanup old logs
@@ -3180,6 +3184,7 @@ def cmd_generate(args: argparse.Namespace) -> dict:
         'logs_cleaned': logs_cleaned,
         'executor_action': gen_result.get('executor_action', 'written'),
         **surface_stats,
+        **version_fields,
     }
 
     return result

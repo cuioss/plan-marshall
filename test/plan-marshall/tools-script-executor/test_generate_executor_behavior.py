@@ -72,7 +72,8 @@ def _load_template_module() -> types.ModuleType:
 
     Rendered through the directory's shared renderer: every ``{{...}}`` token
     takes an inert stand-in (empty mappings, no target-aware resolver body), the
-    version and fingerprint take the fresh-install empty sentinel, and
+    version takes the test renderer's inert stamp and the fingerprint the empty
+    sentinel, and
     ``{{LOGGING_DIR}}`` points at the real manage-logging scripts so the
     module-level ``from plan_logging import ...`` succeeds. The template's
     ``_ledger_core`` / ``worktree_sha`` / ``toon_parser`` imports resolve without
@@ -847,6 +848,39 @@ def test_cmd_generate_flattens_stats_into_fail_open_error(tmp_path, monkeypatch)
     assert result['surfaces_not_derivable'] == 3
     # The nested block is flattened away, not left as a sub-mapping.
     assert 'surface_stats' not in result
+
+
+def test_cmd_generate_forwards_the_version_stamp_and_its_reason(tmp_path, monkeypatch):
+    """The CLI payload carries the stamp and, when nothing was readable, WHY.
+
+    A reason only the preview branch carries is a reason the run that actually
+    stamped the file never reports, so the forwarding is asserted on the written
+    path — the one a lane reads.
+    """
+    monkeypatch.setattr(_gen, 'get_base_path', lambda **k: tmp_path)
+    monkeypatch.setattr(_gen, 'discover_scripts', lambda base: {'a:b:c': '/p/c.py'})
+    monkeypatch.setattr(_gen, 'discover_local_scripts', lambda: {})
+    monkeypatch.setattr(_gen, 'assess_discovery_coverage', lambda base, discovered: _passing_coverage())
+    monkeypatch.setattr(
+        _gen,
+        'generate_executor',
+        lambda *a, **k: {
+            'status': 'success',
+            'surface_stats': _stats(1, 0, 0),
+            'version': _gen.UNVERSIONED_SENTINEL,
+            'version_reason': 'no readable version: ...',
+        },
+    )
+    monkeypatch.setattr(_gen, 'cleanup_old_logs', lambda: 0)
+    monkeypatch.setattr(_gen, 'update_state', lambda *a, **k: None)
+    monkeypatch.setattr(_gen, 'compute_checksum', lambda mappings: 'deadbeef')
+    args = types.SimpleNamespace(marketplace=False, marketplace_root=None, dry_run=False, target=None)
+
+    result = _gen.cmd_generate(args)
+
+    assert result['status'] == 'success'
+    assert result['version'] == _gen.UNVERSIONED_SENTINEL
+    assert result['version_reason'].startswith('no readable version')
 
 
 # =============================================================================

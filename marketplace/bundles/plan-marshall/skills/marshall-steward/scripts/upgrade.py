@@ -761,6 +761,11 @@ _BOOTSTRAP_BUNDLE = 'plan-marshall'
 
 _BOOTSTRAP_REGENERATE_TIMEOUT_SECONDS = 120
 
+#: The stamp ``generate_executor`` writes when no version was readable. It is an
+#: answered absence: the recovery decision below must treat it as a version-less
+#: executor, never as a version to compare against the cache.
+_UNVERSIONED_EXECUTOR_STAMP = 'unversioned'
+
 #: Remedy surfaced with every version-split warning: re-sync the installed
 #: plugin in place, reload the session plugin set so the refreshed cache is
 #: visible, then re-request the stage plan so the skill docs and the planner
@@ -1108,6 +1113,10 @@ def bootstrap_executor(
         runtime_harness = None
     state, current = read_executor_version(executor_path, target=runtime_harness, fallback_on_empty=True)
     executor_version = current if state == EXECUTOR_VERSION_FOUND else None
+    if executor_version == _UNVERSIONED_EXECUTOR_STAMP:
+        # An ANSWERED absence, not a version: the generator could not read one.
+        # It is the version-less case the ungated recovery covers.
+        executor_version = None
 
     # An executor can exist and carry the newest stamp and still fail to IMPORT:
     # the stamp is read as text, so the version comparison alone cannot see a

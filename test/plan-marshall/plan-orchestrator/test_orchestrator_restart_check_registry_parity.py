@@ -117,6 +117,10 @@ def _executor_empty_sentinel(stores: ParityStores) -> None:
     write_executor(stores, "MARSHALL_VERSION = ''\n")
 
 
+def _executor_unversioned_stamp(stores: ParityStores) -> None:
+    write_executor(stores, "MARSHALL_VERSION = 'unversioned'\n")
+
+
 def _pin_not_orderable(stores: ParityStores) -> None:
     pin_registry(stores, '0.1-1069')
 
@@ -144,6 +148,7 @@ ARRANGEMENTS: dict[str, tuple[Callable[[ParityStores], None], str]] = {
     'executor-absent': (_executor_absent, INDETERMINATE),
     'executor-without-assignment': (_executor_without_assignment, INDETERMINATE),
     'executor-empty-sentinel': (_executor_empty_sentinel, INDETERMINATE),
+    'executor-unversioned-stamp': (_executor_unversioned_stamp, INDETERMINATE),
     'pin-not-orderable': (_pin_not_orderable, INDETERMINATE),
     'cache-absent': (_cache_absent, INDETERMINATE),
     'cache-newer-than-the-pin': (_cache_newer_than_the_pin, INDETERMINATE),
@@ -265,6 +270,21 @@ class TestParityEvidence:
         assert plugin_registry.EXECUTOR_VERSION_EMPTY in row['evidence']
         assert 'unversioned' in row['evidence'], 'the empty stamp is reported without a cause'
         assert 'regenerate the executor' in row['evidence']
+
+    def test_the_unversioned_stamp_names_its_cause_rather_than_a_version(
+        self, parity_stores, plan_context, monkeypatch
+    ):
+        """The stamp this codebase now writes must not read as merely unorderable.
+
+        It is READ (a FOUND assignment), so without an explicit arm the evidence
+        would say the pin "could not be ordered against the executor version
+        unversioned" — naming the absence as if it were a version.
+        """
+        row = _signal_row(_report('executor-unversioned-stamp', parity_stores, plan_context, monkeypatch), SIGNAL)
+
+        assert 'stamped unversioned' in row['evidence']
+        assert 'regenerate the executor' in row['evidence']
+        assert 'could not be ordered against the executor version' not in row['evidence']
 
 
 # =============================================================================

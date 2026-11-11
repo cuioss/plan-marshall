@@ -35,8 +35,9 @@ Subcommands:
                               tracking ref (ahead | synced | remote_absent_landed |
                               remote_absent_unverified); read-only, no fetch
     worktree-path             Resolve the persisted worktree path for a plan
-    worktree-create           Create a worktree + feature branch + .plan symlink for a plan,
-                              and produce the worktree's own executor
+    worktree-create           Create a plan worktree (+ feature branch + .plan symlink,
+                              and its own executor), or with --detach the branchless
+                              base-sha evidence tree {plan}-base
     worktree-executor-refresh Regenerate the worktree's executor through the production
                               seam (after a plan changes the script set)
     worktree-remove           Remove a worktree (worktree first, then branch ref)
@@ -65,6 +66,7 @@ Examples:
     # Worktree CRUD verbs
     git-workflow.py worktree-path --plan-id EXAMPLE-PLAN
     git-workflow.py worktree-create --plan-id EXAMPLE-PLAN --branch feature/EXAMPLE-PLAN
+    git-workflow.py worktree-create --plan-id EXAMPLE-PLAN --detach --base origin/main
     git-workflow.py worktree-remove --plan-id EXAMPLE-PLAN
     git-workflow.py worktree-list
     git-workflow.py worktree-rebase-to --plan-id EXAMPLE-PLAN --base main
@@ -2569,11 +2571,33 @@ def cmd_worktree_create(args):
         # failure would fall back to main's older executor and replace a surface
         # the refresh verb had rebuilt. ``_already_moved_in_response`` guards the
         # same decision the same way.
+        #
+        # A detach target that already exists is a base tree a previous run left
+        # behind (the ``cleanup_owed`` state): heal the ``.plan/local`` boundary
+        # its own test bootstrap relies on, and keep saying which tree this is.
+        if detach:
+            ok, link_err = _ensure_worktree_plan_local_real(target)
+            if not ok:
+                return {
+                    'status': 'error',
+                    'plan_id': args.plan_id,
+                    'error': 'plan_local_failed',
+                    'message': f'Base worktree exists but {_PLAN_DIR_NAME}/local materialization failed: {link_err}',
+                    'worktree_path': str(target),
+                    'detached': True,
+                }
         if executor_landed(worktree_executor_path(target)):
             executor_verdict: dict[str, Any] = {'executor_in_worktree': 'present'}
+        elif detach:
+            # A base tree must not inherit MAIN's executor: the copy fallback
+            # carries the main checkout's embedded paths, so a base test that
+            # dispatches through it would run main's scripts and report the
+            # result as base-sha evidence. Generation against the base tree, or
+            # an absent verdict, are the only honest outcomes here.
+            executor_verdict = _produce_worktree_executor(target, args.plan_id, allow_copy=False)
         else:
             executor_verdict = _produce_worktree_executor(target, args.plan_id)
-        return {
+        payload_exists: dict[str, Any] = {
             'status': 'error',
             'plan_id': args.plan_id,
             'error': 'worktree_exists',
@@ -2585,6 +2609,10 @@ def cmd_worktree_create(args):
                 if key in executor_verdict
             },
         }
+        if detach:
+            payload_exists['detached'] = True
+            payload_exists['base_ref'] = args.base or 'HEAD'
+        return payload_exists
     target.parent.mkdir(parents=True, exist_ok=True)
 
     main_root = _find_plan_root_from_cwd()
@@ -2630,7 +2658,8 @@ def cmd_worktree_create(args):
     # The executor slot is filled HERE so the worktree can run scripts the moment
     # it exists. Same seam as the phase-5 move-in (which keeps producing its own
     # copy exactly as before), same on-disk verdict, non-fatal by contract.
-    executor_verdict = _produce_worktree_executor(target, args.plan_id)
+    # A detached base tree forbids the copy: see the resume branch above.
+    executor_verdict = _produce_worktree_executor(target, args.plan_id, allow_copy=not detach)
 
     if detach:
         # A base-sha evidence tree is NOT the plan's worktree: it has no branch

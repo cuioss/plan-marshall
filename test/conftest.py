@@ -153,8 +153,12 @@ EXECUTOR_GENERATION_ERROR_TOKEN = 'status: error'
 #: The base-directory overrides the executor bootstrap must NOT hand its child.
 #: Both outrank the cwd walk in the generator's own target resolution, so an
 #: inherited value — the suite's autouse sandbox exports ``PLAN_BASE_DIR`` —
-#: writes the executor into whatever checkout that variable names.
-INHERITED_BASE_DIR_OVERRIDES = ('PLAN_BASE_DIR', 'PLAN_TRACKED_CONFIG_DIR')
+#: writes the executor into whatever checkout that variable names. The AUTHORITY
+#: is ``file_ops.TRACKED_CONFIG_ENV_OVERRIDES`` (the resolver's own list); this
+#: bootstrap runs before the conftest's sys.path setup, so it cannot import the
+#: resolver here, and ``test_generate_executor_bootstrap`` asserts the two lists
+#: stay identical.
+INHERITED_BASE_DIR_OVERRIDES = ('PLAN_TRACKED_CONFIG_DIR', 'PLAN_BASE_DIR')
 
 
 def _ensure_executor_present(
@@ -235,7 +239,20 @@ def _ensure_executor_present(
     # the walk cannot pass it. The post-check below still proves the file landed
     # where it was asked to.
     try:
-        (project_root / PLAN_DIR_NAME / 'local').mkdir(parents=True, exist_ok=True)
+        plan_dir = project_root / PLAN_DIR_NAME
+        if plan_dir.is_symlink():
+            raise ExecutorBootstrapError(
+                f'Executor bootstrap refuses to prepare {plan_dir}: it is a symlink, so the '
+                f'{PLAN_DIR_NAME}/local boundary and the executor written through it can land '
+                f'outside {project_root}.'
+            )
+        plan_local = plan_dir / 'local'
+        plan_local.mkdir(parents=True, exist_ok=True)
+        if plan_local.is_symlink() or not plan_local.resolve().is_relative_to(project_root.resolve()):
+            raise ExecutorBootstrapError(
+                f'Executor bootstrap refuses to pin its output to {project_root}: {plan_local} '
+                f'resolves to {plan_local.resolve()}, outside the checkout.'
+            )
     except OSError as exc:
         raise ExecutorBootstrapError(
             f'Executor bootstrap cannot pin its output to {project_root}: '

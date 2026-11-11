@@ -351,6 +351,40 @@ class TestBootstrapContainment:
         assert (project_root / '.plan' / 'execute-script.py').is_file(), 'the executor did not land in its own checkout'
         assert list(sentinel.iterdir()) == [], 'the bootstrap inherited PLAN_BASE_DIR and wrote into it'
 
+    def test_a_symlinked_plan_dir_is_refused(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A `.plan` symlink would carry the boundary — and the write — outside the checkout.
+
+        The post-check follows symlinks too, so an external write would look
+        successful; the refusal has to happen BEFORE the directory is created.
+        """
+        monkeypatch.setenv('PLAN_MARSHALL_HOME', str(tmp_path / 'machine-home'))
+        outside = tmp_path / 'outside'
+        outside.mkdir()
+        project_root = tmp_path / 'project'
+        project_root.mkdir()
+        (project_root / '.plan').symlink_to(outside, target_is_directory=True)
+
+        with pytest.raises(ExecutorBootstrapError) as excinfo:
+            _ensure_executor_present(project_root=project_root, generator=self._stub(tmp_path))
+
+        assert 'symlink' in str(excinfo.value)
+        assert list(outside.iterdir()) == [], 'the bootstrap wrote through the symlink'
+
+
+def test_the_bootstrap_filter_matches_the_resolver_overrides() -> None:
+    """The names the bootstrap removes are exactly the names the resolver reads.
+
+    The bootstrap cannot import the resolver at conftest time, so it carries the
+    list as a literal; this is the derivation that keeps the two from drifting —
+    a new override in ``file_ops`` fails here instead of silently redirecting a
+    write.
+    """
+    from file_ops import TRACKED_CONFIG_ENV_OVERRIDES
+
+    from conftest import INHERITED_BASE_DIR_OVERRIDES
+
+    assert INHERITED_BASE_DIR_OVERRIDES == TRACKED_CONFIG_ENV_OVERRIDES
+
 
 def _skills_dir() -> Path:
     """Absolute path to the marketplace ``…/plan-marshall/skills`` directory."""

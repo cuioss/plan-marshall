@@ -2631,8 +2631,14 @@ def test_read_provisioned_version_reads_the_unversioned_stamp_as_empty(tmp_path,
     """
     plan_dir = tmp_path / '.plan'
     plan_dir.mkdir()
-    (plan_dir / 'execute-script.py').write_text("MARSHALL_VERSION = 'unversioned'\n", encoding='utf-8')
+    executor = plan_dir / 'execute-script.py'
+    executor.write_text("MARSHALL_VERSION = '0.1.55'\n", encoding='utf-8')
     monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
+    # First prove the fixture is READ — otherwise the sentinel assertion below
+    # could pass because nothing was found at all.
+    assert _config_defaults_mod.read_provisioned_version() == '0.1.55'
+
+    executor.write_text("MARSHALL_VERSION = 'unversioned'\n", encoding='utf-8')
 
     assert _config_defaults_mod.read_provisioned_version() == ''
 

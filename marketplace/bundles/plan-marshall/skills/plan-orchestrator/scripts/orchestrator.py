@@ -925,6 +925,11 @@ READINESS_INDETERMINATE = 'indeterminate'
 #: only (ADR-020), and the arm's evidence says so beside the command.
 REGISTRY_REPIN_COMMAND = 'python3 marketplace/targets/claude/registry_pin.py --apply'
 
+#: The stamp ``generate_executor`` writes when no version was readable. It reads as
+#: a version to ``plugin_registry`` (a FOUND assignment), so the parity arm names it
+#: explicitly rather than letting it fall through as "could not be ordered".
+_UNVERSIONED_STAMP = 'unversioned'
+
 # --- the generated view and the compact stage -------------------------------
 #
 # START HERE and the Ordered Queue are DERIVED surfaces. They are rendered by ONE
@@ -6169,6 +6174,18 @@ def _registry_parity_signal() -> dict[str, Any]:
             'the executor carries an empty version stamp (empty): it was generated without a readable '
             'version and cannot be ordered against the registry pin; regenerate the executor so it stamps '
             'unversioned and the reason it could not read one',
+            population,
+        )
+    if executor_version == _UNVERSIONED_STAMP:
+        # The stamp this codebase now writes when nothing readable supplied a
+        # version. It was READ, so the generic tail would report it as a version
+        # that merely could not be ordered — the same silence, for the case the
+        # empty arm exists to explain.
+        return _parity_signal(
+            READINESS_INDETERMINATE,
+            'the executor is stamped unversioned: no version was readable when it was generated, so it '
+            'cannot be ordered against the registry pin; regenerate the executor where its manifest is '
+            'readable so the pin and the executor agree',
             population,
         )
     if executor_state != plugin_registry.EXECUTOR_VERSION_FOUND or executor_version is None:

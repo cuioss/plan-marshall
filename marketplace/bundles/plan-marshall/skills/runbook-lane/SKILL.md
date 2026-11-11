@@ -394,10 +394,15 @@ so git alone shows which deliverables are committed.
   detached base worktree, never by copying the repository:
   `python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree-create --detach --plan-id {plan} --base {base_sha}`
   materializes `{plan}-base` under the project's worktree root at that commit, with no branch, and
-  returns its absolute path as `worktree_path`. That tree carries its own `.plan/local` boundary and
-  the executor the same seam produces — best effort, and the payload reports `executor_in_worktree`
-  — so the base tree's own test bootstrap short-circuits instead of resolving its walk into another
-  checkout. The build seam runs against the returned path like any other checkout:
+  returns its absolute path as `worktree_path`. `error: worktree_exists` means the base tree already
+  exists: reuse it only when `git -C` at that path reports the same HEAD as `{base_sha}`, and remove
+  it first when it does not, because the payload that answers `worktree_exists` carries
+  `detached: true` and `base_ref` but never a branch. That tree carries its own
+  `.plan/local` boundary and the executor the same seam produces — best effort, and the payload reports
+  `executor_in_worktree`; the copy-from-main fallback is disabled for it, because a copied executor
+  carries main's paths and would make a base run cite main's code — so the base tree's own test
+  bootstrap short-circuits instead of resolving its walk into another checkout. The build seam runs
+  against the returned path like any other checkout:
   `{build.module-tests} --project-dir` with that `worktree_path`, or the gate canonical, with the
   shell in the main checkout. Four forms are NOT allowed, and a Done-when whose failing run used one
   is reported `not evidenced`: a `git clone`; a raw `git worktree add` into `.plan/temp`; a hand-run
@@ -408,7 +413,8 @@ so git alone shows which deliverables are committed.
   with `git worktree remove`, never with force, once `git -C` at that returned `worktree_path` shows
   a clean `status --porcelain`; when it cannot be removed the landing reports `cleanup_owed=true` and
   names what remains, read from the tree, and no operator question about deleting it is asked before
-  that read has been stated.
+  that read has been stated. While it exists, `{plan}-base` is also what `plan-doctor` reports as a
+  dangling worktree: that report IS the owed cleanup, not a defect in the plan record.
 - **Executor only.**
   - Every script: `python3 .plan/execute-script.py {bundle}:{skill}:{script} …`.
   - Every build: the `build` commands the resolve result supplies (step 4).
@@ -427,8 +433,9 @@ so git alone shows which deliverables are committed.
     never in the main checkout — not even a draft.
 - **`.plan/` state.** Write nothing under `.plan/` except `.plan/temp/`, a `ci` body slot at a path a
   `prepare-*` verb returned under `.plan/local/plans/NO_PLAN/work/ci-bodies/` (never a path written by
-  hand — the slot must come back from `ci pr prepare-body` or `ci pr prepare-comment`), and your one
-  inbox message (step 8). Never edit the spec or any file under `.plan/orchestrator/`.
+  hand — the slot must come back from the matching `prepare-body` / `prepare-comment` verb, whether
+  the `pr` or the `issue` one), and your one inbox message (step 8).
+  Never edit the spec or any file under `.plan/orchestrator/`.
 - **Stay inside the repository.** Never read, list or print anything outside the repository root:
   no credential files, config directories or environment dumps. Those hold secrets, and anything
   you read is sent to the model provider.
