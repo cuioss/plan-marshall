@@ -81,9 +81,13 @@ producer-gap that the landing names rather than fabricating.
 
 ## Required machine-readable fact keys
 
-The landing body carries a fenced block, opened by ` ```landing-facts ` and closed by ` ``` `, of
-`key=value` lines (one per line, `parse_markdown_metadata` shape). It is the machine-readable payload
-the drain consumes. These keys are **required** — a landing missing any of them is INCOMPLETE (see
+The landing body carries a fenced block, opened by the exact line shown here — three backticks and
+the info string, nothing between them — and closed by a bare fence line, of `key=value` lines (one
+per line, `parse_markdown_metadata` shape):
+
+    ```landing-facts
+
+It is the machine-readable payload the drain consumes. These keys are **required** — a landing missing any of them is INCOMPLETE (see
 [`check_landing_completeness`](../scripts/_orchestrator_inbox.py)):
 
 | Key | Value | Source |

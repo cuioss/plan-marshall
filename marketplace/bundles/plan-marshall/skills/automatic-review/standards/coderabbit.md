@@ -335,7 +335,7 @@ The class itself is cross-bot vocabulary — see
 [`bot-participation-contract.md`](bot-participation-contract.md) § "An acknowledgment is not an
 answer".
 
-## Participation evidence — `review_body`, `inline`, `issue_comment`, plus update movement
+## Participation evidence — `review_body`, `inline`, `issue_comment`, currency-tested
 
 CodeRabbit publishes a review summary, per-line comments, and a standalone summary comment, so any
 one of those three shapes is evidence it reviewed this diff.
@@ -397,16 +397,18 @@ review lands on is the cross-bot contract's to state, not this doc's — see
 [`bot-participation-contract.md`](bot-participation-contract.md) § "A credited clean review resolves
 `participated_but_empty`".
 
-**Presence alone is not enough — the update must move.** CodeRabbit **edits its summary comment in
+**Presence alone is not enough — the comment must PLACE its review at the merge candidate.** CodeRabbit **edits its summary comment in
 place** on re-review rather than appending a fresh one, so the comment's continued
 presence proves only that the bot reviewed at some *earlier* commit; after a force-push or a
 loop-back an unedited comment would silently credit CodeRabbit with reviewing code it never saw.
 That is the false-positive direction, and `participation_requires_update: true` closes it: every
 declared-shape comment must clear the currency test, which anchors the credit to the merge candidate
-through the plan-scoped **currency ledger** — the sole source that test reads. The credit holds when
-the SHA the ledger recorded for this comment IS the merge candidate, when the ledger holds no row for
-it and this fetch observes it at a resolvable merge candidate the comment does not demonstrably
-predate, or when its `updated_at` differs from the value recorded at the last credit. An unresolvable
+through the plan-scoped **currency ledger** — the sole source that test reads for a comment whose own
+text names no commit (a named commit is decided by that commit, ahead of any ledger arm). The credit holds when
+the SHA the ledger recorded for this comment IS the merge candidate, or when the ledger holds no row
+for it and this fetch observes it at a resolvable merge candidate the comment does not demonstrably
+predate. An in-place edit credits nothing on its own: a moved `updated_at` says the comment was
+touched, not which commit it reviewed. An unresolvable
 merge-candidate SHA withholds it on every arm. A failed currency test is emphatically **not**
 `absent`: CodeRabbit published, so the remedy is the `@coderabbitai review` re-review trigger rather
 than escalating a reviewer that never engaged.

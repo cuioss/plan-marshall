@@ -2,10 +2,10 @@
   "id": "PLAN-LB-141",
   "slug": "tempdir-teardown-in-test-harnesses",
   "workstream": "WS-04",
-  "status": "staged",
+  "status": "shipped",
   "lane": "runbook",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "plan_marshall_plan_id": "rb-lb-141-tempdir-teardown-in-test-harnesses",
+  "pr": "1951",
+  "landing": "landings/PLAN-LB-141.md",
   "seq": 141
 }
