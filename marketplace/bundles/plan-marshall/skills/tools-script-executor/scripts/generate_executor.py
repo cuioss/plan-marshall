@@ -1699,9 +1699,9 @@ def tree_published_versions(base_path: Path) -> list[tuple[str, str]]:
     A clone that has run the target generator but holds no installed harness
     still publishes a version — in ``target/{target}/dist-manifest.json``. Read
     as the FALLBACK behind :func:`installed_harness_versions`, so a tree-only
-    generation stamps a real version instead of the empty sentinel (which would
-    make every staleness check unanswerable and make ``preflight`` regenerate on
-    every call). Roster order, so the answer is deterministic.
+    generation stamps a real version instead of the ``unversioned`` absence
+    (which would make every staleness check unanswerable and make ``preflight``
+    regenerate on every call). Roster order, so the answer is deterministic.
     """
     pairs: list[tuple[str, str]] = []
     for target in _HARNESS_ROSTER:
@@ -1762,8 +1762,8 @@ def resolve_generated_version(
     if version:
         return version, None
     return UNVERSIONED_SENTINEL, (
-        f'no readable version: the installed harness roots publish no manifest ({len(harness_versions)} read) '
-        f'and this checkout publishes no target manifest ({len(tree_versions)} read), so the executor is '
+        f'no readable version: {len(harness_versions)} installed harness root(s) carried no readable manifest '
+        f'and this checkout published {len(tree_versions)} target manifest version(s), so the executor is '
         f'stamped {UNVERSIONED_SENTINEL}'
     )
 
@@ -2792,18 +2792,18 @@ def _version_tuple(version: str) -> tuple[int, ...]:
     """Parse a dotted ``0.1.N`` version into an int tuple for ordered compare.
 
     Comparison is a full int-tuple compare (no zero-padding), so ``0.1.9`` sorts
-    below ``0.1.10`` and a future ``0.2`` base bump orders correctly. An empty
-    or ``unknown`` sentinel yields the empty tuple, which compares as the lowest
-    possible version — a fresh/unstamped surface is therefore never treated as
-    newer than a real published version.
+    below ``0.1.10`` and a future ``0.2`` base bump orders correctly. The empty
+    string, ``unknown`` and the ``unversioned`` provisioning stamp all yield the
+    empty tuple, which compares as the lowest possible version — an unestablished
+    version is therefore never treated as newer than a real published one.
 
     Args:
-        version: A dotted version string, or the empty/``unknown`` sentinel.
+        version: A dotted version string, or one of the absence sentinels.
 
     Returns:
         The int tuple of the leading numeric components.
     """
-    if not version or version == 'unknown':
+    if not version or version in ('unknown', UNVERSIONED_SENTINEL):
         return ()
     parts: list[int] = []
     for segment in version.split('.'):

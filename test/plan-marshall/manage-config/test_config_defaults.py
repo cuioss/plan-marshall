@@ -2622,6 +2622,21 @@ def test_read_provisioned_version_empty_on_undecodable_executor(tmp_path, monkey
     assert _config_defaults_mod.read_provisioned_version() == ''
 
 
+def test_read_provisioned_version_reads_the_unversioned_stamp_as_empty(tmp_path, monkeypatch):
+    """The generator's ``unversioned`` stamp is an answered absence, not a version.
+
+    ``system.provisioned_version`` holds a ``0.1.N`` stamp or nothing, so the
+    sentinel must not be copied into it — the same non-destructive empty read the
+    absent-executor case produces.
+    """
+    plan_dir = tmp_path / '.plan'
+    plan_dir.mkdir()
+    (plan_dir / 'execute-script.py').write_text("MARSHALL_VERSION = 'unversioned'\n", encoding='utf-8')
+    monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
+
+    assert _config_defaults_mod.read_provisioned_version() == ''
+
+
 # =============================================================================
 # finding_raw_input_max_bytes knob (findings quarantine cap)
 # =============================================================================

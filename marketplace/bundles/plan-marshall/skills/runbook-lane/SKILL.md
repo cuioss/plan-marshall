@@ -391,20 +391,24 @@ so git alone shows which deliverables are committed.
     Done-when the run cannot show is a Done-when it did not meet as written.
   - Never cite a test, file or log you have not just read or run.
 - **Base-sha evidence (needs no clone).** A Done-when that says "fails at `{sha}`" is proved on a
-  detached base worktree, never by copying the repository: `git-workflow worktree-create --detach
-  --plan-id {plan} --base {base_sha}` materializes `{plan}-base` at that commit with no branch,
-  carrying its own `.plan/local` and executor so the base tree's own test bootstrap cannot resolve
-  into another checkout, and the build seam runs against it like any other checkout —
-  `{build.module-tests} --project-dir {plan}-base`, or the gate canonical, with the shell in the main
-  checkout. Four forms are NOT allowed, and a Done-when whose failing run used one is reported
-  `not evidenced`: a `git clone`; a raw `git worktree add` into `.plan/temp`; a hand-run
+  detached base worktree, never by copying the repository:
+  `python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree-create --detach --plan-id {plan} --base {base_sha}`
+  materializes `{plan}-base` under the project's worktree root at that commit, with no branch, and
+  returns its absolute path as `worktree_path`. That tree carries its own `.plan/local` boundary and
+  the executor the same seam produces — best effort, and the payload reports `executor_in_worktree`
+  — so the base tree's own test bootstrap short-circuits instead of resolving its walk into another
+  checkout. The build seam runs against the returned path like any other checkout:
+  `{build.module-tests} --project-dir` with that `worktree_path`, or the gate canonical, with the
+  shell in the main checkout. Four forms are NOT allowed, and a Done-when whose failing run used one
+  is reported `not evidenced`: a `git clone`; a raw `git worktree add` into `.plan/temp`; a hand-run
   `generate_executor`; and an edit of a harness file in the base copy. The evidence must survive the
   base copy: the failing log identifier and the file that produced it go in the PR body, and a probe
   file a Done-when cites by path is committed under the plan's test tree or its content is in the PR
   body — a path that exists only in the removed base copy is not evidence. Remove the base worktree
-  with `git worktree remove`, never with force, before the landing is written; when it is still on
-  disk the landing reports `cleanup_owed=true` with what remains, read from the tree, and no operator
-  question about deleting it is asked before that read has been stated.
+  with `git worktree remove`, never with force, once `git -C` at that returned `worktree_path` shows
+  a clean `status --porcelain`; when it cannot be removed the landing reports `cleanup_owed=true` and
+  names what remains, read from the tree, and no operator question about deleting it is asked before
+  that read has been stated.
 - **Executor only.**
   - Every script: `python3 .plan/execute-script.py {bundle}:{skill}:{script} …`.
   - Every build: the `build` commands the resolve result supplies (step 4).
@@ -988,10 +992,11 @@ step.sonar-roundtrip.open_issue_rules={rules left open|none|unknown|n/a}
 ```
 
 - **Base copy (cleanup_owed):** a base worktree a Done-when's evidence used is removed with
-  `git worktree remove`, never with force, before this landing is written. When it is still on disk,
-  set `cleanup_owed=true` and name what remains, read from the tree. An operator question about
-  removing it states first what exists, read from the tree; the lane never asks how to delete what it
-  created before that read.
+  `git worktree remove`, never with force, once `git -C` at its `worktree_path` shows a clean
+  `status --porcelain`, before this landing is written. When it is still on disk, set the landing's
+  single `cleanup_owed=true` fact — the branch-cleanup fact, which this also answers — and name in the
+  report which tree remains, read from the tree. An operator question about removing it states first
+  what exists, read from the tree; the lane never asks how to delete what it created before that read.
 - **Values:** for a required key, write `unknown` for anything you could not read, never `n/a` and
   never a guess. `deliverables_done` counts only fully met deliverables. The optional per-step facts
   below carry their own two sentinels, where `n/a` is a legal answered absence.

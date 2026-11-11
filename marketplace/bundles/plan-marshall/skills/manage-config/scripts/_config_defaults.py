@@ -1600,6 +1600,12 @@ def compute_config_seed_fingerprint() -> str:
     return hashlib.md5(canonical.encode('utf-8'), usedforsecurity=False).hexdigest()[:8]
 
 
+#: The stamp ``generate_executor`` writes when no version was readable from any
+#: manifest. It is an answered absence, not a version: ``system.provisioned_version``
+#: holds a 0.1.N stamp (or nothing), so this sentinel is read as an empty read.
+UNVERSIONED_EXECUTOR_STAMP = 'unversioned'
+
+
 def read_provisioned_version() -> str:
     """Read the installed ``MARSHALL_VERSION`` to stamp as ``system.provisioned_version``.
 
@@ -1607,7 +1613,8 @@ def read_provisioned_version() -> str:
     ``MARSHALL_VERSION`` (itself stamped from the installed ``dist-manifest.json``
     at generation time). Reads it from the tracked executor at
     ``.plan/execute-script.py``. Returns the empty string when the executor is
-    absent or unstamped (fresh install) — an empty stamp, never an error.
+    absent, unstamped, or carries the generator's ``unversioned`` stamp — an
+    answered absence, never a version, and never an error.
 
     Returns:
         The embedded version string, or ``''`` on a fresh/unstamped install.
@@ -1623,7 +1630,10 @@ def read_provisioned_version() -> str:
         return ''
     match = re.search(r"^MARSHALL_VERSION\s*=\s*'([^']*)'", text, re.MULTILINE)
     if match:
-        return match.group(1)
+        version = match.group(1)
+        # The sentinel is an answered absence, not a version: `system.provisioned_version`
+        # is a 0.1.N stamp or empty, so the sentinel must not be written into it.
+        return '' if version == UNVERSIONED_EXECUTOR_STAMP else version
     return ''
 
 

@@ -679,24 +679,27 @@ def _git_stdout(repo: Path, *args: str) -> str:
     return completed.stdout.strip()
 
 
-def _stub_executor_production(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Stub the executor seam: a base probe needs no generated surface here.
+def _stub_executor_production(monkeypatch: pytest.MonkeyPatch) -> list[Path]:
+    """Stub the executor seam and record the tree it was asked to produce into.
 
     The seam spawns a full generation, which is minutes of parser-surface
     derivation and irrelevant to what this class observes. The real seam is
     covered by its own tests; what matters here is that creation still reports
-    its on-disk verdict.
+    its on-disk verdict AND asks the seam for the detached tree rather than
+    silently skipping it.
     """
+    calls: list[Path] = []
 
     def fake(worktree: Path, plan_id: str, **kwargs) -> dict:
+        calls.append(worktree)
         return {
-            'executor_in_worktree': 'absent',
-            'executor_produced': False,
+            'executor_in_worktree': 'present',
+            'executor_produced': True,
             'executor_detail': 'stubbed for the detach test',
-            'executor_reason': 'stubbed for the detach test',
         }
 
     monkeypatch.setattr(git_workflow, '_produce_worktree_executor', fake)
+    return calls
 
 
 class TestWorktreeCreateDetached:
@@ -716,7 +719,7 @@ class TestWorktreeCreateDetached:
 
         monkeypatch.setattr(git_workflow, 'get_worktree_root', lambda: root)
         monkeypatch.setattr(git_workflow, '_find_plan_root_from_cwd', lambda: repo)
-        _stub_executor_production(monkeypatch)
+        executor_calls = _stub_executor_production(monkeypatch)
         calls = _stub_manage_status_call(monkeypatch, {})
 
         result = cmd_worktree_create(Namespace(plan_id='my-plan', branch=None, base='HEAD', detach=True))
@@ -738,6 +741,10 @@ class TestWorktreeCreateDetached:
         # The base tree carries its own .plan/local boundary, so its own test
         # bootstrap cannot resolve the walk into another checkout.
         assert (target / '.plan' / 'local').is_dir(), 'the base tree has no .plan/local boundary'
+        # The detached tree gets the executor too — the recipe's guarantee that
+        # its bootstrap short-circuits is not a promise the verb does not keep.
+        assert executor_calls == [target], 'the detached tree was not handed to the executor seam'
+        assert result['executor_in_worktree'] == 'present', 'the executor verdict is not reported'
 
     def test_detach_is_on_the_parser_surface(self) -> None:
         result = run_script(SCRIPT_PATH, 'worktree-create', '--help')

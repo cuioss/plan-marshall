@@ -14,7 +14,7 @@ Usage:
     git-workflow.py prune-local-and-remote-ref (--plan-id <plan-id> | --project-dir <path> --head <branch>) [--mode local_and_remote|local_only]
     git-workflow.py branch-sync-state --plan-id <plan-id>
     git-workflow.py worktree-path --plan-id <plan-id>
-    git-workflow.py worktree-create --plan-id <plan-id> --branch <branch> [--base <ref>]
+    git-workflow.py worktree-create --plan-id <plan-id> (--branch <branch> | --detach) [--base <ref>]
     git-workflow.py worktree-executor-refresh --plan-id <plan-id>
     git-workflow.py worktree-remove --plan-id <plan-id> [--force]
     git-workflow.py worktree-list
@@ -2470,7 +2470,11 @@ def cmd_branch_sync_state(args):
 
 
 def cmd_worktree_create(args):
-    """Create a worktree + feature branch + .plan symlinks for ``--plan-id``.
+    """Create a worktree for ``--plan-id``: a plan worktree, or the detached base tree.
+
+    With ``--branch`` it creates that branch and runs the full plan path below.
+    With ``--detach`` it creates the branchless base-sha evidence tree instead
+    (``get_worktree_root() / f'{plan_id}-base'``, no plan-status bookkeeping).
 
     Path is computed from ``get_worktree_root() / plan_id`` — the only
     verb that materializes a new worktree on disk. After ``git worktree
@@ -2516,20 +2520,6 @@ def cmd_worktree_create(args):
     """
     detach = bool(getattr(args, 'detach', False))
     branch = getattr(args, 'branch', None)
-    if detach and branch:
-        return {
-            'status': 'error',
-            'plan_id': args.plan_id,
-            'error': 'detach_takes_no_branch',
-            'message': '--detach creates a branchless base-sha worktree; --branch cannot be combined with it',
-        }
-    if not detach and not branch:
-        return {
-            'status': 'error',
-            'plan_id': args.plan_id,
-            'error': 'branch_required',
-            'message': '--branch is required unless --detach is given',
-        }
 
     if args.plan_id == ORCHESTRATOR_WORKTREE_KEY:
         return {
@@ -2551,6 +2541,23 @@ def cmd_worktree_create(args):
             'plan_id': args.plan_id,
             'error': 'plan_resolution_failed',
             'message': str(exc),
+        }
+
+    # Branch validation runs AFTER the reserved-key refusal, so a reserved id is
+    # refused for what it is rather than for the flag it happens to omit.
+    if detach and branch:
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'detach_takes_no_branch',
+            'message': '--detach creates a branchless base-sha worktree; --branch cannot be combined with it',
+        }
+    if not detach and not branch:
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'branch_required',
+            'message': '--branch is required unless --detach is given',
         }
 
     if target.exists():
@@ -4106,7 +4113,7 @@ Examples:
             },
             {
                 'name': 'worktree-create',
-                'help': 'Create a worktree + feature branch + .plan symlink for a plan',
+                'help': 'Create a plan worktree (+ feature branch + .plan symlink), or a detached base-sha tree with --detach',
                 'handler': cmd_worktree_create,
                 'args': [
                     {
@@ -4130,7 +4137,7 @@ Examples:
                     },
                     {
                         'flags': ['--base'],
-                        'help': 'Base ref for the new branch (default: current HEAD)',
+                        'help': 'Base ref for the new branch, or the commit a --detach tree is checked out at (default: current HEAD)',
                     },
                 ],
             },

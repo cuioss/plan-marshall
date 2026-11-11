@@ -3071,11 +3071,18 @@ def test_the_lane_states_the_one_base_sha_evidence_recipe() -> None:
     """
     rules = _section('## 1. Rules (every one binds; breaking one fails the run)')
 
-    # The recipe: one verb, a detached tree, built through the build seam.
-    assert 'worktree-create --detach' in rules, 'the lane names no detached base-worktree recipe'
+    # The recipe: one verb, through the executor, a detached tree built through the
+    # build seam at the path the verb RETURNED — a bare `{plan}-base` is a name, not
+    # a path, and no run can hand it to `--project-dir`.
+    assert (
+        'python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree-create --detach'
+        in rules
+    ), 'the lane names no executable detached base-worktree recipe'
     assert '{plan}-base' in rules, 'the base worktree has no derived name'
-    assert '--project-dir {plan}-base' in rules, 'the recipe does not build through the build seam'
+    assert 'worktree_path' in rules, 'the recipe never says which path the build seam runs against'
+    assert '--project-dir' in rules, 'the recipe does not build through the build seam'
     assert 'git worktree remove' in rules, 'the recipe never says how the base copy is removed'
+    assert 'status --porcelain' in rules, 'the removal has no cleanliness precondition'
     assert 'no branch' in rules, 'the recipe does not say the base worktree carries no branch'
 
     for form in _FORBIDDEN_BASE_RUN_FORMS:
