@@ -681,12 +681,10 @@ def _upsert_permission_rule(rules: list[Any], action: str, resource: str, effect
     later rule can still match the same resource and win. A requested effect
     the list does not already produce is made effective by moving the rule to
     the end — but never past a later, more specific rule with a different
-    effect the caller did not ask to change. The rules a write crosses are the
-    ones that end up BEFORE the requested rule: after the insertion point when
-    it moves to the end, and before the insertion point when it does not. A
-    crossing is a named conflict: the list is restored and nothing is saved. So
-    is a rule that a later, broader row with the same effect already shadows —
-    writing it would decide nothing.
+    effect the caller did not ask to change. Only that move can cross a rule,
+    so only then is a conflict reported: the list is restored and nothing is
+    saved. A rule a later, broader row with the same effect already shadows is
+    refused too — writing it would decide nothing.
     """
     for index, rule in enumerate(rules):
         if isinstance(rule, dict) and rule.get('action') == action and rule.get('resource') == resource:
@@ -720,11 +718,9 @@ def _upsert_permission_rule(rules: list[Any], action: str, resource: str, effect
             return PermissionRuleWrite(False, _conflict_detail(action, resource, effect, conflict))
         _move_rule_to_end(rules, new_rule, insert_at)
         return PermissionRuleWrite(True)
-    # No move: the new rule overrides only the rules that precede it.
-    conflict = _conflicting_rule(rules, 0, insert_at, action, resource, effect)
-    if conflict is not None:
-        del rules[insert_at]
-        return PermissionRuleWrite(False, _conflict_detail(action, resource, effect, conflict))
+    # No move: the new rule is the last match for its own resource, so every
+    # earlier rule it matches is one the caller asked to narrow. Nothing can be
+    # crossed here.
     hits = _matching_rules(rules, action, resource)
     if hits and hits[-1] is not new_rule:
         shadow = hits[-1].get('resource')
@@ -1759,7 +1755,10 @@ class OpenCodeRuntime(Runtime):
             if cat == 'bash':
                 if bash_map is not None:
                     if bash_map.get(pat) != act:
-                        bash_map[pat] = act
+                        if pat == '*':
+                            _set_map_catch_all(bash_map, act)
+                        else:
+                            bash_map[pat] = act
                         added += 1
             else:
                 cat = _permission_map_key(cat)

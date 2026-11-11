@@ -584,6 +584,52 @@ def test_the_action_wildcard_decides_the_effective_effect():
     assert _effective_rule_effect(rules, 'shell', 'git status') == 'deny'
 
 
+def test_ensure_accepts_a_grant_a_dead_earlier_deny_does_not_cover(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    """A deny the catch-all already overrides is not a conflict for a later grant.
+
+    The deny decides nothing before or after the write, so refusing here would
+    block a valid grant for a file that is simply out of order.
+    """
+    monkeypatch.chdir(tmp_path)
+    config = tmp_path / 'opencode.json'
+    config.write_text(
+        json.dumps(
+            {
+                'permissions': [
+                    {'action': 'shell', 'resource': 'git restore *', 'effect': 'deny'},
+                    {'action': 'shell', 'resource': '*', 'effect': 'allow'},
+                ]
+            },
+            indent=2,
+        )
+        + '\n',
+        encoding='utf-8',
+    )
+
+    result = parse_toon(runtime.permission_fix('project', 'ensure', ['allow(git *)'], False))
+
+    assert result['status'] == 'success'
+    rules = _load(config)['permissions']
+    assert _effective_effect(rules, 'shell', 'git status') == 'allow'
+
+
+def test_configure_writes_a_bash_catch_all_before_the_specific_rows(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    """A bare shell grant becomes the map's ``*`` row, ahead of a specific deny."""
+    monkeypatch.chdir(tmp_path)
+    config = tmp_path / 'opencode.json'
+    config.write_text(json.dumps({'permission': {'bash': {'git push *': 'deny'}}}), encoding='utf-8')
+
+    parse_toon(runtime.permission_configure('project', [{'rule': 'shell'}]))
+
+    rows = _load(config)['permission']['bash']
+    assert list(rows) == ['*', 'git push *']
+    assert rows['git push *'] == 'deny'
+
+
 def test_ensure_accepts_a_grant_a_narrower_later_deny_does_not_cover(
     runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ):
