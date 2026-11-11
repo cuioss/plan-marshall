@@ -150,6 +150,12 @@ class ExecutorBootstrapError(RuntimeError):
 #: that drives it through the subprocess boundary read the same token.
 EXECUTOR_GENERATION_ERROR_TOKEN = 'status: error'
 
+#: The base-directory overrides the executor bootstrap must NOT hand its child.
+#: Both outrank the cwd walk in the generator's own target resolution, so an
+#: inherited value — the suite's autouse sandbox exports ``PLAN_BASE_DIR`` —
+#: writes the executor into whatever checkout that variable names.
+INHERITED_BASE_DIR_OVERRIDES = ('PLAN_BASE_DIR', 'PLAN_TRACKED_CONFIG_DIR')
+
 
 def _ensure_executor_present(
     project_root: Path | None = None,
@@ -182,6 +188,14 @@ def _ensure_executor_present(
     already exists, so the previous-surfaces map it compares against is always
     empty here.
 
+    **The write is confined to the checkout it was asked to prepare.** The
+    generator's target is derived from its environment and cwd, not from this
+    call, so the bootstrap removes the two inherited base-dir overrides and
+    materialises this checkout's own ``.plan/local`` boundary before spawning it.
+    An environment variable or an enclosing checkout can then no longer redirect
+    the write: the file lands at ``project_root/.plan/execute-script.py`` or the
+    post-check raises naming the path.
+
     Raises:
         ExecutorBootstrapError: when the generator is missing, when running it
             raises, or when it did not produce an executor — the last covering
@@ -208,10 +222,33 @@ def _ensure_executor_present(
             f'run without it would cover less than it reports.'
         )
 
+    # Pin the generator's output to THIS checkout. It writes to
+    # ``get_tracked_config_dir()/execute-script.py``, which reads an inherited
+    # ``PLAN_BASE_DIR`` / ``PLAN_TRACKED_CONFIG_DIR`` FIRST and otherwise walks up
+    # from its cwd to the nearest ancestor holding ``.plan/local``. Either input
+    # can name another checkout: this suite's own autouse sandbox exports
+    # ``PLAN_BASE_DIR``, and a clone under another checkout's ``.plan/temp/`` is
+    # nested inside that tree, so the walk reaches it — which replaced the main
+    # checkout's executor with the clone's script surface. The bootstrap therefore
+    # supplies BOTH inputs: the two overrides are removed from the child's
+    # environment, and the ``.plan/local`` boundary is created in this checkout so
+    # the walk cannot pass it. The post-check below still proves the file landed
+    # where it was asked to.
+    try:
+        (project_root / PLAN_DIR_NAME / 'local').mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise ExecutorBootstrapError(
+            f'Executor bootstrap cannot pin its output to {project_root}: '
+            f'creating {PLAN_DIR_NAME}/local failed ({exc}). Without that boundary the '
+            f'generator resolves the nearest ancestor checkout instead.'
+        ) from exc
+    child_env = {key: value for key, value in os.environ.items() if key not in INHERITED_BASE_DIR_OVERRIDES}
+
     try:
         result = subprocess.run(
             ['python3', str(generator), 'generate'],
             cwd=project_root,
+            env=child_env,
             capture_output=True,
             text=True,
             # COUPLED to ``generate_executor._DEFAULT_SURFACE_BUDGET_SECONDS``,

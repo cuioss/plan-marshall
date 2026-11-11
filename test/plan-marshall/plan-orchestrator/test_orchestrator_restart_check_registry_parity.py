@@ -251,6 +251,21 @@ class TestParityEvidence:
         assert f'{PARITY_BUNDLE}={NEWER_VERSION}' in row['evidence']
         assert 'cache: 1 bundle directory(ies) read' in row['population']
 
+    def test_an_empty_stamp_names_the_cause_and_the_remedy(self, parity_stores, plan_context, monkeypatch):
+        """The empty sentinel names WHY it is empty, not only that it is.
+
+        An executor generated with no readable version cannot be ordered against
+        the registry pin. The historical stamp is the empty string, which reads
+        exactly like a file carrying no assignment at all; the evidence must name
+        the cause — the generator now stamps ``unversioned`` when nothing was
+        readable — and the remedy, so the restart decision is actionable.
+        """
+        row = _signal_row(_report('executor-empty-sentinel', parity_stores, plan_context, monkeypatch), SIGNAL)
+
+        assert plugin_registry.EXECUTOR_VERSION_EMPTY in row['evidence']
+        assert 'unversioned' in row['evidence'], 'the empty stamp is reported without a cause'
+        assert 'regenerate the executor' in row['evidence']
+
 
 # =============================================================================
 # The floor — the arm takes part in the overall verdict

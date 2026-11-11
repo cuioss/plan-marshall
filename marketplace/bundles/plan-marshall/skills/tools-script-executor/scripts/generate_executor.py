@@ -171,7 +171,7 @@ import subprocess
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import NamedTuple, TypedDict
+from typing import Any, NamedTuple, TypedDict
 
 # --- plan-marshall skill bootstrap: one shared anchor (see script-shared/scripts/skill_bootstrap.py) ---
 # Stdlib only: it runs before any shared module is importable, so it cannot import the resolver.
@@ -1725,12 +1725,47 @@ def newest_version(versions: list[tuple[str, str]]) -> str:
     "the generating harness's version". The newest installed version is the
     honest machine-level answer for a file that serves all of them, and each
     harness's own answer travels beside it in the per-harness map.
+
+    The empty answer is honest for a COMPARISON and useless as a STAMP: see
+    :func:`resolve_generated_version`, which is what a caller writing a file uses.
     """
     best = ''
     for _harness, version in versions:
         if _version_tuple(version) > _version_tuple(best):
             best = version
     return best
+
+
+#: The provisioning stamp written when no version is readable anywhere.
+#:
+#: An EMPTY ``MARSHALL_VERSION`` is indistinguishable from an executor generated
+#: before the stamp existed: a reader cannot tell "no version was published" from
+#: "the assignment is missing", and two different causes collapse into one
+#: unanswerable value. The sentinel is an ANSWERED absence, and the reason a
+#: generator writes beside it names the reads that came back empty.
+UNVERSIONED_SENTINEL = 'unversioned'
+
+
+def resolve_generated_version(
+    harness_versions: list[tuple[str, str]],
+    tree_versions: list[tuple[str, str]],
+) -> tuple[str, str | None]:
+    """Return ``(stamp, reason)`` for the executor's provisioning version.
+
+    ``reason`` is ``None`` exactly when a version was readable. Otherwise the
+    stamp is :data:`UNVERSIONED_SENTINEL` and the reason names both reads —
+    the installed harness roots (through their manifests) and this checkout's own
+    target trees — so the cause travels in the generation payload instead of
+    being recoverable only by re-running the discovery.
+    """
+    version = newest_version(harness_versions) or newest_version(tree_versions)
+    if version:
+        return version, None
+    return UNVERSIONED_SENTINEL, (
+        f'no readable version: the installed harness roots publish no manifest ({len(harness_versions)} read) '
+        f'and this checkout publishes no target manifest ({len(tree_versions)} read), so the executor is '
+        f'stamped {UNVERSIONED_SENTINEL}'
+    )
 
 
 def _relative_script_under_scripts(path: str, _skill: str = '') -> str | None:
@@ -2082,9 +2117,12 @@ def generate_executor(
     # a machine with no install) — the only target-independent answer for a file
     # that serves all of them — while each harness's own version travels in the map
     # beside it. The script-set fingerprint stays a property of the checkout. A
-    # fresh install has no manifest yet: the empty sentinel is substituted, never
-    # an error.
-    generated_version = newest_version(harness_versions) or newest_version(tree_published_versions(base_path))
+    # fresh install has no manifest yet: the answer is the answered absence
+    # ``unversioned`` plus the reason, never an empty assignment and never an error.
+    generated_version, version_reason = resolve_generated_version(harness_versions, tree_published_versions(base_path))
+    version_fields: dict[str, Any] = {'version': generated_version}
+    if version_reason is not None:
+        version_fields['version_reason'] = version_reason
     manifest: dict = {}
     for _harness, _root in harness_roots:
         if not _root:
@@ -2143,6 +2181,7 @@ def generate_executor(
             # by reference makes the next in-place aggregation corrupt every
             # later caller's baseline.
             'surface_stats': dict(_EMPTY_SURFACE_STATS),
+            **version_fields,
         }
 
     # Guard 1 — format handshake: refuse a template whose declared format
@@ -2330,7 +2369,12 @@ def generate_executor(
     # a template edit, and an mtime comparison would miss a hand edit.
     try:
         if real_executor.is_file() and real_executor.read_bytes() == content.encode('utf-8'):
-            return {'status': 'success', 'surface_stats': surface_stats, 'executor_action': 'unchanged'}
+            return {
+                'status': 'success',
+                'surface_stats': surface_stats,
+                'executor_action': 'unchanged',
+                **version_fields,
+            }
     except OSError:
         pass
 
@@ -2351,7 +2395,7 @@ def generate_executor(
             tmp_executor.unlink(missing_ok=True)
         except OSError:
             pass
-    return {'status': 'success', 'surface_stats': surface_stats}
+    return {'status': 'success', 'surface_stats': surface_stats, **version_fields}
 
 
 def compute_checksum(mappings: dict[str, str]) -> str:

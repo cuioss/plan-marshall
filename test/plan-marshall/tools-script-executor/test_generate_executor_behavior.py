@@ -361,6 +361,7 @@ _TEMPLATE_BODY = (
     ']\n'
     'EXTRA = [{{EXTRA_SCRIPT_DIRS}}]\n'
     'PLAN_DIR_NAME = "{{PLAN_DIR_NAME}}"\n'
+    'MARSHALL_VERSION = "{{GENERATED_VERSION}}"\n'
     'GENERATED_FOR = "{{GENERATED_FOR}}"\n'
     '_INSTALLED_ROOTS = (\n'
     '{{INSTALLED_ROOTS}}\n'
@@ -466,6 +467,52 @@ def test_generate_executor_returns_error_when_template_missing(tmp_path, monkeyp
     result = _gen.generate_executor({'a:b:c': '/p/c.py'}, tmp_path / 'empty-base', dry_run=False)
 
     assert result['status'] == 'error'
+
+
+# =============================================================================
+# The provisioning stamp — an unresolvable version is an ANSWERED absence
+# =============================================================================
+
+
+def test_an_unresolvable_version_is_stamped_unversioned(tmp_path, monkeypatch):
+    """No readable version stamps ``unversioned`` and the payload names why.
+
+    An EMPTY ``MARSHALL_VERSION`` is indistinguishable from a pre-stamp executor:
+    every staleness comparison answers "unanswerable" and the restart-check can
+    only report the empty value back. ``unversioned`` is an answered absence, and
+    the reason names the reads that came back empty so the cause travels with the
+    file.
+    """
+    base = _prep_synthetic(tmp_path, monkeypatch)
+    monkeypatch.setattr(_gen, 'installed_harness_versions', lambda roots: [])
+    monkeypatch.setattr(_gen, 'tree_published_versions', lambda base_path: [])
+
+    result = _gen.generate_executor({'a:b:c': '/p/c.py'}, base, dry_run=False, target='claude')
+
+    assert result['status'] == 'success', result
+    assert result['version'] == 'unversioned'
+    assert 'no readable version' in result['version_reason']
+    written = (tmp_path / '.plan' / 'execute-script.py').read_text(encoding='utf-8')
+    assert 'MARSHALL_VERSION = "unversioned"' in written
+
+
+def test_a_readable_version_is_stamped_without_a_reason(tmp_path, monkeypatch):
+    """Discriminating half: a readable version is stamped verbatim, with no reason.
+
+    Without this case the assertion above would also pass on a generator that
+    stamped ``unversioned`` unconditionally.
+    """
+    base = _prep_synthetic(tmp_path, monkeypatch)
+    monkeypatch.setattr(_gen, 'installed_harness_versions', lambda roots: [('claude', '0.1.9999')])
+    monkeypatch.setattr(_gen, 'tree_published_versions', lambda base_path: [])
+
+    result = _gen.generate_executor({'a:b:c': '/p/c.py'}, base, dry_run=False, target='claude')
+
+    assert result['status'] == 'success', result
+    assert result['version'] == '0.1.9999'
+    assert 'version_reason' not in result
+    written = (tmp_path / '.plan' / 'execute-script.py').read_text(encoding='utf-8')
+    assert 'MARSHALL_VERSION = "0.1.9999"' in written
 
 
 # =============================================================================

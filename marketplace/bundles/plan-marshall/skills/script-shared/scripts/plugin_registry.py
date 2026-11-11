@@ -251,8 +251,8 @@ def read_executor_version(
     - :data:`EXECUTOR_VERSION_UNREADABLE` — the file is absent, could not be read,
       or is not UTF-8 text;
     - :data:`EXECUTOR_VERSION_NOT_FOUND` — it was read and carries no such assignment;
-    - :data:`EXECUTOR_VERSION_EMPTY` — the assignment is present and empty, the
-      sentinel of an executor generated before any manifest existed.
+    - :data:`EXECUTOR_VERSION_EMPTY` — the assignment is present and empty: a
+      legacy executor generated before the ``unversioned`` sentinel existed.
 
     ``target`` names the harness the question is asked FOR. A harness-independent
     executor carries a per-harness version map (``_INSTALLED_VERSIONS``) beside

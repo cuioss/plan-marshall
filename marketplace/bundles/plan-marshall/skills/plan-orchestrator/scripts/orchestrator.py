@@ -6158,6 +6158,19 @@ def _registry_parity_signal() -> dict[str, Any]:
             f'the plugin registry could not be read ({registry_state})',
             population,
         )
+    if executor_state == plugin_registry.EXECUTOR_VERSION_EMPTY:
+        # An empty stamp is a specific, actionable defect rather than a generic
+        # unreadable store: the executor was generated when nothing readable
+        # supplied a version. Name the cause and the remedy — the generator now
+        # stamps ``unversioned`` and says which reads came back empty — so a
+        # restart decision can act on it instead of reporting "unanswerable".
+        return _parity_signal(
+            READINESS_INDETERMINATE,
+            'the executor carries an empty version stamp (empty): it was generated without a readable '
+            'version and cannot be ordered against the registry pin; regenerate the executor so it stamps '
+            'unversioned and the reason it could not read one',
+            population,
+        )
     if executor_state != plugin_registry.EXECUTOR_VERSION_FOUND or executor_version is None:
         return _parity_signal(
             READINESS_INDETERMINATE,

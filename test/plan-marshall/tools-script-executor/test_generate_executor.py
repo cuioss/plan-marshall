@@ -1187,9 +1187,14 @@ def test_generate_substitutes_version_and_fingerprint_from_manifest(tmp_path, mo
     assert '{{MAPPINGS_FINGERPRINT}}' not in text, 'placeholder must be fully substituted'
 
 
-def test_generate_uses_empty_sentinel_on_fresh_install(tmp_path, monkeypatch):
-    """With no installed manifest, the version/fingerprint placeholders resolve
-    to the empty sentinel — no error, executor still generates."""
+def test_generate_stamps_unversioned_on_fresh_install(tmp_path, monkeypatch):
+    """With no installed manifest, the version is the ANSWERED absence ``unversioned``.
+
+    The fingerprint keeps its empty sentinel — nothing measured it — but the
+    version must not: an empty version is indistinguishable from a pre-stamp
+    executor and leaves every staleness comparison unanswerable. The payload
+    states the stamp and the reason nothing was readable.
+    """
     module = load_module()
 
     # Point PM_DIST_MANIFEST at a non-existent file so no manifest is found.
@@ -1201,9 +1206,11 @@ def test_generate_uses_empty_sentinel_on_fresh_install(tmp_path, monkeypatch):
 
     result = module.generate_executor({}, MARKETPLACE_ROOT, dry_run=False)
     assert result['status'] == 'success', f'fresh install (no manifest) must still generate the executor: {result}'
+    assert result['version'] == 'unversioned'
+    assert 'no readable version' in result['version_reason']
 
     text = (plan_dir / 'execute-script.py').read_text(encoding='utf-8')
-    assert "MARSHALL_VERSION = ''" in text, 'fresh install must stamp the empty version sentinel'
+    assert "MARSHALL_VERSION = 'unversioned'" in text, 'a fresh install must stamp the answered absence'
     assert "MAPPINGS_FINGERPRINT = ''" in text, 'fresh install must stamp the empty fingerprint sentinel'
 
 
