@@ -95,17 +95,24 @@ def _verdict(
     )
 
 
-def _no_unreviewed_verdict(bot_kind: str, review_on_record: str = '', pending_findings: int | None = None) -> dict:
+def _no_unreviewed_verdict(
+    bot_kind: str,
+    review_on_record: str = '',
+    pending_findings: int | None = None,
+    finished_review: bool | None = True,
+) -> dict:
     """The SHIPPED selector's verdict for a ``no_unreviewed_commit`` reply from ``bot_kind``.
 
     The two observations default to "not supplied", so a call site names exactly
-    the ones the case is about.
+    the ones the case is about. ``finished_review`` defaults to the producer's
+    positive observation because every arm below is a case with a review on record.
     """
     return github_re_review.resolve_recovery_action(
         bot_kind,
         condition=_github_pr.REFUSAL_CONDITION_NO_UNREVIEWED_COMMIT,
         review_on_record=review_on_record,
         pending_findings=pending_findings,
+        finished_review=finished_review,
     )
 
 
@@ -614,6 +621,7 @@ class TestTheRecoveryActionSelectorDerivesItsVerdict:
             'condition',
             'review_on_record',
             'pending_findings',
+            'finished_review',
             'refusal_conditions',
             'review_on_record_states',
             'escalated_trigger_comment',

@@ -344,6 +344,7 @@ def test_a_bot_with_a_review_on_record_settles_a_no_unreviewed_commit_reply():
         condition=github_re_review.REFUSAL_CONDITION_NO_UNREVIEWED_COMMIT,
         review_on_record='stale',
         pending_findings=0,
+        finished_review=True,
     )
 
     assert verdict['action'] == 'accept_review_on_record'
@@ -365,10 +366,56 @@ def test_a_flagged_bot_with_a_review_on_record_settles_without_posting(review_on
         pending_findings=0,
         window_expired=True,
         attempts_remaining=5,
+        finished_review=True,
     )
 
     assert verdict['action'] == 'accept_review_on_record'
     assert verdict['reason'] == 'review_on_record_done'
+
+
+@pytest.mark.parametrize('finished_review', [None, False])
+def test_an_unobserved_or_absent_finished_review_keeps_the_pre_existing_arm(finished_review):
+    """⛔ The observation is required: the flag plus a stale report is not a finished review."""
+    verdict = github_re_review.resolve_recovery_action(
+        'coderabbit',
+        cause='quota',
+        review_on_record='stale',
+        pending_findings=0,
+        window_expired=True,
+        attempts_remaining=5,
+        finished_review=finished_review,
+    )
+
+    assert verdict['action'] == 'generate_trigger'
+    assert verdict['reason'] == 'claim_window_elapsed_review_on_record'
+
+
+def test_a_finished_review_outranks_a_later_size_refusal():
+    """A done bot owes no review, so a later structural refusal is not escalated at it."""
+    verdict = github_re_review.resolve_recovery_action(
+        'coderabbit',
+        cause='size',
+        review_on_record='stale',
+        pending_findings=0,
+        finished_review=True,
+    )
+
+    assert verdict['action'] == 'accept_review_on_record'
+    assert verdict['reason'] == 'review_on_record_done'
+
+
+def test_a_size_refusal_without_a_finished_review_still_escalates():
+    """MATCHED CONTROL — the structural escalation is unchanged for a bot with no review."""
+    verdict = github_re_review.resolve_recovery_action(
+        'coderabbit',
+        cause='size',
+        review_on_record='stale',
+        pending_findings=0,
+        finished_review=False,
+    )
+
+    assert verdict['action'] == 'escalate_structural'
+    assert verdict['reason'] == 'size_ceiling'
 
 
 def test_a_flagged_bot_with_pending_findings_routes_to_triage():
@@ -380,6 +427,7 @@ def test_a_flagged_bot_with_pending_findings_routes_to_triage():
         pending_findings=2,
         window_expired=True,
         attempts_remaining=5,
+        finished_review=True,
     )
 
     assert verdict['action'] == 'await_triage'
@@ -395,6 +443,7 @@ def test_a_flagged_bot_with_an_unobserved_findings_state_is_unmeasured():
         pending_findings=None,
         window_expired=True,
         attempts_remaining=5,
+        finished_review=True,
     )
 
     assert verdict['action'] == 'unmeasured'

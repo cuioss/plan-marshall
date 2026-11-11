@@ -154,9 +154,39 @@ def _args(*dispositions: str):
     return parse_ns('plan-marshall', 'runbook-lane', 'runbook_lane.py', *argv)
 
 
-def _verdict(read: dict, *dispositions: str) -> Any:
+def _args_with_reviewers(*reviewers: str):
+    argv = ['review-gate', '--pr-number', '7']
+    for reviewer in reviewers:
+        argv += ['--required-reviewer', reviewer]
+    return parse_ns('plan-marshall', 'runbook-lane', 'runbook_lane.py', *argv)
+
+
+def _verdict(read: dict, *dispositions: str, reviewers: tuple[str, ...] = ()) -> Any:
+    args = _args_with_reviewers(*reviewers) if reviewers else _args(*dispositions)
     with patch.object(lane, '_read_review_surfaces', return_value=read):
-        return cmd_review_gate(_args(*dispositions))
+        return cmd_review_gate(args)
+
+
+def _finished_marker_body() -> str:
+    return '<!-- final_review_risk_coverage:{"coveredCommitId":"' + 'a' * 40 + '","kind":"reviewed"} -->'
+
+
+def _issue_comment(body: str, author: str = 'coderabbitai') -> dict:
+    return {
+        'kind': 'issue_comment',
+        'id': 'issue-1',
+        'thread_id': '',
+        'author': author,
+        'body': body,
+        'path': '',
+        'line': 0,
+        'resolved': False,
+        'created_at': '2026-11-07T10:00:00Z',
+        'updated_at': '2026-11-07T10:00:00Z',
+        'commit_id': '',
+        'reply_to_id': '',
+        'thread_reply': False,
+    }
 
 
 def _only_unresolved_threads_stub(read: dict) -> bool:
@@ -857,3 +887,60 @@ def test_the_ci_read_is_the_abstraction_s_own_invocation(monkeypatch) -> None:
     assert argv[3:6] == ['pr', 'comments', '--pr-number']
     assert argv[6] == '7'
     assert seen['cwd'] == '/tmp/project', 'the read runs in the project it was handed'
+
+
+# ---------------------------------------------------------------------------
+# The done rule's precondition: a named required reviewer must HAVE a review
+# ---------------------------------------------------------------------------
+
+
+def test_a_named_required_reviewer_with_no_review_refuses_the_merge() -> None:
+    """⛔ The flag alone never waives the currency demand: a review must exist."""
+    verdict = _verdict(_read(), reviewers=('coderabbit',))
+
+    assert verdict['merge_allowed'] is False
+    assert verdict['reason'] == 'required_review_missing'
+    assert verdict['missing_required_reviews'] == ['coderabbit']
+
+
+def test_a_named_required_reviewer_with_a_formal_review_passes() -> None:
+    """MATCHED CONTROL — the same read plus one formal review record admits the merge."""
+    verdict = _verdict(_read(_review_body('No actionable comments were generated')), reviewers=('coderabbit',))
+
+    assert verdict['merge_allowed'] is True
+    assert verdict['reason'] == 'all_handled'
+    assert verdict['required_reviewers'] == ['coderabbit']
+
+
+def test_a_named_required_reviewer_with_a_finished_marker_summary_passes() -> None:
+    """The other qualifying artifact: a readable kind=reviewed marker naming a commit."""
+    verdict = _verdict(_read(_issue_comment(_finished_marker_body())), reviewers=('coderabbit',))
+
+    assert verdict['merge_allowed'] is True
+
+
+def test_a_named_required_reviewer_with_only_a_walkthrough_is_refused() -> None:
+    """A marker-less walkthrough is not a review, so the done precondition fails."""
+    verdict = _verdict(_read(_issue_comment('## Walkthrough\n\nsome prose')), reviewers=('coderabbit',))
+
+    assert verdict['merge_allowed'] is False
+    assert verdict['reason'] == 'required_review_missing'
+
+
+def test_a_named_required_reviewer_with_only_a_refusal_is_refused() -> None:
+    """A refusal submitted as a review object is not a review either."""
+    verdict = _verdict(
+        _read(_review_body('> ## Review limit reached > Please wait 12 minutes before requesting another review.')),
+        reviewers=('coderabbit',),
+    )
+
+    assert verdict['merge_allowed'] is False
+    assert verdict['reason'] == 'required_review_missing'
+
+
+def test_an_unnamed_reviewer_population_leaves_the_verdict_unchanged() -> None:
+    """The new input is opt-in: a call that names no reviewer behaves exactly as before."""
+    verdict = _verdict(_read())
+
+    assert verdict['merge_allowed'] is True
+    assert 'required_reviewers' not in verdict

@@ -2666,11 +2666,38 @@ def _read_review_surfaces(pr_number: int, project_dir: Path) -> dict[str, Any]:
         return {'status': 'error', 'error': f'the CI read output was not parseable as TOON: {exc}'}
 
 
+def _required_reviewers_without_a_review(comments: list[dict[str, Any]], required_reviewers: list[str]) -> list[str]:
+    """Return the required reviewers that hold no qualifying review on this read.
+
+    The done rule's precondition, checked where the merge is decided. A qualifying
+    review is the producer's finished-review test: a formal review record of the bot,
+    or a summary marker that is readable, ``kind: reviewed`` and names a covered
+    commit. A refusal submitted as a review object is not one. Nothing here decides
+    what to do with the review — only that a review exists to be done.
+    """
+    import _github_pr
+    from github_re_review import _is_refusal_body
+
+    present: set[str] = set()
+    for comment in comments:
+        bot = _bot_of(comment)
+        if not bot or bot not in required_reviewers:
+            continue
+        kind = comment.get('kind')
+        body = str(comment.get('body') or '')
+        if kind == 'review_body' and not _is_refusal_body(body, bot):
+            present.add(bot)
+        elif kind == 'issue_comment' and _github_pr.review_coverage_names_commit(body):
+            present.add(bot)
+    return sorted(set(required_reviewers) - present)
+
+
 def _review_gate_verdict(
     pr_number: int,
     read: dict[str, Any],
     dispositions: list[dict[str, str]],
     refused: list[str],
+    required_reviewers: list[str] | None = None,
 ) -> dict[str, Any]:
     """Decide whether the review surfaces admit the merge (section 7's condition).
 
@@ -2776,6 +2803,21 @@ def _review_gate_verdict(
         'review_body_findings_handled': len(findings) - len(undisposed),
         'unresolved_threads': unresolved,
     }
+    missing_reviews = (
+        _required_reviewers_without_a_review(comments, list(required_reviewers or [])) if required_reviewers else []
+    )
+    if required_reviewers:
+        verdict['required_reviewers'] = list(required_reviewers)
+    if missing_reviews:
+        # The done rule is "one handled review IS the review", never "the flag is
+        # enough": a required reviewer the run names must actually hold a qualifying
+        # review before its currency demand can be waived.
+        return {
+            **verdict,
+            'merge_allowed': False,
+            'reason': 'required_review_missing',
+            'missing_required_reviews': missing_reviews,
+        }
     if unresolved:
         return {**verdict, 'merge_allowed': False, 'reason': 'unresolved_review_threads'}
     if undisposed:
@@ -2796,8 +2838,11 @@ def cmd_review_gate(args: argparse.Namespace) -> dict[str, Any]:
         }
     project_dir = Path(getattr(args, 'project_dir', None) or '.')
     dispositions, refused = _parse_dispositions(list(getattr(args, 'disposition', None) or []))
+    required_reviewers = [
+        str(bot).strip() for bot in (getattr(args, 'required_reviewer', None) or []) if str(bot).strip()
+    ]
     read = _read_review_surfaces(pr_number, project_dir)
-    return _review_gate_verdict(pr_number, read, dispositions, refused)
+    return _review_gate_verdict(pr_number, read, dispositions, refused, required_reviewers)
 
 
 def cmd_resolve(args: argparse.Namespace) -> dict[str, Any]:
@@ -3109,6 +3154,18 @@ def main() -> int:
         action='append',
         default=None,
         help=('One progress-file disposition line, repeatable: "{reviewer} {section} {id} — {sha|reason}"'),
+    )
+    review_parser.add_argument(
+        '--required-reviewer',
+        dest='required_reviewer',
+        action='append',
+        default=None,
+        help=(
+            'A REQUIRED reviewer bot kind, repeatable. When named, the gate also requires '
+            'that reviewer to hold a qualifying review on record (a formal review record, or '
+            'a summary marker that is readable, kind=reviewed and names a commit); one '
+            'without it answers merge_allowed: false, required_review_missing.'
+        ),
     )
 
     args = parser.parse_args()

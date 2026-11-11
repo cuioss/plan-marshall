@@ -130,8 +130,10 @@ def _elapsed_verdict(review_on_record: str) -> dict:
         attempt_held=True,
         review_on_record=review_on_record,
         # The findings observation is supplied so a flagged bot's done arm can
-        # settle; the unflagged arms below never read it.
+        # settle; the unflagged arms below never read it. The finished-review
+        # observation is supplied for the same reason — the done arm requires it.
         pending_findings=0,
+        finished_review=True,
     )
 
 

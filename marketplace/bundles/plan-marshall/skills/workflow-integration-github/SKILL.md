@@ -1297,6 +1297,7 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github
   --bot-kind BOT_KIND \
   [--cause {size|quota}] [--condition {rate_limited|no_unreviewed_commit}] \
   [--review-on-record {credited|stale|undecidable|absent}] [--pending-findings N] \
+  [--finished-review {true|false}] \
   [--window-expired {true|false}] [--attempts-remaining N] \
   [--attempt-held {true|false}] [--notice-stale {true|false}] [--plan-id PLAN_ID]
 ```
@@ -1314,6 +1315,8 @@ DERIVES which recovery a detected refusal arms, from the bot registry plus the c
 `--notice-stale` is the `stale` field of a `pr wait-for-comments` `rate_limited_bots[]` record: `true` when the window the notice stated had already elapsed when the notice was read. **Omit it when the record carries no such field** — a `refusals[]` record does not — and it reads as not stale. A stale notice resolves `settle_stale_notice` in place of `await_window` and of `escalate_exhausted`: there is no open window to claim, so nothing is claimed, waited for or triggered on it. Three things bound that arm. It needs both window observations, like every window arm, so a consult carrying neither is still `unmeasured`. `--attempt-held true` skips it: a caller that claimed a window on this notice and waited it out reads the same notice again afterwards, stale by then, and the event its claim bought is still owed through the elapsed arms. And `--review-on-record absent` skips it: a required bot that never reviewed is not "nothing to do", and settling it let every later pass settle the same notice again. Such a notice takes the budget and window arms instead — `escalate_exhausted` once the budget is spent, `await_window` while a claim is still running — and otherwise resolves `trigger_stale_notice`: the caller posts the bot's ordinary trigger once and then claims the window, so the attempt counter advances and the next pass meets that claim rather than triggering again. Every other review observation, and none at all, still settles.
 
 `--condition` is the refusal record's `condition`. **Omit it when the record carries none** — an omitted condition reads as empty and takes the rate-limit derivation below. `no_unreviewed_commit` is resolved before the cause and the class: the bot said every commit is already reviewed, so there is no limit to classify and no window to claim. It resolves from two observations, each of which reads as `unmeasured` when omitted:
+
+`--finished-review` is the producer's done-rule observation: `true` exactly when the bot is named in `github_pr fetch_findings` `finished_review_bots[]`, `false` when the fetch reported the list without it. **Omit it when the observation was not made.** A bot declaring `review_complete_after_handling` with a review on record settles on the done arm before ANY cause, window or budget arm — including a later structural size refusal, which no re-review would cure — and only a positive observation takes that arm, so a stale report or a credited participation that is not a finished review keeps every pre-existing arm.
 
 - `--review-on-record` — where this bot's review stands for the merge candidate, read off the consuming step's `fetch_findings` return. That return has three disjoint per-bot participation lists, and the state is derived from all three:
 

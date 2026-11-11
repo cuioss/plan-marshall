@@ -795,6 +795,7 @@ def resolve_recovery_action(
     attempts_remaining: int | None = None,
     attempt_held: bool = False,
     notice_stale: bool = False,
+    finished_review: bool | None = None,
 ) -> dict[str, Any]:
     """Return the recovery move a detected refusal arms, DERIVED from the registry.
 
@@ -987,11 +988,33 @@ def resolve_recovery_action(
         # The refusal record's `stale` field as received — whether the window the
         # notice stated had already elapsed when the notice was read.
         'notice_stale': notice_stale,
+        'finished_review': finished_review,
         'recovery_actions': list(RECOVERY_ACTIONS),
     }
 
     if not known:
         return {**verdict, 'action': RECOVERY_ACTION_UNMEASURED, 'reason': 'registry_empty'}
+    # THE DONE RULE, once, ahead of every cause/window/budget arm. A flagged bot with
+    # the producer's FINISHED-review observation and a review on record owes no later
+    # review, so nothing is requested, waited for or escalated — not even a structural
+    # size refusal on a later diff, which no re-review would cure. The observation is
+    # required: a stale report or a credited participation alone can come from a
+    # marker-bearing comment that never finished a review, so an unobserved value is
+    # never done.
+    if (
+        bot_registry.review_complete_after_handling(bot_kind)
+        and finished_review is True
+        and review_on_record in (REVIEW_ON_RECORD_CREDITED, REVIEW_ON_RECORD_STALE)
+    ):
+        if pending_findings is None:
+            return {**verdict, 'action': RECOVERY_ACTION_UNMEASURED, 'reason': 'no_findings_observation'}
+        if pending_findings > 0:
+            return {
+                **verdict,
+                'action': RECOVERY_ACTION_AWAIT_TRIAGE,
+                'reason': 'review_on_record_done_findings_pending',
+            }
+        return {**verdict, 'action': RECOVERY_ACTION_ACCEPT_REVIEW_ON_RECORD, 'reason': 'review_on_record_done'}
     if condition == REFUSAL_CONDITION_NO_UNREVIEWED_COMMIT:
         # A value outside the vocabulary is an observation nobody made, exactly as
         # an omitted one is: it resolves `unmeasured`, never the posting arm.
@@ -1004,20 +1027,6 @@ def resolve_recovery_action(
             return {**verdict, 'action': RECOVERY_ACTION_UNMEASURED, 'reason': 'review_state_undecidable'}
         if pending_findings is None:
             return {**verdict, 'action': RECOVERY_ACTION_UNMEASURED, 'reason': 'no_findings_observation'}
-        if bot_registry.review_complete_after_handling(bot_kind) and review_on_record in (
-            REVIEW_ON_RECORD_CREDITED,
-            REVIEW_ON_RECORD_STALE,
-        ):
-            # Same done rule as the elapsed arm: the bot's own reply that nothing is
-            # unreviewed is a statement about REQUESTS, and its review on record is
-            # the review. Pending findings are triaged; nothing is posted either way.
-            if pending_findings > 0:
-                return {
-                    **verdict,
-                    'action': RECOVERY_ACTION_AWAIT_TRIAGE,
-                    'reason': 'review_on_record_done_findings_pending',
-                }
-            return {**verdict, 'action': RECOVERY_ACTION_ACCEPT_REVIEW_ON_RECORD, 'reason': 'review_on_record_done'}
         if review_on_record == REVIEW_ON_RECORD_STALE:
             return {
                 **verdict,
@@ -1047,26 +1056,6 @@ def resolve_recovery_action(
     stale_unheld = notice_stale and not attempt_held
     if stale_unheld and review_on_record != REVIEW_ON_RECORD_ABSENT:
         return {**verdict, 'action': RECOVERY_ACTION_SETTLE_STALE_NOTICE, 'reason': 'notice_window_elapsed'}
-    if bot_registry.review_complete_after_handling(bot_kind) and review_on_record in (
-        REVIEW_ON_RECORD_CREDITED,
-        REVIEW_ON_RECORD_STALE,
-    ):
-        # A flagged bot's one handled review is the review: with it on record there
-        # is nothing to request and nothing to wait for, so the elapsed window
-        # settles instead of triggering — before the budget and window arms, which
-        # would otherwise burn attempts and hold a wait for a review nobody owes.
-        # Pending findings are still handling, never a reason to re-request, so they
-        # route to triage; an unobserved findings state is unmeasured rather than a
-        # pass.
-        if pending_findings is None:
-            return {**verdict, 'action': RECOVERY_ACTION_UNMEASURED, 'reason': 'no_findings_observation'}
-        if pending_findings > 0:
-            return {
-                **verdict,
-                'action': RECOVERY_ACTION_AWAIT_TRIAGE,
-                'reason': 'review_on_record_done_findings_pending',
-            }
-        return {**verdict, 'action': RECOVERY_ACTION_ACCEPT_REVIEW_ON_RECORD, 'reason': 'review_on_record_done'}
     if attempts_remaining <= 0 and not attempt_held:
         return {**verdict, 'action': RECOVERY_ACTION_ESCALATE_EXHAUSTED, 'reason': 'attempt_cap_exhausted'}
     if not window_expired:
@@ -2118,6 +2107,10 @@ def cmd_recovery_action(args: argparse.Namespace) -> dict:
         # Read defensively, like the inputs above. Absent reads as NOT stale, so
         # a caller that forwards nothing gets the derivation it got before.
         notice_stale=getattr(args, 'notice_stale', None) == 'true',
+        # The producer's finished-review observation: `true` only when the bot is in
+        # finished_review_bots[]. Absent reads as UNOBSERVED (None), and the done rule
+        # requires a positive observation, so an older caller keeps every arm it had.
+        finished_review=None if getattr(args, 'finished_review', None) is None else args.finished_review == 'true',
     )
     return {'status': 'success', 'operation': 'recovery_action', **verdict}
 
@@ -2301,6 +2294,18 @@ def main() -> int:
             'instead of await_window, unless --attempt-held is true or --review-on-record is '
             "'absent' (then trigger_stale_notice within the attempt budget). OMIT it when the "
             'record carries no such field (reads as not stale)'
+        ),
+    )
+    recovery.add_argument(
+        '--finished-review',
+        choices=('true', 'false'),
+        dest='finished_review',
+        help=(
+            "The producer's finished-review observation: 'true' exactly when the bot is named in "
+            'github_pr fetch_findings finished_review_bots[]. A bot declaring '
+            'review_complete_after_handling with a review on record and this observation settles '
+            '(accept_review_on_record / await_triage) before any cause, window or budget arm. '
+            'OMIT it when the observation was not made: the done arm then does not apply.'
         ),
     )
     recovery.add_argument('--plan-id', help='Plan identifier (accepted for routing uniformity)')

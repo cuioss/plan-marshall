@@ -52,7 +52,7 @@ _SURFACE = {
     'phase-6-finalize/standards/branch-cleanup-rereview.md': (
         _doc('phase-6-finalize', 'standards', 'branch-cleanup-rereview.md'),
         '## Re-review the rebased HEAD (trigger A)',
-        f'A bot declaring `{_FLAG}` is never re-reviewed here',
+        f'A bot declaring `{_FLAG}` is re-reviewed only when',
     ),
     'phase-6-finalize/standards/branch-cleanup.md': (
         _doc('phase-6-finalize', 'standards', 'branch-cleanup.md'),

@@ -818,6 +818,8 @@ def test_recovery_action_resolves_no_unreviewed_commit_from_its_two_observations
         review_on_record,
         '--pending-findings',
         str(pending_findings),
+        '--finished-review',
+        'true' if bot_kind == 'coderabbit' else 'false',
     )
 
     assert verdict['action'] == action
