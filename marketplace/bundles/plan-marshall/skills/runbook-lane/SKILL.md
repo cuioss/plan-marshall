@@ -399,8 +399,10 @@ so git alone shows which deliverables are committed.
   clean `status --porcelain`, and remove it first when either differs — the answer carries
   `detached: true`, `base_ref` and the tree's actual `head_sha`, refuses a tree that is on a branch
   (`worktree_target_conflict`), and re-produces the executor from that tree, never from main's copy.
-  A reuse answer whose `executor_in_worktree` is `absent` is not evidence: remove the tree and report
-  the blocker. That tree carries its own
+  A creation or reuse answer whose `executor_in_worktree` is `absent` is not evidence: remove the tree
+  and report the blocker. A tree without an executor cannot be trusted to contain its own bootstrap —
+  the bootstrap at that sha may still read a base-directory override from the environment — so never
+  run the base tests on that assumption. That tree carries its own
   `.plan/local` boundary and the executor the same seam produces — best effort, and the payload reports
   `executor_in_worktree`; the copy-from-main fallback is disabled for it, because a copied executor
   carries main's paths and would make a base run cite main's code — so the base tree's own test
@@ -410,7 +412,9 @@ so git alone shows which deliverables are committed.
   shell in the main checkout. The tree at the base commit does NOT contain the test the Done-when
   just added, so copy that committed test file from the plan's worktree into the same path in the
   base tree before the run — it is the plan's own test, not a harness file — and record the failing
-  output that names it; the copy dies with the base tree, the committed test does not. Four forms are
+  output that names it; then DELETE the copy, before the cleanliness check, because an untracked file
+  makes `status --porcelain` dirty and `git worktree remove` refuses. The copy dies with the base
+  tree, the committed test does not. Four forms are
   NOT allowed, and a Done-when whose failing run used one
   is reported `not evidenced`: a `git clone`; a raw `git worktree add` into `.plan/temp`; a hand-run
   `generate_executor`; and an edit of a harness file in the base copy. The evidence must survive the
