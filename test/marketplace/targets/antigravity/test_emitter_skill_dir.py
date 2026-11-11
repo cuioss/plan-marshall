@@ -5,11 +5,19 @@ A skill ships every file of its directory beside the transformed ``SKILL.md``,
 whatever sub-directory the file lives in. What is left out is a short, explicit
 list: cache directories, dot-files, and files a ``targets:`` declaration scopes
 away from this target.
+
+A sub-file whose suffix is ``.md`` is written through the target's SUB-FILE
+transform — the dispatch-block applier only, deliberately not the full body
+transformer: the ``Skill:`` / ``Read:`` directives a sub-file carries are often
+quoted examples, and rewriting them would corrupt the document the target
+ships. Every other file (and every ``.md`` when no sub-file transform is
+supplied) is copied byte-identical.
 """
 
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -17,6 +25,11 @@ import pytest
 import marketplace.targets.antigravity.emitter as ag_emitter
 from conftest import PROJECT_ROOT
 from marketplace.targets.antigravity.emitter import emit_bundles
+from marketplace.targets.antigravity.target import AntigravityTarget
+from marketplace.targets.body_transform_engine import (
+    load_transform_rules,
+    make_sub_file_transformer,
+)
 from marketplace.targets.component_targets import SourceSymlinkError
 
 #: Skill-relative files the target must emit byte-identical. None of the
@@ -279,3 +292,116 @@ def test_emitter_exposes_no_subdirectory_allow_list():
     """The emitter carries no name-based allow-list of skill sub-directories."""
     assert not hasattr(ag_emitter, 'VERBATIM_SKILL_SUBDIRS')
     assert 'VERBATIM_SKILL_SUBDIRS' not in ag_emitter.__all__
+
+
+# =============================================================================
+# The sub-file transform (dispatch applier only)
+# =============================================================================
+
+#: A sub-file as the source corpus writes one: a load directive, a ``Skill:``
+#: directive and a dispatch block. The first two are quoted catalogue rows a
+#: reader must still see verbatim; only the dispatch line has no meaning for
+#: this target.
+_SUB_FILE_WITH_DISPATCH = (
+    '# Workflow\n'
+    '\n'
+    'Skill: demo:other-skill\n'
+    'Read: standards/thing.md\n'
+    '\n'
+    '```text\n'
+    'Task: plan-marshall:{target}\n'
+    '  prompt: |\n'
+    '    name: demo-envelope\n'
+    '```\n'
+)
+
+_TARGETED_DISPATCH_RE = re.compile(r'^\s*Task: plan-marshall:', re.MULTILINE)
+
+
+def _sub_file_transformer(antigravity_config_dir: Path):
+    rules = load_transform_rules(antigravity_config_dir / 'mapping.json')
+    return make_sub_file_transformer(rules)
+
+
+def _dispatch_skill(marketplace: Path) -> Path:
+    """Build a one-skill bundle whose workflow sub-file carries a dispatch block."""
+    bundle = marketplace / 'demo'
+    skill = bundle / 'skills' / 'demo-skill'
+    (skill / 'workflow').mkdir(parents=True)
+    (skill / 'SKILL.md').write_text('---\nname: demo-skill\ndescription: demo desc\n---\n# Body\n', encoding='utf-8')
+    (skill / 'workflow' / 'execution.md').write_text(_SUB_FILE_WITH_DISPATCH, encoding='utf-8')
+    manifest = bundle / '.claude-plugin' / 'plugin.json'
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text(json.dumps({'name': 'demo', 'skills': ['./skills/demo-skill']}) + '\n', encoding='utf-8')
+    return marketplace
+
+
+def test_a_markdown_sub_file_is_written_through_the_dispatch_applier_only(tmp_path: Path, antigravity_config_dir: Path):
+    """The sub-file transform is the dispatch applier: directives stay, dispatch goes.
+
+    The scope is deliberate — the full transformer would also rewrite the
+    ``Skill:`` and ``Read:`` lines, which sub-files carry as quoted examples a
+    reader must still see verbatim.
+    """
+    marketplace = _dispatch_skill(tmp_path / 'bundles')
+    out = tmp_path / 'out'
+
+    emit_bundles(
+        marketplace,
+        out,
+        antigravity_config_dir,
+        sub_file_transformer=_sub_file_transformer(antigravity_config_dir),
+    )
+
+    emitted = (out / 'skills' / 'demo-demo-skill' / 'workflow' / 'execution.md').read_text(encoding='utf-8')
+    assert not _TARGETED_DISPATCH_RE.search(emitted), 'the dispatch line survived'
+    assert '`invoke_subagent`' in emitted
+    assert 'plan-marshall:{target}' in emitted
+    assert 'Skill: demo:other-skill' in emitted, 'the Skill: directive is an example, not a target directive here'
+    assert 'Read: standards/thing.md' in emitted, 'the Read: directive is an example, not a target directive here'
+
+
+def test_without_a_sub_file_transformer_a_markdown_sub_file_is_byte_identical(
+    tmp_path: Path, antigravity_config_dir: Path
+):
+    """The sub-file transform is opt-in: an emitter called without it copies bytes."""
+    marketplace = _dispatch_skill(tmp_path / 'bundles')
+    out = tmp_path / 'out'
+
+    emit_bundles(marketplace, out, antigravity_config_dir)
+
+    emitted = (out / 'skills' / 'demo-demo-skill' / 'workflow' / 'execution.md').read_text(encoding='utf-8')
+    assert emitted == _SUB_FILE_WITH_DISPATCH
+
+
+def test_generated_plan_marshall_workflow_carries_no_bare_dispatch_line(tmp_path: Path):
+    """Generating the target over the real bundle leaves the two dispatch sites native."""
+    out = tmp_path / 'out'
+
+    AntigravityTarget().generate(Path(PROJECT_ROOT) / 'marketplace' / 'bundles', out, bundles=['plan-marshall'])
+
+    execution = out / 'skills' / 'plan-marshall-plan-marshall' / 'workflow' / 'execution.md'
+    text = execution.read_text(encoding='utf-8')
+    assert not _TARGETED_DISPATCH_RE.search(text)
+    sites = [line for line in text.splitlines() if line.strip().startswith('Call the `invoke_subagent` tool')]
+    assert len(sites) == 2, f'expected the phase-5 and verification-feedback dispatch sites, got {sites}'
+    assert all('plan-marshall:{target}' in line for line in sites), (
+        f'every dispatch instruction must name the resolved target, got {sites}'
+    )
+
+
+@pytest.mark.parametrize('document', ['phase-5-execute', 'execute-task'])
+def test_generated_phase_five_documents_carry_no_bare_task_line(document: str, tmp_path: Path):
+    """No generated ``phase-5-execute`` / ``execute-task`` document keeps a bare dispatch line."""
+    out = tmp_path / 'out'
+
+    AntigravityTarget().generate(Path(PROJECT_ROOT) / 'marketplace' / 'bundles', out, bundles=['plan-marshall'])
+
+    emitted_skill = out / 'skills' / f'plan-marshall-{document}'
+    offenders = [
+        f'{path.relative_to(emitted_skill).as_posix()}:{number}'
+        for path in sorted(emitted_skill.rglob('*.md'))
+        for number, line in enumerate(path.read_text(encoding='utf-8').splitlines(), start=1)
+        if re.match(r'^\s*Task:', line)
+    ]
+    assert not offenders, f'generated documents carry a bare dispatch line: {offenders}'

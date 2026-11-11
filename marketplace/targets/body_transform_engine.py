@@ -41,16 +41,25 @@ The three transforms, all rule-data-driven:
     - ``rewrite_inline_code`` — rewrite backtick-wrapped tool references
       (e.g. `` `AskUserQuestion` `` → `` `question` ``) to the target tool
       name. Bare prose mentions of the concept are left alone.
-    - ``preserve`` — a deliberate, leaf-aware non-rewrite (e.g. ``Task:`` —
-      the dispatcher's leaf-constraint prose must NOT be blanket-rewritten).
+    - ``rewrite_dispatch_block`` — rewrite a full-line sub-agent dispatch header
+      (``Task: plan-marshall:{target}``, or a bare ``Task:`` naming its agent on
+      the block's own ``subagent_type:`` line) into an instruction naming the
+      target's sub-agent tool and the resolved agent. The indented block below
+      the header — the ``prompt:`` body — is carried through unchanged.
+    - ``preserve`` — a deliberate, leaf-aware non-rewrite (e.g. a leaf's
+      ``no Task: dispatch`` constraint prose must NOT be blanket-rewritten).
     - ``source_fix`` — the divergence is fixed in the source, not at emit time
       (e.g. ``Skill: <entry>`` placeholder prose).
 
-**Fail-closed discipline.** Two guards fail the build rather than emit an
+**Fail-closed discipline.** Three guards fail the build rather than emit an
 un-dispositioned idiom:
 
 * :func:`assert_dispositions_known` — any ``body_idiom_rewrites`` entry carrying
   an *unknown* disposition raises :class:`UnmappedIdiomError`.
+* :func:`assert_dispatch_template_complete` — a ``rewrite_dispatch_block`` entry
+  whose ``template`` is missing or carries no ``{target}`` placeholder raises
+  :class:`UnmappedIdiomError`: without it the emitted instruction would drop the
+  agent the header named.
 * :func:`assert_source_vocabulary_mapped` — a *non-verbatim* target (one that
   declares any rewrite category) that leaves a structural source idiom
   (``skill_directive`` / ``read_directive`` / ``slash_command``) without a
@@ -63,9 +72,10 @@ un-dispositioned idiom:
 All transforms are idempotent — running them on already-transformed text is a
 no-op.
 
-The factory :func:`make_body_transformer` composes the three transforms into a
+The factory :func:`make_body_transformer` composes the transforms into a
 callable matching the ``BodyTransformer`` signature consumed by each target's
-emitter::
+emitter, and :func:`make_sub_file_transformer` composes the narrower transform a
+skill's non-``SKILL.md`` Markdown files go through::
 
     rules = load_transform_rules(config_dir / 'mapping.json')
     lookup = build_user_invocable_lookup(marketplace_dir)
@@ -84,7 +94,7 @@ from typing import Any
 
 # The set of dispositions the engine knows how to honour. A registered idiom
 # carrying any other disposition is a build-time error (fail-closed).
-_KNOWN_DISPOSITIONS = frozenset({'rewrite_inline_code', 'preserve', 'source_fix'})
+_KNOWN_DISPOSITIONS = frozenset({'rewrite_inline_code', 'preserve', 'source_fix', 'rewrite_dispatch_block'})
 
 # The structural "Claude source vocabulary": source idioms a non-verbatim target
 # MUST supply a rewrite template for, keyed to the ``mapping.json`` category that
@@ -145,6 +155,28 @@ READ_DIRECTIVE_RE = re.compile(
     r'^Read:[ \t]+(?P<path>\S.*?)[ \t]*(?P<cr>\r?)$',
     re.MULTILINE,
 )
+
+# Match the header line of a sub-agent dispatch block. Two shapes occur in the
+# source corpus, and the applier reads both: ``Task: plan-marshall:{target}``,
+# which carries the agent on the line, and a bare ``Task:`` whose agent is named
+# by the block's own ``subagent_type:`` line. The remainder after ``Task:`` is
+# captured whole and shape-checked by :func:`_dispatch_header`, because the agent
+# token may be a literal (``execution-context-level-3``) or a placeholder
+# (``{target}``), and a single regex spanning both would be unreadable.
+# ``indent`` is captured so an indented header keeps its column; ``cr`` is
+# restored so CRLF bodies survive the substitution, as in
+# :data:`READ_DIRECTIVE_RE`.
+DISPATCH_LINE_RE = re.compile(
+    r'^(?P<indent>[ \t]*)Task:[ \t]*(?P<rest>[^\s].*?)?[ \t]*(?P<cr>\r?)$',
+    re.MULTILINE,
+)
+
+# The agent token of a target-bearing dispatch header, e.g.
+# ``plan-marshall:execution-context-level-3`` or ``plan-marshall:{target}``.
+_DISPATCH_TARGET_RE = re.compile(r'^(?P<namespace>[A-Za-z0-9_-]+):(?P<agent>[A-Za-z0-9_{][A-Za-z0-9_.{}-]*)$')
+
+# A dispatch block's own agent line, used by the bare-header form.
+_SUBAGENT_TYPE_RE = re.compile(r'^[ \t]*subagent_type:[ \t]*(?P<agent>\S+?)[ \t]*(?P<cr>\r?)$')
 
 
 BodyTransformer = Callable[[str, str, str], str]
@@ -207,6 +239,7 @@ def load_transform_rules(mapping_path: Path) -> TransformRules:
         body_idiom_rewrites=_as_dict(data.get('body_idiom_rewrites')),
     )
     assert_dispositions_known(rules.body_idiom_rewrites)
+    assert_dispatch_template_complete(rules.body_idiom_rewrites)
     assert_source_vocabulary_mapped(rules)
     return rules
 
@@ -229,6 +262,27 @@ def assert_dispositions_known(registry: dict[str, dict[str, Any]]) -> None:
             raise UnmappedIdiomError(
                 f'Registered idiom {idiom!r} has unknown disposition {disposition!r}; '
                 f'known dispositions: {sorted(_KNOWN_DISPOSITIONS)}'
+            )
+
+
+def assert_dispatch_template_complete(registry: dict[str, dict[str, Any]]) -> None:
+    """Fail closed: a ``rewrite_dispatch_block`` idiom must name its agent.
+
+    The applier substitutes the dispatched agent into the target's template, so a
+    template without ``{target}`` would emit an instruction that drops the agent
+    the header named — a silent content loss, not a cosmetic defect. Raises
+    :class:`UnmappedIdiomError` in that case, and for a missing template.
+    """
+    for idiom, record in registry.items():
+        if not isinstance(record, dict):
+            continue
+        if record.get('disposition') != 'rewrite_dispatch_block':
+            continue
+        template = record.get('template')
+        if not isinstance(template, str) or '{target}' not in template:
+            raise UnmappedIdiomError(
+                f'Registered idiom {idiom!r} carries disposition rewrite_dispatch_block '
+                f'but no template naming {{target}}: {template!r}'
             )
 
 
@@ -342,6 +396,108 @@ def rewrite_slash_commands(body: str, lookup: dict[str, str], template: str) -> 
     return pattern.sub(replace, body)
 
 
+def _dispatch_header(line: str) -> tuple[str, str | None, str] | None:
+    """Read one line as a dispatch header: ``(indent, agent, cr)``, or ``None``.
+
+    ``agent`` is ``None`` for the bare-header form, whose agent the block's own
+    ``subagent_type:`` line names. A line that carries other text after
+    ``Task:`` (prose mentioning the idiom) is not a header and yields ``None``.
+    """
+    match = DISPATCH_LINE_RE.match(line)
+    if match is None:
+        return None
+    rest = (match.group('rest') or '').strip()
+    if not rest:
+        return match.group('indent'), None, match.group('cr')
+    targeted = _DISPATCH_TARGET_RE.match(rest)
+    if targeted is None:
+        return None
+    return match.group('indent'), f'{targeted.group("namespace")}:{targeted.group("agent")}', match.group('cr')
+
+
+def _dispatch_block_end(lines: list[str], start: int, indent_width: int) -> int:
+    """Index of the first non-blank line at or above the header's own indent."""
+    index = start
+    while index < len(lines):
+        line = lines[index]
+        if line.strip() == '':
+            index += 1
+            continue
+        if len(line) - len(line.lstrip(' \t')) <= indent_width:
+            break
+        index += 1
+    return index
+
+
+def _take_subagent_type(block: list[str]) -> tuple[str | None, list[str]]:
+    """Hoist a block's own ``subagent_type:`` agent out of the block it names."""
+    for index, line in enumerate(block):
+        if line.strip() == '':
+            continue
+        match = _SUBAGENT_TYPE_RE.match(line)
+        if match is None:
+            return None, block
+        return match.group('agent'), block[:index] + block[index + 1 :]
+    return None, block
+
+
+def rewrite_dispatch_blocks(body: str, template: str) -> str:
+    """Rewrite every sub-agent dispatch block into a target sub-agent instruction.
+
+    ``template`` is the target's rewrite string with a ``{target}`` placeholder
+    (from the ``rewrite_dispatch_block`` entry of
+    ``mapping.json::body_idiom_rewrites``); the dispatched agent is substituted
+    into it. The header line is replaced; the indented block below it — the
+    ``prompt:`` body — is carried through unchanged, so no prompt content is
+    lost. A bare ``Task:`` header takes its agent from the block's own
+    ``subagent_type:`` line, which is removed from the block because the
+    instruction now names it.
+
+    A ``Task:`` line that carries neither a target nor an indented block is
+    prose, not a dispatch, and is left alone.
+
+    Idempotent: the emitted instruction line no longer matches
+    :data:`DISPATCH_LINE_RE`, so re-running is a no-op.
+    """
+    lines = body.splitlines(keepends=True)
+    out: list[str] = []
+    index = 0
+    while index < len(lines):
+        header = _dispatch_header(lines[index])
+        if header is None:
+            out.append(lines[index])
+            index += 1
+            continue
+        indent, agent, cr = header
+        block_end = _dispatch_block_end(lines, index + 1, len(indent))
+        block = lines[index + 1 : block_end]
+        if not any(line.strip() for line in block):
+            out.append(lines[index])
+            index += 1
+            continue
+        if agent is None:
+            agent, block = _take_subagent_type(block)
+        if agent is None:
+            out.append(lines[index])
+            index += 1
+            continue
+        newline = '\n' if lines[index].endswith('\n') else ''
+        out.append(f'{indent}{template.replace("{target}", agent)}{cr}{newline}')
+        out.extend(block)
+        index = block_end
+    return ''.join(out)
+
+
+def _dispatched_idiom_template(registry: dict[str, dict[str, Any]]) -> str:
+    """The target's ``rewrite_dispatch_block`` template, or ``''`` when it has none."""
+    for record in registry.values():
+        if isinstance(record, dict) and record.get('disposition') == 'rewrite_dispatch_block':
+            template = record.get('template')
+            if isinstance(template, str):
+                return template
+    return ''
+
+
 def rewrite_registered_idioms(body: str, registry: dict[str, dict[str, Any]]) -> str:
     """Apply Transform 3: data-driven registered-idiom rewrites.
 
@@ -350,6 +506,8 @@ def rewrite_registered_idioms(body: str, registry: dict[str, dict[str, Any]]) ->
 
     - ``rewrite_inline_code`` — rewrite backtick-wrapped `` `{idiom}` `` to the
       target tool name (`` `{opencode_tool}` ``). Bare prose mentions are left.
+    - ``rewrite_dispatch_block`` — applied by :func:`rewrite_dispatch_blocks`,
+      which needs the block shape this line-level pass does not see.
     - ``preserve`` / ``source_fix`` — no body change (deliberate non-rewrite /
       source-side fix).
 
@@ -373,25 +531,29 @@ def make_body_transformer(
     lookup: dict[str, str],
     rules: TransformRules,
 ) -> BodyTransformer:
-    """Compose Transforms 1 + 2 + 3 into a ``BodyTransformer``.
+    """Compose the transforms into a ``BodyTransformer``.
 
     The returned callable matches the emitter's ``BodyTransformer`` signature:
     ``(body, bundle, kind) -> rewritten body``. The bundle and kind arguments are
     reserved for future per-context behavior; the current transforms apply
     uniformly to skill, agent, and command bodies.
 
-    Transform 1 covers both registered structural directives (``Skill:`` and
-    ``Read:``); each runs only when ``rules`` supplies its template. The
-    remaining transforms run only when ``rules`` declares their category, so a
-    verbatim target (empty ``rules``) returns bodies unchanged. ``rules`` is
-    expected to have passed the fail-closed validation in
-    :func:`load_transform_rules`.
+    The dispatch-block applier runs first, consuming each dispatch header before
+    the line-level transforms see the block it introduced. Transform 1 covers
+    both registered structural directives (``Skill:`` and ``Read:``); each runs
+    only when ``rules`` supplies its template. The remaining transforms run only
+    when ``rules`` declares their category, so a verbatim target (empty ``rules``)
+    returns bodies unchanged. ``rules`` is expected to have passed the
+    fail-closed validation in :func:`load_transform_rules`.
     """
     directive_template = _structural_template(rules.directive_rewrites, 'skill_directive')
     read_template = _structural_template(rules.directive_rewrites, 'read_directive')
     slash_template = _structural_template(rules.slash_rewrites, 'slash_command')
+    dispatch_template = _dispatched_idiom_template(rules.body_idiom_rewrites)
 
     def transform(body: str, _bundle: str, _kind: str) -> str:
+        if dispatch_template:
+            body = rewrite_dispatch_blocks(body, dispatch_template)
         if directive_template:
             body = rewrite_skill_directives(body, directive_template)
         if read_template:
@@ -400,6 +562,27 @@ def make_body_transformer(
             body = rewrite_slash_commands(body, lookup, slash_template)
         if rules.body_idiom_rewrites:
             body = rewrite_registered_idioms(body, rules.body_idiom_rewrites)
+        return body
+
+    return transform
+
+
+def make_sub_file_transformer(rules: TransformRules) -> BodyTransformer:
+    """Compose the transform a skill's non-``SKILL.md`` Markdown files go through.
+
+    The scope is deliberately narrower than :func:`make_body_transformer`: only
+    the dispatch-block applier runs. A sub-file's ``Skill:`` / ``Read:``
+    directives are frequently quoted examples and catalogue rows — the
+    ``Skill: <entry>`` record is itself a ``source_fix`` for that reason — so
+    rewriting them would corrupt the document the target ships. The dispatch
+    header is different: it is an instruction the reader is meant to follow, and
+    its Claude-native form names no tool this target has.
+    """
+    dispatch_template = _dispatched_idiom_template(rules.body_idiom_rewrites)
+
+    def transform(body: str, _bundle: str, _kind: str) -> str:
+        if dispatch_template:
+            body = rewrite_dispatch_blocks(body, dispatch_template)
         return body
 
     return transform
@@ -487,17 +670,21 @@ def build_user_invocable_lookup(marketplace_dir: Path) -> dict[str, str]:
 
 __all__ = [
     'BodyTransformer',
+    'DISPATCH_LINE_RE',
     'READ_DIRECTIVE_RE',
     'STRUCTURAL_VOCABULARY',
     'SKILL_DIRECTIVE_RE',
     'TransformRules',
     'UnmappedIdiomError',
+    'assert_dispatch_template_complete',
     'assert_dispositions_known',
     'assert_source_vocabulary_mapped',
     'build_slash_command_re',
     'build_user_invocable_lookup',
     'load_transform_rules',
     'make_body_transformer',
+    'make_sub_file_transformer',
+    'rewrite_dispatch_blocks',
     'rewrite_read_directives',
     'rewrite_registered_idioms',
     'rewrite_skill_directives',
