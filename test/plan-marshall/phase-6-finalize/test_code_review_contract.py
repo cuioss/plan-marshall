@@ -459,16 +459,80 @@ def test_the_double_quote_scan_matches_what_it_targets():
     assert not scan.DOUBLE_QUOTED_PLACEHOLDER_RE.search('--title "not_run at code-review"')
 
 
-def test_every_free_text_template_names_the_quoting_rule():
-    pairs = scan.bash_blocks_with_lead_in(_body())
-    governed = [(lead_in, block) for lead_in, block in pairs if scan.SINGLE_QUOTED_PLACEHOLDER_RE.search(block)]
-    assert governed, 'control: the body must carry free-text templates for the reference check to read'
-    unreferenced = [
+def test_the_quoted_placeholder_patterns_read_the_equals_form():
+    """``--message="{x}"`` and ``--message='{x}'`` offend exactly as their space-separated forms do."""
+    assert scan.DOUBLE_QUOTED_PLACEHOLDER_RE.search('--message="{ref}"')
+    assert scan.SINGLE_QUOTED_PLACEHOLDER_RE.search("--message='{ref}'")
+
+
+def test_the_quoted_placeholder_patterns_keep_the_space_separated_form():
+    """The space-separated forms stay flagged, so the ``=`` form joins them rather than replacing them."""
+    assert scan.DOUBLE_QUOTED_PLACEHOLDER_RE.search('--message "{ref}"')
+    assert scan.SINGLE_QUOTED_PLACEHOLDER_RE.search("--message '{ref}'")
+
+
+def _templates_without_the_quoting_rule(body: str) -> list[str]:
+    """The free-text templates of ``body`` whose lead-in does not name the quoting rule."""
+    governed = [
+        (lead_in, block)
+        for lead_in, block in scan.bash_blocks_with_lead_in(body)
+        if scan.SINGLE_QUOTED_PLACEHOLDER_RE.search(block)
+    ]
+    return [
         scan.free_text_lines(block, scan.SINGLE_QUOTED_PLACEHOLDER_RE)[0]
         for lead_in, block in governed
         if _QUOTING_RULE_ANCHOR not in lead_in
     ]
+
+
+def test_every_free_text_template_names_the_quoting_rule():
+    pairs = scan.bash_blocks_with_lead_in(_body())
+    governed = [(lead_in, block) for lead_in, block in pairs if scan.SINGLE_QUOTED_PLACEHOLDER_RE.search(block)]
+    assert governed, 'control: the body must carry free-text templates for the reference check to read'
+    unreferenced = _templates_without_the_quoting_rule(_body())
     assert not unreferenced, f'these templates interpolate free text without naming the quoting rule: {unreferenced}'
+
+
+#: One free-text template whose lead-in the fixtures below vary.
+_FIXTURE_TEMPLATE = (
+    '```bash\npython3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \\\n'
+    "  decision --message '{title}'\n```"
+)
+
+
+def _fixture_body(*paragraphs: str) -> str:
+    """A document body whose paragraphs precede :data:`_FIXTURE_TEMPLATE`."""
+    return '\n\n'.join([*paragraphs, _FIXTURE_TEMPLATE])
+
+
+def test_the_lead_in_is_the_immediately_preceding_paragraph_only():
+    """A citation two paragraphs above the block does not introduce it."""
+    two_above = _fixture_body(
+        f'Quoted per [§ Shell-safe free text]{_QUOTING_RULE_ANCHOR}.',
+        'A further paragraph, with no citation.',
+    )
+    assert _templates_without_the_quoting_rule(two_above), (
+        'a citation two paragraphs above the first block must not introduce it'
+    )
+
+
+def test_the_lead_in_carries_a_citation_from_the_immediately_preceding_paragraph():
+    """The citation in the paragraph directly above the block does introduce it."""
+    immediately_above = _fixture_body(
+        'An earlier paragraph, with no citation.',
+        f'Quoted per [§ Shell-safe free text]{_QUOTING_RULE_ANCHOR}.',
+    )
+    assert not _templates_without_the_quoting_rule(immediately_above)
+
+
+def test_a_heading_between_the_citation_and_the_block_ends_the_lead_in():
+    """A heading starts a new paragraph, so a citation above it does not reach the block."""
+    under_a_heading = _fixture_body(
+        f'Quoted per [§ Shell-safe free text]{_QUOTING_RULE_ANCHOR}.',
+        '## A heading',
+        'The sentence under the heading, with no citation.',
+    )
+    assert _templates_without_the_quoting_rule(under_a_heading)
 
 
 # ---------------------------------------------------------------------------

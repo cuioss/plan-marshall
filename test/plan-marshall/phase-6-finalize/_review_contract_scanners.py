@@ -24,14 +24,16 @@ FREE_TEXT_FLAGS = ('--message', '--title', '--detail', '--display-detail')
 #: The alternation of :data:`FREE_TEXT_FLAGS`, derived so a flag added to the
 #: declared set is scanned without a second edit.
 FREE_TEXT_FLAG = '(?:' + '|'.join(re.escape(flag) for flag in FREE_TEXT_FLAGS) + ')'
-DOUBLE_QUOTED_PLACEHOLDER_RE = re.compile(rf'{FREE_TEXT_FLAG}\s+"[^"\n]*\{{')
-SINGLE_QUOTED_PLACEHOLDER_RE = re.compile(rf"{FREE_TEXT_FLAG}\s+'[^'\n]*\{{")
+DOUBLE_QUOTED_PLACEHOLDER_RE = re.compile(rf'{FREE_TEXT_FLAG}(?:\s+|=)"[^"\n]*\{{')
+SINGLE_QUOTED_PLACEHOLDER_RE = re.compile(rf"{FREE_TEXT_FLAG}(?:\s+|=)'[^'\n]*\{{")
 #: A free-text flag and the separator before its argument.
 FREE_TEXT_ARGUMENT_RE = re.compile(rf'(?<![\w-]){FREE_TEXT_FLAG}(?:\s+|=)')
 #: The one safe form: the whole argument is a single single-quoted shell word.
 ONE_SINGLE_QUOTED_WORD_RE = re.compile(r"'[^'\n]*'")
 #: A fence at any indentation — a template inside a list item is indented.
 ANY_FENCE_RE = re.compile(r'^\s*```(\w*)\s*$')
+#: A markdown ATX heading, indented at most three spaces; it is a paragraph of its own.
+HEADING_RE = re.compile(r'^ {0,3}#{1,6}\s')
 
 #: The halt rule that must sit between an advisory decision-log template and the
 #: ``mark-step-done`` that records the outcome after it.
@@ -46,31 +48,42 @@ ADVISORY_HALT_RE = re.compile(
 
 
 def bash_blocks_with_lead_in(text: str) -> list[tuple[str, str]]:
-    """Every ``bash`` block, indented ones included, paired with the prose that introduces it.
+    """Every ``bash`` block, indented ones included, paired with the paragraph that introduces it.
 
-    Blocks separated only by blank lines share one lead-in: the prose before the
+    Only the immediately preceding paragraph introduces a block: a blank line ends
+    the paragraph it separates, and a heading is a paragraph of its own, so a
+    citation further up the document does not reach a block it does not sit above.
+    Blocks separated only by blank lines share one lead-in: the paragraph before the
     first of them introduces the whole run.
     """
     pairs: list[tuple[str, str]] = []
-    lead_in: list[str] = []
+    paragraph: list[str] = []
+    introducing: list[str] = []
     block: list[str] | None = None
     language = ''
-    after_block = False
+    lead_in: list[str] = []
     for line in text.splitlines():
         fence = ANY_FENCE_RE.match(line)
         if fence and block is None:
             block, language = [], fence.group(1)
+            lead_in = paragraph or introducing
             continue
         if fence and block is not None:
             if language == 'bash':
                 pairs.append((' '.join(lead_in), '\n'.join(block)))
-            block, after_block = None, True
+            block = None
             continue
         if block is not None:
             block.append(line)
-        elif line.strip():
-            lead_in = [line] if after_block else [*lead_in, line]
-            after_block = False
+            continue
+        if not line.strip():
+            if paragraph:
+                introducing, paragraph = paragraph, []
+            continue
+        if HEADING_RE.match(line):
+            introducing, paragraph = [line], []
+            continue
+        paragraph.append(line)
     return pairs
 
 
