@@ -14,6 +14,7 @@ they need from ``ci_base`` alone.
 
 import argparse
 import re
+import shlex
 import subprocess
 import sys
 import time
@@ -183,6 +184,29 @@ VALID_BODY_KINDS = frozenset(
     }
 )
 
+# The ONE command that allocates a scratch path for each body kind. A consumer
+# that finds no prepared body names the command for ITS kind: "call the matching
+# prepare-body subcommand" is unfollowable for a thread reply, which no
+# prepare-body slot serves — `pr prepare-comment` carries the `--for` flag.
+BODY_PREPARE_COMMANDS = {
+    BODY_KIND_PR_CREATE: 'ci pr prepare-body --for create',
+    BODY_KIND_PR_EDIT: 'ci pr prepare-body --for edit',
+    BODY_KIND_PR_REPLY: 'ci pr prepare-comment --for reply',
+    BODY_KIND_PR_THREAD_REPLY: 'ci pr prepare-comment --for thread-reply',
+    BODY_KIND_ISSUE_CREATE: 'ci issue prepare-body',
+    BODY_KIND_ISSUE_COMMENT: 'ci issue prepare-comment',
+}
+
+# Registration-time completeness: a body kind added to VALID_BODY_KINDS without a
+# command here would leave that kind's refusal with no followable guidance — the
+# defect this map exists to remove. The set is defined in THIS module, so the
+# assertion is the derivation: one closed vocabulary, checked once at import.
+assert set(BODY_PREPARE_COMMANDS) == VALID_BODY_KINDS, (
+    'BODY_PREPARE_COMMANDS must cover exactly VALID_BODY_KINDS: '
+    f'missing={sorted(VALID_BODY_KINDS - set(BODY_PREPARE_COMMANDS))} '
+    f'extra={sorted(set(BODY_PREPARE_COMMANDS) - VALID_BODY_KINDS)}'
+)
+
 _BODY_SLOT_RE = re.compile(r'^[a-z0-9][a-z0-9-]{0,63}$')
 
 
@@ -315,6 +339,10 @@ def read_and_consume_body(
     if not path.exists():
         if not required:
             return '', None
+        # The recovery command must be COPY-PASTEABLE: both prepare verbs require
+        # --plan-id, and a non-default slot without --slot would allocate a
+        # different body. The quoted values are the ones this call resolved.
+        command = BODY_PREPARE_COMMANDS.get(kind, 'the matching prepare verb')
         return None, {
             'status': 'error',
             'error': 'body_not_prepared',
@@ -322,8 +350,9 @@ def read_and_consume_body(
             'path': str(path),
             'message': (
                 f'No prepared body for kind={kind} plan_id={plan_id}. '
-                f'Call the matching prepare-body subcommand first and write the '
-                f'body content to the returned path.'
+                f'Allocate one with `{command} --plan-id {shlex.quote(plan_id)} '
+                f'--slot {shlex.quote(_resolve_body_slot(slot))}` and write the body content to the '
+                f'path it returns.'
             ),
         }
 

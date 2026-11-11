@@ -72,7 +72,8 @@ def _load_template_module() -> types.ModuleType:
 
     Rendered through the directory's shared renderer: every ``{{...}}`` token
     takes an inert stand-in (empty mappings, no target-aware resolver body), the
-    version and fingerprint take the fresh-install empty sentinel, and
+    version takes the test renderer's inert stamp and the fingerprint the empty
+    sentinel, and
     ``{{LOGGING_DIR}}`` points at the real manage-logging scripts so the
     module-level ``from plan_logging import ...`` succeeds. The template's
     ``_ledger_core`` / ``worktree_sha`` / ``toon_parser`` imports resolve without
@@ -361,6 +362,7 @@ _TEMPLATE_BODY = (
     ']\n'
     'EXTRA = [{{EXTRA_SCRIPT_DIRS}}]\n'
     'PLAN_DIR_NAME = "{{PLAN_DIR_NAME}}"\n'
+    'MARSHALL_VERSION = "{{GENERATED_VERSION}}"\n'
     'GENERATED_FOR = "{{GENERATED_FOR}}"\n'
     '_INSTALLED_ROOTS = (\n'
     '{{INSTALLED_ROOTS}}\n'
@@ -466,6 +468,52 @@ def test_generate_executor_returns_error_when_template_missing(tmp_path, monkeyp
     result = _gen.generate_executor({'a:b:c': '/p/c.py'}, tmp_path / 'empty-base', dry_run=False)
 
     assert result['status'] == 'error'
+
+
+# =============================================================================
+# The provisioning stamp — an unresolvable version is an ANSWERED absence
+# =============================================================================
+
+
+def test_an_unresolvable_version_is_stamped_unversioned(tmp_path, monkeypatch):
+    """No readable version stamps ``unversioned`` and the payload names why.
+
+    An EMPTY ``MARSHALL_VERSION`` is indistinguishable from a pre-stamp executor:
+    every staleness comparison answers "unanswerable" and the restart-check can
+    only report the empty value back. ``unversioned`` is an answered absence, and
+    the reason names the reads that came back empty so the cause travels with the
+    file.
+    """
+    base = _prep_synthetic(tmp_path, monkeypatch)
+    monkeypatch.setattr(_gen, 'installed_harness_versions', lambda roots: [])
+    monkeypatch.setattr(_gen, 'tree_published_versions', lambda base_path: [])
+
+    result = _gen.generate_executor({'a:b:c': '/p/c.py'}, base, dry_run=False, target='claude')
+
+    assert result['status'] == 'success', result
+    assert result['version'] == 'unversioned'
+    assert 'no readable version' in result['version_reason']
+    written = (tmp_path / '.plan' / 'execute-script.py').read_text(encoding='utf-8')
+    assert 'MARSHALL_VERSION = "unversioned"' in written
+
+
+def test_a_readable_version_is_stamped_without_a_reason(tmp_path, monkeypatch):
+    """Discriminating half: a readable version is stamped verbatim, with no reason.
+
+    Without this case the assertion above would also pass on a generator that
+    stamped ``unversioned`` unconditionally.
+    """
+    base = _prep_synthetic(tmp_path, monkeypatch)
+    monkeypatch.setattr(_gen, 'installed_harness_versions', lambda roots: [('claude', '0.1.9999')])
+    monkeypatch.setattr(_gen, 'tree_published_versions', lambda base_path: [])
+
+    result = _gen.generate_executor({'a:b:c': '/p/c.py'}, base, dry_run=False, target='claude')
+
+    assert result['status'] == 'success', result
+    assert result['version'] == '0.1.9999'
+    assert 'version_reason' not in result
+    written = (tmp_path / '.plan' / 'execute-script.py').read_text(encoding='utf-8')
+    assert 'MARSHALL_VERSION = "0.1.9999"' in written
 
 
 # =============================================================================
@@ -800,6 +848,39 @@ def test_cmd_generate_flattens_stats_into_fail_open_error(tmp_path, monkeypatch)
     assert result['surfaces_not_derivable'] == 3
     # The nested block is flattened away, not left as a sub-mapping.
     assert 'surface_stats' not in result
+
+
+def test_cmd_generate_forwards_the_version_stamp_and_its_reason(tmp_path, monkeypatch):
+    """The CLI payload carries the stamp and, when nothing was readable, WHY.
+
+    A reason only the preview branch carries is a reason the run that actually
+    stamped the file never reports, so the forwarding is asserted on the written
+    path — the one a lane reads.
+    """
+    monkeypatch.setattr(_gen, 'get_base_path', lambda **k: tmp_path)
+    monkeypatch.setattr(_gen, 'discover_scripts', lambda base: {'a:b:c': '/p/c.py'})
+    monkeypatch.setattr(_gen, 'discover_local_scripts', lambda: {})
+    monkeypatch.setattr(_gen, 'assess_discovery_coverage', lambda base, discovered: _passing_coverage())
+    monkeypatch.setattr(
+        _gen,
+        'generate_executor',
+        lambda *a, **k: {
+            'status': 'success',
+            'surface_stats': _stats(1, 0, 0),
+            'version': _gen.UNVERSIONED_SENTINEL,
+            'version_reason': 'no readable version: ...',
+        },
+    )
+    monkeypatch.setattr(_gen, 'cleanup_old_logs', lambda: 0)
+    monkeypatch.setattr(_gen, 'update_state', lambda *a, **k: None)
+    monkeypatch.setattr(_gen, 'compute_checksum', lambda mappings: 'deadbeef')
+    args = types.SimpleNamespace(marketplace=False, marketplace_root=None, dry_run=False, target=None)
+
+    result = _gen.cmd_generate(args)
+
+    assert result['status'] == 'success'
+    assert result['version'] == _gen.UNVERSIONED_SENTINEL
+    assert result['version_reason'].startswith('no readable version')
 
 
 # =============================================================================

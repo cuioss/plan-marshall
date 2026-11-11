@@ -657,3 +657,52 @@ def test_poll_until_eventual_success():
 # =============================================================================
 # --head flag registration tests
 # =============================================================================
+
+
+# =============================================================================
+# body_not_prepared names the prepare command for its KIND
+# =============================================================================
+
+
+#: The expected recovery command per body kind, written INDEPENDENTLY of
+#: ``BODY_PREPARE_COMMANDS`` so a wrong value in production fails this test —
+#: while the parameter list is derived from ``VALID_BODY_KINDS`` so a newly
+#: registered kind cannot slip through untested.
+_EXPECTED_PREPARE_COMMAND = {
+    BODY_KIND_PR_CREATE: 'ci pr prepare-body --for create',
+    BODY_KIND_PR_EDIT: 'ci pr prepare-body --for edit',
+    BODY_KIND_PR_REPLY: 'ci pr prepare-comment --for reply',
+    BODY_KIND_PR_THREAD_REPLY: 'ci pr prepare-comment --for thread-reply',
+    BODY_KIND_ISSUE_CREATE: 'ci issue prepare-body',
+    BODY_KIND_ISSUE_COMMENT: 'ci issue prepare-comment',
+}
+assert set(_EXPECTED_PREPARE_COMMAND) == set(VALID_BODY_KINDS), (
+    'the expectation table must cover every registered body kind: '
+    f'missing={sorted(set(VALID_BODY_KINDS) - set(_EXPECTED_PREPARE_COMMAND))}'
+)
+
+#: The parametrized population, derived from the module's own closed vocabulary
+#: so a newly registered kind cannot go untested — and asserted non-empty at the
+#: binding site, because a derived-and-empty population would silently run nothing.
+_TESTED_BODY_KINDS = sorted(VALID_BODY_KINDS)
+assert _TESTED_BODY_KINDS, 'the derived body-kind population is empty'
+
+
+@pytest.mark.parametrize('kind', _TESTED_BODY_KINDS)
+def test_body_not_prepared_names_the_prepare_command_for_its_kind(plan_base_env, kind):
+    """Each kind's refusal names the COPY-PASTEABLE command that allocates its body.
+
+    The retired message said "call the matching prepare-body subcommand", which is
+    unfollowable for a thread reply: no ``prepare-body`` slot serves it, and the
+    reader is left to discover that ``prepare-comment`` carries a ``--for`` flag.
+    The printed command also has to run as written, so it carries the plan id and
+    the slot this call resolved.
+    """
+    content, error = read_and_consume_body('my-plan', kind, slot='absent')
+
+    assert content is None
+    assert error is not None
+    assert error['error'] == 'body_not_prepared'
+    assert _EXPECTED_PREPARE_COMMAND[kind] in error['message'], error['message']
+    assert '--plan-id my-plan' in error['message'], error['message']
+    assert '--slot absent' in error['message'], error['message']

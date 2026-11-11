@@ -754,6 +754,14 @@ def test_read_executor_anchor_distinguishes_unreadable_from_unanchored(tmp_path)
     sentinel.write_text("MARSHALL_VERSION = ''\n", encoding='utf-8')
     assert _ppt.read_executor_anchored_version(sentinel).status == _ppt.EXECUTOR_NO_ANCHOR
 
+    unversioned = tmp_path / 'unversioned.py'
+    unversioned.write_text("MARSHALL_VERSION = 'unversioned'\n", encoding='utf-8')
+    anchor = _ppt.read_executor_anchored_version(unversioned)
+    # The generator's answered absence is anchor-less too: reading it as a version
+    # would turn "no store could state one" into a demonstrated divergence.
+    assert anchor.status == _ppt.EXECUTOR_NO_ANCHOR
+    assert anchor.version is None
+
 
 def test_compare_pin_content_reports_counts(tmp_path):
     source = tmp_path / 'source'

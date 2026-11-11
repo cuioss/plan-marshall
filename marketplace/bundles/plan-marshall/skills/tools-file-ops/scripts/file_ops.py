@@ -94,6 +94,13 @@ from toon_parser import serialize_toon
 # None means "resolve from environment / git on each call".
 _BASE_DIR_OVERRIDE: Path | None = None
 
+#: The environment variables that OVERRIDE the tracked-config resolution, in
+#: precedence order. One definition, because a consumer that must run a child with
+#: resolution pinned to the cwd (the test executor bootstrap) has to remove
+#: exactly these: a new override added here is then removed there too instead of
+#: silently redirecting a write outside the checkout.
+TRACKED_CONFIG_ENV_OVERRIDES = ('PLAN_TRACKED_CONFIG_DIR', 'PLAN_BASE_DIR')
+
 
 def now_utc_iso() -> str:
     """Get current UTC time as ISO 8601 string with Z suffix.
@@ -1481,24 +1488,21 @@ def get_tracked_config_dir() -> Path:
 
     Resolution order:
         1. Explicit set_base_dir() override (tests).
-        2. PLAN_TRACKED_CONFIG_DIR environment variable (tests, fine-grained
-           override).
-        3. PLAN_BASE_DIR environment variable (backward compatibility for
-           tests that already stage both runtime state AND marshal.json in
-           the same fixture directory).
-        4. ``<plan-root>/.plan`` where ``<plan-root>`` is the nearest ancestor
+        2. The environment overrides in :data:`TRACKED_CONFIG_ENV_OVERRIDES`, in
+           order — ``PLAN_TRACKED_CONFIG_DIR`` (tests, fine-grained override)
+           then ``PLAN_BASE_DIR`` (backward compatibility for tests that stage
+           runtime state and marshal.json in one fixture directory).
+        3. ``<plan-root>/.plan`` where ``<plan-root>`` is the nearest ancestor
            of the current working directory containing ``.plan/local`` (the
            uniform cwd rule, ADR-002).
-        5. ./.plan relative to cwd (fallback).
+        4. ./.plan relative to cwd (fallback).
     """
     if _BASE_DIR_OVERRIDE is not None:
         return _BASE_DIR_OVERRIDE
-    env_tracked = os.environ.get('PLAN_TRACKED_CONFIG_DIR')
-    if env_tracked:
-        return Path(env_tracked)
-    env_base = os.environ.get('PLAN_BASE_DIR')
-    if env_base:
-        return Path(env_base)
+    for name in TRACKED_CONFIG_ENV_OVERRIDES:
+        value = os.environ.get(name)
+        if value:
+            return Path(value)
     root = _find_plan_root_from_cwd()
     if root is not None:
         return root / PLAN_DIR_NAME
