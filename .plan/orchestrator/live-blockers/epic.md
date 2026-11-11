@@ -65,6 +65,31 @@ derive, for rows still live.
   current pull request only; an edit naming no commit credits nothing; an optional bot never asks. Open: the declined inline-2 is not
   sound (no verb stamps or removes a findings row), the surface drift is partly undisclosed, and the minors are Watches.
 
+- **PLAN-LB-143** (staged, runbook lane, WS-04; staged on the operator's word of 2026-11-11, "larger plans, fewer of them") — the OpenCode
+  target expresses an agent's tool restriction, and the permission writers stop dropping, ignoring and refusing what they should keep.
+  Five deliverables on one surface, from the PLAN-LB-134 landing: the emitter writes deny rows (never grants) for each action an agent's
+  source does not grant, because the base policy is allow-all (observed twice: the leaf and the orchestrator ran `opencode api GET
+  /api/agent/execution-context-reader` at `v2.2.7`, which returns `{*,*,allow}` first and denies only `browser` and `skill:browser`, so
+  the reader's "read-only by construction" containment does not exist on OpenCode); an already-satisfied request is a success and a
+  partially overlapping glob is a conflict; the OpenCode 1 map writers keep a scalar `bash` deny or ask, match the effect on removal
+  and keep a `webfetch` pattern map; the contract, the adoc and the error codes agree with the code; the tests pin what was only argued.
+  Grounded by a read-only leaf against `9771c0f9e`; the orchestrator re-read the emitter diff, the upsert, the scalar, removal and
+  `web-apply` branches and re-ran the two OpenCode queries. `corpus spec-skills` emit-allowed, the Done-when lint flags nothing, the
+  declared surface is determinate and shares no file with anything in flight. **Sequence before PLAN-LB-135, 136 and 140** (it shares
+  `opencode_runtime.py`, `opencode.adoc` and `test_opencode_runtime.py` with 135 and corrects the matrix wording 135 D3 rewrites).
+
+- **PLAN-LB-144** (staged, held, runbook lane, WS-03; staged on the same word) — a closing state must be real, a refusal must name a
+  remedy that exists, and the freshness gate reads a Gradle submodule row. Four deliverables from the PLAN-LB-130, 132 and 133
+  landings: `superseded_by` rejects the deliverable's own number, a cycle and an unmet successor and accepts the natural spellings with
+  an error that says why (two existing fixtures that pin the self-citation move); a resolved legacy findings row stops refusing the
+  merge and the refusal names a `manage-findings` verb that exists (it has never had one), `foreign_stored_findings` is consumed, and
+  `trigger-bot --pr-number` gets an end-to-end test; the review-completeness prose and `unproven_bots` are corrected; a `:`-prefixed
+  Gradle task row is readable again so a root row beside a submodule row no longer refuses the whole tree. Grounded by a read-only leaf
+  against `9771c0f9e`; the orchestrator re-read the `superseded_by` rule. **Held until PLAN-LB-142 ships:** the cross-check reports 12
+  shared files with it (the automatic-review and finalize-gate surfaces; 4 of the 12 come from PLAN-LB-142's own directory claim on
+  `test/plan-marshall/phase-6-finalize/`), and PLAN-LB-142's hunks sit beside the participation-scope code, so the spec names
+  functions and not lines. The `lessons-routing` finding 085 (freshness gate and a rewriting quality gate) is a lead and is not in it.
+
 - **PLAN-LB-138** (shipped #1957, 2026-11-10, runbook lane, `deepseek-v4.1-flash/high`) — see `landings/PLAN-LB-138.md`. Merge commit
   `27f4e4b96`, a squash commit with one parent `eacede16c` (the #1958 ledger land). One three-layer leaf read it with the lane's
   claims passed one by one and ran four read-only orchestrator verbs against the live store; the orchestrator re-read the `next`
@@ -1382,6 +1407,17 @@ derive, for rows still live.
 
 ## Decisions
 
+- 2026-11-11 — **The open majors and their residue are consolidated into two staged plans, PLAN-LB-143 and PLAN-LB-144, on the
+  operator's word ("aim at larger plans, a smaller number of plans if sensible"); nothing is emitted.** One plan per surface, not per
+  defect: PLAN-LB-143 (OpenCode permission writer and emitter, WS-04, five deliverables) takes the four PLAN-LB-134 majors and their
+  minors; PLAN-LB-144 (gate integrity, WS-03, four deliverables) takes the PLAN-LB-133 `superseded_by` major, the PLAN-LB-132
+  participation-scope residue and the PLAN-LB-130 Gradle carve-out. Two plans, not one, because they share no file and PLAN-LB-144
+  must wait for PLAN-LB-142 while PLAN-LB-143 need not; both stay under the six-deliverable guard. The emitter question is settled
+  by an observed fact and not left as a Watch: the OpenCode 2 base policy is allow-all (live GET at `v2.2.7`), so an omitted grant
+  restricts nothing, and the plan emits denies and never grants. The `lessons-routing` findings 084, 085 and 086 are NOT folded in:
+  they are unanalysed. 085 (freshness) belongs with PLAN-LB-144 D4 if it confirms. The earlier recommendation to read the base
+  policy before touching the emitter is done.
+
 - 2026-11-11 — **PLAN-LB-133, PLAN-LB-134 and PLAN-LB-138 are analysed from the inbox on the operator's word ("analyze landed, do not
   emit yet, after analyze land, after that report"); nothing is emitted.** Each landing was read by its own three-layer leaf with the
   lane's claims passed one by one; every squash parent was read with git (`eacede16c`, `27f4e4b96`, `b09bf3197`) and named in the leaf
@@ -2329,7 +2365,10 @@ derive, for rows still live.
 ## Open Defects
 
 - **MAJOR — the OpenCode emitter expresses no tool restriction for any agent, and the effect rests on one unread fact (PLAN-LB-134
-  landing, 2026-11-11; NOT STAGED, reported to the operator, a fix plan only on the operator's word).** `transform_agent_frontmatter`
+  landing, 2026-11-11; STAGED as PLAN-LB-143 deliverable 1 on the operator's word of 2026-11-11. The unread fact was then read, by the
+  leaf and by the orchestrator: `GET /api/agent/execution-context-reader` at `opencode v2.2.7` returns `{*,*,allow}` first and denies
+  only `browser` and `skill:browser`, so the base policy is allow-all, the reader can edit, write and run shell on the OpenCode
+  target, and the "if no match means ask" branch below is refuted).** `transform_agent_frontmatter`
   now only validates an agent's `tools:` and emits no permission rule (the diff was re-read); before the change it emitted `allow`
   rows only, so the restriction of an agent such as `execution-context-reader` (WebSearch, WebFetch, Read, Grep, the containment
   boundary for untrusted web content) was never expressed in the OpenCode artifact either. What the change does depends on the base
@@ -2341,7 +2380,7 @@ derive, for rows still live.
   allows does not apply to denies. Retire when the base policy is read and the emitter either expresses the restriction or the
   documents state what is true.
 - **MAJOR — `permission fix protect-path` and `ensure` refuse a request a later broader row of the same effect already satisfies
-  (PLAN-LB-134 landing, 2026-11-11; NOT STAGED).** The new shadow refusal (`opencode_runtime.py:721-733`, re-read) returns
+  (PLAN-LB-134 landing, 2026-11-11; STAGED as PLAN-LB-143 deliverable 2).** The new shadow refusal (`opencode_runtime.py:721-733`, re-read) returns
   `permission_conflict` and saves nothing when the requested effect already holds through a later broader row, because the exact
   resource is absent so `_rule_exists` does not short-circuit (`:623-639`, re-read). On a list that holds a `cat *` deny after the
   shell catch-all, the first `protect-path` vector aborts the whole batch and the remaining vectors are not installed; `ensure ask(git
@@ -2349,14 +2388,14 @@ derive, for rows still live.
   reads the spec's `ask` counter-example as already `ask` at the base (not re-read). Loud, fails closed, but a hardening command that
   aborts on a plausible configuration. Retire when an already-satisfied request is idempotent.
 - **MAJOR — a scalar `permission.bash` (or scalar `permission`) value is replaced by an empty map in six writers (PLAN-LB-134
-  landing, 2026-11-11; pre-existing at the base, the lane's own residue; NOT STAGED).** At the re-read site (`configure`,
+  landing, 2026-11-11; pre-existing at the base, the lane's own residue; STAGED as PLAN-LB-143 deliverable 3).** At the re-read site (`configure`,
   `opencode_runtime.py:1742-1749`) only a scalar `"allow"` survives; any other scalar becomes `{}` before the grant is typed, so a
   conservative `"deny"` or `"ask"` is lost, and the leaf says OpenCode 1's default is allow (not re-read). The leaf names the other
   five: `permission fix` ensure and add, ensure-defaults, `cmd_ensure_wildcards`, `cmd_ensure_executor` and `cmd_ensure`. The same
   class, minor each and OpenCode 1 map shape only: the runtime map removal ignores the effect (`:2064-2086`, re-read) and `web-apply`
   replaces a `webfetch` pattern map (`:2372-2375`, re-read). One small plan could close the class.
 - **MAJOR — a deliverable can supersede itself, or two can supersede each other, and its criteria close with no evidence
-  (PLAN-LB-133 landing, 2026-11-11; NOT STAGED, reported to the operator, a fix plan only on the operator's word).**
+  (PLAN-LB-133 landing, 2026-11-11; STAGED as PLAN-LB-144 deliverable 1, held until PLAN-LB-142 ships).**
   `superseded_by_names_deliverable` (`_criteria_snapshot.py:1836-1867`, re-read) checks that the cited number is one of the
   outline's own, never that it differs from the deliverable's own, and the validator (`_review_support_validate.py:444-450`, leaf)
   and `open_criteria` share it. Not a regression (the base closed on any free text) and the lane recorded it as spec-literal, but the
@@ -2370,7 +2409,7 @@ derive, for rows still live.
   layer 1). The merge state and the deliverable count were read from the PR and the diff instead. Retire when the finalize steps publish
   the four numbers.
 - **HIGH — the freshness gate refuses a whole-tree change on a Gradle ledger that holds a submodule row beside a root row
-  (PLAN-LB-130 landing, 2026-11-10; NOT STAGED, reported to the operator, a fix plan only on the operator's word).** The PLAN-LB-124
+  (PLAN-LB-130 landing, 2026-11-10; STAGED as PLAN-LB-144 deliverable 4 on the operator's word of 2026-11-11, held until PLAN-LB-142 ships).** The PLAN-LB-124
   defect (goal tokens read as module scope) is closed for npm, Maven and Gradle root rows. The PLAN-LB-130 lane added a carve-out the
   spec did not ask for: `parse_row_scope` returns unreadable for any `:`-prefixed payload token on a Maven or Gradle row
   (`_freshness_crosscheck.py:849-850`), and the Gradle discoverer prefixes every submodule task that way
