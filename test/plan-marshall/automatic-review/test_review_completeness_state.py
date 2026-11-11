@@ -761,8 +761,10 @@ class TestStateTaxonomy:
 
         The branch sits ABOVE ``in_progress``: an observed publish — even a stale
         one — says more about what the bot did than an unfinished check-run does.
-        For the flagged bot the same branch resolves its done state, which is still
-        an observation and still outranks ``in_progress``.
+        For the flagged bot the same branch resolves its done state when the producer
+        also reports a finished review, which is still an observation and still
+        outranks ``in_progress``; without that report it stays ``participated_stale``,
+        which the assertion below pins because this fixture supplies neither.
         """
         plan_id = 'rc-state-stale-vs-in-progress'
         plan_context.plan_dir_for(plan_id)
@@ -774,7 +776,7 @@ class TestStateTaxonomy:
             stale_participation_bots=['coderabbit'],
         )
 
-        assert _state_of(result, 'coderabbit') == rc.STATE_PARTICIPATED_BUT_EMPTY
+        assert _state_of(result, 'coderabbit') == rc.STATE_PARTICIPATED_STALE
         assert _state_of(result, 'coderabbit') != rc.STATE_IN_PROGRESS
 
     def test_stale_participation_is_an_unproven_state(self, plan_context):
@@ -871,9 +873,9 @@ class TestStateTaxonomy:
             expected = rc.STATE_IN_PROGRESS
         else:
             kwargs['stale_participation_bots'] = ['coderabbit']
-            # The flagged bot's stale report is its done review, which is still a
-            # positive observation and therefore still outranks the PR-wide absence.
-            expected = rc.STATE_PARTICIPATED_BUT_EMPTY
+            # No finished-review report is supplied, so the flagged bot stays stale —
+            # still a positive observation, which is what outranks the PR-wide absence.
+            expected = rc.STATE_PARTICIPATED_STALE
 
         result = rc.check_completeness(plan_id, ['coderabbit'], not_triggered=True, **kwargs)
 

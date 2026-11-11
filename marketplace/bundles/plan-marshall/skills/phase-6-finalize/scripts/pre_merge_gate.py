@@ -1002,6 +1002,12 @@ def _check_participation(plan_id: str, pr_number: int, project_dir: str) -> dict
     stale = _pairs(fetched.get('stale_participation_bots'), 'evidence_kind')
     if stale:
         argv += ['--stale-participation-bots', ','.join(stale)]
+    # The done rule's input: a bot is complete on a stale report only when the producer
+    # also reports a FINISHED review for it. Omitted when absent, which withholds the
+    # benefit — the fail-closed direction.
+    finished = _bot_kinds(fetched.get('finished_review_bots'))
+    if finished:
+        argv += ['--finished-review-bots', ','.join(finished)]
     refused = _bot_kinds(fetched.get('refused_bots'))
     if refused:
         argv += ['--refused-bots', ','.join(refused)]

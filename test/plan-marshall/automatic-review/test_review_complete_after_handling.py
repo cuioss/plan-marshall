@@ -60,7 +60,7 @@ def _seed_comment(plan_id: str, bot: str) -> str:
 
 
 def test_a_flagged_bot_reported_stale_has_participated():
-    """The stale report IS the qualifying review on an earlier head."""
+    """A stale report PLUS a finished review is the done state."""
     state = rc.classify_bot(
         'coderabbit',
         proven_participants={},
@@ -68,6 +68,7 @@ def test_a_flagged_bot_reported_stale_has_participated():
         in_progress=set(),
         refused=set(),
         stale_participants={'coderabbit'},
+        finished_review_bots={'coderabbit'},
     )
 
     assert state == rc.STATE_PARTICIPATED
@@ -81,9 +82,30 @@ def test_a_flagged_stale_bot_with_no_findings_is_participated_but_empty():
         in_progress=set(),
         refused=set(),
         stale_participants={'coderabbit'},
+        finished_review_bots={'coderabbit'},
     )
 
     assert state == rc.STATE_PARTICIPATED_BUT_EMPTY
+
+
+def test_a_flagged_stale_bot_without_a_finished_review_stays_stale():
+    """⛔ The B1 control: a marker-bearing comment is evidence, not a finished review.
+
+    The producer reports the bot stale and does NOT report a finished review — the
+    shape of a coverage marker whose payload is unreadable, whose kind is not
+    ``reviewed``, or which names no commit. That must never complete the quorum.
+    """
+    state = rc.classify_bot(
+        'coderabbit',
+        proven_participants={},
+        has_findings=False,
+        in_progress=set(),
+        refused=set(),
+        stale_participants={'coderabbit'},
+        finished_review_bots=set(),
+    )
+
+    assert state == rc.STATE_PARTICIPATED_STALE
 
 
 def test_an_unflagged_stale_bot_stays_participated_stale():
@@ -131,12 +153,31 @@ def test_a_handled_flagged_review_completes_participation(plan_context):
         ['coderabbit'],
         triage_ran=True,
         stale_participation_bots=['coderabbit'],
+        finished_review_bots=['coderabbit'],
         pr_number=_PR,
     )
 
     assert result['status'] == 'success'
     assert result['participation_complete'] is True
     assert _state(result, 'coderabbit') in (rc.STATE_PARTICIPATED, rc.STATE_PARTICIPATED_BUT_EMPTY)
+
+
+def test_a_flagged_stale_report_without_a_finished_review_does_not_complete(plan_context):
+    """The same fixture with the producer reporting NO finished review: still incomplete."""
+    plan_id = 'lb142-done-not-finished'
+    plan_context.plan_dir_for(plan_id)
+
+    result = rc.check_completeness(
+        plan_id,
+        ['coderabbit'],
+        triage_ran=True,
+        stale_participation_bots=['coderabbit'],
+        finished_review_bots=[],
+        pr_number=_PR,
+    )
+
+    assert result['participation_complete'] is False
+    assert _state(result, 'coderabbit') == rc.STATE_PARTICIPATED_STALE
 
 
 def test_a_pending_finding_still_blocks_a_flagged_review(plan_context):
@@ -150,6 +191,7 @@ def test_a_pending_finding_still_blocks_a_flagged_review(plan_context):
         ['coderabbit'],
         triage_ran=True,
         stale_participation_bots=['coderabbit'],
+        finished_review_bots=['coderabbit'],
         pr_number=_PR,
     )
 
@@ -201,17 +243,33 @@ def test_an_unreadable_findings_store_is_never_complete(plan_context, monkeypatc
 # ---------------------------------------------------------------------------
 
 
-def test_trigger_bot_lists_no_flagged_bot_with_a_review_on_record():
+def test_trigger_bot_lists_no_flagged_bot_with_a_finished_review():
     payload = rc.list_bots_for_trigger(
         ['coderabbit'],
         [],
         ['coderabbit'],
         optional_bots=['sourcery'],
+        finished_review_bots=['coderabbit'],
     )
 
     assert payload['trigger_bots'] == []
     assert payload['required_stale_bots'] == []
     assert payload['review_complete_bots'] == ['coderabbit']
+
+
+def test_trigger_bot_keeps_a_flagged_bot_whose_stale_report_is_not_a_finished_review():
+    """MATCHED CONTROL — evidence that is not a review keeps its trigger."""
+    payload = rc.list_bots_for_trigger(
+        ['coderabbit'],
+        [],
+        ['coderabbit'],
+        optional_bots=['sourcery'],
+        finished_review_bots=[],
+    )
+
+    assert payload['trigger_bots'] == ['coderabbit']
+    assert payload['required_stale_bots'] == ['coderabbit']
+    assert payload['review_complete_bots'] == []
 
 
 def test_trigger_bot_still_lists_an_unflagged_stale_bot():
@@ -229,10 +287,10 @@ def test_trigger_bot_still_lists_an_unflagged_stale_bot():
 
 
 def test_trigger_bot_withholds_a_flagged_bot_whose_stored_finding_is_joined():
-    """A stored finding is evidence the bot reviewed, so the done filter covers the join.
+    """A stored finding is NOT proof of a finished review — only the producer's report is.
 
-    The exclusion keys on the registry flag, not on which source named the bot: a
-    flagged bot owes no later head once ANY admitted evidence of its review exists.
+    Both halves are required, so a flagged bot with an older stored finding and no
+    admitted finished review still gets asked, which is the only exit for that state.
     """
     payload = rc.list_bots_for_trigger(
         [],
@@ -240,10 +298,24 @@ def test_trigger_bot_withholds_a_flagged_bot_whose_stored_finding_is_joined():
         ['coderabbit'],
         optional_bots=['sourcery'],
         stored_findings_stale=True,
+        finished_review_bots=[],
+    )
+
+    assert payload['trigger_bots'] == ['coderabbit']
+    assert payload['review_complete_bots'] == []
+
+
+def test_trigger_bot_withholds_a_flagged_bot_with_both_a_stored_finding_and_a_finished_review():
+    payload = rc.list_bots_for_trigger(
+        [],
+        ['coderabbit'],
+        ['coderabbit'],
+        optional_bots=['sourcery'],
+        stored_findings_stale=True,
+        finished_review_bots=['coderabbit'],
     )
 
     assert payload['trigger_bots'] == []
-    assert payload['required_stale_bots'] == []
     assert payload['review_complete_bots'] == ['coderabbit']
 
 
@@ -254,6 +326,7 @@ def test_a_flagged_candidate_in_neither_roster_list_is_still_reported_unclassifi
         [],
         ['sourcery'],
         optional_bots=[],
+        finished_review_bots=['coderabbit'],
     )
 
     assert payload['review_complete_bots'] == ['coderabbit']

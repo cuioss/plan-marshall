@@ -141,6 +141,7 @@ def _participation_flag(find_result):
 def _classify(plan_id, find_result, declined_bots=None, refused_bots=None):
     """The step-done participation guard over CodeRabbit as the only required bot."""
     stale = [row['bot_kind'] for row in find_result.get('stale_participation_bots') or []]
+    finished = [row['bot_kind'] for row in find_result.get('finished_review_bots') or []]
     return rc.check_completeness(
         plan_id,
         [_BOT],
@@ -148,6 +149,7 @@ def _classify(plan_id, find_result, declined_bots=None, refused_bots=None):
         declined_bots=declined_bots or [],
         refused_bots=refused_bots or [],
         stale_participation_bots=stale,
+        finished_review_bots=finished,
     )
 
 

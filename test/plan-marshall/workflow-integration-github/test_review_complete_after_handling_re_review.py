@@ -229,12 +229,11 @@ def test_a_capped_history_is_not_read_as_no_review(monkeypatch):
     assert posted == [(_PR, '@coderabbitai review')]
 
 
-def test_a_marker_without_a_commit_is_still_admitted_evidence(monkeypatch):
-    """The marker is the producer's admission test; the head is never asked at this site.
+def test_a_marker_that_names_no_commit_is_not_a_finished_review(monkeypatch):
+    """``kind: reviewed`` without a covered commit is a claim nobody can evaluate.
 
-    A marker naming no commit is not HEAD-BOUND evidence — it cannot credit a review of
-    the current tree — but it IS an admitted review artifact, which is the only question
-    the done rule asks before suppressing a request.
+    The producer reports such a comment as admitted evidence but never as a finished
+    review, so the first trigger must still be posted.
     """
     posted = _record_posts(monkeypatch)
     _history(
@@ -244,8 +243,27 @@ def test_a_marker_without_a_commit_is_still_admitted_evidence(monkeypatch):
 
     result = _request('coderabbit', monkeypatch)
 
-    assert posted == []
-    assert result['status'] == 'refused'
+    assert result['status'] == 'success'
+    assert posted == [(_PR, '@coderabbitai review')]
+
+
+def test_a_marker_whose_kind_is_not_reviewed_is_not_a_finished_review(monkeypatch):
+    """A ``kind: walkthrough`` marker is evidence the bot published, not a review."""
+    posted = _record_posts(monkeypatch)
+    _history(
+        monkeypatch,
+        [
+            _comment(
+                'issue_comment',
+                f'<!-- final_review_risk_coverage:{{"coveredCommitId":"{_EARLIER}","kind":"walkthrough"}} -->',
+            )
+        ],
+    )
+
+    result = _request('coderabbit', monkeypatch)
+
+    assert result['status'] == 'success'
+    assert posted == [(_PR, '@coderabbitai review')]
 
 
 def test_a_summary_without_a_declared_marker_is_not_a_review(monkeypatch):
@@ -259,27 +277,26 @@ def test_a_summary_without_a_declared_marker_is_not_a_review(monkeypatch):
     assert posted == [(_PR, '@coderabbitai review')]
 
 
-def test_the_retired_review_wrapper_is_still_admitted_evidence(monkeypatch):
-    """Both declared markers are the producer's admission test, so both suppress a request."""
+def test_the_retired_review_wrapper_names_no_commit_so_it_is_not_a_finished_review(monkeypatch):
+    """The retired wrapper is evidence, but it names no commit — not the one review."""
     posted = _record_posts(monkeypatch)
     _history(monkeypatch, [_comment('issue_comment', '<!-- recent_review_start -->\nNo findings.')])
 
     result = _request('coderabbit', monkeypatch)
 
-    assert posted == []
-    assert result['status'] == 'refused'
+    assert result['status'] == 'success'
+    assert posted == [(_PR, '@coderabbitai review')]
 
 
-def test_an_inline_comment_proves_a_review(monkeypatch):
-    """An inline comment is published BY a review, so it is evidence one happened."""
+def test_an_inline_comment_alone_is_not_a_finished_review(monkeypatch):
+    """A line comment is BY a review; the review's own artifact is what this test reads."""
     posted = _record_posts(monkeypatch)
     _history(monkeypatch, [_comment('inline', 'a line comment', commit_id='')])
 
     result = _request('coderabbit', monkeypatch)
 
-    assert posted == []
-    assert result['status'] == 'refused'
-    assert result['reason'] == 'review_on_record_done'
+    assert result['status'] == 'success'
+    assert posted == [(_PR, '@coderabbitai review')]
 
 
 def test_a_bot_with_a_review_on_record_settles_a_no_unreviewed_commit_reply():

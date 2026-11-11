@@ -25,7 +25,7 @@ _PLAN_ID = 'lb142-merge-gate'
 _PR = 142
 
 
-def _real_participation(plan_id, required_bots, stale_bots):
+def _real_participation(plan_id, required_bots, stale_bots, finished_bots):
     """The predicate's own answer, reshaped to the verdict ``_check_participation`` returns."""
 
     def _check(_plan, _pr, _project_dir):
@@ -34,6 +34,7 @@ def _real_participation(plan_id, required_bots, stale_bots):
             required_bots,
             triage_ran=True,
             stale_participation_bots=stale_bots,
+            finished_review_bots=finished_bots,
             pr_number=_PR,
         )
         if checked['status'] != 'success':
@@ -75,7 +76,7 @@ def test_a_done_flagged_review_is_admitted_without_any_authorization(plan_contex
         _PR,
         '.',
         head='b' * 40,
-        participation_check=_real_participation(_PLAN_ID, ['coderabbit'], ['coderabbit']),
+        participation_check=_real_participation(_PLAN_ID, ['coderabbit'], ['coderabbit'], ['coderabbit']),
         authorization_check=authorization,
     )
 
@@ -109,13 +110,32 @@ def test_a_pending_finding_keeps_the_same_review_refused(plan_context):
         _PR,
         '.',
         head='b' * 40,
-        participation_check=_real_participation(_PLAN_ID, ['coderabbit'], ['coderabbit']),
+        participation_check=_real_participation(_PLAN_ID, ['coderabbit'], ['coderabbit'], ['coderabbit']),
         authorization_check=authorization,
     )
 
     assert verdict['allowed'] is False
     assert verdict['code'] == 'participation_unproven'
     assert authorization.calls != [], 'a known gap consults the authorization seam'
+
+
+def test_a_stale_report_that_is_not_a_finished_review_is_refused(plan_context):
+    """⛔ The B1 control at the gate: evidence is not a review, so no merge."""
+    plan_context.plan_dir_for(_PLAN_ID)
+    authorization = _AuthorizationRecorder({'status': 'success', 'any_admissible': False, 'admissible_kinds': []})
+
+    verdict = gate._participation_verdict(
+        _PLAN_ID,
+        _PR,
+        '.',
+        head='b' * 40,
+        participation_check=_real_participation(_PLAN_ID, ['coderabbit'], ['coderabbit'], []),
+        authorization_check=authorization,
+    )
+
+    assert verdict['allowed'] is False
+    assert verdict['code'] == 'participation_unproven'
+    assert verdict['unproven_bots'] == ['coderabbit']
 
 
 def test_an_unflagged_stale_review_is_still_refused(plan_context):
@@ -128,7 +148,7 @@ def test_an_unflagged_stale_review_is_still_refused(plan_context):
         _PR,
         '.',
         head='b' * 40,
-        participation_check=_real_participation(_PLAN_ID, ['sourcery'], ['sourcery']),
+        participation_check=_real_participation(_PLAN_ID, ['sourcery'], ['sourcery'], []),
         authorization_check=authorization,
     )
 

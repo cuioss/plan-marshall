@@ -127,6 +127,7 @@ from _github_pr import (
     refusal_layers,
     refusal_size_cap,
     review_coverage_is_finished,
+    review_coverage_names_commit,
     review_coverage_verdict,
 )
 from ci_base import extract_routing_args, register_subcommands, set_default_cwd
@@ -2151,6 +2152,16 @@ def cmd_fetch_findings(args):
             refusing_bots.add(_refusal_bot)
     participated: dict[str, str] = {}
     stale_participation: dict[str, str] = {}
+    # Bots holding an admitted FINISHED review of SOME commit on this pull request —
+    # a formal ``review_body`` record, or a summary whose coverage marker is readable,
+    # ``kind: reviewed`` and names a covered commit (``review_coverage_names_commit``).
+    # This is the fact the done rule needs and ``stale_participation_bots`` cannot
+    # carry: that set also contains marker-bearing comments which are NOT finished
+    # reviews (an unreadable payload, a non-``reviewed`` kind, a marker naming no
+    # commit), and a bot whose only artifact is one of those has NOT reviewed anything.
+    # The head is deliberately not compared: a finished review of another commit is
+    # exactly what the done rule consumes.
+    finished_review: dict[str, str] = {}
     # The THIRD outcome: a currency-subject bot whose comment was ALREADY admissible
     # evidence — a declared publish shape carrying its content marker where one is
     # declared — while the merge candidate itself could not be read. It is neither credited
@@ -2201,6 +2212,8 @@ def cmd_fetch_findings(args):
         if not _is_participation_evidence(_comment, _bot_kind):
             continue
         _kind = _comment.get('kind') or 'inline'
+        if _kind == 'review_body' or (_kind == 'issue_comment' and review_coverage_names_commit(_body)):
+            finished_review.setdefault(_bot_kind, _kind)
         # THE INLINE RULE, decided before every other arm. An inline comment is
         # credited only when the provider PLACES it (or the review it belongs to) at
         # the merge candidate, and a reply posted into an existing thread is never
@@ -2952,6 +2965,15 @@ def cmd_fetch_findings(args):
         # subtracted here — the same shape as the stale-participation subtraction
         # below. A bot with any genuine review keeps its credit.
         'participated_bots': [{'bot_kind': bot, 'evidence_kind': participated[bot]} for bot in credited_bots],
+        # DISCLOSURE AND DONE-RULE INPUT: bots holding an admitted FINISHED review of
+        # some commit on this pull request. Independent of the credit: a review of
+        # another head (stale), or one the reply-covered arm credited, is still a
+        # finished review. The consumers that apply the done rule key on THIS list,
+        # never on ``stale_participation_bots[]``, because that set also carries
+        # marker-bearing comments that are not finished reviews.
+        'finished_review_bots': [
+            {'bot_kind': bot, 'evidence_kind': finished_review[bot]} for bot in sorted(finished_review)
+        ],
         # The proven set is SUBTRACTED before emitting: a bot with one stale comment
         # and one fresh one is a participant, not a stale publisher. Without the
         # subtraction the same bot would appear in both sets and the classifier's
