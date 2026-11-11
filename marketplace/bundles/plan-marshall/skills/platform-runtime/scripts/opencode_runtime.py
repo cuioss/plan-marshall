@@ -272,6 +272,23 @@ def installed_rules_clobbered(project_dir: Path) -> bool:
 #: intent can never degrade to ``allow`` by reaching the bare-form default.
 _OPENCODE_GRANT_ACTIONS = ('allow', 'ask', 'deny')
 
+#: Every error code an OpenCode mutating permission operation can return. It is
+#: the vocabulary `standards/contract.md` and `SKILL.md` must list, and a doc
+#: test compares the two documents against it so a code the code emits cannot
+#: go undocumented.
+OPENCODE_PERMISSION_ERROR_CODES = frozenset(
+    {
+        'invalid_scope',
+        'invalid_operation',
+        'invalid_settings',
+        'load_error',
+        'permission_conflict',
+        'wildcard_action_rule',
+        'io_error',
+        'permission_write_failed',
+    }
+)
+
 #: Bash binaries that can exfiltrate a file's contents. Guarded in BOTH the
 #: tilde and the absolute spelling of a protected directory, because either
 #: can appear in a command line. Mirrors the Claude runtime's vector set.
@@ -542,6 +559,20 @@ def _permission_rules(settings: dict[str, Any], *, create: bool = False) -> list
         settings['permissions'] = created
         return created
     return None
+
+
+def _settings_error(settings: dict[str, Any]) -> tuple[str, str] | None:
+    """Return ``(error_code, message)`` for a settings payload that could not be used.
+
+    A payload the loader could not read at all defaults to ``load_error``; a
+    payload that parsed but carries a shape the writers cannot use names
+    ``invalid_settings`` in its own ``error_code``. One defect therefore reaches
+    every operation under one code, instead of the same unparseable file being
+    reported as two different things by two verbs.
+    """
+    if 'error' not in settings:
+        return None
+    return str(settings.get('error_code', 'load_error')), str(settings['error'])
 
 
 def _resource_matches(pattern: Any, resource: str) -> bool:
@@ -1818,11 +1849,13 @@ class OpenCodeRuntime(Runtime):
 
         settings_path = self.permission_settings_path(scope, write=True)
         settings = self.permission_load_settings(settings_path)
-        if 'error' in settings:
+        failure = _settings_error(settings)
+        if failure is not None:
+            code, message = failure
             return toon_error(
                 'permission configure',
-                'load_error',
-                f'Failed to load settings from {settings_path}: {settings["error"]}',
+                code,
+                f'Failed to load settings from {settings_path}: {message}',
             )
         rules = _permission_rules(settings, create=True)
         if rules is not None:
@@ -1843,7 +1876,7 @@ class OpenCodeRuntime(Runtime):
                 if not self.permission_save_settings(settings_path, settings):
                     return toon_error(
                         'permission configure',
-                        'save_error',
+                        'io_error',
                         f'Failed to write settings to {settings_path}',
                     )
             return toon_success(
@@ -1903,7 +1936,7 @@ class OpenCodeRuntime(Runtime):
             if not self.permission_save_settings(settings_path, settings):
                 return toon_error(
                     'permission configure',
-                    'save_error',
+                    'io_error',
                     f'Failed to write settings to {settings_path}',
                 )
 
@@ -2011,11 +2044,13 @@ class OpenCodeRuntime(Runtime):
 
         settings_path = self.permission_settings_path(scope, write=not dry_run)
         settings = self.permission_load_settings(settings_path)
-        if 'error' in settings:
+        failure = _settings_error(settings)
+        if failure is not None:
+            code, message = failure
             return toon_error(
                 'permission fix',
-                'load_error',
-                f'Failed to load settings from {settings_path}: {settings["error"]}',
+                code,
+                f'Failed to load settings from {settings_path}: {message}',
             )
         rules = _permission_rules(settings, create=True)
 
@@ -2265,11 +2300,13 @@ class OpenCodeRuntime(Runtime):
 
         settings_path = self.permission_settings_path(scope, write=not dry_run)
         settings = self.permission_load_settings(settings_path)
-        if 'error' in settings:
+        failure = _settings_error(settings)
+        if failure is not None:
+            code, message = failure
             return toon_error(
                 'permission fix',
-                'invalid_settings',
-                settings['error'],
+                code,
+                f'Failed to load settings from {settings_path}: {message}',
             )
 
         # De-duplicate ACROSS the named paths, not only within each: two paths
@@ -2373,11 +2410,13 @@ class OpenCodeRuntime(Runtime):
             )
         settings_path = self.permission_settings_path(scope, write=not dry_run)
         settings = self.permission_load_settings(settings_path)
-        if 'error' in settings:
+        failure = _settings_error(settings)
+        if failure is not None:
+            code, message = failure
             return toon_error(
                 'permission ensure-wildcards',
-                'load_error',
-                f'Failed to load settings from {settings_path}: {settings["error"]}',
+                code,
+                f'Failed to load settings from {settings_path}: {message}',
             )
         res = self.permission_ensure_defaults(settings, settings_path, dry_run=dry_run)
         if res.get('error'):
@@ -2449,11 +2488,13 @@ class OpenCodeRuntime(Runtime):
             )
         settings_path = self.permission_settings_path(scope, write=not dry_run)
         settings = self.permission_load_settings(settings_path)
-        if 'error' in settings:
+        failure = _settings_error(settings)
+        if failure is not None:
+            code, message = failure
             return toon_error(
                 'permission web-apply',
-                'load_error',
-                f'Failed to load settings from {settings_path}: {settings["error"]}',
+                code,
+                f'Failed to load settings from {settings_path}: {message}',
             )
         rules = _permission_rules(settings, create=True)
         changed = False
@@ -2507,7 +2548,7 @@ class OpenCodeRuntime(Runtime):
             if not self.permission_save_settings(settings_path, settings):
                 return toon_error(
                     'permission web-apply',
-                    'save_error',
+                    'io_error',
                     f'Failed to write settings to {settings_path}',
                 )
 
@@ -2646,17 +2687,15 @@ class OpenCodeRuntime(Runtime):
 
         - 'global': ~/.config/opencode/opencode.json (or $OPENCODE_CONFIG_DIR/opencode.json)
         - 'project': <project_dir>/opencode.json (prefers existing opencode.json or .opencode/opencode.json)
+
+        Resolution only: this does not create the file. The skeleton is laid
+        down by the FIRST successful write (``permission_save_settings``), so a
+        refusal, a conflict or a dry run that says "no rule was written" leaves
+        no file behind. ``write`` still selects the write-side project target
+        (the ``.opencode/`` copy when that directory exists).
         """
         if scope == 'global':
-            g_path = _opencode_config_dir() / 'opencode.json'
-            if write and not g_path.is_file():
-                g_path.parent.mkdir(parents=True, exist_ok=True)
-                skeleton = _opencode2_skeleton()
-                try:
-                    g_path.write_text(json.dumps(skeleton, indent=2) + '\n', encoding='utf-8')
-                except OSError:
-                    pass
-            return str(g_path)
+            return str(_opencode_config_dir() / 'opencode.json')
 
         if scope == 'project':
             pd = Path(project_dir).resolve() if project_dir else Path.cwd().resolve()
@@ -2670,14 +2709,6 @@ class OpenCodeRuntime(Runtime):
             target_cfg = root_cfg
             if (pd / '.opencode').is_dir():
                 target_cfg = dot_cfg
-
-            if write and not target_cfg.is_file():
-                target_cfg.parent.mkdir(parents=True, exist_ok=True)
-                skeleton = _opencode2_skeleton()
-                try:
-                    target_cfg.write_text(json.dumps(skeleton, indent=2) + '\n', encoding='utf-8')
-                except OSError:
-                    pass
             return str(target_cfg)
 
         raise ValueError(f"Unsupported scope: {scope!r}; must be 'global' or 'project'")
@@ -2689,22 +2720,56 @@ class OpenCodeRuntime(Runtime):
         never as an empty settings object a writer would then save a skeleton
         over. Undecodable bytes are that case too: a UTF-8 decode failure means
         the file was not read, not that it holds no settings.
+
+        A file that PARSES but carries a shape no writer can use is also an
+        ``error`` (with ``error_code`` ``invalid_settings``): a root that is not
+        an object, a ``permissions`` value that is not a list, or a
+        ``permission`` value that is not an object. Those are valid JSON, so a
+        syntax check alone does not catch them, and rewriting them would clobber
+        an operator's file.
         """
         p = Path(path)
         if not p.is_file():
             return {}
         try:
             data = json.loads(p.read_text(encoding='utf-8'))
-            return data if isinstance(data, dict) else {}
         except (OSError, json.JSONDecodeError, UnicodeDecodeError) as exc:
             return {'error': str(exc)}
+        if not isinstance(data, dict):
+            return {
+                'error': f'settings root is {type(data).__name__}, not an object',
+                'error_code': 'invalid_settings',
+            }
+        if 'permissions' in data and not isinstance(data['permissions'], list):
+            return {
+                'error': f'the `permissions` value is {type(data["permissions"]).__name__}, not a list',
+                'error_code': 'invalid_settings',
+            }
+        if 'permission' in data and not isinstance(data['permission'], dict):
+            return {
+                'error': f'the `permission` value is {type(data["permission"]).__name__}, not an object',
+                'error_code': 'invalid_settings',
+            }
+        return data
 
     def permission_save_settings(self, path: str, settings: dict[str, Any]) -> bool:
-        """Persist settings to an OpenCode JSON file."""
+        """Persist settings to an OpenCode JSON file.
+
+        The first successful write is what creates the file, so a refused
+        write leaves none behind. When the target is absent and the payload is
+        a fresh OpenCode 2 list, the skeleton's baseline allows are laid down
+        first and the payload's rules follow; a payload in the OpenCode 1 map
+        shape carries its own defaults and is written as it is.
+        """
         p = Path(path)
+        payload = settings
+        if not p.is_file() and isinstance(settings.get('permissions'), list) and 'permission' not in settings:
+            skeleton_rules = _opencode2_skeleton()['permissions']
+            extra = [rule for rule in settings['permissions'] if rule not in skeleton_rules]
+            payload = {**settings, 'permissions': skeleton_rules + extra}
         try:
             p.parent.mkdir(parents=True, exist_ok=True)
-            p.write_text(json.dumps(settings, indent=2) + '\n', encoding='utf-8')
+            p.write_text(json.dumps(payload, indent=2) + '\n', encoding='utf-8')
             return True
         except OSError:
             return False

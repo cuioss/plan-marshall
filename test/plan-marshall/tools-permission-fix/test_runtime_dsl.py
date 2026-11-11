@@ -725,6 +725,64 @@ class TestOpenCodeUnreadableInputIsReported:
         assert result['status'] == 'error'
         assert config.read_text(encoding='utf-8') == 'not json'
 
+    def test_add_reports_an_unparsable_project_file(self, monkeypatch, tmp_path, in_tmp_cwd):
+        config = self._unparsable(tmp_path)
+        force_opencode(monkeypatch)
+
+        result = pf.cmd_add(
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'add',
+                '--permission',
+                'deny(git push *)',
+                '--target',
+                'project',
+            )
+        )
+
+        assert result['status'] == 'error'
+        assert config.read_text(encoding='utf-8') == 'not json'
+
+    def test_remove_reports_an_unparsable_project_file(self, monkeypatch, tmp_path, in_tmp_cwd):
+        config = self._unparsable(tmp_path)
+        force_opencode(monkeypatch)
+
+        result = pf.cmd_remove(
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'remove',
+                '--permission',
+                'deny(git push *)',
+                '--target',
+                'project',
+            )
+        )
+
+        assert result['status'] == 'error'
+        assert config.read_text(encoding='utf-8') == 'not json'
+
+    def test_apply_fixes_reports_an_unparsable_project_file(self, monkeypatch, tmp_path, in_tmp_cwd):
+        config = self._unparsable(tmp_path)
+        force_opencode(monkeypatch)
+
+        result = pf.cmd_apply_fixes(
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'apply-fixes',
+                '--scope',
+                'project',
+            )
+        )
+
+        assert result['status'] == 'error'
+        assert config.read_text(encoding='utf-8') == 'not json'
+
     def test_add_and_remove_work_on_an_opencode2_list(self, monkeypatch, tmp_path, in_tmp_cwd):
         config = tmp_path / 'opencode.json'
         config.write_text(

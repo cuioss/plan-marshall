@@ -131,15 +131,15 @@ OpenCode resolves configuration from three tiered locations:
 2. **Project Subdirectory (`<project_dir>/.opencode/opencode.json`)**: Alternative project-local configuration folder.
 3. **Global User Configuration (`~/.config/opencode/opencode.json`)**: User-global configuration. Can be overridden via the `OPENCODE_CONFIG_DIR` environment variable.
 
-OpenCode 2 applies the **last** matching rule in a list and defaults to `ask` when nothing matches, so a list keeps its catch-all first and its specific rules after it — except where the list is appended after another list, as an agent's is: a catch-all there would override the earlier list's specific rows. The agent's own rules are appended after the global ones, so an agent rule re-decides every resource a global rule already decided; that is why an emitted agent carries no permission rule of its own. (The repository's root-config test `test/plan-marshall/platform-runtime/test_opencode_root_config.py` models the global-then-agent evaluation.)
+OpenCode 2 applies the **last** matching rule in a list, and its base policy — OBSERVED at `opencode v2.2.7` (`GET /api/agent/execution-context-reader`, in the `location` the client reports for its config) — begins `{action: "*", resource: "*", effect: "allow"}`: an action no rule names is allowed, not asked. A list therefore keeps its catch-all first and its specific rules after it — except where the list is appended after another list, as an agent's is: a catch-all there would re-decide the earlier list's specific rows. The agent's own rules are appended after the global ones, so an agent deny for an action re-decides only that action: it cannot weaken a global deny for the same action (it only adds one after it), and it does override a global specific allow for that action. (The repository's root-config test `test/plan-marshall/platform-runtime/test_opencode_root_config.py` models the global-then-agent evaluation over that base policy.)
 
 `action` is matched with the same whole-value wildcard as `resource`: `*` matches every action. A rule whose action is `*` therefore decides the resource for every tool, which is why the effective-effect computation treats it as a match rather than as an opaque tool name.
 
 === Permission Schema
 
-OpenCode 2 permissions are declared under the `"permissions"` key as an ordered list of `{action, resource, effect}` rules conforming to `https://opencode.ai/config.json`. `action` is the tool name (`shell` for command execution) or the `*` wildcard, `resource` is a glob over the tool's input, and `effect` is `allow`, `ask` or `deny`. No match means `ask`. The landed plan-marshall `opencode.json` keeps the shell catch-all as the first rule and follows it with the never-legitimate deny rows, the rare-legitimate ask rows, and the final allow rows, so last-match-wins yields the intended effect. The OpenCode 1 `"permission"` map is not emitted; the normalizer would concatenate it *before* the list, where its catch-all could be overridden by the list's.
+OpenCode 2 permissions are declared under the `"permissions"` key as an ordered list of `{action, resource, effect}` rules conforming to `https://opencode.ai/config.json`. `action` is the tool name (`shell` for command execution) or the `*` wildcard, `resource` is a glob over the tool's input, and `effect` is `allow`, `ask` or `deny`. The client's base policy is allow-all (OBSERVED at `opencode v2.2.7`: the ruleset begins `{action: "*", resource: "*", effect: "allow"}`), so a restriction is an explicit `deny` row and an omitted grant restricts nothing. The landed plan-marshall `opencode.json` keeps the shell catch-all as the first rule and follows it with the never-legitimate deny rows, the rare-legitimate ask rows, and the final allow rows, so last-match-wins yields the intended effect. The OpenCode 1 `"permission"` map is not emitted; the normalizer would concatenate it *before* the list, where its catch-all could be overridden by the list's.
 
-An agent's emitted frontmatter carries no permission rule at all. Because the agent's rules are appended after the global ones, any rule there would be a `resource: "*"` catch-all for one action, turning a global `gh *`, `rm *` or protected-path deny into an allow; the action is left to OpenCode's own base policy instead.
+An agent's emitted frontmatter writes one `{action, resource: "*", effect: "deny"}` row for each OpenCode action in the mapped universe that the source's `tools:` does not grant, and no `allow` or `ask` row. The base policy is allow-all, so an omitted grant would restrict nothing; the denies are what make the emitted agent say what its source says. Because the agent's rules are appended after the global ones, a deny cannot weaken a global deny for the same action — it only adds one after it — while it does override a global specific allow for an action the agent lacks, which is the intent.
 
 === Global Shell Permission List
 
@@ -207,7 +207,7 @@ The matrix below resolves every relevant (role, surface, path) cell. Rows are ve
 | Destructive git | `git push/restore/checkout --/stash/clean *` | deny | per-agent deny rows
 | Test runners | `pytest *`, `python3 -m pytest *` | deny | per-agent deny rows; guard R4 blocks at the host layer
 | Shell file ops | `rm *` and other mutation ops | deny | per-agent deny rows; guard R2 blocks at the host layer
-| CI abstraction | `gh *`, `glab *` | deny | per-agent deny rows (the agent `"*": "ask"` overrides the global deny)
+| CI abstraction | `gh *`, `glab *` | deny | per-agent deny row, restated after the agent's `"*": "ask"` catch-all so it still decides
 |===
 
 ==== Reader (`execution-context-reader`, level variants) — read-only information surface
@@ -215,14 +215,14 @@ The matrix below resolves every relevant (role, surface, path) cell. Rows are ve
 [cols="2,4,2,3", options="header"]
 |===
 | Surface | Path | Resolution | Source (landed artifact)
-| Executor | `python3 .plan/execute-script.py *` | allow | per-agent allow row; guard R4 exempts the permit
-| Git read | `git status/log/diff *` | allow | per-agent allow rows
+| Executor | `python3 .plan/execute-script.py *` | ask | global allow, then the reader block's `"*": "ask"` fallback — the source declares no `Bash`, so the block carries no allow
+| Git read | `git status/log/diff *` | ask | global allow, then the reader block's `"*": "ask"` fallback — no per-agent allow
 | Everything else | `"*"` fallback | ask | per-agent `"*": "ask"`
 | Read probes | `find/grep/cat/head/tail *`, `git grep *` | deny | per-agent deny rows
 | Git write | `git add/commit/push *` | deny | per-agent deny rows
 | Shell file ops | `rm *` and other mutation ops | deny | per-agent deny rows; guard R2 blocks at the host layer
 | Test runners | `pytest *`, `python3 -m pytest *` | deny | per-agent deny rows; guard R4 blocks at the host layer
-| CI abstraction | `gh *`, `glab *` | deny | per-agent deny rows (the agent `"*": "ask"` overrides the global deny)
+| CI abstraction | `gh *`, `glab *` | deny | per-agent deny row, restated after the agent's `"*": "ask"` catch-all so it still decides
 |===
 
 The matrix is the authoritative record of the carve-out as implemented: the orchestrator keeps read-only file ops and git status/log as information lookups under `ask` (never silently suppressed, never auto-allowed), and the executor is confined to the `python3 .plan/execute-script.py` permit plus deny on the hard rules. Rows that carry a guard rule in the `Source` column are enforced twice — once by the map, once by the throw-to-block plugin — so a mis-merged `opencode.json` cannot silently widen a hard-rule class.

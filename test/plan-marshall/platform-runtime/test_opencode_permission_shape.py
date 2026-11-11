@@ -113,29 +113,44 @@ def test_ensure_defaults_is_idempotent_in_the_list_shape(runtime: OpenCodeRuntim
     assert again['applied'] is False
 
 
-def test_new_skeleton_is_opencode2_shaped(runtime: OpenCodeRuntime, tmp_path: pathlib.Path):
-    """A freshly created settings file carries a list, not the OpenCode 1 map."""
+def test_new_skeleton_is_opencode2_shaped(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    """The first write creates the settings file in the OpenCode 2 shape."""
+    monkeypatch.chdir(tmp_path)
     path = runtime.permission_settings_path('project', write=True, project_dir=str(tmp_path))
+    assert not pathlib.Path(path).exists(), 'resolution must not create the file'
+
+    runtime.permission_configure('project', [{'rule': 'read'}])
+
     data = _load(pathlib.Path(path))
 
     _assert_no_legacy_map(data)
     rules = data['permissions']
     assert isinstance(rules, list) and rules
-    assert all(rule['action'] == 'shell' and rule['effect'] == 'allow' for rule in rules)
+    baseline = [rule for rule in rules if rule['resource'] in OPENCODE_DEFAULT_PERMISSIONS]
+    assert baseline, 'the first write lays the baseline allows down'
+    assert all(rule['action'] == 'shell' and rule['effect'] == 'allow' for rule in baseline)
 
 
-def test_a_new_skeleton_carries_no_shell_catch_all(runtime: OpenCodeRuntime, tmp_path: pathlib.Path):
+def test_a_new_skeleton_carries_no_shell_catch_all(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
     """No skeleton rule re-decides a command a global deny already decided.
 
     Project rules are appended after the global ones, so a skeleton catch-all
-    there would decide every command the global list denied. The client answers
-    ``ask`` when nothing matches, which is the default the catch-all restated.
+    there would decide every command the global list denied. The client's base
+    policy is allow-all, which is what an unmatched command gets anyway.
     """
+    monkeypatch.chdir(tmp_path)
     path = runtime.permission_settings_path('project', write=True, project_dir=str(tmp_path))
+    runtime.permission_configure('project', [{'rule': 'read'}])
     rules = _load(pathlib.Path(path))['permissions']
 
-    assert not [rule for rule in rules if rule['resource'] == '*'], 'the skeleton must carry no catch-all'
-    assert {rule['resource'] for rule in rules} == set(OPENCODE_DEFAULT_PERMISSIONS)
+    assert not [rule for rule in rules if rule['action'] == 'shell' and rule['resource'] == '*'], (
+        'the skeleton must carry no shell catch-all'
+    )
+    assert set(OPENCODE_DEFAULT_PERMISSIONS) <= {rule['resource'] for rule in rules}
 
 
 # ---------------------------------------------------------------------------
@@ -1026,3 +1041,161 @@ def test_web_apply_keeps_a_webfetch_pattern_map(
     rows = _load(config)['permission']['webfetch']
     assert rows == {'*': 'allow', 'evil.com': 'deny'}
     assert list(rows) == ['*', 'evil.com'], 'the catch-all must precede the specific deny'
+
+
+# ---------------------------------------------------------------------------
+# an unusable settings shape is refused, never rewritten
+# ---------------------------------------------------------------------------
+
+UNUSABLE_PAYLOADS = [
+    '[1, 2, 3]\n',
+    'null\n',
+    '{"permissions": "nope"}\n',
+    '{"permission": []}\n',
+]
+
+
+def _dispatch_write(runtime: OpenCodeRuntime, operation: str) -> str:
+    if operation == 'configure':
+        return runtime.permission_configure('project', [{'rule': 'webfetch'}])
+    if operation == 'fix':
+        return runtime.permission_fix('project', 'ensure', ['webfetch'], False)
+    return runtime.permission_web_apply('project', add=['example.com'], remove=[], dry_run=False)
+
+
+@pytest.mark.parametrize('operation', ['configure', 'fix', 'web-apply'])
+@pytest.mark.parametrize('payload', UNUSABLE_PAYLOADS)
+def test_an_unusable_settings_shape_is_refused_without_a_write(
+    runtime: OpenCodeRuntime,
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    operation: str,
+    payload: str,
+):
+    """A root that is not an object, or a wrong-typed shape, is ``invalid_settings``.
+
+    These are valid JSON, so a syntax check does not catch them; each is refused
+    before any write and the file stays byte-identical.
+    """
+    monkeypatch.chdir(tmp_path)
+    config = tmp_path / 'opencode.json'
+    config.write_text(payload, encoding='utf-8')
+    before = config.read_bytes()
+
+    result = parse_toon(_dispatch_write(runtime, operation))
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'invalid_settings', result
+    assert config.read_bytes() == before
+
+
+@pytest.mark.parametrize('operation', ['configure', 'fix', 'web-apply', 'protect-path'])
+def test_an_unparsable_file_reports_the_load_code(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, operation: str
+):
+    """One code for every unparseable-JSON case, ``protect-path`` included."""
+    monkeypatch.chdir(tmp_path)
+    config = tmp_path / 'opencode.json'
+    config.write_text('not json', encoding='utf-8')
+
+    if operation == 'protect-path':
+        result = parse_toon(runtime.permission_fix('project', 'protect-path', ['/home/u/.plan-x'], False))
+    else:
+        result = parse_toon(_dispatch_write(runtime, operation))
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'load_error', result
+    assert config.read_text(encoding='utf-8') == 'not json'
+
+
+def test_resolving_a_settings_path_creates_no_file(runtime: OpenCodeRuntime, tmp_path: pathlib.Path):
+    """Resolution is not a write: a refusal that says "no rule was written" is true."""
+    path = pathlib.Path(runtime.permission_settings_path('project', write=True, project_dir=str(tmp_path)))
+
+    assert not path.exists(), 'resolving the write path must not create the settings file'
+
+
+def test_the_first_write_lays_down_the_skeleton(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    """The first successful write creates the file, complete with the baseline allows."""
+    monkeypatch.chdir(tmp_path)
+
+    runtime.permission_configure('project', [{'rule': 'webfetch'}])
+
+    config = tmp_path / 'opencode.json'
+    assert config.is_file()
+    data = _load(config)
+    _assert_no_legacy_map(data)
+    resources = {rule['resource'] for rule in data['permissions']}
+    assert set(OPENCODE_DEFAULT_PERMISSIONS) <= resources, 'the baseline allows must be laid down'
+    assert _exact_index(data['permissions'], 'webfetch', '*', 'allow') is not None
+
+
+def test_a_failed_first_write_leaves_no_file(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    """A refused write leaves no file it created."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(runtime, 'permission_save_settings', lambda *_args, **_kwargs: False)
+
+    result = parse_toon(runtime.permission_fix('project', 'protect-path', ['/home/u/.plan-x'], False))
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'io_error'
+    assert not (tmp_path / 'opencode.json').exists(), 'a failed write must not leave a file behind'
+
+
+@pytest.mark.parametrize('operation', ['configure', 'web-apply'])
+def test_a_failed_save_reports_the_contract_code(
+    runtime: OpenCodeRuntime, list_settings: pathlib.Path, monkeypatch: pytest.MonkeyPatch, operation: str
+):
+    """A failed save is ``io_error``, the code the contract lists for it."""
+    monkeypatch.setattr(runtime, 'permission_save_settings', lambda *_args, **_kwargs: False)
+
+    if operation == 'configure':
+        result = parse_toon(runtime.permission_configure('project', [{'rule': 'deny(git push *)'}]))
+    else:
+        result = parse_toon(runtime.permission_web_apply('project', add=['example.com'], remove=[], dry_run=False))
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'io_error', result
+
+
+def test_the_shadowed_rule_branch_reports_no_change(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    """The branch a later same-effect row triggers reports a no-change write.
+
+    Named for the branch itself: the insert is made, the later broader row
+    already produces the effect, and the branch removes the insert and reports
+    neither a change nor a conflict.
+    """
+    from opencode_runtime import _upsert_permission_rule
+
+    rules: list = [
+        {'action': 'shell', 'resource': '*', 'effect': 'allow'},
+        {'action': 'shell', 'resource': 'git *', 'effect': 'ask'},
+    ]
+
+    write = _upsert_permission_rule(rules, 'shell', 'git push *', 'ask')
+
+    assert write.changed is False
+    assert write.conflict is None
+    assert rules == [
+        {'action': 'shell', 'resource': '*', 'effect': 'allow'},
+        {'action': 'shell', 'resource': 'git *', 'effect': 'ask'},
+    ]
+
+
+def test_project_initial_setup_reports_a_failed_permission_write(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    """A setup whose baseline write never reached disk is an error, not a setup."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(runtime, 'permission_save_settings', lambda *_args, **_kwargs: False)
+
+    result = parse_toon(runtime.project_initial_setup(str(tmp_path), 'opencode'))
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'permission_write_failed'

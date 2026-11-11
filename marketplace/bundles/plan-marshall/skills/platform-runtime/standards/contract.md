@@ -46,14 +46,15 @@ alternative: <what the caller can do instead>
 | Code | Meaning |
 |------|---------|
 | `invalid_scope` | `--scope` not `project` or `global` |
+| `invalid_operation` | `permission fix --operation` is unknown, or the operation's required argument is missing or unusable (`protect-path` path) |
 | `invalid_check` | `permission analyze --checks` contains an unknown check name |
 | `marshal_not_found` | `.plan/marshal.json` missing |
 | `prompt_not_found` | `subagent dispatch --prompt-file` path not found |
 | `unknown_target` | `runtime.target` value not in the target registry |
 | `unknown_overwrite_key` | `project install-hook --overwrite` names a conflict key the target does not define; rejected fail-closed before any write, so a typo never reads as "do not overwrite" |
 | `hook_not_configured` | SessionStart hook not installed; `$CLAUDE_CODE_SESSION_ID` unset |
-| `invalid_settings` | Settings file cannot be used as settings — **not only a JSON parse error**. Four shapes reach it: unparseable JSON; a JSON root that is not an object; a `permissions` value that is not an object; and a `permissions.deny` that is not a list (`protect-path` only, the sole branch that indexes it). The middle two are valid JSON, so a syntax check does not catch them. Fail-closed before any write, so a malformed file is never clobbered — returned by `permission configure`, `permission fix`, `permission ensure-wildcards`, `permission ensure-steps`, `permission web-apply` |
-| `load_error` | The OpenCode settings file was not read — unparseable JSON or bytes that are not UTF-8 — so nothing was written; the file is never loaded as an error skeleton and saved over — returned by `permission configure`, `permission fix`, `permission ensure-wildcards`, `permission web-apply` |
+| `invalid_settings` | Settings file cannot be used as settings — **not only a JSON parse error**. Two shapes reach it: a JSON root that is not an object, and a `permissions` value that is neither a list nor an object while `permission`, when present, must be an object. Both are valid JSON, so a syntax check does not catch them. Fail-closed before any write, so a malformed file is never clobbered — returned by `permission configure`, `permission fix`, `permission ensure-wildcards`, `permission ensure-steps`, `permission web-apply` |
+| `load_error` | The OpenCode settings file was not read — unparseable JSON or bytes that are not UTF-8. This is the ONE code every unparseable-JSON case carries: a file that cannot be parsed is never `invalid_settings`, and never loaded as an error skeleton and saved over — returned by `permission configure`, `permission fix` (every operation, `protect-path` included), `permission ensure-wildcards`, `permission web-apply` |
 | `permission_conflict` | The requested effect cannot be made effective without overriding a later, more specific rule with a different effect the caller did not ask to change; no rule is written and the file is left as it was — returned by `permission configure`, `permission fix`, `permission ensure-wildcards`, `permission web-apply` |
 | `wildcard_action_rule` | The grant to remove is decided by a rule whose `action` is the `*` wildcard, so deleting the named rule would not remove the effect; nothing is written — returned by `permission fix` remove |
 | `permission_write_failed` | The baseline permission list could not be written during `project initial-setup`, including for an unreadable settings file; setup stops rather than report a configured project |

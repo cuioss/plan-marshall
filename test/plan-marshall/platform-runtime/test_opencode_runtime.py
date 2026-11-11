@@ -696,17 +696,13 @@ def test_permission_settings_path_project_finds_dot_opencode(runtime: OpenCodeRu
     assert runtime.permission_settings_path('project', project_dir=str(tmp_path)) == str(cfg)
 
 
-def test_permission_settings_path_project_creates_when_writing(
+def test_permission_settings_path_project_resolves_without_creating(
     runtime: OpenCodeRuntime, tmp_path: pathlib.Path
 ) -> None:
-    """permission_settings_path with write=True creates opencode.json if missing."""
-    target_path = runtime.permission_settings_path('project', write=True, project_dir=str(tmp_path))
-    assert pathlib.Path(target_path).is_file()
-    data = json.loads(pathlib.Path(target_path).read_text(encoding='utf-8'))
-    assert 'permission' not in data, 'a new file must be created in the OpenCode 2 shape'
-    rules = data['permissions']
-    assert rules, 'the skeleton carries the baseline allows'
-    assert all(rule['action'] == 'shell' and rule['resource'] != '*' for rule in rules)
+    """write=True resolves the write-side target and creates nothing itself."""
+    target_path = pathlib.Path(runtime.permission_settings_path('project', write=True, project_dir=str(tmp_path)))
+    assert not target_path.exists(), 'the skeleton is created by the first write, not by resolution'
+    assert target_path.parent == tmp_path
 
 
 def test_permission_load_and_save_settings(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
