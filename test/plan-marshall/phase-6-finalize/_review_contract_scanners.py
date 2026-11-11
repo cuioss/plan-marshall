@@ -51,7 +51,7 @@ def bash_blocks_with_lead_in(text: str) -> list[tuple[str, str]]:
     """Every ``bash`` block, indented ones included, paired with the paragraph that introduces it.
 
     Only the immediately preceding paragraph introduces a block: a blank line ends
-    the paragraph it separates, and a heading is a paragraph of its own, so a
+    the paragraph it separates, and an ATX heading is a paragraph of its own, so a
     citation further up the document does not reach a block it does not sit above.
     Blocks separated only by blank lines share one lead-in: the paragraph before the
     first of them introduces the whole run.

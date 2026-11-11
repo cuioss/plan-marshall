@@ -459,9 +459,13 @@ def test_the_double_quote_scan_matches_what_it_targets():
     assert not scan.DOUBLE_QUOTED_PLACEHOLDER_RE.search('--title "not_run at code-review"')
 
 
-def test_the_quoted_placeholder_patterns_read_the_equals_form():
-    """``--message="{x}"`` and ``--message='{x}'`` offend exactly as their space-separated forms do."""
+def test_the_double_quote_pattern_reads_the_equals_form():
+    """``--message="{x}"`` offends exactly as its space-separated form does."""
     assert scan.DOUBLE_QUOTED_PLACEHOLDER_RE.search('--message="{ref}"')
+
+
+def test_the_single_quote_pattern_reads_the_equals_form():
+    """``--message='{x}'`` offends exactly as its space-separated form does."""
     assert scan.SINGLE_QUOTED_PLACEHOLDER_RE.search("--message='{ref}'")
 
 
@@ -471,23 +475,26 @@ def test_the_quoted_placeholder_patterns_keep_the_space_separated_form():
     assert scan.SINGLE_QUOTED_PLACEHOLDER_RE.search("--message '{ref}'")
 
 
-def _templates_without_the_quoting_rule(body: str) -> list[str]:
-    """The free-text templates of ``body`` whose lead-in does not name the quoting rule."""
-    governed = [
+def _governed_free_text_templates(body: str) -> list[tuple[str, str]]:
+    """Every ``(lead_in, block)`` pair of ``body`` whose block carries a single-quoted placeholder."""
+    return [
         (lead_in, block)
         for lead_in, block in scan.bash_blocks_with_lead_in(body)
         if scan.SINGLE_QUOTED_PLACEHOLDER_RE.search(block)
     ]
+
+
+def _templates_without_the_quoting_rule(body: str) -> list[str]:
+    """The free-text templates of ``body`` whose lead-in does not name the quoting rule."""
     return [
         scan.free_text_lines(block, scan.SINGLE_QUOTED_PLACEHOLDER_RE)[0]
-        for lead_in, block in governed
+        for lead_in, block in _governed_free_text_templates(body)
         if _QUOTING_RULE_ANCHOR not in lead_in
     ]
 
 
 def test_every_free_text_template_names_the_quoting_rule():
-    pairs = scan.bash_blocks_with_lead_in(_body())
-    governed = [(lead_in, block) for lead_in, block in pairs if scan.SINGLE_QUOTED_PLACEHOLDER_RE.search(block)]
+    governed = _governed_free_text_templates(_body())
     assert governed, 'control: the body must carry free-text templates for the reference check to read'
     unreferenced = _templates_without_the_quoting_rule(_body())
     assert not unreferenced, f'these templates interpolate free text without naming the quoting rule: {unreferenced}'
