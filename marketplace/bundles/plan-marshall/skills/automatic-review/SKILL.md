@@ -560,10 +560,16 @@ an unquantified one. Either is `unknown` when unavailable; report it as unknown 
 substituting a default, and read the pair as an order-of-magnitude comparison, since the two carry
 different units by design.
 
+⛔ **Name EVERY unproven required bot, not only the one that refused.** Carry the return's
+`guard_unproven_bots` as the envelope's `{unproven_bots}` set and put that whole list in
+`display_detail`. Accepting the gap authorizes past all of them, so a prompt naming one would let an
+operator accept an absence they were never shown — the rule the pre-merge barrier's structural prompt
+states in the same words.
+
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO \
-  --message "(plan-marshall:automatic-review) refusal recovery SKIPPED — bot {bot_kind} refused STRUCTURALLY (cause=size, cap={cap}, rate_limit_class={rate_limit_class}); returning escalate_ask{reason: refusal_structural} rather than awaiting a diff-size ceiling that waiting does not move"
+  --message "(plan-marshall:automatic-review) refusal recovery SKIPPED — bot {bot_kind} refused STRUCTURALLY (cause=size, cap={cap}, rate_limit_class={rate_limit_class}); unproven_bots={unproven_bots}; returning escalate_ask{reason: refusal_structural} rather than awaiting a diff-size ceiling that waiting does not move"
 ```
 
 #### Branch 1 — `hard_quota` or `unknown` (and `cause` is not `size`): escalate, do not await, do not generate
@@ -1668,7 +1674,7 @@ disjoint from theirs:
 
 ```toon
 status: escalate_ask
-display_detail: "refusal structural — {bot_kind} over cap {cap} (pr {pr_number})"
+display_detail: "refusal structural — {bot_kind} over cap {cap}; unproven {unproven_bots} (pr {pr_number})"
 action: ask
 reason: refusal_structural
 timed_out: false
@@ -1711,6 +1717,7 @@ Field contract:
 - `head_sha`: present only on the `re_review_timeout` variant — the full worktree HEAD SHA the timed-out re-review was awaiting; the unreviewed commit the operator decision applies to. Omitted on the rate-window and structural variants (no HEAD advance is involved).
 - `timed_out`: `true` only for `rate_window_timeout` (a budget genuinely elapsed). `rate_window_await` reports `false` because its wait has not started; `rate_window_not_awaitable`, `rate_window_exhausted`, and `refusal_structural` escalate WITHOUT awaiting, so they report `false` too — reporting a timeout that never happened would misdescribe the escalation.
 - `bot_kind` / `refusal_class`: present on the rate-window and structural variants — which bot refused and under which class, so the operator sees whether the non-participation is awaitable at all.
+- `unproven_bots[]`: present ONLY on the `refusal_structural` variant — every REQUIRED bot the predicate could not prove, not only the one that refused. Accepting the coverage gap authorizes past all of them, so the list is what the operator is actually deciding about, and `display_detail` names it.
 - `expires_at` / `seconds_remaining`: present ONLY on `rate_window_await` — the claim's expiry instant and the seconds left to it, as `merge_lock` reported them. They name what the main-context wait is waiting for; the wait itself re-reads the claim rather than trusting either.
 - `rate_window_arming[]`: present on `rate_window_await`, and on the `rate_window_timeout` handling item 7a derives from it — the two envelopes a claimed window can produce. `rate_window_exhausted` is raised by Branch 2's own `recovery_cap_exhausted` refusal, BEFORE any claim exists, so it never carries a row: the only other route to it is the Branch 3 re-entry consult, and that consult passes `--attempt-held true`, under which the selector never returns `escalate_exhausted`. Same rows and same absence rule as on the main envelope above; `rate_window_not_awaitable` and `refusal_structural` escalate without claiming, so they never carry it either.
 - `refusal_cause` / `cap` / `measured_diff_size`: present ONLY on the `refusal_structural` variant. `refusal_cause` is always `size` there (it is what selected the variant); `cap` is the ceiling the notice stated and `measured_diff_size` is how big the refused diff was, each the literal `unknown` when unavailable. The pair is what makes an accepted gap auditable rather than asserted — and the two carry different units by design, so read them as an order-of-magnitude comparison, never as an equality check.
