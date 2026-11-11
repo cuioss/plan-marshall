@@ -535,32 +535,36 @@ class TestStateTaxonomy:
         assert _state_of(result, 'coderabbit') == rc.STATE_PARTICIPATED
 
     def test_stale_participation_is_participated_stale_and_blocks_like_absent(self, plan_context):
-        """A required bot whose publish failed the currency test blocks exactly as ``absent``.
+        """A required bot without the done flag whose publish failed currency blocks as ``absent``.
 
         The state is a RENAME of what was already reported, not a softening: the
         gate outcome is asserted to be identical to the ``absent`` control below,
         so nothing about this member can be read as relaxing the quorum. What
         changes is that the operator now learns the remedy is a re-review trigger
         rather than an escalation for a bot that never engaged.
+
+        ``sourcery`` is the subject because it declares no
+        ``review_complete_after_handling``; a flagged bot's stale report is a done
+        review instead, and is pinned in ``test_review_complete_after_handling``.
         """
         plan_id = 'rc-state-stale'
         plan_context.plan_dir_for(plan_id)
 
-        result = rc.check_completeness(plan_id, ['coderabbit'], stale_participation_bots=['coderabbit'])
+        result = rc.check_completeness(plan_id, ['sourcery'], stale_participation_bots=['sourcery'])
 
-        assert _state_of(result, 'coderabbit') == rc.STATE_PARTICIPATED_STALE
-        assert result['unproven_bots'] == ['coderabbit']
+        assert _state_of(result, 'sourcery') == rc.STATE_PARTICIPATED_STALE
+        assert result['unproven_bots'] == ['sourcery']
         assert result['participation_complete'] is False
 
         # The absent control, over an otherwise identical store: same verdict, same
         # unproven set. Only the reported state differs.
         control_id = 'rc-state-stale-absent-control'
         plan_context.plan_dir_for(control_id)
-        control = rc.check_completeness(control_id, ['coderabbit'])
+        control = rc.check_completeness(control_id, ['sourcery'])
 
         assert control['participation_complete'] == result['participation_complete']
         assert control['unproven_bots'] == result['unproven_bots']
-        assert _state_of(control, 'coderabbit') == rc.STATE_ABSENT
+        assert _state_of(control, 'sourcery') == rc.STATE_ABSENT
 
     def test_stale_participation_blocks_in_both_triage_modes(self, plan_context):
         """Stale participation is a participation gap, independent of triage state.
@@ -574,25 +578,23 @@ class TestStateTaxonomy:
 
             result = rc.check_completeness(
                 plan_id,
-                ['coderabbit'],
+                ['sourcery'],
                 triage_ran=triage_ran,
-                stale_participation_bots=['coderabbit'],
+                stale_participation_bots=['sourcery'],
             )
 
             assert result['participation_complete'] is False
-            assert _state_of(result, 'coderabbit') == rc.STATE_PARTICIPATED_STALE
+            assert _state_of(result, 'sourcery') == rc.STATE_PARTICIPATED_STALE
 
     def test_stale_optional_bot_is_reported_but_does_not_block(self, plan_context):
         """The required/optional dial governs the new member exactly as the others."""
         plan_id = 'rc-state-stale-optional'
         plan_context.plan_dir_for(plan_id)
 
-        result = rc.check_completeness(
-            plan_id, [], optional_bots=['coderabbit'], stale_participation_bots=['coderabbit']
-        )
+        result = rc.check_completeness(plan_id, [], optional_bots=['sourcery'], stale_participation_bots=['sourcery'])
 
-        assert _state_of(result, 'coderabbit') == rc.STATE_PARTICIPATED_STALE
-        assert result['unproven_bots'] == ['coderabbit']
+        assert _state_of(result, 'sourcery') == rc.STATE_PARTICIPATED_STALE
+        assert result['unproven_bots'] == ['sourcery']
         assert result['participation_complete'] is True
 
     def test_declined_bot_is_declined_and_blocks_like_absent(self, plan_context):
@@ -759,6 +761,10 @@ class TestStateTaxonomy:
 
         The branch sits ABOVE ``in_progress``: an observed publish — even a stale
         one — says more about what the bot did than an unfinished check-run does.
+        For the flagged bot the same branch resolves its done state when the producer
+        also reports a finished review, which is still an observation and still
+        outranks ``in_progress``; without that report it stays ``participated_stale``,
+        which the assertion below pins because this fixture supplies neither.
         """
         plan_id = 'rc-state-stale-vs-in-progress'
         plan_context.plan_dir_for(plan_id)
@@ -771,6 +777,7 @@ class TestStateTaxonomy:
         )
 
         assert _state_of(result, 'coderabbit') == rc.STATE_PARTICIPATED_STALE
+        assert _state_of(result, 'coderabbit') != rc.STATE_IN_PROGRESS
 
     def test_stale_participation_is_an_unproven_state(self, plan_context):
         """The membership is asserted on the constant set, not only on a verdict.
@@ -866,6 +873,8 @@ class TestStateTaxonomy:
             expected = rc.STATE_IN_PROGRESS
         else:
             kwargs['stale_participation_bots'] = ['coderabbit']
+            # No finished-review report is supplied, so the flagged bot stays stale —
+            # still a positive observation, which is what outranks the PR-wide absence.
             expected = rc.STATE_PARTICIPATED_STALE
 
         result = rc.check_completeness(plan_id, ['coderabbit'], not_triggered=True, **kwargs)

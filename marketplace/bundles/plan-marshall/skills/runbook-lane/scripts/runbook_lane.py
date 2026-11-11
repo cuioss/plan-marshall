@@ -845,6 +845,10 @@ def _resolve_bots(marshal: dict[str, Any]) -> tuple[list[dict[str, Any]], list[d
     current head"; see ``runbook-lane/SKILL.md`` § merge gate. Because the flag
     resolves ``False`` when a record declares nothing, the authorization stays off
     for every reviewer the project has not positively marked.
+
+    The row carries ``review_complete_after_handling`` beside it, from the same
+    record, so the lane reads one source for both: a flagged reviewer is done once
+    its qualifying review is handled, with no re-trigger, wait or currency demand.
     """
     plan_block = marshal.get('plan')
     steps = plan_block.get('phase-6-finalize', {}).get('steps', {}) if isinstance(plan_block, dict) else {}
@@ -861,6 +865,7 @@ def _resolve_bots(marshal: dict[str, Any]) -> tuple[list[dict[str, Any]], list[d
                 'trigger_comment': bot_registry.trigger_comment(bot),
                 'escalated_trigger_comment': bot_registry.escalated_trigger_comment(bot),
                 'quota_limited': bot_registry.quota_limited(bot),
+                'review_complete_after_handling': bot_registry.review_complete_after_handling(bot),
             }
             for bot in names
         ]
@@ -2661,11 +2666,64 @@ def _read_review_surfaces(pr_number: int, project_dir: Path) -> dict[str, Any]:
         return {'status': 'error', 'error': f'the CI read output was not parseable as TOON: {exc}'}
 
 
+def _required_reviewers_without_a_review(comments: list[dict[str, Any]], required_reviewers: list[str]) -> list[str]:
+    """Return the required reviewers that hold no qualifying review on this read.
+
+    The done rule's precondition, checked where the merge is decided. A qualifying
+    review is the producer's finished-review test: a formal review record of the bot,
+    or a summary marker that is readable, ``kind: reviewed`` and names a covered
+    commit. A refusal submitted as a review object is not one. Nothing here decides
+    what to do with the review — only that a review exists to be done.
+    """
+    # `github_re_review` owns the import-order-safe entry into `_github_pr` (it
+    # imports `github_ops` first, which breaks that module's import cycle) and
+    # re-exports the one marker reader, so the lane never imports the cycle itself.
+    from github_re_review import _is_refusal_body, review_coverage_names_commit
+
+    def _marker_names_commit(body: str) -> bool:
+        """The one marker reader, on a body this read's DISPLAY path flattened.
+
+        ``ci pr comments`` flattens comment bodies (newlines become spaces), while
+        the marker parser requires its opener at the start of a line. Restoring the
+        HTML-comment boundaries is a presentation fix only — the grammar stays the
+        parser's — and without it a summary carrying prose before its marker loses
+        its qualifying evidence on this read while the producer sees it.
+        """
+        return review_coverage_names_commit((body or '').replace('<!--', '\n<!--'))
+
+    import bot_registry
+
+    present: set[str] = set()
+    for comment in comments:
+        bot = _bot_of(comment)
+        if not bot or bot not in required_reviewers:
+            continue
+        kind = comment.get('kind')
+        if kind not in set(bot_registry.participation_evidence(bot)):
+            # The producer admits evidence only in the bot's OWN declared publish
+            # shapes; a shape this bot does not publish is not evidence for it.
+            continue
+        body = str(comment.get('body') or '')
+        commit = str(comment.get('commit_id') or '').strip()
+        marker_names_commit = _marker_names_commit(body)
+        if kind == 'review_body':
+            # A formal review qualifies on a named commit, or on a finished coverage
+            # marker that names one. A refusal submitted as a review object is not a
+            # review — unless it also carries that marker, which the producer admits
+            # too (a review summary may carry a later limit notice beside its verdict).
+            if marker_names_commit or (commit and not _is_refusal_body(body, bot)):
+                present.add(bot)
+        elif kind == 'issue_comment' and marker_names_commit:
+            present.add(bot)
+    return sorted(set(required_reviewers) - present)
+
+
 def _review_gate_verdict(
     pr_number: int,
     read: dict[str, Any],
     dispositions: list[dict[str, str]],
     refused: list[str],
+    required_reviewers: list[str] | None = None,
 ) -> dict[str, Any]:
     """Decide whether the review surfaces admit the merge (section 7's condition).
 
@@ -2771,6 +2829,21 @@ def _review_gate_verdict(
         'review_body_findings_handled': len(findings) - len(undisposed),
         'unresolved_threads': unresolved,
     }
+    missing_reviews = (
+        _required_reviewers_without_a_review(comments, list(required_reviewers or [])) if required_reviewers else []
+    )
+    if required_reviewers:
+        verdict['required_reviewers'] = list(required_reviewers)
+    if missing_reviews:
+        # The done rule is "one handled review IS the review", never "the flag is
+        # enough": a required reviewer the run names must actually hold a qualifying
+        # review before its currency demand can be waived.
+        return {
+            **verdict,
+            'merge_allowed': False,
+            'reason': 'required_review_missing',
+            'missing_required_reviews': missing_reviews,
+        }
     if unresolved:
         return {**verdict, 'merge_allowed': False, 'reason': 'unresolved_review_threads'}
     if undisposed:
@@ -2791,8 +2864,11 @@ def cmd_review_gate(args: argparse.Namespace) -> dict[str, Any]:
         }
     project_dir = Path(getattr(args, 'project_dir', None) or '.')
     dispositions, refused = _parse_dispositions(list(getattr(args, 'disposition', None) or []))
+    required_reviewers = [
+        str(bot).strip() for bot in (getattr(args, 'required_reviewer', None) or []) if str(bot).strip()
+    ]
     read = _read_review_surfaces(pr_number, project_dir)
-    return _review_gate_verdict(pr_number, read, dispositions, refused)
+    return _review_gate_verdict(pr_number, read, dispositions, refused, required_reviewers)
 
 
 def cmd_resolve(args: argparse.Namespace) -> dict[str, Any]:
@@ -3104,6 +3180,18 @@ def main() -> int:
         action='append',
         default=None,
         help=('One progress-file disposition line, repeatable: "{reviewer} {section} {id} — {sha|reason}"'),
+    )
+    review_parser.add_argument(
+        '--required-reviewer',
+        dest='required_reviewer',
+        action='append',
+        default=None,
+        help=(
+            'A REQUIRED reviewer bot kind, repeatable. When named, the gate also requires '
+            'that reviewer to hold a qualifying review on record (a formal review record, or '
+            'a summary marker that is readable, kind=reviewed and names a commit); one '
+            'without it answers merge_allowed: false, required_review_missing.'
+        ),
     )
 
     args = parser.parse_args()

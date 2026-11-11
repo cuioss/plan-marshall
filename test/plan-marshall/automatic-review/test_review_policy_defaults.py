@@ -129,6 +129,11 @@ def _elapsed_verdict(review_on_record: str) -> dict:
         attempts_remaining=2,
         attempt_held=True,
         review_on_record=review_on_record,
+        # The findings observation is supplied so a flagged bot's done arm can
+        # settle; the unflagged arms below never read it. The finished-review
+        # observation is supplied for the same reason — the done arm requires it.
+        pending_findings=0,
+        finished_review=True,
     )
 
 
@@ -145,13 +150,29 @@ class TestCloseAndReopenIsBoundToNoReviewOnRecord:
             github_re_review.RECOVERY_ACTION_CLOSE_AND_REOPEN
         )
 
-    def test_a_bot_that_already_reviewed_is_re_triggered_instead(self, monkeypatch):
+    def test_a_flagged_bot_that_already_reviewed_settles_on_its_review(self, monkeypatch):
+        """A bot declaring the done rule accepts the review on record; it is never re-triggered."""
         bot = _awaitable_bot()
         monkeypatch.setattr(
             bot_registry,
             'trigger_semantics',
             lambda kind: bot_registry.TRIGGER_SEMANTICS_REQUIRES_EXPLICIT_TRIGGER if kind == bot else 'auto_on_push',
         )
+
+        for review_state in (github_re_review.REVIEW_ON_RECORD_CREDITED, github_re_review.REVIEW_ON_RECORD_STALE):
+            verdict = _elapsed_verdict(review_state)
+            assert verdict['action'] == github_re_review.RECOVERY_ACTION_ACCEPT_REVIEW_ON_RECORD, review_state
+            assert verdict['action'] != github_re_review.RECOVERY_ACTION_CLOSE_AND_REOPEN
+
+    def test_an_unflagged_bot_that_already_reviewed_is_re_triggered_instead(self, monkeypatch):
+        """MATCHED CONTROL — with the flag off, the pre-existing re-trigger arm is intact."""
+        bot = _awaitable_bot()
+        monkeypatch.setattr(
+            bot_registry,
+            'trigger_semantics',
+            lambda kind: bot_registry.TRIGGER_SEMANTICS_REQUIRES_EXPLICIT_TRIGGER if kind == bot else 'auto_on_push',
+        )
+        monkeypatch.setattr(github_re_review.bot_registry, 'review_complete_after_handling', lambda _kind: False)
 
         for review_state in (github_re_review.REVIEW_ON_RECORD_CREDITED, github_re_review.REVIEW_ON_RECORD_STALE):
             verdict = _elapsed_verdict(review_state)
@@ -172,6 +193,7 @@ class TestCloseAndReopenIsBoundToNoReviewOnRecord:
     def test_a_push_triggering_bot_is_unaffected(self, monkeypatch):
         _awaitable_bot()  # asserts an awaitable bot exists, so the case is not vacuous
         monkeypatch.setattr(bot_registry, 'trigger_semantics', lambda kind: bot_registry.TRIGGER_SEMANTICS_AUTO_ON_PUSH)
+        monkeypatch.setattr(github_re_review.bot_registry, 'review_complete_after_handling', lambda _kind: False)
 
         assert _elapsed_verdict(github_re_review.REVIEW_ON_RECORD_CREDITED)['action'] == (
             github_re_review.RECOVERY_ACTION_GENERATE_TRIGGER

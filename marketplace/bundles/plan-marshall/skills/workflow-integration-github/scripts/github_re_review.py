@@ -287,6 +287,7 @@ from _github_pr import (
     refusal_size_cap,
     review_coverage_is_finished,
     review_coverage_marker_present,
+    review_coverage_names_commit,
     review_coverage_verdict,
 )
 from ci_base import (
@@ -794,6 +795,7 @@ def resolve_recovery_action(
     attempts_remaining: int | None = None,
     attempt_held: bool = False,
     notice_stale: bool = False,
+    finished_review: bool | None = None,
 ) -> dict[str, Any]:
     """Return the recovery move a detected refusal arms, DERIVED from the registry.
 
@@ -921,7 +923,15 @@ def resolve_recovery_action(
     7. **An OPEN claim resolves ``await_window``.** ⛔ A re-trigger inside the
        window RESETS it rather than shortening it — an advertised wait was
        observed going from 50 to 59 minutes — and spends quota doing so.
-    8. **An ELAPSED claim resolves by the bot's ``trigger_semantics``**, with one
+    8. **A flagged bot with a review on record SETTLES, before any window or
+       budget arm.** A bot declaring
+       :meth:`bot_registry.BotRegistry.review_complete_after_handling` whose review
+       is ``credited`` or ``stale`` has nothing to request and nothing to wait for:
+       pending findings route to triage (``await_triage``), an unobserved findings
+       state is ``unmeasured``, and everything else accepts the review on record
+       (``accept_review_on_record``, reason ``review_on_record_done``). None of the
+       three posts, so the done rule also removes the wait.
+    9. **An ELAPSED claim resolves by the bot's ``trigger_semantics``**, with one
        exception for a bot that reviews only when explicitly asked: ``close_and_reopen``
        for that bot **only when no review by it is on record**
        (``review_on_record`` is not ``credited``/``stale``), and ``generate_trigger``
@@ -978,11 +988,33 @@ def resolve_recovery_action(
         # The refusal record's `stale` field as received — whether the window the
         # notice stated had already elapsed when the notice was read.
         'notice_stale': notice_stale,
+        'finished_review': finished_review,
         'recovery_actions': list(RECOVERY_ACTIONS),
     }
 
     if not known:
         return {**verdict, 'action': RECOVERY_ACTION_UNMEASURED, 'reason': 'registry_empty'}
+    # THE DONE RULE, once, ahead of every cause/window/budget arm. A flagged bot with
+    # the producer's FINISHED-review observation and a review on record owes no later
+    # review, so nothing is requested, waited for or escalated — not even a structural
+    # size refusal on a later diff, which no re-review would cure. The observation is
+    # required: a stale report or a credited participation alone can come from a
+    # marker-bearing comment that never finished a review, so an unobserved value is
+    # never done.
+    if (
+        bot_registry.review_complete_after_handling(bot_kind)
+        and finished_review is True
+        and review_on_record in (REVIEW_ON_RECORD_CREDITED, REVIEW_ON_RECORD_STALE, REVIEW_ON_RECORD_UNDECIDABLE)
+    ):
+        if pending_findings is None:
+            return {**verdict, 'action': RECOVERY_ACTION_UNMEASURED, 'reason': 'no_findings_observation'}
+        if pending_findings > 0:
+            return {
+                **verdict,
+                'action': RECOVERY_ACTION_AWAIT_TRIAGE,
+                'reason': 'review_on_record_done_findings_pending',
+            }
+        return {**verdict, 'action': RECOVERY_ACTION_ACCEPT_REVIEW_ON_RECORD, 'reason': 'review_on_record_done'}
     if condition == REFUSAL_CONDITION_NO_UNREVIEWED_COMMIT:
         # A value outside the vocabulary is an observation nobody made, exactly as
         # an omitted one is: it resolves `unmeasured`, never the posting arm.
@@ -1040,7 +1072,9 @@ def resolve_recovery_action(
         # candidate moved on — so re-delivering the whole PR buys nothing and the
         # operator policy bounds close-and-reopen to the no-review-on-record case.
         # Such a bot is re-triggered instead (`generate_trigger`), which is what the
-        # caller's fallback path posts when no rebase can produce an event.
+        # caller's fallback path posts when no rebase can produce an event. A bot
+        # declaring `review_complete_after_handling` never reaches this line: its
+        # branch above settles before any window arm.
         if review_on_record in (REVIEW_ON_RECORD_CREDITED, REVIEW_ON_RECORD_STALE):
             return {
                 **verdict,
@@ -1188,8 +1222,34 @@ class _ReReviewStrategy:
         then is :meth:`_escalated_post_refusal` consulted, which refuses a second
         post of a command the bot has not answered yet. Both commands leave
         through the one ``post_pr_comment`` call below.
+
+        **A flagged bot's review on record refuses both commands.** Before either
+        guard, a bot declaring
+        :meth:`bot_registry.BotRegistry.review_complete_after_handling` is refused
+        with ``reason: review_on_record_done`` when this pull request already holds
+        a qualifying review by it, because one handled review is the review and a
+        further request spends the bot's allowance for nothing. A pull request with
+        no qualifying review is untouched: the first trigger posts exactly as
+        before, and so does every bot that does not declare the flag.
         """
         reader = read_rate_window if window_reader is None else window_reader
+        if bot_registry.review_complete_after_handling(self.bot_kind):
+            # The done rule, enforced at the one post chokepoint so it cannot be
+            # bypassed by a caller that skipped its own check. The read answers
+            # three ways and only a POSITIVE "the review is on record" refuses:
+            # an unreadable history permits the post for the same reason the rate
+            # window does — refusing there would take the whole re-review path
+            # down whenever the fetch is unreachable, a far larger failure than
+            # the redundant comment it would prevent.
+            if _qualifying_review_on_record(pr_number, self.bot_kind) is True:
+                return {
+                    'status': 'refused',
+                    'operation': 'request_fresh_review',
+                    'reason': 'review_on_record_done',
+                    'bot_kind': self.bot_kind,
+                    'pr_number': pr_number,
+                    'escalated': escalated,
+                }
         observation = reader(plan_id or _GUARD_PLAN_SENTINEL, self.bot_kind, pr_number)
         if observation.get('expired') is False:
             return {
@@ -1813,6 +1873,79 @@ def bot_kind_for_author(author_login: str | None) -> str | None:
     return _AUTHOR_LOGIN_TO_BOT_KIND.get(normalized)
 
 
+def _is_refusal_body(body: str, bot_kind: str) -> bool:
+    """Whether ``body`` is a refusal notice, by the same layered arms the producer runs.
+
+    The producer's ``_is_refusal_notice`` lives in ``github_pr``, which imports this
+    module, so the arms are composed from the shared ``_github_pr`` primitives instead
+    of importing it. The three layers are the ones ``_github_pr.REFUSAL_LAYERS`` names:
+    the structural rate-limit recogniser, the bot's own declared ``refusal_patterns``,
+    and the enumerative arm for a notice no earlier layer could read. Any one is
+    enough; a body no layer reads is not a refusal.
+    """
+    if _is_rate_limit_notice(body):
+        return True
+    lowered = (body or '').casefold()
+    if any(pattern.casefold() in lowered for pattern in bot_registry.refusal_patterns(bot_kind) if pattern):
+        return True
+    return _is_unrecognised_refusal(body)
+
+
+def _qualifying_review_on_record(pr_number: int | str, bot_kind: str) -> bool | None:
+    """Whether ``bot_kind`` holds a qualifying review on this pull request.
+
+    The done rule's read, and the one question it asks: is a FINISHED review by this
+    bot on record here AT ALL — never whether that review covers the current head.
+    The test is the producer's own ``finished_review_bots`` test, restated per comment
+    so one fetch answers it:
+
+    - a formal review record of this bot (the producer's ``review_body`` record), or
+    - an issue comment of this bot whose coverage marker is readable, ``kind:
+      reviewed`` and names a covered commit (``review_coverage_names_commit``, the
+      head-free companion of the one marker parser).
+
+    A marker-bearing comment that is NOT a finished review — an unreadable payload, a
+    non-``reviewed`` kind, a marker naming no commit — is admitted participation
+    EVIDENCE but not a review, so it must never suppress the first trigger. Neither
+    does an inline comment on its own: it is a line comment BY a review, and the
+    review it belongs to carries the artifact this test reads. The head-bound
+    ``review_coverage_verdict`` is deliberately NOT consulted: it answers "does this
+    review cover the current head", which is the currency question this rule removes.
+
+    Three answers, matching the fetch's own: ``True`` when a finished review exists,
+    ``False`` when the bot published none, and ``None`` when the pull request's
+    history could not be read IN FULL — a failed fetch, or a successful one whose
+    connection was capped (``complete: false``), because a review may sit in the part
+    that was not read. ``None`` is the caller's fail-open to the pre-existing path for
+    a POST decision — never a claim that no review exists.
+    """
+    envelope = _github.fetch_pr_comments_data(int(pr_number))
+    if envelope.get('status') != 'success':
+        return None
+    if envelope.get('complete') is not True:
+        return None
+    for comment in envelope.get('comments') or []:
+        if not isinstance(comment, dict):
+            continue
+        if bot_kind_for_author(comment.get('author')) != bot_kind:
+            continue
+        kind = str(comment.get('kind') or '')
+        body = str(comment.get('body') or '')
+        if kind == 'review_body':
+            # A review OBJECT can carry a refusal notice instead of a review. The
+            # producer excludes such a body from participation (and so from
+            # ``finished_review_bots``), so this read must too — otherwise a
+            # refusal-as-review would make the first trigger unreachable. A body that
+            # is a refusal AND carries a readable finished marker is the one case both
+            # sites admit (CodeRabbit keeps the marker beside a later limit notice).
+            if not _is_refusal_body(body, bot_kind) or review_coverage_names_commit(body):
+                return True
+            continue
+        if kind == 'issue_comment' and review_coverage_names_commit(body):
+            return True
+    return False
+
+
 # ---------------------------------------------------------------------------
 # Registered trigger-comment recognizer (shared with the producer pre-filter)
 # ---------------------------------------------------------------------------
@@ -1974,6 +2107,10 @@ def cmd_recovery_action(args: argparse.Namespace) -> dict:
         # Read defensively, like the inputs above. Absent reads as NOT stale, so
         # a caller that forwards nothing gets the derivation it got before.
         notice_stale=getattr(args, 'notice_stale', None) == 'true',
+        # The producer's finished-review observation: `true` only when the bot is in
+        # finished_review_bots[]. Absent reads as UNOBSERVED (None), and the done rule
+        # requires a positive observation, so an older caller keeps every arm it had.
+        finished_review=None if getattr(args, 'finished_review', None) is None else args.finished_review == 'true',
     )
     return {'status': 'success', 'operation': 'recovery_action', **verdict}
 
@@ -2157,6 +2294,18 @@ def main() -> int:
             'instead of await_window, unless --attempt-held is true or --review-on-record is '
             "'absent' (then trigger_stale_notice within the attempt budget). OMIT it when the "
             'record carries no such field (reads as not stale)'
+        ),
+    )
+    recovery.add_argument(
+        '--finished-review',
+        choices=('true', 'false'),
+        dest='finished_review',
+        help=(
+            "The producer's finished-review observation: 'true' exactly when the bot is named in "
+            'github_pr fetch_findings finished_review_bots[]. A bot declaring '
+            'review_complete_after_handling with a review on record and this observation settles '
+            '(accept_review_on_record / await_triage) before any cause, window or budget arm. '
+            'OMIT it when the observation was not made: the done arm then does not apply.'
         ),
     )
     recovery.add_argument('--plan-id', help='Plan identifier (accepted for routing uniformity)')

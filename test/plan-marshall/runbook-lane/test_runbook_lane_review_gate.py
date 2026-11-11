@@ -112,7 +112,7 @@ def _inline(
     }
 
 
-def _review_body(body: str, author: str = 'coderabbitai') -> dict:
+def _review_body(body: str, author: str = 'coderabbitai', commit_id: str = 'a' * 40) -> dict:
     return {
         'kind': 'review_body',
         'id': 'review-1',
@@ -124,7 +124,7 @@ def _review_body(body: str, author: str = 'coderabbitai') -> dict:
         'resolved': False,
         'created_at': '2026-11-07T10:00:00Z',
         'updated_at': '2026-11-07T10:00:00Z',
-        'commit_id': 'a' * 40,
+        'commit_id': commit_id,
         'reply_to_id': '',
         'thread_reply': False,
     }
@@ -154,9 +154,43 @@ def _args(*dispositions: str):
     return parse_ns('plan-marshall', 'runbook-lane', 'runbook_lane.py', *argv)
 
 
-def _verdict(read: dict, *dispositions: str) -> Any:
+def _args_with_reviewers(*reviewers: str):
+    argv = ['review-gate', '--pr-number', '7']
+    for reviewer in reviewers:
+        argv += ['--required-reviewer', reviewer]
+    return parse_ns('plan-marshall', 'runbook-lane', 'runbook_lane.py', *argv)
+
+
+def _verdict(read: dict, *dispositions: str, reviewers: tuple[str, ...] = ()) -> Any:
+    argv = ['review-gate', '--pr-number', '7']
+    for disposition in dispositions:
+        argv += ['--disposition', disposition]
+    for reviewer in reviewers:
+        argv += ['--required-reviewer', reviewer]
     with patch.object(lane, '_read_review_surfaces', return_value=read):
-        return cmd_review_gate(_args(*dispositions))
+        return cmd_review_gate(parse_ns('plan-marshall', 'runbook-lane', 'runbook_lane.py', *argv))
+
+
+def _finished_marker_body() -> str:
+    return '<!-- final_review_risk_coverage:{"coveredCommitId":"' + 'a' * 40 + '","kind":"reviewed"} -->'
+
+
+def _issue_comment(body: str, author: str = 'coderabbitai') -> dict:
+    return {
+        'kind': 'issue_comment',
+        'id': 'issue-1',
+        'thread_id': '',
+        'author': author,
+        'body': body,
+        'path': '',
+        'line': 0,
+        'resolved': False,
+        'created_at': '2026-11-07T10:00:00Z',
+        'updated_at': '2026-11-07T10:00:00Z',
+        'commit_id': '',
+        'reply_to_id': '',
+        'thread_reply': False,
+    }
 
 
 def _only_unresolved_threads_stub(read: dict) -> bool:
@@ -857,3 +891,104 @@ def test_the_ci_read_is_the_abstraction_s_own_invocation(monkeypatch) -> None:
     assert argv[3:6] == ['pr', 'comments', '--pr-number']
     assert argv[6] == '7'
     assert seen['cwd'] == '/tmp/project', 'the read runs in the project it was handed'
+
+
+# ---------------------------------------------------------------------------
+# The done rule's precondition: a named required reviewer must HAVE a review
+# ---------------------------------------------------------------------------
+
+
+def test_a_named_required_reviewer_with_no_review_refuses_the_merge() -> None:
+    """⛔ The flag alone never waives the currency demand: a review must exist."""
+    verdict = _verdict(_read(), reviewers=('coderabbit',))
+
+    assert verdict['merge_allowed'] is False
+    assert verdict['reason'] == 'required_review_missing'
+    assert verdict['missing_required_reviews'] == ['coderabbit']
+
+
+def test_a_named_required_reviewer_with_a_formal_review_passes() -> None:
+    """MATCHED CONTROL — the same read plus one formal review record admits the merge."""
+    verdict = _verdict(_read(_review_body('No actionable comments were generated')), reviewers=('coderabbit',))
+
+    assert verdict['merge_allowed'] is True
+    assert verdict['reason'] == 'all_handled'
+    assert verdict['required_reviewers'] == ['coderabbit']
+
+
+def test_a_named_required_reviewer_with_a_finished_marker_summary_passes() -> None:
+    """The other qualifying artifact: a readable kind=reviewed marker naming a commit."""
+    verdict = _verdict(_read(_issue_comment(_finished_marker_body())), reviewers=('coderabbit',))
+
+    assert verdict['merge_allowed'] is True
+
+
+def test_a_named_required_reviewer_with_only_a_walkthrough_is_refused() -> None:
+    """A marker-less walkthrough is not a review, so the done precondition fails."""
+    verdict = _verdict(_read(_issue_comment('## Walkthrough\n\nsome prose')), reviewers=('coderabbit',))
+
+    assert verdict['merge_allowed'] is False
+    assert verdict['reason'] == 'required_review_missing'
+
+
+def test_a_named_required_reviewer_with_only_a_refusal_is_refused() -> None:
+    """A refusal submitted as a review object is not a review either."""
+    verdict = _verdict(
+        _read(_review_body('> ## Review limit reached > Please wait 12 minutes before requesting another review.')),
+        reviewers=('coderabbit',),
+    )
+
+    assert verdict['merge_allowed'] is False
+    assert verdict['reason'] == 'required_review_missing'
+
+
+def test_a_review_body_without_a_commit_and_without_a_marker_is_refused() -> None:
+    """§ 7 requires a formal review WITH a commit id: an empty one proves no head."""
+    verdict = _verdict(
+        _read(_review_body('No actionable comments were generated', commit_id='')), reviewers=('coderabbit',)
+    )
+
+    assert verdict['merge_allowed'] is False
+    assert verdict['reason'] == 'required_review_missing'
+
+
+def test_a_flattened_summary_marker_names_its_commit() -> None:
+    """`ci pr comments` flattens newlines; the marker opener is restored before parsing."""
+    flattened = 'Some prose first. ' + _finished_marker_body()
+    verdict = _verdict(_read(_issue_comment(flattened)), reviewers=('coderabbit',))
+
+    assert verdict['merge_allowed'] is True
+
+
+def test_a_marker_beside_a_refusal_notice_is_still_a_finished_review() -> None:
+    """The producer admits this combination; the lane's check must agree with it."""
+    body = '> ## Review limit reached\n' + _finished_marker_body()
+    verdict = _verdict(_read(_review_body(body, commit_id='')), reviewers=('coderabbit',))
+
+    assert verdict['merge_allowed'] is True
+
+
+def test_a_marker_in_a_shape_the_bot_does_not_publish_is_not_evidence() -> None:
+    """The producer admits only the bot's own declared shapes; Sourcery publishes no summary."""
+    verdict = _verdict(_read(_issue_comment(_finished_marker_body(), author='sourcery-ai')), reviewers=('sourcery',))
+
+    assert verdict['merge_allowed'] is False
+    assert verdict['reason'] == 'required_review_missing'
+
+
+def test_a_required_reviewer_with_findings_and_dispositions_is_admitted() -> None:
+    """Both inputs travel together: the reviewer check does not bypass finding dispositions."""
+    read = _read(_review_body(_NITPICK_BODY))
+    verdict = _verdict(read, 'coderabbit nitpick nitpick-1 — f1670af19', reviewers=('coderabbit',))
+
+    assert verdict['review_body_findings_total'] == 3
+    assert verdict['merge_allowed'] is False
+    assert verdict['reason'] == 'body_findings_undisposed'
+
+
+def test_an_unnamed_reviewer_population_leaves_the_verdict_unchanged() -> None:
+    """The new input is opt-in: a call that names no reviewer behaves exactly as before."""
+    verdict = _verdict(_read())
+
+    assert verdict['merge_allowed'] is True
+    assert 'required_reviewers' not in verdict

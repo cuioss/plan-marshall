@@ -166,7 +166,7 @@ Both operations take the same `PRRT_` thread ID — pass the comment's `thread_i
    stale_participation_bots[N]{bot_kind,evidence_kind}:
    ```
 
-   Same record shape as `participated_bots[]`, and the proven set is **subtracted before emitting** — a bot with one stale comment and one fresh one appears only in `participated_bots[]`, never in both. Forward the list to `review_completeness check --stale-participation-bots` so the quorum layer classifies the bot `participated_stale` instead of `absent`. The two are not interchangeable and their remedies are opposite: a stale publish is **re-triggered** (the review exists, it merely predates this HEAD), while a true absence is **escalated** (there is no review to refresh). Discarding the failed currency test is what collapsed the two.
+   Same record shape as `participated_bots[]`, and the proven set is **subtracted before emitting** — a bot with one stale comment and one fresh one appears only in `participated_bots[]`, never in both. Forward the list to `review_completeness check --stale-participation-bots` so the quorum layer classifies the bot `participated_stale` instead of `absent`. The two are not interchangeable and their remedies are opposite: a stale publish is **re-triggered** (the review exists, it merely predates this HEAD), while a true absence is **escalated** (there is no review to refresh). Discarding the failed currency test is what collapsed the two. A bot declaring `review_complete_after_handling` is the one exception, and the quorum layer applies it: that review on record completes the bot, so it resolves `participated` / `participated_but_empty` and no later head is re-triggered.
 
    **One reply lifts a bot out of the stale set: its own statement that nothing is unreviewed.** A bot the currency test left stale is counted after all — moved into `participated_bots[]` and out of `stale_participation_bots[]` — when a reply of its with `condition: no_unreviewed_commit` was written AFTER the merge-candidate commit. The bot said every commit is already reviewed, and that commit existed when it said so, so its review on record covers it. Each bot counted this way is also named in:
 
@@ -337,6 +337,31 @@ The refusal is a **returned envelope, never an exception** — a caller branches
 ⛔ **The ordinary post-merge path is safe BY CONSTRUCTION, not by a carve-out.** `rate-window check` reports `expired: true` for a bot with **no stored record**, so a re-review that followed no refusal at all is authorized through the very same predicate that refuses one that did. Preserve that property: the guard refuses only on `expired` being positively `false`. Every other observation permits the post, including a read that could not be performed — refusing on an unreadable read would take the whole re-review path down whenever `manage-locks` is unreachable, a far larger failure than the one the guard prevents.
 
 ⛔ **A re-trigger inside an open window RESETS it rather than shortening it** (an advertised wait was observed going from 50 to 59 minutes) and spends quota doing so. That is why the guard refuses rather than merely warning, and why the recovery selector below never reaches a trigger arm while a claim is still running.
+
+#### The one handled review
+
+A bot whose registry record declares `review_complete_after_handling: true` owes a pull request ONE
+review. Once a qualifying review — a formal review record, or the bot's summary comment carrying a
+readable `kind: reviewed` coverage marker that names a commit; the producer reports these bots in
+`finished_review_bots[]` — is on record, every finding of it is handled and its threads are resolved,
+the review is DONE at any later head: no trigger is posted, no review is awaited, and no gate asks
+that the recorded review cover the current head. The recorded review may predate the head by any
+number of fix commits, a merge of the base branch or a branch-cleanup rebase, and that is the point.
+
+A marker-bearing comment that is not a finished review — an unreadable payload, a non-`reviewed` kind,
+a marker naming no commit — is evidence the bot published, never a review, so it neither completes the
+bot nor suppresses the first trigger.
+
+The rule is enforced where the post happens rather than left to prose: `request_fresh_review` reads
+the pull request's comments for a qualifying review by a flagged bot and returns `status: refused` /
+`reason: review_on_record_done` instead of posting, for the ordinary and escalated commands alike.
+The read is fail-open for the POST decision only — a history that could not be fetched in full (a
+failed fetch, or a capped connection) permits the post, for the same reason the rate-window guard
+does — while `review_completeness` treats an unreadable state as never done. A pull request with no
+qualifying review is untouched: the first trigger and the quota policy apply exactly as they do for
+every other bot. Done stops requests, never handling — a comment that arrives after done, a resolved
+thread whose last bot comment says the concern remains, or a finding an edit reset to pending still
+blocks the merge through `review-gate` and the pending-findings predicates.
 
 #### The escalated command
 
@@ -1263,7 +1288,7 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github
 
 `--escalated` posts the bot's registry `escalated_trigger_comment` instead of its `trigger_comment`. It takes no value. See § "The escalated command" for when it is used and the guard that applies to it alone.
 
-The verb has three terminal shapes, not two: `status: success` (the trigger was posted and the await ran to a verdict), `status: error`, and `status: refused`. A refusal names its `reason`: `window_open` — the refusal re-trigger guard declining to post into an unexpired rate window, for either command (see § "The refusal re-trigger guard" for the envelope's field set) — or, under `--escalated` only, `no_escalated_command`, `escalated_command_already_posted` or `escalated_history_unreadable` (§ "The escalated command"). A `status: success` return carries `escalated: true|false`, naming which command was sent.
+The verb has three terminal shapes, not two: `status: success` (the trigger was posted and the await ran to a verdict), `status: error`, and `status: refused`. A refusal names its `reason`: `window_open` — the refusal re-trigger guard declining to post into an unexpired rate window, for either command (see § "The refusal re-trigger guard" for the envelope's field set) — or `review_on_record_done` — a bot declaring `review_complete_after_handling` already holds a qualifying review on this pull request, so one handled review is the review and no second request is posted (§ "The one handled review") — or, under `--escalated` only, `no_escalated_command`, `escalated_command_already_posted` or `escalated_history_unreadable` (§ "The escalated command"). A `status: success` return carries `escalated: true|false`, naming which command was sent.
 
 ### github_re_review recovery-action
 
@@ -1272,6 +1297,7 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github
   --bot-kind BOT_KIND \
   [--cause {size|quota}] [--condition {rate_limited|no_unreviewed_commit}] \
   [--review-on-record {credited|stale|undecidable|absent}] [--pending-findings N] \
+  [--finished-review {true|false}] \
   [--window-expired {true|false}] [--attempts-remaining N] \
   [--attempt-held {true|false}] [--notice-stale {true|false}] [--plan-id PLAN_ID]
 ```
@@ -1290,6 +1316,8 @@ DERIVES which recovery a detected refusal arms, from the bot registry plus the c
 
 `--condition` is the refusal record's `condition`. **Omit it when the record carries none** — an omitted condition reads as empty and takes the rate-limit derivation below. `no_unreviewed_commit` is resolved before the cause and the class: the bot said every commit is already reviewed, so there is no limit to classify and no window to claim. It resolves from two observations, each of which reads as `unmeasured` when omitted:
 
+`--finished-review` is the producer's done-rule observation: `true` exactly when the bot is named in `github_pr fetch_findings` `finished_review_bots[]`, `false` when the fetch reported the list without it. **Omit it when the observation was not made.** A bot declaring `review_complete_after_handling` with a review on record settles on the done arm before ANY cause, window or budget arm — including a later structural size refusal, which no re-review would cure — and only a positive observation takes that arm, so a stale report or a credited participation that is not a finished review keeps every pre-existing arm.
+
 - `--review-on-record` — where this bot's review stands for the merge candidate, read off the consuming step's `fetch_findings` return. That return has three disjoint per-bot participation lists, and the state is derived from all three:
 
   | Value | The bot on the `fetch_findings` return |
@@ -1302,12 +1330,14 @@ DERIVES which recovery a detected refusal arms, from the bot registry plus the c
   `fetch_findings` credits a stale bot whose own `no_unreviewed_commit` reply is strictly newer than the merge-candidate commit — on either ground it went stale on, a failed ledger test or a comment naming another commit — so `stale` here means the reply does not cover the merge candidate.
 - `--pending-findings` — how many of this bot's `pr-comment` findings are still pending.
 
-Only an `absent` review resolves `post_escalated_command`. A `credited` review resolves `accept_review_on_record` when no finding is pending and `await_triage` when one is; a `stale` review resolves `leave_to_stale_review`. An `undecidable` review resolves `unmeasured` with `reason: review_state_undecidable`, whatever `--pending-findings` carries: the producer did not observe where the review stands, and an unobserved review state never selects the arm that posts. `post_escalated_command` is the only action of this condition that posts: the other four — `accept_review_on_record`, `await_triage`, `leave_to_stale_review` and `unmeasured` — post nothing. For any other condition `--pending-findings` is ignored. Two arms read `--review-on-record` for a refusal: the stale-notice arm (`absent` resolves `trigger_stale_notice`; see `--notice-stale` above) and the ELAPSED arm (`credited` / `stale` keep an explicit-trigger bot on the re-trigger path instead of `close_and_reopen`). See [`../automatic-review/SKILL.md`](../automatic-review/SKILL.md) § "Rate-limit refusal recovery" Branch 6 for the step that gathers the two observations and acts on the result.
+Only an `absent` review resolves `post_escalated_command`. A `credited` review resolves `accept_review_on_record` when no finding is pending and `await_triage` when one is; a `stale` review resolves `leave_to_stale_review` — except for a bot declaring `review_complete_after_handling`, whose `credited` OR `stale` review settles on `accept_review_on_record` (reason `review_on_record_done`) or `await_triage` (reason `review_on_record_done_findings_pending`) before any window or budget arm. An `undecidable` review resolves `unmeasured` with `reason: review_state_undecidable`, whatever `--pending-findings` carries: the producer did not observe where the review stands, and an unobserved review state never selects the arm that posts. `post_escalated_command` is the only action of this condition that posts: the other four — `accept_review_on_record`, `await_triage`, `leave_to_stale_review` and `unmeasured` — post nothing. For any other condition `--pending-findings` is ignored. Two arms read `--review-on-record` for a refusal: the stale-notice arm (`absent` resolves `trigger_stale_notice`; see `--notice-stale` above) and the ELAPSED arm (`credited` / `stale` keep an explicit-trigger bot on the re-trigger path instead of `close_and_reopen`, while a `review_complete_after_handling` bot settles on the done arm). See [`../automatic-review/SKILL.md`](../automatic-review/SKILL.md) § "Rate-limit refusal recovery" Branch 6 for the step that gathers the two observations and acts on the result.
 
 The returned `action` is one of:
 
 | `action` | `reason` | Meaning |
 |----------|----------|---------|
+| `accept_review_on_record` | `review_on_record_done` | The bot declares `review_complete_after_handling` and its review is `credited` or `stale`, with no pending finding. One handled review is the review, so the elapsed window settles without a post and the later head is not demanded. |
+| `await_triage` | `review_on_record_done_findings_pending` | The same done arm with findings of that review still pending. Post nothing; triage handles them, never a re-request. |
 | `accept_review_on_record` | `review_on_record_findings_handled` | The condition is `no_unreviewed_commit`, a review by the bot is credited for the merge candidate, and none of its findings is pending. Post nothing. |
 | `await_triage` | `findings_pending` | The condition is `no_unreviewed_commit`, a review by the bot is credited for the merge candidate, and findings of it are still pending. Post nothing; the triage that follows handles them. |
 | `leave_to_stale_review` | `merge_candidate_newer_than_reply` | The condition is `no_unreviewed_commit`, but the bot's review is stale and the reply does not cover the merge candidate: the merge candidate is newer than the reply. Post nothing; the stale review is re-triggered with the bot's ordinary trigger. A reply strictly newer than the merge-candidate commit never reaches this arm — `fetch_findings` credits that bot, a bot whose comment names another commit included. The one remainder is a reply whose order against the commit could not be read: `fetch_findings` fails closed, the bot stays stale, and this arm is returned for it too. |

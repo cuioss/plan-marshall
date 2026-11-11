@@ -784,36 +784,48 @@ def test_a_bot_declaring_no_such_pattern_never_carries_the_no_unreviewed_conditi
 
 
 @pytest.mark.parametrize(
-    ('review_on_record', 'pending_findings', 'action', 'reason'),
+    ('bot_kind', 'review_on_record', 'pending_findings', 'action', 'reason'),
     [
-        pytest.param('credited', 0, 'accept_review_on_record', 'review_on_record_findings_handled', id='accept'),
-        pytest.param('credited', 3, 'await_triage', 'findings_pending', id='pending-findings'),
-        pytest.param('stale', 0, 'leave_to_stale_review', 'merge_candidate_newer_than_reply', id='stale'),
-        pytest.param('stale', 3, 'leave_to_stale_review', 'merge_candidate_newer_than_reply', id='stale-pending'),
-        pytest.param('absent', 0, 'post_escalated_command', 'no_review_on_record', id='no-review'),
+        # An unflagged bot keeps every pre-existing arm.
+        pytest.param(
+            'sourcery', 'credited', 0, 'accept_review_on_record', 'review_on_record_findings_handled', id='accept'
+        ),
+        pytest.param('sourcery', 'credited', 3, 'await_triage', 'findings_pending', id='pending-findings'),
+        pytest.param('sourcery', 'stale', 0, 'leave_to_stale_review', 'merge_candidate_newer_than_reply', id='stale'),
+        pytest.param(
+            'sourcery', 'stale', 3, 'leave_to_stale_review', 'merge_candidate_newer_than_reply', id='stale-pending'
+        ),
+        # A flagged bot's review on record IS the review, in this condition too.
+        pytest.param('coderabbit', 'credited', 0, 'accept_review_on_record', 'review_on_record_done', id='flagged'),
+        pytest.param(
+            'coderabbit', 'stale', 3, 'await_triage', 'review_on_record_done_findings_pending', id='flagged-pending'
+        ),
+        pytest.param('sourcery', 'absent', 0, 'post_escalated_command', 'no_review_on_record', id='no-review'),
     ],
 )
 def test_recovery_action_resolves_no_unreviewed_commit_from_its_two_observations(
-    review_on_record, pending_findings, action, reason, monkeypatch, capsys
+    bot_kind, review_on_record, pending_findings, action, reason, monkeypatch, capsys
 ):
     """Through the CLI: each review state resolves its own action, and one of them posts."""
     verdict = _run_recovery_action(
         monkeypatch,
         capsys,
         '--bot-kind',
-        NO_UNREVIEWED_COMMIT_BOT_KIND,
+        bot_kind,
         '--condition',
         'no_unreviewed_commit',
         '--review-on-record',
         review_on_record,
         '--pending-findings',
         str(pending_findings),
+        '--finished-review',
+        'true' if bot_kind == 'coderabbit' else 'false',
     )
 
     assert verdict['action'] == action
     assert verdict['reason'] == reason
     assert verdict['condition'] == 'no_unreviewed_commit'
-    assert verdict['escalated_trigger_comment'] == bot_registry.escalated_trigger_comment(NO_UNREVIEWED_COMMIT_BOT_KIND)
+    assert verdict['escalated_trigger_comment'] == bot_registry.escalated_trigger_comment(bot_kind)
 
 
 def test_only_an_absent_review_resolves_the_posting_action():

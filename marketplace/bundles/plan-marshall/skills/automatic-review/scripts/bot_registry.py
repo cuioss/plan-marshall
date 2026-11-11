@@ -14,9 +14,9 @@ markers, its acknowledgment patterns, its refusal patterns, its no-unreviewed-co
 patterns, its contentless-review markers and headings, its actionable-content markers,
 its concern-section headings and clean-section verdicts,
 its participation-evidence publish shapes and the content literals each of those
-shapes must carry to count, its severity map, its rate-limit class, and its
-rate-limit ETA patterns) instead of hard-coding three bots across several code
-files.
+shapes must carry to count, whether one handled review completes it, its severity
+map, its rate-limit class, and its rate-limit ETA patterns) instead of hard-coding
+three bots across several code files.
 
 The loader is deliberately generic — there is no per-bot branch anywhere in it.
 Adding, removing, or re-configuring a bot is a pure data edit to a
@@ -978,6 +978,33 @@ class BotRegistry:
         """
         return bool(self._by_kind.get(bot_kind, {}).get('participation_requires_update', False))
 
+    def review_complete_after_handling(self, bot_kind: str) -> bool:
+        """Return whether ONE handled review completes ``bot_kind`` at any later head.
+
+        True for a bot whose review allowance is the scarce resource: once a
+        qualifying review of this pull request is on record and every finding of it
+        is handled, no later head needs another review from it. The review is DONE,
+        so no path posts a further trigger, awaits another review, or demands that
+        the recorded review cover the current head.
+
+        This flag is NOT :meth:`quota_limited`. A quota-limited bot also reviews
+        under an allowance, but it is still expected to review the current head when
+        it can; this flag states the stronger rule that the handled review itself
+        completes the obligation. A bot declaring neither keeps the behaviour it had
+        before either flag existed.
+
+        False (the default) for a bot whose record omits the field, declares it
+        empty, or declares a non-boolean. Fail-closed in that direction on purpose:
+        the done rule must stay OFF for every reviewer the project has not
+        positively marked, never switched on by an omission — an unflagged bot is
+        still re-triggered on a fresh head.
+
+        The declaration belongs in the bot's own record rather than in project
+        configuration because the rule is a property of the REVIEWER's allowance,
+        not of the repository that configures it.
+        """
+        return self._by_kind.get(bot_kind, {}).get('review_complete_after_handling') is True
+
     def rate_limit_class(self, bot_kind: str) -> str:
         """Return the rate-limit class for ``bot_kind``, fail-closed to ``'unknown'``.
 
@@ -1204,6 +1231,11 @@ def participation_evidence_markers(bot_kind: str) -> dict[str, str]:
 def participation_requires_update(bot_kind: str) -> bool:
     """Whether ``bot_kind``'s participation evidence requires the currency test."""
     return REGISTRY.participation_requires_update(bot_kind)
+
+
+def review_complete_after_handling(bot_kind: str) -> bool:
+    """Whether one handled review of this pull request completes ``bot_kind``."""
+    return REGISTRY.review_complete_after_handling(bot_kind)
 
 
 def rate_limit_class(bot_kind: str) -> str:

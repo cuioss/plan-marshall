@@ -793,8 +793,13 @@ whether to continue at the limit. Record every finding and its disposition.
    in the progress file, `finding: {reviewer} {section} {id} — {sha|reason}`, and each line is handed
    to the merge gate's `review-gate` call (section 7) as one `--disposition` value, with the
    `finding: ` prefix dropped and `{reviewer}`/`{section}`/`{id}` exactly as the verb reports them.
-6. **After every push, re-trigger** a reviewer whose last review predates the head. Re-read the open
-   Sonar findings after every push too, on the same condition as step 4.
+6. **After every push, re-trigger** a reviewer whose last review predates the head, **except a
+   reviewer the resolve result marks `review_complete_after_handling` that holds a qualifying review
+   on record**: that review is the review, so a later head raises no obligation and no trigger is
+   posted. The resolve flag alone is not the exemption — establish the review from the PR's own
+   surfaces (§ 7 names the artifact) before leaving the reviewer out; a flagged reviewer with no
+   qualifying review is re-triggered exactly as any other. Re-read the open Sonar findings after
+   every push too, on the same condition as step 4.
 7. **Reviewer quota policy** ("review limit reached" or similar), for ANY required reviewer that
    refuses on quota **while no qualifying review exists** (see section 7):
    1. Wait 90 minutes. Record the refusal and the next allowed trigger time in the progress file,
@@ -815,9 +820,19 @@ whether to continue at the limit. Record every finding and its disposition.
 
 Merge only when all of these hold:
 
-- Every required reviewer reviewed the **current head**. **Exception — standing review
-  authorization, quota-limited reviewers only.** For a required reviewer that the resolve result
-  marks `quota_limited`, "reviewed the current head" may be replaced by ALL of:
+- Every required reviewer reviewed the **current head**. **Satisfied by done for a reviewer the
+  resolve result marks `review_complete_after_handling`, ONCE a qualifying review by that reviewer is
+  on record** — a formal review with a commit id, or its marker-bearing summary whose readable
+  `kind=reviewed` payload names a covered commit (the artifact clause 1 below states; rate-limit
+  notices, marker-less walkthroughs, thread replies and a refusal submitted as a review do not
+  count). The flag alone is not the exemption: `review-gate` enforces it per reviewer when the lane
+  passes `--required-reviewer {bot}` for each required bot, and answers
+  `required_review_missing` when one holds no such review. Given the review, every finding of it
+  being handled makes it the review at ANY head of this PR: the currency demand does not apply, no
+  re-trigger is posted for a later head, and the "which head it last reviewed" fact reports the head
+  that one review covered. **Exception — standing review authorization, quota-limited reviewers
+  only.** For a required reviewer that the resolve result marks `quota_limited` and does NOT mark
+  `review_complete_after_handling`, "reviewed the current head" may be replaced by ALL of:
   1. **a qualifying review exists** — a formal review by that reviewer on one of this PR's heads,
      listed by `ci pr reviews` with its commit id, or, where the reviewer publishes a clean review
      only as a summary comment, the marker-bearing summary comment whose `sourceCommitId` /
@@ -852,13 +867,16 @@ Merge only when all of these hold:
 - The review surfaces of the current head admit the merge: `review-gate` reports `merge_allowed:
   true` on a read taken after the last push — no unresolved review thread, every review-body finding
   carrying a disposition that names a commit or a stated reason, and no resolved thread whose last
-  BOT comment says the concern remains. Its `--disposition` values are this
+  BOT comment says the concern remains. Call it with `--required-reviewer {bot}` once per required
+  bot, so the done exemption is checked against a review that actually exists
+  (`required_review_missing` otherwise). Its `--disposition` values are this
   run's progress-file `finding:` lines. An undecidable or truncated read is a blocker and is retried.
   The standing review authorization never overrides a `review-gate` `false`.
 
 The reviewer quota policy (§ 6 step 7) applies only while no qualifying review exists. The standing
 authorization never applies to a reviewer that is not quota-limited, and never to a PR without a
-qualifying review.
+qualifying review. A `review_complete_after_handling` reviewer's own review on record is that
+qualifying review, so the quota policy does not apply to it either: nothing is asked of it again.
 
 **An unresolved review thread or an unhandled review-body finding on the merge head blocks the
 standing authorization.** A reviewer's thread that is still open, or a finding from any review-body
@@ -884,8 +902,9 @@ enqueue**, whatever else the gates say.
 `git -C {worktree} fetch origin {base_branch}`, then
 `git -C {worktree} merge origin/{base_branch} -m "merge: origin/{base_branch} into {branch}" -m "{commit_trailer}"`,
 so the merge commit it creates ends with the resolved `{commit_trailer}` line the Commit trailer rule
-requires. Run the build gate again, push, re-trigger the reviewers, re-read the Sonar findings, re-run
-the review gate, and repeat the reviewer quota policy (§ 6 step 7).
+requires. Run the build gate again, push, re-trigger the reviewers (leaving out every reviewer marked
+`review_complete_after_handling`), re-read the Sonar findings, re-run the review gate, and repeat the
+reviewer quota policy (§ 6 step 7).
 
 **Before enqueue, re-check the authorization rule:** merge only when every condition above holds, or
 when the operator **selected** an option in a question-tool call that names the exact gap (which

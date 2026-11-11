@@ -345,14 +345,14 @@ def _seed_comment(plan_id: str, bot: str, pr_number: str | None, reviewed: str =
     return str(result['hash_id'])
 
 
-def _trigger_bots(plan_id: str, pr_number: int | None) -> dict:
+def _trigger_bots(plan_id: str, pr_number: int | None, required_bots: tuple[str, ...] = ('coderabbit',)) -> dict:
     # ``rc`` is an untyped dynamically-loaded module, so the call's value is ``Any``;
     # binding it to a declared ``dict`` is what keeps this helper's own signature
     # honest rather than returning ``Any`` from a ``-> dict`` (``./pw compile``).
     payload: dict = rc.list_bots_for_trigger(
         [],
         [str(f.get('bot_kind') or '') for f in rc._read_pr_comment_findings(plan_id, pr_number)['findings']],
-        ['coderabbit'],
+        list(required_bots),
         optional_bots=['sourcery'],
         stored_findings_stale=True,
     )
@@ -378,14 +378,19 @@ class TestTheStoredFindingJoinIsScopedToOnePullRequest:
         assert _trigger_bots(plan_id, 102)['trigger_bots'] == []
 
     def test_the_same_finding_joins_for_its_own_pr(self, plan_context):
-        """⛔ MATCHED CONTROL — same store, same rows; only the PR asked about differs."""
+        """⛔ MATCHED CONTROL — same store, same rows; only the PR asked about differs.
+
+        ``sourcery`` is the subject because it declares no done rule: the join itself —
+        which is what this class pins — is unchanged for a bot that keeps today's
+        re-review behaviour.
+        """
         plan_id = 'trigger-b-own-pr'
         plan_context.plan_dir_for(plan_id)
-        _seed_comment(plan_id, 'coderabbit', '101')
+        _seed_comment(plan_id, 'sourcery', '101')
 
         read = rc._read_pr_comment_findings(plan_id, 101)
-        assert [f['bot_kind'] for f in read['findings']] == ['coderabbit']
-        assert _trigger_bots(plan_id, 101)['trigger_bots'] == ['coderabbit']
+        assert [f['bot_kind'] for f in read['findings']] == ['sourcery']
+        assert _trigger_bots(plan_id, 101, ('sourcery',))['trigger_bots'] == ['sourcery']
 
     def test_a_legacy_row_on_a_two_pr_plan_is_reported_unscoped(self, plan_context):
         """A row carrying no PR, on a store that spans two, belongs to neither.

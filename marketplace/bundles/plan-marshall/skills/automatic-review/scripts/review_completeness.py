@@ -122,11 +122,11 @@ state — the quorum is vacuously satisfied and ``participation_complete`` is
 ``true``.
 
 Usage:
-    review_completeness.py check --plan-id <id> [--pr-number <n>] [--required-bots [<csv>]] [--optional-bots [<csv>]] [--participated-bots [<csv>]] [--in-progress-bots [<csv>]] [--refused-bots [<csv>]] [--stale-participation-bots [<csv>]] [--declined-bots [<csv>]] [--unrecognised-refusal-bots [<csv>]] [--not-triggered] [--triage-ran] [--refused-causes [<csv>]] [--refusal-size-caps [<csv>]] [--measured-diff-size [<s>]]
-    review_completeness.py deficit --plan-id <id> [--required-bots [<csv>]] [--optional-bots [<csv>]] [--participated-bots [<csv>]] [--in-progress-bots [<csv>]] [--refused-bots [<csv>]] [--stale-participation-bots [<csv>]] [--declined-bots [<csv>]] [--unrecognised-refusal-bots [<csv>]] [--not-triggered] [--refused-causes [<csv>]] [--refusal-size-caps [<csv>]] [--min-deficit <n>]
+    review_completeness.py check --plan-id <id> [--pr-number <n>] [--required-bots [<csv>]] [--optional-bots [<csv>]] [--participated-bots [<csv>]] [--in-progress-bots [<csv>]] [--refused-bots [<csv>]] [--stale-participation-bots [<csv>]] [--declined-bots [<csv>]] [--finished-review-bots [<csv>]] [--unrecognised-refusal-bots [<csv>]] [--not-triggered] [--triage-ran] [--refused-causes [<csv>]] [--refusal-size-caps [<csv>]] [--measured-diff-size [<s>]]
+    review_completeness.py deficit --plan-id <id> [--required-bots [<csv>]] [--optional-bots [<csv>]] [--participated-bots [<csv>]] [--in-progress-bots [<csv>]] [--refused-bots [<csv>]] [--stale-participation-bots [<csv>]] [--declined-bots [<csv>]] [--finished-review-bots [<csv>]] [--unrecognised-refusal-bots [<csv>]] [--not-triggered] [--refused-causes [<csv>]] [--refusal-size-caps [<csv>]] [--min-deficit <n>]
     review_completeness.py size-caps
     review_completeness.py roster --plan-id <id>
-    review_completeness.py trigger-bot --plan-id <id> [--pr-number <n>] [--required-bots [<csv>]] [--optional-bots [<csv>]] [--stale-participation-bots [<csv>]] [--reviewed-commit-sha [<sha>]] [--head-sha [<sha>]]
+    review_completeness.py trigger-bot --plan-id <id> [--pr-number <n>] [--required-bots [<csv>]] [--optional-bots [<csv>]] [--stale-participation-bots [<csv>]] [--finished-review-bots [<csv>]] [--reviewed-commit-sha [<sha>]] [--head-sha [<sha>]]
     review_completeness.py --help
 
 Every list flag above takes an OPTIONAL value: it may be supplied bare (the flag
@@ -204,7 +204,10 @@ Subcommands:
     trigger-bot
                List every bot a re-review must be requested from after a fix commit,
                required bots first: the bots whose participation is stale at the
-               current HEAD, joined with the bots that have stored findings. Its
+               current HEAD, joined with the bots that have stored findings. A bot
+               declaring ``review_complete_after_handling`` is withheld from both
+               lists and reported in ``review_complete_bots`` instead, because its
+               stale participation is a qualifying review on record. Its
                ``--required-bots`` / ``--optional-bots`` are bare-form and its
                ``--stale-participation-bots`` is pair-form, exactly as on ``check``.
 
@@ -217,6 +220,8 @@ Return TOON shape (trigger-bot):
     stored_finding_bots[N]:              # the bots with a stored finding, joined or not
       - bot
     stored_findings_stale: true|false    # whether the stored-finding bots were joined
+    review_complete_bots[N]:             # flagged bots whose handled review completes them
+      - bot
     unclassified_bots[N]:                # candidates in neither list — not triggered
       - bot
     store_scope: pr|unscoped              # whether the stored-finding join was PR-scoped
@@ -416,7 +421,10 @@ CAUSE_SIZE = 'size'
 # proven publish shape against the merge candidate: ``participated`` filed at least
 # one finding, ``participated_but_empty`` reviewed and found nothing. Every other
 # state is a non-review (a refusal, an absence, a stale or in-flight publish), so it
-# can be neither a deficit baseline nor a meaningful finding count.
+# can be neither a deficit baseline nor a meaningful finding count. A bot declaring
+# ``review_complete_after_handling`` reaches both states on a review of an EARLIER
+# head too, because that review completes it — so for such a bot the pair means
+# "reviewed", not necessarily "reviewed this head".
 _REVIEWED_STATES = frozenset({STATE_PARTICIPATED, STATE_PARTICIPATED_BUT_EMPTY})
 
 # The two actions the participation guard can take on a ``participation_complete:
@@ -447,6 +455,7 @@ def list_bots_for_trigger(
     required_bots: list[str],
     optional_bots: list[str] | None = None,
     stored_findings_stale: bool = False,
+    finished_review_bots: list[str] | None = None,
 ) -> dict:
     """Return every bot a re-review trigger should address, required bots first.
 
@@ -463,6 +472,15 @@ def list_bots_for_trigger(
       They are joined only when ``stored_findings_stale`` is true, i.e. when the
       commit those findings were filed against is not the current HEAD.
 
+    A flagged bot's stale participation is a QUALIFYING REVIEW ON RECORD, not an
+    out-of-date obligation. For a bot declaring ``review_complete_after_handling``
+    the handled review completes it, so it is removed from the whole candidate
+    population — the stale source AND the stored-finding join — and never reaches a
+    trigger list. It is reported in ``review_complete_bots`` so a caller can tell
+    "done, no trigger owed" from "silent, trigger owed". A flagged bot with no
+    admitted review keeps its place, so a pull request with no qualifying review is
+    triggered exactly as before.
+
     Only a bot the configuration classifies is triggered: a candidate in neither
     ``required_bots`` nor ``optional_bots`` is reported in ``unclassified_bots``
     and left out of the list.
@@ -478,17 +496,30 @@ def list_bots_for_trigger(
     - ``stored_finding_bots`` — the stored-finding population that was read,
       whether or not it was joined, sorted by name.
     - ``stored_findings_stale`` — whether that population was joined.
+    - ``review_complete_bots`` — the flagged bots removed from the stale set
+      because a qualifying handled review already completes them.
     - ``unclassified_bots`` — candidates left out because no list names them.
     """
     required = list(required_bots)
     required_set = set(required)
     optional_set = set(optional_bots or [])
-    stale_set = set(stale_participation_bots)
+    stale_all = set(stale_participation_bots)
     stored_set = set(stored_finding_bots)
-
-    candidates = set(stale_set)
+    candidates = set(stale_all)
     if stored_findings_stale:
         candidates |= stored_set
+    # Applied to the WHOLE candidate population, and keyed on the producer's
+    # finished-review report — never on the flag alone. A stored finding or a stale
+    # report proves the bot PUBLISHED something; only ``finished_review_bots`` proves
+    # a review actually finished, and a marker-bearing comment that is not a finished
+    # review must keep its trigger.
+    done_set = {
+        bot
+        for bot in candidates
+        if bot_registry.review_complete_after_handling(bot) and bot in set(finished_review_bots or [])
+    }
+    stale_set = stale_all - done_set
+    candidates -= done_set
 
     trigger_bots = [bot for bot in required if bot in candidates]
     trigger_bots += sorted(bot for bot in candidates if bot in optional_set and bot not in required_set)
@@ -498,7 +529,13 @@ def list_bots_for_trigger(
         'required_stale_bots': [bot for bot in required if bot in stale_set],
         'stored_finding_bots': sorted(stored_set),
         'stored_findings_stale': stored_findings_stale,
-        'unclassified_bots': sorted(candidates - required_set - optional_set),
+        'review_complete_bots': sorted(done_set),
+        # Read from the UNFILTERED population: a flagged bot configured in neither
+        # roster list is a misconfiguration warning, and the done filter must not
+        # swallow it.
+        'unclassified_bots': sorted(
+            (stale_all | (stored_set if stored_findings_stale else set())) - required_set - optional_set
+        ),
     }
 
 
@@ -852,6 +889,7 @@ def classify_bot(
     declined: set[str] | None = None,
     refused_causes: dict[str, str] | None = None,
     unrecognised_refusal: set[str] | None = None,
+    finished_review_bots: set[str] | None = None,
 ) -> str:
     """Return the single state ``bot`` resolves to.
 
@@ -902,7 +940,10 @@ def classify_bot(
       review it proves predates this HEAD. A moved ``updated_at`` is not a currency fact
       and credits nothing. Unproven and therefore blocking, but the remedy is to
       re-trigger a re-review — the opposite of ``absent``, where there is no review to
-      refresh.
+      refresh. A bot declaring ``review_complete_after_handling`` does not land here on
+      that strength: the stale evidence IS a qualifying review on record, so the bot is
+      classified ``participated`` / ``participated_but_empty`` and needs no later
+      review, while its pending findings still block through the triage arm.
     - **``in_progress``** — the bot's review is still running.
     - **``unregistered_kind``** — the configured token matches no member of the live
       registry kind set, so no reviewer answers to this name and none ever could:
@@ -931,6 +972,20 @@ def classify_bot(
     # PARTICIPATION THAT DOES COVER THE CANDIDATE STILL WINS. A review of the exact
     # tree being merged is the evidence the quorum exists to obtain, and a later
     # quota notice about a redundant re-trigger does not contradict it.
+    #
+    # THE DONE RULE OUTRANKS THE REFUSAL. A flagged bot whose FINISHED review the
+    # producer reports, and whose only review evidence is stale (an earlier head), is
+    # done: a later refusal is a statement about a request it no longer owes, so it
+    # must not re-block the quorum. Pending findings still block through the triage
+    # arm of ``check_completeness``, and a flagged bot with NO finished review keeps
+    # every refusal arm below.
+    if (
+        bot not in proven_participants
+        and bot in (stale_participants or set())
+        and bot_registry.review_complete_after_handling(bot)
+        and bot in (finished_review_bots or set())
+    ):
+        return STATE_PARTICIPATED if has_findings else STATE_PARTICIPATED_BUT_EMPTY
     participation_is_current = bot in proven_participants and bot not in (stale_participants or set())
     refusal_observed = bot in refused or bot in (unrecognised_refusal or set())
     if refusal_observed and not participation_is_current:
@@ -961,6 +1016,21 @@ def classify_bot(
     if bot in (declined or set()):
         return STATE_DECLINED
     if bot in (stale_participants or set()):
+        # A bot declaring ``review_complete_after_handling`` is DONE once a qualifying
+        # review of this pull request is on record: the producer admits the comment as
+        # evidence AND reports the bot in ``finished_review_bots`` — a formal review
+        # record, or a summary marker that is readable, ``kind: reviewed`` and names a
+        # covered commit. Both halves are required: ``stale_participation_bots`` also
+        # carries marker-bearing comments that are NOT finished reviews (an unreadable
+        # payload, a non-``reviewed`` kind, a marker naming no commit), and treating one
+        # of those as done would complete the quorum on a review that never finished.
+        # Pending findings still block through the ``triage_ran`` arm below, and a
+        # refusal or decline observed on this candidate still outranks this branch —
+        # the done rule removes the demand for a later review, never the handling.
+        #
+        # The done check itself runs BEFORE the refusal branch above, because a
+        # finished review's bot that refuses a REDUNDANT later request must still be
+        # done; the branch is left here as the plain stale state.
         return STATE_PARTICIPATED_STALE
     if bot in in_progress:
         return STATE_IN_PROGRESS
@@ -1354,6 +1424,7 @@ def check_completeness(
     measured_diff_size: str = '',
     unrecognised_refusal_bots: list[str] | None = None,
     pr_number: int | None = None,
+    finished_review_bots: list[str] | None = None,
 ) -> dict:
     """Classify each bot's PARTICIPATION against the plan's ``pr-comment`` findings store.
 
@@ -1413,7 +1484,12 @@ def check_completeness(
                            ``stale_participation_bots[]``. They resolve to
                            ``participated_stale`` — unproven and blocking, but whose
                            remedy is a re-review trigger rather than the
-                           non-participation escalation ``absent`` calls for. The
+                           non-participation escalation ``absent`` calls for. A bot
+                           declaring ``review_complete_after_handling`` does NOT land
+                           there on a review on record: that review completes it, so
+                           it resolves ``participated`` / ``participated_but_empty``
+                           and its pending findings still block through the triage
+                           arm. The
                            producer already subtracted the proven set, so a bot with
                            one stale and one fresh comment never arrives here.
         declined_bots:     Bots that were asked to review the merge candidate (a
@@ -1509,6 +1585,7 @@ def check_completeness(
             declined,
             causes_in,
             unrecognised,
+            set(finished_review_bots or []),
         )
         bot_states.append({'bot_kind': bot, 'state': state})
         if state in _UNPROVEN_STATES:
@@ -1636,6 +1713,7 @@ def check_deficit(
     refusal_size_caps: dict[str, str] | None = None,
     min_deficit: int = 1,
     unrecognised_refusal_bots: list[str] | None = None,
+    finished_review_bots: list[str] | None = None,
 ) -> dict:
     """Classify each bot, count its FILED findings, and assess the deficit signal (D2).
 
@@ -1704,6 +1782,7 @@ def check_deficit(
             declined,
             causes_in,
             unrecognised,
+            set(finished_review_bots or []),
         )
         reviewers.append(
             {
@@ -2215,6 +2294,11 @@ def _parse_bot_observations(args: argparse.Namespace) -> dict:
             parse_stale_participation(args.stale_participation_bots, '--stale-participation-bots')
         ),
         'declined_bots': _split_bots(args.declined_bots, '--declined-bots'),
+        # Bare-form: the producer emits {bot_kind, evidence_kind} records, and the done
+        # rule needs only the bot_kind. It is NOT interchangeable with the stale set:
+        # the stale set also carries marker-bearing comments that are not finished
+        # reviews, and done must never rest on one of those.
+        'finished_review_bots': _split_bots(args.finished_review_bots, '--finished-review-bots'),
         # Shared by BOTH subcommands: the cause is state-determining for ``size``, and
         # ``deficit`` publishes a per-reviewer ``state`` column, so parsing it here is
         # what keeps the two commands from naming different members for one refusal.
@@ -2256,6 +2340,7 @@ def cmd_check(args: argparse.Namespace) -> int:
         refused_bots=obs['refused_bots'],
         stale_participation_bots=obs['stale_participation_bots'],
         declined_bots=obs['declined_bots'],
+        finished_review_bots=obs['finished_review_bots'],
         not_triggered=args.not_triggered,
         refused_causes=obs['refused_causes'],
         refusal_size_caps=obs['refusal_size_caps'],
@@ -2288,6 +2373,7 @@ def cmd_deficit(args: argparse.Namespace) -> int:
         refused_bots=obs['refused_bots'],
         stale_participation_bots=obs['stale_participation_bots'],
         declined_bots=obs['declined_bots'],
+        finished_review_bots=obs['finished_review_bots'],
         not_triggered=args.not_triggered,
         refused_causes=obs['refused_causes'],
         refusal_size_caps=obs['refusal_size_caps'],
@@ -2347,6 +2433,7 @@ def cmd_trigger_bot(args: argparse.Namespace) -> int:
         required,
         optional_bots=optional,
         stored_findings_stale=bool(reviewed_sha and head_sha and reviewed_sha != head_sha),
+        finished_review_bots=_split_bots(getattr(args, 'finished_review_bots', ''), '--finished-review-bots'),
     )
     # The scope travels with the list: a caller must be able to tell that the join it
     # got was scoped to its PR, and which rows nobody can place. The unscoped fields are
@@ -2476,6 +2563,23 @@ def _add_bot_observation_flags(sub: argparse.ArgumentParser) -> None:
             'quota / size notice) and --stale-participation-bots (a review that '
             'exists but predates the merge candidate). May be supplied bare (no '
             'value), which reads as the empty list.'
+        ),
+    )
+    sub.add_argument(
+        '--finished-review-bots',
+        nargs='?',
+        const='',
+        default='',
+        help=(
+            'Comma-separated review-bot kinds holding an admitted FINISHED review of '
+            'SOME commit on this pull request, from github_pr fetch_findings '
+            'finished_review_bots[] — a formal review record, or a summary whose '
+            'coverage marker is readable, kind=reviewed and names a covered commit. '
+            'This is the done rule input: a bot declaring review_complete_after_handling '
+            'is complete on a stale report ONLY when it also appears here. Omitted or '
+            'empty means no bot is done — the fail-closed direction, because a '
+            'marker-bearing comment that is not a finished review must never satisfy a '
+            'quorum. May be supplied bare (no value), which reads as the empty list.'
         ),
     )
     sub.add_argument(
@@ -2726,6 +2830,20 @@ def main(argv: list[str] | None = None) -> int:
             'whether or not it has a stored finding. A bare bot_kind with no '
             'evidence_kind is rejected as malformed. May be supplied bare (no '
             'value), which reads as the empty list.'
+        ),
+    )
+    trigger_bot_parser.add_argument(
+        '--finished-review-bots',
+        nargs='?',
+        const='',
+        default='',
+        help=(
+            'Comma-separated review-bot kinds holding an admitted FINISHED review of '
+            'SOME commit on this pull request, from github_pr fetch_findings '
+            'finished_review_bots[]. A bot declaring review_complete_after_handling is '
+            'withheld from both trigger lists only when it appears here — a stale '
+            'report or a stored finding alone does not prove a review finished. May be '
+            'supplied bare (no value), which withholds no bot.'
         ),
     )
     trigger_bot_parser.add_argument(

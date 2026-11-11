@@ -95,17 +95,24 @@ def _verdict(
     )
 
 
-def _no_unreviewed_verdict(bot_kind: str, review_on_record: str = '', pending_findings: int | None = None) -> dict:
+def _no_unreviewed_verdict(
+    bot_kind: str,
+    review_on_record: str = '',
+    pending_findings: int | None = None,
+    finished_review: bool | None = True,
+) -> dict:
     """The SHIPPED selector's verdict for a ``no_unreviewed_commit`` reply from ``bot_kind``.
 
     The two observations default to "not supplied", so a call site names exactly
-    the ones the case is about.
+    the ones the case is about. ``finished_review`` defaults to the producer's
+    positive observation because every arm below is a case with a review on record.
     """
     return github_re_review.resolve_recovery_action(
         bot_kind,
         condition=_github_pr.REFUSAL_CONDITION_NO_UNREVIEWED_COMMIT,
         review_on_record=review_on_record,
         pending_findings=pending_findings,
+        finished_review=finished_review,
     )
 
 
@@ -571,26 +578,33 @@ class TestTheRecoveryActionSelectorDerivesItsVerdict:
             # The no_unreviewed_commit arms: one per review-on-record state, the
             # credited state split on whether a finding is pending, one unmeasured
             # arm per missing observation, and one for a review state the producer
-            # could not decide.
+            # could not decide. The undecidable arm carries NO finished-review
+            # observation, because a finished review settles that state under the
+            # done rule (its own arm).
             (
-                _no_unreviewed_verdict(awaitable, github_re_review.REVIEW_ON_RECORD_UNDECIDABLE, 0),
+                _no_unreviewed_verdict(
+                    awaitable,
+                    github_re_review.REVIEW_ON_RECORD_UNDECIDABLE,
+                    0,
+                    finished_review=None,
+                ),
                 github_re_review.RECOVERY_ACTION_UNMEASURED,
                 'review_state_undecidable',
             ),
             (
                 _no_unreviewed_verdict(awaitable, github_re_review.REVIEW_ON_RECORD_CREDITED, 0),
                 github_re_review.RECOVERY_ACTION_ACCEPT_REVIEW_ON_RECORD,
-                'review_on_record_findings_handled',
+                'review_on_record_done',
             ),
             (
                 _no_unreviewed_verdict(awaitable, github_re_review.REVIEW_ON_RECORD_CREDITED, 2),
                 github_re_review.RECOVERY_ACTION_AWAIT_TRIAGE,
-                'findings_pending',
+                'review_on_record_done_findings_pending',
             ),
             (
                 _no_unreviewed_verdict(awaitable, github_re_review.REVIEW_ON_RECORD_STALE, 0),
-                github_re_review.RECOVERY_ACTION_LEAVE_TO_STALE_REVIEW,
-                'merge_candidate_newer_than_reply',
+                github_re_review.RECOVERY_ACTION_ACCEPT_REVIEW_ON_RECORD,
+                'review_on_record_done',
             ),
             (
                 _no_unreviewed_verdict(awaitable, github_re_review.REVIEW_ON_RECORD_ABSENT, 0),
@@ -614,6 +628,7 @@ class TestTheRecoveryActionSelectorDerivesItsVerdict:
             'condition',
             'review_on_record',
             'pending_findings',
+            'finished_review',
             'refusal_conditions',
             'review_on_record_states',
             'escalated_trigger_comment',
@@ -638,11 +653,17 @@ class TestTheRecoveryActionSelectorDerivesItsVerdict:
 
         reached = {verdict['action'] for verdict, _a, _r in arms}
         # ``generate_trigger`` is unreachable without re-declaring a bot's trigger
-        # semantics, which is the neighbouring test's subject; it is named here so
-        # the coverage claim states its one exclusion rather than hiding it.
-        assert reached | {github_re_review.RECOVERY_ACTION_GENERATE_TRIGGER} == set(
-            github_re_review.RECOVERY_ACTIONS
-        ), f'arms reached {sorted(reached)} of {sorted(github_re_review.RECOVERY_ACTIONS)}'
+        # semantics, which is the neighbouring test's subject; ``leave_to_stale_review``
+        # is unreachable for the awaitable bot because it declares
+        # ``review_complete_after_handling`` (its stale review is done), and is pinned
+        # for an unflagged bot in the neighbouring module's matched control. Both are
+        # named here so the coverage claim states its exclusions rather than hiding them.
+        assert reached | {
+            github_re_review.RECOVERY_ACTION_GENERATE_TRIGGER,
+            github_re_review.RECOVERY_ACTION_LEAVE_TO_STALE_REVIEW,
+        } == set(github_re_review.RECOVERY_ACTIONS), (
+            f'arms reached {sorted(reached)} of {sorted(github_re_review.RECOVERY_ACTIONS)}'
+        )
 
 
 class TestBothProducersCarryOneObservationShape:

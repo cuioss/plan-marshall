@@ -730,12 +730,12 @@ class TestTriggerBot:
             '--required-bots',
             'sourcery',
             '--optional-bots',
-            'coderabbit',
+            'retired-bot',
             '--stale-participation-bots',
-            'coderabbit:inline,sourcery:review_body',
+            'retired-bot:inline,sourcery:review_body',
         )
 
-        assert parsed['trigger_bots'] == ['sourcery', 'coderabbit']
+        assert parsed['trigger_bots'] == ['sourcery', 'retired-bot']
         assert parsed['required_stale_bots'] == ['sourcery']
 
     def test_required_bots_keep_the_order_they_were_configured_in(self, plan_context):
@@ -746,13 +746,13 @@ class TestTriggerBot:
             '--plan-id',
             plan_id,
             '--required-bots',
-            'sourcery,coderabbit',
+            'sourcery,retired-bot',
             '--stale-participation-bots',
-            'coderabbit:inline,sourcery:review_body',
+            'retired-bot:inline,sourcery:review_body',
         )
 
-        assert parsed['trigger_bots'] == ['sourcery', 'coderabbit']
-        assert parsed['required_stale_bots'] == ['sourcery', 'coderabbit']
+        assert parsed['trigger_bots'] == ['sourcery', 'retired-bot']
+        assert parsed['required_stale_bots'] == ['sourcery', 'retired-bot']
 
     def test_a_stored_finding_bot_is_joined_when_head_moved_past_the_reviewed_commit(self, plan_context):
         plan_id = 'rc-trigger-stored-joined'
@@ -777,8 +777,9 @@ class TestTriggerBot:
         assert parsed['trigger_bots'] == ['retired-bot', 'coderabbit']
         assert parsed['stored_finding_bots'] == ['coderabbit']
         assert parsed['stored_findings_stale'] is True
-        # The stored-finding bot is listed, but it is not a required bot whose
-        # participation is stale.
+        # A stored finding is not proof a review FINISHED (the producer reports that
+        # separately), so the optional bot keeps its place in the join.
+        assert parsed.get('review_complete_bots') in (None, [])
         assert parsed['required_stale_bots'] == ['retired-bot']
 
     def test_a_stored_finding_bot_is_not_joined_when_head_is_the_reviewed_commit(self, plan_context):
@@ -829,12 +830,12 @@ class TestTriggerBot:
             '--plan-id',
             plan_id,
             '--required-bots',
-            'coderabbit',
+            'retired-bot',
             '--stale-participation-bots',
-            'coderabbit:inline,sourcery:review_body',
+            'retired-bot:inline,sourcery:review_body',
         )
 
-        assert parsed['trigger_bots'] == ['coderabbit']
+        assert parsed['trigger_bots'] == ['retired-bot']
         assert parsed['unclassified_bots'] == ['sourcery']
 
     def test_an_optional_stale_bot_is_listed_but_is_not_a_required_stale_bot(self, plan_context):
