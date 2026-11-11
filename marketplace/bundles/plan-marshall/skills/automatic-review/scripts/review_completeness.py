@@ -225,8 +225,8 @@ Return TOON shape (trigger-bot):
     unclassified_bots[N]:                # candidates in neither list — not triggered
       - bot
     store_scope: pr|unscoped              # whether the stored-finding join was PR-scoped
-    unscoped_stored_findings: <n>         # emitted only when non-empty — stored rows
-    unscoped_stored_finding_ids[N]:       # whose PR could not be placed (legacy rows
+    unscoped_stored_findings: <n>         # emitted only when non-empty — PENDING stored
+    unscoped_stored_finding_ids[N]:       # rows whose PR could not be placed (legacy rows
       - hash_id                           # on a plan that spans more than one PR)
 
 Return TOON shape (check):
@@ -267,8 +267,8 @@ Return TOON shape (check):
     guard_prompt_options[N]:             # escalation only — never contains a wait
       - <operator option>
     store_scope: pr|unscoped             # whether the findings read was PR-scoped
-    unscoped_stored_findings: <n>        # emitted only when non-empty — stored rows
-    unscoped_stored_finding_ids[N]:      # whose PR could not be placed (legacy rows
+    unscoped_stored_findings: <n>        # emitted only when non-empty — PENDING stored
+    unscoped_stored_finding_ids[N]:      # rows whose PR could not be placed (legacy rows
       - hash_id                          # on a plan that spans more than one PR)
 
 Return TOON shape (size-caps):

@@ -700,7 +700,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings as
 | `invalid_commit_sha` | `stamp-fix-commit` was given a `--commit-sha` that is not 7 to 40 hexadecimal characters. |
 | `fix_stamp_selector_required` | `stamp-fix-commit` was given neither `--task-number` nor `--hash-id`, or both. |
 | `finding_not_fixed` | `stamp-fix-commit --hash-id` named a finding whose resolution is not `fixed`. The payload carries its `resolution`. |
-| `invalid_pr_number` | `stamp-pr` was given a `--pr-number` that is not a positive integer. Nothing is written. |
+| `invalid_pr_number` | `stamp-pr` was given a `--pr-number` that is not a POSITIVE integer. A non-numeric value never reaches the handler (argparse refuses it with exit 2); this code covers zero and negatives. Nothing is written. |
 | `pr_number_conflict` | `stamp-pr` named a `pr-comment` finding already stamped for a DIFFERENT pull request. The payload carries `existing_pr_number`; the row is left byte-identical. |
 | `not_pr_comment` | `stamp-pr` named a finding that is not a `pr-comment` row. The payload carries its `type`; the row is left byte-identical. |
 | `findings_store_unresolved` | `plans/{plan_id}/` is absent under the resolved root (`findings_store_state: plan_absent`), or no runtime-state root resolved at all (`unknown`). Returned by every surface — read, write and `add` — instead of a clean zero or a manufactured store. |

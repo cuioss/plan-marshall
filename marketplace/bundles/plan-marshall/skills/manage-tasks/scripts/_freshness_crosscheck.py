@@ -446,11 +446,13 @@ _PYPROJECT_NOTATION = 'plan-marshall:build-pyproject:pyproject_build'
 #: ⛔ A Gradle SUBMODULE row is the exception the dropping must not swallow: its
 #: discoverer prefixes every task with the subproject path (``:core:test``,
 #: ``:core:test :core:jacocoTestReport``), so those tokens name a real blast
-#: radius. Dropping them would read a one-subproject run as whole-tree — the false
-#: green this dimension exists to close — so :func:`parse_row_scope` reports a row
-#: carrying any ``:module:``-prefixed token as unreadable instead. npm is exempt
-#: from that guard: a script name may begin with a colon, but it selects no
-#: project path, so dropping it keeps the row's real ``--workspace`` scope.
+#: radius. A MULTI-task list therefore keeps its positionals and reads as the
+#: narrow scoped row it was, while a LONE ``:module:``-prefixed task reads as a
+#: readable canonical-unknown inability (there is no second positional to narrow
+#: with). Dropping either shape would read a one-subproject run as whole-tree —
+#: the false green this dimension exists to close. npm is exempt from that guard:
+#: a script name may begin with a colon, but it selects no project path, so
+#: dropping it keeps the row's real ``--workspace`` scope.
 _GOAL_POSITIONAL_NOTATIONS: frozenset[str] = frozenset(
     {
         'plan-marshall:build-maven:maven',
@@ -846,8 +848,8 @@ def parse_row_scope(entry: dict[str, Any]) -> RowScope | None:
         # run that built one subproject:
         #
         #   * a MULTI-task ``:``-prefixed payload keeps its positionals, so the
-        #     row reads as the narrow scoped row the subproject run was — ``core``
-        #     is the canonical token here and the remaining tasks are its scope;
+        #     row reads as the narrow scoped row the subproject run was — the head
+        #     task token is the canonical and the remaining tasks are its scope;
         #   * a LONE ``:``-prefixed task has no second positional to narrow with,
         #     so it reads as a readable canonical-unknown inability (the token is
         #     a task, not an analysis). Returning ``None`` for it made the whole-

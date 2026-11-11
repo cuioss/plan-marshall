@@ -22,6 +22,7 @@ from typing import Any
 from _criteria_snapshot import (
     AUTHORED_KEY,
     AUTHORSHIP_SCHEMA,
+    CLOSING_VERDICTS,
     CRITERION_UNPARSED,
     PARSER_EXTENDED,
     REFERENCE_CYCLE,
@@ -46,7 +47,9 @@ KIND_CODE = 'code'
 
 FUNCTIONAL_VERDICTS = ('met', 'met_with_residuals', 'not_met', 'superseded')
 #: The verdicts that claim the deliverable's value is delivered, so must evidence a criterion.
-DELIVERED_VERDICTS = ('met', 'met_with_residuals')
+#: The SAME tuple :data:`CLOSING_VERDICTS` names in ``_criteria_snapshot`` — imported
+#: rather than restated, so a verdict added there cannot leave this copy behind.
+DELIVERED_VERDICTS = CLOSING_VERDICTS
 CRITERION_STATUSES = ('met', 'unevidenced', 'not_met')
 FIX_KIND_IMPLEMENTATION = 'implementation'
 FIX_KIND_CORRECTION = 'correction'
@@ -434,7 +437,7 @@ def _superseded_rejection_message(reason: str, cited: str, number: int) -> str:
     if reason == REFERENCE_UNREADABLE:
         return (
             f'superseded_by {cited!r} carries no deliverable reference at its head '
-            '(expected D2, Deliverable 2, `D2`, **D2** or (D2))'
+            '(expected D2, Deliverable 2, Deliverable #2, Deliverable D2, `D2`, **D2** or (D2))'
         )
     if reason == REFERENCE_UNKNOWN:
         return f'superseded_by {cited!r} names no deliverable of the outline'

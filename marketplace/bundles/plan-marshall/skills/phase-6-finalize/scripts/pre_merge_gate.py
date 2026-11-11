@@ -1040,12 +1040,14 @@ def _check_participation(plan_id: str, pr_number: int, project_dir: str) -> dict
                 'an unknown verdict is never a pass'
             ),
         }
-    # The scope the predicate read under, and the rows it could not place. A legacy
-    # (pre-stamp) row on a store that spans several PRs is EXCLUDED from the read, so it
-    # never reaches the pending-finding input — which makes it a silent hole in a gate
-    # that decides a merge. It is named and refused rather than forwarded as a clean
-    # verdict: assigning such a row to this PR would be the silent join the scoping
-    # exists to prevent, and ignoring it would hide a pending finding.
+    # The scope the predicate read under, and the rows it could not place. A PENDING
+    # legacy (pre-stamp) row on a store that spans several PRs is EXCLUDED from the
+    # read, so it never reaches the pending-finding input — which makes it a silent
+    # hole in a gate that decides a merge. It is named and refused rather than
+    # forwarded as a clean verdict: assigning such a row to this PR would be the
+    # silent join the scoping exists to prevent, and ignoring it would hide a
+    # pending finding. A legacy row already resolved or rejected is excluded too,
+    # but is not named: it cannot hide a pending finding, so it decides nothing.
     unscoped_ids = list(checked.get('unscoped_stored_finding_ids') or [])
     foreign_stored = int(checked.get('foreign_stored_findings') or 0)
     if unscoped_ids:
@@ -1885,6 +1887,11 @@ def merge(
         result['merge_authorization_kind'] = participation['authorization_kind']
         result['merge_authorization_gap'] = REVIEW_BARRIER_GAP_CLASS
         result['unproven_bots'] = participation['unproven_bots']
+    # The provenance disclosure travels with a CLEAN participation verdict too, so a
+    # reader of the merge record sees that the plan's store also holds findings filed
+    # for earlier pull requests. It is a disclosure, never a gate input.
+    if participation.get('foreign_stored_findings'):
+        result['foreign_stored_findings'] = participation['foreign_stored_findings']
     # The head binding ADMITTED this candidate; name what it did not validate, so
     # a waived step is distinguishable from a validated one at the record site.
     if head_evidence['waived_steps']:

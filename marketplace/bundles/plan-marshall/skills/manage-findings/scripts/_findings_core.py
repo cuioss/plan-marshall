@@ -1250,6 +1250,10 @@ PR_COMMENT_FINDING_TYPE = 'pr-comment'
 #: The provenance stamp a ``pr-comment`` finding's ``detail`` carries as its FIRST
 #: line — the same shape the producer writes and ``review_completeness`` reads.
 _PR_NUMBER_DETAIL = re.compile(r'\Apr_number:[ \t]*(?P<id>[0-9]+)[ \t]*(?:\n|\Z)')
+#: The same shape ANYWHERE in the detail. Used only by the stamp verb's conflict scan:
+#: a ``pr_number:`` line below the head is ambiguous text, and stamping over it would
+#: leave two numbers in one row.
+_PR_NUMBER_ANYWHERE = re.compile(r'pr_number:[ \t]*(?P<id>[0-9]+)[ \t]*(?:\n|\Z)')
 
 
 def stamp_finding_pr_number(plan_id: str, hash_id: str, pr_number: int) -> dict[str, Any]:
@@ -1303,9 +1307,14 @@ def stamp_finding_pr_number(plan_id: str, hash_id: str, pr_number: int) -> dict[
         }
 
     detail = str(parent.get('detail') or '')
-    existing = _PR_NUMBER_DETAIL.match(detail)
+    # Scan the WHOLE detail, not just the head: a ``pr_number:`` line anywhere means
+    # the row already carries provenance. At the head it is the stamp readers parse;
+    # anywhere else it is ambiguous text this verb must not stamp on top of, because
+    # the readers would then see the new head line while the row still records the
+    # old number below it.
+    existing = _PR_NUMBER_ANYWHERE.search(detail)
     if existing is not None:
-        if existing.group('id') == str(pr_number):
+        if existing.start() == 0 and existing.group('id') == str(pr_number):
             return {
                 'status': 'success',
                 'hash_id': hash_id,
@@ -1319,7 +1328,8 @@ def stamp_finding_pr_number(plan_id: str, hash_id: str, pr_number: int) -> dict[
             'hash_id': hash_id,
             'existing_pr_number': int(existing.group('id')),
             'message': (
-                f'Finding {hash_id} is already stamped for pull request {existing.group("id")}; '
+                f'Finding {hash_id} already carries a pr_number line for pull request '
+                f'{existing.group("id")}{" (not at the head)" if existing.start() else ""}; '
                 f'refusing to restamp it as {pr_number} — a provenance stamp is written once'
             ),
             **store_state_fields(store),

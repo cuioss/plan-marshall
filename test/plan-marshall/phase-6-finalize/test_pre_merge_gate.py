@@ -19,9 +19,15 @@ from argparse import Namespace
 import pytest
 from _dispatch_roster import parse_roster_rows
 
+import _findings_core as fc
+
 from conftest import MARKETPLACE_ROOT, load_script_module, parse_ns
 
 gate = load_script_module('plan-marshall', 'phase-6-finalize', 'pre_merge_gate.py', 'pre_merge_gate')
+# The REAL participation predicate, so the D2 cases drive it rather than an assembled verdict.
+_rc = load_script_module(
+    'plan-marshall', 'automatic-review', 'review_completeness.py', 'pre_merge_gate_review_completeness', register=False
+)
 
 # Both route-parametrized refusal tests bind gate.ROUTES; an empty route set would
 # turn every case into a silent skip, so pin it non-empty at collection time.
@@ -268,6 +274,17 @@ def test_clean_store_dispatches_safe_merge_once_with_its_arguments():
         'participation_gate': 'complete',
         'dispatched': True,
     }
+
+
+def test_a_clean_merge_result_carries_the_foreign_findings_disclosure():
+    """Earlier-PR findings are disclosed on the CLEAN record too, not only on a refusal."""
+    runner = _Runner({'status': 'success', 'merged': True})
+    participation = dict(_PARTICIPATION_COMPLETE, foreign_stored_findings=2)
+
+    result = _merge(_CLEAN_VERDICT, runner, participation=participation)
+
+    assert result['participation_gate'] == 'complete'
+    assert result['foreign_stored_findings'] == 2
 
 
 def test_clean_store_dispatches_merge_queue_once_with_the_pr_number_alone():
@@ -761,6 +778,48 @@ def test_the_chain_refuses_a_store_whose_rows_cannot_be_placed(monkeypatch):
     assert verdict['error'] == 'participation_scope_ambiguous'
     assert verdict['unscoped_stored_finding_ids'] == ['deadbeef']
     assert verdict['roster_read'] is True
+
+
+def test_the_chain_does_not_refuse_a_settled_legacy_row(plan_context, monkeypatch):
+    """Driven through the REAL predicate: a resolved legacy row cannot refuse the merge.
+
+    Two pull requests are in the store and the unplaced row is already dispositioned,
+    so the predicate reports no unscoped id and the chain answers a participation
+    verdict rather than ``participation_scope_ambiguous``.
+    """
+    plan_context.plan_dir_for(_PLAN_ID)
+    for bot, pr_number in (('coderabbit', '101'), ('sourcery', None)):
+        detail = f'kind: inline\nauthor: {bot}\nthread_id: t\ncomment_id: c\n'
+        if pr_number is not None:
+            detail = f'pr_number: {pr_number}\n{detail}'
+        added = fc.add_finding(_PLAN_ID, 'pr-comment', title=f'{bot} comment', detail=detail, bot_kind=bot, kind='inline')
+        assert added['status'] == 'success', added
+        if pr_number is None:
+            resolved = fc.resolve_finding(_PLAN_ID, added['hash_id'], 'fixed', 'addressed')
+            assert resolved['status'] == 'success', resolved
+
+    responses = {gate._MANIFEST_NOTATION: _ROSTER_PAYLOAD, _PRODUCER_NOTATION: _FETCH_PAYLOAD}
+
+    def fake_run_verb(notation, argv, **_kwargs):
+        if notation == gate._COMPLETENESS_NOTATION:
+            return _rc.check_completeness(
+                _PLAN_ID,
+                ['coderabbit'],
+                optional_bots=['sourcery'],
+                participated_bots={'coderabbit': 'review_body'},
+                stale_participation_bots=['sourcery'],
+                pr_number=42,
+                triage_ran=True,
+            )
+        return dict(responses[notation])
+
+    monkeypatch.setattr(gate, '_run_verb', fake_run_verb)
+    monkeypatch.setattr(gate, '_provider_pr_notation', lambda _project_dir=None: _PRODUCER_NOTATION)
+
+    verdict = gate._check_participation(_PLAN_ID, 42, _PROJECT_DIR)
+
+    assert verdict.get('error') != 'participation_scope_ambiguous', verdict
+    assert verdict.get('status') == 'success', verdict
 
 
 def test_the_scope_refusal_points_the_operator_at_the_store(monkeypatch):

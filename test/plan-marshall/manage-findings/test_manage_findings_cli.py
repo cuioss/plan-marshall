@@ -44,6 +44,8 @@ PLAN_IDS = (
     'mf-cli-stamp-finding',
     'mf-cli-stamp-pr',
     'mf-cli-stamp-pr-conflict',
+    'mf-cli-stamp-pr-invalid',
+    'mf-cli-stamp-pr-mid',
     'mf-cli-stamp-pr-type',
     'mf-cli-stamp-selector',
     'mf-cli-stamp-sha',
@@ -465,6 +467,42 @@ def test_main_stamp_pr_refuses_a_row_that_is_not_a_pr_comment(plan_context, monk
     data = parse_toon(out)
     assert data['status'] == 'error'
     assert data['error'] == 'not_pr_comment'
+
+
+def test_main_stamp_pr_refuses_a_non_positive_number(plan_context, monkeypatch, capsys):
+    """``--pr-number 0`` reaches the handler and is refused; nothing is written."""
+    hid = _seed_pr_comment('mf-cli-stamp-pr-invalid')
+    before = _stored_finding('mf-cli-stamp-pr-invalid', hid)['detail']
+
+    code, out = _run_main(
+        monkeypatch,
+        capsys,
+        ['stamp-pr', '--plan-id', 'mf-cli-stamp-pr-invalid', '--hash-id', hid, '--pr-number', '0'],
+    )
+
+    assert code == 0
+    data = parse_toon(out)
+    assert data['status'] == 'error'
+    assert data['error'] == 'invalid_pr_number'
+    assert _stored_finding('mf-cli-stamp-pr-invalid', hid)['detail'] == before
+
+
+def test_main_stamp_pr_refuses_a_stamp_that_is_not_at_the_head(plan_context, monkeypatch, capsys):
+    """A ``pr_number:`` line below the head is still provenance; it is refused, not doubled."""
+    detail = 'kind: inline\npr_number: 101\nauthor: coderabbit\n'
+    hid = _seed_pr_comment('mf-cli-stamp-pr-mid', detail=detail)
+
+    code, out = _run_main(
+        monkeypatch,
+        capsys,
+        ['stamp-pr', '--plan-id', 'mf-cli-stamp-pr-mid', '--hash-id', hid, '--pr-number', '102'],
+    )
+
+    assert code == 0
+    data = parse_toon(out)
+    assert data['status'] == 'error'
+    assert data['error'] == 'pr_number_conflict'
+    assert _stored_finding('mf-cli-stamp-pr-mid', hid)['detail'] == detail
 
 
 def test_main_resolve_with_task_number_records_the_fix_task(plan_context, monkeypatch, capsys):

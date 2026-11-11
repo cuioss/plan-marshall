@@ -84,7 +84,8 @@ def test_the_currency_code_comment_does_not_measure_an_edit() -> None:
     source = _text(_GITHUB_PR)
 
     assert 'measures a fresh' not in source
-    assert 'never a credit test' in source
+    assert 'The NEXT fetch compares the' in source
+    assert 'recorded SHA with the merge candidate' in source
 
 
 # --- Branch 0 names every unproven required bot -------------------------------------------
@@ -110,7 +111,10 @@ def test_the_structural_display_detail_template_names_unproven_bots() -> None:
 
 def test_the_structural_field_contract_lists_unproven_bots() -> None:
     text = _text(_SKILL_MD)
-    start = text.index('Field contract:')
-    contract = text[start:]
+    envelope = text[text.index('The STRUCTURAL variant') :]
+    start = envelope.index('Field contract:')
+    contract = envelope[start:]
+    # Bound to the structural envelope's own contract: stop where that section ends.
+    contract = contract[: contract.index('\n\n**')] if '\n\n**' in contract else contract
 
     assert '- `unproven_bots[]`' in contract
