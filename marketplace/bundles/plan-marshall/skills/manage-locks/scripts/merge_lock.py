@@ -963,6 +963,12 @@ def read_lock_holder(lock_path: Path | None = None) -> dict[str, Any]:
     shape. A file that exists but names no holder (empty, or whitespace only) is
     ``unreadable`` for the same reason: it proves nothing about who holds it.
 
+    The read itself is the existence test: a missing file raises
+    ``FileNotFoundError`` and is ``absent``, while every other ``OSError`` — a
+    directory in the lock's place, a permission fault, an unreadable parent — is
+    ``unreadable``. That ordering is what makes the three states total rather than
+    guessed.
+
     Args:
         lock_path: The lock file to read. Resolved against the MAIN checkout when
             omitted (the shared main-anchored resolver, cwd-independent).
@@ -975,13 +981,9 @@ def read_lock_holder(lock_path: Path | None = None) -> dict[str, Any]:
     path = lock_path if lock_path is not None else _resolve_main_lock_path()
     verdict: dict[str, Any] = {'state': HOLDER_ABSENT, 'holder': None, 'lock_path': str(path)}
     try:
-        exists = path.exists()
-    except OSError as exc:
-        return {**verdict, 'state': HOLDER_UNREADABLE, 'error': f'lock path unreadable: {exc}'}
-    if not exists:
-        return verdict
-    try:
         holder = path.read_text(encoding='utf-8').strip()
+    except FileNotFoundError:
+        return verdict
     except OSError as exc:
         return {**verdict, 'state': HOLDER_UNREADABLE, 'error': f'lock file unreadable: {exc}'}
     if not holder:

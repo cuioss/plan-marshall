@@ -58,15 +58,33 @@ QUEUE_LIST_HEADING = '### merge_lock — queue-list'
 
 @pytest.fixture
 def isolated_base(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict:
-    """Stage an isolated PLAN_BASE_DIR under tmp_path (mirrors the sibling units)."""
+    """Stage an isolated PLAN_BASE_DIR under tmp_path (mirrors the sibling units).
+
+    It also answers the ``locate-plan-checkout`` consult from that staged layout, so
+    a blocked ``acquire``'s ``queue_front`` liveness read never spawns a real executor
+    subprocess; a case that cares about the locator's own vocabulary overrides it with
+    :func:`_stub_locator`.
+    """
     base = tmp_path / 'main' / '.plan' / 'local'
     (base / 'plans').mkdir(parents=True)
     monkeypatch.setenv('PLAN_BASE_DIR', str(base))
+    _answer_locator_from_base(monkeypatch, base)
     return {
         'base': base,
         'lock_path': base / 'merge.lock',
         'queue_path': base / 'merge-queue.json',
     }
+
+
+def _answer_locator_from_base(monkeypatch: pytest.MonkeyPatch, base: Path) -> None:
+    """Answer ``locate-plan-checkout`` from the isolated base's plan dirs."""
+
+    def fake(notation: str, *cli_args: str) -> dict:
+        plan_id = cli_args[cli_args.index('--plan-id') + 1]
+        location = 'current' if (base / 'plans' / plan_id).exists() else 'not_found'
+        return {'status': 'success', 'plan_id': plan_id, 'location': location}
+
+    monkeypatch.setattr(merge_lock, '_run_executor', fake)
 
 
 def _seed_queue(queue_path: Path, waiting: list[dict], **siblings) -> None:

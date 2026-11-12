@@ -31,27 +31,6 @@ from _manage_locks_merge_lock_fixtures import (
 # =============================================================================
 
 
-@pytest.fixture(autouse=True)
-def _stub_locator_consult(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Autouse: answer ``locate-plan-checkout`` from the isolated base's plan dirs.
-
-    A blocked ``acquire`` names the FIFO-front entry it is queued behind, and that
-    entry's ``liveness`` is resolved through ``git-workflow locate-plan-checkout`` —
-    a real executor subprocess. This module exercises the LOCK, not the locator, so
-    the consult is answered from the same ``PLAN_BASE_DIR`` layout ``holder_is_dead``
-    reads: ``current`` when the holder's plan dir exists under the isolated base,
-    ``not_found`` otherwise.
-    """
-
-    def fake(notation: str, *cli_args: str) -> dict:
-        plan_id = cli_args[cli_args.index('--plan-id') + 1]
-        base = merge_lock._resolve_merge_queue_path().parent
-        location = 'current' if (base / 'plans' / plan_id).exists() else 'not_found'
-        return {'status': 'success', 'plan_id': plan_id, 'location': location}
-
-    monkeypatch.setattr(merge_lock, '_run_executor', fake)
-
-
 class TestBlockedReplyNamesTheFrontEntry:
     """A non-front waiter is told WHICH entry holds it, its liveness, why admission
     keeps it, and the command that frees it.
