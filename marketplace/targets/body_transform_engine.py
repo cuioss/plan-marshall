@@ -188,10 +188,12 @@ DISPATCH_LINE_RE = re.compile(
 _DISPATCH_TARGET_RE = re.compile(r'^(?:[A-Za-z0-9_-]+:)?(?P<agent>[A-Za-z0-9_{][A-Za-z0-9_.{}-]*)$')
 
 # The first field a real dispatch block carries: the prompt body itself, the
-# agent of the bare-header form, or a prompt-body key. A ``Task: <agent>`` line
-# followed by free-text prose is a mention with an indented continuation, not a
-# dispatch, and is left alone — the block shape is part of the matcher.
-_DISPATCH_BODY_FIELD_RE = re.compile(r'^[ \t]*(prompt|subagent_type|name|description|skills)\b')
+# agent of the bare-header form, or a prompt-body key. The field name must be
+# followed by its colon, so an indented explanatory sentence that happens to
+# start with the same word ("name the command being discussed.") is prose, not a
+# dispatch body. A ``Task: <agent>`` line followed by free-text prose is a
+# mention with an indented continuation, not a dispatch, and is left alone.
+_DISPATCH_BODY_FIELD_RE = re.compile(r'^[ \t]*(?:prompt|subagent_type|name|description|skills(?:\[[^\]]*\])?)[ \t]*:')
 
 # A dispatch block's own agent line, used by the bare-header form.
 _SUBAGENT_TYPE_RE = re.compile(r'^[ \t]*subagent_type:[ \t]*(?P<agent>\S+?)[ \t]*(?P<cr>\r?)$')

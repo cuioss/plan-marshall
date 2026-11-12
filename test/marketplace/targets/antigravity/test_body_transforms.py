@@ -175,6 +175,12 @@ def test_a_mention_with_an_indented_continuation_is_left_alone(rules):
     assert rewrite_dispatch_blocks(raw, _dispatch_template(rules)) == raw
 
 
+def test_an_indented_sentence_starting_with_a_field_name_is_left_alone(rules):
+    """The field name needs its colon; 'name the command…' is prose, not a field."""
+    raw = 'Task: diagnose-command\n  name the command being discussed.\n'
+    assert rewrite_dispatch_blocks(raw, _dispatch_template(rules)) == raw
+
+
 def test_dispatch_block_rewrite_is_idempotent(rules):
     template = _dispatch_template(rules)
     once = rewrite_dispatch_blocks(TARGETED_DISPATCH_BLOCK, template)
