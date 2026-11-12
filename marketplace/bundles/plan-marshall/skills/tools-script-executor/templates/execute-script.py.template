@@ -73,9 +73,10 @@ from pathlib import Path
 PLAN_DIR_NAME = '{{PLAN_DIR_NAME}}'
 
 # Provisioning stamps - injected at generation time. MARSHALL_VERSION is the
-# 0.1.N version this executor was generated at; MAPPINGS_FINGERPRINT is the
-# machine-portable script-set fingerprint. Both are the empty sentinel on a fresh
-# install (no manifest yet).
+# newest version any installed harness publishes (see below); MAPPINGS_FINGERPRINT
+# is the machine-portable script-set fingerprint. MARSHALL_VERSION is
+# 'unversioned' when no readable manifest supplied a version, which is an
+# answered absence rather than an empty assignment.
 #
 # MARSHALL_VERSION is the NEWEST version published by any installed harness (or by
 # this checkout's own target trees when nothing is installed) — a function of the

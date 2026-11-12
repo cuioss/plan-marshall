@@ -390,6 +390,38 @@ so git alone shows which deliverables are committed.
     not count toward `deliverables_done`: it is graded exactly as a not-met Done-when, because a
     Done-when the run cannot show is a Done-when it did not meet as written.
   - Never cite a test, file or log you have not just read or run.
+- **Base-sha evidence (needs no clone).** A Done-when that says "fails at `{sha}`" is proved on a
+  detached base worktree, never by copying the repository:
+  `python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree-create --detach --plan-id {plan} --base {base_sha}`
+  materializes `{plan}-base` under the project's worktree root at that commit, with no branch, and
+  returns its absolute path as `worktree_path`. `error: worktree_exists` means the base tree already
+  exists: reuse it only when `git -C` at that path reports the same HEAD as `{base_sha}` **and** a
+  clean `status --porcelain`, and remove it first when either differs — the answer carries
+  `detached: true`, `base_ref` and the tree's actual `head_sha`, refuses a tree that is on a branch
+  (`worktree_target_conflict`), and re-produces the executor from that tree, never from main's copy.
+  A reuse answer whose `executor_in_worktree` is `absent` is not evidence: remove the tree and report
+  the blocker. That tree carries its own
+  `.plan/local` boundary and the executor the same seam produces — best effort, and the payload reports
+  `executor_in_worktree`; the copy-from-main fallback is disabled for it, because a copied executor
+  carries main's paths and would make a base run cite main's code — so the base tree's own test
+  bootstrap short-circuits instead of resolving its walk into another checkout. The build seam runs
+  against the returned path like any other checkout:
+  `{build.module-tests} --project-dir` with that `worktree_path`, or the gate canonical, with the
+  shell in the main checkout. The tree at the base commit does NOT contain the test the Done-when
+  just added, so copy that committed test file from the plan's worktree into the same path in the
+  base tree before the run — it is the plan's own test, not a harness file — and record the failing
+  output that names it; the copy dies with the base tree, the committed test does not. Four forms are
+  NOT allowed, and a Done-when whose failing run used one
+  is reported `not evidenced`: a `git clone`; a raw `git worktree add` into `.plan/temp`; a hand-run
+  `generate_executor`; and an edit of a harness file in the base copy. The evidence must survive the
+  base copy: the failing log identifier and the file that produced it go in the PR body, and a probe
+  file a Done-when cites by path is committed under the plan's test tree or its content is in the PR
+  body — a path that exists only in the removed base copy is not evidence. Remove the base worktree
+  with `git worktree remove`, never with force, once `git -C` at that returned `worktree_path` shows
+  a clean `status --porcelain`; when it cannot be removed the landing reports `cleanup_owed=true` and
+  names what remains, read from the tree, and no operator question about deleting it is asked before
+  that read has been stated. While it exists, `{plan}-base` is also what `plan-doctor` reports as a
+  dangling worktree: that report IS the owed cleanup, not a defect in the plan record.
 - **Executor only.**
   - Every script: `python3 .plan/execute-script.py {bundle}:{skill}:{script} …`.
   - Every build: the `build` commands the resolve result supplies (step 4).
@@ -406,9 +438,11 @@ so git alone shows which deliverables are committed.
   - Temp files go only under `.plan/temp/`.
   - Repository files (source, tests, docs) are created and edited **only inside the worktree**,
     never in the main checkout — not even a draft.
-- **`.plan/` state.** Write nothing under `.plan/` except `.plan/temp/`, the `ci` body slots under
-  `.plan/local/plans/NO_PLAN/work/ci-bodies/` that step 6 prescribes, and your one inbox message
-  (step 8). Never edit the spec or any file under `.plan/orchestrator/`.
+- **`.plan/` state.** Write nothing under `.plan/` except `.plan/temp/`, a `ci` body slot at a path a
+  `prepare-*` verb returned under `.plan/local/plans/NO_PLAN/work/ci-bodies/` (never a path written by
+  hand — the slot must come back from the matching `prepare-body` / `prepare-comment` verb, whether
+  the `pr` or the `issue` one), and your one inbox message (step 8).
+  Never edit the spec or any file under `.plan/orchestrator/`.
 - **Stay inside the repository.** Never read, list or print anything outside the repository root:
   no credential files, config directories or environment dumps. Those hold secrets, and anything
   you read is sent to the model provider.
@@ -555,7 +589,9 @@ For each deliverable, in the spec's order:
    landing report then says `skills: none named`.
 1. Confirm the spec's HYPOTHESIS lines for this deliverable by reading the code. Write down
    confirmed or refuted, with `file:line`.
-2. Write the Done-when tests and capture their evidence under the `order` §1 defines.
+2. Write the Done-when tests and capture their evidence under the `order` §1 defines — for a
+   Done-when whose clause fails at a base sha, that is §1's base-sha recipe: a detached `{plan}-base`
+   worktree, built through the build seam, never a clone.
 3. Implement. Run the tests; record them passing.
 4. If any `*.py` changed, run the quality gate (step 4) until clean.
 5. **Refresh the worktree executor after adding, removing or renaming a script verb**, before running
@@ -728,8 +764,8 @@ whether to continue at the limit. Record every finding and its disposition.
      carries, per Done-when, the `order` and verdict §1 defines, the test name, and the failing
      run's commit and output identifier only where the order is not `none`. No footer.
    - Then: `python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr create --plan-id NO_PLAN --head {branch} --base {base_branch} --title "{conventional title}"`
-2. **Trigger each reviewer** with a PR comment (`ci pr prepare-comment` + `ci pr reply`), posting
-   its resolved `trigger_comment`.
+2. **Trigger each reviewer** with a PR comment (`ci pr prepare-comment --for reply` + `ci pr reply`),
+   posting its resolved `trigger_comment`.
 3. **Wait for CI:** `python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci checks wait --pr-number {N} --timeout 540`.
 4. **Read the pull request's open Sonar findings** — after CI is green on the head and before the
    pull request is reported ready. Skip nothing when `sonar` is `configured`:
@@ -784,8 +820,8 @@ whether to continue at the limit. Record every finding and its disposition.
    or load-bearing, real or false-positive drift, and severity — before deciding whether it applies.
    Handle every comment:
    - fix it, commit and push; or
-   - answer it with `ci pr thread-reply` (the reason it does not apply), then close it with
-     `ci pr resolve-thread`.
+   - answer it with `ci pr prepare-comment --for thread-reply`, write the reason into the returned
+     path, and post it with `ci pr thread-reply`; then close it with `ci pr resolve-thread`.
 
    **A thread is resolved only after a reply that names a commit or a stated reason** — never to
    silence it: `ci pr thread-reply` first, `ci pr resolve-thread` second, in that order. Every
@@ -969,6 +1005,12 @@ sonar_open_new_issues={measured count|n/a|unknown}
 step.sonar-roundtrip.open_issue_rules={rules left open|none|unknown|n/a}
 ```
 
+- **Base copy (cleanup_owed):** a base worktree a Done-when's evidence used is removed with
+  `git worktree remove`, never with force, once `git -C` at its `worktree_path` shows a clean
+  `status --porcelain`, before this landing is written. When it is still on disk, set the landing's
+  single `cleanup_owed=true` fact — the branch-cleanup fact, which this also answers — and name in the
+  report which tree remains, read from the tree. An operator question about removing it states first
+  what exists, read from the tree; the lane never asks how to delete what it created before that read.
 - **Values:** for a required key, write `unknown` for anything you could not read, never `n/a` and
   never a guess. `deliverables_done` counts only fully met deliverables. The optional per-step facts
   below carry their own two sentinels, where `n/a` is a legal answered absence.
