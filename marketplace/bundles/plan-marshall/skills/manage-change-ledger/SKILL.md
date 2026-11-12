@@ -402,7 +402,7 @@ from _ledger_core import (
 | `manage-status` 5-execute boundary | reports (never writes) | carries the ready-to-run `remap` invocation in its `execute_commits_unrecorded` refusal; appends nothing itself |
 | `build-server-client` `submit` verb | produces | imports `job_record` + `append_entry`; writes `kind=job` at submit time for re-attach |
 | `build-server-client` `wait` re-attach | consumes | imports `read_entries`; reads the latest `kind=job` for the plan to recover `job_id` |
-| `manage-tasks:pre-commit-verify-freshness` gate | consumes | imports `read_entries` + `compute_worktree_sha`; scans `kind=build` by `status == success` + `worktree_sha`, then cross-checks each matching row's `notation` against the project's architecture-resolved build notations. This is the gate's ledger-reading route only — an exempted footprint returns before the scan and consumes no entry at all |
+| `manage-tasks:pre-commit-verify-freshness` gate | consumes | imports `read_entries` + `compute_worktree_sha`; scans `kind=build` by `status == success` + `worktree_sha`, splits the matches on the row's recorded tree identity (`worktree_root`, and `worktree_sha_at_dispatch` against `worktree_sha`), then cross-checks each surviving row's `notation` against the project's architecture-resolved build notations. This is the gate's ledger-reading route only — an exempted footprint returns before the scan and consumes no entry at all |
 | `plan-retrospective:analyze-logs` `summarize_build_ledger` | consumes | imports `read_entries`; keeps `kind=build` rows for one `plan_id` and partitions their `status` into `pass`/`error`/`timeout`/`killed`/`status_unknown` alongside the `duration_seconds` sum |
 
 The two `kind=build` consuming rows have a completeness FLOOR that can be

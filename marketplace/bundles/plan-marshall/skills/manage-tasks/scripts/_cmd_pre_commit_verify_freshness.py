@@ -134,6 +134,7 @@ Outcomes:
                      verdict carries a ``reason`` naming WHY, because the routes
                      need different remedies and this gate must not assert a
                      cause it did not establish: ``worktree_mutated`` /
+                     ``build_tree_unrecorded`` /
                      ``build_error`` / ``build_timeout`` / ``build_killed`` /
                      ``build_indeterminate`` (see ``_stale_reason`` below), the
                      tree-identity refusals ``worktree_root_mismatch`` /
@@ -233,6 +234,15 @@ _STALE_MUTATED = (
     'the last observed build. Re-dispatch a build before retrying.',
 )
 
+_STALE_UNRECORDED = (
+    'build_tree_unrecorded',
+    'A build-class dispatch completed but recorded NO tree hash at all: the '
+    'writer could not resolve the tree it was building, so its row can never '
+    'match any tree — and re-running the build reproduces the same unrecorded '
+    'row. Establish why the plan-context root did not resolve for this plan '
+    '(its worktree metadata, or the resolver itself), then re-dispatch.',
+)
+
 # ---------------------------------------------------------------------------
 # Tree identity — the row must describe THIS tree, not merely carry its hash
 # ---------------------------------------------------------------------------
@@ -316,11 +326,15 @@ def _same_path(recorded: str, gate_root: Path) -> bool:
     Compared after ``resolve()`` on both sides, so a recorded relative path, a
     trailing separator or a symlinked spelling of one tree is not reported as a
     different tree. A path that cannot be resolved is NOT the same tree — the
-    fail-closed direction.
+    fail-closed direction. ``ValueError`` is in the refusal set alongside the two
+    the filesystem raises: ``Path.resolve()`` raises it for a string it cannot
+    even treat as a path (an embedded NUL, which JSON can carry), and letting it
+    escape would turn a `stale` verdict into a traceback at a gate whose whole
+    purpose is to refuse.
     """
     try:
         return Path(recorded).resolve() == Path(gate_root).resolve()
-    except (OSError, RuntimeError):
+    except (OSError, RuntimeError, ValueError):
         return False
 
 
@@ -414,6 +428,11 @@ def _stale_reason(entries: list[dict], current_sha: str) -> tuple[str, str, str 
 
     Discrimination is by presence, then by status:
 
+    * No ``kind=build`` row at all for ``current_sha``, but at least one
+      ``kind=build`` row carrying NO hash (``worktree_sha`` null or absent) →
+      ``build_tree_unrecorded``: the writer never established the tree it built,
+      so no re-run can match and the remedy is to fix the resolution. Naming a
+      mutation there would prescribe exactly the retry that reproduces it.
     * No ``kind=build`` row at all for ``current_sha`` → the tree really did move
       past every observed build (or was never built): ``worktree_mutated``.
     * A row exists for ``current_sha`` but none is ``success`` → the tree WAS
@@ -449,6 +468,19 @@ def _stale_reason(entries: list[dict], current_sha: str) -> tuple[str, str, str 
         entry for entry in entries if entry.get('kind') == KIND_BUILD and entry.get('worktree_sha') == current_sha
     ]
     if not matching:
+        # A build row that carries NO hash cannot ever match a tree, and telling
+        # its owner to "re-dispatch a build" reproduces the same unrecorded row.
+        # That route gets its own reason and its own remedy: fix the resolution.
+        unrecorded = [
+            entry for entry in entries if entry.get('kind') == KIND_BUILD and entry.get('worktree_sha') is None
+        ]
+        if unrecorded:
+            observed_unrecorded = unrecorded[-1].get('status')
+            return (
+                _STALE_UNRECORDED[0],
+                _STALE_UNRECORDED[1],
+                observed_unrecorded if isinstance(observed_unrecorded, str) else None,
+            )
         reason, message = _STALE_MUTATED
         return reason, message, None
 

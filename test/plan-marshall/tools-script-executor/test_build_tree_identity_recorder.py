@@ -234,6 +234,47 @@ def test_the_row_records_both_hashes(monkeypatch, main_checkout, worktree, ledge
     )
 
 
+#: A build child that edits a tracked file while it runs — the "file edited
+#: during the build" shape, driven through the executor's own ``main()``.
+_EDITING_BUILD = """
+import os
+from pathlib import Path
+
+target = Path(os.environ['PM_TEST_EDIT_FILE'])
+target.write_text(target.read_text(encoding='utf-8') + 'edited during the build\\n', encoding='utf-8')
+print('status: success')
+"""
+
+
+def test_main_captures_the_tree_before_the_build_edits_it(worktree, ledger_path, tmp_path, monkeypatch) -> None:
+    """The dispatch capture is a PRE-BUILD observation of the plan's tree.
+
+    Drives the executor's own ``main()``: the build child edits a tracked file
+    while it runs, so the row must carry two DIFFERING hashes. A capture taken
+    after the subprocess — or a row that never receives the captured value —
+    would fold the edit into one green, which is the false-fresh this whole
+    change exists to remove.
+    """
+    module = _load_template_module()
+    _redirect_ledger(module, monkeypatch, ledger_path)
+    editing_build = tmp_path / 'editing_build.py'
+    editing_build.write_text(_EDITING_BUILD, encoding='utf-8')
+    monkeypatch.setenv('PM_TEST_EDIT_FILE', str(worktree / 'plan.py'))
+    monkeypatch.setattr(module, 'resolve_notation', lambda _notation: str(editing_build))
+    monkeypatch.setattr(module.sys, 'argv', ['execute-script.py', _NOTATION, 'run', '--plan-id', _PLAN_ID])
+
+    with patch_query_worktree_path(True, str(worktree)), pytest.raises(SystemExit) as exit_info:
+        module.main()
+
+    assert exit_info.value.code == 0
+    entry = read_entries(path=ledger_path)[0]
+    assert Path(entry['worktree_root']).resolve() == worktree.resolve()
+    assert entry['worktree_sha_at_dispatch'] is not None, 'main() did not pass a dispatch capture to the writer'
+    assert entry['worktree_sha'] != entry['worktree_sha_at_dispatch'], (
+        'the build edited the tree; a capture taken after the subprocess would hide that'
+    )
+
+
 def test_a_build_that_changes_nothing_records_equal_hashes(monkeypatch, worktree, ledger_path) -> None:
     """A build that changed nothing stamps two IDENTICAL hashes.
 

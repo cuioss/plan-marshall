@@ -138,6 +138,32 @@ def test_an_unreadable_recorded_root_never_matches(plan_context, monkeypatch, tm
     assert result['reason'] == 'worktree_root_unreadable', result
 
 
+def test_a_root_the_filesystem_refuses_is_a_refusal_not_a_crash(plan_context, monkeypatch, tmp_path) -> None:
+    """An embedded NUL cannot become a path — the gate must refuse, never raise.
+
+    A ledger row is untrusted input: JSON can carry ``"a\\u0000b"`` as a string,
+    and ``Path.resolve()`` raises ``ValueError`` for it. A gate whose whole job
+    is to fail closed must answer `stale`, not a traceback.
+    """
+    result = _run_gate(plan_context, monkeypatch, tmp_path, _row(worktree_root='a\x00b'))
+
+    assert result['status'] == 'stale', result
+    assert result['reason'] == 'worktree_root_mismatch', result
+
+
+def test_a_build_row_that_recorded_no_tree_is_named_as_unrecorded(plan_context, monkeypatch, tmp_path) -> None:
+    """A row with no hash at all gets its own cause, not 'the tree was mutated'.
+
+    Telling a caller to "re-dispatch a build" reproduces the same unrecorded row,
+    so the refusal names the resolution instead.
+    """
+    result = _run_gate(plan_context, monkeypatch, tmp_path, _build_entry(worktree_sha=None))
+
+    assert result['status'] == 'stale', result
+    assert result['reason'] == 'build_tree_unrecorded', result
+    assert 're-running' in result['message'].lower(), result['message']
+
+
 # =============================================================================
 # The two hashes — a build that changed the tree under itself
 # =============================================================================

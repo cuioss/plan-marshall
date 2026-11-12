@@ -583,8 +583,11 @@ on observed evidence.
   `matched_*` evidence fields, and no `ledger_path` — the absence of those keys is
   itself the record that nothing was examined.
 - `status: fresh` — one or more `kind=build` entries with `status == success` and
-  a matching `worktree_sha` exist AND are citable on BOTH cross-check dimensions
-  as § "Joint selection" defines, so the gate is permitted to pass. The record
+  a matching `worktree_sha` exist, each describes THIS tree (its recorded
+  `worktree_root` matches, and its dispatch and completion hashes agree), AND the
+  survivors are citable on BOTH cross-check dimensions
+  as § "Joint selection" defines, so the gate is permitted to pass. Tree identity
+  is the third admission step, taken before either cross-check dimension. The record
   **names its evidence**: `worktree_sha`, `contributing_rows` (every row the
   verdict rests on, in ledger order — each entry carries `ledger_index`,
   `notation`, `plan_id`, `canonical`, `scope`, `analyses` and `timestamp_iso`,
@@ -607,13 +610,16 @@ on observed evidence.
 - `status: stale` — the ledger has entries but none is citable: either none is a
   successful build against the current working-tree sha, or a matching row
   describes another tree (a recorded root that is not this gate's, or a build
-  that rewrote the tree it was building), or every such build names a notation
+  that rewrote the tree it was building), or a build row recorded no tree at all,
+  or every such build names a notation
   this project does not resolve, or such builds fall short of the change alone
   and combined, or the change needs whole-tree coverage and a candidate row's
   scope cannot be read, or the attributable rows fall short while the rows that
   would close the gap are unattributable. The gate
   MUST fail closed. Carries `worktree_sha`, `worktree_root`, `ledger_path`, and a
-  **`reason` naming which route to `stale` was taken** — plus `observed_status`
+  **`reason` naming which route to `stale` was taken** — plus `refused_rows`
+  (every row tree identity rejected, with the route it was rejected on, whenever
+  the refusal is a tree-identity one) — and `observed_status`
   (the offending row's own build status) whenever a row carried a readable status
   string, and `notation_cross_check` / `scope_cross_check` /
   `expected_notations` / `candidate_notations` / `row_scopes` /
@@ -635,6 +641,7 @@ on observed evidence.
   | `reason` | Ledger evidence | Remedy the caller owes |
   |---|---|---|
   | `worktree_mutated` | NO `kind=build` row of any status carries this sha | The tree really did move past every observed build — re-dispatch a build. |
+  | `build_tree_unrecorded` | A `kind=build` row exists but records NO hash at all (the writer could not resolve the tree), so it can never match a tree | Re-running reproduces the same unrecorded row. Establish why the plan-context root did not resolve for this plan, then re-dispatch. |
   | `build_error` | Latest row for this sha is `status: error` | The build ran and reported failures — fix them, then re-build. |
   | `build_timeout` | Latest row for this sha is `status: timeout` | The build exceeded its own outer budget; no verdict was reported. Not a code defect. Re-run, and diagnose the budget if it recurs. |
   | `build_killed` | Latest row for this sha is `status: killed` | Externally killed — **not flaky, do not blind-retry.** No budget fired and no verdict was reported. Establish why before re-running. |

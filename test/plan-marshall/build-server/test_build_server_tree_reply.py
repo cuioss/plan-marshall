@@ -228,7 +228,8 @@ def test_plan_less_submit_writes_the_global_work_log_as_plan_less(home, ledger, 
     assert all(plan_id is None for _t, plan_id, _l, _m in captured_logs), (
         f'a plan-less submit wrote to a plan-scoped log: {captured_logs!r}'
     )
-    _t, _p, level, message = captured_logs[-1]
+    log_type, _p, level, message = captured_logs[-1]
+    assert log_type == 'work', 'the plan-less trace belongs to the work log, not the script or decision log'
     assert level == 'INFO'
     assert 'JOB-NP' in message
     assert f'plan={NO_PLAN_SENTINEL}' in message, 'the global log line must state the plan-less identity'

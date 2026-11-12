@@ -1039,6 +1039,16 @@ def test_template_build_ledger_append_fires_after_dispatch_not_before():
     call_site_idx = source.find('_append_build_ledger_record(', branch_idx)
     assert call_site_idx != -1, 'ledger append call site not found after the guard'
 
+    # The guard's VALUE is captured BEFORE the dispatch, so the tree capture it
+    # gates is a pre-build observation. Without this ordering the capture could
+    # move behind the subprocess and every hash would be taken after the build —
+    # the rewrite would fold back into one green, silently.
+    assert guard_idx < dispatch_idx, (
+        'the build-class guard must be evaluated BEFORE the subprocess dispatch, so the '
+        f'dispatch-time tree capture is a pre-build observation (guard at {guard_idx}, '
+        f'dispatch at {dispatch_idx})'
+    )
+
     assert call_site_idx > dispatch_idx, (
         'ledger append must fire AFTER the subprocess dispatch, not before — '
         f'append at {call_site_idx} precedes dispatch at {dispatch_idx}'

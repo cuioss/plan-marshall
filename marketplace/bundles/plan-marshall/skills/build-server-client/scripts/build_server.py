@@ -517,8 +517,9 @@ def run_submit(args: Namespace) -> dict[str, Any]:
     exec_path = args.exec_path or project_path
     # A plan-less submission carries the NO_PLAN sentinel, not the empty
     # string, so the job spec on the wire and the kind=job ledger row match the
-    # kind=build row's never-null contract. `_audit_log` treats the sentinel as
-    # absent, so the plan-less no-op it always had is preserved.
+    # kind=build row's never-null contract. `_audit_log` still treats the
+    # sentinel as absent — there is no plan-scoped work log to write to — and
+    # the queued line is written to the GLOBAL work log instead, below.
     plan_id = args.plan_id or NO_PLAN_SENTINEL
     notation = _notation_from_command(command)
     # ``args.timeout`` is the caller's EXPLICIT build bound, forwarded onto the
@@ -587,21 +588,17 @@ def run_submit(args: Namespace) -> dict[str, Any]:
         # `wait` with no --job-id cannot find the row) rather than crash the
         # client and lose the job_id we are about to return.
         pass
-    _audit_log(
-        plan_id,
-        'INFO',
+    queued_message = (
         f'build-server submit queued: job_id={_sanitize_for_log(job_id)} job_status={STATUS_QUEUED} '
-        f'attached={attached} notation={notation} mechanism=daemon_longpoll',
+        f'attached={attached} notation={notation} mechanism=daemon_longpoll'
     )
+    _audit_log(plan_id, 'INFO', queued_message)
     if not names_real_plan(plan_id):
         # Plan-less submissions have no plan-scoped work log, so this is the one
         # line that keeps a green main-checkout build visible beside the plans'.
-        _audit_log_plan_less(
-            'INFO',
-            f'build-server submit queued: plan={NO_PLAN_SENTINEL} '
-            f'job_id={_sanitize_for_log(job_id)} job_status={STATUS_QUEUED} '
-            f'attached={attached} notation={notation} mechanism=daemon_longpoll',
-        )
+        # One message source: the plan-less identity is PREFIXED onto the same
+        # line rather than a second copy of it kept in step by hand.
+        _audit_log_plan_less('INFO', f'plan={NO_PLAN_SENTINEL} ' + queued_message)
     return {
         'status': 'success',
         'job_status': STATUS_QUEUED,

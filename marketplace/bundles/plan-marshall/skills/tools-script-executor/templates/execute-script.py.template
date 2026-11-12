@@ -36,7 +36,12 @@ Runtime side-effects:
     wrapper's stdout TOON, so a timed-out build stamps status=timeout despite its exit
     code 0, and an exit-0 dispatch whose payload carries no wrapper-claimable status
     stamps status=unknown rather than a green nothing substantiates), worktree_sha (the
-    working-tree currency hash), log_file, and timestamp_iso. The stdout payload is
+    working-tree currency hash, computed against the plan's worktree root — the tree
+    pre-commit-verify-freshness hashes for the same plan — or against the working
+    directory for a plan-less dispatch), worktree_root (the root that hash describes),
+    worktree_sha_at_dispatch (the same root's hash captured BEFORE the build ran, so a
+    build that changed the tree under itself carries two differing hashes), log_file,
+    and timestamp_iso. The stdout payload is
     parsed exactly once and feeds status, command, duration_seconds and outcome
     together; an absent or unparseable payload leaves those three None and the status
     derivation falls back to the exit code (nonzero -> error, zero -> unknown).
@@ -1064,12 +1069,26 @@ def _ledger_tree_root(plan_id: str) -> str | None:
     tree, so this resolves the root the gate resolves: the plan's worktree root,
     through the single shared plan-context resolver. A plan-less dispatch keeps
     the working directory — that is the tree it was asked to build, and the
-    ``NO_PLAN`` sentinel names no worktree.
+    ``NO_PLAN`` sentinel names no worktree. A falsy ``plan_id`` is read the same
+    way: a direct caller (a test, an ad-hoc invocation) may pass none, and a
+    lookup for ``None`` would fail and silently record no hash at all.
+
+    Two spellings of "plan-less" meet here deliberately rather than by accident:
+    the resolver maps the sentinel to the checkout root, while this function
+    returns the process's working directory, because the spec for a plan-less
+    build is "the tree it was dispatched from". The two agree whenever the
+    dispatch happens at the checkout root, which is the case every caller in
+    this tree produces; a plan-less dispatch from a subdirectory records the
+    subdirectory and the gate reports a root mismatch rather than silently
+    matching the checkout.
 
     ``None`` means the root could not be resolved. The caller then records no
     hash at all rather than a hash of a tree nobody named: a row the gate cannot
     match is the fail-closed answer, while a row hashed against this process's
-    working directory is precisely the defect this resolution removes.
+    working directory is precisely the defect this resolution removes. Such a row
+    is what the gate's ``build_tree_unrecorded`` route names, so the failure is
+    reported with its own cause and remedy instead of as an unexplained
+    ``worktree_mutated``.
     """
     if not plan_id or plan_id == NO_PLAN_SENTINEL:
         return os.getcwd()
@@ -1080,7 +1099,13 @@ def _ledger_tree_root(plan_id: str) -> str | None:
 
 
 def _tree_state(root: str | None) -> tuple[str | None, str | None]:
-    """Return ``(root, sha)`` for ``root``, or ``(None, None)`` when it is unknown."""
+    """Return ``(root, sha)`` for ``root``; ``(None, None)`` when no root is known.
+    ``root`` stays as given — it is the tree the row NAMES, whether or not the
+    tree's currency hash could be computed. An unresolvable ``HEAD`` therefore
+    yields ``(root, None)``: the root is a fact the writer established, and only
+    the hash is missing. A row carrying no hash can never match the gate, which
+    is the fail-closed direction and the reason nothing is guessed here.
+    """
     if root is None:
         return None, None
     return root, compute_worktree_sha(root)

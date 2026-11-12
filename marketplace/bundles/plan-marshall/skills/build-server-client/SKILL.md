@@ -79,7 +79,6 @@ unchanged, because the record the client already keeps is the one that knows. A
 job whose row cannot be read, or a row written before the fields existed, reports
 no tree fields at all: an absent tree is honest, a guessed one is not.
 
-
 ## The status-TOON contract (two hard properties + `killed`)
 
 A `wait` result carries `job_status` — the daemon's own status vocabulary. Two

@@ -68,6 +68,27 @@ _PINS = (
         retired=_RETIRED_CWD_HASH,
     ),
     _Pin(
+        label='executor template — its module docstring states the same schema',
+        path=PROJECT_ROOT
+        / 'marketplace'
+        / 'bundles'
+        / 'plan-marshall'
+        / 'skills'
+        / 'tools-script-executor'
+        / 'templates'
+        / 'execute-script.py.template',
+        marker='Runtime side-effects:',
+        snippet='worktree_sha_at_dispatch',
+        retired='worktree_sha (the working-tree currency hash), log_file',
+    ),
+    _Pin(
+        label='manage-tasks/SKILL.md — a build that recorded no tree is named',
+        path=_doc('manage-tasks', 'SKILL.md'),
+        marker='| `build_tree_unrecorded` | A `kind=build` row exists',
+        snippet='Establish why the plan-context root did not resolve',
+        retired='Re-run the build.',
+    ),
+    _Pin(
         label='manage-tasks/SKILL.md — the recorder and the gate hash one root',
         path=_doc('manage-tasks', 'SKILL.md'),
         marker="**The hash is computed against the plan's worktree root",
