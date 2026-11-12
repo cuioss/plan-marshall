@@ -940,9 +940,10 @@ def _read_holder(lock_path: Path) -> str:
 #: - ``held`` — the lock file exists and names a holder.
 #: - ``absent`` — no lock file at that path.
 #: - ``unreadable`` — the path could not be read as a holder: a read fault
-#:   (permission, a directory in its place, an unreadable parent, an I/O error), or
-#:   a file naming no holder. Existence is deliberately not required for this
-#:   answer — a parent nobody can traverse is not proof of absence.
+#:   (permission, a directory in its place, an unreadable parent, an I/O error),
+#:   bytes that are not UTF-8, or a file naming no holder. Existence is deliberately
+#:   not required for this answer — a parent nobody can traverse is not proof of
+#:   absence.
 #:   ⛔ NOT a synonym for ``absent``: a consumer that must PROVE it holds the lock
 #:   cannot read "a file nobody can read" as "no lock at all".
 HOLDER_HELD = 'held'
@@ -966,10 +967,10 @@ def read_lock_holder(lock_path: Path | None = None) -> dict[str, Any]:
     ``unreadable`` for the same reason: it proves nothing about who holds it.
 
     The read itself is the existence test: a missing file raises
-    ``FileNotFoundError`` and is ``absent``, while every other ``OSError`` — a
-    directory in the lock's place, a permission fault, an unreadable parent — is
-    ``unreadable``. That ordering is what makes the three states total rather than
-    guessed.
+    ``FileNotFoundError`` and is ``absent``, while a read fault — a directory in the
+    lock's place, a permission fault, an unreadable parent, a byte sequence that is
+    not UTF-8 — is ``unreadable``. That ordering is what makes the three states total
+    rather than guessed.
 
     Args:
         lock_path: The lock file to read. Resolved against the MAIN checkout when
@@ -986,7 +987,10 @@ def read_lock_holder(lock_path: Path | None = None) -> dict[str, Any]:
         holder = path.read_text(encoding='utf-8').strip()
     except FileNotFoundError:
         return verdict
-    except OSError as exc:
+    except (OSError, UnicodeError) as exc:
+        # UnicodeError is a ValueError, not an OSError: a lock file whose bytes are
+        # not UTF-8 is a holder nobody can read, and it must not escape as a crash
+        # from a query whose contract is three total answers.
         return {**verdict, 'state': HOLDER_UNREADABLE, 'error': f'lock file unreadable: {exc}'}
     if not holder:
         return {**verdict, 'state': HOLDER_UNREADABLE, 'error': 'lock file names no holder'}

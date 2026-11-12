@@ -302,15 +302,17 @@ class TestRetentionField:
 
         emitted = {entry['retention'] for entry in _queue_list()['entries']}
         # The vocabulary's owner is `_locks_core`, which declares the closed set;
-        # `merge_lock` re-exports only the members it uses.
+        # `merge_lock` re-exports only the members it uses. The expected answerable
+        # set is DERIVED from it, so a new value added there reddens this
+        # anti-vacuity check instead of sliding past it.
         core = sys.modules[merge_lock.waiter_retention.__module__]
 
         assert emitted <= core.RETENTION_STATES
         # Anti-vacuity: every ANSWERABLE member is reachable from staged state, so the
-        # subset assertion above is not passing over a one-value population. The fourth
-        # member (`unknown`) is pinned by the unanswerable-consult case below, which
+        # subset assertion above is not passing over a one-value population. The
+        # `unknown` member is pinned by the unanswerable-consult case below, which
         # needs a raising predicate rather than a staged queue.
-        assert emitted == {'plan_dir', 'git_marker', 'none'}
+        assert emitted == core.RETENTION_STATES - {core.RETENTION_UNKNOWN}
 
     def test_an_unanswerable_retention_consult_is_unknown_and_never_none(
         self, isolated_base: dict, monkeypatch: pytest.MonkeyPatch
@@ -330,6 +332,30 @@ class TestRetentionField:
         assert _queue_list()['entries'][0]['retention'] == 'unknown'
         # And the prune KEEPS it: an entry it could not judge is not dropped.
         assert [e['plan_id'] for e in merge_lock._prune_dead_waiting([{'plan_id': 'ghost', 'ts': 1.0}])] == ['ghost']
+
+    def test_a_path_probe_that_cannot_answer_is_not_absence(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The probe behind both liveness predicates must distinguish a MISSING path
+        # from one it could not read: `Path.exists()` answers False for every OSError,
+        # which would turn a permission fault into "dead" (ADR-009 forbids it).
+        core = sys.modules[merge_lock.waiter_retention.__module__]
+
+        assert core._path_present(tmp_path) is True
+        assert core._path_present(tmp_path / 'absent') is False
+
+        def _denied(_self: Path, *_args: object, **_kwargs: object) -> object:
+            raise PermissionError('parent directory not traversable')
+
+        original = Path.stat
+        monkeypatch.setattr(Path, 'stat', _denied)
+        try:
+            with pytest.raises(PermissionError):
+                core._path_present(tmp_path / 'denied' / 'child')
+        finally:
+            # Restored immediately: `Path.stat` is process-global, and the suite's own
+            # teardown probes the filesystem through it.
+            monkeypatch.setattr(Path, 'stat', original)
 
 
 class TestQueueListMutatesNothing:

@@ -179,7 +179,28 @@ def holder_is_dead(holder: str, project_root: str | Path | None = None) -> bool:
         base = Path(project_root) / PLAN_DIR_NAME / 'local'
     main_plan = base / 'plans' / holder
     worktree_plan = base / 'worktrees' / holder / PLAN_DIR_NAME / 'local' / 'plans' / holder
-    return not (main_plan.exists() or worktree_plan.exists())
+    return not (_path_present(main_plan) or _path_present(worktree_plan))
+
+
+def _path_present(path: Path) -> bool:
+    """Return True when ``path`` exists, letting an UNANSWERABLE probe raise.
+
+    ``Path.exists()`` answers ``False`` for every ``OSError`` — a permission fault
+    on a parent directory is indistinguishable from a missing path — so a probe that
+    could not be performed would read as absence, the inference ADR-009 forbids. A
+    genuinely missing path (``FileNotFoundError``, or a non-directory in the middle
+    of the path) IS absence and answers ``False``; every other ``OSError``
+    propagates, so the caller answers ``unknown`` rather than ``dead``.
+
+    This is the ONE probe the liveness predicates below use, so their "resolution
+    failures propagate loudly" contract is real on every supported interpreter
+    rather than dependent on ``exists()``'s current exception handling.
+    """
+    try:
+        path.stat()
+    except (FileNotFoundError, NotADirectoryError):
+        return False
+    return True
 
 
 def holder_has_live_worktree(holder: str) -> bool:
@@ -245,7 +266,7 @@ def holder_has_live_worktree(holder: str) -> bool:
     git_marker = worktree_dir / '.git'
     # Live plan dir moved into the worktree (executing / mid-finalize).
     live_plan_dir = worktree_dir / PLAN_DIR_NAME / 'local' / 'plans' / holder
-    return git_marker.exists() or live_plan_dir.exists()
+    return _path_present(git_marker) or _path_present(live_plan_dir)
 
 
 #: The closed vocabulary naming WHY a FIFO admission prune KEEPS a holder's queue

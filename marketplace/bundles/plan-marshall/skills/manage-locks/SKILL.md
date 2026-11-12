@@ -524,7 +524,8 @@ python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock check \
 A non-mutating holder read: `status: free` when no lock file exists,
 `status: held` + `holder_plan_id` when one does, and `status: unreadable` +
 `error` when the path cannot be read as a holder (a read fault, an unreadable
-parent, a directory in its place, or a file naming no holder). On the `held` branch it also
+parent, a directory in its place, bytes that are not UTF-8, or a file naming no
+holder). On the `held` branch it also
 surfaces a `staleness` field (`fresh` / `stale` / `unknown`, from
 `holder_staleness`) — the authoritative main-anchored verdict the manual-release
 recovery recipe consults instead of a cwd-scoped `manage-status list` /
