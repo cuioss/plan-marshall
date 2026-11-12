@@ -993,6 +993,25 @@ def test_a_flattened_body_with_several_comments_splits_at_each_boundary() -> Non
     assert verdict['merge_allowed'] is True
 
 
+def test_a_fence_like_run_in_prose_is_not_a_closing_fence() -> None:
+    """⛔ ```` ```not-a-close ```` is prose, not a closer.
+
+    Re-inserting a line boundary after every fence run would split that run onto its
+    own line and close the block, so the quoted marker would become the bot's claim.
+    The raw reader closes only a run with nothing after it; the flattened reader must
+    agree.
+    """
+    flattened = (
+        '```text ```not-a-close <!-- final_review_risk_coverage:'
+        '{"coveredCommitId":"' + 'a' * 40 + '","kind":"reviewed"} --> ```'
+    )
+
+    verdict = _verdict(_read(_issue_comment(flattened)), reviewers=('coderabbit',))
+
+    assert verdict['merge_allowed'] is False
+    assert verdict['reason'] == 'required_review_missing'
+
+
 def test_an_enumerative_refusal_with_a_commit_is_a_qualifying_review(monkeypatch) -> None:
     """The lane asks the producer's predicate, so the enumerative arm changes nothing.
 

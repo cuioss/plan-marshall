@@ -2678,24 +2678,25 @@ def _required_reviewers_without_a_review(comments: list[dict[str, Any]], require
 
     ``ci pr comments`` is a DISPLAY read: it flattens every body to one line. The
     marker parser requires its opener at the start of a line and its fence reader
-    requires a fence at the start of a line, so the flattened body is restored before
-    the predicate reads it. The restoration is a presentation fix only — the grammar
-    stays the parser's — and it restores the FENCE structure as well as the comment
-    boundaries, so a finished marker quoted inside a fenced example is not read as the
-    bot's own claim.
+    requires a fence at the start of a line, so the flattened body is first stripped of
+    any FENCED region and its HTML-comment boundaries are then restored. The stripping
+    reads fence state from the fence runs themselves, so a finished marker quoted inside
+    a fenced example is not read as the bot's own claim — and a fence-like run in prose
+    (`` ```not-a-close ``) is never mistaken for a closing fence.
     """
     # `github_re_review` owns the import-order-safe entry into `_github_pr` (it
     # imports `github_ops` first, which breaks that module's import cycle) and
-    # re-exports the one finished-review reader and the flattened-body restorer, so
-    # the lane never imports the cycle itself.
-    from github_re_review import is_finished_review, restore_flattened_line_structure
+    # re-exports the one finished-review reader and the flattened-body fence stripper,
+    # so the lane never imports the cycle itself.
+    from github_re_review import is_finished_review, strip_fenced_regions
 
     present: set[str] = set()
     for comment in comments:
         bot = _bot_of(comment)
         if not bot or bot not in required_reviewers:
             continue
-        restored = {**comment, 'body': restore_flattened_line_structure(str(comment.get('body') or ''))}
+        body = strip_fenced_regions(str(comment.get('body') or ''))
+        restored = {**comment, 'body': body.replace('<!--', '\n<!--')}
         if is_finished_review(restored, bot):
             present.add(bot)
     return sorted(set(required_reviewers) - present)

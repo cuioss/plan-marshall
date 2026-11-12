@@ -292,9 +292,9 @@ from _github_pr import (
 )
 
 # Explicit re-export (`as` the same name): the runbook lane reads the flattened-body
-# restorer through this module, the import-order-safe entry into ``_github_pr``. The
-# `as` form is what tells ruff this is a re-export rather than an unused import.
-from _github_pr import restore_flattened_line_structure as restore_flattened_line_structure
+# fence stripper through this module, the import-order-safe entry into ``_github_pr``.
+# The `as` form is what tells ruff this is a re-export rather than an unused import.
+from _github_pr import strip_fenced_regions as strip_fenced_regions
 from ci_base import (
     DEFAULT_CI_INTERVAL,
     DEFAULT_CI_TIMEOUT,

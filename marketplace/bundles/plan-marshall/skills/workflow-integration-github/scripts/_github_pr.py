@@ -666,26 +666,55 @@ def is_finished_review(comment: dict, bot_kind: str) -> bool:
 _FENCE_RUN = re.compile(r'`{3,}|~{3,}')
 
 
-def restore_flattened_line_structure(body: str) -> str:
-    """Restore the line boundaries a DISPLAY read flattened away.
+def strip_fenced_regions(body: str) -> str:
+    """Remove fenced code blocks from a body a DISPLAY read flattened.
 
-    ``github_ops.flatten_comment_body`` replaces every tab and newline with a space,
-    so the two rules the coverage parser needs — a marker opener at the START of a
-    line (:func:`_coverage_opener_position`) and a fence line at the start of a line
-    (:func:`markdown_fence.fence_marker`) — cannot see the original structure. A
-    marker quoted inside a fenced example would then read as the bot's own claim.
+    ``github_ops.flatten_comment_body`` replaces every newline with a space, so the
+    line-based fence reader cannot see the original lines. This reads fence state from
+    the fence RUNS themselves, conservatively:
 
-    Re-inserting a boundary before AND after every fence run, and before every
-    HTML-comment opener, restores exactly the structure those two rules read: a fence
-    run becomes a line of its own (a closing fence's flattened trailing text moves to
-    the next line, so it closes), and a marker gets its own line whether it is inside
-    that fence or outside it. No content is changed, and an inline fence-shaped run
-    in prose only opens a fence the parser then refuses to treat as a claim — the
-    fail-closed direction.
+    - a run that STARTED a line in the original — here, one at the start of the body or
+      preceded by whitespace — may OPEN a fence;
+    - a run that ENDED a line in the original — here, one followed by whitespace or the
+      end of the body — may CLOSE it, when it uses the same character and is at least as
+      long as the opener.
+
+    A run that is neither — the `` ```not-a-close `` in `` ```text ```not-a-close … ``` ``
+    — is prose, exactly as the raw reader treats it. Re-inserting line boundaries
+    around every run instead would split that run onto a line of its own and make it a
+    closer, turning a quoted marker into a claim.
+
+    Text between an opener and its closer is removed, and an UNTERMINATED fence removes
+    everything to the end. A marker inside a quoted example therefore cannot be read as
+    the bot's own claim, and the failure direction is to withhold a review, never to
+    credit a quote.
     """
-    text = (body or '').replace('\r', ' ').replace('\n', ' ')
-    text = _FENCE_RUN.sub(lambda match: '\n' + match.group(0) + '\n', text)
-    return text.replace('<!--', '\n<!--')
+    text = body or ''
+    removals: list[tuple[int, int]] = []
+    opened: tuple[str, int, int] | None = None  # (character, length, start)
+    for match in _FENCE_RUN.finditer(text):
+        run = match.group(0)
+        character, length = run[0], len(run)
+        preceded_by_space = match.start() == 0 or text[match.start() - 1].isspace()
+        followed_by_space = match.end() == len(text) or text[match.end()].isspace()
+        if opened is None:
+            if preceded_by_space:
+                opened = (character, length, match.start())
+            continue
+        if followed_by_space and character == opened[0] and length >= opened[1]:
+            removals.append((opened[2], match.end()))
+            opened = None
+    if opened is not None:
+        removals.append((opened[2], len(text)))
+    if not removals:
+        return text
+    pieces: list[str] = []
+    cursor = 0
+    for start, end in removals:
+        pieces.append(text[cursor:start])
+        cursor = end
+    pieces.append(text[cursor:])
+    return ' '.join(pieces)
 
 
 def review_coverage_verdict(body: str, head_sha: str) -> bool | None:

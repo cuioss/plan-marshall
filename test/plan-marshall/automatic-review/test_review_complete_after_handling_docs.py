@@ -282,7 +282,7 @@ _DONE_ARM_PINS: dict[str, tuple] = {
     'branch-cleanup-rereview.md states the current behaviour': (
         _doc('phase-6-finalize', 'standards', 'branch-cleanup-rereview.md'),
         'A bot without the flag',
-        'A bot without the flag is re-reviewed whenever HEAD advances',
+        'A bot without the flag is re-reviewed when HEAD advances',
         "A bot without the flag keeps today's behaviour",
     ),
     'list_bots_for_trigger docstring states the current behaviour': (
