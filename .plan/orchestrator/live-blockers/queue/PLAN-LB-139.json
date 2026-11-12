@@ -2,10 +2,10 @@
   "id": "PLAN-LB-139",
   "slug": "review-contract-scanners",
   "workstream": "WS-05",
-  "status": "staged",
+  "status": "shipped",
   "lane": "runbook",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "plan_marshall_plan_id": "rb-lb-139-review-contract-scanners",
+  "pr": "1962",
+  "landing": "landings/PLAN-LB-139.md",
   "seq": 137
 }
