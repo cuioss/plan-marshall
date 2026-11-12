@@ -225,7 +225,13 @@ def _write_rules_bridge(project_dir: Path) -> _BridgeWrite:
         else:
             replaced = False
         bridge.parent.mkdir(parents=True, exist_ok=True)
-        bridge.write_bytes(desired)
+        # Stage the bytes beside the bridge and REPLACE the path, so a partial
+        # write can never leave a damaged bridge and a bridge path that is a
+        # symlink is replaced by the file itself rather than written through:
+        # whatever the link pointed at is left untouched.
+        staging = bridge.with_name(f'.{bridge.name}.tmp')
+        staging.write_bytes(desired)
+        staging.replace(bridge)
         return _BridgeWrite(written=True, replaced=replaced)
     except OSError:
         return _BridgeWrite(written=False, replaced=False)

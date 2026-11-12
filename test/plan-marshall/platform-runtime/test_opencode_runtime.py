@@ -2250,6 +2250,31 @@ def test_a_bridge_is_compared_as_bytes_not_replacement_text(
     assert bridge.read_bytes() == desired
 
 
+def test_a_bridge_path_that_is_a_symlink_is_replaced_not_written_through(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, machine_home: pathlib.Path
+) -> None:
+    """Setup replaces a symlinked bridge path and leaves the link's target alone."""
+    from opencode_runtime import _bridge_body, _bridge_rules_path, standing_rules_drift_status
+
+    outside = tmp_path / 'outside-rules-file.bin'
+    outside.write_bytes(b'\xff\xfe external content \xff')
+    bridge = _bridge_rules_path(tmp_path)
+    bridge.parent.mkdir(parents=True)
+    bridge.symlink_to(outside)
+
+    result = _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
+
+    assert result['bridge_written'] is True
+    assert outside.read_bytes() == b'\xff\xfe external content \xff', 'the link target is never written through'
+    assert not bridge.is_symlink(), 'the bridge path becomes the bridge file'
+    assert bridge.read_bytes() == _bridge_body(None).encode('utf-8')
+    assert standing_rules_drift_status(str(tmp_path)) == {
+        'drift': False,
+        'needs_bridge': False,
+        'reason': 'baseline_missing',
+    }
+
+
 def test_setup_reports_drift_for_a_hand_edited_bridge(
     runtime: OpenCodeRuntime, tmp_path: pathlib.Path, machine_home: pathlib.Path
 ) -> None:
