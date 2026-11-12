@@ -1421,6 +1421,8 @@ status: no-op
 operation: subagent dispatch
 reason: "Agent team-coordinator-agent requires unmapped tools: SendMessage"
 alternative: Remove unsupported tools from agent frontmatter or inline the agent logic
+dispatch_mode: inline
+dispatch_boundary_rows: 1
 ```
 
 **Error (prompt file not found)**:

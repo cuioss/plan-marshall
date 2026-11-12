@@ -1025,6 +1025,7 @@ class AntigravityRuntime(Runtime):
                 'subagent dispatch',
                 f'Agent {agent!r} requires unmapped tools: {", ".join(unmapped)}',
                 'Remove unsupported tools from agent frontmatter or inline the agent logic',
+                extra={'dispatch_mode': 'inline', 'dispatch_boundary_rows': 1},
             )
 
         prompt_body = f'Run {agent}'

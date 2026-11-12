@@ -1372,7 +1372,8 @@ def test_the_dispatch_branch_calls_the_seam_with_the_resolved_target_and_the_spa
     branch = _dispatch_branch()
 
     assert 'platform_runtime subagent dispatch' in branch, 'the branch carries no seam call'
-    assert '--agent plan-marshall:{target}' in branch, 'the seam call drops the resolved dispatch target'
+    assert '--agent {target}' in branch, 'the seam call drops the resolved dispatch target'
+    assert 'plan-marshall:{target}' not in branch, 'a bundle-qualified agent id resolves to no agent file'
     assert 'spawning_tool_available' in branch, 'the seam call drops the spawning-tool signal'
 
 

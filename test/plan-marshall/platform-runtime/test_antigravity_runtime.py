@@ -501,6 +501,8 @@ def test_subagent_dispatch_unmapped_agent_tool_takes_inline_branch(
     assert result['operation'] == 'subagent dispatch'
     assert 'SendMessage' in result['reason']
     assert 'inline' in result['alternative']
+    assert result['dispatch_mode'] == 'inline'
+    assert result['dispatch_boundary_rows'] == 1
 
 
 def test_subagent_dispatch_mapped_agent_tools_succeed(runtime: AntigravityRuntime, tmp_path: Path, monkeypatch):
