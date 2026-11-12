@@ -124,6 +124,18 @@ def _pins_for(document: Path) -> tuple[tuple[Path, str, str, str | None], ...]:
     return tuple(pin for pin in PINS if pin[0] == document)
 
 
+def _plant_in_section(text: str, heading: str, phrase: str, replacement: str) -> str:
+    """Replace ``phrase`` INSIDE ``heading``'s section, leaving other sections alone.
+
+    A phrase may be stated in more than one section; a document-wide replace would
+    plant into whichever came first and leave the pinned section untouched, so the
+    control would pass while proving nothing.
+    """
+    section = _section_text(text, heading)
+    assert phrase in section, f'the pin {phrase!r} is not in {heading!r}, so nothing was planted'
+    return text.replace(section, section.replace(phrase, replacement, 1), 1)
+
+
 def _missing_pins(text: str, pins: tuple[tuple[Path, str, str, str | None], ...]) -> list[str]:
     """Return the pins ``text`` does not carry IN THE SECTION EACH NAMES."""
     missing: list[str] = []
@@ -164,8 +176,7 @@ def test_planting_the_retired_wording_reddens_that_document_s_pins(document: Pat
         assert retired not in text, (
             f'the retired wording is still present in {document}, so planting it would prove nothing: {retired!r}'
         )
-        planted = text.replace(phrase, retired, 1)
-        assert planted != text, f'the pin {phrase!r} was not found in {document}, so nothing was planted'
+        planted = _plant_in_section(text, heading, phrase, retired)
         assert phrase not in _section_text(planted, heading), (
             f'the plant did not remove {phrase!r} from {heading!r}, so the control proves nothing'
         )
@@ -179,9 +190,8 @@ def test_planting_an_absence_reddens_a_wholly_new_statement(document: Path) -> N
     pins = _pins_for(document)
     text = document.read_text(encoding='utf-8')
 
-    for _path, _heading, phrase, _retired in pins:
-        planted = text.replace(phrase, '', 1)
-        assert planted != text
+    for _path, heading, phrase, _retired in pins:
+        planted = _plant_in_section(text, heading, phrase, '')
         with pytest.raises(AssertionError):
             _assert_document_states(planted, pins)
 
