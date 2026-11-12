@@ -53,7 +53,7 @@ Verdict file schemas (JSON — the rows nest criteria and evidence lists)::
                                        "fix_kind": "implementation|correction"}],
                          "residuals": [{"description": str, "consequential": bool,
                                         "fix_kind": ...}],
-                         "superseded_by": str,
+                         "superseded_by": "D<n> | Deliverable <n> — the existing CLOSING successor: not this deliverable, not a cycle, graded met/met_with_residuals",
                          "fix_kind": ...}],
        "unrequested_changes": [{"path": str, "consequential": bool,
                                 "reason": str, "fix_kind": ...}],

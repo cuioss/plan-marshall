@@ -44,9 +44,9 @@ Author/verifier choreography per step-owned body:
 
 Stale envelope references are step-owned-body defects, not envelope defects: when a template still names a removed envelope field or omits a current `requires_prompt_fields` entry, the fix lands in that pattern's template row above, never as a generic-envelope override.
 
-## Per-Task Subagent Seam Routing (execute flow)
+## Subagent Seam Routing (execute flow)
 
-Every phase-5 task routes through the harness-native subagent seam before any inline work. Resolve `platform_runtime subagent dispatch --agent execution-context --context {"plan_id": "{plan_id}"}` for the active target and branch on the result: on `status: success` dispatch through the returned `invocation.tool` with the returned parameters (Claude `Task`, OpenCode `subagent` where available, Antigravity `invoke_subagent`); on `status: no-op` take the explicit logged inline branch inside the same envelope and log the returned `reason` at INFO, including the inline-branch logging obligation — no silent fallback. The decision is per task and is logged per task; usage propagates as `unknown` on every path where no dispatch happened.
+This envelope resolves no sub-agent seam of its own: the main-context orchestrator resolves it per envelope before dispatch (see `plan-marshall/workflow/execution.md` § "Orchestrator per-harness dispatch branch"), and writes the envelope's one dispatch-boundary row when it returns. Usage propagates as `unknown` on every path where no dispatch happened.
 
 ## Verification-feedback loop-back returns (`loop_back_target`)
 

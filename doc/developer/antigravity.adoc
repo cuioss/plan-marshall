@@ -50,7 +50,7 @@ target/antigravity/
 └── dist-manifest.json
 ----
 
-The sub-directories under a skill in the tree above are examples, not a fixed set. The emitter writes the transformed `SKILL.md` and copies the rest of the source skill directory byte-identical, whatever its sub-directories are named, so a new one ships the moment it exists. A file is left out only when it is one of three things:
+The sub-directories under a skill in the tree above are examples, not a fixed set. The emitter writes the transformed `SKILL.md` and ships the rest of the source skill directory, whatever its sub-directories are named, so a new one ships the moment it exists: a Markdown file goes through the sub-file transform (the dispatch-block rewrite), and every other file is copied byte-identical. A file is left out only when it is one of three things:
 
 * under a directory named in `EXCLUDED_DIR_NAMES` — the bytecode and tool-cache directories;
 * a dot-file, or under a dot-directory;
@@ -151,6 +151,12 @@ Skill and agent markdown bodies undergo deterministic transformation before emis
    `Call the \`view_file\` tool with \`{ AbsolutePath: "{path}" }\` before continuing.`
 3. **Slash Commands**:
    `/{name}` invocations are normalized to the registered bundle-prefixed command names.
+4. **Sub-agent Dispatch Blocks**:
+   a full-line `Task: <agent>` header (bundle-qualified or bare), or a bare `Task:` whose agent its own `subagent_type:` line names, is rewritten to:
+   `Call the \`invoke_subagent\` tool with \`subagent_type: "{target}"\` and this prompt body:`
+   with the indented `prompt:` block below it carried through — except a dispatch header nested inside that block, which the same pass rewrites. Antigravity's agent ids are unqualified, so the bundle namespace is dropped.
+
+Transform 4 is the **sub-file transform**: it also runs over the Markdown files a skill ships beside `SKILL.md`, which is why a generated `workflow/` or `standards/` document carries no bare dispatch line. Those sub-files keep their other directives verbatim — their `Skill:` and `Read:` lines are frequently quoted examples, so transforms 1 and 2 run on `SKILL.md` (and on agent and command bodies) only.
 
 == Cloud & Sandboxed Environment Findings
 
@@ -353,8 +359,9 @@ The test suite provides complete coverage across:
   ** `test_target.py`: Target registration, capability inspection, and layout emission.
   ** `test_config_files.py`: JSON schema validation for `mapping.json` and `frontmatter-rules.json`.
   ** `test_frontmatter.py`: Tool transformation, model resolution, and fail-closed error handling (`UnmappedToolError`, `UnmappedFrontmatterError`).
-  ** `test_body_transforms.py`: Directive rewriting and slash command expansion.
-  ** `test_emitter.py`: Bundle traversal, verbatim copying of the whole skill directory under the emission rule (see _Output Layout_), stale artifact pruning, target-scoped bundle emission, `bundle-components.json` attribution emission, and installer lifecycle validation (selective bundle flags, aliases, dependency closure, manifest persistence, `plugin.json` tailoring, atomic update backup/rollback, workspace rule emission, and selective uninstallation).
+  ** `test_body_transforms.py`: Directive rewriting, slash command expansion, and the dispatch-block rewrite (its target-bearing and bare-header forms, the no-block left-alone case, and idempotency).
+  ** `test_emitter.py`: Bundle traversal, whole-skill-directory emission under the emission rule (see _Output Layout_), stale artifact pruning, target-scoped bundle emission, `bundle-components.json` attribution emission, and installer lifecycle validation (selective bundle flags, aliases, dependency closure, manifest persistence, `plugin.json` tailoring, atomic update backup/rollback, workspace rule emission, and selective uninstallation).
+  ** `test_emitter_skill_dir.py`: Which skill files are emitted, the sub-file transform scope (dispatch applier only), and the real-bundle generation that leaves no bare dispatch line.
   ** `test_variant_emitter.py`: Role-eligible subagent variant generation and ADR-021 model pin application.
   ** `test_level_table_lockstep.py`: Table object identity assertion against Claude target and model alias validity.
 * `test/sync-harnesses/`:

@@ -457,6 +457,41 @@ def test_subagent_dispatch_attestation_flag_stripped_from_prompt(runtime: Antigr
     assert 'spawning_tool_available' not in result['invocation']['prompt']
 
 
+def test_subagent_dispatch_explicit_inline_dispatch_mode_writes_one_boundary_row(runtime: AntigravityRuntime):
+    """An explicit ``dispatch_mode: inline`` reaches the inline branch with one boundary row.
+
+    The spawning-tool flag is UNSET here — the tool is available, and the caller
+    still asks for the inline branch, which is the orchestrator's explicit
+    per-harness choice rather than a fallback. The payload says how many
+    dispatch-boundary rows that envelope owes: exactly one.
+    """
+    result = _parse(
+        runtime.subagent_dispatch(
+            'execution-context-level-3',
+            None,
+            {'plan_id': 'test-plan', 'dispatch_mode': 'inline'},
+        )
+    )
+    assert result['status'] == 'no-op'
+    assert result['dispatch_mode'] == 'inline'
+    assert result['dispatch_boundary_rows'] == 1
+    assert 'inline' in result['reason']
+
+
+def test_subagent_dispatch_rejects_an_unknown_dispatch_mode(runtime: AntigravityRuntime):
+    """An unrecognised dispatch mode fails closed instead of dispatching silently."""
+    result = _parse(runtime.subagent_dispatch('execution-context-level-3', None, {'dispatch_mode': 'batch'}))
+    assert result['status'] == 'error'
+    assert result['error'] == 'invalid_argument'
+
+
+def test_subagent_dispatch_rejects_a_non_boolean_spawning_signal(runtime: AntigravityRuntime):
+    """A string ``"false"`` is not the boolean the seam reads, so it fails closed."""
+    result = _parse(runtime.subagent_dispatch('execution-context-level-3', None, {'spawning_tool_available': 'false'}))
+    assert result['status'] == 'error'
+    assert result['error'] == 'invalid_argument'
+
+
 def test_subagent_dispatch_unmapped_agent_tool_takes_inline_branch(
     runtime: AntigravityRuntime, tmp_path: Path, monkeypatch
 ):
@@ -473,6 +508,8 @@ def test_subagent_dispatch_unmapped_agent_tool_takes_inline_branch(
     assert result['operation'] == 'subagent dispatch'
     assert 'SendMessage' in result['reason']
     assert 'inline' in result['alternative']
+    assert result['dispatch_mode'] == 'inline'
+    assert result['dispatch_boundary_rows'] == 1
 
 
 def test_subagent_dispatch_mapped_agent_tools_succeed(runtime: AntigravityRuntime, tmp_path: Path, monkeypatch):

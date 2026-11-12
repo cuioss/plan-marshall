@@ -276,7 +276,7 @@ For each deliverable in the `deliverables` rows of `{attribution_toon}`, write o
 - Grade the deliverable `met`, `met_with_residuals`, `not_met` or `superseded` by [`review-rubric.md`](../standards/review-rubric.md) § 2.
 - Write one criterion entry per success criterion, in the outline's order. A criterion is `met` only with evidence in a form [`review-rubric.md`](../standards/review-rubric.md) § 4 lists. The plan's own report that it met a criterion is the thing being checked, so it is never the evidence.
 - On `met_with_residuals`, name every residual and say whether it is part of what the deliverable was asked to deliver (`consequential`).
-- On `superseded`, `superseded_by` must open with the deliverable that supersedes this one — `D3`, or `deliverable 3` — because the value is what closes the criteria; a value opening with no deliverable of the outline is a validation error, and a reference buried inside prose is not a citation. State the operator decision or the refutation after the reference when a reader needs it.
+- On `superseded`, `superseded_by` must open with the CLOSING deliverable that takes the work over — `D3`, `D 3`, `Deliverable 3`, `Deliverable #3`, `Deliverable D3`, or one of those wrapped in a backtick, bold/italic markers or a parenthesis — because the value is what closes the criteria. The cited deliverable must exist in the outline, must not be this deliverable itself, must not form a supersede cycle, and must be graded `met` or `met_with_residuals`; a value that fails any of these is a validation error that names which one, and a reference buried inside prose is not a citation. A deliverable retired by operator decision with no successor is not superseded — close it through `criteria-authorize`. State the operator decision or the refutation after the reference when a reader needs it.
 - Give every blocking item a `fix_kind` — `implementation` when the fix needs work the change does not contain yet, `correction` when it is an amendment to the diff in hand ([`review-rubric.md`](../standards/review-rubric.md) § 6).
 
 **On a delta round**, grade only the deliverables in scope and copy every other deliverable's row verbatim from the previous verdict in `{verdict_file}`. A row is carried forward only because no file it declares or is attributed changed since the round that wrote it.
@@ -335,7 +335,7 @@ The verdict file is the schema `review_support validate --kind functional` check
       "residuals": [
         {"description": "what is missing", "consequential": true, "fix_kind": "implementation | correction"}
       ],
-      "superseded_by": "D2 — the deliverable that supersedes this one",
+      "superseded_by": "D2 | Deliverable 2 — the existing CLOSING successor: not this deliverable, not a cycle, graded met/met_with_residuals",
       "fix_kind": "implementation | correction"
     }
   ],
@@ -349,7 +349,7 @@ The verdict file is the schema `review_support validate --kind functional` check
 }
 ```
 
-`deliverables` carries exactly one row per outline deliverable. `residuals` belongs on a `met_with_residuals` row and `superseded_by` on a `superseded` row. `fix_kind` is required on every item that grades `blocking`; a `not_met` deliverable and an `unevidenced` criterion default to `implementation` when it is omitted.
+`deliverables` carries exactly one row per outline deliverable. `residuals` belongs on a `met_with_residuals` row and `superseded_by` on a `superseded` row, where it names an existing closing successor (not the row's own deliverable, not a cycle, graded `met` or `met_with_residuals`). `fix_kind` is required on every item that grades `blocking`; a `not_met` deliverable and an `unevidenced` criterion default to `implementation` when it is omitted.
 
 A criterion row answers its frozen criterion by `criterion_id` first, then by exact normalised text. Position is never a match. When the row's `criterion` text is a paraphrase rather than the frozen wording, carry the criterion's id (`C1`; the deliverable-qualified `D1.C1` is also accepted and is checked against the row's own deliverable). A paraphrased row without the id leaves the criterion ungraded and the validator reports the row as `unmatched_criterion` — unless the row's text is a criterion the current outline carries, which is the author grading the outline as it now reads (an operator-authorized rewrite lands there). A verdict sealed before `criterion_id` existed whose row paraphrases a frozen criterion is therefore reported unmatched and cannot close: re-run the round and include the id.
 
