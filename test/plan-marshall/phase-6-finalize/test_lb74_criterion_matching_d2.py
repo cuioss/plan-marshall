@@ -51,6 +51,27 @@ def _plan(plan_context: Any) -> Path:
     return plan_dir
 
 
+def _outline_with_successor(criteria: list[str]) -> str:
+    """Two deliverables, so a ``superseded`` row has a real closing successor."""
+    body = '\n'.join(f'- {text}' for text in criteria)
+    return (
+        '# Solution: criterion matching\n\n## Deliverables\n\n### 1. Deliver the parser\n\n'
+        '**Affected files:**\n- `src/parser.py` (write-new)\n\n'
+        f'**Success Criteria:**\n{body}\n\n'
+        '### 2. Carry the parser forward\n\n**Affected files:**\n- `src/successor.py` (write-new)\n\n'
+        '**Success Criteria:**\n- successor delivers the parser\n'
+    )
+
+
+def _plan_with_successor(plan_context: Any) -> Path:
+    plan_dir = Path(plan_context.plan_dir_for(PLAN_ID))
+    status = {'title': 'fixture', 'phases': [], 'current_phase': '6-finalize', 'metadata': {'use_worktree': False}}
+    (plan_dir / 'status.json').write_text(json.dumps(status), encoding='utf-8')
+    (plan_dir / 'solution_outline.md').write_text(_outline_with_successor(FROZEN), encoding='utf-8')
+    assert _snap.write_snapshot(PLAN_ID)['status'] == 'success'
+    return plan_dir
+
+
 def _document(rows: list[dict[str, Any]]) -> dict[str, Any]:
     return {
         'deliverables': [{'number': 1, 'verdict': 'met', 'criteria': rows}],
@@ -171,7 +192,8 @@ def test_an_authorized_criterion_rewrite_is_not_reported_unmatched(plan_context,
 
 
 def test_a_superseded_deliverables_rows_are_not_reported_unmatched(plan_context, tmp_path) -> None:
-    plan_dir = _plan(plan_context)
+    """A deliverable superseded by a CLOSING successor is not graded row by row."""
+    plan_dir = _plan_with_successor(plan_context)
     _seal_into_plan(
         plan_dir,
         tmp_path,
@@ -180,9 +202,20 @@ def test_a_superseded_deliverables_rows_are_not_reported_unmatched(plan_context,
                 {
                     'number': 1,
                     'verdict': 'superseded',
-                    'superseded_by': 'D1',
+                    'superseded_by': 'D2',
                     'criteria': [{'criterion': 'an unrelated row', 'status': 'not_met', 'evidence': []}],
-                }
+                },
+                {
+                    'number': 2,
+                    'verdict': 'met',
+                    'criteria': [
+                        {
+                            'criterion': 'successor delivers the parser',
+                            'status': 'met',
+                            'evidence': ['src/successor.py:1'],
+                        }
+                    ],
+                },
             ],
             'unrequested_changes': [],
             'self_reports': [],
@@ -195,6 +228,7 @@ def test_a_superseded_deliverables_rows_are_not_reported_unmatched(plan_context,
     )
 
     assert [item for item in payload['findings'] if item['kind'] == 'unmatched_criterion'] == []
+    assert payload['valid'] is True, payload
 
 
 def test_author_verdict_refuses_a_qualified_id_for_another_deliverable(plan_context, tmp_path) -> None:

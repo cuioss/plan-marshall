@@ -39,6 +39,15 @@ def _outline(criteria: list[str]) -> str:
     )
 
 
+def _outline_with_successor(criteria: list[str]) -> str:
+    """Two deliverables, so a ``superseded`` row has a real closing successor."""
+    return (
+        _outline(criteria)
+        + '\n### 2. Carry the change forward\n\n**Affected files:**\n- `src/successor.py` (write-new)\n\n'
+        + '**Success Criteria:**\n- successor delivers the change\n'
+    )
+
+
 def _plan(
     plan_context: Any,
     criteria: list[str],
@@ -382,12 +391,28 @@ def test_operator_authorized_deleted_criterion_is_closed(plan_context, tmp_path)
 
 
 def test_superseded_deliverable_criteria_do_not_block(plan_context, tmp_path) -> None:
-    plan_dir = _plan(plan_context, ['a', 'b'], freeze_from=['a', 'b'])
+    """A deliverable superseded by a CLOSING successor does not block finalize."""
+    plan_dir = _plan(plan_context, ['a', 'b'])
+    (plan_dir / 'solution_outline.md').write_text(_outline_with_successor(['a', 'b']), encoding='utf-8')
+    assert _snap.write_snapshot(PLAN_ID)['status'] == 'success'
     _sealed_live(
         plan_dir,
         tmp_path,
         {
-            'deliverables': [{'number': 1, 'verdict': 'superseded', 'superseded_by': 'D1'}],
+            'deliverables': [
+                {'number': 1, 'verdict': 'superseded', 'superseded_by': 'D2'},
+                {
+                    'number': 2,
+                    'verdict': 'met',
+                    'criteria': [
+                        {
+                            'criterion': 'successor delivers the change',
+                            'status': 'met',
+                            'evidence': ['src/successor.py:1'],
+                        }
+                    ],
+                },
+            ],
             'unrequested_changes': [],
             'self_reports': [],
             'files_read': [],

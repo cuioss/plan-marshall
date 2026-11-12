@@ -2169,8 +2169,10 @@ def cmd_fetch_findings(args):
     # which cannot fix a failed head read), so it is carried in its own disjoint set.
     undecidable_participation: dict[str, str] = {}
     # Currency records staged for the ``participation_requires_update`` comments credited
-    # this fetch — written to the ledger after the loop so the NEXT fetch measures a fresh
-    # edit against THIS credit rather than against ``created_at``.
+    # this fetch — written to the ledger after the loop. The NEXT fetch compares the
+    # recorded SHA with the merge candidate; ``updated_at`` is stored as provenance and is
+    # never a credit test (an edit credits nothing, because it says the bot touched its
+    # comment, not which commit the comment reviews).
     currency_updates: dict[tuple[str, str], tuple[str, str]] = {}
     for _comment in raw_comments:
         _bot_kind = bot_kind_for_author(_comment.get('author') or 'unknown')

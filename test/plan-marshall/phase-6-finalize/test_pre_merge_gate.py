@@ -11,16 +11,22 @@ both routes.
 """
 
 import re
+import shlex
 import subprocess
 import sys
 from argparse import Namespace
 
+import _findings_core as fc
 import pytest
 from _dispatch_roster import parse_roster_rows
 
-from conftest import MARKETPLACE_ROOT, load_script_module
+from conftest import MARKETPLACE_ROOT, load_script_module, parse_ns
 
 gate = load_script_module('plan-marshall', 'phase-6-finalize', 'pre_merge_gate.py', 'pre_merge_gate')
+# The REAL participation predicate, so the D2 cases drive it rather than an assembled verdict.
+_rc = load_script_module(
+    'plan-marshall', 'automatic-review', 'review_completeness.py', 'pre_merge_gate_review_completeness', register=False
+)
 
 # Both route-parametrized refusal tests bind gate.ROUTES; an empty route set would
 # turn every case into a silent skip, so pin it non-empty at collection time.
@@ -267,6 +273,17 @@ def test_clean_store_dispatches_safe_merge_once_with_its_arguments():
         'participation_gate': 'complete',
         'dispatched': True,
     }
+
+
+def test_a_clean_merge_result_carries_the_foreign_findings_disclosure():
+    """Earlier-PR findings are disclosed on the CLEAN record too, not only on a refusal."""
+    runner = _Runner({'status': 'success', 'merged': True})
+    participation = dict(_PARTICIPATION_COMPLETE, foreign_stored_findings=2)
+
+    result = _merge(_CLEAN_VERDICT, runner, participation=participation)
+
+    assert result['participation_gate'] == 'complete'
+    assert result['foreign_stored_findings'] == 2
 
 
 def test_clean_store_dispatches_merge_queue_once_with_the_pr_number_alone():
@@ -762,6 +779,53 @@ def test_the_chain_refuses_a_store_whose_rows_cannot_be_placed(monkeypatch):
     assert verdict['roster_read'] is True
 
 
+def test_the_chain_does_not_refuse_a_settled_legacy_row(plan_context, monkeypatch):
+    """Driven through the REAL predicate: a resolved legacy row cannot refuse the merge.
+
+    Two pull requests are in the store and the unplaced row is already dispositioned,
+    so the predicate reports no unscoped id and the chain answers a participation
+    verdict rather than ``participation_scope_ambiguous``.
+    """
+    plan_context.plan_dir_for(_PLAN_ID)
+    for bot, pr_number in (('coderabbit', '101'), ('sourcery', None)):
+        detail = f'kind: inline\nauthor: {bot}\nthread_id: t\ncomment_id: c\n'
+        if pr_number is not None:
+            detail = f'pr_number: {pr_number}\n{detail}'
+        added = fc.add_finding(
+            _PLAN_ID, 'pr-comment', title=f'{bot} comment', detail=detail, bot_kind=bot, kind='inline'
+        )
+        assert added['status'] == 'success', added
+        if pr_number is None:
+            resolved = fc.resolve_finding(_PLAN_ID, added['hash_id'], 'fixed', 'addressed')
+            assert resolved['status'] == 'success', resolved
+
+    responses = {gate._MANIFEST_NOTATION: _ROSTER_PAYLOAD, _PRODUCER_NOTATION: _FETCH_PAYLOAD}
+
+    def fake_run_verb(notation, argv, **_kwargs):
+        if notation == gate._COMPLETENESS_NOTATION:
+            # Read the flags the gate FORWARDS, so a dropped/wrong --pr-number fails here.
+            assert '--triage-ran' in argv, argv
+            pr_number = int(argv[argv.index('--pr-number') + 1])
+            return _rc.check_completeness(
+                _PLAN_ID,
+                ['coderabbit'],
+                optional_bots=['sourcery'],
+                participated_bots={'coderabbit': 'review_body'},
+                stale_participation_bots=['sourcery'],
+                pr_number=pr_number,
+                triage_ran=True,
+            )
+        return dict(responses[notation])
+
+    monkeypatch.setattr(gate, '_run_verb', fake_run_verb)
+    monkeypatch.setattr(gate, '_provider_pr_notation', lambda _project_dir=None: _PRODUCER_NOTATION)
+
+    verdict = gate._check_participation(_PLAN_ID, 42, _PROJECT_DIR)
+
+    assert verdict.get('error') != 'participation_scope_ambiguous', verdict
+    assert verdict.get('status') == 'success', verdict
+
+
 def test_the_scope_refusal_points_the_operator_at_the_store(monkeypatch):
     """The scope cause gets its own remedy: the gate was readable, the STORE was not placeable.
 
@@ -782,8 +846,81 @@ def test_the_scope_refusal_points_the_operator_at_the_store(monkeypatch):
     payload = gate._participation_refusal(_PLAN_ID, None, verdict)
 
     assert payload['reason'] == 'participation_scope_ambiguous'
-    assert 'Write the PR stamp into those rows' in payload['message']
+    assert 'stamp-pr' in payload['message']
+    assert 'Resolving the row also settles it' in payload['message']
+    assert 'cannot clear this' not in payload['message']
     assert 'must be made readable' not in payload['message']
+
+
+def _stamp_pr_argv(message: str) -> list[str]:
+    """The ``stamp-pr`` command a refusal names, ready for the real parser.
+
+    Extracts the backticked command, drops the executor prefix, and substitutes the
+    remedy's placeholders — so the test proves the SYNTAX the refusal advertises is
+    one the live parser accepts, not that it accepts a hand-built equivalent.
+    """
+    match = re.search(r'`([^`]*\bstamp-pr\b[^`]*)`', message)
+    assert match is not None, message
+    tokens = shlex.split(match.group(1))
+    argv = tokens[tokens.index('stamp-pr') :]
+    substitutions = {'{plan_id}': _PLAN_ID, '{hash_id}': 'deadbeef', '{N}': '42'}
+    return [substitutions.get(token, token) for token in argv]
+
+
+def test_the_scope_remedy_names_a_command_the_verb_parser_accepts():
+    """A remedy nobody can carry out is not a remedy: parse the command it advertises."""
+    verdict = {
+        'code': 'participation_scope_ambiguous',
+        'detail': 'one stored finding could not be placed',
+        'authorizable': False,
+        'roster_read': True,
+        'required_bots': ['coderabbit'],
+        'unproven_bots': [],
+        'bot_states': [],
+    }
+
+    payload = gate._participation_refusal(_PLAN_ID, None, verdict)
+    namespace = parse_ns('plan-marshall', 'manage-findings', 'manage-findings.py', *_stamp_pr_argv(payload['message']))
+
+    assert namespace.command == 'stamp-pr'
+    assert namespace.plan_id == _PLAN_ID
+    assert namespace.hash_id == 'deadbeef'
+    assert namespace.pr_number == 42
+
+
+def test_the_participation_verdict_discloses_earlier_pr_findings(monkeypatch):
+    """Earlier-PR findings are a disclosure on the verdict, never a silent drop."""
+    predicate = dict(
+        _PREDICATE_PAYLOAD,
+        store_scope='pr',
+        foreign_stored_findings=2,
+        unscoped_stored_findings=0,
+        unscoped_stored_finding_ids=[],
+    )
+
+    verdict, _calls = _participation_chain(
+        monkeypatch, _full_chain_responses(**{gate._COMPLETENESS_NOTATION: predicate})
+    )
+
+    assert verdict['status'] == 'success', verdict
+    assert verdict['participation_complete'] is True
+    assert verdict['foreign_stored_findings'] == 2
+
+
+def test_the_complete_participation_verdict_carries_the_foreign_disclosure(monkeypatch):
+    """The normalised verdict keeps the disclosure, so a caller reads it beside ``allowed``."""
+    participation = dict(_PARTICIPATION_COMPLETE, foreign_stored_findings=3)
+
+    normalised = gate._participation_verdict(
+        _PLAN_ID,
+        42,
+        _PROJECT_DIR,
+        head=_HEAD,
+        participation_check=lambda _plan, _pr, _dir: dict(participation),
+    )
+
+    assert normalised['allowed'] is True
+    assert normalised['foreign_stored_findings'] == 3
 
 
 def test_the_participation_verdict_normalises_the_scope_cause_to_code(monkeypatch):

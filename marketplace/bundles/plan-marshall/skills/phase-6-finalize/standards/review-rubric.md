@@ -29,7 +29,7 @@ The functional review grades every outline deliverable with exactly one verdict:
 | `met` | Every success criterion of the deliverable carries evidence (§ 4). |
 | `met_with_residuals` | The deliverable's value is delivered, and the residuals — what is missing or partial — are named on the row. |
 | `not_met` | The deliverable's value is not delivered. |
-| `superseded` | The deliverable no longer applies. The row's `superseded_by` opens with the deliverable it is superseded by — `D3`, or `deliverable 3` — because that value is what closes the deliverable's frozen criteria; a value that does not open with one of the outline's deliverable numbers is not a valid verdict, and a stray reference inside prose is not a citation. State the operator decision or the refutation after the reference when a reader needs it. |
+| `superseded` | The deliverable no longer applies. The row's `superseded_by` opens with the CLOSING deliverable that takes the work over — `D3`, `D 3`, `Deliverable 3`, `Deliverable #3`, `Deliverable D3`, or one of those wrapped in a backtick, bold/italic markers or a parenthesis — because that value is what closes the deliverable's frozen criteria. The cited deliverable must exist in the outline, must not be this deliverable itself, must not form a supersede cycle, and must be graded `met` or `met_with_residuals`; a value that fails any of these is a validation error that names which one, and a stray reference inside prose is not a citation. A deliverable retired by operator decision with no successor is not superseded — close it through `criteria-authorize`. State the operator decision or the refutation after the reference when a reader needs it. |
 
 The blocking line for the functional review:
 
