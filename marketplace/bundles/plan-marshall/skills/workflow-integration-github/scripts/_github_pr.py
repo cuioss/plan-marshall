@@ -586,6 +586,82 @@ def review_coverage_names_commit(body: str) -> bool:
     return bool(covered)
 
 
+def _is_participation_evidence(comment: dict, bot_kind: str) -> bool:
+    """True if ``comment`` is ADMISSIBLE participation evidence for ``bot_kind``.
+
+    Two registry reads, both generic — no bot name appears here:
+
+    1. SHAPE — the comment's ``kind`` is one of the publish shapes the bot declares
+       in ``participation_evidence``.
+    2. CONTENT — when the bot declares ``participation_evidence_markers`` entries for
+       THAT shape, the body carries at least one of the declared literals. A shape a
+       bot publishes both before its review completes and after it finishes credits
+       only the artifact carrying a finished-review literal, so a pre-review
+       walkthrough in a declared shape is not evidence. An undeclared shape is
+       FAIL-OPEN and credits on the shape alone (see
+       ``bot_registry.participation_evidence_markers_for``).
+
+    This is the admissibility question only. The refusal exclusion and the
+    ``participation_requires_update`` currency test stay at the call site, because
+    they answer different questions: a refusal is admissible-shaped but is evidence
+    of NON-participation, and the currency test decides WHICH commit an admissible
+    comment reviewed. A comment this predicate rejects is therefore neither
+    credited nor stale — it is not a review artifact at all.
+    """
+    kind = comment.get('kind') or 'inline'
+    if kind not in bot_registry.participation_evidence(bot_kind):
+        return False
+    markers = bot_registry.participation_evidence_markers_for(bot_kind, kind)
+    if not markers:
+        return True
+    body = str(comment.get('body') or '')
+    return any(marker in body for marker in markers)
+
+
+def is_finished_review(comment: dict, bot_kind: str) -> bool:
+    """Whether ``comment`` is a FINISHED review by ``bot_kind`` — the ONE reader.
+
+    The done rule rests on one question — is a finished review on record — and this
+    is its only answer. The producer builds ``github_pr`` ``finished_review_bots[]``
+    with it, the post chokepoint (``github_re_review._qualifying_review_on_record``)
+    and the runbook lane's ``review-gate --required-reviewer`` check ask it too, so
+    the three sites cannot answer a formal review differently.
+
+    A comment is a finished review only when ALL of these hold:
+
+    - it is not a refusal notice that carries no readable finished marker. A refusal
+      submitted as a review object proves the bot did NOT review; the one exception
+      is a body that is a refusal AND carries a readable finished marker, which
+      CodeRabbit publishes when its summary keeps a later limit notice beside its
+      verdict (:func:`review_coverage_is_finished`). The refusal test is
+      :func:`_is_refusal_notice` — the producer's own — never the enumerative arm,
+      which runs at a different pipeline position and answers a different question.
+    - it is admissible participation evidence for the bot (:func:`_is_participation_evidence`):
+      the comment's kind is one of the bot's declared publish shapes, and carries
+      that shape's declared content marker where one is declared.
+    - a ``review_body`` names the commit it reviewed, in the provider's
+      ``commit_id`` or in a readable finished coverage marker that names one. An
+      empty commit names no head, so it is no finished review.
+    - an ``issue_comment`` carries a readable finished coverage marker that names a
+      covered commit (:func:`review_coverage_names_commit`).
+
+    Any other kind — an inline comment on its own, a walkthrough in an undeclared
+    shape — is not a finished review. An inline comment is a line comment BY a
+    review, and the review it belongs to carries the artifact this reads.
+    """
+    body = str(comment.get('body') or '')
+    if _is_refusal_notice(body, bot_kind) and not review_coverage_is_finished(body):
+        return False
+    if not _is_participation_evidence(comment, bot_kind):
+        return False
+    kind = comment.get('kind') or 'inline'
+    if kind == 'review_body':
+        return bool(str(comment.get('commit_id') or '').strip()) or review_coverage_names_commit(body)
+    if kind == 'issue_comment':
+        return review_coverage_names_commit(body)
+    return False
+
+
 def review_coverage_verdict(body: str, head_sha: str) -> bool | None:
     """Return what a review-coverage marker says about ``head_sha``, or no verdict.
 

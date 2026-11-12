@@ -352,6 +352,18 @@ A marker-bearing comment that is not a finished review — an unreadable payload
 a marker naming no commit — is evidence the bot published, never a review, so it neither completes the
 bot nor suppresses the first trigger.
 
+One reader answers the question: `_github_pr.is_finished_review`. The producer builds
+`finished_review_bots[]` with it, the post chokepoint (`github_re_review._qualifying_review_on_record`)
+asks it, and the runbook lane's `review-gate --required-reviewer` check asks it too, so no site can
+answer a formal review differently. A formal review is admitted only with a non-empty commit or a
+readable finished marker that names one; a refusal-shaped body is admitted only when it also carries
+that marker; and a comment in a shape the bot does not publish is not evidence for it.
+
+The commit an admitted artifact names is accepted as the commit the review covered. It is **not**
+checked against this pull request's heads, so a marker naming a commit outside the pull request
+satisfies this read; the head-currency question is a separate one, asked of the merge-candidate read
+by `review_coverage_verdict`.
+
 The rule is enforced where the post happens rather than left to prose: `request_fresh_review` reads
 the pull request's comments for a qualifying review by a flagged bot and returns `status: refused` /
 `reason: review_on_record_done` instead of posting, for the ordinary and escalated commands alike.

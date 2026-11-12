@@ -2670,50 +2670,31 @@ def _required_reviewers_without_a_review(comments: list[dict[str, Any]], require
     """Return the required reviewers that hold no qualifying review on this read.
 
     The done rule's precondition, checked where the merge is decided. A qualifying
-    review is the producer's finished-review test: a formal review record of the bot,
-    or a summary marker that is readable, ``kind: reviewed`` and names a covered
-    commit. A refusal submitted as a review object is not one. Nothing here decides
-    what to do with the review — only that a review exists to be done.
+    review is the producer's finished-review test — the ONE predicate
+    (``_github_pr.is_finished_review``) the producer, the post chokepoint and this
+    check all ask, so none of the three can answer a formal review differently.
+    Nothing here decides what to do with the review — only that a review exists to be
+    done.
+
+    ``ci pr comments`` is a DISPLAY read: it flattens every body to one line, while
+    the marker parser requires its opener at the start of a line. Restoring the
+    HTML-comment boundaries is a presentation fix only — the grammar stays the
+    parser's — and without it a summary carrying prose before its marker loses its
+    qualifying evidence on this read while the producer sees it.
     """
     # `github_re_review` owns the import-order-safe entry into `_github_pr` (it
     # imports `github_ops` first, which breaks that module's import cycle) and
-    # re-exports the one marker reader, so the lane never imports the cycle itself.
-    from github_re_review import _is_refusal_body, review_coverage_names_commit
-
-    def _marker_names_commit(body: str) -> bool:
-        """The one marker reader, on a body this read's DISPLAY path flattened.
-
-        ``ci pr comments`` flattens comment bodies (newlines become spaces), while
-        the marker parser requires its opener at the start of a line. Restoring the
-        HTML-comment boundaries is a presentation fix only — the grammar stays the
-        parser's — and without it a summary carrying prose before its marker loses
-        its qualifying evidence on this read while the producer sees it.
-        """
-        return review_coverage_names_commit((body or '').replace('<!--', '\n<!--'))
-
-    import bot_registry
+    # re-exports the one finished-review reader, so the lane never imports the cycle
+    # itself.
+    from github_re_review import is_finished_review
 
     present: set[str] = set()
     for comment in comments:
         bot = _bot_of(comment)
         if not bot or bot not in required_reviewers:
             continue
-        kind = comment.get('kind')
-        if kind not in set(bot_registry.participation_evidence(bot)):
-            # The producer admits evidence only in the bot's OWN declared publish
-            # shapes; a shape this bot does not publish is not evidence for it.
-            continue
-        body = str(comment.get('body') or '')
-        commit = str(comment.get('commit_id') or '').strip()
-        marker_names_commit = _marker_names_commit(body)
-        if kind == 'review_body':
-            # A formal review qualifies on a named commit, or on a finished coverage
-            # marker that names one. A refusal submitted as a review object is not a
-            # review — unless it also carries that marker, which the producer admits
-            # too (a review summary may carry a later limit notice beside its verdict).
-            if marker_names_commit or (commit and not _is_refusal_body(body, bot)):
-                present.add(bot)
-        elif kind == 'issue_comment' and marker_names_commit:
+        restored = {**comment, 'body': str(comment.get('body') or '').replace('<!--', '\n<!--')}
+        if is_finished_review(restored, bot):
             present.add(bot)
     return sorted(set(required_reviewers) - present)
 

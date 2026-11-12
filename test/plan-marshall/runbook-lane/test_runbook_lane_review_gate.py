@@ -960,6 +960,24 @@ def test_a_flattened_summary_marker_names_its_commit() -> None:
     assert verdict['merge_allowed'] is True
 
 
+def test_an_enumerative_refusal_with_a_commit_is_a_qualifying_review(monkeypatch) -> None:
+    """The lane asks the producer's predicate, so the enumerative arm changes nothing.
+
+    The arm answers a different question at a different pipeline position; the
+    producer's finished-review test reads ``_is_refusal_notice`` alone.
+    """
+    import _github_pr
+
+    monkeypatch.setattr(_github_pr, 'UNRECOGNISED_REFUSAL_MAX_CHARS', 200)
+    body = 'Please resubmit this pull request later.'
+    assert _github_pr._is_unrecognised_refusal(body, 'coderabbit') is True
+    assert _github_pr._is_refusal_notice(body, 'coderabbit') is False
+
+    verdict = _verdict(_read(_review_body(body, commit_id='b' * 40)), reviewers=('coderabbit',))
+
+    assert verdict['merge_allowed'] is True
+
+
 def test_a_marker_beside_a_refusal_notice_is_still_a_finished_review() -> None:
     """The producer admits this combination; the lane's check must agree with it."""
     body = '> ## Review limit reached\n' + _finished_marker_body()
