@@ -479,7 +479,8 @@ Output carries an `admission` discriminator:
   hand to the operator, with its `exit_command`, instead of polling to budget.
   - **`blocked_reason`** names WHICH cause produced the block, and is
     present on every blocked payload. Three causes hid behind the one `blocked`
-    label, and only one of them has a blocking plan to name:
+    label, and only `not_fifo_front` has no blocking plan to name — the two
+    lock-contended causes name the holder:
 
     | `blocked_reason` | Meaning | `blocking_plan_id` |
     |------------------|---------|--------------------|

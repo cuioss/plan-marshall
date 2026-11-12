@@ -693,16 +693,16 @@ Only when the FIFO poll loop exhausts `{wait_budget}` without admission does the
 ```yaml
 AskUserQuestion:
   questions:
-    - question: "Only one plan may merge at a time, and another one ({front_plan}) has been ahead of this one for {wait_budget} seconds without finishing. Nothing has gone wrong — it is simply taking longer than the wait allows. Keep waiting, or leave this merge for later?"
+    - question: "Only one plan may merge at a time, and another plan ({front_plan}) has been holding this one up for {wait_budget} seconds without finishing. Nothing has gone wrong — it is simply taking longer than the wait allows. Keep waiting, or leave this merge for later?"
       header: "Merge queue"
       description: |
-        **Ahead of this plan**: {front_plan}
+        **Blocking plan**: {front_plan}
         **This plan**: {plan_id}
         **Waited so far**: {wait_budget}s
 
-        Merges are taken strictly in the order plans joined the queue. This
-        plan has not been overtaken and it has not failed — it is simply
-        behind one that is slow.
+        Merges are taken strictly in the order plans joined the queue, and a
+        holder keeps the lock until it is done. This plan has not been overtaken
+        and it has not failed — it is simply waiting on one that is slow.
       options:
         - label: "Wait and retry (recommended)"
           description: "Keeps this plan's place in line and waits another {wait_budget} seconds; usually the plan ahead finishes and this one merges next"

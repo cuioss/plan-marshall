@@ -76,7 +76,7 @@ co-tenants the same store, and the storeless ``poll-delay`` computation:
     failure, unremovable file) stays ``status: error``.
   * ``check`` — a non-blocking holder read: ``status: free`` when no lock file
     exists, ``status: held`` + ``holder_plan_id`` when one does, and
-    ``status: unreadable`` when a lock file exists but cannot be read as a holder.
+    ``status: unreadable`` when the path could not be read as a holder.
     Never attempts
     to create or mutate the lock, and never touches the FIFO queue. On the
     ``held`` branch it also surfaces the authoritative main-anchored ``staleness``
@@ -1396,7 +1396,8 @@ def _admitted_result(plan_id: str, action: str, lock_path: Path, reclaimed: bool
 
 #: The closed vocabulary every ``admission: blocked`` payload publishes as
 #: ``blocked_reason``. Three causes hide behind the one ``blocked`` label, and only
-#: one of them has a blocking plan to name:
+#: ``not_fifo_front`` has no blocking plan to name — the two lock-contended causes
+#: name the holder:
 #:
 #: - ``not_fifo_front`` — this plan is not the queue front, so it never attempted
 #:   the ``O_EXCL`` create. There is no blocking plan BY CONSTRUCTION: what blocks
@@ -1754,8 +1755,8 @@ def run_check(args: Namespace) -> dict[str, Any]:
     Reads the lock file without attempting to create or mutate it, and never
     touches the FIFO queue. Returns ``status: free`` when no lock file exists,
     ``status: held`` + ``holder_plan_id`` when one does (including a self-held
-    lock), and ``status: unreadable`` + ``error`` when the file exists but its
-    holder cannot be read — the three-valued answer :func:`read_lock_holder`
+    lock), and ``status: unreadable`` + ``error`` when the path could not be read
+    as a holder — the three-valued answer :func:`read_lock_holder`
     publishes, which a caller proving ownership needs and a bare holder-or-``None``
     read cannot give. On the ``held`` branch it also surfaces the authoritative
     main-anchored ``staleness`` verdict (``fresh`` / ``stale`` / ``unknown``, from

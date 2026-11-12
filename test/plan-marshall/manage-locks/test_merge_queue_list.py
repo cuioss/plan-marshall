@@ -14,8 +14,9 @@ Two halves are pinned here:
   each with its holder's liveness resolved through ``locate-plan-checkout``, each
   with the ``retention`` reason the dead-waiter prune consults, and **no mutation
   under any input**, asserted by a byte comparison of the store file.
-* **The blocked-reason split** — two causes hid behind one ``blocked`` label and
-  only one has a blocking plan to name, which is why ``blocking_plan_id: null``
+* **The blocked-reason split** — three causes hid behind one ``blocked`` label and
+  only ``not_fifo_front`` has no blocking plan to name, which is why
+  ``blocking_plan_id: null``
   beside ``waiting_count: 2`` read as self-contradictory when it was merely
   unlabelled.
 
@@ -400,7 +401,7 @@ class TestQueueListMutatesNothing:
 
 
 # =============================================================================
-# The blocked-reason split — two causes, one label no longer
+# The blocked-reason split — three causes, one label no longer
 # =============================================================================
 
 
