@@ -923,14 +923,16 @@ def resolve_recovery_action(
     7. **An OPEN claim resolves ``await_window``.** ⛔ A re-trigger inside the
        window RESETS it rather than shortening it — an advertised wait was
        observed going from 50 to 59 minutes — and spends quota doing so.
-    8. **A flagged bot with a review on record SETTLES, before any window or
-       budget arm.** A bot declaring
+    8. **A flagged bot with a finished review on record SETTLES, before every
+       cause, window and budget arm.** A bot declaring
        :meth:`bot_registry.BotRegistry.review_complete_after_handling` whose review
-       is ``credited`` or ``stale`` has nothing to request and nothing to wait for:
-       pending findings route to triage (``await_triage``), an unobserved findings
-       state is ``unmeasured``, and everything else accepts the review on record
-       (``accept_review_on_record``, reason ``review_on_record_done``). None of the
-       three posts, so the done rule also removes the wait.
+       is ``credited``, ``stale`` or ``undecidable`` has nothing to request and
+       nothing to wait for: pending findings route to triage (``await_triage``), an
+       unobserved findings state is ``unmeasured``, and everything else accepts the
+       review on record (``accept_review_on_record``, reason
+       ``review_on_record_done``). None of the three posts, so the done rule also
+       removes the wait. The arm runs first, so a later structural size refusal
+       cannot displace it either.
     9. **An ELAPSED claim resolves by the bot's ``trigger_semantics``**, with one
        exception for a bot that reviews only when explicitly asked: ``close_and_reopen``
        for that bot **only when no review by it is on record**
@@ -1072,9 +1074,11 @@ def resolve_recovery_action(
         # candidate moved on — so re-delivering the whole PR buys nothing and the
         # operator policy bounds close-and-reopen to the no-review-on-record case.
         # Such a bot is re-triggered instead (`generate_trigger`), which is what the
-        # caller's fallback path posts when no rebase can produce an event. A bot
-        # declaring `review_complete_after_handling` never reaches this line: its
-        # branch above settles before any window arm.
+        # caller's fallback path posts when no rebase can produce an event. A flagged
+        # bot whose FINISHED review is on record settles on the done arm above; one
+        # with no review on record falls through to here and takes
+        # `close_and_reopen`, because the operator policy bounds close-and-reopen to
+        # the no-review-on-record case.
         if review_on_record in (REVIEW_ON_RECORD_CREDITED, REVIEW_ON_RECORD_STALE):
             return {
                 **verdict,
@@ -1229,8 +1233,8 @@ class _ReReviewStrategy:
         with ``reason: review_on_record_done`` when this pull request already holds
         a qualifying review by it, because one handled review is the review and a
         further request spends the bot's allowance for nothing. A pull request with
-        no qualifying review is untouched: the first trigger posts exactly as
-        before, and so does every bot that does not declare the flag.
+        no qualifying review is untouched: the first trigger posts, and so does every
+        bot that does not declare the flag.
         """
         reader = read_rate_window if window_reader is None else window_reader
         if bot_registry.review_complete_after_handling(self.bot_kind):

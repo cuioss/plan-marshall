@@ -219,3 +219,106 @@ def test_the_operator_policy_is_scoped_to_the_no_review_case():
 
     assert 'no-review case' in text
     assert 'Nothing about a spent quota is a reason to merge without the review.' in text
+
+
+# ---------------------------------------------------------------------------
+# The done arm's own prose: it admits an `undecidable` review and runs ahead of
+# every cause, window and budget arm, and the comments say so.
+# ---------------------------------------------------------------------------
+#
+# Each entry is (path, section marker, the corrected statement the section must
+# carry, the retired wording it replaced). The planted control replaces the
+# corrected statement with the retired one, so a pin that only looked for the flag
+# somewhere in the file would not fail — which is the weakness these controls close.
+_DONE_ARM_PINS: dict[str, tuple] = {
+    'github_re_review.py item 8 admits undecidable': (
+        _doc('workflow-integration-github', 'scripts', 'github_re_review.py'),
+        '8. **A flagged bot with a finished review on record SETTLES',
+        '``credited``, ``stale`` or ``undecidable`` has nothing to request',
+        '``credited`` or ``stale`` has nothing to request',
+    ),
+    'github_re_review.py item 8 runs ahead of every arm': (
+        _doc('workflow-integration-github', 'scripts', 'github_re_review.py'),
+        '8. **A flagged bot with a finished review on record SETTLES',
+        'before every\n       cause, window and budget arm',
+        'before any window or\n       budget arm',
+    ),
+    'workflow-integration-github/SKILL.md prose admits undecidable': (
+        _doc('workflow-integration-github', 'SKILL.md'),
+        'Only an `absent` review resolves',
+        'whose `credited`, `stale` OR `undecidable` review settles',
+        'whose `credited` OR `stale` review settles',
+    ),
+    'workflow-integration-github/SKILL.md prose runs ahead of every arm': (
+        _doc('workflow-integration-github', 'SKILL.md'),
+        'Only an `absent` review resolves',
+        'before every cause, window and budget arm',
+        'before any window or budget arm',
+    ),
+    'workflow-integration-github/SKILL.md table row admits undecidable': (
+        _doc('workflow-integration-github', 'SKILL.md'),
+        '| `accept_review_on_record` | `review_on_record_done` |',
+        'its review is `credited`, `stale` or `undecidable`',
+        'its review is `credited` or `stale`',
+    ),
+    'review_completeness.py done arm precedes the refusal arms': (
+        _doc('automatic-review', 'scripts', 'review_completeness.py'),
+        '# Pending findings still block through the ``triage_ran`` arm below.',
+        'This branch is reached only by a bot with no finished review',
+        'a refusal or decline observed on this candidate still outranks this branch',
+    ),
+    'github_re_review.py elapsed-arm comment': (
+        _doc('workflow-integration-github', 'scripts', 'github_re_review.py'),
+        '# Such a bot is re-triggered instead (`generate_trigger`)',
+        'bot whose FINISHED review is on record settles on the done arm above',
+        'declaring `review_complete_after_handling` never reaches this line',
+    ),
+    'bot_registry.py states the current behaviour': (
+        _doc('automatic-review', 'scripts', 'bot_registry.py'),
+        'A bot declaring neither',
+        'A bot declaring neither is re-triggered whenever',
+        'A bot declaring neither keeps the behaviour it had',
+    ),
+    'branch-cleanup-rereview.md states the current behaviour': (
+        _doc('phase-6-finalize', 'standards', 'branch-cleanup-rereview.md'),
+        'A bot without the flag',
+        'A bot without the flag is re-reviewed whenever HEAD advances',
+        "A bot without the flag keeps today's behaviour",
+    ),
+    'list_bots_for_trigger docstring states the current behaviour': (
+        _doc('automatic-review', 'scripts', 'review_completeness.py'),
+        'A flagged bot with no',
+        'still triggers the bot.',
+        'is\n    triggered exactly as before.',
+    ),
+    'request_fresh_review docstring states the current behaviour': (
+        _doc('workflow-integration-github', 'scripts', 'github_re_review.py'),
+        'A pull request with\n        no qualifying review is untouched',
+        'the first trigger posts, and so does every',
+        'the first trigger posts exactly as before',
+    ),
+}
+
+
+@pytest.mark.parametrize('label', sorted(_DONE_ARM_PINS))
+def test_each_corrected_statement_is_pinned_in_its_section(label):
+    """A comment or document that drifts back to the old reading fails HERE."""
+    path, marker, snippet, _old = _DONE_ARM_PINS[label]
+    assert path.is_file(), f'{label} is missing at {path}'
+    assert _states_done_rule(path.read_text(encoding='utf-8'), marker, snippet), (
+        f'{label} does not state the current behaviour in the section opened by {marker!r}'
+    )
+
+
+@pytest.mark.parametrize('label', sorted(_DONE_ARM_PINS))
+def test_a_planted_copy_of_each_old_statement_fails(label):
+    """Mutation control per pin: the retired wording must make the pin go red."""
+    path, marker, snippet, old = _DONE_ARM_PINS[label]
+    text = path.read_text(encoding='utf-8')
+    assert _states_done_rule(text, marker, snippet), f'{label} does not carry the statement to mutate'
+
+    planted = text.replace(snippet, old)
+    assert planted != text, f'the statement is not in {label} — the control would be vacuous'
+    assert not _states_done_rule(planted, marker, snippet), (
+        f'a planted copy of the old wording still passes for {label}: the pin is too loose'
+    )

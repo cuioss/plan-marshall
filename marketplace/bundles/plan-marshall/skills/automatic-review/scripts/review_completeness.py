@@ -480,8 +480,8 @@ def list_bots_for_trigger(
     population — the stale source AND the stored-finding join — and never reaches a
     trigger list. It is reported in ``review_complete_bots`` so a caller can tell
     "done, no trigger owed" from "silent, trigger owed". A flagged bot with no
-    admitted review keeps its place, so a pull request with no qualifying review is
-    triggered exactly as before.
+    admitted review keeps its place, so a pull request with no qualifying review
+    still triggers the bot.
 
     Only a bot the configuration classifies is triggered: a candidate in neither
     ``required_bots`` nor ``optional_bots`` is reported in ``unclassified_bots``
@@ -1026,13 +1026,11 @@ def classify_bot(
         # carries marker-bearing comments that are NOT finished reviews (an unreadable
         # payload, a non-``reviewed`` kind, a marker naming no commit), and treating one
         # of those as done would complete the quorum on a review that never finished.
-        # Pending findings still block through the ``triage_ran`` arm below, and a
-        # refusal or decline observed on this candidate still outranks this branch —
-        # the done rule removes the demand for a later review, never the handling.
-        #
-        # The done check itself runs BEFORE the refusal branch above, because a
-        # finished review's bot that refuses a REDUNDANT later request must still be
-        # done; the branch is left here as the plain stale state.
+        # Pending findings still block through the ``triage_ran`` arm below. The done
+        # check itself runs BEFORE every refusal and decline branch above, so a
+        # finished review's bot that refuses a REDUNDANT later request is still done.
+        # This branch is reached only by a bot with no finished review, and reports
+        # the plain stale state.
         return STATE_PARTICIPATED_STALE
     if bot in in_progress:
         return STATE_IN_PROGRESS
