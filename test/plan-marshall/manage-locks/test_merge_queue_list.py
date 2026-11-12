@@ -11,12 +11,18 @@ pruned a live sibling plan's slot.
 Two halves are pinned here:
 
 * **``queue-list``** — the read-only inspection. Entries in FIFO (arrival) order,
-  each with its holder's liveness resolved through ``locate-plan-checkout``, and
-  **no mutation under any input**, asserted by a byte comparison of the store file.
+  each with its holder's liveness resolved through ``locate-plan-checkout``, each
+  with the ``retention`` reason the dead-waiter prune consults, and **no mutation
+  under any input**, asserted by a byte comparison of the store file.
 * **The blocked-reason split** — two causes hid behind one ``blocked`` label and
   only one has a blocking plan to name, which is why ``blocking_plan_id: null``
   beside ``waiting_count: 2`` read as self-contradictory when it was merely
   unlabelled.
+
+``retention`` is a separate reading from ``liveness`` on purpose: a holder with no
+checkout whose worktree still carries a ``.git`` marker is ``not_live`` AND retained,
+and an entry that is retained but never leaves has a named exit
+(``merge_lock dequeue``) rather than a budget-long wait it cannot influence.
 
 Isolation: every test runs against an isolated ``PLAN_BASE_DIR`` staged under
 ``tmp_path``, so the suite never contends for the real
@@ -29,6 +35,7 @@ from __future__ import annotations
 
 import json
 import shlex
+import sys
 from argparse import Namespace
 from pathlib import Path
 
@@ -207,6 +214,102 @@ class TestQueueListOrder:
         assert emitted == merge_lock.QUEUE_LIVENESS_STATES
 
 
+class TestRetentionField:
+    """``retention`` names WHAT keeps an entry — the same predicate the prune asks.
+
+    ``liveness`` answers "does a checkout hold this plan"; ``retention`` answers "why
+    does admission keep its queue entry". They are different readings on purpose: a
+    holder with no checkout but a ``.git`` marker under ``worktrees/{holder}`` is
+    ``not_live`` AND retained, and reading that entry as dead is what made an
+    operator diagnose a wedged queue by hand.
+    """
+
+    def _stage_git_marker(self, base: Path, plan_id: str) -> None:
+        """Stage the worktree root's ``.git`` marker — real git plumbing, no plan dir."""
+        worktree = base / 'worktrees' / plan_id
+        worktree.mkdir(parents=True, exist_ok=True)
+        (worktree / '.git').write_text(f'gitdir: /main/.git/worktrees/{plan_id}\n', encoding='utf-8')
+
+    def test_a_retained_entry_names_the_git_marker_that_keeps_it(
+        self, isolated_base: dict, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The incident's shape: not_live, but the worktree still has git plumbing, so
+        # the dead-waiter prune keeps the entry. The field must say so.
+        self._stage_git_marker(isolated_base['base'], 'retained-front')
+        _seed_queue(isolated_base['queue_path'], [{'plan_id': 'retained-front', 'ts': 1.0}])
+        _stub_locator(monkeypatch, {'retained-front': 'not_found'})
+
+        entry = _queue_list()['entries'][0]
+
+        assert entry['liveness'] == merge_lock.LIVENESS_NOT_LIVE
+        assert entry['retention'] == 'git_marker'
+
+    def test_a_live_plan_entry_names_its_plan_directory(
+        self, isolated_base: dict, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _make_live_plan(isolated_base['base'], 'live-waiter')
+        _seed_queue(isolated_base['queue_path'], [{'plan_id': 'live-waiter', 'ts': 1.0}])
+        _stub_locator(monkeypatch, {'live-waiter': 'current'})
+
+        entry = _queue_list()['entries'][0]
+
+        assert entry['liveness'] == merge_lock.LIVENESS_LIVE
+        assert entry['retention'] == 'plan_dir'
+
+    def test_an_entry_the_prune_would_drop_names_no_retention(
+        self, isolated_base: dict, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # No plan dir, no marker: the next admission prune drops this entry, and the
+        # field says that instead of leaving the reader to infer it from liveness.
+        _seed_queue(isolated_base['queue_path'], [{'plan_id': 'ghost', 'ts': 1.0}])
+        _stub_locator(monkeypatch, {'ghost': 'not_found'})
+
+        assert _queue_list()['entries'][0]['retention'] == 'none'
+
+    def test_every_reported_retention_is_in_the_declared_vocabulary(
+        self, isolated_base: dict, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._stage_git_marker(isolated_base['base'], 'marker-only')
+        _make_live_plan(isolated_base['base'], 'live-plan')
+        _seed_queue(
+            isolated_base['queue_path'],
+            [
+                {'plan_id': 'live-plan', 'ts': 1.0},
+                {'plan_id': 'marker-only', 'ts': 2.0},
+                {'plan_id': 'ghost', 'ts': 3.0},
+            ],
+        )
+        _stub_locator(monkeypatch, {'live-plan': 'current', 'marker-only': 'not_found', 'ghost': 'not_found'})
+
+        emitted = {entry['retention'] for entry in _queue_list()['entries']}
+
+        assert emitted <= merge_lock.RETENTION_STATES
+        # Anti-vacuity: every ANSWERABLE member is reachable from staged state, so the
+        # subset assertion above is not passing over a one-value population. The fourth
+        # member (`unknown`) is pinned by the unanswerable-consult case below, which
+        # needs a raising predicate rather than a staged queue.
+        assert emitted == {'plan_dir', 'git_marker', 'none'}
+
+    def test_an_unanswerable_retention_consult_is_unknown_and_never_none(
+        self, isolated_base: dict, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # ADR-009's rule at the retention seam: a consult nobody could answer is
+        # `unknown`, never `none` — reading it as "not retained" is the inference
+        # that pruned a live sibling plan's slot by hand.
+        core = sys.modules[merge_lock.waiter_retention.__module__]
+
+        def _boom(*_args: object, **_kwargs: object) -> bool:
+            raise RuntimeError('main base unresolvable')
+
+        monkeypatch.setattr(core, 'holder_is_dead', _boom)
+        _seed_queue(isolated_base['queue_path'], [{'plan_id': 'ghost', 'ts': 1.0}])
+        _stub_locator(monkeypatch, {'ghost': 'not_found'})
+
+        assert _queue_list()['entries'][0]['retention'] == 'unknown'
+        # And the prune KEEPS it: an entry it could not judge is not dropped.
+        assert [e['plan_id'] for e in merge_lock._prune_dead_waiting([{'plan_id': 'ghost', 'ts': 1.0}])] == ['ghost']
+
+
 class TestQueueListMutatesNothing:
     def test_a_not_live_front_entry_is_reported_and_not_removed(
         self, isolated_base: dict, monkeypatch: pytest.MonkeyPatch
@@ -230,6 +333,7 @@ class TestQueueListMutatesNothing:
             'ts': 1.0,
             'liveness': merge_lock.LIVENESS_NOT_LIVE,
             'location': 'not_found',
+            'retention': 'none',
         }
         assert result['waiting_count'] == 2
         assert queue_path.read_bytes() == before, 'queue-list mutated merge-queue.json'
