@@ -42,14 +42,21 @@ The three transforms, all rule-data-driven:
       (e.g. `` `AskUserQuestion` `` → `` `question` ``) to the target tool
       name. Bare prose mentions of the concept are left alone.
     - ``rewrite_dispatch_block`` — rewrite a full-line sub-agent dispatch header
-      (``Task: plan-marshall:{target}``, or a bare ``Task:`` naming its agent on
-      the block's own ``subagent_type:`` line) into an instruction naming the
-      target's sub-agent tool and the resolved agent. The indented block below
-      the header — the ``prompt:`` body — is carried through unchanged.
+      (``Task: <agent>``, qualified or not, or a bare ``Task:`` naming its agent
+      on the block's own ``subagent_type:`` line) into an instruction naming the
+      target's sub-agent tool and the resolved agent. The agent id is emitted
+      unqualified — a target's agents are flat, so a bundle namespace would name
+      no file — and the indented ``prompt:`` body below the header survives,
+      apart from any dispatch header nested inside it, which this pass rewrites
+      too.
     - ``preserve`` — a deliberate, leaf-aware non-rewrite (e.g. a leaf's
       ``no Task: dispatch`` constraint prose must NOT be blanket-rewritten).
     - ``source_fix`` — the divergence is fixed in the source, not at emit time
       (e.g. ``Skill: <entry>`` placeholder prose).
+
+The ``rewrite_dispatch_block`` disposition gets its own pass
+(:func:`rewrite_dispatch_blocks`) rather than a line-level one, because it
+consumes a header together with the block under it.
 
 **Fail-closed discipline.** Three guards fail the build rather than emit an
 un-dispositioned idiom:
@@ -171,12 +178,14 @@ DISPATCH_LINE_RE = re.compile(
     re.MULTILINE,
 )
 
-# The agent token of a target-bearing dispatch header, e.g.
-# ``plan-marshall:execution-context-level-3`` or ``plan-marshall:{target}``.
-# Only the agent is captured: a target's agent ids are unqualified (its agents
-# are emitted flat under ``agents/``), so an emitted instruction must name the
-# agent file and dropping the bundle namespace is what makes the id resolvable.
-_DISPATCH_TARGET_RE = re.compile(r'^[A-Za-z0-9_-]+:(?P<agent>[A-Za-z0-9_{][A-Za-z0-9_.{}-]*)$')
+# The agent token of a dispatch header: either a bare name
+# (``diagnose-command``, ``{target}``) or a bundle-qualified one
+# (``plan-marshall:execution-context-level-3``). Only the agent is captured: a
+# target's agent ids are unqualified (its agents are emitted flat under
+# ``agents/``), so an emitted instruction must name the agent file and dropping
+# the bundle namespace is what makes the id resolvable. A header naming a
+# namespace without an agent (``Task: foo:``) matches nothing and stays prose.
+_DISPATCH_TARGET_RE = re.compile(r'^(?:[A-Za-z0-9_-]+:)?(?P<agent>[A-Za-z0-9_{][A-Za-z0-9_.{}-]*)$')
 
 # A dispatch block's own agent line, used by the bare-header form.
 _SUBAGENT_TYPE_RE = re.compile(r'^[ \t]*subagent_type:[ \t]*(?P<agent>\S+?)[ \t]*(?P<cr>\r?)$')
@@ -439,6 +448,13 @@ def _unquoted(value: str) -> str:
     return value
 
 
+def _agent_id(value: str) -> str:
+    """The agent id a scalar names: unquoted, and without a bundle namespace."""
+    unquoted = _unquoted(value)
+    match = _DISPATCH_TARGET_RE.match(unquoted)
+    return match.group('agent') if match is not None else unquoted
+
+
 def _take_subagent_type(block: list[str]) -> tuple[str | None, list[str]]:
     """Hoist a block's own ``subagent_type:`` agent out of the block it names."""
     for index, line in enumerate(block):
@@ -447,7 +463,7 @@ def _take_subagent_type(block: list[str]) -> tuple[str | None, list[str]]:
         match = _SUBAGENT_TYPE_RE.match(line)
         if match is None:
             return None, block
-        return _unquoted(match.group('agent')), block[:index] + block[index + 1 :]
+        return _agent_id(match.group('agent')), block[:index] + block[index + 1 :]
     return None, block
 
 

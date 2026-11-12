@@ -10,6 +10,8 @@ import pytest
 
 from conftest import PROJECT_ROOT
 from marketplace.targets.body_transform_engine import (
+    UnmappedIdiomError,
+    assert_dispatch_template_complete,
     load_transform_rules,
     make_body_transformer,
     rewrite_dispatch_blocks,
@@ -86,6 +88,19 @@ def test_dispatch_line_records_that_it_is_rewritten_with_a_target(rules):
     assert '{target}' in record['template'], 'the dispatch instruction must name the resolved target'
 
 
+def test_a_dispatch_template_without_a_target_placeholder_fails_closed():
+    """The guard refuses a ``rewrite_dispatch_block`` record that would drop the agent."""
+    registry = {'Task:': {'disposition': 'rewrite_dispatch_block', 'template': 'Call the `invoke_subagent` tool:'}}
+
+    with pytest.raises(UnmappedIdiomError, match='rewrite_dispatch_block'):
+        assert_dispatch_template_complete(registry)
+
+
+def test_a_complete_dispatch_template_passes_the_guard():
+    registry = {'Task:': {'disposition': 'rewrite_dispatch_block', 'template': 'Call ... `{target}`'}}
+    assert_dispatch_template_complete(registry)
+
+
 def test_targeted_dispatch_block_becomes_an_invoke_subagent_instruction(rules):
     out = rewrite_dispatch_blocks(TARGETED_DISPATCH_BLOCK, _dispatch_template(rules))
     assert not _TARGETED_DISPATCH_RE.search(out), 'the bare Antigravity-meaningless dispatch line survived'
@@ -100,16 +115,25 @@ def test_bare_dispatch_block_is_rewritten_from_its_own_subagent_type(rules):
     out = rewrite_dispatch_blocks(BARE_DISPATCH_BLOCK, _dispatch_template(rules))
     assert not _BARE_DISPATCH_RE.search(out)
     assert '`invoke_subagent`' in out
-    assert 'pm-dev-builder:maven-builder' in out
+    assert 'subagent_type: "maven-builder"' in out, 'the bundle namespace names no agent file on this target'
     assert out.count('subagent_type') == 1, 'the agent must be named once, in the instruction'
     assert '    Execute mvn clean verify, report results and coverage\n' in out
+
+
+def test_an_unqualified_header_is_rewritten_too(rules):
+    """A header naming one bare agent is a dispatch, not prose."""
+    block = 'Task: diagnose-command\n  prompt: |\n    Run the diagnosis\n'
+    out = rewrite_dispatch_blocks(block, _dispatch_template(rules))
+    assert not _BARE_DISPATCH_RE.search(out)
+    assert '`invoke_subagent`' in out
+    assert 'subagent_type: "diagnose-command"' in out
 
 
 def test_a_quoted_subagent_type_is_hoisted_without_its_quotes(rules):
     """The hoisted agent carries no YAML quoting into the instruction."""
     block = 'Task:\n  subagent_type: "pm-dev-builder:maven-builder"\n  prompt: |\n    Run\n'
     out = rewrite_dispatch_blocks(block, _dispatch_template(rules))
-    assert 'subagent_type: "pm-dev-builder:maven-builder"' in out
+    assert 'subagent_type: "maven-builder"' in out
     assert '""' not in out
 
 

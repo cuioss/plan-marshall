@@ -152,7 +152,7 @@ Skill and agent markdown bodies undergo deterministic transformation before emis
 3. **Slash Commands**:
    `/{name}` invocations are normalized to the registered bundle-prefixed command names.
 4. **Sub-agent Dispatch Blocks**:
-   a full-line `Task: plan-marshall:{target}` header, or a bare `Task:` whose agent its own `subagent_type:` line names, is rewritten to:
+   a full-line `Task: <agent>` header (bundle-qualified or bare), or a bare `Task:` whose agent its own `subagent_type:` line names, is rewritten to:
    `Call the \`invoke_subagent\` tool with \`subagent_type: "{target}"\` and this prompt body:`
    with the indented `prompt:` block below it carried through unchanged. Antigravity's agent ids are unqualified, so the bundle namespace is dropped.
 
