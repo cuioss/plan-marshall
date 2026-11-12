@@ -240,54 +240,9 @@ def test_submit_success_writes_job_id_to_ledger(home, ledger, monkeypatch):
     assert rows[0]['notation'] == 'a:b:c'
 
 
-def test_the_submit_reply_names_the_tree_it_builds(home, ledger, monkeypatch):
-    """A green result is a fact about THIS tree, so the reply states which."""
-    root = str(home / 'proj')
-    monkeypatch.setattr(client, '_handshake', lambda _p: ({'version': '1'}, None))
-    monkeypatch.setattr(
-        client,
-        '_call_daemon',
-        lambda _req, timeout: {'status': 'queued', 'job_id': 'JOB-1', 'attached': False},
-    )
-
-    result = client.run_submit(_submit_args(root))
-
-    assert result['exec_path'] == root
-    assert result['project_path'] == root
-    assert result['plan_id'] == 'p1'
-
-
-def test_a_plan_less_submit_reply_states_the_sentinel(home, ledger, monkeypatch):
-    """``NO_PLAN`` is STATED, never blank — the sentinel is the answer, not an absence."""
-    root = str(home / 'proj')
-    monkeypatch.setattr(client, '_handshake', lambda _p: ({'version': '1'}, None))
-    monkeypatch.setattr(
-        client,
-        '_call_daemon',
-        lambda _req, timeout: {'status': 'queued', 'job_id': 'JOB-NP', 'attached': False},
-    )
-
-    result = client.run_submit(_submit_args(root, plan_id=None))
-
-    assert result['plan_id'] == NO_PLAN_SENTINEL
-    assert result['project_path'] == root
-
-
-def test_the_job_row_records_the_tree_the_job_builds(home, ledger, monkeypatch):
-    """The wait reply has no argv of its own, so the row is where the tree lives."""
-    root = str(home / 'proj')
-    monkeypatch.setattr(client, '_handshake', lambda _p: ({'version': '1'}, None))
-    monkeypatch.setattr(
-        client,
-        '_call_daemon',
-        lambda _req, timeout: {'status': 'queued', 'job_id': 'JOB-1', 'attached': False},
-    )
-
-    client.run_submit(_submit_args(root))
-
-    row = _job_rows()[0]
-    assert row['exec_path'] == root
-    assert row['project_path'] == root
+# The reply's tree fields, and the plan-less work-log trace, live in
+# ``test_build_server_tree_reply.py``: they pin one contract — "the reply says
+# which tree it built" — rather than the submit/wait mechanics covered here.
 
 
 # =============================================================================
@@ -337,36 +292,6 @@ def test_plan_less_submit_records_the_sentinel_and_reattaches(home, ledger, monk
         'submit just wrote — the write and the read disagree on the sentinel.'
     )
     assert result['job_status'] == 'success'
-
-
-def test_plan_less_submit_writes_the_global_work_log_as_plan_less(home, ledger, captured_logs, monkeypatch):
-    """A plan-less submission is NOT silent: it lands in the GLOBAL work log.
-
-    ``_audit_log`` still no-ops for the sentinel — there is no plan-scoped work
-    log to write to — so the plan-less identity travels in the MESSAGE (a log
-    path cannot carry it) and the target is the global fallback. Without this a
-    green result for the main checkout left no trace at all beside the plans' own
-    builds in the same journal.
-    """
-    root = str(home / 'proj')
-    monkeypatch.setattr(client, '_handshake', lambda _p: ({'version': '1'}, None))
-    monkeypatch.setattr(
-        client,
-        '_call_daemon',
-        lambda _req, timeout: {'status': 'queued', 'job_id': 'JOB-NP', 'attached': False},
-    )
-
-    client.run_submit(_submit_args(root, plan_id=None))
-
-    assert captured_logs, 'a plan-less submit must leave a trace'
-    assert all(plan_id is None for _t, plan_id, _l, _m in captured_logs), (
-        f'a plan-less submit wrote to a plan-scoped log: {captured_logs!r}'
-    )
-    _t, _p, level, message = captured_logs[-1]
-    assert level == 'INFO'
-    assert 'JOB-NP' in message
-    assert f'plan={NO_PLAN_SENTINEL}' in message, 'the global log line must state the plan-less identity'
-    assert root not in message, 'the global work log must not carry the project path'
 
 
 def test_a_real_plan_submit_still_writes_its_audit_log(home, ledger, monkeypatch):
@@ -527,81 +452,6 @@ def test_wait_reattaches_via_ledger_when_no_job_id(home, ledger, monkeypatch):
 
     assert captured['job_id'] == 'JOB-REATTACH'
     assert result['job_status'] == 'success'
-
-
-def test_the_wait_reply_carries_the_tree_the_submit_named(home, ledger, monkeypatch):
-    """The wait names the same tree as the submit, from the job record it reads.
-
-    The daemon's status payload carries the job's outcome and never its paths, so
-    a plain passthrough would leave the caller unable to compare the tree built
-    with the tree it meant.
-    """
-    root = str(home / 'proj')
-    monkeypatch.setattr(client, '_handshake', lambda _p: ({'version': '1'}, None))
-    monkeypatch.setattr(
-        client,
-        '_call_daemon',
-        lambda _req, timeout: {'status': 'queued', 'job_id': 'JOB-1', 'attached': False},
-    )
-    submitted = client.run_submit(_submit_args(root))
-
-    monkeypatch.setattr(
-        client,
-        '_call_daemon',
-        lambda _req, timeout: {'status': 'success', 'job_id': 'JOB-1', 'exit_code': 0},
-    )
-    result = client.run_wait(_variant(_WAIT_ARGS, job_id=None, plan_id='p1', bound=1))
-
-    assert result['exec_path'] == submitted['exec_path']
-    assert result['project_path'] == submitted['project_path']
-    assert result['plan_id'] == submitted['plan_id']
-
-
-def test_a_plan_less_wait_reply_states_the_sentinel(home, ledger, monkeypatch):
-    """The plan-less round trip states ``NO_PLAN`` on both replies."""
-    root = str(home / 'proj')
-    monkeypatch.setattr(client, '_handshake', lambda _p: ({'version': '1'}, None))
-    monkeypatch.setattr(
-        client,
-        '_call_daemon',
-        lambda _req, timeout: {'status': 'queued', 'job_id': 'JOB-NP', 'attached': False},
-    )
-    client.run_submit(_submit_args(root, plan_id=None))
-
-    monkeypatch.setattr(
-        client,
-        '_call_daemon',
-        lambda _req, timeout: {'status': 'success', 'job_id': 'JOB-NP', 'exit_code': 0},
-    )
-    result = client.run_wait(_variant(_WAIT_ARGS, job_id=None, plan_id=None, bound=1))
-
-    assert result['plan_id'] == NO_PLAN_SENTINEL
-    assert result['project_path'] == root
-
-
-def test_a_wait_for_a_row_that_names_no_tree_reports_no_tree(home, ledger, monkeypatch):
-    """CONTROL: a row written before the fields existed yields absence, not a guess."""
-    ledger_core.append_entry(
-        ledger_core.job_record(
-            job_id='JOB-OLD',
-            plan_id='p1',
-            fingerprint='fp',
-            notation='a:b:c',
-            worktree_sha='test-sha',
-        )
-    )
-    monkeypatch.setattr(client, '_handshake', lambda _p: ({'version': '1'}, None))
-    monkeypatch.setattr(
-        client,
-        '_call_daemon',
-        lambda _req, timeout: {'status': 'success', 'job_id': 'JOB-OLD', 'exit_code': 0},
-    )
-
-    result = client.run_wait(_variant(_WAIT_ARGS, job_id=None, plan_id='p1', bound=1))
-
-    assert 'exec_path' not in result
-    assert 'project_path' not in result
-    assert result['plan_id'] == 'p1', 'the plan id the ROW states is still reported'
 
 
 def test_wait_errors_when_no_job_id_and_no_ledger_row(home, ledger):
@@ -925,21 +775,6 @@ def test_wait_degraded_logs_warning(captured_logs, monkeypatch):
         level == 'WARNING' and client.REASON_SOCKET_ABSENT in message and 'mechanism=in_process_fallback' in message
         for _t, _p, level, message in captured_logs
     ), 'a degraded wait must produce a captured WARNING entry naming the in-process fallback'
-
-
-def test_plan_less_submit_is_traced_with_the_sentinel(home, ledger, captured_logs, monkeypatch):
-    """The empty-string plan id resolves to the same plan-less trace."""
-    monkeypatch.setattr(client, '_handshake', lambda _p: ({'version': '1'}, None))
-    monkeypatch.setattr(
-        client,
-        '_call_daemon',
-        lambda _req, timeout: {'status': 'queued', 'job_id': 'JOB-1', 'attached': False},
-    )
-
-    client.run_submit(_submit_args(str(home / 'proj'), plan_id=''))
-
-    assert captured_logs, 'a plan-less submit must leave a trace'
-    assert f'plan={NO_PLAN_SENTINEL}' in captured_logs[-1][3]
 
 
 def test_no_logged_message_contains_raw_command_argv(home, ledger, captured_logs, monkeypatch):
