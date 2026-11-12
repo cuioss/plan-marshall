@@ -72,7 +72,7 @@ All profiles share the steps below. Profile-specific steps are documented in eac
 
 ### Step: Subagent Seam (resolved by the orchestrator)
 
-The seam is resolved once per envelope by the main-context orchestrator's per-harness dispatch branch ([`../plan-marshall/workflow/execution.md`](../plan-marshall/workflow/execution.md) § "Orchestrator per-harness dispatch branch") before this skill runs, so this leaf resolves none itself: a task that needs a further dispatch returns the signal to the orchestrator instead of dispatching, and usage propagates as `unknown` on every path where no dispatch happened. Before running any verification command that could exceed the leaf ceiling, re-resolve it live via `architecture resolve` and hand back without starting the run when the live tier is `orchestrator` (stamped values are advisory only).
+The seam is resolved once per envelope by the main-context orchestrator's per-harness dispatch branch ([`../plan-marshall/workflow/execution.md`](../plan-marshall/workflow/execution.md) § "Orchestrator per-harness dispatch branch") before this skill runs, so this leaf resolves none itself: a task that needs a further dispatch hands it to the orchestrator, which owns it, and usage propagates as `unknown` on every path where no dispatch happened. Before running any verification command that could exceed the leaf ceiling, re-resolve it live via `architecture resolve` and hand back without starting the run when the live tier is `orchestrator` (stamped values are advisory only).
 
 ### Step: Resolve Stale Targets
 

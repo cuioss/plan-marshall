@@ -175,7 +175,7 @@ Inside that single envelope, for each task:
 2. Load `execute-task` in-context as a `Skill:` (leaf-legal in-context skill loading per `persona-plan-marshall-agent` — NOT a per-task `Task:` subagent dispatch; the dispatch block above is the orchestrator-to-execute-envelope dispatch, not a per-task subagent spawn) and run the profile-appropriate workflow
 3. Mark step/task complete via `manage-tasks finalize-step --plan-id {plan_id} --task-number {task_number} --step {step_number} --outcome done`
 
-**Orchestrator per-harness dispatch branch.** The envelope above is the dispatch unit on every harness; only the spawning tool differs per harness. This branch is the one place the sub-agent seam is resolved: a dispatched leaf cannot dispatch, so no leaf resolves it. Before the first dispatch, resolve the seam live for the resolved dispatch target (`{target}` from the `effort resolve-target` call above) and pass whether the spawning tool exists in this envelope:
+**Orchestrator per-harness dispatch branch.** The envelope above is the dispatch unit on every harness; only the spawning tool differs per harness. For the phase-5 envelope this branch is the one place the sub-agent seam is resolved: a dispatched leaf cannot dispatch, so no leaf resolves it. Before the first dispatch, resolve the seam live for the resolved dispatch target (`{target}` from the `effort resolve-target` call above) and pass whether the spawning tool exists in this envelope:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime subagent dispatch \
@@ -387,7 +387,7 @@ guard in `manage-tasks finalize-step`.
    - If `fix_tasks_created == 0` AND `overflow_deferred == 0` → mark the verification task complete (all findings suppressed / accepted / `taken_into_account`); resume the normal post-return classification.
    - If `overflow_deferred > 0` → leave the verification task `pending`; re-fire this triage dispatch on the next phase-5-execute entry (the iteration cap is unchanged).
 
-This dispatch lives in the main-context orchestrator so every cross-envelope `Task:` dispatch originates there, while the leaf retains all deterministic, store-mutating work (failure detection, scope cross-reference, planned-failure exception, iteration-cap check, and `manage-findings qgate add` finding persistence).
+This dispatch lives in the main-context orchestrator so every cross-envelope dispatch originates there, while the leaf retains all deterministic, store-mutating work (failure detection, scope cross-reference, planned-failure exception, iteration-cap check, and `manage-findings qgate add` finding persistence).
 
 ### Post-return `escalate_ask` batched deviation dispatch (conditional)
 

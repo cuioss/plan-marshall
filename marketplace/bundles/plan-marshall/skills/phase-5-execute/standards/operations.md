@@ -46,7 +46,7 @@ Stale envelope references are step-owned-body defects, not envelope defects: whe
 
 ## Subagent Seam Routing (execute flow)
 
-This envelope is a leaf and resolves no sub-agent seam of its own. The main-context orchestrator resolves the platform-runtime sub-agent seam per harness before dispatching the envelope — native where the harness exposes a spawning tool, otherwise the explicit logged inline branch under `dispatch_mode: inline` — and writes the envelope's one dispatch-boundary row when the envelope returns (see `plan-marshall/workflow/execution.md` § "Orchestrator per-harness dispatch branch"). Every task therefore runs inline inside the envelope it was given, and usage propagates as `unknown` on every path where no dispatch happened.
+This envelope resolves no sub-agent seam of its own. The main-context orchestrator resolves the platform-runtime sub-agent seam per harness before dispatching the envelope — native where the harness exposes a spawning tool, otherwise the explicit logged inline branch under `dispatch_mode: inline` — and writes the envelope's one dispatch-boundary row when the envelope returns (see `plan-marshall/workflow/execution.md` § "Orchestrator per-harness dispatch branch"). The seam decision is per envelope, not per task, and usage propagates as `unknown` on every path where no dispatch happened.
 
 ## Verification-feedback loop-back returns (`loop_back_target`)
 
