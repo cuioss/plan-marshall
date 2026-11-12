@@ -154,7 +154,7 @@ Skill and agent markdown bodies undergo deterministic transformation before emis
 4. **Sub-agent Dispatch Blocks**:
    a full-line `Task: <agent>` header (bundle-qualified or bare), or a bare `Task:` whose agent its own `subagent_type:` line names, is rewritten to:
    `Call the \`invoke_subagent\` tool with \`subagent_type: "{target}"\` and this prompt body:`
-   with the indented `prompt:` block below it carried through unchanged. Antigravity's agent ids are unqualified, so the bundle namespace is dropped.
+   with the indented `prompt:` block below it carried through — except a dispatch header nested inside that block, which the same pass rewrites. Antigravity's agent ids are unqualified, so the bundle namespace is dropped.
 
 Transform 4 is the **sub-file transform**: it also runs over the Markdown files a skill ships beside `SKILL.md`, which is why a generated `workflow/` or `standards/` document carries no bare dispatch line. Those sub-files keep their other directives verbatim — their `Skill:` and `Read:` lines are frequently quoted examples, so transforms 1 and 2 run on `SKILL.md` (and on agent and command bodies) only.
 

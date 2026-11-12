@@ -87,10 +87,20 @@ def _marketplace(source_skill: Path) -> Path:
 def test_skill_file_is_emitted_byte_identical(
     rel: str, source_skill: Path, tmp_path: Path, antigravity_config_dir: Path
 ):
-    """A skill file is emitted byte-identical."""
+    """A skill file with nothing to rewrite survives the real target's emit byte-identical.
+
+    The sub-file transformer is the one the target installs, so this pins the
+    decode/rewrite/encode round trip a ``.md`` file now takes rather than the
+    plain copy path it took before.
+    """
     out = tmp_path / 'out'
 
-    written = emit_bundles(_marketplace(source_skill), out, antigravity_config_dir)
+    written = emit_bundles(
+        _marketplace(source_skill),
+        out,
+        antigravity_config_dir,
+        sub_file_transformer=_sub_file_transformer(antigravity_config_dir),
+    )
 
     emitted = out / EMITTED_SKILL / rel
     assert emitted.read_bytes() == EMITTED_FILES[rel]
