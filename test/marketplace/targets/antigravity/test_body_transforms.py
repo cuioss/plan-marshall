@@ -75,7 +75,8 @@ _TARGETED_DISPATCH_RE = re.compile(r'^\s*Task: plan-marshall:', re.MULTILINE)
 
 
 def _dispatch_template(rules) -> str:
-    return rules.body_idiom_rewrites['Task:']['template']
+    template = rules.body_idiom_rewrites['Task:']['template']
+    return template if isinstance(template, str) else ''
 
 
 def test_dispatch_line_records_that_it_is_rewritten_with_a_target(rules):
@@ -89,7 +90,8 @@ def test_targeted_dispatch_block_becomes_an_invoke_subagent_instruction(rules):
     out = rewrite_dispatch_blocks(TARGETED_DISPATCH_BLOCK, _dispatch_template(rules))
     assert not _TARGETED_DISPATCH_RE.search(out), 'the bare Antigravity-meaningless dispatch line survived'
     assert '`invoke_subagent`' in out
-    assert 'plan-marshall:{target}' in out
+    assert 'subagent_type: "{target}"' in out, 'the instruction must name the resolved agent unqualified'
+    assert 'plan-marshall:{target}' not in out, 'a bundle-qualified id resolves to no agent file on this target'
     assert '    name: phase-5-execute\n' in out, 'the prompt body must survive the rewrite'
 
 
@@ -103,6 +105,14 @@ def test_bare_dispatch_block_is_rewritten_from_its_own_subagent_type(rules):
     assert '    Execute mvn clean verify, report results and coverage\n' in out
 
 
+def test_a_quoted_subagent_type_is_hoisted_without_its_quotes(rules):
+    """The hoisted agent carries no YAML quoting into the instruction."""
+    block = 'Task:\n  subagent_type: "pm-dev-builder:maven-builder"\n  prompt: |\n    Run\n'
+    out = rewrite_dispatch_blocks(block, _dispatch_template(rules))
+    assert 'subagent_type: "pm-dev-builder:maven-builder"' in out
+    assert '""' not in out
+
+
 def test_a_dispatch_mention_without_a_block_is_left_alone(rules):
     """Prose naming the idiom is not a dispatch header, so it is preserved."""
     raw = 'Task: plan-marshall:{target} is the dispatch idiom the orchestrator follows.\n'
@@ -113,6 +123,24 @@ def test_dispatch_block_rewrite_is_idempotent(rules):
     template = _dispatch_template(rules)
     once = rewrite_dispatch_blocks(TARGETED_DISPATCH_BLOCK, template)
     assert rewrite_dispatch_blocks(once, template) == once
+
+
+def test_a_dispatch_block_nested_in_a_prompt_body_is_rewritten_in_one_pass(rules):
+    """One pass reaches the fixed point, so the idempotency claim is not conditional on depth."""
+    template = _dispatch_template(rules)
+    nested = (
+        'Task: plan-marshall:{target}\n'
+        '  prompt: |\n'
+        '    Task: plan-marshall:{target}\n'
+        '      prompt: |\n'
+        '        name: inner\n'
+    )
+    once = rewrite_dispatch_blocks(nested, template)
+    assert '`invoke_subagent`' in once
+    assert '        name: inner\n' in once
+    assert once.count('`invoke_subagent`') == 2
+    assert rewrite_dispatch_blocks(once, template) == once
+    assert 'Task:' not in once
 
 
 def test_the_full_transformer_rewrites_a_dispatch_block(rules):

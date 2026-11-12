@@ -817,9 +817,12 @@ def iter_emitted_skill_files(skill_dir: Path, bundle_dir: Path, excluded: frozen
 
     This is the one statement of the skill-directory emission rule. A target
     that re-shapes a skill (rather than mirroring the bundle wholesale) writes
-    the transformed ``SKILL.md`` itself and copies every file this yields
-    byte-identical, so a skill's sub-directories need no allow-list: a new
-    one ships the moment it exists. A file is yielded unless it is:
+    the transformed ``SKILL.md`` itself and ships every file this yields, so a
+    skill's sub-directories need no allow-list: a new one ships the moment it
+    exists. A target may transform a yielded file before writing it — the
+    Antigravity emitter runs a skill's Markdown files through its sub-file
+    transform — and every file it does not transform is copied byte-identical.
+    A file is yielded unless it is:
 
     * the skill's own ``SKILL.md`` — the manifest the target transforms;
     * under a directory named in :data:`EXCLUDED_DIR_NAMES`;

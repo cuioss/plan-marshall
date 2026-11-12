@@ -48,7 +48,7 @@
     "Task:": {
       "disposition": "rewrite_dispatch_block",
       "template": "Call the `invoke_subagent` tool with `subagent_type: \"{target}\"` and this prompt body:",
-      "note": "A full-line `Task: <agent>` dispatch header (or a bare `Task:` naming its agent on the block's own `subagent_type:` line) has no meaning in Antigravity; it rewrites to an invoke_subagent instruction naming the resolved agent, and its indented prompt block is carried through unchanged. Prose mentioning `Task:` without a block is left alone."
+      "note": "A full-line `Task: <agent>` dispatch header (or a bare `Task:` naming its agent on the block's own `subagent_type:` line) has no meaning in Antigravity; it rewrites to an invoke_subagent instruction naming the resolved agent, and its indented prompt block is carried through unchanged. Antigravity's agent ids are unqualified — its agents are emitted flat under `agents/` — so a bundle-qualified header drops its namespace; a namespaced id resolves to no agent file. Prose mentioning `Task:` without a block is left alone."
     },
     "Skill: <entry>": {
       "disposition": "source_fix",

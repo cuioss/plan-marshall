@@ -356,7 +356,7 @@ def test_a_markdown_sub_file_is_written_through_the_dispatch_applier_only(tmp_pa
     emitted = (out / 'skills' / 'demo-demo-skill' / 'workflow' / 'execution.md').read_text(encoding='utf-8')
     assert not _TARGETED_DISPATCH_RE.search(emitted), 'the dispatch line survived'
     assert '`invoke_subagent`' in emitted
-    assert 'plan-marshall:{target}' in emitted
+    assert 'subagent_type: "{target}"' in emitted
     assert 'Skill: demo:other-skill' in emitted, 'the Skill: directive is an example, not a target directive here'
     assert 'Read: standards/thing.md' in emitted, 'the Read: directive is an example, not a target directive here'
 
@@ -385,7 +385,7 @@ def test_generated_plan_marshall_workflow_carries_no_bare_dispatch_line(tmp_path
     assert not _TARGETED_DISPATCH_RE.search(text)
     sites = [line for line in text.splitlines() if line.strip().startswith('Call the `invoke_subagent` tool')]
     assert len(sites) == 2, f'expected the phase-5 and verification-feedback dispatch sites, got {sites}'
-    assert all('plan-marshall:{target}' in line for line in sites), (
+    assert all('subagent_type: "{target}"' in line for line in sites), (
         f'every dispatch instruction must name the resolved target, got {sites}'
     )
 

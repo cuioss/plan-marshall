@@ -173,7 +173,10 @@ DISPATCH_LINE_RE = re.compile(
 
 # The agent token of a target-bearing dispatch header, e.g.
 # ``plan-marshall:execution-context-level-3`` or ``plan-marshall:{target}``.
-_DISPATCH_TARGET_RE = re.compile(r'^(?P<namespace>[A-Za-z0-9_-]+):(?P<agent>[A-Za-z0-9_{][A-Za-z0-9_.{}-]*)$')
+# Only the agent is captured: a target's agent ids are unqualified (its agents
+# are emitted flat under ``agents/``), so an emitted instruction must name the
+# agent file and dropping the bundle namespace is what makes the id resolvable.
+_DISPATCH_TARGET_RE = re.compile(r'^[A-Za-z0-9_-]+:(?P<agent>[A-Za-z0-9_{][A-Za-z0-9_.{}-]*)$')
 
 # A dispatch block's own agent line, used by the bare-header form.
 _SUBAGENT_TYPE_RE = re.compile(r'^[ \t]*subagent_type:[ \t]*(?P<agent>\S+?)[ \t]*(?P<cr>\r?)$')
@@ -412,7 +415,7 @@ def _dispatch_header(line: str) -> tuple[str, str | None, str] | None:
     targeted = _DISPATCH_TARGET_RE.match(rest)
     if targeted is None:
         return None
-    return match.group('indent'), f'{targeted.group("namespace")}:{targeted.group("agent")}', match.group('cr')
+    return match.group('indent'), targeted.group('agent'), match.group('cr')
 
 
 def _dispatch_block_end(lines: list[str], start: int, indent_width: int) -> int:
@@ -429,6 +432,13 @@ def _dispatch_block_end(lines: list[str], start: int, indent_width: int) -> int:
     return index
 
 
+def _unquoted(value: str) -> str:
+    """Strip one matched pair of surrounding quotes from a scalar value."""
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
+        return value[1:-1]
+    return value
+
+
 def _take_subagent_type(block: list[str]) -> tuple[str | None, list[str]]:
     """Hoist a block's own ``subagent_type:`` agent out of the block it names."""
     for index, line in enumerate(block):
@@ -437,7 +447,7 @@ def _take_subagent_type(block: list[str]) -> tuple[str | None, list[str]]:
         match = _SUBAGENT_TYPE_RE.match(line)
         if match is None:
             return None, block
-        return match.group('agent'), block[:index] + block[index + 1 :]
+        return _unquoted(match.group('agent')), block[:index] + block[index + 1 :]
     return None, block
 
 
@@ -448,10 +458,11 @@ def rewrite_dispatch_blocks(body: str, template: str) -> str:
     (from the ``rewrite_dispatch_block`` entry of
     ``mapping.json::body_idiom_rewrites``); the dispatched agent is substituted
     into it. The header line is replaced; the indented block below it — the
-    ``prompt:`` body — is carried through unchanged, so no prompt content is
-    lost. A bare ``Task:`` header takes its agent from the block's own
-    ``subagent_type:`` line, which is removed from the block because the
-    instruction now names it.
+    ``prompt:`` body — is carried through unchanged apart from any dispatch
+    header nested inside it, which is rewritten on this same pass so one pass
+    reaches the fixed point. A bare ``Task:`` header takes its agent from the
+    block's own ``subagent_type:`` line, which is removed from the block
+    because the instruction now names it.
 
     A ``Task:`` line that carries neither a target nor an indented block is
     prose, not a dispatch, and is left alone.
@@ -483,7 +494,7 @@ def rewrite_dispatch_blocks(body: str, template: str) -> str:
             continue
         newline = '\n' if lines[index].endswith('\n') else ''
         out.append(f'{indent}{template.replace("{target}", agent)}{cr}{newline}')
-        out.extend(block)
+        out.append(rewrite_dispatch_blocks(''.join(block), template))
         index = block_end
     return ''.join(out)
 
