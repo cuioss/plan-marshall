@@ -81,3 +81,27 @@ def test_the_observed_base_policy_is_stated_with_its_source(name: str) -> None:
     normalized = ' '.join(ALL_DOCUMENTS[name].read_text(encoding='utf-8').split())
     assert BASE_POLICY_STATEMENT in normalized, f'{name} does not state the observed base policy'
     assert OBSERVED_VERSION in normalized, f'{name} does not name the version the base policy was observed at'
+
+
+#: The agent ``"*"`` fallback in the shape the client reads: a rule in the
+#: ordered ``permissions`` list, never an OpenCode 1 ``permission`` map entry.
+ASK_FALLBACK_RULE = '{action: "*", resource: "*", effect: "ask"}'
+
+
+def test_the_role_matrix_describes_the_agent_fallback_as_a_list_rule() -> None:
+    """The fallback is a list rule, not OpenCode 1 ``"*": "ask"`` map notation."""
+    normalized = ' '.join(ADOC.read_text(encoding='utf-8').split())
+
+    assert ASK_FALLBACK_RULE in normalized, 'opencode.adoc never spells the fallback as a list rule'
+    assert '"*": "ask"' not in normalized, 'opencode.adoc still spells the fallback as a permission map entry'
+
+
+def test_every_cited_test_module_exists() -> None:
+    """Every test module the developer document cites exists in the tree."""
+    cited = set(re.findall(r'(test_[a-z0-9_]+\.py)', ADOC.read_text(encoding='utf-8')))
+    assert cited, 'the document cites no test module'
+
+    present = {path.name for path in (Path(PROJECT_ROOT) / 'test').rglob('*.py')}
+    missing = sorted(cited - present)
+
+    assert not missing, f'opencode.adoc cites test module(s) that do not exist: {missing}'

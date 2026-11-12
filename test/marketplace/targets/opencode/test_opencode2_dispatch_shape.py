@@ -83,3 +83,29 @@ def test_no_bundle_standard_names_the_opencode_subagent_tool_as_task():
                 offenders.append(f'{path.relative_to(bundles)}:{number}: {line.strip()}')
 
     assert not offenders, 'OpenCode 1 tool name in an OpenCode-facing surface:\n' + '\n'.join(offenders)
+
+
+def test_target_rules_skill_body_names_the_opencode2_tools_and_the_hash_drift():
+    """The target-rules skill body names the OpenCode 2 tools and content-hash drift.
+
+    An agent reads the skill body before it reads the standards, so a body that
+    still names the OpenCode 1 tools or an mtime drift check contradicts the code
+    it is supposed to describe.
+    """
+    text = (
+        Path(PROJECT_ROOT)
+        / 'marketplace'
+        / 'bundles'
+        / 'plan-marshall-opencode'
+        / 'skills'
+        / 'target-rules'
+        / 'SKILL.md'
+    ).read_text(encoding='utf-8')
+    normalized = ' '.join(text.split())
+
+    assert '`shell`' in normalized, 'the body must name the OpenCode 2 command tool'
+    assert '`subagent`' in normalized, 'the body must name the OpenCode 2 sub-agent tool'
+    for tool in ('task', 'bash'):
+        assert f'`{tool}`' not in normalized, f'the body still names the OpenCode 1 tool `{tool}`'
+    assert 'source-sha256' in normalized, 'the drift sentence must name the content hash the bridge records'
+    assert 'newer than the bridge' not in normalized, 'the drift sentence must not describe the mtime check'

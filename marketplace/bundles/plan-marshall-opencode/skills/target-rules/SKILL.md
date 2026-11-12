@@ -12,11 +12,11 @@ mode: knowledge
 ## Constraints & Hard Rules
 
 1. **OpenCode Tool & Permission Invariants**:
-   - Use `bash` for command execution with single-command discipline.
+   - Use `shell` for command execution with single-command discipline.
    - Use `read`, `write`, and `edit` for file operations.
    - Use `glob` and `grep` for codebase exploration.
    - Use `question` for interactive user clarification.
-   - Use `task` for background task dispatch and `skill` for skill activation.
+   - Use `subagent` for background task dispatch and `skill` for skill activation.
    - Use `webfetch` for network retrieval of documentation or external references.
 
 2. **Deployed Flat Layout**:
@@ -25,14 +25,14 @@ mode: knowledge
    - Internal references resolve within the flat skill directory structure.
 
 3. **Command & `.plan/` Discipline**:
-   - One command per `bash` call — no `&&`, `;`, `|`, `$()`, subshells, loops, or heredocs.
+   - One command per `shell` call — no `&&`, `;`, `|`, `$()`, subshells, loops, or heredocs.
    - All `.plan/` operations run exclusively through `python3 .plan/execute-script.py`. Never read, write, or edit `.plan/` files directly.
    - Store all temporary files in `.plan/temp/`.
 
 4. **Standing-Rules Bridge & Drift**:
    - The standing rules are bridged at project setup from the `CLAUDE.md` baseline into the workspace rules file; the baseline stays authoritative and this bridge is never edited by hand.
-   - Re-setup detects drift: a missing version marker or a baseline newer than the bridge reports drift, and the steward upgrade path reconciles the bridge back to current.
-   - Subagent dispatch is conditional: the `task` tool fires only when available in the envelope, otherwise take the explicit logged inline branch with usage unknown.
+   - Re-setup detects drift by content: the bridge records its baseline's `source-sha256`, and a changed baseline, a missing recorded hash or a missing version marker reports drift, while the steward upgrade path reconciles the bridge back to current.
+   - Subagent dispatch is conditional: the `subagent` tool fires only when available in the envelope, otherwise take the explicit logged inline branch with usage unknown.
 
 ## Available Standards
 
