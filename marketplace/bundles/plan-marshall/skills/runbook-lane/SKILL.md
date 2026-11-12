@@ -452,7 +452,8 @@ so git alone shows which deliverables are committed.
 - **`.plan/` state.** Write nothing under `.plan/` except `.plan/temp/`, a `ci` body slot at a path a
   `prepare-*` verb returned under `.plan/local/plans/NO_PLAN/work/ci-bodies/` (never a path written by
   hand — the slot must come back from the matching `prepare-body` / `prepare-comment` verb, whether
-  the `pr` or the `issue` one), and your one inbox message (step 8).
+  the `pr` or the `issue` one), the base tree's own `.plan/local/base-evidence-owner` marker (§1), and
+  your one inbox message (step 8).
   Never edit the spec or any file under `.plan/orchestrator/`.
 - **Stay inside the repository.** Never read, list or print anything outside the repository root:
   no credential files, config directories or environment dumps. Those hold secrets, and anything
