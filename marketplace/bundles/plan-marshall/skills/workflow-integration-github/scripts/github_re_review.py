@@ -281,15 +281,20 @@ from _github_pr import (
     _is_rate_limit_notice,
     _is_unrecognised_refusal,
     commit_tokens,
+    is_finished_review,
     rate_limit_eta_seconds,
     refusal_cause,
     refusal_condition,
     refusal_size_cap,
     review_coverage_is_finished,
     review_coverage_marker_present,
-    review_coverage_names_commit,
     review_coverage_verdict,
 )
+
+# Explicit re-export (`as` the same name): the runbook lane reads the flattened-body
+# fence stripper through this module, the import-order-safe entry into ``_github_pr``.
+# The `as` form is what tells ruff this is a re-export rather than an unused import.
+from _github_pr import strip_fenced_regions as strip_fenced_regions
 from ci_base import (
     DEFAULT_CI_INTERVAL,
     DEFAULT_CI_TIMEOUT,
@@ -923,14 +928,16 @@ def resolve_recovery_action(
     7. **An OPEN claim resolves ``await_window``.** ⛔ A re-trigger inside the
        window RESETS it rather than shortening it — an advertised wait was
        observed going from 50 to 59 minutes — and spends quota doing so.
-    8. **A flagged bot with a review on record SETTLES, before any window or
-       budget arm.** A bot declaring
+    8. **A flagged bot with a finished review on record SETTLES, before every
+       cause, window and budget arm.** A bot declaring
        :meth:`bot_registry.BotRegistry.review_complete_after_handling` whose review
-       is ``credited`` or ``stale`` has nothing to request and nothing to wait for:
-       pending findings route to triage (``await_triage``), an unobserved findings
-       state is ``unmeasured``, and everything else accepts the review on record
-       (``accept_review_on_record``, reason ``review_on_record_done``). None of the
-       three posts, so the done rule also removes the wait.
+       is ``credited``, ``stale`` or ``undecidable`` has nothing to request and
+       nothing to wait for: pending findings route to triage (``await_triage``), an
+       unobserved findings state is ``unmeasured``, and everything else accepts the
+       review on record (``accept_review_on_record``, reason
+       ``review_on_record_done``). None of the three posts, so the done rule also
+       removes the wait. The arm runs first, so a later structural size refusal
+       cannot displace it either.
     9. **An ELAPSED claim resolves by the bot's ``trigger_semantics``**, with one
        exception for a bot that reviews only when explicitly asked: ``close_and_reopen``
        for that bot **only when no review by it is on record**
@@ -1072,9 +1079,11 @@ def resolve_recovery_action(
         # candidate moved on — so re-delivering the whole PR buys nothing and the
         # operator policy bounds close-and-reopen to the no-review-on-record case.
         # Such a bot is re-triggered instead (`generate_trigger`), which is what the
-        # caller's fallback path posts when no rebase can produce an event. A bot
-        # declaring `review_complete_after_handling` never reaches this line: its
-        # branch above settles before any window arm.
+        # caller's fallback path posts when no rebase can produce an event. A flagged
+        # bot whose FINISHED review is on record settles on the done arm above; one
+        # with no review on record falls through to here and takes
+        # `close_and_reopen`, because the operator policy bounds close-and-reopen to
+        # the no-review-on-record case.
         if review_on_record in (REVIEW_ON_RECORD_CREDITED, REVIEW_ON_RECORD_STALE):
             return {
                 **verdict,
@@ -1229,8 +1238,8 @@ class _ReReviewStrategy:
         with ``reason: review_on_record_done`` when this pull request already holds
         a qualifying review by it, because one handled review is the review and a
         further request spends the bot's allowance for nothing. A pull request with
-        no qualifying review is untouched: the first trigger posts exactly as
-        before, and so does every bot that does not declare the flag.
+        no qualifying review is untouched: the first trigger posts, and so does every
+        bot that does not declare the flag.
         """
         reader = read_rate_window if window_reader is None else window_reader
         if bot_registry.review_complete_after_handling(self.bot_kind):
@@ -1873,36 +1882,23 @@ def bot_kind_for_author(author_login: str | None) -> str | None:
     return _AUTHOR_LOGIN_TO_BOT_KIND.get(normalized)
 
 
-def _is_refusal_body(body: str, bot_kind: str) -> bool:
-    """Whether ``body`` is a refusal notice, by the same layered arms the producer runs.
-
-    The producer's ``_is_refusal_notice`` lives in ``github_pr``, which imports this
-    module, so the arms are composed from the shared ``_github_pr`` primitives instead
-    of importing it. The three layers are the ones ``_github_pr.REFUSAL_LAYERS`` names:
-    the structural rate-limit recogniser, the bot's own declared ``refusal_patterns``,
-    and the enumerative arm for a notice no earlier layer could read. Any one is
-    enough; a body no layer reads is not a refusal.
-    """
-    if _is_rate_limit_notice(body):
-        return True
-    lowered = (body or '').casefold()
-    if any(pattern.casefold() in lowered for pattern in bot_registry.refusal_patterns(bot_kind) if pattern):
-        return True
-    return _is_unrecognised_refusal(body)
-
-
 def _qualifying_review_on_record(pr_number: int | str, bot_kind: str) -> bool | None:
     """Whether ``bot_kind`` holds a qualifying review on this pull request.
 
     The done rule's read, and the one question it asks: is a FINISHED review by this
     bot on record here AT ALL — never whether that review covers the current head.
-    The test is the producer's own ``finished_review_bots`` test, restated per comment
-    so one fetch answers it:
+    The test is the producer's own ``finished_review_bots`` test, asked through the
+    ONE reader (:func:`_github_pr.is_finished_review`) so this chokepoint, the
+    producer and the runbook lane's ``review-gate --required-reviewer`` check cannot
+    answer a formal review differently:
 
-    - a formal review record of this bot (the producer's ``review_body`` record), or
-    - an issue comment of this bot whose coverage marker is readable, ``kind:
-      reviewed`` and names a covered commit (``review_coverage_names_commit``, the
-      head-free companion of the one marker parser).
+    - a ``review_body`` counts with the commit it reviewed, or with a readable
+      finished coverage marker that names one;
+    - an ``issue_comment`` counts with a readable finished coverage marker that
+      names a covered commit;
+    - a refusal submitted as a review object counts only when it also carries a
+      readable finished marker;
+    - a comment in a shape the bot does not publish is not evidence for it.
 
     A marker-bearing comment that is NOT a finished review — an unreadable payload, a
     non-``reviewed`` kind, a marker naming no commit — is admitted participation
@@ -1929,19 +1925,7 @@ def _qualifying_review_on_record(pr_number: int | str, bot_kind: str) -> bool | 
             continue
         if bot_kind_for_author(comment.get('author')) != bot_kind:
             continue
-        kind = str(comment.get('kind') or '')
-        body = str(comment.get('body') or '')
-        if kind == 'review_body':
-            # A review OBJECT can carry a refusal notice instead of a review. The
-            # producer excludes such a body from participation (and so from
-            # ``finished_review_bots``), so this read must too — otherwise a
-            # refusal-as-review would make the first trigger unreachable. A body that
-            # is a refusal AND carries a readable finished marker is the one case both
-            # sites admit (CodeRabbit keeps the marker beside a later limit notice).
-            if not _is_refusal_body(body, bot_kind) or review_coverage_names_commit(body):
-                return True
-            continue
-        if kind == 'issue_comment' and review_coverage_names_commit(body):
+        if is_finished_review(comment, bot_kind):
             return True
     return False
 

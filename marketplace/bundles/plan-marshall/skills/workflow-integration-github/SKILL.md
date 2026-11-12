@@ -352,6 +352,18 @@ A marker-bearing comment that is not a finished review — an unreadable payload
 a marker naming no commit — is evidence the bot published, never a review, so it neither completes the
 bot nor suppresses the first trigger.
 
+One reader answers the question: `_github_pr.is_finished_review`. The producer builds
+`finished_review_bots[]` with it, the post chokepoint (`github_re_review._qualifying_review_on_record`)
+asks it, and the runbook lane's `review-gate --required-reviewer` check asks it too, so no site can
+answer a formal review differently. A formal review is admitted only with a non-empty commit or a
+readable finished marker that names one; a refusal-shaped body is admitted only when it also carries
+that marker; and a comment in a shape the bot does not publish is not evidence for it.
+
+The commit an admitted artifact names is accepted as the commit the review covered. It is **not**
+checked against this pull request's heads, so a marker naming a commit outside the pull request
+satisfies this read; the head-currency question is a separate one, asked of the merge-candidate read
+by `review_coverage_verdict`.
+
 The rule is enforced where the post happens rather than left to prose: `request_fresh_review` reads
 the pull request's comments for a qualifying review by a flagged bot and returns `status: refused` /
 `reason: review_on_record_done` instead of posting, for the ordinary and escalated commands alike.
@@ -1330,13 +1342,13 @@ DERIVES which recovery a detected refusal arms, from the bot registry plus the c
   `fetch_findings` credits a stale bot whose own `no_unreviewed_commit` reply is strictly newer than the merge-candidate commit — on either ground it went stale on, a failed ledger test or a comment naming another commit — so `stale` here means the reply does not cover the merge candidate.
 - `--pending-findings` — how many of this bot's `pr-comment` findings are still pending.
 
-Only an `absent` review resolves `post_escalated_command`. A `credited` review resolves `accept_review_on_record` when no finding is pending and `await_triage` when one is; a `stale` review resolves `leave_to_stale_review` — except for a bot declaring `review_complete_after_handling`, whose `credited` OR `stale` review settles on `accept_review_on_record` (reason `review_on_record_done`) or `await_triage` (reason `review_on_record_done_findings_pending`) before any window or budget arm. An `undecidable` review resolves `unmeasured` with `reason: review_state_undecidable`, whatever `--pending-findings` carries: the producer did not observe where the review stands, and an unobserved review state never selects the arm that posts. `post_escalated_command` is the only action of this condition that posts: the other four — `accept_review_on_record`, `await_triage`, `leave_to_stale_review` and `unmeasured` — post nothing. For any other condition `--pending-findings` is ignored. Two arms read `--review-on-record` for a refusal: the stale-notice arm (`absent` resolves `trigger_stale_notice`; see `--notice-stale` above) and the ELAPSED arm (`credited` / `stale` keep an explicit-trigger bot on the re-trigger path instead of `close_and_reopen`, while a `review_complete_after_handling` bot settles on the done arm). See [`../automatic-review/SKILL.md`](../automatic-review/SKILL.md) § "Rate-limit refusal recovery" Branch 6 for the step that gathers the two observations and acts on the result.
+Only an `absent` review resolves `post_escalated_command`. A `credited` review resolves `accept_review_on_record` when no finding is pending and `await_triage` when one is; a `stale` review resolves `leave_to_stale_review` — except for a bot declaring `review_complete_after_handling`, whose `credited`, `stale` OR `undecidable` review settles on `accept_review_on_record` (reason `review_on_record_done`) or `await_triage` (reason `review_on_record_done_findings_pending`) before every cause, window and budget arm. An `undecidable` review resolves `unmeasured` with `reason: review_state_undecidable`, whatever `--pending-findings` carries: the producer did not observe where the review stands, and an unobserved review state never selects the arm that posts. `post_escalated_command` is the only action of this condition that posts: the other four — `accept_review_on_record`, `await_triage`, `leave_to_stale_review` and `unmeasured` — post nothing. For any other condition `--pending-findings` is ignored. Two arms read `--review-on-record` for a refusal: the stale-notice arm (`absent` resolves `trigger_stale_notice`; see `--notice-stale` above) and the ELAPSED arm (`credited` / `stale` keep an explicit-trigger bot on the re-trigger path instead of `close_and_reopen`, while a `review_complete_after_handling` bot settles on the done arm). See [`../automatic-review/SKILL.md`](../automatic-review/SKILL.md) § "Rate-limit refusal recovery" Branch 6 for the step that gathers the two observations and acts on the result.
 
 The returned `action` is one of:
 
 | `action` | `reason` | Meaning |
 |----------|----------|---------|
-| `accept_review_on_record` | `review_on_record_done` | The bot declares `review_complete_after_handling` and its review is `credited` or `stale`, with no pending finding. One handled review is the review, so the elapsed window settles without a post and the later head is not demanded. |
+| `accept_review_on_record` | `review_on_record_done` | The bot declares `review_complete_after_handling` and its review is `credited`, `stale` or `undecidable`, with no pending finding. One handled review is the review, so the elapsed window settles without a post and the later head is not demanded. |
 | `await_triage` | `review_on_record_done_findings_pending` | The same done arm with findings of that review still pending. Post nothing; triage handles them, never a re-request. |
 | `accept_review_on_record` | `review_on_record_findings_handled` | The condition is `no_unreviewed_commit`, a review by the bot is credited for the merge candidate, and none of its findings is pending. Post nothing. |
 | `await_triage` | `findings_pending` | The condition is `no_unreviewed_commit`, a review by the bot is credited for the merge candidate, and findings of it are still pending. Post nothing; the triage that follows handles them. |
