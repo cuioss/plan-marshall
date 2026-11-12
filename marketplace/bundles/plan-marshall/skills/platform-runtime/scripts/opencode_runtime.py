@@ -2919,8 +2919,14 @@ class OpenCodeRuntime(Runtime):
         caller propagates ``usage`` as ``unknown``) — instead of a faux
         success the harness cannot honour. The flags default explicitly to
         available: an absent flag (or an absent *context*) reads as ``True``
-        and the dispatch fires; only an explicit ``False`` declines. Both
-        flags are consumed here and never merged into the prompt.
+        and the dispatch fires; only an explicit ``False`` declines. The caller
+        can also pin the inline branch outright with ``dispatch_mode: inline``
+        inside *context*, whether or not the tool is available; any other
+        ``dispatch_mode`` value is rejected as ``invalid_argument``. Every
+        inline-branch ``no-op`` carries ``dispatch_mode: inline`` and
+        ``dispatch_boundary_rows: 1`` — the one dispatch-boundary row the caller
+        records for the inline envelope when it returns. All these context keys
+        are consumed here and never merged into the prompt.
 
         Verify-first clause 2: the requested agent's frontmatter tools must
         map onto the OpenCode tool set (``targets/opencode/mapping.json``).
@@ -2935,12 +2941,34 @@ class OpenCodeRuntime(Runtime):
         spawning_tool_available = (
             True if not isinstance(context, dict) else context.get('spawning_tool_available', True)
         )
+        if not isinstance(spawning_tool_available, bool):
+            return toon_error(
+                'subagent dispatch',
+                'invalid_argument',
+                f'spawning_tool_available must be a boolean when set; got {spawning_tool_available!r}',
+            )
+        dispatch_mode = None if not isinstance(context, dict) else context.get('dispatch_mode')
+        if dispatch_mode not in (None, 'inline'):
+            return toon_error(
+                'subagent dispatch',
+                'invalid_argument',
+                f"dispatch_mode must be 'inline' when set; got {dispatch_mode!r}",
+            )
+        if dispatch_mode == 'inline':
+            return toon_noop(
+                'subagent dispatch',
+                'The caller pinned dispatch_mode=inline for this envelope — run the envelope '
+                'inline and record one dispatch-boundary row for it when it returns',
+                'Run the agent logic in-turn in the main context and propagate usage as unknown',
+                extra={'dispatch_mode': 'inline', 'dispatch_boundary_rows': 1},
+            )
         if task_tool_available is False or spawning_tool_available is False:
             return toon_noop(
                 'subagent dispatch',
                 "OpenCode 'subagent' tool is not available in this envelope — "
                 'take the explicit logged inline branch instead of dispatching',
                 'Inline the agent logic in-turn and propagate usage as unknown',
+                extra={'dispatch_mode': 'inline', 'dispatch_boundary_rows': 1},
             )
 
         if prompt_file is not None and not pathlib.Path(prompt_file).exists():
@@ -2956,6 +2984,7 @@ class OpenCodeRuntime(Runtime):
                 'subagent dispatch',
                 f'Agent {agent!r} requires unmapped tools: {", ".join(unmapped)}',
                 'Remove unsupported tools from agent frontmatter or inline the agent logic',
+                extra={'dispatch_mode': 'inline', 'dispatch_boundary_rows': 1},
             )
 
         prompt_body = f'Run {agent}'
@@ -2970,7 +2999,11 @@ class OpenCodeRuntime(Runtime):
                 )
 
         if context:
-            context = {k: v for k, v in context.items() if k not in ('task_tool_available', 'spawning_tool_available')}
+            context = {
+                k: v
+                for k, v in context.items()
+                if k not in ('task_tool_available', 'spawning_tool_available', 'dispatch_mode')
+            }
             for key, value in context.items():
                 prompt_body = prompt_body.replace(f'{{{key}}}', str(value))
 

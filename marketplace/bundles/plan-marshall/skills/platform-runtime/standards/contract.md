@@ -1338,6 +1338,8 @@ Return the platform-specific invocation parameters for spawning a focused subage
 
 **Arguments**: `--agent <name>` (required), `--prompt-file <path>` (optional), `--context <json>` (optional)
 
+The `--context` object carries the caller's dispatch attestations and its prompt substitutions. The two runtimes that carry an inline branch (OpenCode, Antigravity) consume two keys at the seam and never merge them into the prompt: `spawning_tool_available` (the spawning-tool signal — an explicit `false` declares the tool absent in this envelope) and `dispatch_mode` (an explicit `"inline"` pins the inline branch whether or not the tool exists; any other value is rejected as `invalid_argument`). Claude's `Task` tool is always present in the orchestrator's envelope, so its runtime has no inline branch and reads neither key; it merges the remaining `--context` into the prompt as a `## Context` block, where a caller that passes an attestation key sees it.
+
 Every target echoes the requested `--agent` back inside its invocation: as `invocation.subagent_type` on Claude and Antigravity, and as `invocation.agent` on OpenCode 2 (whose sub-agent tool takes `{agent, description, prompt}`). No target substitutes an agent of its own choosing, so a caller's selection always reaches the invocation.
 
 The admitted registry is `antigravity, claude, opencode` — derived live from `platform_runtime._REGISTRY` via `describe_targets`, never a hard-coded literal.
@@ -1345,8 +1347,10 @@ The admitted registry is `antigravity, claude, opencode` — derived live from `
 Per-harness dispatch outcomes:
 
 - **Claude** — `Task` tool with the agent frontmatter description; unmapped frontmatter tools decline as `no-op`.
-- **OpenCode** — `subagent` tool, conditional on verify-first clause 1 (tool available in the envelope) and clause 2 (the requested agent's frontmatter tools map onto the OpenCode tool set via `targets/opencode/mapping.json`). A caller passing `task_tool_available: False` (legacy) or the target-neutral `spawning_tool_available: False` in `--context` takes the explicit logged inline branch (`no-op` carrying the inline fallback) instead of a faux success; an agent requiring an unmapped tool takes the same inline branch. Both flags are consumed at this seam and never merged into the prompt.
-- **Antigravity** — `invoke_subagent` tool, keeping that mapping on every path, conditional on the same two verify-first clauses: `spawning_tool_available: False` in `--context` takes the explicit logged inline branch, and an agent requiring a tool outside `targets/antigravity/mapping.json` takes the same inline branch. When the agent file or the mapping is unreadable the clause-2 check is vacuous and the dispatch proceeds.
+- **OpenCode** — `subagent` tool, conditional on verify-first clause 1 (tool available in the envelope) and clause 2 (the requested agent's frontmatter tools map onto the OpenCode tool set via `targets/opencode/mapping.json`). A caller passing `task_tool_available: false` (legacy) or the target-neutral `spawning_tool_available: false` in `--context` takes the explicit logged inline branch (`no-op` carrying the inline fallback) instead of a faux success; a caller passing `dispatch_mode: "inline"` takes it by explicit request; an agent requiring an unmapped tool takes the same inline branch.
+- **Antigravity** — `invoke_subagent` tool, keeping that mapping on every path, conditional on the same two verify-first clauses: `spawning_tool_available: false` in `--context` takes the explicit logged inline branch, `dispatch_mode: "inline"` pins it by explicit request, and an agent requiring a tool outside `targets/antigravity/mapping.json` takes the same inline branch. When the agent file or the mapping is unreadable the clause-2 check is vacuous and the dispatch proceeds.
+
+Every inline-branch `no-op` of the two inline-capable runtimes (OpenCode, Antigravity) carries `dispatch_mode: inline` and `dispatch_boundary_rows: 1`: the caller records exactly one dispatch-boundary row for the inline envelope when it returns, so an inlined envelope is as visible in the metrics ledger as a dispatched one. Claude has no inline branch, so no Claude `no-op` carries them.
 
 Transcripts vocabulary: no dispatch has happened at this seam — the payload carries invocation parameters, not a run — so every success carries `usage: unknown` rather than a measured zero, and every inline-branch `no-op` propagates usage as unknown the same way. `unknown` here shares the manage-metrics unknown vocabulary: absent measurement is stated, never zero-filled.
 
@@ -1369,6 +1373,18 @@ status: no-op
 operation: subagent dispatch
 reason: OpenCode 'subagent' tool is not available in this envelope — take the explicit logged inline branch instead of dispatching
 alternative: Inline the agent logic in-turn and propagate usage as unknown
+dispatch_mode: inline
+dispatch_boundary_rows: 1
+```
+
+**No-op (inline branch pinned by `dispatch_mode`)**:
+```toon
+status: no-op
+operation: subagent dispatch
+reason: The caller pinned dispatch_mode=inline for this envelope — run the envelope inline and record one dispatch-boundary row for it when it returns
+alternative: Run the agent logic in-turn in the main context and propagate usage as unknown
+dispatch_mode: inline
+dispatch_boundary_rows: 1
 ```
 
 **Success (Claude)**:
@@ -1405,6 +1421,8 @@ status: no-op
 operation: subagent dispatch
 reason: "Agent team-coordinator-agent requires unmapped tools: SendMessage"
 alternative: Remove unsupported tools from agent frontmatter or inline the agent logic
+dispatch_mode: inline
+dispatch_boundary_rows: 1
 ```
 
 **Error (prompt file not found)**:
