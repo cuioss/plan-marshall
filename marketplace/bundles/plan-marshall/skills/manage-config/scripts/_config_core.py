@@ -171,13 +171,12 @@ CANONICAL_TOP_LEVEL_KEY_ORDER = [
     # in its alphabetical slot among the trailing keys that follow `build`.
     'interaction_mode',
     'project',
-    # `project_dir` and `runtime` are written at the top level by the platform
-    # runtime seed (`project initial-setup`): the Claude seed writes both, the
-    # OpenCode seed writes `runtime`. `runtime.target` is read back by
-    # `platform_runtime._resolve_target`, so they are first-party product
-    # configuration rather than stray blocks — omitting them made `normalize-keys`
-    # report the product's own seed as unrecognized. Both take their alphabetical
-    # slot among the trailing keys.
+    # `project_dir` and `runtime` are first-party product configuration rather
+    # than stray blocks: a project may declare them at the top level (older
+    # seeds wrote them; every current `project initial-setup` reports
+    # `marshal_written: false`), and `runtime.target` is read back by the target
+    # resolver when declared, so `normalize-keys` must not report them as
+    # unrecognized. Both take their alphabetical slot among the trailing keys.
     'project_dir',
     'providers',
     'runtime',

@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""The permission documents and the code state the same error vocabulary.
+"""The permission documents and the code state the same story.
 
 An operator reads ``doc/developer/opencode.adoc``, ``standards/contract.md`` and
-``SKILL.md`` to decide what an error means. A code the operations return but a
-document omits (or the other way round) turns that reading into a guess, so the
-three surfaces are compared against the runtime's own declaration — and the
-base policy every one of them states is the one OBSERVED on the client, not the
-retired "no match means ask" model.
+``SKILL.md`` to decide what an error means and which rule an invocation resolves
+to. A code the operations return but a document omits (or the other way round)
+turns that reading into a guess, so the three surfaces are compared against the
+runtime's own declaration — and the base policy every one of them states is the
+one OBSERVED on the client, not the retired "no match means ask" model. The
+developer document's role matrix and its test citations are pinned the same way,
+so a passage that describes the retired map notation or names a test module that
+no longer exists fails here rather than at a reader.
 """
 
 from __future__ import annotations
@@ -84,8 +87,9 @@ def test_the_observed_base_policy_is_stated_with_its_source(name: str) -> None:
 
 
 #: The agent ``"*"`` fallback in the shape the client reads: a rule in the
-#: ordered ``permissions`` list, never an OpenCode 1 ``permission`` map entry.
-ASK_FALLBACK_RULE = '{action: "*", resource: "*", effect: "ask"}'
+#: ordered ``permissions`` list of the root configuration's ``agents`` block,
+#: never an OpenCode 1 ``permission`` map entry.
+ASK_FALLBACK_RULE = '{action: "shell", resource: "*", effect: "ask"}'
 
 
 def test_the_role_matrix_describes_the_agent_fallback_as_a_list_rule() -> None:

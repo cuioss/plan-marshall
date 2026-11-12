@@ -48,10 +48,11 @@ def runtime() -> OpenCodeRuntime:
 
 @pytest.fixture()
 def machine_home(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> pathlib.Path:
-    """Point ``PLAN_MARSHALL_HOME`` at a per-test directory.
+    """Point the machine-global ``PLAN_MARSHALL_HOME`` root at a per-test directory.
 
-    Setup reads the machine-global configuration, so an isolated home keeps a
-    test from measuring the developer's real one.
+    Nothing a test reaches writes the developer's real machine-global home: the
+    variable is set for the whole test, in-process readers and the child executor
+    processes alike, so a machine-global read or write cannot leave the sandbox.
     """
     home = tmp_path / 'machine-home'
     home.mkdir()
@@ -2175,8 +2176,12 @@ def test_a_non_utf8_bridge_never_raises_from_setup_or_drift(
     assert 'rule' in bridge.read_text(encoding='utf-8')
 
 
-def test_a_deleted_baseline_replaces_the_bridge_with_the_stub(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
+def test_a_deleted_baseline_replaces_the_bridge_with_the_stub(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, machine_home: pathlib.Path
+) -> None:
     """A deleted baseline must not leave its rules presented as current."""
+    from opencode_runtime import _bridge_body
+
     baseline = tmp_path / 'CLAUDE.md'
     baseline.write_text('# Project rules\n\nstale rule\n', encoding='utf-8')
     _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
@@ -2189,11 +2194,17 @@ def test_a_deleted_baseline_replaces_the_bridge_with_the_stub(runtime: OpenCodeR
     assert result['bridge_written'] is True
     assert result['bridge_drift'] is True, 'replacing a bridge that carried rules is drift'
     assert result['bridge_reason'] == 'baseline_missing'
-    assert 'stale rule' not in bridge.read_text(encoding='utf-8')
+    assert bridge.read_text(encoding='utf-8') == _bridge_body(None), 'the bridge is exactly the marker-only stub'
 
 
-def test_setup_reports_drift_for_a_hand_edited_bridge(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
-    """A body edit that keeps the marker and hash is still a bridge setup replaces."""
+def test_setup_reports_drift_for_a_hand_edited_bridge(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, machine_home: pathlib.Path
+) -> None:
+    """A body edit that keeps the marker and hash is still a bridge setup replaces.
+
+    The pre-heal status reads ``in_sync`` by design — it compares the recorded
+    hash to the baseline only — so the drift verdict must come from the write.
+    """
     from opencode_runtime import _bridge_rules_path
 
     (tmp_path / 'CLAUDE.md').write_text('# Project rules\n\nrule\n', encoding='utf-8')
@@ -2206,6 +2217,7 @@ def test_setup_reports_drift_for_a_hand_edited_bridge(runtime: OpenCodeRuntime, 
 
     assert result['bridge_written'] is True
     assert result['bridge_drift'] is True, 'a rewrite of an existing bridge is drift even when the hash matches'
+    assert result['bridge_reason'] == 'in_sync', 'the pre-heal status cannot see a body-only edit'
     assert 'hand edit' not in bridge.read_text(encoding='utf-8')
 
 

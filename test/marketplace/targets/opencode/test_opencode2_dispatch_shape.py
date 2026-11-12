@@ -58,10 +58,11 @@ def test_no_bundle_standard_names_the_opencode_subagent_tool_as_task():
     """No OpenCode-facing surface may name the OpenCode 1 tools ``task`` or ``bash``.
 
     The standards sweep keeps its original needle across every bundle. The
-    OpenCode-only bundle is swept over its whole surface — its ``SKILL.md`` and
-    its workflow documents say which tool to call just as its standards do — and
-    there the needle widens to a backticked ``task`` or ``bash`` used as the tool
-    name, because the target-rules skill never carries the narrower literal.
+    OpenCode-only bundle is swept over its whole OpenCode-facing surface — its
+    ``SKILL.md``, its workflow documents and its README say which tool to call
+    just as its standards do — and there the needle widens to a backticked
+    ``task`` or ``bash`` anywhere on the line, because the target-rules skill
+    never carries the narrower literal.
     """
     bundles = Path(PROJECT_ROOT) / 'marketplace' / 'bundles'
     offenders: list[str] = []
@@ -71,12 +72,20 @@ def test_no_bundle_standard_names_the_opencode_subagent_tool_as_task():
                 offenders.append(f'{path.relative_to(bundles)}:{number}: {line.strip()}')
 
     opencode_bundle = bundles / 'plan-marshall-opencode'
-    surfaces = [
-        path
-        for pattern in ('skills/*/SKILL.md', 'skills/*/standards/*.md', 'skills/*/workflow/*.md')
-        for path in sorted(opencode_bundle.glob(pattern))
-    ]
-    assert surfaces, 'the plan-marshall-opencode sweep matched no file'
+    required_patterns = ('skills/*/SKILL.md', 'skills/*/standards/*.md', 'README.md')
+    # ``skills/*/workflow/*.md`` ships no file in this bundle today; it stays in
+    # the population so a workflow document added later is swept without a
+    # second edit, and it is not part of the vacuity guard for that reason.
+    optional_patterns = ('skills/*/workflow/*.md',)
+    matched: dict[str, int] = {}
+    surfaces: list[Path] = []
+    for pattern in required_patterns + optional_patterns:
+        found = sorted(opencode_bundle.glob(pattern))
+        matched[pattern] = len(found)
+        surfaces.extend(found)
+
+    for pattern in required_patterns:
+        assert matched[pattern], f'the plan-marshall-opencode sweep matches no file for {pattern}'
     for path in surfaces:
         for number, line in enumerate(path.read_text(encoding='utf-8').splitlines(), start=1):
             if any(f'`{tool}`' in line for tool in ('task', 'bash')):

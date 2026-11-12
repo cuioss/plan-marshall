@@ -125,8 +125,8 @@ class TestCascadeTiers:
         """Antigravity outranks OpenCode, which outranks Claude, by literal signal names.
 
         The three signals are spelled here rather than read from
-        ``TARGET_ENV_SIGNALS``, so this test pins the CONTRACT while the table it
-        guards stays free to be reordered — a reorder must make it fail.
+        ``TARGET_ENV_SIGNALS``, so this test states the precedence independently of
+        the table, and reordering the table must fail it.
         """
         monkeypatch.setenv('ANTIGRAVITY_AGENT', '1')
         monkeypatch.setenv('OPENCODE', '1')

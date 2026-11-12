@@ -184,7 +184,7 @@ The matrix below resolves every relevant (role, surface, path) cell. Rows are ve
 | Sync engine | `python3 marketplace/targets/sync.py *` | allow | `agents.build.permissions` allow row
 | Git read | `git status/log/diff/show/branch *` | ask | `agents.build.permissions` ask rows — information lookups stay available under operator confirmation
 | Read probes | `ls/cat/head/tail/grep/find *` | ask | `agents.build.permissions` ask rows — override the global deny for the orchestrator (carve-out as implemented)
-| Git write | `git add/commit *` and other unwritten git verbs | ask | `agents.build.permissions` rule `{action: "*", resource: "*", effect: "ask"}`
+| Git write | `git add/commit *` and other unwritten git verbs | ask | `agents.build.permissions` rule `{action: "shell", resource: "*", effect: "ask"}`
 | Network git | `git push/fetch/pull/merge/rebase/reset *` | ask | global ask rows (no build override)
 | Package install | `npm install *`, `pip install *`, `python3 -m pip *` | ask | global ask rows
 | Containers | `docker *` | ask | global ask row
@@ -202,12 +202,12 @@ The matrix below resolves every relevant (role, surface, path) cell. Rows are ve
 | Executor | `python3 .plan/execute-script.py *` | allow | per-agent allow row; guard R4 exempts the permit
 | Git read | `git status/log/diff *` | allow | per-agent allow rows
 | Git local write | `git add/commit *` | allow | per-agent allow rows
-| Everything else | `"*"` fallback | ask | per-agent rule `{action: "*", resource: "*", effect: "ask"}` — includes `./pw *`, network git, package install
+| Everything else | `"*"` fallback | ask | root-config per-agent rule `{action: "shell", resource: "*", effect: "ask"}` — includes `./pw *`, network git, package install
 | Read probes | `find/grep/cat/head/tail *`, `git grep *` | deny | per-agent deny rows
 | Destructive git | `git push/restore/checkout --/stash/clean *` | deny | per-agent deny rows
 | Test runners | `pytest *`, `python3 -m pytest *` | deny | per-agent deny rows; guard R4 blocks at the host layer
 | Shell file ops | `rm *` and other mutation ops | deny | per-agent deny rows; guard R2 blocks at the host layer
-| CI abstraction | `gh *`, `glab *` | deny | per-agent deny row, restated after the agent's `{action: "*", resource: "*", effect: "ask"}` catch-all so it still decides
+| CI abstraction | `gh *`, `glab *` | deny | per-agent deny row, restated after the agent's `{action: "shell", resource: "*", effect: "ask"}` catch-all so it still decides
 |===
 
 ==== Reader (`execution-context-reader`, level variants) — read-only information surface
@@ -215,14 +215,14 @@ The matrix below resolves every relevant (role, surface, path) cell. Rows are ve
 [cols="2,4,2,3", options="header"]
 |===
 | Surface | Path | Resolution | Source (landed artifact)
-| Executor | `python3 .plan/execute-script.py *` | ask or deny, never allow | the block carries no allow; its `{action: "*", resource: "*", effect: "ask"}` fallback decides, and the emitted agent's `shell: deny` is appended after the global list — either way the reader never reaches `allow`
+| Executor | `python3 .plan/execute-script.py *` | ask or deny, never allow | the block carries no allow; its `{action: "shell", resource: "*", effect: "ask"}` fallback decides, and the emitted agent's `shell: deny` is appended after the global list — either way the reader never reaches `allow`
 | Git read | `git status/log/diff *` | ask or deny, never allow | same as the executor row: global allow, then the reader's own catch-all and/or the emitted shell deny
-| Everything else | `"*"` fallback | ask | per-agent rule `{action: "*", resource: "*", effect: "ask"}`
+| Everything else | `"*"` fallback | ask | root-config per-agent rule `{action: "shell", resource: "*", effect: "ask"}`
 | Read probes | `find/grep/cat/head/tail *`, `git grep *` | deny | per-agent deny rows
 | Git write | `git add/commit/push *` | deny | per-agent deny rows
 | Shell file ops | `rm *` and other mutation ops | deny | per-agent deny rows; guard R2 blocks at the host layer
 | Test runners | `pytest *`, `python3 -m pytest *` | deny | per-agent deny rows; guard R4 blocks at the host layer
-| CI abstraction | `gh *`, `glab *` | deny | per-agent deny row, restated after the agent's `{action: "*", resource: "*", effect: "ask"}` catch-all so it still decides
+| CI abstraction | `gh *`, `glab *` | deny | per-agent deny row, restated after the agent's `{action: "shell", resource: "*", effect: "ask"}` catch-all so it still decides
 |===
 
 The matrix is the authoritative record of the carve-out as implemented: the orchestrator keeps read-only file ops and git status/log as information lookups under `ask` (never silently suppressed, never auto-allowed), and the executor is confined to the `python3 .plan/execute-script.py` permit plus deny on the hard rules. Rows that carry a guard rule in the `Source` column are enforced twice — once by the map, once by the throw-to-block plugin — so a mis-merged `opencode.json` cannot silently widen a hard-rule class.
@@ -231,7 +231,7 @@ The matrix is the authoritative record of the carve-out as implemented: the orch
 
 == Runtime Abstraction & Platform Integration
 
-Plan Marshall integrates OpenCode as a first-class runtime through `platform-runtime`, permission utilities (`tools-permission-fix`, `tools-permission-doctor`), and project setup (`marshall-steward`). The target is resolved by the shared target resolver from the harness's own signals and the machine-local configuration; project setup writes no `runtime.target` and reports `marshal_written: false`.
+Plan Marshall integrates OpenCode as a first-class runtime through `platform-runtime`, permission utilities (`tools-permission-fix`, `tools-permission-doctor`), and project setup (`marshall-steward`). The target is resolved by the shared target resolver from the harness's own signals and the machine-local configuration — a legacy `runtime.target` in `.plan/marshal.json` is still honoured where a project declares one — and project setup writes no `runtime.target` and reports `marshal_written: false`.
 
 === OpenCodeRuntime (`platform-runtime`)
 
