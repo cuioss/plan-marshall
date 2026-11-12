@@ -1,0 +1,11 @@
+{
+  "id": "PLAN-LB-147",
+  "slug": "qualifying-review-one-reader",
+  "workstream": "WS-05",
+  "status": "shipped",
+  "lane": "runbook",
+  "plan_marshall_plan_id": "rb-lb-147-qualifying-review-one-reader",
+  "pr": "1973",
+  "landing": "landings/PLAN-LB-147.md",
+  "seq": 147
+}
