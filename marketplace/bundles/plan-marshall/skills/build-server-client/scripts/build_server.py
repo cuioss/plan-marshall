@@ -395,7 +395,11 @@ def _job_row(job_id: str) -> dict[str, Any] | None:
     """
     try:
         entries = read_entries()
-    except OSError:
+    except (OSError, ValueError):
+        # Reading the ledger is best-effort on this path. ``ValueError`` covers a
+        # corrupt (non-UTF-8) ledger, which ``read_entries`` does not swallow: a
+        # wait must report the daemon's result with no tree fields rather than
+        # fail with ``internal_error`` and lose a finished job.
         return None
     matching = [entry for entry in entries if entry.get('kind') == KIND_JOB and entry.get('job_id') == job_id]
     return matching[-1] if matching else None
@@ -619,14 +623,23 @@ def run_wait(args: Namespace) -> dict[str, Any]:
     # Same resolution as `run_submit`, and load-bearing for re-attach: the
     # lookup below matches the ledger row VERBATIM, so an unresolved '' here
     # would never find the NO_PLAN row a plan-less submit wrote.
-    plan_id = args.plan_id or NO_PLAN_SENTINEL
-    job_id = args.job_id or _latest_job_id_for_plan(plan_id)
+    requested_plan_id = args.plan_id or NO_PLAN_SENTINEL
+    job_id = args.job_id or _latest_job_id_for_plan(requested_plan_id)
     if not job_id:
         return make_error(
             'no --job-id given and no kind=job ledger row to re-attach to'
             + (f' for plan {args.plan_id}' if names_real_plan(args.plan_id) else ''),
             code=ErrorCode.NOT_FOUND,
         )
+
+    # The job RECORD is read before the first audit call, so the wait's own log
+    # lines are routed by the submitted plan rather than by the caller's flags: a
+    # wait given only `--job-id` would otherwise write a plan-scoped job's outcome
+    # into the GLOBAL log under `plan=NO_PLAN`. The caller's value stays the
+    # fallback for a job whose record is missing or unreadable.
+    job_row = _job_row(job_id)
+    record_plan_id = (job_row or {}).get('plan_id')
+    plan_id = record_plan_id if isinstance(record_plan_id, str) and record_plan_id.strip() else requested_plan_id
 
     bound = args.bound if args.bound is not None else _DEFAULT_WAIT_BOUND
     _, reason = _handshake(_socket_path())
@@ -649,11 +662,10 @@ def run_wait(args: Namespace) -> dict[str, Any]:
 
     result = _render_job_status(response)
     # Name the tree from the submission record, never from the daemon payload:
-    # the daemon reports the job's OUTCOME and carries no paths. A wait that
-    # re-attached from the ledger has the row in hand; one given `--job-id` reads
-    # it here. A job whose record cannot be read reports no tree at all rather
-    # than a guessed one, so the caller sees the absence.
-    result.update(_job_tree_fields(_job_row(job_id)))
+    # the daemon reports the job's OUTCOME and carries no paths. A job whose
+    # record cannot be read reports no path fields rather than a guessed one, so
+    # the caller sees the absence.
+    result.update(_job_tree_fields(job_row))
     # job_id may be a client-supplied `--job-id`, and job_status/elapsed/eta come
     # back from the daemon response; sanitize every one before interpolating it
     # into the line-oriented work log (CWE-117), exactly as notation is sanitized.

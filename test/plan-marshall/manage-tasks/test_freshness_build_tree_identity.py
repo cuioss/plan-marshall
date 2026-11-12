@@ -216,6 +216,22 @@ def test_an_explicit_null_root_never_matches(plan_context, monkeypatch, tmp_path
     assert result['reason'] == 'worktree_root_unreadable', result
 
 
+def test_a_routing_seam_row_is_not_read_as_a_failed_capture(plan_context, monkeypatch, tmp_path) -> None:
+    """CONTROL: the seam's deliberately hash-less row keeps the mutation answer.
+
+    `_append_gate_build_row` writes ``worktree_sha=None`` on purpose (resolving the
+    hash there would run git after the build). Reading that omission as a failed
+    capture would send an operator to repair a resolution that works.
+    """
+    seam_row = _build_entry(plan_id=_PLAN_ID, worktree_sha=None)
+    seam_row['outcome'] = {'route': 'in_process'}
+
+    result = _run_gate(plan_context, monkeypatch, tmp_path, seam_row)
+
+    assert result['status'] == 'stale', result
+    assert result['reason'] == 'worktree_mutated', result
+
+
 def test_an_old_unrecorded_row_does_not_hide_a_later_mutation(plan_context, monkeypatch, tmp_path) -> None:
     """CONTROL: the unrecorded route is scoped to the NEWEST build row.
 
@@ -224,8 +240,8 @@ def test_an_old_unrecorded_row_does_not_hide_a_later_mutation(plan_context, monk
     ever — and would name a resolution fault where the current build recorded its
     tree perfectly well.
     """
-    stale_unrecorded = _build_entry(worktree_sha=None)
-    later_mutation = _build_entry(worktree_sha='f' * 64)
+    stale_unrecorded = _build_entry(plan_id=_PLAN_ID, worktree_sha=None)
+    later_mutation = _build_entry(plan_id=_PLAN_ID, worktree_sha='f' * 64)
 
     result = _run_gate(plan_context, monkeypatch, tmp_path, [stale_unrecorded, later_mutation])
 

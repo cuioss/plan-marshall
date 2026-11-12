@@ -212,15 +212,17 @@ def test_a_planted_copy_of_the_retired_wording_fails_every_pin(pin: _Pin) -> Non
 
 
 def test_no_document_still_describes_the_plan_less_submit_as_silent() -> None:
-    """The retired claim is gone from the whole marketplace tree, not only its section.
+    """The retired claim is gone from the whole MARKETPLACE tree, not one bundle.
 
     The client's interaction-logging section stated plan-less silence twice — the
     bullet and its closing sentence — so a section-scoped pin alone could pass
-    while the other statement kept the old behaviour alive.
+    while the other statement kept the old behaviour alive. The sweep therefore
+    covers every bundle the marketplace ships, which is what the docstring claims.
     """
+    marketplace = PROJECT_ROOT / 'marketplace'
     offenders = [
-        path.relative_to(_SKILLS).as_posix()
-        for path in sorted(_SKILLS.rglob('*.md'))
+        path.relative_to(PROJECT_ROOT).as_posix()
+        for path in sorted(marketplace.rglob('*.md'))
         if _RETIRED_PLAN_LESS_SILENCE in path.read_text(encoding='utf-8')
     ]
 

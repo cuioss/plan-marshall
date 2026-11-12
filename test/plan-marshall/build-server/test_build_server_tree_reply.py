@@ -264,6 +264,48 @@ def test_a_plan_less_degraded_submit_is_traced_too(home, ledger, captured_logs, 
     assert client.REASON_IMPOSTOR_SOCKET in warnings[-1][3]
 
 
+def test_a_wait_given_only_a_job_id_logs_under_the_job_rows_plan(home, ledger, captured_logs, monkeypatch) -> None:
+    """The job RECORD routes the wait's own log lines, not the caller's flags.
+
+    A wait given only `--job-id` has no plan of its own; reading the record first
+    keeps a plan-scoped job's outcome in that plan's work log instead of the
+    global one under `plan=NO_PLAN`.
+    """
+    root = str(home / 'proj')
+    _queue(monkeypatch)
+    client.run_submit(_submit_args(root))
+
+    captured_logs.clear()
+    _finish(monkeypatch)
+    client.run_wait(_variant(_WAIT_ARGS, job_id='JOB-1', plan_id=None, bound=1))
+
+    assert captured_logs, 'a wait must log its result'
+    assert all(plan_id == 'p1' for _t, plan_id, _l, _m in captured_logs), (
+        f"the wait logged under the caller's plan-less identity: {captured_logs!r}"
+    )
+
+
+def test_a_corrupt_ledger_never_loses_the_daemon_result(home, ledger, monkeypatch) -> None:
+    """An unreadable ledger costs the tree fields, never the result.
+
+    `read_entries` raises on bytes that are not UTF-8; `_job_row` treats that like
+    any other unreadable record so the finished job's outcome still reaches the
+    caller.
+    """
+
+    def _corrupt():
+        raise UnicodeDecodeError('utf-8', b'\xff', 0, 1, 'invalid start byte')
+
+    monkeypatch.setattr(client, 'read_entries', _corrupt)
+    _finish(monkeypatch)
+
+    result = client.run_wait(_variant(_WAIT_ARGS, job_id='JOB-1', plan_id='p1', bound=1))
+
+    assert result['status'] == 'success', result
+    assert result['job_status'] == 'success'
+    assert 'exec_path' not in result
+
+
 def test_a_plan_scoped_submit_writes_no_global_line(home, ledger, captured_logs, monkeypatch) -> None:
     """CONTROL: the global line is the plan-less route only."""
     _queue(monkeypatch)

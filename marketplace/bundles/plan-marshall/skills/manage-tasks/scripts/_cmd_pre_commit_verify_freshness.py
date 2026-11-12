@@ -427,6 +427,28 @@ def _refusal_reason(refused: list[tuple[int, dict, str]], gate_root: Path) -> tu
     return reason, message
 
 
+def _is_routing_seam_row(entry: dict) -> bool:
+    """Whether ``entry`` is the routing seam's own auxiliary ``kind=build`` row.
+
+    ``script-shared/scripts/build/_build_execute_factory.py`` appends one row per
+    terminal gate route that carries ``worktree_sha=None`` DELIBERATELY — resolving
+    the hash there would run git calls after the build, which the timeout suite's
+    patched ``subprocess.run`` would read as the build's own call. Its ``outcome``
+    names the route (``{'route': 'in_process'|'routed', ...}``), which no
+    executor-stamped row carries, so the marker distinguishes "this writer never
+    intended to hash" from "a writer that intended to hash could not".
+
+    The distinction is load-bearing on the ``build_tree_unrecorded`` route: reading
+    a deliberate omission as a failed capture would tell an operator to repair a
+    resolution that is working.
+    """
+    outcome = entry.get('outcome')
+    if not isinstance(outcome, dict):
+        return False
+    route = outcome.get('route')
+    return isinstance(route, str) and bool(route.strip())
+
+
 def _stale_reason(entries: list[dict], current_sha: str, plan_id: str) -> tuple[str, str, str | None]:
     """Derive the ``stale`` reason from what the ledger actually holds.
 
@@ -515,8 +537,12 @@ def _stale_reason(entries: list[dict], current_sha: str, plan_id: str) -> tuple[
         # tree as a resolution fault. A row that cannot be attributed falls back
         # to `worktree_mutated`, whose remedy is the one that can work here.
         build_rows = [entry for entry in entries if entry.get('kind') == KIND_BUILD]
-        if build_rows:
-            newest = build_rows[-1]
+        # The routing seam's aux rows are deliberately hash-less, so they are not
+        # candidates for "a writer failed to record the tree" — the newest row this
+        # route may read is the newest row that INTENDED to carry a hash.
+        attributable = [entry for entry in build_rows if not _is_routing_seam_row(entry)]
+        if attributable:
+            newest = attributable[-1]
             if newest.get('worktree_sha') is None and newest.get('plan_id') == plan_id:
                 observed_unrecorded = newest.get('status')
                 return (
