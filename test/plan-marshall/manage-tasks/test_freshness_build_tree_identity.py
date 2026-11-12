@@ -143,12 +143,14 @@ def test_a_root_the_filesystem_refuses_is_a_refusal_not_a_crash(plan_context, mo
 
     A ledger row is untrusted input: JSON can carry ``"a\\u0000b"`` as a string,
     and ``Path.resolve()`` raises ``ValueError`` for it. A gate whose whole job
-    is to fail closed must answer `stale`, not a traceback.
+    is to fail closed must answer `stale`, not a traceback — and the route must
+    be the unreadable one, because nothing was hashed against a string that is
+    not a path at all.
     """
     result = _run_gate(plan_context, monkeypatch, tmp_path, _row(worktree_root='a\x00b'))
 
     assert result['status'] == 'stale', result
-    assert result['reason'] == 'worktree_root_mismatch', result
+    assert result['reason'] == 'worktree_root_unreadable', result
 
 
 def test_a_build_row_that_recorded_no_tree_is_named_as_unrecorded(plan_context, monkeypatch, tmp_path) -> None:
@@ -162,6 +164,23 @@ def test_a_build_row_that_recorded_no_tree_is_named_as_unrecorded(plan_context, 
     assert result['status'] == 'stale', result
     assert result['reason'] == 'build_tree_unrecorded', result
     assert 're-running' in result['message'].lower(), result['message']
+
+
+def test_an_old_unrecorded_row_does_not_hide_a_later_mutation(plan_context, monkeypatch, tmp_path) -> None:
+    """CONTROL: the unrecorded route is scoped to the NEWEST build row.
+
+    The ledger is one shared, append-only, never-rewritten file per repository, so
+    an unscoped "any row is unrecorded" would relabel every later mutation for
+    ever — and would name a resolution fault where the current build recorded its
+    tree perfectly well.
+    """
+    stale_unrecorded = _build_entry(worktree_sha=None)
+    later_mutation = _build_entry(worktree_sha='f' * 64)
+
+    result = _run_gate(plan_context, monkeypatch, tmp_path, [stale_unrecorded, later_mutation])
+
+    assert result['status'] == 'stale', result
+    assert result['reason'] == 'worktree_mutated', result
 
 
 # =============================================================================

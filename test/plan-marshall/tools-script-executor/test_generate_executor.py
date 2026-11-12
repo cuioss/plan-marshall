@@ -1039,14 +1039,17 @@ def test_template_build_ledger_append_fires_after_dispatch_not_before():
     call_site_idx = source.find('_append_build_ledger_record(', branch_idx)
     assert call_site_idx != -1, 'ledger append call site not found after the guard'
 
-    # The guard's VALUE is captured BEFORE the dispatch, so the tree capture it
-    # gates is a pre-build observation. Without this ordering the capture could
-    # move behind the subprocess and every hash would be taken after the build —
-    # the rewrite would fold back into one green, silently.
-    assert guard_idx < dispatch_idx, (
-        'the build-class guard must be evaluated BEFORE the subprocess dispatch, so the '
-        f'dispatch-time tree capture is a pre-build observation (guard at {guard_idx}, '
-        f'dispatch at {dispatch_idx})'
+    # The guard's VALUE and the capture it gates must both come BEFORE the
+    # dispatch, so the tree capture is a pre-build observation. This positional
+    # pin is the cheap half; the behavioural half is
+    # ``test_main_captures_the_tree_before_the_build_edits_it`` in
+    # ``test_build_tree_identity_recorder.py``, which is what catches a capture
+    # moved behind the subprocess or a value dropped from the writer call.
+    capture_idx = source.find('_dispatch_tree_state = _capture_dispatch_tree_state(')
+    assert capture_idx != -1, 'dispatch-time tree capture not found in main()'
+    assert guard_idx < capture_idx < dispatch_idx, (
+        'the guard and the dispatch-time tree capture must both precede the subprocess '
+        f'dispatch (guard {guard_idx}, capture {capture_idx}, dispatch {dispatch_idx})'
     )
 
     assert call_site_idx > dispatch_idx, (

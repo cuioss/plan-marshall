@@ -11,9 +11,12 @@ recorder's own prose in the executor template, the gate's section in
 
 Every pin reads the REAL document, inside the SECTION that states the behaviour,
 and each carries a planted-copy control: the document with the pinned sentence
-replaced by the wording the change retired must fail. A pin that only looked for
-a token somewhere in the file could not fail that way, because the rest of the
-file still names the token — which is exactly the weakness the controls close.
+replaced by the wording the change retired must fail. Two things are kept apart
+there — the control proves the SECTION no longer carries the statement, and the
+section window is what keeps a sentence in a LATER section from answering for
+this one. A control cannot prove the absence of a duplicate elsewhere in the
+file (it replaces every occurrence), so the window, not the control, is what
+holds that direction.
 """
 
 from __future__ import annotations
@@ -84,8 +87,8 @@ _PINS = (
     _Pin(
         label='manage-tasks/SKILL.md — a build that recorded no tree is named',
         path=_doc('manage-tasks', 'SKILL.md'),
-        marker='| `build_tree_unrecorded` | A `kind=build` row exists',
-        snippet='Establish why the plan-context root did not resolve',
+        marker='| `build_tree_unrecorded` | The NEWEST `kind=build` row records',
+        snippet='Establish whether the tree would not resolve',
         retired='Re-run the build.',
     ),
     _Pin(
@@ -147,9 +150,10 @@ def test_each_document_states_the_pinned_behaviour(pin: _Pin) -> None:
 def test_a_planted_copy_of_the_retired_wording_fails_every_pin(pin: _Pin) -> None:
     """Mutation control per pin: replace the sentence, the pin must go red.
 
-    The mutation substitutes the retired wording for the pinned sentence, so the
-    control proves the pin is anchored to the statement rather than to a token
-    that happens to appear elsewhere in the same document.
+    The mutation substitutes the retired wording for every occurrence of the
+    pinned sentence, so the control proves the SECTION stops carrying it. It
+    cannot detect a duplicate elsewhere in the file, and does not claim to: the
+    window is what keeps a later section from answering for this one.
     """
     text = pin.path.read_text(encoding='utf-8')
     assert _states(text, pin.marker, pin.snippet), f'{pin.label}: nothing pinned to mutate'

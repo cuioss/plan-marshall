@@ -236,11 +236,12 @@ _STALE_MUTATED = (
 
 _STALE_UNRECORDED = (
     'build_tree_unrecorded',
-    'A build-class dispatch completed but recorded NO tree hash at all: the '
-    'writer could not resolve the tree it was building, so its row can never '
-    'match any tree — and re-running the build reproduces the same unrecorded '
-    'row. Establish why the plan-context root did not resolve for this plan '
-    '(its worktree metadata, or the resolver itself), then re-dispatch.',
+    'The NEWEST build-class dispatch recorded NO tree hash at all, so its row can '
+    'never match any tree — and re-running the build reproduces the same '
+    'unrecorded row. Either the tree it was building would not resolve (the '
+    "plan's worktree metadata, or the resolver), or that tree's currency hash "
+    'could not be computed (an unresolvable HEAD — a non-git directory, or a repo '
+    'with no commit). Establish which of the two applies, then re-dispatch.',
 )
 
 # ---------------------------------------------------------------------------
@@ -320,22 +321,21 @@ _REFUSAL_MESSAGES: dict[str, str] = dict(
 )
 
 
-def _same_path(recorded: str, gate_root: Path) -> bool:
+def _same_path(recorded: str, gate_root: Path) -> bool | None:
     """Whether ``recorded`` names the same directory as ``gate_root``.
 
     Compared after ``resolve()`` on both sides, so a recorded relative path, a
     trailing separator or a symlinked spelling of one tree is not reported as a
-    different tree. A path that cannot be resolved is NOT the same tree — the
-    fail-closed direction. ``ValueError`` is in the refusal set alongside the two
-    the filesystem raises: ``Path.resolve()`` raises it for a string it cannot
-    even treat as a path (an embedded NUL, which JSON can carry), and letting it
-    escape would turn a `stale` verdict into a traceback at a gate whose whole
-    purpose is to refuse.
+    different tree. ``True``/``False`` answer the comparison; ``None`` means the
+    string cannot even be treated as a path — ``Path.resolve()`` raises
+    ``ValueError`` for an embedded NUL, which JSON can carry — and the caller
+    reads that as an UNREADABLE root rather than as a different tree, because
+    nothing was hashed against a string that is not a path.
     """
     try:
         return Path(recorded).resolve() == Path(gate_root).resolve()
     except (OSError, RuntimeError, ValueError):
-        return False
+        return None
 
 
 def _row_tree_verdicts(entry: dict, gate_root: Path) -> tuple[str, str]:
@@ -355,7 +355,11 @@ def _row_tree_verdicts(entry: dict, gate_root: Path) -> tuple[str, str]:
     elif not isinstance(recorded_root, str) or not recorded_root.strip():
         root_verdict = _UNREADABLE
     else:
-        root_verdict = _SAME if _same_path(recorded_root, gate_root) else _DIFFERENT
+        same_root = _same_path(recorded_root, gate_root)
+        if same_root is None:
+            root_verdict = _UNREADABLE
+        else:
+            root_verdict = _SAME if same_root else _DIFFERENT
 
     dispatch_sha = entry.get(_DISPATCH_SHA_FIELD)
     if dispatch_sha is None:
@@ -428,11 +432,14 @@ def _stale_reason(entries: list[dict], current_sha: str) -> tuple[str, str, str 
 
     Discrimination is by presence, then by status:
 
-    * No ``kind=build`` row at all for ``current_sha``, but at least one
-      ``kind=build`` row carrying NO hash (``worktree_sha`` null or absent) →
+    * No ``kind=build`` row at all for ``current_sha``, and the NEWEST
+      ``kind=build`` row carries NO hash (``worktree_sha`` null or absent) →
       ``build_tree_unrecorded``: the writer never established the tree it built,
       so no re-run can match and the remedy is to fix the resolution. Naming a
-      mutation there would prescribe exactly the retry that reproduces it.
+      mutation there would prescribe exactly the retry that reproduces it. The
+      predicate is scoped to the newest row because the ledger is one shared,
+      append-only file per repository: an unscoped "any row is unrecorded" would
+      latch one old row onto every later mutation verdict forever.
     * No ``kind=build`` row at all for ``current_sha`` → the tree really did move
       past every observed build (or was never built): ``worktree_mutated``.
     * A row exists for ``current_sha`` but none is ``success`` → the tree WAS
@@ -456,13 +463,17 @@ def _stale_reason(entries: list[dict], current_sha: str) -> tuple[str, str, str 
 
     Returns:
         ``(reason, message, observed_status)``. ``observed_status`` is ``None``
-        on TWO routes, and the caller omits the field for both: the
-        ``worktree_mutated`` route, where no row was observed at all, and the
+        on THREE routes, and the caller omits the field for each: the
+        ``worktree_mutated`` route, where no row was observed at all; the
         ``build_indeterminate`` sub-case where a row WAS observed but carried no
-        readable ``status`` string. Reporting a status there would mean
-        inventing one — the row's defining property is that it has none — so the
-        field's absence is itself the honest answer, and ``reason`` still
-        distinguishes the two routes.
+        readable ``status`` string; and the ``build_tree_unrecorded`` route where
+        the newest row carries no readable ``status`` either. Reporting a status
+        absent from a row would mean inventing one — the row's defining property
+        is that it has none — so the field's absence is itself the honest answer,
+        and ``reason`` still distinguishes the routes. The
+        ``build_tree_unrecorded`` route can also publish a non-``None`` status:
+        it is taken from the newest row even though that row is not about
+        ``current_sha``, which is exactly what ``reason`` says.
     """
     matching = [
         entry for entry in entries if entry.get('kind') == KIND_BUILD and entry.get('worktree_sha') == current_sha
@@ -471,11 +482,16 @@ def _stale_reason(entries: list[dict], current_sha: str) -> tuple[str, str, str 
         # A build row that carries NO hash cannot ever match a tree, and telling
         # its owner to "re-dispatch a build" reproduces the same unrecorded row.
         # That route gets its own reason and its own remedy: fix the resolution.
-        unrecorded = [
-            entry for entry in entries if entry.get('kind') == KIND_BUILD and entry.get('worktree_sha') is None
-        ]
-        if unrecorded:
-            observed_unrecorded = unrecorded[-1].get('status')
+        #
+        # Scoped to the LAST kind=build row, never to "any row in history": the
+        # ledger is one shared, append-only, never-rewritten file per repository,
+        # so an unscoped predicate would latch a single old unrecorded row onto
+        # every later `worktree_mutated` verdict for that repo forever, and would
+        # name a resolution fault where the current build recorded its tree
+        # perfectly well.
+        build_rows = [entry for entry in entries if entry.get('kind') == KIND_BUILD]
+        if build_rows and build_rows[-1].get('worktree_sha') is None:
+            observed_unrecorded = build_rows[-1].get('status')
             return (
                 _STALE_UNRECORDED[0],
                 _STALE_UNRECORDED[1],
