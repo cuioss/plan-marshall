@@ -6137,7 +6137,7 @@ def _executor_stamp_note(executor_state: str, executor_version: str | None) -> s
     version. ``''`` when the stamp is an ordinary version (nothing to add).
     """
     if executor_state == plugin_registry.EXECUTOR_VERSION_EMPTY:
-        return '; the executor also carries an empty version stamp (a generator that could not read one)'
+        return '; the executor also carries an empty version stamp (a pre-sentinel executor that named no version)'
     if executor_version == _UNVERSIONED_STAMP:
         return f'; the executor is also stamped {_UNVERSIONED_STAMP} (no version was readable when it was generated)'
     return ''
