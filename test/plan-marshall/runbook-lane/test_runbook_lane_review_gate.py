@@ -960,6 +960,39 @@ def test_a_flattened_summary_marker_names_its_commit() -> None:
     assert verdict['merge_allowed'] is True
 
 
+def test_a_marker_quoted_inside_a_fenced_block_is_not_a_qualifying_review() -> None:
+    """⛔ Flattening erases the fence lines, so the re-split must restore them too.
+
+    A marker quoted inside a fenced example is not the bot's own claim. Reading it as
+    one would let a walkthrough that shows the marker — as documentation, not as a
+    verdict — satisfy the done precondition and merge a pull request nobody reviewed.
+    """
+    flattened = 'A summary explains the marker: ```text ' + _finished_marker_body() + ' ``` and nothing else.'
+
+    verdict = _verdict(_read(_issue_comment(flattened)), reviewers=('coderabbit',))
+
+    assert verdict['merge_allowed'] is False
+    assert verdict['reason'] == 'required_review_missing'
+
+
+def test_a_flattened_body_keeps_a_marker_outside_any_fence() -> None:
+    """MATCHED CONTROL — the same marker outside a fence is still the bot's claim."""
+    flattened = 'Prose with a fenced example: ```text code ``` and then ' + _finished_marker_body()
+
+    verdict = _verdict(_read(_issue_comment(flattened)), reviewers=('coderabbit',))
+
+    assert verdict['merge_allowed'] is True
+
+
+def test_a_flattened_body_with_several_comments_splits_at_each_boundary() -> None:
+    """HOLDS AT THE BASE: every `<!--` boundary is restored, not only the first."""
+    flattened = 'first <!-- cr-comment:v1:aaaaaaaaaaaaaaaaaaaaaaaa --> second ' + _finished_marker_body()
+
+    verdict = _verdict(_read(_issue_comment(flattened)), reviewers=('coderabbit',))
+
+    assert verdict['merge_allowed'] is True
+
+
 def test_an_enumerative_refusal_with_a_commit_is_a_qualifying_review(monkeypatch) -> None:
     """The lane asks the producer's predicate, so the enumerative arm changes nothing.
 

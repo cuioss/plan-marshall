@@ -290,6 +290,11 @@ from _github_pr import (
     review_coverage_marker_present,
     review_coverage_verdict,
 )
+
+# Explicit re-export (`as` the same name): the runbook lane reads the flattened-body
+# restorer through this module, the import-order-safe entry into ``_github_pr``. The
+# `as` form is what tells ruff this is a re-export rather than an unused import.
+from _github_pr import restore_flattened_line_structure as restore_flattened_line_structure
 from ci_base import (
     DEFAULT_CI_INTERVAL,
     DEFAULT_CI_TIMEOUT,

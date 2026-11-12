@@ -662,6 +662,32 @@ def is_finished_review(comment: dict, bot_kind: str) -> bool:
     return False
 
 
+#: A CommonMark fence run: three or more backticks or tildes.
+_FENCE_RUN = re.compile(r'`{3,}|~{3,}')
+
+
+def restore_flattened_line_structure(body: str) -> str:
+    """Restore the line boundaries a DISPLAY read flattened away.
+
+    ``github_ops.flatten_comment_body`` replaces every tab and newline with a space,
+    so the two rules the coverage parser needs — a marker opener at the START of a
+    line (:func:`_coverage_opener_position`) and a fence line at the start of a line
+    (:func:`markdown_fence.fence_marker`) — cannot see the original structure. A
+    marker quoted inside a fenced example would then read as the bot's own claim.
+
+    Re-inserting a boundary before AND after every fence run, and before every
+    HTML-comment opener, restores exactly the structure those two rules read: a fence
+    run becomes a line of its own (a closing fence's flattened trailing text moves to
+    the next line, so it closes), and a marker gets its own line whether it is inside
+    that fence or outside it. No content is changed, and an inline fence-shaped run
+    in prose only opens a fence the parser then refuses to treat as a claim — the
+    fail-closed direction.
+    """
+    text = (body or '').replace('\r', ' ').replace('\n', ' ')
+    text = _FENCE_RUN.sub(lambda match: '\n' + match.group(0) + '\n', text)
+    return text.replace('<!--', '\n<!--')
+
+
 def review_coverage_verdict(body: str, head_sha: str) -> bool | None:
     """Return what a review-coverage marker says about ``head_sha``, or no verdict.
 
