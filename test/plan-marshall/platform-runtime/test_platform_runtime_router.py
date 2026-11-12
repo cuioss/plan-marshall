@@ -1351,6 +1351,7 @@ _EXECUTION_WORKFLOW = _SKILLS_ROOT / 'plan-marshall' / 'workflow' / 'execution.m
 
 _BRANCH_MARKER = '**Orchestrator per-harness dispatch branch.**'
 _BRANCH_END_MARKER = 'The dispatch unit is the **execution envelope'
+_RETURN_MARKER = '### After execution-context returns'
 
 #: Every document that used to resolve the seam from inside a leaf.
 _LEAF_DOCUMENTS = (
@@ -1377,12 +1378,35 @@ def test_the_dispatch_branch_calls_the_seam_with_the_resolved_target_and_the_spa
     assert 'spawning_tool_available' in branch, 'the seam call drops the spawning-tool signal'
 
 
-def test_the_inline_branch_is_explicit_and_writes_one_boundary_row() -> None:
-    """The inline branch names its dispatch mode and owes exactly one boundary row per envelope."""
+def test_the_inline_branch_is_explicit_and_names_its_boundary_row() -> None:
+    """The inline branch names its dispatch mode and the one boundary row the envelope owes."""
     branch = _dispatch_branch()
 
     assert 'dispatch_mode: inline' in branch, 'the inline branch is unnamed'
-    assert branch.count('record-dispatch-boundary') == 1, 'the inline branch and its boundary row are not one call'
+    assert branch.count('record-dispatch-boundary') == 1, 'the branch must point at the boundary row exactly once'
+    assert 'After execution-context returns' in branch, 'the boundary-row pointer names no section'
+
+
+def test_the_section_the_branch_points_at_carries_the_boundary_command() -> None:
+    """The executable boundary call lives in the section named above, as a real command.
+
+    Asserting on the executable line, not on the bare identifier: a prose mention
+    survives deleting the command, so it cannot witness the rule.
+    """
+    text = _EXECUTION_WORKFLOW.read_text(encoding='utf-8')
+    start = text.index(_RETURN_MARKER)
+    end = text.index('### Post-return', start)
+    section = text[start:end]
+
+    commands = [
+        line.strip()
+        for line in section.splitlines()
+        if line.strip().startswith('python3') and 'record-dispatch-boundary' in line
+    ]
+    assert commands, f'the return section carries no executable boundary call: {section}'
+    assert all('.plan/execute-script.py' in line for line in commands), (
+        f'every boundary call must go through the executor: {commands}'
+    )
 
 
 @pytest.mark.parametrize('document', _LEAF_DOCUMENTS, ids=[p.parent.name + '/' + p.name for p in _LEAF_DOCUMENTS])

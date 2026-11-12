@@ -2941,6 +2941,12 @@ class OpenCodeRuntime(Runtime):
         spawning_tool_available = (
             True if not isinstance(context, dict) else context.get('spawning_tool_available', True)
         )
+        if not isinstance(spawning_tool_available, bool):
+            return toon_error(
+                'subagent dispatch',
+                'invalid_argument',
+                f'spawning_tool_available must be a boolean when set; got {spawning_tool_available!r}',
+            )
         dispatch_mode = None if not isinstance(context, dict) else context.get('dispatch_mode')
         if dispatch_mode not in (None, 'inline'):
             return toon_error(

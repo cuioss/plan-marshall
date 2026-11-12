@@ -1696,6 +1696,14 @@ def test_subagent_dispatch_explicit_inline_dispatch_mode_writes_one_boundary_row
     assert result['dispatch_boundary_rows'] == 1
 
 
+def test_subagent_dispatch_rejects_a_non_boolean_spawning_signal(runtime: OpenCodeRuntime) -> None:
+    """A string ``"false"`` is not the boolean the seam reads, so it fails closed."""
+    result = _parse(runtime.subagent_dispatch('execution-context-level-3', None, {'spawning_tool_available': 'false'}))
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'invalid_argument'
+
+
 def test_subagent_dispatch_attestation_flags_stripped_from_prompt(
     runtime: OpenCodeRuntime, tmp_path: pathlib.Path
 ) -> None:

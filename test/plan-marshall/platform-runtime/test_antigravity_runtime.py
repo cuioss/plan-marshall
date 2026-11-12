@@ -485,6 +485,13 @@ def test_subagent_dispatch_rejects_an_unknown_dispatch_mode(runtime: Antigravity
     assert result['error'] == 'invalid_argument'
 
 
+def test_subagent_dispatch_rejects_a_non_boolean_spawning_signal(runtime: AntigravityRuntime):
+    """A string ``"false"`` is not the boolean the seam reads, so it fails closed."""
+    result = _parse(runtime.subagent_dispatch('execution-context-level-3', None, {'spawning_tool_available': 'false'}))
+    assert result['status'] == 'error'
+    assert result['error'] == 'invalid_argument'
+
+
 def test_subagent_dispatch_unmapped_agent_tool_takes_inline_branch(
     runtime: AntigravityRuntime, tmp_path: Path, monkeypatch
 ):
