@@ -2121,9 +2121,11 @@ def cmd_fetch_findings(args):
             refusing_bots.add(_refusal_bot)
     participated: dict[str, str] = {}
     stale_participation: dict[str, str] = {}
-    # Bots holding an admitted FINISHED review of SOME commit on this pull request —
-    # a formal ``review_body`` record, or a summary whose coverage marker is readable,
-    # ``kind: reviewed`` and names a covered commit (``review_coverage_names_commit``).
+    # Bots holding an admitted FINISHED review of SOME commit on this pull request.
+    # The test is the ONE reader, ``is_finished_review`` — a formal ``review_body``
+    # record that names a commit (or a readable finished marker naming one), or a
+    # summary whose coverage marker is readable, ``kind: reviewed`` and names a covered
+    # commit.
     # This is the fact the done rule needs and ``stale_participation_bots`` cannot
     # carry: that set also contains marker-bearing comments which are NOT finished
     # reviews (an unreadable payload, a non-``reviewed`` kind, a marker naming no

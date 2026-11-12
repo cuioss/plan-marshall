@@ -6,18 +6,20 @@ both halves of that rule at the two places a request can originate:
 
 - ``request_fresh_review`` — the one post chokepoint — refuses a flagged bot whose
   qualifying review is already on record on this pull request, and posts nothing; a
-  pull request with no qualifying review is triggered exactly as before, and so is
-  every bot without the flag.
+  pull request with no qualifying review is triggered, and so is every bot without
+  the flag.
 - ``resolve_recovery_action`` — the refusal derivation — settles a flagged bot with
   a credited or stale review instead of returning the trigger arm, while leaving
   every other bot's derivation unchanged.
 
-A qualifying review is the producer's own admitted evidence: a comment in one of the
-bot's declared ``participation_evidence`` publish shapes, carrying that shape's
-declared content marker where one is declared. A walkthrough posted before a review
-completes carries no declared marker and is not admitted; a refusal, an acknowledgment
-and a skip notice are not declared publish shapes at all. Those are the shapes that
-must keep the first trigger reachable.
+A qualifying review is the one reader's verdict (``_github_pr.is_finished_review``):
+a comment in one of the bot's declared ``participation_evidence`` publish shapes,
+carrying that shape's declared content marker where one is declared, and — for a
+formal review record — naming the commit it reviewed, in the provider's ``commit_id``
+or in a readable finished coverage marker that names one. A walkthrough posted before
+a review completes carries no declared marker and is not admitted; a refusal, an
+acknowledgment and a skip notice are never evidence for this question, whatever shape
+they arrive in. Those are the artifacts that must keep the first trigger reachable.
 """
 
 from __future__ import annotations

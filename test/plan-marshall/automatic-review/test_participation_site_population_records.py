@@ -299,11 +299,14 @@ SITE_EXPECTATIONS: dict[str, SiteExpectation] = {
     ),
     f'{_SKILLS}/workflow-integration-github/scripts/_github_pr.py': SiteExpectation(
         'live_comment_scan',
-        'timestamp',
+        'both',
         'yes',
         'Hosts the wait predicate’s movement arm (_detect_movement_bots) and its answerability '
-        'read. It reads the fetched comment list and matches movement since the wait started; '
-        'it grants no participation credit.',
+        'read, and it is the ONE home of the participation-admissibility predicate '
+        '(_is_participation_evidence) and the finished-review reader (is_finished_review) that '
+        'the producer, the post chokepoint and the runbook lane all call. The wait arm matches '
+        'movement since the wait started and grants no participation credit; the finished-review '
+        'reader anchors on the commit a review or its coverage marker names.',
     ),
     f'{_SKILLS}/workflow-integration-github/scripts/github_pr.py': SiteExpectation(
         'currency_ledger',

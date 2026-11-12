@@ -264,7 +264,7 @@ _DONE_ARM_PINS: dict[str, tuple] = {
     'review_completeness.py done arm precedes the refusal arms': (
         _doc('automatic-review', 'scripts', 'review_completeness.py'),
         '# Pending findings still block through the ``triage_ran`` arm below.',
-        'This branch is reached only by a bot with no finished review',
+        'This branch is reached only by a bot the caller did not report in',
         'a refusal or decline observed on this candidate still outranks this branch',
     ),
     'github_re_review.py elapsed-arm comment': (

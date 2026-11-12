@@ -1029,8 +1029,9 @@ def classify_bot(
         # Pending findings still block through the ``triage_ran`` arm below. The done
         # check itself runs BEFORE every refusal and decline branch above, so a
         # finished review's bot that refuses a REDUNDANT later request is still done.
-        # This branch is reached only by a bot with no finished review, and reports
-        # the plain stale state.
+        # This branch is reached only by a bot the caller did not report in
+        # ``finished_review_bots`` — either it has no finished review, or the caller
+        # omitted that observation — and it reports the plain stale state.
         return STATE_PARTICIPATED_STALE
     if bot in in_progress:
         return STATE_IN_PROGRESS
