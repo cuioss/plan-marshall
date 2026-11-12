@@ -181,6 +181,18 @@ def test_a_plan_less_dispatch_records_the_working_directory(monkeypatch, main_ch
     assert entry['worktree_sha'] == compute_worktree_sha(main_checkout)
 
 
+def test_a_plan_less_dispatch_hashes_the_working_directory(monkeypatch, main_checkout, ledger_path) -> None:
+    """CONTROL: a plan-less build keeps hashing the tree it was dispatched from."""
+    module = _load_template_module()
+    _redirect_ledger(module, monkeypatch, ledger_path)
+    monkeypatch.chdir(main_checkout)
+
+    _record(module, plan_id=NO_PLAN_SENTINEL)
+
+    entry = read_entries(path=ledger_path)[0]
+    assert entry['worktree_sha'] == compute_worktree_sha(main_checkout)
+
+
 def test_an_unresolvable_root_records_no_hash(monkeypatch, main_checkout, ledger_path) -> None:
     """A root nobody can resolve records nothing rather than a guessed tree."""
     module = _load_template_module()
@@ -220,6 +232,26 @@ def test_the_row_records_both_hashes(monkeypatch, main_checkout, worktree, ledge
     assert entry['worktree_sha'] != entry['worktree_sha_at_dispatch'], (
         'both hashes must be recorded from their own capture, not one stamped twice'
     )
+
+
+def test_a_build_that_changes_nothing_records_equal_hashes(monkeypatch, worktree, ledger_path) -> None:
+    """A build that changed nothing stamps two IDENTICAL hashes.
+
+    The dispatch capture is taken for real here, against the tree the completion
+    hash is then computed on, so this pins the equal-hash case rather than
+    asserting it from a hand-made value.
+    """
+    module = _load_template_module()
+    _redirect_ledger(module, monkeypatch, ledger_path)
+    monkeypatch.chdir(worktree)
+
+    with patch_query_worktree_path(True, str(worktree)):
+        dispatch_tree_state = module._capture_dispatch_tree_state(_PLAN_ID)
+        _record(module, plan_id=_PLAN_ID, dispatch_tree_state=dispatch_tree_state)
+
+    entry = read_entries(path=ledger_path)[0]
+    assert entry['worktree_sha_at_dispatch'] == entry['worktree_sha']
+    assert entry['worktree_sha'] == compute_worktree_sha(worktree)
 
 
 def test_the_dispatch_capture_never_raises(monkeypatch) -> None:

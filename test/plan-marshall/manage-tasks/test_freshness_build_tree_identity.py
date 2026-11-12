@@ -67,11 +67,12 @@ def _stub_resolver_seam(monkeypatch):
     )
 
 
-def _run_gate(plan_context, monkeypatch, tmp_path: Path, row: dict) -> dict:
-    """Drive the gate over a ledger holding exactly ``row``."""
+def _run_gate(plan_context, monkeypatch, tmp_path: Path, row: dict | list[dict]) -> dict:
+    """Drive the gate over a ledger holding ``row`` (or a list of rows)."""
+    rows = row if isinstance(row, list) else [row]
     _write_status(plan_context.plan_dir_for(_PLAN_ID))
     _stub_worktree_sha(monkeypatch, _CURRENT_SHA)
-    _stub_ledger_path(monkeypatch, _write_ledger(tmp_path, [row]))
+    _stub_ledger_path(monkeypatch, _write_ledger(tmp_path, rows))
     return cmd_pre_commit_verify_freshness(Namespace(plan_id=_PLAN_ID))
 
 
@@ -192,6 +193,24 @@ def test_a_root_mismatch_wins_over_a_rewrite(plan_context, monkeypatch, tmp_path
     result = _run_gate(plan_context, monkeypatch, tmp_path, row)
 
     assert result['reason'] == 'worktree_root_mismatch', result
+
+
+def test_a_rerun_on_the_committed_tree_clears_the_rewrite_verdict(
+    plan_context, monkeypatch, tmp_path
+) -> None:
+    """A rewrite refusal is CLEARABLE: commit the rewrite, re-run, read fresh.
+
+    The refusal names a remedy — commit the rewrite and re-run — so the gate must
+    credit that re-run. Both rows are in the ledger at once here, which is the
+    real shape: the ledger is append-only, so clearing a verdict never removes
+    the row that caused it.
+    """
+    rewritten = _row(worktree_root=_GATE_ROOT, worktree_sha_at_dispatch='0' * 64)
+    rerun = _row(worktree_root=_GATE_ROOT, worktree_sha_at_dispatch=_CURRENT_SHA)
+
+    result = _run_gate(plan_context, monkeypatch, tmp_path, [rewritten, rerun])
+
+    assert result['status'] == 'fresh', result
 
 
 # =============================================================================
