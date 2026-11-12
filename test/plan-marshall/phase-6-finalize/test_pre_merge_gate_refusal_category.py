@@ -27,6 +27,23 @@ assert len(gate.ROUTES) >= 1, 'pre_merge_gate.ROUTES is empty; the route-paramet
 _PLAN_ID = 'pre-merge-gate-category-plan'
 _CLEAN_VERDICT = {'status': 'success', 'plan_id': _PLAN_ID, 'phase': '6-finalize', 'blocking_count': 0}
 
+
+@pytest.fixture(autouse=True)
+def _merge_mutex_held_by_this_plan(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Autouse: answer the merge-mutex proof "held by this plan".
+
+    This module is about the refusal CATEGORY, so every case needs the mutex proof
+    satisfied and none of them may depend on the machine's real
+    ``.plan/local/merge.lock``. The proof itself is exercised by
+    ``test_pre_merge_gate_merge_lock_proof.py``, against an isolated base.
+    """
+    monkeypatch.setattr(
+        gate,
+        '_merge_lock_holder_read',
+        lambda: {'state': 'held', 'holder': _PLAN_ID, 'lock_path': '<test>'},
+    )
+
+
 _PARTICIPATION_COMPLETE = {
     'status': 'success',
     'participation_complete': True,
