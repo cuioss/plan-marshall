@@ -46,6 +46,21 @@ def runtime() -> OpenCodeRuntime:
     return OpenCodeRuntime()
 
 
+@pytest.fixture()
+def machine_home(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> pathlib.Path:
+    """Point the machine-global ``PLAN_MARSHALL_HOME`` root at a per-test directory.
+
+    No machine-global WRITE leaves the sandbox: the variable is set for the whole
+    test, so in-process readers and the child executor processes alike resolve
+    that root there. What this cannot redirect is the developer's own OpenCode
+    configuration and session store, which setup reads and never writes.
+    """
+    home = tmp_path / 'machine-home'
+    home.mkdir()
+    monkeypatch.setenv('PLAN_MARSHALL_HOME', str(home))
+    return home
+
+
 # =============================================================================
 # Helper
 # =============================================================================
@@ -2001,12 +2016,29 @@ def test_standing_rules_drift_baseline_missing_without_bridge(tmp_path: pathlib.
 
 
 def test_standing_rules_drift_baseline_missing_with_bridge(tmp_path: pathlib.Path) -> None:
-    """No baseline but a bridge file reports baseline_missing with no needed bridge."""
-    from opencode_runtime import _bridge_rules_path, standing_rules_drift_status
+    """A bridge that still carries rules drifts when its baseline is gone.
+
+    The writer replaces that bridge with the marker-only stub, so a status that
+    called it current would hide the rewrite setup is about to perform.
+    """
+    from opencode_runtime import _bridge_body, _bridge_rules_path, standing_rules_drift_status
 
     bridge = _bridge_rules_path(tmp_path)
     bridge.parent.mkdir(parents=True)
-    bridge.write_text('bridge-version: 1\n', encoding='utf-8')
+    bridge.write_text(_bridge_body('# baseline\n\ncarried rule\n'), encoding='utf-8')
+
+    status = standing_rules_drift_status(str(tmp_path))
+
+    assert status == {'drift': True, 'needs_bridge': False, 'reason': 'baseline_missing'}
+
+
+def test_standing_rules_drift_baseline_missing_with_stub_bridge(tmp_path: pathlib.Path) -> None:
+    """A marker-only stub is current when there is no baseline to carry."""
+    from opencode_runtime import _bridge_body, _bridge_rules_path, standing_rules_drift_status
+
+    bridge = _bridge_rules_path(tmp_path)
+    bridge.parent.mkdir(parents=True)
+    bridge.write_text(_bridge_body(None), encoding='utf-8')
 
     status = standing_rules_drift_status(str(tmp_path))
 
@@ -2100,28 +2132,57 @@ def test_editing_claude_md_makes_setup_report_drift(runtime: OpenCodeRuntime, tm
 
 
 def test_an_unreadable_baseline_never_overwrites_the_bridge(
-    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, machine_home: pathlib.Path
 ) -> None:
-    """Setup must not replace carried rules with the marker-only stub."""
-    import opencode_runtime
+    """Setup must not replace carried rules with the marker-only stub.
 
+    The baseline is unreadable because its BYTES are not UTF-8 — a real file the
+    read itself fails on, not a monkeypatched helper — so the existing bridge is
+    kept byte-for-byte and the verdict names the unreadable baseline.
+    """
     (tmp_path / 'CLAUDE.md').write_text('# Project rules\n\nkeep me\n', encoding='utf-8')
     _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
     bridge = tmp_path / '.opencode' / 'rules' / 'plan-marshall-standing-rules.md'
     before = bridge.read_text(encoding='utf-8')
     assert 'keep me' in before
 
-    monkeypatch.setattr(opencode_runtime, '_baseline_text', lambda _project_dir: None)
+    (tmp_path / 'CLAUDE.md').write_bytes(b'\xff\xfe keep me')
     result = _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
 
+    assert result['status'] == 'success'
     assert result['bridge_written'] is False
     assert result['bridge_drift'] is True
     assert result['bridge_reason'] == 'baseline_unreadable'
     assert bridge.read_text(encoding='utf-8') == before
 
 
-def test_a_deleted_baseline_replaces_the_bridge_with_the_stub(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
+def test_a_non_utf8_bridge_never_raises_from_setup_or_drift(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, machine_home: pathlib.Path
+) -> None:
+    """A bridge holding non-UTF-8 bytes is judged, never raised on."""
+    from opencode_runtime import _bridge_rules_path, standing_rules_drift_status
+
+    (tmp_path / 'CLAUDE.md').write_text('# Project rules\n\nrule\n', encoding='utf-8')
+    bridge = _bridge_rules_path(tmp_path)
+    bridge.parent.mkdir(parents=True)
+    bridge.write_bytes(b'\xff\xfe bridge-version: 1 \xff tail')
+
+    status = standing_rules_drift_status(str(tmp_path))
+    assert status['drift'] is True, 'a bridge carrying non-UTF-8 bytes is not the stub setup writes'
+
+    result = _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
+
+    assert result['status'] == 'success'
+    assert result['bridge_written'] is True
+    assert 'rule' in bridge.read_text(encoding='utf-8')
+
+
+def test_a_deleted_baseline_replaces_the_bridge_with_the_stub(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, machine_home: pathlib.Path
+) -> None:
     """A deleted baseline must not leave its rules presented as current."""
+    from opencode_runtime import _bridge_body
+
     baseline = tmp_path / 'CLAUDE.md'
     baseline.write_text('# Project rules\n\nstale rule\n', encoding='utf-8')
     _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
@@ -2132,8 +2193,132 @@ def test_a_deleted_baseline_replaces_the_bridge_with_the_stub(runtime: OpenCodeR
     result = _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
 
     assert result['bridge_written'] is True
+    assert result['bridge_drift'] is True, 'replacing a bridge that carried rules is drift'
     assert result['bridge_reason'] == 'baseline_missing'
-    assert 'stale rule' not in bridge.read_text(encoding='utf-8')
+    assert bridge.read_text(encoding='utf-8') == _bridge_body(None), 'the bridge is exactly the marker-only stub'
+
+
+def test_an_unreadable_baseline_without_a_bridge_is_reported_as_drift(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, machine_home: pathlib.Path
+) -> None:
+    """An unreadable baseline is not a missing one: setup says so even with no bridge."""
+    from opencode_runtime import _bridge_body, _bridge_rules_path, standing_rules_drift_status
+
+    (tmp_path / 'CLAUDE.md').write_bytes(b'\xff\xfe not utf-8')
+
+    status = standing_rules_drift_status(str(tmp_path))
+
+    assert status == {'drift': True, 'needs_bridge': True, 'reason': 'baseline_unreadable'}
+
+    result = _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
+
+    assert result['bridge_written'] is True
+    assert result['bridge_drift'] is True
+    assert result['bridge_reason'] == 'baseline_unreadable'
+    assert _bridge_rules_path(tmp_path).read_bytes() == _bridge_body(None).encode('utf-8')
+
+
+def test_a_bridge_is_compared_as_bytes_not_replacement_text(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, machine_home: pathlib.Path
+) -> None:
+    """An invalid-UTF-8 body is replaced even where replacement decoding would match.
+
+    Replacement decoding turns the stray ``0xff`` byte into U+FFFD, which equals
+    the desired text when the baseline itself carries U+FFFD — so a text
+    comparison would declare the malformed bridge current and leave it corrupt.
+    """
+    from opencode_runtime import _bridge_body, _bridge_rules_path, standing_rules_drift_status
+
+    baseline = tmp_path / 'CLAUDE.md'
+    baseline.write_text('# Project rules\n\ncarries \ufffd here\n', encoding='utf-8')
+    assert _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))['bridge_written'] is True
+    bridge = _bridge_rules_path(tmp_path)
+    desired = _bridge_body(baseline.read_text(encoding='utf-8')).encode('utf-8')
+    corrupted = desired.replace('\ufffd'.encode('utf-8'), b'\xff')
+    assert corrupted != desired
+    bridge.write_bytes(corrupted)
+
+    assert standing_rules_drift_status(str(tmp_path)) == {
+        'drift': True,
+        'needs_bridge': False,
+        'reason': 'bridge_unreadable',
+    }
+
+    result = _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
+
+    assert result['bridge_written'] is True, 'a malformed bridge must be repaired, never accepted'
+    assert bridge.read_bytes() == desired
+
+
+def test_a_bridge_path_that_is_a_symlink_is_replaced_not_written_through(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, machine_home: pathlib.Path
+) -> None:
+    """Setup replaces a symlinked bridge path and leaves the link's target alone."""
+    from opencode_runtime import _bridge_body, _bridge_rules_path, standing_rules_drift_status
+
+    outside = tmp_path / 'outside-rules-file.bin'
+    outside.write_bytes(b'\xff\xfe external content \xff')
+    bridge = _bridge_rules_path(tmp_path)
+    bridge.parent.mkdir(parents=True)
+    bridge.symlink_to(outside)
+
+    result = _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
+
+    assert result['bridge_written'] is True
+    assert outside.read_bytes() == b'\xff\xfe external content \xff', 'the link target is never written through'
+    assert not bridge.is_symlink(), 'the bridge path becomes the bridge file'
+    assert bridge.read_bytes() == _bridge_body(None).encode('utf-8')
+    assert standing_rules_drift_status(str(tmp_path)) == {
+        'drift': False,
+        'needs_bridge': False,
+        'reason': 'baseline_missing',
+    }
+
+
+def test_a_symlink_with_matching_bytes_is_still_replaced_by_the_bridge_file(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, machine_home: pathlib.Path
+) -> None:
+    """A matching external target is not accepted as the owned bridge."""
+    from opencode_runtime import _bridge_body, _bridge_rules_path
+
+    baseline = tmp_path / 'CLAUDE.md'
+    baseline.write_text('# Project rules\n\nrule\n', encoding='utf-8')
+    desired = _bridge_body(baseline.read_text(encoding='utf-8'))
+    outside = tmp_path / 'outside-rules-copy.md'
+    outside.write_text(desired, encoding='utf-8')
+    bridge = _bridge_rules_path(tmp_path)
+    bridge.parent.mkdir(parents=True)
+    bridge.symlink_to(outside)
+
+    result = _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
+
+    assert result['bridge_written'] is True
+    assert not bridge.is_symlink(), 'a symlinked path is never the owned bridge'
+    assert bridge.read_text(encoding='utf-8') == desired
+
+
+def test_setup_reports_drift_for_a_hand_edited_bridge(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, machine_home: pathlib.Path
+) -> None:
+    """A body edit that keeps the marker and hash is still a bridge setup replaces.
+
+    The pre-heal status reads ``in_sync`` by design — it compares the recorded
+    hash to the baseline only — so the drift verdict must come from the write.
+    """
+    from opencode_runtime import _bridge_rules_path
+
+    (tmp_path / 'CLAUDE.md').write_text('# Project rules\n\nrule\n', encoding='utf-8')
+    first = _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
+    assert first['bridge_written'] is True
+    bridge = _bridge_rules_path(tmp_path)
+    bridge.write_text(bridge.read_text(encoding='utf-8') + '\nhand edit\n', encoding='utf-8')
+
+    result = _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
+
+    assert result['bridge_written'] is True
+    assert result['bridge_drift'] is True, 'a rewrite of an existing bridge is drift even when the hash matches'
+    assert result['bridge_reason'] == 'bridge_body_replaced', 'the pre-heal status cannot see a body-only edit'
+    assert 'hand edit' not in bridge.read_text(encoding='utf-8')
 
 
 def test_doc_surfaces_carry_the_missing_plugin_rule() -> None:
