@@ -46,6 +46,10 @@ Examples:
 - **CI operations via abstraction** — All PR/issue/CI work goes through `plan-marshall:tools-integration-ci:ci` scripts. Never `gh` or `glab` directly.
 - **Quality-gate auto-fixes in place** — `quality-gate` rewrites tracked files under `marketplace/bundles/`, `marketplace/targets/`, `test/`, and `.claude/` via `ruff check --fix` + `ruff format` (it mirrors Maven's `verify -Ppre-commit`). Commit in-flight edits before running it. To discard its churn, never `git restore` / `git checkout --` / `git stash` a file that was already dirty — those discard *unstaged* changes, not just the churn. Restore such files only from a snapshot you took yourself.
 
+## Merge Authorization (Standing)
+
+Merging a pull request is part of the process and needs no further operator permission. A plan (`/plan-marshall`, phase-6-finalize) and a runbook lane (`plan-marshall:runbook-lane`, `doc/plans/`) merge their own PR once the merge gate passes — required checks green, required reviewers handled, no open blocking findings — and never ask the operator whether to merge; running the plan or the lane is the authorization. The gate, the merge mutex, and the need for a separate instruction on unrelated outward-facing actions (force-push, deleting a branch the plan did not create, closing someone else's PR) are not waived. The full statement is in `CLAUDE.md` § "Merge Authorization (Standing)".
+
 ## File Formats
 
 - **Skills/Agents/Commands**: Markdown with YAML frontmatter (name, description, tools/permissions)
