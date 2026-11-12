@@ -309,7 +309,9 @@ green is about the rewritten tree rather than the one it started from
 (`worktree_rewritten_by_build` — commit the rewrite and re-run). A row carrying
 neither field is read as today, with no mismatch claim: the fields were added to
 a schema that already held rows, and failing closed on history is not the same as
-failing closed on evidence. A field that IS present but unreadable never matches.
+failing closed on evidence. The two are judged SEPARATELY, so a row recording
+only one of them is read as today for the dimension it does not record. A field
+that IS present but unreadable never matches.
 
 The ledger query's **primary predicate** filters on `kind`, `status`, and
 `worktree_sha` only — never `exit_code` or `plan_id` — so it stays
@@ -584,9 +586,10 @@ on observed evidence.
   itself the record that nothing was examined.
 - `status: fresh` — one or more `kind=build` entries with `status == success` and
   a matching `worktree_sha` exist, and each describes THIS tree (its recorded
-  `worktree_root` matches, and its dispatch and completion hashes agree; a row
-  that records NEITHER field is a legacy row and is read as it always was, with
-  no mismatch claim), AND the
+  `worktree_root` matches, and its dispatch and completion hashes agree; the two
+  fields are judged SEPARATELY, so a row that records only one of them — or
+  neither, as every row written before the fields existed does — is read as it
+  always was for the dimension it does not record, with no claim either way), AND the
   survivors are citable on BOTH cross-check dimensions
   as § "Joint selection" defines, so the gate is permitted to pass. Tree identity
   is the third admission step, taken before either cross-check dimension. The record

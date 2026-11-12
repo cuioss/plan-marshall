@@ -1073,6 +1073,16 @@ def _ledger_tree_root(plan_id: str) -> str | None:
     way: a direct caller (a test, an ad-hoc invocation) may pass none, and a
     lookup for ``None`` would fail and silently record no hash at all.
 
+    The row describes the tree the PLAN names — the tree this resolution returns.
+    A dispatch that names a plan while its wrapper was pointed at a different
+    tree (``--audit-plan-id X`` together with a script-level ``--project-dir Y``)
+    therefore records X's tree, not Y's. That combination is off-spec: the
+    canonical resolution path routes a ``--project-dir`` build to an
+    UNATTRIBUTED command, and ``--audit-plan-id`` is documented as audit-only, so
+    no documented flow binds the two. The plan's tree is the reading the gate can
+    act on, and naming it is what makes the mismatch visible if a caller ever
+    does combine them.
+
     Two spellings of "plan-less" meet here deliberately rather than by accident:
     the resolver maps the sentinel to the checkout root, while this function
     returns the process's working directory, because the spec for a plan-less

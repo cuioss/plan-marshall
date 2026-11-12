@@ -163,6 +163,10 @@ def test_a_build_row_that_recorded_no_tree_is_named_as_unrecorded(plan_context, 
 
     assert result['status'] == 'stale', result
     assert result['reason'] == 'build_tree_unrecorded', result
+    assert result['observed_status'] == 'success', (
+        "the newest row's own status is published on this route, and it is that row's "
+        'status — not a verdict about this sha'
+    )
     assert 're-running' in result['message'].lower(), result['message']
 
 
