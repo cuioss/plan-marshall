@@ -255,13 +255,14 @@ def _handshake(sock_path: Path) -> tuple[dict[str, Any] | None, str | None]:
 def _audit_log(plan_id: str, level: str, message: str) -> None:
     """Write one captured work-log entry for a build-server interaction outcome.
 
-    No-ops for a plan-less build — anything :func:`names_real_plan` rejects,
-    which includes the ``NO_PLAN`` sentinel a plan-less submission carries on
-    the wire and in the ledger — because there is no plan-scoped work log to
-    write to. The plan-less path is not silent, though: it goes through
-    :func:`_audit_log_plan_less`, which writes the same entry to the GLOBAL work
-    log with its plan-less identity stated, so a green result for the main
-    checkout leaves a trace beside the plan's own builds.
+    A plan-scoped outcome goes to the plan's work log. A plan-less one — anything
+    :func:`names_real_plan` rejects, which includes the ``NO_PLAN`` sentinel a
+    plan-less submission carries on the wire and in the ledger — has no
+    plan-scoped work log to write to, so it goes to the GLOBAL work log with its
+    plan-less identity prefixed onto the message (a log path cannot carry it).
+    Neither route is silent: every interaction outcome lands somewhere, which is
+    what `build-server-client/SKILL.md` promises and what keeps a green
+    main-checkout build visible beside the plans' own builds.
 
     Otherwise it delegates to the same ``plan_logging`` substrate the
     ``manage-logging`` work verb writes through, so no interaction outcome is
@@ -273,13 +274,14 @@ def _audit_log(plan_id: str, level: str, message: str) -> None:
     ``project_path``, env, or any spec field that may carry secrets.
 
     Args:
-        plan_id: Submitting plan id; empty or ``NO_PLAN`` for a plan-less build
-            (no plan-scoped write).
+        plan_id: Submitting plan id; empty or ``NO_PLAN`` for a plan-less build,
+            which routes the entry to the global log.
         level: Captured log level — ``INFO`` for a normal outcome, ``WARNING``
             for a fallback / refusal.
         message: The pre-formatted, secret-free outcome message.
     """
     if not names_real_plan(plan_id):
+        _audit_log_plan_less(level, f'plan={NO_PLAN_SENTINEL} ' + message)
         return
     log_entry('work', plan_id, level, message)
 
@@ -288,8 +290,8 @@ def _audit_log_plan_less(level: str, message: str) -> None:
     """Write a plan-less interaction outcome to the GLOBAL work log.
 
     A plan-less submission is a legitimate build — the main checkout's own
-    ``generate-*`` calls run that way — and its outcome used to leave no trace
-    at all, so a green result for the main checkout was indistinguishable from a
+    ``generate-*`` calls run that way — and its outcomes used to leave no trace at
+    all, so a green result for the main checkout was indistinguishable from a
     green result for a plan's worktree beside it in the same journal. The global
     fallback (``plan_id=None``) is the log that exists when no plan does; the
     caller states the plan-less identity IN the message, because the log path
@@ -299,7 +301,8 @@ def _audit_log_plan_less(level: str, message: str) -> None:
     append, so a logging fault never fails a submission.
 
     Args:
-        level: Captured log level — ``INFO`` for a normal outcome.
+        level: Captured log level — ``INFO`` for a normal outcome, ``WARNING``
+            for a fallback / refusal.
         message: The pre-formatted, secret-free outcome message.
     """
     log_entry('work', None, level, message)
@@ -593,12 +596,6 @@ def run_submit(args: Namespace) -> dict[str, Any]:
         f'attached={attached} notation={notation} mechanism=daemon_longpoll'
     )
     _audit_log(plan_id, 'INFO', queued_message)
-    if not names_real_plan(plan_id):
-        # Plan-less submissions have no plan-scoped work log, so this is the one
-        # line that keeps a green main-checkout build visible beside the plans'.
-        # One message source: the plan-less identity is PREFIXED onto the same
-        # line rather than a second copy of it kept in step by hand.
-        _audit_log_plan_less('INFO', f'plan={NO_PLAN_SENTINEL} ' + queued_message)
     return {
         'status': 'success',
         'job_status': STATUS_QUEUED,

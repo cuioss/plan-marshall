@@ -246,6 +246,24 @@ def test_an_empty_plan_id_traces_the_same_way(home, ledger, captured_logs, monke
     assert f'plan={NO_PLAN_SENTINEL}' in captured_logs[-1][3]
 
 
+def test_a_plan_less_degraded_submit_is_traced_too(home, ledger, captured_logs, monkeypatch) -> None:
+    """Every plan-less outcome is traced, not only the queued acceptance.
+
+    The routing sits in `_audit_log`, so a fallback or a refusal cannot slip past
+    it — which is what "plan-less builds are traced, not silent" claims.
+    """
+    monkeypatch.setattr(client, '_handshake', lambda _p: (None, client.REASON_IMPOSTOR_SOCKET))
+
+    client.run_submit(_submit_args(str(home / 'proj'), plan_id=None))
+
+    assert captured_logs, 'a plan-less degraded submit must leave a trace'
+    assert all(plan_id is None for _t, plan_id, _l, _m in captured_logs), captured_logs
+    warnings = [entry for entry in captured_logs if entry[2] == 'WARNING']
+    assert warnings, 'the degraded fallback must be recorded at WARNING'
+    assert f'plan={NO_PLAN_SENTINEL}' in warnings[-1][3]
+    assert client.REASON_IMPOSTOR_SOCKET in warnings[-1][3]
+
+
 def test_a_plan_scoped_submit_writes_no_global_line(home, ledger, captured_logs, monkeypatch) -> None:
     """CONTROL: the global line is the plan-less route only."""
     _queue(monkeypatch)

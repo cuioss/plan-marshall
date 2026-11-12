@@ -76,8 +76,10 @@ tree it meant:
 `submit` states them from the job spec it just built. `wait` states the SAME three
 by reading the `kind=job` row that submission wrote — the daemon side is
 unchanged, because the record the client already keeps is the one that knows. A
-job whose row cannot be read, or a row written before the fields existed, reports
-no tree fields at all: an absent tree is honest, a guessed one is not.
+job whose row cannot be read, or a row written before the path fields existed,
+reports no PATH fields: an absent path is honest, a guessed one is not. The plan
+id the row itself states is still reported, so a legacy row answers with
+`plan_id` and no `exec_path` / `project_path`.
 
 ## The status-TOON contract (two hard properties + `killed`)
 
@@ -147,15 +149,16 @@ it surfaced only below the captured threshold.
   audit, and the ledger all correlate on one `job_id`.
 - **Every fallback and refusal logs at WARNING.** No `degraded` (fallback) or
   `refused` branch returns without a captured entry naming the `reason`.
-- **Plan-less builds are traced, not silent.** When no `--plan-id` is supplied
-  the submission is recorded under the `NO_PLAN` sentinel (so the ledger
+- **Every plan-less outcome is traced, not silent.** When no `--plan-id` is
+  supplied the submission is recorded under the `NO_PLAN` sentinel (so the ledger
   `kind=job` row is never null), and there is no per-plan work log to write to —
-  so `_audit_log` no-ops for it and the plan-less path writes instead through the
-  GLOBAL work log with `plan=NO_PLAN` in the message. That is what keeps a green
-  main-checkout build visible beside the plans' own builds: the path cannot carry
-  the plan-less identity, so the message does. The sentinel is truthy, so
-  `_audit_log` tests for it explicitly rather than relying on falsiness — it is a
-  routing/ledger value, never a plan-directory selector.
+  so `_audit_log` routes every such entry to the GLOBAL work log with
+  `plan=NO_PLAN` in the message (a log path cannot carry the plan-less identity).
+  That covers queued, degraded and refused submits and the wait outcomes alike,
+  so a green main-checkout build leaves a trace beside the plans' own builds
+  instead of vanishing. The sentinel is truthy, so `_audit_log` tests for it
+  explicitly rather than relying on falsiness — it is a routing/ledger value,
+  never a plan-directory selector.
 - **The build-execute routing seam's own resolution line lands here too.** The
   routing decision (`[BUILD-SERVER] resolved build (requested=…, resolved=routed|in_process|fail-loud, reason=…)`)
   is written to the same plan work log through the same substrate, at the same

@@ -346,28 +346,39 @@ def _row_tree_verdicts(entry: dict, gate_root: Path) -> tuple[str, str]:
     a difference means the build changed the tree while it ran, so the green it
     reports is about the rewritten tree.
 
-    Both are three-plus-one-valued: ``unrecorded`` (absent or null — a legacy
-    row, matched as today), ``same``, ``different``, ``unreadable``.
+    Both are three-plus-one-valued: ``unrecorded`` (the KEY is absent — a row
+    written before the field existed, matched as today), ``same``, ``different``,
+    ``unreadable``.
+
+    ⛔ **Presence of the key, not a null value, is the legacy test.** The current
+    writer ALWAYS writes both keys and writes ``None`` for a fact it could not
+    establish, so an explicit ``null`` means "this build could not capture it" and
+    refusing it is the fail-closed answer — admitting it would let a build whose
+    dispatch capture failed (the one case where a mid-build rewrite is invisible)
+    pass as fresh. A row written before the fields existed has no key at all, and
+    only that shape is read as before.
     """
-    recorded_root = entry.get(_ROOT_FIELD)
-    if recorded_root is None:
+    if _ROOT_FIELD not in entry:
         root_verdict = _UNRECORDED
-    elif not isinstance(recorded_root, str) or not recorded_root.strip():
-        root_verdict = _UNREADABLE
     else:
-        same_root = _same_path(recorded_root, gate_root)
-        if same_root is None:
+        recorded_root = entry.get(_ROOT_FIELD)
+        if not isinstance(recorded_root, str) or not recorded_root.strip():
             root_verdict = _UNREADABLE
         else:
-            root_verdict = _SAME if same_root else _DIFFERENT
+            same_root = _same_path(recorded_root, gate_root)
+            if same_root is None:
+                root_verdict = _UNREADABLE
+            else:
+                root_verdict = _SAME if same_root else _DIFFERENT
 
-    dispatch_sha = entry.get(_DISPATCH_SHA_FIELD)
-    if dispatch_sha is None:
+    if _DISPATCH_SHA_FIELD not in entry:
         hash_verdict = _UNRECORDED
-    elif not isinstance(dispatch_sha, str) or not dispatch_sha.strip():
-        hash_verdict = _UNREADABLE
     else:
-        hash_verdict = _SAME if dispatch_sha == entry.get('worktree_sha') else _DIFFERENT
+        dispatch_sha = entry.get(_DISPATCH_SHA_FIELD)
+        if not isinstance(dispatch_sha, str) or not dispatch_sha.strip():
+            hash_verdict = _UNREADABLE
+        else:
+            hash_verdict = _SAME if dispatch_sha == entry.get('worktree_sha') else _DIFFERENT
     return root_verdict, hash_verdict
 
 
@@ -416,7 +427,7 @@ def _refusal_reason(refused: list[tuple[int, dict, str]], gate_root: Path) -> tu
     return reason, message
 
 
-def _stale_reason(entries: list[dict], current_sha: str) -> tuple[str, str, str | None]:
+def _stale_reason(entries: list[dict], current_sha: str, plan_id: str) -> tuple[str, str, str | None]:
     """Derive the ``stale`` reason from what the ledger actually holds.
 
     One message for every route cannot be honest, because CAUSE and REMEDY differ
@@ -432,14 +443,17 @@ def _stale_reason(entries: list[dict], current_sha: str) -> tuple[str, str, str 
 
     Discrimination is by presence, then by status:
 
-    * No ``kind=build`` row at all for ``current_sha``, and the NEWEST
+    * No ``kind=build`` row at all for ``current_sha``, and THIS PLAN's newest
       ``kind=build`` row carries NO hash (``worktree_sha`` null or absent) →
       ``build_tree_unrecorded``: the writer never established the tree it built,
       so no re-run can match and the remedy is to fix the resolution. Naming a
-      mutation there would prescribe exactly the retry that reproduces it. The
-      predicate is scoped to the newest row because the ledger is one shared,
-      append-only file per repository: an unscoped "any row is unrecorded" would
-      latch one old row onto every later mutation verdict forever.
+      mutation there would prescribe exactly the retry that reproduces it. Two
+      scopings are load-bearing: the row must be the NEWEST (the ledger is one
+      shared, append-only file per repository, so an unscoped "any row is
+      unrecorded" would latch one old row onto every later mutation verdict for
+      ever), and it must carry THIS plan's ``plan_id`` (an unrecorded row carries
+      no root to compare, so another plan's unrecorded build must not relabel this
+      plan's changed tree as a resolution fault).
     * No ``kind=build`` row at all for ``current_sha`` → the tree really did move
       past every observed build (or was never built): ``worktree_mutated``.
     * A row exists for ``current_sha`` but none is ``success`` → the tree WAS
@@ -460,6 +474,11 @@ def _stale_reason(entries: list[dict], current_sha: str) -> tuple[str, str, str 
     Args:
         entries: All ledger entries, in file order.
         current_sha: The recomputed working-tree currency hash.
+        plan_id: The plan the gate was invoked for. Used to ATTRIBUTE the newest
+            ``kind=build`` row on the ``build_tree_unrecorded`` route: the ledger
+            is shared by every plan in the repository, and an unrecorded row
+            carries no root to compare, so another plan's unrecorded build must
+            not relabel this plan's changed tree as a resolution fault.
 
     Returns:
         ``(reason, message, observed_status)``. ``observed_status`` is ``None``
@@ -489,14 +508,22 @@ def _stale_reason(entries: list[dict], current_sha: str) -> tuple[str, str, str 
         # every later `worktree_mutated` verdict for that repo forever, and would
         # name a resolution fault where the current build recorded its tree
         # perfectly well.
+        #
+        # Attributed by PLAN, because an unrecorded row carries no root to
+        # compare: the ledger is shared by every plan in the repository, so
+        # another plan's unrecorded build must not relabel THIS plan's changed
+        # tree as a resolution fault. A row that cannot be attributed falls back
+        # to `worktree_mutated`, whose remedy is the one that can work here.
         build_rows = [entry for entry in entries if entry.get('kind') == KIND_BUILD]
-        if build_rows and build_rows[-1].get('worktree_sha') is None:
-            observed_unrecorded = build_rows[-1].get('status')
-            return (
-                _STALE_UNRECORDED[0],
-                _STALE_UNRECORDED[1],
-                observed_unrecorded if isinstance(observed_unrecorded, str) else None,
-            )
+        if build_rows:
+            newest = build_rows[-1]
+            if newest.get('worktree_sha') is None and newest.get('plan_id') == plan_id:
+                observed_unrecorded = newest.get('status')
+                return (
+                    _STALE_UNRECORDED[0],
+                    _STALE_UNRECORDED[1],
+                    observed_unrecorded if isinstance(observed_unrecorded, str) else None,
+                )
         reason, message = _STALE_MUTATED
         return reason, message, None
 
@@ -1008,7 +1035,7 @@ def cmd_pre_commit_verify_freshness(args) -> dict:
     # The gate has refused. WHY it refused is derived from the ledger rather
     # than assumed, so the caller is not told a mutation happened when a build
     # was observed and killed.
-    reason, remedy, observed_status = _stale_reason(entries, current_sha)
+    reason, remedy, observed_status = _stale_reason(entries, current_sha, plan_id)
     stale: dict = {
         'status': 'stale',
         'plan_id': plan_id,

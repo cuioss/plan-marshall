@@ -154,12 +154,17 @@ def test_a_root_the_filesystem_refuses_is_a_refusal_not_a_crash(plan_context, mo
 
 
 def test_a_build_row_that_recorded_no_tree_is_named_as_unrecorded(plan_context, monkeypatch, tmp_path) -> None:
-    """A row with no hash at all gets its own cause, not 'the tree was mutated'.
+    """This plan's own row with no hash gets its own cause, not 'the tree was mutated'.
 
     Telling a caller to "re-dispatch a build" reproduces the same unrecorded row,
     so the refusal names the resolution instead.
     """
-    result = _run_gate(plan_context, monkeypatch, tmp_path, _build_entry(worktree_sha=None))
+    result = _run_gate(
+        plan_context,
+        monkeypatch,
+        tmp_path,
+        _build_entry(plan_id=_PLAN_ID, worktree_sha=None),
+    )
 
     assert result['status'] == 'stale', result
     assert result['reason'] == 'build_tree_unrecorded', result
@@ -168,6 +173,47 @@ def test_a_build_row_that_recorded_no_tree_is_named_as_unrecorded(plan_context, 
         'status — not a verdict about this sha'
     )
     assert 're-running' in result['message'].lower(), result['message']
+
+
+def test_another_plans_unrecorded_row_does_not_relabel_this_plans_mutation(plan_context, monkeypatch, tmp_path) -> None:
+    """Attribution is by plan: the ledger is shared by every plan in the repository.
+
+    An unrecorded row carries no root to compare, so another plan's unrecorded
+    build must not turn this plan's changed tree into a resolution fault.
+    """
+    other_plan_unrecorded = _build_entry(plan_id='some-other-plan', worktree_sha=None)
+
+    result = _run_gate(plan_context, monkeypatch, tmp_path, other_plan_unrecorded)
+
+    assert result['status'] == 'stale', result
+    assert result['reason'] == 'worktree_mutated', result
+
+
+def test_an_explicit_null_dispatch_hash_never_matches(plan_context, monkeypatch, tmp_path) -> None:
+    """A row that PRESENTS the key with ``null`` is refused, not read as legacy.
+
+    The current writer always writes both keys and writes ``null`` for a fact it
+    could not establish, so an explicit null means "this build could not capture
+    its tree" — the one case where a mid-build rewrite is invisible. Admitting it
+    would let exactly that build pass as fresh.
+    """
+    result = _run_gate(
+        plan_context,
+        monkeypatch,
+        tmp_path,
+        _row(worktree_root=_GATE_ROOT, worktree_sha_at_dispatch=None),
+    )
+
+    assert result['status'] == 'stale', result
+    assert result['reason'] == 'worktree_dispatch_hash_unreadable', result
+
+
+def test_an_explicit_null_root_never_matches(plan_context, monkeypatch, tmp_path) -> None:
+    """The same rule for the root: a presented ``null`` is unreadable, not legacy."""
+    result = _run_gate(plan_context, monkeypatch, tmp_path, _row(worktree_root=None))
+
+    assert result['status'] == 'stale', result
+    assert result['reason'] == 'worktree_root_unreadable', result
 
 
 def test_an_old_unrecorded_row_does_not_hide_a_later_mutation(plan_context, monkeypatch, tmp_path) -> None:

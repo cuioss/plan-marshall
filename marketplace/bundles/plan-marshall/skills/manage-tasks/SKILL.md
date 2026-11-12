@@ -307,11 +307,14 @@ hash pair. A row hashed against another root is a green for another tree
 rewrote the tree while it ran, or that a concurrent edit slipped inside, so its
 green is about the rewritten tree rather than the one it started from
 (`worktree_rewritten_by_build` — commit the rewrite and re-run). A row carrying
-neither field is read as today, with no mismatch claim: the fields were added to
+neither KEY is read as today, with no mismatch claim: the fields were added to
 a schema that already held rows, and failing closed on history is not the same as
-failing closed on evidence. The two are judged SEPARATELY, so a row recording
-only one of them is read as today for the dimension it does not record. A field
-that IS present but unreadable never matches.
+failing closed on evidence. The two are judged SEPARATELY, so a row carrying
+only one of them is read as today for the dimension it does not record. Presence
+of the KEY — not a null value — is the legacy test: the current writer always
+writes both keys and writes `null` for a fact it could not establish, so a field
+PRESENT as `null` (or as anything but a non-empty string) is unreadable and never
+matches, while an ABSENT key is the pre-field shape.
 
 The ledger query's **primary predicate** filters on `kind`, `status`, and
 `worktree_sha` only — never `exit_code` or `plan_id` — so it stays
@@ -587,9 +590,9 @@ on observed evidence.
 - `status: fresh` — one or more `kind=build` entries with `status == success` and
   a matching `worktree_sha` exist, and each describes THIS tree (its recorded
   `worktree_root` matches, and its dispatch and completion hashes agree; the two
-  fields are judged SEPARATELY, so a row that records only one of them — or
-  neither, as every row written before the fields existed does — is read as it
-  always was for the dimension it does not record, with no claim either way), AND the
+  fields are judged SEPARATELY, so a row written before the fields existed — no
+  key at all — is read as it always was for the dimension it does not carry, with
+  no claim either way, while a field PRESENT as `null` is unreadable), AND the
   survivors are citable on BOTH cross-check dimensions
   as § "Joint selection" defines, so the gate is permitted to pass. Tree identity
   is the third admission step, taken before either cross-check dimension. The record
@@ -650,7 +653,7 @@ on observed evidence.
   | `reason` | Ledger evidence | Remedy the caller owes |
   |---|---|---|
   | `worktree_mutated` | NO `kind=build` row of any status carries this sha | The tree really did move past every observed build — re-dispatch a build. |
-  | `build_tree_unrecorded` | The NEWEST `kind=build` row records NO hash at all, so it can never match a tree | Re-running reproduces the same unrecorded row. Establish whether the tree would not resolve (the plan's worktree metadata, or the resolver) or its currency hash could not be computed (an unresolvable HEAD), then re-dispatch. |
+  | `build_tree_unrecorded` | THIS PLAN's NEWEST `kind=build` row records NO hash at all, so it can never match a tree | Re-running reproduces the same unrecorded row. Establish whether the tree would not resolve (the plan's worktree metadata, or the resolver) or its currency hash could not be computed (an unresolvable HEAD), then re-dispatch. |
   | `build_error` | Latest row for this sha is `status: error` | The build ran and reported failures — fix them, then re-build. |
   | `build_timeout` | Latest row for this sha is `status: timeout` | The build exceeded its own outer budget; no verdict was reported. Not a code defect. Re-run, and diagnose the budget if it recurs. |
   | `build_killed` | Latest row for this sha is `status: killed` | Externally killed — **not flaky, do not blind-retry.** No budget fired and no verdict was reported. Establish why before re-running. |
