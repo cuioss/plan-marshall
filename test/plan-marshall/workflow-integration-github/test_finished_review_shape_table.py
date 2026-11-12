@@ -138,7 +138,9 @@ def test_the_chokepoint_and_trigger_bot_never_both_hold(plan_context, monkeypatc
     finished = _producer(plan_context, monkeypatch, comments)
 
     done = github_re_review._qualifying_review_on_record(_PR, _BOT) is True
-    refused = github_re_review.resolve_strategy(_BOT).request_fresh_review(_PR, '2026-01-01T00:00:00Z')
+    strategy = github_re_review.resolve_strategy(_BOT)
+    assert strategy is not None, f'{_BOT} resolves no strategy'
+    refused = strategy.request_fresh_review(_PR, '2026-01-01T00:00:00Z')
     trigger = rc.list_bots_for_trigger([_BOT], [], [_BOT], finished_review_bots=list(finished))
 
     assert (refused.get('status') == 'refused') is done
