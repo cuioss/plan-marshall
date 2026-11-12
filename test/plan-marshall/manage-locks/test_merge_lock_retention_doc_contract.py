@@ -98,25 +98,32 @@ PINS: tuple[tuple[Path, str, str, str | None], ...] = (
 def _section_text(text: str, heading: str) -> str:
     """Return ``text``'s section for ``heading``, up to the next same-or-higher heading.
 
-    An absent heading yields the empty string, which fails every pin anchored there —
-    the fail-closed direction: a section that vanished states nothing.
+    Fenced code blocks are skipped when looking for headings, so a ``#``-prefixed
+    comment inside a fenced block cannot end the section early (which would redden a
+    pin that is perfectly fine). An absent heading yields the empty string, which
+    fails every pin anchored there — the fail-closed direction: a section that
+    vanished states nothing.
     """
     target = heading.strip()
     level = len(target) - len(target.lstrip('#'))
     collected: list[str] = []
     inside = False
+    in_fence = False
     for line in text.splitlines():
-        if not inside:
-            if line.strip() == target:
-                inside = True
-                collected.append(line)
+        stripped = line.lstrip()
+        fenced = stripped.startswith('```')
+        if not in_fence and not fenced and stripped == target:
+            inside = True
+            collected.append(line)
             continue
-        marker = line.lstrip()
-        if marker.startswith('#'):
-            marker_level = len(marker) - len(marker.lstrip('#'))
-            if marker_level <= level and marker[marker_level : marker_level + 1] == ' ':
+        if inside and not in_fence and not fenced and stripped.startswith('#'):
+            marker_level = len(stripped) - len(stripped.lstrip('#'))
+            if marker_level <= level and stripped[marker_level : marker_level + 1] == ' ':
                 break
-        collected.append(line)
+        if inside:
+            collected.append(line)
+        if fenced:
+            in_fence = not in_fence
     return '\n'.join(collected)
 
 
@@ -194,6 +201,32 @@ def test_planting_an_absence_reddens_a_wholly_new_statement(document: Path) -> N
         planted = _plant_in_section(text, heading, phrase, '')
         with pytest.raises(AssertionError):
             _assert_document_states(planted, pins)
+
+
+def test_section_extraction_ignores_a_hash_comment_inside_a_fenced_block() -> None:
+    """A ``#`` line inside a fence is text, not a heading — it cannot end a section.
+
+    Without this the extractor would treat a shell comment as a heading and truncate
+    the section, reddening a pin whose statement is intact.
+    """
+    text = '\n'.join(
+        [
+            '## Target',
+            'before',
+            '```bash',
+            '# not a heading',
+            'echo after',
+            '```',
+            'after the fence',
+            '## Next',
+            'elsewhere',
+        ]
+    )
+
+    section = _section_text(text, '## Target')
+
+    assert 'after the fence' in section
+    assert 'elsewhere' not in section
 
 
 def test_every_pinned_section_exists_in_its_document() -> None:

@@ -66,8 +66,8 @@ co-tenants the same store, and the storeless ``poll-delay`` computation:
     bounded call and adds ``waited_seconds`` + ``timed_out``), until admitted or its
     budget is exhausted, then the Pre-Merge Gate's
     ``AskUserQuestion`` last-resort escape hatch fires. ``blocked_reason`` (one of
-    :data:`BLOCKED_REASONS`) is what separates the two causes the single ``blocked``
-    label used to collapse: only the lock-contended one has a blocking plan to name,
+    :data:`BLOCKED_REASONS`) is what separates the three causes the single ``blocked``
+    label used to collapse: only the lock-contended ones have a blocking plan to name,
     so ``blocking_plan_id: null`` beside a non-zero ``waiting_count`` is EXPLAINED by
     the payload rather than reading as a contradiction; the ``not_fifo_front``
     cause also carries ``queue_front`` — the entry in front with its ``liveness``,
@@ -939,8 +939,10 @@ def _read_holder(lock_path: Path) -> str:
 #:
 #: - ``held`` — the lock file exists and names a holder.
 #: - ``absent`` — no lock file at that path.
-#: - ``unreadable`` — the path exists but its holder could not be read: a read
-#:   fault (permission, a directory, an I/O error), or a file naming no holder.
+#: - ``unreadable`` — the path could not be read as a holder: a read fault
+#:   (permission, a directory in its place, an unreadable parent, an I/O error), or
+#:   a file naming no holder. Existence is deliberately not required for this
+#:   answer — a parent nobody can traverse is not proof of absence.
 #:   ⛔ NOT a synonym for ``absent``: a consumer that must PROVE it holds the lock
 #:   cannot read "a file nobody can read" as "no lock at all".
 HOLDER_HELD = 'held'
@@ -1393,15 +1395,16 @@ def _admitted_result(plan_id: str, action: str, lock_path: Path, reclaimed: bool
 
 
 #: The closed vocabulary every ``admission: blocked`` payload publishes as
-#: ``blocked_reason``. Two causes hide behind the one ``blocked`` label, and only
+#: ``blocked_reason``. Three causes hide behind the one ``blocked`` label, and only
 #: one of them has a blocking plan to name:
 #:
 #: - ``not_fifo_front`` — this plan is not the queue front, so it never attempted
 #:   the ``O_EXCL`` create. There is no blocking plan BY CONSTRUCTION: what blocks
 #:   it is its own queue position, not a holder. ``blocking_plan_id`` is therefore
 #:   routinely ``null`` beside a ``waiting_count`` above zero, and that pairing —
-#:   which read as a self-contradiction when the two causes shared one label — is
-#:   explained by this reason rather than needing to be diagnosed by hand.
+#:   which read as a self-contradiction when the causes shared one label — is
+#:   explained by this reason rather than needing to be diagnosed by hand. This is
+#:   also the only cause whose reply carries ``queue_front``.
 #: - ``lock_held_by_live_holder`` — this plan IS the front and lost the ``O_EXCL``
 #:   race (or its stale reclaim) to a live foreign holder. That holder is named in
 #:   ``blocking_plan_id``.
@@ -1438,7 +1441,9 @@ def _blocked_result(
     ``O_EXCL`` create against a foreign live holder. The consumer's poll/backoff
     loop re-polls (idempotently preserving FIFO position) against this signal until
     admitted or its wait budget is exhausted, then fires the Pre-Merge Gate's
-    last-resort ``AskUserQuestion`` carrying ``blocking_plan_id``.
+    last-resort ``AskUserQuestion`` naming the entry ahead — ``queue_front.plan_id``
+    on the ``not_fifo_front`` cause, ``blocking_plan_id`` (the lock holder) on the
+    other two.
 
     ``blocked_reason`` is REQUIRED and is one of :data:`BLOCKED_REASONS` — the
     machine-readable cause. It is not optional because the whole point is that the

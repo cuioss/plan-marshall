@@ -477,8 +477,8 @@ Output carries an `admission` discriminator:
   exhausted, then fires the last-resort `AskUserQuestion`. A `queue_front` whose
   `retention` is `git_marker` will never leave on its own — that is the entry to
   hand to the operator, with its `exit_command`, instead of polling to budget.
-  - **`blocked_reason`** names WHICH of the two causes produced the block, and is
-    present on every blocked payload. Two causes hid behind the one `blocked`
+  - **`blocked_reason`** names WHICH cause produced the block, and is
+    present on every blocked payload. Three causes hid behind the one `blocked`
     label, and only one of them has a blocking plan to name:
 
     | `blocked_reason` | Meaning | `blocking_plan_id` |
@@ -522,8 +522,8 @@ python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock check \
 
 A non-mutating holder read: `status: free` when no lock file exists,
 `status: held` + `holder_plan_id` when one does, and `status: unreadable` +
-`error` when a lock file exists but its holder cannot be read (a read fault, or a
-file naming no holder). On the `held` branch it also
+`error` when the path cannot be read as a holder (a read fault, an unreadable
+parent, a directory in its place, or a file naming no holder). On the `held` branch it also
 surfaces a `staleness` field (`fresh` / `stale` / `unknown`, from
 `holder_staleness`) — the authoritative main-anchored verdict the manual-release
 recovery recipe consults instead of a cwd-scoped `manage-status list` /

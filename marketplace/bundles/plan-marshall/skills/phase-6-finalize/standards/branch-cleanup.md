@@ -683,12 +683,12 @@ Optionally log each `admission: blocked` call for grep-ability during a run:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-6-finalize) Branch cleanup: merge-queue admission blocked behind {front_plan} ({blocked_reason}, retention={queue_front.retention}, waiting_count={waiting_count}) after {waited}s of {wait_budget}s, re-issuing acquire within budget"
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-6-finalize) Branch cleanup: merge-queue admission blocked behind {front_plan} ({blocked_reason}, waiting_count={waiting_count}) after {waited}s of {wait_budget}s, re-issuing acquire within budget"
 ```
 
 ###### Budget-exhaustion escalation (last resort)
 
-Only when the FIFO poll loop exhausts `{wait_budget}` without admission does the escalation fire. Read the final `admission: blocked` poll's `blocked_reason` first, because the cause decides which field names the entry ahead: on `lock_held_by_live_holder` and `stale_holder_live_worktree` it is `blocking_plan_id`; on `not_fifo_front` it is the `queue_front` object that reply carries (`plan_id`, `liveness`, `retention`, `exit_command`), and `blocking_plan_id` is the LOCK holder — routinely `null` there, because what holds this plan is its queue position, not a holder. Bind `{front_plan}` to the field that cause names (`queue_front.plan_id`, falling back to `blocking_plan_id`), and surface `queue_front.retention` beside it. A `retention` of `git_marker` means the entry ahead has no plan directory but git plumbing still under its worktree, so it will not leave on its own however long this plan waits — say so in the question, and name the `exit_command` (`merge_lock dequeue --plan-id {front_plan}`) as the operator's own option for a holder that is provably gone. This is a disclosure, never an automatic reclaim: § "Merge-Mutex Hold Window" invariant 4 and the mid-recovery protection are unchanged.
+Only when the FIFO poll loop exhausts `{wait_budget}` without admission does the escalation fire. Read the final `admission: blocked` poll's `blocked_reason` first, because the cause decides which field names the entry ahead: on `lock_held_by_live_holder` and `stale_holder_live_worktree` that plan IS the lock holder, so bind `{front_plan}` to `blocking_plan_id` and omit the retention line — there is no queue entry ahead; on `not_fifo_front` bind `{front_plan}` to the `queue_front.plan_id` the reply carries and include the retention line, because `blocking_plan_id` is the LOCK holder there and is routinely `null` — what holds this plan is its queue position, not a holder. A `retention` of `git_marker` means the entry ahead has no plan directory but git plumbing still under its worktree, so it will not leave on its own however long this plan waits; name the `exit_command` (`merge_lock dequeue --plan-id {front_plan}`) as the operator's own option for a holder that is provably gone. This is a disclosure, never an automatic reclaim: § "Merge-Mutex Hold Window" invariant 4 and the mid-recovery protection are unchanged.
 
 ```yaml
 AskUserQuestion:
@@ -699,7 +699,6 @@ AskUserQuestion:
         **Ahead of this plan**: {front_plan}
         **This plan**: {plan_id}
         **Waited so far**: {wait_budget}s
-        **Retention of the entry ahead**: {queue_front.retention} — `plan_dir` or `git_marker`, or `none` when the entry is due to be pruned; `git_marker` means it will not leave on its own, and `{queue_front.exit_command}` withdraws it
 
         Merges are taken strictly in the order plans joined the queue. This
         plan has not been overtaken and it has not failed — it is simply
@@ -710,6 +709,12 @@ AskUserQuestion:
         - label: "Skip merge"
           description: "Stops here without merging. Your branch and pull request are untouched, but this plan gives up its place in line — re-running finalize later joins the back of whatever queue exists then"
       multiSelect: false
+```
+
+On `blocked_reason: not_fifo_front`, add one line to that description — the only cause whose reply carries a queue entry ahead — naming the retention and the exit, with all four values the field can hold:
+
+```text
+**Retention of the entry ahead**: {queue_front.retention} — `plan_dir`, `git_marker`, `none` when the entry is due to be pruned, or `unknown` when the predicate could not be consulted; `git_marker` means it will not leave on its own, and `{queue_front.exit_command}` withdraws it
 ```
 
 On **Wait and retry**, reset `{waited}` to `0` and re-enter the **FIFO poll/backoff loop** above (a fresh `{wait_budget}` window; the plan kept its FIFO position throughout).
