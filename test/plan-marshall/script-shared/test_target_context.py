@@ -121,6 +121,25 @@ class TestCascadeTiers:
         """The ambient-signal table carries no ``OPENCODE_PID`` probe."""
         assert all(name != 'OPENCODE_PID' for name, _target in target_context.TARGET_ENV_SIGNALS)
 
+    def test_env_signal_precedence_is_literal(self, monkeypatch):
+        """Antigravity outranks OpenCode, which outranks Claude, by literal signal names.
+
+        The three signals are spelled here rather than read from
+        ``TARGET_ENV_SIGNALS``, so this test pins the CONTRACT while the table it
+        guards stays free to be reordered — a reorder must make it fail.
+        """
+        monkeypatch.setenv('ANTIGRAVITY_AGENT', '1')
+        monkeypatch.setenv('OPENCODE', '1')
+        monkeypatch.setenv('CLAUDE_CODE_SESSION_ID', 'session-id')
+
+        assert detect_target_from_env() == 'antigravity'
+
+        monkeypatch.delenv('ANTIGRAVITY_AGENT')
+        assert detect_target_from_env() == 'opencode'
+
+        monkeypatch.delenv('OPENCODE')
+        assert detect_target_from_env() == 'claude'
+
     def test_local_config_tier_resolves_a_declared_harness(self, tmp_path):
         """Harness state in .plan/local/harness/{harness}.json names the target."""
         _write_local_harness_config(tmp_path, 'antigravity')

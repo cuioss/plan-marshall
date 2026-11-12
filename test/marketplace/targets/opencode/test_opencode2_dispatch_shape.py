@@ -55,11 +55,31 @@ def test_mapping_task_note_agrees_with_its_tool_mapping(opencode_config_dir: Pat
 
 
 def test_no_bundle_standard_names_the_opencode_subagent_tool_as_task():
-    """No bundle standard may name OpenCode's sub-agent tool ``task``."""
-    standards = Path(PROJECT_ROOT) / 'marketplace' / 'bundles'
+    """No OpenCode-facing surface may name the OpenCode 1 tools ``task`` or ``bash``.
+
+    The standards sweep keeps its original needle across every bundle. The
+    OpenCode-only bundle is swept over its whole surface — its ``SKILL.md`` and
+    its workflow documents say which tool to call just as its standards do — and
+    there the needle widens to a backticked ``task`` or ``bash`` used as the tool
+    name, because the target-rules skill never carries the narrower literal.
+    """
+    bundles = Path(PROJECT_ROOT) / 'marketplace' / 'bundles'
     offenders: list[str] = []
-    for path in sorted(standards.glob('*/skills/*/standards/*.md')):
+    for path in sorted(bundles.glob('*/skills/*/standards/*.md')):
         for number, line in enumerate(path.read_text(encoding='utf-8').splitlines(), start=1):
             if 'OpenCode `task`' in line:
-                offenders.append(f'{path.relative_to(standards)}:{number}: {line.strip()}')
-    assert not offenders, 'OpenCode 1 sub-agent tool name in a bundle standard:\n' + '\n'.join(offenders)
+                offenders.append(f'{path.relative_to(bundles)}:{number}: {line.strip()}')
+
+    opencode_bundle = bundles / 'plan-marshall-opencode'
+    surfaces = [
+        path
+        for pattern in ('skills/*/SKILL.md', 'skills/*/standards/*.md', 'skills/*/workflow/*.md')
+        for path in sorted(opencode_bundle.glob(pattern))
+    ]
+    assert surfaces, 'the plan-marshall-opencode sweep matched no file'
+    for path in surfaces:
+        for number, line in enumerate(path.read_text(encoding='utf-8').splitlines(), start=1):
+            if any(f'`{tool}`' in line for tool in ('task', 'bash')):
+                offenders.append(f'{path.relative_to(bundles)}:{number}: {line.strip()}')
+
+    assert not offenders, 'OpenCode 1 tool name in an OpenCode-facing surface:\n' + '\n'.join(offenders)
