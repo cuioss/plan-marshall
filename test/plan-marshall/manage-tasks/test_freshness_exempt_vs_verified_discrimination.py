@@ -211,10 +211,14 @@ _D1_PUBLISHED_BRANCHES_COUNT = 10
 #: Branching consumers that joined the class after that survey was recorded. The
 #: surveyed count is a published figure and is not edited to absorb them; the
 #: growth is stated here instead, so the reconciliation below still fails on a
-#: member nobody accounted for. All four are the gate-owning slice's own suites:
+#: member nobody accounted for. Five are the gate-owning slice's own suites —
 #: three for rows credited together (union coverage, missing analyses, union
-#: controls) and one for a row scoped to a narrow unit (narrow-unit control).
-_JOINED_SINCE_D1_SURVEY = 4
+#: controls), one for a row scoped to a narrow unit, and one for the tree
+#: identity a row must describe — and the sixth is the executor slice's recorder
+#: control for that same identity.
+_JOINED_IN_GATE_SLICE = 5
+_JOINED_OUTSIDE_GATE_SLICE = 1
+_JOINED_SINCE_D1_SURVEY = _JOINED_IN_GATE_SLICE + _JOINED_OUTSIDE_GATE_SLICE
 
 #: The two workflow documents in that class. A document "branches" by carrying a
 #: normative instruction that selects behaviour on the status VALUE.
@@ -236,9 +240,9 @@ _DOC_BRANCHING_CONSUMERS = (
 _GATE_OWNING_SLICE = 'test/plan-marshall/manage-tasks'
 
 _CODE_CONSUMER_SLICES = {
-    _GATE_OWNING_SLICE: 6 + _JOINED_SINCE_D1_SURVEY,
+    _GATE_OWNING_SLICE: 6 + _JOINED_IN_GATE_SLICE,
     'test/plan-marshall/manage-execution-manifest': 1,
-    'test/plan-marshall/tools-script-executor': 1,
+    'test/plan-marshall/tools-script-executor': 1 + _JOINED_OUTSIDE_GATE_SLICE,
 }
 
 #: This module — the prover, excluded from its own population by explicit path.

@@ -64,6 +64,24 @@ see WHICH row satisfied the gate instead of taking the verdict on trust. That
 alone converts a silent wrong-reason pass into a visible one, independently of
 whether the cross-check could be performed.
 
+**A matching hash is not the same claim as a matching TREE.** The row is hashed
+against the plan's worktree root — the recorder resolves that root through the
+same shared plan-context resolver this gate resolves — and it records both the
+root it hashed and the tree hash it captured BEFORE the build ran. So the gate
+matches on three facts, not one: the currency hash, the root the row was hashed
+against, and the dispatch hash equalling the completion hash. A row hashed
+against another root is a green for another tree (`worktree_root_mismatch`); a
+row whose dispatch hash differs from its completion hash describes a build that
+rewrote the tree while it ran, or that a concurrent edit slipped inside, so its
+green is about the rewritten tree and not the one it started from
+(`worktree_rewritten_by_build`). Both are refusals that NAME their cause and the
+rows they rejected, never a ``stale`` with no explanation. A row carrying
+neither field is read as today, with no mismatch claim: the fields were added to
+the row schema after rows already existed, and refusing every pre-existing row
+would fail closed on history rather than on evidence. A field that IS present
+but unreadable never matches — a root or hash nobody can read cannot be shown to
+describe this tree.
+
 The primitive is the *working-tree* currency, NOT the committed ``HEAD``. This
 is a pre-commit gate: at gate time the plan's edits are still uncommitted, so a
 ``git rev-parse HEAD`` primitive would match trivially regardless of any
@@ -117,7 +135,12 @@ Outcomes:
                      need different remedies and this gate must not assert a
                      cause it did not establish: ``worktree_mutated`` /
                      ``build_error`` / ``build_timeout`` / ``build_killed`` /
-                     ``build_indeterminate`` (see ``_stale_reason`` below), plus
+                     ``build_indeterminate`` (see ``_stale_reason`` below), the
+                     tree-identity refusals ``worktree_root_mismatch`` /
+                     ``worktree_rewritten_by_build`` /
+                     ``worktree_root_unreadable`` /
+                     ``worktree_dispatch_hash_unreadable`` (see
+                     ``_refusal_route`` below), plus
                      ``notation_unrelated`` / ``notation_absent`` /
                      ``build_scope_narrow`` /
                       ``build_scope_unreadable_for_whole_tree_change`` /
@@ -209,6 +232,170 @@ _STALE_MUTATED = (
     'state, so no build has observed it — the worktree has been mutated since '
     'the last observed build. Re-dispatch a build before retrying.',
 )
+
+# ---------------------------------------------------------------------------
+# Tree identity — the row must describe THIS tree, not merely carry its hash
+# ---------------------------------------------------------------------------
+#
+# A row's `worktree_sha` matches the gate's recomputed sha, which proves the
+# CONTENT matched at hash time. It does not prove the build ran in this tree:
+# two checkouts of the same content hash identically, and a row written against
+# another root then reads as a green for the wrong tree. The recorder therefore
+# names the root it hashed, and the two hashes it captured, and the gate
+# compares that record with its own resolution here.
+
+#: The `kind=build` field naming the root the row's hash was computed against.
+_ROOT_FIELD = 'worktree_root'
+
+#: The `kind=build` field naming the tree hash captured BEFORE the build ran.
+_DISPATCH_SHA_FIELD = 'worktree_sha_at_dispatch'
+
+# Row-verdict vocabulary for the two tree-identity dimensions. `unrecorded` is
+# the LEGACY state — the field is absent or null, which is what every row
+# written before it existed carries — and it matches, with no mismatch claim.
+# `unreadable` is a field that IS present but is not a non-empty string, and it
+# never matches: a name nobody can read cannot be shown to describe this tree.
+_UNRECORDED = 'unrecorded'
+_SAME = 'same'
+_DIFFERENT = 'different'
+_UNREADABLE = 'unreadable'
+
+_STALE_ROOT_MISMATCH = (
+    'worktree_root_mismatch',
+    'The successful build row was hashed against a DIFFERENT tree root, so its '
+    "green describes another tree. Re-dispatch the build against this plan's "
+    'tree.',
+)
+
+_STALE_REWRITTEN_BY_BUILD = (
+    'worktree_rewritten_by_build',
+    'The build changed the tree it was building: the tree hash it recorded at '
+    'dispatch differs from the one at completion, so its success describes the '
+    'rewritten tree rather than the one it started from. Commit the rewrite and '
+    're-run the build.',
+)
+
+_STALE_ROOT_UNREADABLE = (
+    'worktree_root_unreadable',
+    'A successful build row for this working-tree state records a tree root that '
+    'cannot be read, so it cannot be shown to describe this tree. Establish what '
+    'wrote that row, or re-dispatch the build.',
+)
+
+_STALE_DISPATCH_HASH_UNREADABLE = (
+    'worktree_dispatch_hash_unreadable',
+    'A successful build row for this working-tree state records a dispatch tree '
+    'hash that cannot be read, so the row cannot be shown to describe a tree that '
+    'was stable across the build. Re-dispatch the build.',
+)
+
+#: Why a row that carries the current hash was still not citable, in the order
+#: the reason is chosen when several routes apply. A root mismatch wins over a
+#: rewrite: the row is then about another tree entirely, and naming the rewrite
+#: would describe a tree this gate never asked about.
+_REFUSAL_PRECEDENCE: tuple[str, ...] = (
+    _STALE_ROOT_MISMATCH[0],
+    _STALE_REWRITTEN_BY_BUILD[0],
+    _STALE_ROOT_UNREADABLE[0],
+    _STALE_DISPATCH_HASH_UNREADABLE[0],
+)
+
+_REFUSAL_MESSAGES: dict[str, str] = dict(
+    (
+        _STALE_ROOT_MISMATCH,
+        _STALE_REWRITTEN_BY_BUILD,
+        _STALE_ROOT_UNREADABLE,
+        _STALE_DISPATCH_HASH_UNREADABLE,
+    )
+)
+
+
+def _same_path(recorded: str, gate_root: Path) -> bool:
+    """Whether ``recorded`` names the same directory as ``gate_root``.
+
+    Compared after ``resolve()`` on both sides, so a recorded relative path, a
+    trailing separator or a symlinked spelling of one tree is not reported as a
+    different tree. A path that cannot be resolved is NOT the same tree — the
+    fail-closed direction.
+    """
+    try:
+        return Path(recorded).resolve() == Path(gate_root).resolve()
+    except (OSError, RuntimeError):
+        return False
+
+
+def _row_tree_verdicts(entry: dict, gate_root: Path) -> tuple[str, str]:
+    """Return ``(root_verdict, hash_verdict)`` for one candidate row.
+
+    ``root_verdict`` compares the row's recorded root with the gate's own.
+    ``hash_verdict`` compares the row's dispatch hash with its completion hash:
+    a difference means the build changed the tree while it ran, so the green it
+    reports is about the rewritten tree.
+
+    Both are three-plus-one-valued: ``unrecorded`` (absent or null — a legacy
+    row, matched as today), ``same``, ``different``, ``unreadable``.
+    """
+    recorded_root = entry.get(_ROOT_FIELD)
+    if recorded_root is None:
+        root_verdict = _UNRECORDED
+    elif not isinstance(recorded_root, str) or not recorded_root.strip():
+        root_verdict = _UNREADABLE
+    else:
+        root_verdict = _SAME if _same_path(recorded_root, gate_root) else _DIFFERENT
+
+    dispatch_sha = entry.get(_DISPATCH_SHA_FIELD)
+    if dispatch_sha is None:
+        hash_verdict = _UNRECORDED
+    elif not isinstance(dispatch_sha, str) or not dispatch_sha.strip():
+        hash_verdict = _UNREADABLE
+    else:
+        hash_verdict = _SAME if dispatch_sha == entry.get('worktree_sha') else _DIFFERENT
+    return root_verdict, hash_verdict
+
+
+def _refusal_route(root_verdict: str, hash_verdict: str) -> str | None:
+    """The route a candidate row is refused on, or ``None`` when it is citable."""
+    if root_verdict == _DIFFERENT:
+        return _STALE_ROOT_MISMATCH[0]
+    if hash_verdict == _DIFFERENT:
+        return _STALE_REWRITTEN_BY_BUILD[0]
+    if root_verdict == _UNREADABLE:
+        return _STALE_ROOT_UNREADABLE[0]
+    if hash_verdict == _UNREADABLE:
+        return _STALE_DISPATCH_HASH_UNREADABLE[0]
+    return None
+
+
+def _partition_candidates(
+    candidates: list[tuple[int, dict]], gate_root: Path
+) -> tuple[list[tuple[int, dict]], list[tuple[int, dict, str]]]:
+    """Split the rows that matched the primary predicate by tree identity.
+
+    Returns the citable rows and the refused ones, each refused row paired with
+    the route it was refused on, so the verdict can name what it rejected
+    instead of reporting an unexplained ``stale``.
+    """
+    admitted: list[tuple[int, dict]] = []
+    refused: list[tuple[int, dict, str]] = []
+    for index, entry in candidates:
+        root_verdict, hash_verdict = _row_tree_verdicts(entry, gate_root)
+        route = _refusal_route(root_verdict, hash_verdict)
+        if route is None:
+            admitted.append((index, entry))
+        else:
+            refused.append((index, entry, route))
+    return admitted, refused
+
+
+def _refusal_reason(refused: list[tuple[int, dict, str]], gate_root: Path) -> tuple[str, str]:
+    """Return ``(reason, message)`` for a set of tree-identity refusals."""
+    routes = {route for _index, _entry, route in refused}
+    reason = next(route for route in _REFUSAL_PRECEDENCE if route in routes)
+    message = _REFUSAL_MESSAGES[reason]
+    if reason == _STALE_ROOT_MISMATCH[0]:
+        roots = sorted({str(entry.get(_ROOT_FIELD)) for _index, entry, route in refused if route == reason})
+        message = f'Recorded root(s): {"; ".join(roots)}. This gate hashes: {gate_root}. {message}'
+    return reason, message
 
 
 def _stale_reason(entries: list[dict], current_sha: str) -> tuple[str, str, str | None]:
@@ -726,14 +913,49 @@ def cmd_pre_commit_verify_freshness(args) -> dict:
         and entry.get('worktree_sha') == current_sha
     ]
 
-    if candidates:
+    # A matching hash proves the CONTENT matched. It does not prove the build ran
+    # in THIS tree: the row records the root it hashed and the two hashes it
+    # captured, and a row that names another root — or that reports different
+    # hashes at dispatch and completion, i.e. a build that rewrote the tree while
+    # running — is not evidence about this working tree. Refused rows are named
+    # in the verdict rather than dropped: a `stale` whose cause nobody can see is
+    # the failure this discrimination replaces.
+    admitted, refused = _partition_candidates(candidates, worktree_root)
+
+    if admitted:
         return _verdict_for_candidates(
-            candidates,
+            admitted,
             plan_id=plan_id,
             current_sha=current_sha,
             worktree_root=worktree_root,
             ledger_path=ledger_path,
         )
+
+    if refused:
+        reason, refusal_message = _refusal_reason(refused, worktree_root)
+        return {
+            'status': 'stale',
+            'plan_id': plan_id,
+            'reason': reason,
+            'worktree_sha': current_sha,
+            'worktree_root': str(worktree_root),
+            'ledger_path': str(ledger_path),
+            'message': (
+                f'{len(refused)} kind=build row(s) carry the current working-tree sha but do '
+                f'not describe this tree. Gate MUST fail closed. {refusal_message}'
+            ),
+            'refused_rows': [
+                {
+                    'ledger_index': index,
+                    'notation': entry.get('notation', ''),
+                    'plan_id': entry.get('plan_id', ''),
+                    'worktree_root': entry.get(_ROOT_FIELD),
+                    'reason': route,
+                    'timestamp_iso': entry.get('timestamp_iso', ''),
+                }
+                for index, entry, route in refused
+            ],
+        }
 
     # The gate has refused. WHY it refused is derived from the ledger rather
     # than assumed, so the caller is not told a mutation happened when a build
