@@ -81,7 +81,7 @@ OpenCode operates with a native set of agent tools. The mappings are declared in
 | `Grep` | `grep` | Content regex and literal searching.
 | `AskUserQuestion` | `question` | Interactive user prompts and clarification questions.
 | `Task` | `subagent` | Spawns subagent execution tasks (OpenCode 2 tool `subagent`).
-| `NotebookEdit` | _None (null)_ | Target-absent sentinel: OpenCode provides no native notebook editing tool; fail-closed omit.
+| `NotebookEdit` | `edit` | Shares OpenCode's file-edit action: an agent whose source declares it grants `edit`, so no `edit` deny is emitted for that agent. |
 | `WebFetch` | `webfetch` | Web content retrieval.
 | `WebSearch` | `websearch` | Web search querying.
 |===

@@ -228,9 +228,11 @@ def cmd_apply_fixes(args: argparse.Namespace) -> dict:
 
     if is_opencode_target():
         settings_path = resolve_settings_arg(args)
-        settings, error = load_settings(settings_path)
-        if error:
-            return {'status': 'error', 'error': error}
+        # The non-creating load: path resolution no longer creates the file, so a
+        # project without one must reach the defaults writer, not "not found".
+        settings = load_settings_path(Path(settings_path))
+        if 'error' in settings:
+            return {'status': 'error', 'error': f'Invalid settings in {settings_path}: {settings["error"]}'}
         defaults = ensure_default_permissions(settings, settings_path, args.dry_run)
         if defaults.get('error'):
             return {'status': 'error', 'error': str(defaults['error']), 'settings_file': settings_path}
@@ -1020,9 +1022,11 @@ def cmd_ensure_wildcards(args: argparse.Namespace) -> dict:
         )
 
         settings_path = resolve_settings_arg(args)
-        settings, error = load_settings(settings_path)
-        if error:
-            return {'status': 'error', 'error': error}
+        # The non-creating load: a project without a settings file reaches the
+        # defaults writer, while an existing unreadable file is still refused.
+        settings = load_settings_path(Path(settings_path))
+        if 'error' in settings:
+            return {'status': 'error', 'error': f'Invalid settings in {settings_path}: {settings["error"]}'}
 
         rules = _permission_rules(settings, create=True)
         if rules is not None:

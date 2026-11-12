@@ -58,16 +58,26 @@ def test_the_retired_save_code_is_gone(name: str) -> None:
     assert 'save_error' not in DOCUMENTS[name].read_text(encoding='utf-8')
 
 
-@pytest.mark.parametrize('name', ['SKILL.md', 'contract.md', 'opencode.adoc'])
+#: Every prose surface the run must keep honest: the documents with an
+#: error-code table, plus the developer adoc. Derived from ``DOCUMENTS`` so a
+#: document added there is swept by every test below.
+ALL_DOCUMENTS = {**DOCUMENTS, 'opencode.adoc': ADOC}
+
+
+@pytest.mark.parametrize('name', sorted(ALL_DOCUMENTS))
 def test_no_document_states_an_unmatched_action_is_ask(name: str) -> None:
-    path = ADOC if name == 'opencode.adoc' else DOCUMENTS[name]
-    offenders = _RETIRED_ASK_MODEL.findall(path.read_text(encoding='utf-8'))
+    offenders = _RETIRED_ASK_MODEL.findall(ALL_DOCUMENTS[name].read_text(encoding='utf-8'))
     assert not offenders, f'{name} still documents the retired base policy: {offenders}'
 
 
-@pytest.mark.parametrize('name', ['opencode.adoc', 'SKILL.md'])
+#: The two surfaces that state the agent base policy (the developer adoc and the
+#: skill body). ``contract.md`` documents operation error codes, not the base
+#: policy, so it is not in this population.
+_BASE_POLICY_DOCUMENTS = ('opencode.adoc', 'SKILL.md')
+
+
+@pytest.mark.parametrize('name', _BASE_POLICY_DOCUMENTS)
 def test_the_observed_base_policy_is_stated_with_its_source(name: str) -> None:
-    path = ADOC if name == 'opencode.adoc' else DOCUMENTS[name]
-    normalized = ' '.join(path.read_text(encoding='utf-8').split())
+    normalized = ' '.join(ALL_DOCUMENTS[name].read_text(encoding='utf-8').split())
     assert BASE_POLICY_STATEMENT in normalized, f'{name} does not state the observed base policy'
     assert OBSERVED_VERSION in normalized, f'{name} does not name the version the base policy was observed at'

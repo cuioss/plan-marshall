@@ -68,6 +68,7 @@ import re
 import shutil
 import sqlite3
 import subprocess
+import tempfile
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any, NamedTuple
@@ -295,6 +296,7 @@ OPENCODE_PERMISSION_ERROR_CODES = frozenset(
         'io_error',
         'permission_write_failed',
         'marshal_not_found',
+        'invalid_marshal',
     }
 )
 
@@ -311,22 +313,40 @@ _OPENCODE_EXFILTRATION_BASH_VECTORS = ('cat', 'head', 'tail', 'less', 'more', 'c
 _OPENCODE_PATH_CHARS_THE_MAP_CANNOT_CARRY = ('(', ')', '*')
 
 
-#: Characters a settings-file path may carry. The path is produced by
-#: ``permission_settings_path`` — a scope constant plus the config directory or
-#: the project root — so it is host configuration, never file content. This
-#: allowlist is a hardening backstop for the read and write, not the primary
-#: boundary: anything outside it is refused rather than opened.
-_SETTINGS_PATH_CHARS = re.compile(r'^[A-Za-z0-9._/\-:]+$')
+def _contained_settings_path(candidate: Path, project_dir: Path) -> Path:
+    """Return *candidate* when it resolves inside *project_dir*, else the root file.
 
-
-def _safe_settings_path(path: str) -> Path | None:
-    """Return the settings path, or ``None`` when it is not a plain path.
-
-    A path carrying a character outside the allowlist, or a ``..`` segment, is
-    refused before it is read or written: traversal-shaped values never reach
-    the filesystem calls.
+    A `.opencode` directory that is a symlink out of the project — to the
+    user's global OpenCode directory, say — must not turn a project-scoped
+    write into a global one: the resolved target is checked for containment, and
+    an escaping one falls back to the project's own ``opencode.json``.
     """
-    if not path or not _SETTINGS_PATH_CHARS.match(path):
+    try:
+        resolved = candidate.resolve()
+        resolved_project = project_dir.resolve()
+    except OSError:
+        return project_dir / 'opencode.json'
+    if resolved_project in resolved.parents:
+        return resolved
+    return project_dir / 'opencode.json'
+
+
+# A settings-file path is produced by ``permission_settings_path`` — a scope
+# constant plus the config directory or the project root — so it is host
+# configuration, never file content. ``_safe_settings_path`` is a hardening
+# backstop for the read and write, not the primary boundary: a traversal-shaped
+# value is refused rather than opened.
+def _safe_settings_path(path: str) -> Path | None:
+    """Return the settings path, or ``None`` when it is not a usable path.
+
+    A path carrying a NUL or a control character, or a ``..`` segment, is
+    refused before it is read or written: traversal-shaped values never reach
+    the filesystem calls. Ordinary characters — spaces included, since a
+    project directory may contain them — are accepted.
+    """
+    if not path:
+        return None
+    if any(ord(char) < 0x20 or ord(char) == 0x7F for char in path):
         return None
     candidate = Path(path)
     if '..' in candidate.parts:
@@ -2581,6 +2601,12 @@ class OpenCodeRuntime(Runtime):
                 )
 
             current = perm.get('webfetch')
+            if 'webfetch' in perm and not isinstance(current, (dict, str)):
+                return toon_error(
+                    'permission web-apply',
+                    'invalid_settings',
+                    'the `webfetch` value is neither an object nor a string; refusing to replace it',
+                )
             if isinstance(current, dict):
                 # A pattern map keeps its rows: the grant is the map's ``*`` row,
                 # written FIRST so a specific deny after it still decides.
@@ -2757,16 +2783,14 @@ class OpenCodeRuntime(Runtime):
         if scope == 'project':
             pd = Path(project_dir).resolve() if project_dir else Path.cwd().resolve()
             root_cfg = pd / 'opencode.json'
-            if root_cfg.is_file():
-                return str(root_cfg)
-            dot_cfg = pd / '.opencode' / 'opencode.json'
-            if dot_cfg.is_file():
-                return str(dot_cfg)
+            for candidate in (root_cfg, pd / '.opencode' / 'opencode.json'):
+                if candidate.is_file():
+                    return str(_contained_settings_path(candidate, pd))
 
             target_cfg = root_cfg
             if (pd / '.opencode').is_dir():
-                target_cfg = dot_cfg
-            return str(target_cfg)
+                target_cfg = pd / '.opencode' / 'opencode.json'
+            return str(_contained_settings_path(target_cfg, pd))
 
         raise ValueError(f"Unsupported scope: {scope!r}; must be 'global' or 'project'")
 
@@ -2829,12 +2853,27 @@ class OpenCodeRuntime(Runtime):
             extra = [rule for rule in settings['permissions'] if rule not in skeleton_rules]
             payload = {**settings, 'permissions': skeleton_rules + extra}
         content = json.dumps(payload, indent=2) + '\n'
+        temporary: Path | None = None
         try:
             p.parent.mkdir(parents=True, exist_ok=True)
-            with p.open('w', encoding='utf-8') as handle:
+            with tempfile.NamedTemporaryFile(
+                'w',
+                dir=p.parent,
+                prefix=f'.{p.name}.',
+                suffix='.tmp',
+                delete=False,
+                encoding='utf-8',
+            ) as handle:
+                temporary = Path(handle.name)
                 handle.write(content)
+            os.replace(temporary, p)
             return True
         except OSError:
+            if temporary is not None:
+                try:
+                    temporary.unlink()
+                except OSError:
+                    pass
             return False
 
     def permission_ensure_defaults(

@@ -37,7 +37,7 @@ from marketplace.targets.opencode.variant_emitter import (
 )
 
 CONFIG_DIR = PROJECT_ROOT / 'marketplace' / 'targets' / 'opencode'
-ALL_LEVELS = [f'level-{n}' for n in range(1, 8)]
+ALL_LEVELS = list(LEVEL_TABLE)
 
 
 def _write(path: Path, content: str) -> None:
@@ -199,8 +199,12 @@ def test_variant_of_a_restricted_agent_stays_restricted(tmp_path: Path) -> None:
         ]
         assert all(rule['effect'] == 'deny' for rule in rules), f'{level}: {rules}'
         by_action = {rule['action']: rule['effect'] for rule in [base, *rules]}
+        catch_alls = {rule['action']: rule['resource'] for rule in rules if rule['effect'] == 'deny'}
         assert by_action['edit'] == 'deny'
         assert by_action['shell'] == 'deny'
+        # The deny is a catch-all over the action, not a single command.
+        assert catch_alls['edit'] == '*'
+        assert catch_alls['shell'] == '*'
         for action in ('webfetch', 'websearch', 'read', 'grep'):
             assert by_action.get(action, 'allow') == 'allow', f'{level}: {action} is granted'
 

@@ -181,8 +181,8 @@ def test_emitted_agent_carries_only_deny_rules(bundle_root: Path, tmp_path: Path
 def test_a_restricted_agent_stays_restricted_in_emitted_output(tmp_path: Path, opencode_config_dir: Path):
     """An end-to-end emit keeps a read-only agent read-only.
 
-    The reader declares ``WebSearch, WebFetch, Read, Grep``; nothing denies
-    edit, write or shell when the emitter expresses the source faithfully.
+    The reader declares ``WebSearch, WebFetch, Read, Grep``, so the emitted agent
+    denies ``edit`` and ``shell`` and leaves the four granted actions undecided.
     """
     marketplace = tmp_path / 'bundles'
     bundle = marketplace / 'demo'

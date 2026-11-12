@@ -46,7 +46,7 @@ alternative: <what the caller can do instead>
 | Code | Meaning |
 |------|---------|
 | `invalid_scope` | `--scope` not `project` or `global` |
-| `invalid_operation` | `permission fix --operation` is unknown, or the operation's required argument is missing or unusable (`protect-path` path) |
+| `invalid_operation` | The operation's required argument is missing or unusable (`protect-path` path), or a direct runtime call names an unknown operation. The CLI routes `--operation` through argparse `choices`, so an unknown value stops there with an argparse rejection before this code can be returned |
 | `invalid_check` | `permission analyze --checks` contains an unknown check name |
 | `marshal_not_found` | `.plan/marshal.json` missing |
 | `prompt_not_found` | `subagent dispatch --prompt-file` path not found |

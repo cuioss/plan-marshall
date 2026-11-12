@@ -725,6 +725,50 @@ class TestOpenCodeUnreadableInputIsReported:
         assert result['status'] == 'error'
         assert config.read_text(encoding='utf-8') == 'not json'
 
+    def test_ensure_wildcards_performs_the_first_write_on_a_new_project(self, monkeypatch, tmp_path, in_tmp_cwd):
+        """A project with no settings file reaches the defaults writer, not "not found"."""
+        marketplace_file = tmp_path / 'marketplace.json'
+        marketplace_file.write_text(json.dumps({'bundles': {}}))
+        force_opencode(monkeypatch)
+
+        result = pf.cmd_ensure_wildcards(
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'ensure-wildcards',
+                '--settings',
+                str(tmp_path / 'opencode.json'),
+                '--marketplace-json',
+                str(marketplace_file),
+            )
+        )
+
+        assert result['status'] == 'success', result
+        assert (tmp_path / 'opencode.json').is_file(), 'the first write must create the file'
+
+    def test_ensure_wildcards_reports_an_unparsable_project_file(self, monkeypatch, tmp_path, in_tmp_cwd):
+        config = self._unparsable(tmp_path)
+        marketplace_file = tmp_path / 'marketplace.json'
+        marketplace_file.write_text(json.dumps({'bundles': {}}))
+        force_opencode(monkeypatch)
+
+        result = pf.cmd_ensure_wildcards(
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'ensure-wildcards',
+                '--settings',
+                str(config),
+                '--marketplace-json',
+                str(marketplace_file),
+            )
+        )
+
+        assert result['status'] == 'error'
+        assert config.read_text(encoding='utf-8') == 'not json'
+
     def test_add_reports_an_unparsable_project_file(self, monkeypatch, tmp_path, in_tmp_cwd):
         config = self._unparsable(tmp_path)
         force_opencode(monkeypatch)

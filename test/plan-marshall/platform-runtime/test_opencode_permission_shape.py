@@ -1237,6 +1237,70 @@ def test_a_traversal_shaped_settings_path_is_refused(
     assert saved is False
 
 
+def test_a_project_path_with_spaces_is_accepted(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    """A project directory may contain spaces; its settings path is still usable."""
+    project = tmp_path / 'My Project'
+    project.mkdir()
+    monkeypatch.chdir(project)
+
+    result = parse_toon(runtime.permission_configure('project', [{'rule': 'webfetch'}]))
+
+    assert result['status'] == 'success', result
+    assert (project / 'opencode.json').is_file()
+
+
+def test_a_dot_opencode_symlink_out_of_the_project_falls_back_to_the_root_file(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path
+):
+    """A ``.opencode`` symlink must not turn a project write into a global one."""
+    outside = tmp_path / 'outside'
+    outside.mkdir()
+    (outside / 'opencode.json').write_text('{}', encoding='utf-8')
+    project = tmp_path / 'project'
+    project.mkdir()
+    (project / '.opencode').symlink_to(outside, target_is_directory=True)
+
+    path = pathlib.Path(runtime.permission_settings_path('project', write=True, project_dir=str(project)))
+
+    assert path == (project / 'opencode.json').resolve()
+    assert outside not in path.parents
+
+
+def test_web_apply_refuses_an_unpreservable_webfetch_value(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    """A list-valued ``webfetch`` is refused rather than replaced by ``allow``."""
+    config = _scalar_config(tmp_path, monkeypatch, {'permission': {'webfetch': ['deny']}})
+    before = config.read_bytes()
+
+    result = parse_toon(runtime.permission_web_apply('project', add=['example.com'], remove=[], dry_run=False))
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'invalid_settings'
+    assert config.read_bytes() == before
+
+
+def test_a_failed_replace_leaves_the_target_intact(
+    runtime: OpenCodeRuntime, list_settings: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    """The write goes through a temporary file, so a late failure cannot truncate the target."""
+    before = list_settings.read_bytes()
+
+    def boom(*_args, **_kwargs):
+        raise OSError('simulated replace failure')
+
+    monkeypatch.setattr('opencode_runtime.os.replace', boom)
+
+    result = parse_toon(runtime.permission_configure('project', [{'rule': 'deny(git push *)'}]))
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'io_error'
+    assert list_settings.read_bytes() == before
+    assert list(list_settings.parent.glob('*.tmp')) == [], 'no temporary file may be left behind'
+
+
 def test_project_initial_setup_reports_a_failed_permission_write(
     runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ):

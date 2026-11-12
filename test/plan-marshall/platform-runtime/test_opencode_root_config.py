@@ -103,7 +103,6 @@ def test_reader_blocks_carry_no_allow_row(agent: str) -> None:
     """
     allows = [rule for rule in _CONFIG['agents'][agent].get('permissions', []) if rule['effect'] == 'allow']
     assert allows == [], f'{agent}: {allows}'
-    assert not [rule for rule in _CONFIG['agents'][agent].get('permissions', []) if rule['action'] == 'edit']
 
 
 def test_catch_all_is_first_in_every_rule_list() -> None:

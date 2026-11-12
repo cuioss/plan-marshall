@@ -185,7 +185,7 @@ No-op policy and caller obligations: `standards/no-op-policy.md`
 | `wildcard_action_rule` | The grant to remove is decided by an `action: "*"` rule, so deleting the named rule would not remove the effect — `permission fix remove` |
 | `io_error` | The change was computed but the settings file could not be written; no counter is reported as applied — every mutating permission op (`permission configure/fix/ensure-wildcards/ensure-steps/web-apply`) |
 | `permission_write_failed` | The baseline permission list could not be written during `project initial-setup`, unreadable settings included; setup stops rather than report a configured project |
-| `invalid_operation` | `permission fix --operation` is unknown, or the operation's required argument is missing or unusable (`protect-path` path) — `permission fix` |
+| `invalid_operation` | The operation's required argument is missing or unusable (`protect-path` path), or a direct runtime call names an unknown operation (the CLI's argparse `choices` rejects an unknown `--operation` first) — `permission fix` |
 | `invalid_marshal` | `.plan/marshal.json` malformed (parse error); fail-closed instead of zero-step audit — `permission analyze/ensure-steps` |
 | `unsupported_observable` | `wait for --observable` names a kind outside the closed set |
 | `invalid_bound` | `wait for --bound-seconds` is not positive |
