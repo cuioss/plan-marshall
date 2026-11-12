@@ -421,7 +421,11 @@ def test_dispatch_damaged_stub_returns_damaged_verdict(plan_env, monkeypatch: py
 
     import opencode_runtime
 
-    monkeypatch.setattr(opencode_runtime, '_write_rules_bridge', lambda _project_dir: False)
+    monkeypatch.setattr(
+        opencode_runtime,
+        '_write_rules_bridge',
+        lambda _project_dir: opencode_runtime._BridgeWrite(written=False, replaced=False),
+    )
 
     res = ch.dispatch_platform_runtime_setup('opencode', project_dir)
 
@@ -438,7 +442,11 @@ def test_outdated_bridge_version_is_damaged(plan_env, monkeypatch: pytest.Monkey
 
     import opencode_runtime
 
-    monkeypatch.setattr(opencode_runtime, '_write_rules_bridge', lambda _project_dir: False)
+    monkeypatch.setattr(
+        opencode_runtime,
+        '_write_rules_bridge',
+        lambda _project_dir: opencode_runtime._BridgeWrite(written=False, replaced=False),
+    )
 
     assert ch._reconcile_standing_rules_bridge('opencode', project_dir) is False
     assert ch.dispatch_platform_runtime_setup('opencode', project_dir)['bridge_verdict'] == 'damaged'

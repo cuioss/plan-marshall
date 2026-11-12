@@ -177,12 +177,26 @@ def _bridge_body(baseline_text: str | None) -> str:
     )
 
 
-def _write_rules_bridge(project_dir: Path) -> bool:
+class _BridgeWrite(NamedTuple):
+    """What one bridge write did.
+
+    ``written`` reports that a write happened; ``replaced`` reports that it
+    replaced an EXISTING file that differed from what was written. The second
+    field is the writer's OWN write-time observation, so a change made to the
+    bridge between the drift read and the write cannot hide a heal behind a
+    stale pre-check.
+    """
+
+    written: bool
+    replaced: bool
+
+
+def _write_rules_bridge(project_dir: Path) -> _BridgeWrite:
     """Write the bridge file that carries the baseline's standing rules.
 
-    Returns whether the file was (re)written. The bridge owns its own file; the
-    installed target rules shipped by ``install.sh --emit-rules`` are never
-    written here, so a setup can no longer replace the full rules with a stub.
+    Returns what the write did. The bridge owns its own file; the installed
+    target rules shipped by ``install.sh --emit-rules`` are never written here,
+    so a setup can no longer replace the full rules with a stub.
 
     The two "no text" cases are DIFFERENT and must not be collapsed:
 
@@ -192,21 +206,29 @@ def _write_rules_bridge(project_dir: Path) -> bool:
     * A PRESENT but unreadable baseline leaves an existing bridge untouched:
       replacing it with the stub would delete rules the operator still has on
       disk for a transient read failure.
+
+    The equality check is over BYTES: replacement decoding would call an
+    invalid-UTF-8 body current whenever the baseline itself carries U+FFFD, and
+    the malformed bridge would stay on disk.
     """
     bridge = _bridge_rules_path(project_dir)
     baseline = project_dir / STANDING_RULES_BASELINE
     baseline_text = _baseline_text(project_dir)
     if baseline_text is None and baseline.is_file() and bridge.is_file():
-        return False
-    desired = _bridge_body(baseline_text)
+        return _BridgeWrite(written=False, replaced=False)
+    desired = _bridge_body(baseline_text).encode('utf-8')
     try:
-        if bridge.is_file() and bridge.read_text(encoding='utf-8', errors='replace') == desired:
-            return False
+        if bridge.is_file():
+            if bridge.read_bytes() == desired:
+                return _BridgeWrite(written=False, replaced=False)
+            replaced = True
+        else:
+            replaced = False
         bridge.parent.mkdir(parents=True, exist_ok=True)
-        bridge.write_text(desired, encoding='utf-8')
-        return True
+        bridge.write_bytes(desired)
+        return _BridgeWrite(written=True, replaced=replaced)
     except OSError:
-        return False
+        return _BridgeWrite(written=False, replaced=False)
 
 
 def standing_rules_drift_status(project_dir: str) -> dict[str, Any]:
@@ -216,35 +238,45 @@ def standing_rules_drift_status(project_dir: str) -> dict[str, Any]:
     compared with the current baseline's hash. ``baseline_changed`` means the
     rules moved; a mtime change alone is ``in_sync``. A bridge with the marker
     but no recorded hash predates content tracking and is reported as
-    ``source_hash_missing`` rather than assumed current. Bridge bytes that are
-    not UTF-8 are decoded with replacement, so a malformed bridge is judged
-    rather than raised on. With no baseline file a bridge that still carries
-    rules is ``drift`` (the writer replaces it with the stub) while the
-    marker-only stub the writer produces is current.
+    ``source_hash_missing`` rather than assumed current. A baseline that exists
+    but cannot be decoded is ``baseline_unreadable`` — drift whatever the bridge
+    holds, because the rules exist and are not being read — and bridge bytes
+    that are not UTF-8 are ``bridge_unreadable``; neither raises. With no
+    baseline file at all, a bridge that still carries rules is ``drift`` (the
+    writer replaces it with the stub) while the marker-only stub the writer
+    produces is current.
     """
     proj = Path(project_dir).resolve()
     baseline = proj / STANDING_RULES_BASELINE
     bridge = _bridge_rules_path(proj)
-    if not baseline.is_file():
+    baseline_present = baseline.is_file()
+    baseline_text = _baseline_text(proj) if baseline_present else None
+    if baseline_present and baseline_text is None:
+        return {
+            'drift': True,
+            'needs_bridge': not bridge.is_file(),
+            'reason': 'baseline_unreadable',
+        }
+    if not baseline_present:
         if not bridge.is_file():
             return {'drift': False, 'needs_bridge': True, 'reason': 'baseline_missing'}
         try:
-            stub_candidate = bridge.read_text(encoding='utf-8', errors='replace')
+            bridge_bytes = bridge.read_bytes()
         except OSError:
             return {'drift': True, 'needs_bridge': False, 'reason': 'baseline_missing'}
         # A stub carries no rules, so a deleted baseline loses nothing and the
         # bridge is current; a bridge that still carries rules is stale — the
         # writer replaces it with the stub, which is drift.
         return {
-            'drift': stub_candidate != _bridge_body(None),
+            'drift': bridge_bytes != _bridge_body(None).encode('utf-8'),
             'needs_bridge': False,
             'reason': 'baseline_missing',
         }
     if not bridge.is_file():
         return {'drift': False, 'needs_bridge': True, 'reason': 'bridge_missing'}
     try:
-        text = bridge.read_text(encoding='utf-8', errors='replace')
-    except OSError:
+        text = bridge.read_text(encoding='utf-8')
+    except (OSError, UnicodeDecodeError):
         return {'drift': True, 'needs_bridge': False, 'reason': 'bridge_unreadable'}
     if STANDING_RULES_BRIDGE_MARKER not in text:
         return {'drift': True, 'needs_bridge': False, 'reason': 'marker_mismatch'}
@@ -1597,18 +1629,15 @@ class OpenCodeRuntime(Runtime):
             )
 
         resolved = pathlib.Path(project_dir).resolve()
-        bridge_file = _bridge_rules_path(resolved)
-        bridge_present = bridge_file.is_file()
-        # The verdict is taken BEFORE the heal: a setup that rewrites the
-        # bridge has just found it drifted, and reporting the post-write
-        # ``in_sync`` would tell the operator nothing needed attention.
+        # The status is read BEFORE the heal: a setup that rewrites the bridge
+        # has just found it drifted, and reporting the post-write ``in_sync``
+        # would tell the operator nothing needed attention.
         drift = standing_rules_drift_status(str(resolved))
-        bridge_written = _write_rules_bridge(resolved)
-        # A write over an EXISTING bridge replaced one that differed from what
-        # was written, which is drift however the pre-heal status classified
-        # it. A first write that creates the bridge is not a heal and stays
-        # clean.
-        bridge_drift = drift['drift'] or (bridge_written and bridge_present)
+        bridge_write = _write_rules_bridge(resolved)
+        # A write that replaced an existing differing bridge is a heal, and the
+        # writer's own observation says whether that is what it did. A first
+        # write that creates the bridge is not a heal and stays clean.
+        bridge_drift = drift['drift'] or bridge_write.replaced
 
         persisted_checkable = False
         persisted_warnings: list[dict[str, Any]] = []
@@ -1631,7 +1660,7 @@ class OpenCodeRuntime(Runtime):
                 'target': target,
                 'project_dir': str(proj.resolve()),
                 'marshal_written': False,
-                'bridge_written': bridge_written,
+                'bridge_written': bridge_write.written,
                 'bridge_drift': bridge_drift,
                 'bridge_reason': drift['reason'],
                 'settings_path': settings_path,

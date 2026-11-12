@@ -174,9 +174,11 @@ CANONICAL_TOP_LEVEL_KEY_ORDER = [
     # `project_dir` and `runtime` are first-party product configuration rather
     # than stray blocks: a project may declare them at the top level (older
     # seeds wrote them; every current `project initial-setup` reports
-    # `marshal_written: false`), and `runtime.target` is read back by the target
-    # resolver when declared, so `normalize-keys` must not report them as
-    # unrecognized. Both take their alphabetical slot among the trailing keys.
+    # `marshal_written: false`), so `normalize-keys` must not report them as
+    # unrecognized. `runtime.target` is read back by the target resolver only
+    # from the machine-local `.plan/run-configuration.json` or
+    # `.plan/local/harness/*.json`, never from `marshal.json`. Both take their
+    # alphabetical slot among the trailing keys.
     'project_dir',
     'providers',
     'runtime',

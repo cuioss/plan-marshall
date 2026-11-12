@@ -2198,6 +2198,58 @@ def test_a_deleted_baseline_replaces_the_bridge_with_the_stub(
     assert bridge.read_text(encoding='utf-8') == _bridge_body(None), 'the bridge is exactly the marker-only stub'
 
 
+def test_an_unreadable_baseline_without_a_bridge_is_reported_as_drift(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, machine_home: pathlib.Path
+) -> None:
+    """An unreadable baseline is not a missing one: setup says so even with no bridge."""
+    from opencode_runtime import _bridge_body, _bridge_rules_path, standing_rules_drift_status
+
+    (tmp_path / 'CLAUDE.md').write_bytes(b'\xff\xfe not utf-8')
+
+    status = standing_rules_drift_status(str(tmp_path))
+
+    assert status == {'drift': True, 'needs_bridge': True, 'reason': 'baseline_unreadable'}
+
+    result = _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
+
+    assert result['bridge_written'] is True
+    assert result['bridge_drift'] is True
+    assert result['bridge_reason'] == 'baseline_unreadable'
+    assert _bridge_rules_path(tmp_path).read_bytes() == _bridge_body(None).encode('utf-8')
+
+
+def test_a_bridge_is_compared_as_bytes_not_replacement_text(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, machine_home: pathlib.Path
+) -> None:
+    """An invalid-UTF-8 body is replaced even where replacement decoding would match.
+
+    Replacement decoding turns the stray ``0xff`` byte into U+FFFD, which equals
+    the desired text when the baseline itself carries U+FFFD — so a text
+    comparison would declare the malformed bridge current and leave it corrupt.
+    """
+    from opencode_runtime import _bridge_body, _bridge_rules_path, standing_rules_drift_status
+
+    baseline = tmp_path / 'CLAUDE.md'
+    baseline.write_text('# Project rules\n\ncarries \ufffd here\n', encoding='utf-8')
+    assert _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))['bridge_written'] is True
+    bridge = _bridge_rules_path(tmp_path)
+    desired = _bridge_body(baseline.read_text(encoding='utf-8')).encode('utf-8')
+    corrupted = desired.replace('\ufffd'.encode('utf-8'), b'\xff')
+    assert corrupted != desired
+    bridge.write_bytes(corrupted)
+
+    assert standing_rules_drift_status(str(tmp_path)) == {
+        'drift': True,
+        'needs_bridge': False,
+        'reason': 'bridge_unreadable',
+    }
+
+    result = _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
+
+    assert result['bridge_written'] is True, 'a malformed bridge must be repaired, never accepted'
+    assert bridge.read_bytes() == desired
+
+
 def test_setup_reports_drift_for_a_hand_edited_bridge(
     runtime: OpenCodeRuntime, tmp_path: pathlib.Path, machine_home: pathlib.Path
 ) -> None:

@@ -231,7 +231,7 @@ The matrix is the authoritative record of the carve-out as implemented: the orch
 
 == Runtime Abstraction & Platform Integration
 
-Plan Marshall integrates OpenCode as a first-class runtime through `platform-runtime`, permission utilities (`tools-permission-fix`, `tools-permission-doctor`), and project setup (`marshall-steward`). The target is resolved by the shared target resolver from the harness's own signals and the machine-local configuration — a legacy `runtime.target` in `.plan/marshal.json` is still honoured where a project declares one — and project setup writes no `runtime.target` and reports `marshal_written: false`.
+Plan Marshall integrates OpenCode as a first-class runtime through `platform-runtime`, permission utilities (`tools-permission-fix`, `tools-permission-doctor`), and project setup (`marshall-steward`). The target is resolved by the shared target resolver from the harness's own signals and the machine-local configuration; project setup writes no `runtime.target` and reports `marshal_written: false`.
 
 === OpenCodeRuntime (`platform-runtime`)
 
