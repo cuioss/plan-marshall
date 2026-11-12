@@ -187,6 +187,12 @@ DISPATCH_LINE_RE = re.compile(
 # namespace without an agent (``Task: foo:``) matches nothing and stays prose.
 _DISPATCH_TARGET_RE = re.compile(r'^(?:[A-Za-z0-9_-]+:)?(?P<agent>[A-Za-z0-9_{][A-Za-z0-9_.{}-]*)$')
 
+# The first field a real dispatch block carries: the prompt body itself, the
+# agent of the bare-header form, or a prompt-body key. A ``Task: <agent>`` line
+# followed by free-text prose is a mention with an indented continuation, not a
+# dispatch, and is left alone — the block shape is part of the matcher.
+_DISPATCH_BODY_FIELD_RE = re.compile(r'^[ \t]*(prompt|subagent_type|name|description|skills)\b')
+
 # A dispatch block's own agent line, used by the bare-header form.
 _SUBAGENT_TYPE_RE = re.compile(r'^[ \t]*subagent_type:[ \t]*(?P<agent>\S+?)[ \t]*(?P<cr>\r?)$')
 
@@ -284,12 +290,22 @@ def assert_dispatch_template_complete(registry: dict[str, dict[str, Any]]) -> No
     template without ``{target}`` would emit an instruction that drops the agent
     the header named — a silent content loss, not a cosmetic defect. Raises
     :class:`UnmappedIdiomError` in that case, and for a missing template.
+
+    The registry key is checked too: :data:`DISPATCH_LINE_RE` matches the
+    ``Task:`` header, and the applier applies the ONE template it finds, so a
+    dispatch record registered under any other key would be validated and then
+    never applied — a silent non-rewrite, which is the same class of defect.
     """
     for idiom, record in registry.items():
         if not isinstance(record, dict):
             continue
         if record.get('disposition') != 'rewrite_dispatch_block':
             continue
+        if idiom != 'Task:':
+            raise UnmappedIdiomError(
+                f'Registered idiom {idiom!r} carries disposition rewrite_dispatch_block, '
+                "which only the 'Task:' header supports"
+            )
         template = record.get('template')
         if not isinstance(template, str) or '{target}' not in template:
             raise UnmappedIdiomError(
@@ -408,6 +424,15 @@ def rewrite_slash_commands(body: str, lookup: dict[str, str], template: str) -> 
     return pattern.sub(replace, body)
 
 
+def _is_dispatch_body(block: list[str]) -> bool:
+    """Does this indented block open with a dispatch-body field?"""
+    for line in block:
+        if line.strip() == '':
+            continue
+        return _DISPATCH_BODY_FIELD_RE.match(line) is not None
+    return False
+
+
 def _dispatch_header(line: str) -> tuple[str, str | None, str] | None:
     """Read one line as a dispatch header: ``(indent, agent, cr)``, or ``None``.
 
@@ -480,8 +505,11 @@ def rewrite_dispatch_blocks(body: str, template: str) -> str:
     block's own ``subagent_type:`` line, which is removed from the block
     because the instruction now names it.
 
-    A ``Task:`` line that carries neither a target nor an indented block is
-    prose, not a dispatch, and is left alone.
+    A ``Task:`` line that carries neither a target nor an indented dispatch
+    body is prose, not a dispatch, and is left alone: the block must open with a
+    dispatch-body field (``prompt:``, the bare form's ``subagent_type:``, or a
+    prompt-body key), so an indented explanatory sentence after a prose mention
+    does not turn that mention into an instruction.
 
     Idempotent: the emitted instruction line no longer matches
     :data:`DISPATCH_LINE_RE`, so re-running is a no-op.
@@ -498,7 +526,7 @@ def rewrite_dispatch_blocks(body: str, template: str) -> str:
         indent, agent, cr = header
         block_end = _dispatch_block_end(lines, index + 1, len(indent))
         block = lines[index + 1 : block_end]
-        if not any(line.strip() for line in block):
+        if not _is_dispatch_body(block):
             out.append(lines[index])
             index += 1
             continue

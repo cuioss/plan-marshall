@@ -96,6 +96,14 @@ def test_a_dispatch_template_without_a_target_placeholder_fails_closed():
         assert_dispatch_template_complete(registry)
 
 
+def test_a_dispatch_record_under_another_key_fails_closed():
+    """The applier only matches ``Task:``, so any other key would never be applied."""
+    registry = {'Delegate:': {'disposition': 'rewrite_dispatch_block', 'template': 'Call ... `{target}`'}}
+
+    with pytest.raises(UnmappedIdiomError, match='Delegate:'):
+        assert_dispatch_template_complete(registry)
+
+
 def test_a_complete_dispatch_template_passes_the_guard():
     registry = {'Task:': {'disposition': 'rewrite_dispatch_block', 'template': 'Call ... `{target}`'}}
     assert_dispatch_template_complete(registry)
@@ -140,6 +148,12 @@ def test_a_quoted_subagent_type_is_hoisted_without_its_quotes(rules):
 def test_a_dispatch_mention_without_a_block_is_left_alone(rules):
     """Prose naming the idiom is not a dispatch header, so it is preserved."""
     raw = 'Task: plan-marshall:{target} is the dispatch idiom the orchestrator follows.\n'
+    assert rewrite_dispatch_blocks(raw, _dispatch_template(rules)) == raw
+
+
+def test_a_mention_with_an_indented_continuation_is_left_alone(rules):
+    """An indented explanatory line is not a dispatch body, so the mention survives."""
+    raw = 'Task: diagnose-command\n  This is a syntax example, not a dispatch.\n'
     assert rewrite_dispatch_blocks(raw, _dispatch_template(rules)) == raw
 
 

@@ -39,6 +39,12 @@ EMITTED_FILES = {
     'assets/b.json': b'{"k": [1, 2]}\n',
     'workflow/sub/c.md': b'# nested c\n',
     'extension.py': b'VALUE = 1\n',
+    # A CRLF body with nothing to rewrite: the decode/rewrite/encode route must
+    # not normalise its line endings.
+    'workflow/crlf.md': b'# crlf\r\n\r\nA body with no dispatch block.\r\n',
+    # A `.md` file that is not UTF-8: the sub-file transform must fall back to a
+    # byte copy rather than fail the emit.
+    'workflow/not-utf8.md': b'\xff\xfe# not utf-8\n',
 }
 
 #: Skill-relative files this target does not emit.
@@ -382,6 +388,29 @@ def test_without_a_sub_file_transformer_a_markdown_sub_file_is_byte_identical(
 
     emitted = (out / 'skills' / 'demo-demo-skill' / 'workflow' / 'execution.md').read_text(encoding='utf-8')
     assert emitted == _SUB_FILE_WITH_DISPATCH
+
+
+def test_a_crlf_sub_file_keeps_its_line_endings_across_the_rewrite(tmp_path: Path, antigravity_config_dir: Path):
+    """The transform rewrites the dispatch header and leaves every CRLF intact."""
+    marketplace = _dispatch_skill(tmp_path / 'bundles')
+    skill = marketplace / 'demo' / 'skills' / 'demo-skill'
+    (skill / 'workflow' / 'crlf.md').write_bytes(
+        b'# crlf\r\n\r\nTask: plan-marshall:{target}\r\n  prompt: |\r\n    name: demo-envelope\r\n'
+    )
+    out = tmp_path / 'out'
+
+    emit_bundles(
+        marketplace,
+        out,
+        antigravity_config_dir,
+        sub_file_transformer=_sub_file_transformer(antigravity_config_dir),
+    )
+
+    emitted = (out / 'skills' / 'demo-demo-skill' / 'workflow' / 'crlf.md').read_bytes()
+    assert b'`invoke_subagent`' in emitted
+    assert b'Task: plan-marshall:' not in emitted
+    assert emitted.count(b'\r\n') == 5, f'CRLF line endings were lost: {emitted!r}'
+    assert b'\n' not in emitted.replace(b'\r\n', b''), f'a bare LF appeared: {emitted!r}'
 
 
 def test_generated_plan_marshall_workflow_carries_no_bare_dispatch_line(tmp_path: Path):
