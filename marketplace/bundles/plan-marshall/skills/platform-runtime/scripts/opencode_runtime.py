@@ -218,20 +218,27 @@ def _write_rules_bridge(project_dir: Path) -> _BridgeWrite:
         return _BridgeWrite(written=False, replaced=False)
     desired = _bridge_body(baseline_text).encode('utf-8')
     try:
-        if bridge.is_file():
-            if bridge.read_bytes() == desired:
-                return _BridgeWrite(written=False, replaced=False)
-            replaced = True
-        else:
-            replaced = False
+        # A symlinked bridge path is never taken as an owned, current bridge —
+        # even when its target already matches — because a later change to that
+        # target would change the workspace rules without changing the path.
+        if bridge.is_file() and not bridge.is_symlink() and bridge.read_bytes() == desired:
+            return _BridgeWrite(written=False, replaced=False)
+        replaced = bridge.is_file()
         bridge.parent.mkdir(parents=True, exist_ok=True)
-        # Stage the bytes beside the bridge and REPLACE the path, so a partial
-        # write can never leave a damaged bridge and a bridge path that is a
-        # symlink is replaced by the file itself rather than written through:
-        # whatever the link pointed at is left untouched.
-        staging = bridge.with_name(f'.{bridge.name}.tmp')
-        staging.write_bytes(desired)
-        staging.replace(bridge)
+        # Stage the bytes under a uniquely created name beside the bridge and
+        # REPLACE the path: a partial write can never leave a damaged bridge, a
+        # planted symlink at the staging name cannot be written through, and a
+        # symlinked bridge path becomes the bridge file itself.
+        handle, staging_name = tempfile.mkstemp(dir=bridge.parent, prefix=f'.{bridge.name}.', suffix='.tmp')
+        staging = Path(staging_name)
+        try:
+            with os.fdopen(handle, 'wb') as stream:
+                stream.write(desired)
+            staging.chmod(0o644)
+            staging.replace(bridge)
+        except BaseException:
+            staging.unlink(missing_ok=True)
+            raise
         return _BridgeWrite(written=True, replaced=replaced)
     except OSError:
         return _BridgeWrite(written=False, replaced=False)
@@ -1644,6 +1651,11 @@ class OpenCodeRuntime(Runtime):
         # writer's own observation says whether that is what it did. A first
         # write that creates the bridge is not a heal and stays clean.
         bridge_drift = drift['drift'] or bridge_write.replaced
+        bridge_reason = drift['reason']
+        if bridge_write.replaced and bridge_reason == 'in_sync':
+            # The status compares the recorded hash only, so a body-only edit
+            # reads in_sync; the write is the one witness that the body moved.
+            bridge_reason = 'bridge_body_replaced'
 
         persisted_checkable = False
         persisted_warnings: list[dict[str, Any]] = []
@@ -1668,7 +1680,7 @@ class OpenCodeRuntime(Runtime):
                 'marshal_written': False,
                 'bridge_written': bridge_write.written,
                 'bridge_drift': bridge_drift,
-                'bridge_reason': drift['reason'],
+                'bridge_reason': bridge_reason,
                 'settings_path': settings_path,
                 'permissions_applied': defaults.get('applied', False),
                 'permissions_added': defaults.get('defaults_added', []),

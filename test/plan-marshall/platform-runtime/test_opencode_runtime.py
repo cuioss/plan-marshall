@@ -2275,6 +2275,28 @@ def test_a_bridge_path_that_is_a_symlink_is_replaced_not_written_through(
     }
 
 
+def test_a_symlink_with_matching_bytes_is_still_replaced_by_the_bridge_file(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, machine_home: pathlib.Path
+) -> None:
+    """A matching external target is not accepted as the owned bridge."""
+    from opencode_runtime import _bridge_body, _bridge_rules_path
+
+    baseline = tmp_path / 'CLAUDE.md'
+    baseline.write_text('# Project rules\n\nrule\n', encoding='utf-8')
+    desired = _bridge_body(baseline.read_text(encoding='utf-8'))
+    outside = tmp_path / 'outside-rules-copy.md'
+    outside.write_text(desired, encoding='utf-8')
+    bridge = _bridge_rules_path(tmp_path)
+    bridge.parent.mkdir(parents=True)
+    bridge.symlink_to(outside)
+
+    result = _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
+
+    assert result['bridge_written'] is True
+    assert not bridge.is_symlink(), 'a symlinked path is never the owned bridge'
+    assert bridge.read_text(encoding='utf-8') == desired
+
+
 def test_setup_reports_drift_for_a_hand_edited_bridge(
     runtime: OpenCodeRuntime, tmp_path: pathlib.Path, machine_home: pathlib.Path
 ) -> None:
@@ -2295,7 +2317,7 @@ def test_setup_reports_drift_for_a_hand_edited_bridge(
 
     assert result['bridge_written'] is True
     assert result['bridge_drift'] is True, 'a rewrite of an existing bridge is drift even when the hash matches'
-    assert result['bridge_reason'] == 'in_sync', 'the pre-heal status cannot see a body-only edit'
+    assert result['bridge_reason'] == 'bridge_body_replaced', 'the pre-heal status cannot see a body-only edit'
     assert 'hand edit' not in bridge.read_text(encoding='utf-8')
 
 
