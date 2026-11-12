@@ -377,20 +377,22 @@ class TestTheStoredFindingJoinIsScopedToOnePullRequest:
         assert read['store_scope'] == 'pr'
         assert _trigger_bots(plan_id, 102)['trigger_bots'] == []
 
-    def test_the_same_finding_joins_for_its_own_pr(self, plan_context):
+    @pytest.mark.parametrize('bot', ['sourcery', 'coderabbit'])
+    def test_the_same_finding_joins_for_its_own_pr(self, plan_context, bot):
         """⛔ MATCHED CONTROL — same store, same rows; only the PR asked about differs.
 
-        ``sourcery`` is the subject because it declares no done rule: the join itself —
-        which is what this class pins — is unchanged for a bot that keeps today's
-        re-review behaviour.
+        ``sourcery`` declares no done rule and ``coderabbit`` does, but the done filter
+        needs the producer's ``finished_review_bots`` and this helper passes none, so
+        neither subject is filtered: the join itself — which is what this class pins —
+        is unchanged for both.
         """
-        plan_id = 'trigger-b-own-pr'
+        plan_id = f'trigger-b-own-pr-{bot}'
         plan_context.plan_dir_for(plan_id)
-        _seed_comment(plan_id, 'sourcery', '101')
+        _seed_comment(plan_id, bot, '101')
 
         read = rc._read_pr_comment_findings(plan_id, 101)
-        assert [f['bot_kind'] for f in read['findings']] == ['sourcery']
-        assert _trigger_bots(plan_id, 101, ('sourcery',))['trigger_bots'] == ['sourcery']
+        assert [f['bot_kind'] for f in read['findings']] == [bot]
+        assert _trigger_bots(plan_id, 101, (bot,))['trigger_bots'] == [bot]
 
     def test_a_legacy_row_on_a_two_pr_plan_is_reported_unscoped(self, plan_context):
         """A row carrying no PR, on a store that spans two, belongs to neither.

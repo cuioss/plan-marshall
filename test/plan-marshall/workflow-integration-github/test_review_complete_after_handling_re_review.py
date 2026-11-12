@@ -135,16 +135,35 @@ def test_a_marker_bearing_finished_review_refuses_the_trigger(monkeypatch):
     assert result['escalated'] is False
 
 
-def test_a_formal_review_record_refuses_the_trigger(monkeypatch):
-    """A review record is admitted evidence whatever commit it names — the head is not asked."""
+def test_a_formal_review_record_with_a_commit_refuses_the_trigger(monkeypatch):
+    """A review record is admitted evidence when it names the commit it reviewed.
+
+    The head is not asked: a review of an earlier commit is still a finished review.
+    """
     posted = _record_posts(monkeypatch)
-    _history(monkeypatch, [_comment('review_body', 'findings here', commit_id='')])
+    _history(monkeypatch, [_comment('review_body', 'findings here', commit_id=_EARLIER)])
 
     result = _request('coderabbit', monkeypatch)
 
     assert posted == []
     assert result['status'] == 'refused'
     assert result['reason'] == 'review_on_record_done'
+
+
+def test_a_formal_review_record_without_a_commit_does_not_refuse_the_trigger(monkeypatch):
+    """⛔ MOVED TO THE AGREED READING — an empty commit names no head.
+
+    The old reading admitted any non-refusal formal review here, while the producer
+    left the bot out of ``finished_review_bots`` and ``trigger-bot`` listed it. That
+    disagreement is the loop this plan closes.
+    """
+    posted = _record_posts(monkeypatch)
+    _history(monkeypatch, [_comment('review_body', 'findings here', commit_id='')])
+
+    result = _request('coderabbit', monkeypatch)
+
+    assert result['status'] == 'success'
+    assert posted == [(_PR, '@coderabbitai review')]
 
 
 def test_the_escalated_command_is_refused_too(monkeypatch):
