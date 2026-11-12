@@ -46,6 +46,19 @@ def runtime() -> OpenCodeRuntime:
     return OpenCodeRuntime()
 
 
+@pytest.fixture()
+def machine_home(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> pathlib.Path:
+    """Point ``PLAN_MARSHALL_HOME`` at a per-test directory.
+
+    Setup reads the machine-global configuration, so an isolated home keeps a
+    test from measuring the developer's real one.
+    """
+    home = tmp_path / 'machine-home'
+    home.mkdir()
+    monkeypatch.setenv('PLAN_MARSHALL_HOME', str(home))
+    return home
+
+
 # =============================================================================
 # Helper
 # =============================================================================
@@ -2100,24 +2113,49 @@ def test_editing_claude_md_makes_setup_report_drift(runtime: OpenCodeRuntime, tm
 
 
 def test_an_unreadable_baseline_never_overwrites_the_bridge(
-    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, machine_home: pathlib.Path
 ) -> None:
-    """Setup must not replace carried rules with the marker-only stub."""
-    import opencode_runtime
+    """Setup must not replace carried rules with the marker-only stub.
 
+    The baseline is unreadable because its BYTES are not UTF-8 — a real file the
+    read itself fails on, not a monkeypatched helper — so the existing bridge is
+    kept byte-for-byte and the verdict names the unreadable baseline.
+    """
     (tmp_path / 'CLAUDE.md').write_text('# Project rules\n\nkeep me\n', encoding='utf-8')
     _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
     bridge = tmp_path / '.opencode' / 'rules' / 'plan-marshall-standing-rules.md'
     before = bridge.read_text(encoding='utf-8')
     assert 'keep me' in before
 
-    monkeypatch.setattr(opencode_runtime, '_baseline_text', lambda _project_dir: None)
+    (tmp_path / 'CLAUDE.md').write_bytes(b'\xff\xfe keep me')
     result = _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
 
+    assert result['status'] == 'success'
     assert result['bridge_written'] is False
     assert result['bridge_drift'] is True
     assert result['bridge_reason'] == 'baseline_unreadable'
     assert bridge.read_text(encoding='utf-8') == before
+
+
+def test_a_non_utf8_bridge_never_raises_from_setup_or_drift(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, machine_home: pathlib.Path
+) -> None:
+    """A bridge holding non-UTF-8 bytes is judged, never raised on."""
+    from opencode_runtime import _bridge_rules_path, standing_rules_drift_status
+
+    (tmp_path / 'CLAUDE.md').write_text('# Project rules\n\nrule\n', encoding='utf-8')
+    bridge = _bridge_rules_path(tmp_path)
+    bridge.parent.mkdir(parents=True)
+    bridge.write_bytes(b'\xff\xfe bridge-version: 1 \xff tail')
+
+    status = standing_rules_drift_status(str(tmp_path))
+    assert status['drift'] is True, 'a bridge carrying non-UTF-8 bytes is not the stub setup writes'
+
+    result = _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
+
+    assert result['status'] == 'success'
+    assert result['bridge_written'] is True
+    assert 'rule' in bridge.read_text(encoding='utf-8')
 
 
 def test_a_deleted_baseline_replaces_the_bridge_with_the_stub(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:

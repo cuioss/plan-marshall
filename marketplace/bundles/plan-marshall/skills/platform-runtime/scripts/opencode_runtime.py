@@ -139,10 +139,15 @@ _SOURCE_HASH_PATTERN = re.compile(r'^source-sha256:\s*([0-9a-f]{64})$', re.MULTI
 
 
 def _baseline_text(project_dir: Path) -> str | None:
-    """Return the standing-rules baseline's text, or ``None`` when unreadable."""
+    """Return the standing-rules baseline's text, or ``None`` when unreadable.
+
+    Unreadable covers BOTH a file the process cannot read (``OSError``) and a
+    file whose bytes are not UTF-8 (``UnicodeDecodeError``): each leaves nothing
+    to bridge, so the caller keeps the existing bridge instead of failing.
+    """
     try:
         return (project_dir / STANDING_RULES_BASELINE).read_text(encoding='utf-8')
-    except OSError:
+    except (OSError, UnicodeDecodeError):
         return None
 
 
@@ -195,7 +200,7 @@ def _write_rules_bridge(project_dir: Path) -> bool:
         return False
     desired = _bridge_body(baseline_text)
     try:
-        if bridge.is_file() and bridge.read_text(encoding='utf-8') == desired:
+        if bridge.is_file() and bridge.read_text(encoding='utf-8', errors='replace') == desired:
             return False
         bridge.parent.mkdir(parents=True, exist_ok=True)
         bridge.write_text(desired, encoding='utf-8')
@@ -211,7 +216,9 @@ def standing_rules_drift_status(project_dir: str) -> dict[str, Any]:
     compared with the current baseline's hash. ``baseline_changed`` means the
     rules moved; a mtime change alone is ``in_sync``. A bridge with the marker
     but no recorded hash predates content tracking and is reported as
-    ``source_hash_missing`` rather than assumed current.
+    ``source_hash_missing`` rather than assumed current. Bridge bytes that are
+    not UTF-8 are decoded with replacement, so a malformed bridge is judged
+    rather than raised on.
     """
     proj = Path(project_dir).resolve()
     baseline = proj / STANDING_RULES_BASELINE
@@ -221,7 +228,7 @@ def standing_rules_drift_status(project_dir: str) -> dict[str, Any]:
     if not bridge.is_file():
         return {'drift': False, 'needs_bridge': True, 'reason': 'bridge_missing'}
     try:
-        text = bridge.read_text(encoding='utf-8')
+        text = bridge.read_text(encoding='utf-8', errors='replace')
     except OSError:
         return {'drift': True, 'needs_bridge': False, 'reason': 'bridge_unreadable'}
     if STANDING_RULES_BRIDGE_MARKER not in text:
