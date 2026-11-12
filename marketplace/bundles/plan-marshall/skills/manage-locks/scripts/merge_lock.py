@@ -72,7 +72,9 @@ co-tenants the same store, and the storeless ``poll-delay`` computation:
     the payload rather than reading as a contradiction. A genuine error (resolution
     failure, unremovable file) stays ``status: error``.
   * ``check`` — a non-blocking holder read: ``status: free`` when no lock file
-    exists, ``status: held`` + ``holder_plan_id`` when one does. Never attempts
+    exists, ``status: held`` + ``holder_plan_id`` when one does, and
+    ``status: unreadable`` when a lock file exists but cannot be read as a holder.
+    Never attempts
     to create or mutate the lock, and never touches the FIFO queue. On the
     ``held`` branch it also surfaces the authoritative main-anchored ``staleness``
     verdict (``fresh`` / ``stale`` / ``unknown``) so the manual-release recovery
@@ -912,11 +914,67 @@ def _release_rate_window(plan_id: str, bot_kind: str) -> dict[str, Any]:
 
 
 def _read_holder(lock_path: Path) -> str:
-    """Read the recorded holder from the lock file (best effort, '' on error)."""
+    """Read the recorded holder from the lock file (best effort, '' on error).
+
+    The best-effort projection of :func:`read_lock_holder`: callers that act on
+    "who holds it" without having to prove an identity keep their long-standing ''
+    shape, while the one reader below owns how the file is read.
+    """
+    return read_lock_holder(lock_path).get('holder') or ''
+
+
+#: The closed vocabulary :func:`read_lock_holder` publishes as ``state``.
+#:
+#: - ``held`` — the lock file exists and names a holder.
+#: - ``absent`` — no lock file at that path.
+#: - ``unreadable`` — the path exists but its holder could not be read: a read
+#:   fault (permission, a directory, an I/O error), or a file naming no holder.
+#:   ⛔ NOT a synonym for ``absent``: a consumer that must PROVE it holds the lock
+#:   cannot read "a file nobody can read" as "no lock at all".
+HOLDER_HELD = 'held'
+HOLDER_ABSENT = 'absent'
+HOLDER_UNREADABLE = 'unreadable'
+HOLDER_STATES = frozenset({HOLDER_HELD, HOLDER_ABSENT, HOLDER_UNREADABLE})
+
+
+def read_lock_holder(lock_path: Path | None = None) -> dict[str, Any]:
+    """Read the merge-lock holder without mutating anything — three-valued.
+
+    The read-only holder query an authority-bearing consumer asks: is a lock there,
+    WHO holds it, or can it not be read at all. It never creates, reclaims or
+    removes anything, and it never touches the FIFO queue.
+
+    ``absent`` and ``unreadable`` are separate answers on purpose. A caller that
+    must prove it holds the mutex cannot treat "no lock file" and "a lock file
+    nobody can read" as the same state, so the distinction is made HERE, at the one
+    place the file is read, rather than by each consumer re-deriving the file's
+    shape. A file that exists but names no holder (empty, or whitespace only) is
+    ``unreadable`` for the same reason: it proves nothing about who holds it.
+
+    Args:
+        lock_path: The lock file to read. Resolved against the MAIN checkout when
+            omitted (the shared main-anchored resolver, cwd-independent).
+
+    Returns:
+        ``{'state': 'held'|'absent'|'unreadable', 'holder': str|None,
+        'lock_path': str}``, plus ``error`` naming the fault on the
+        ``unreadable`` branch.
+    """
+    path = lock_path if lock_path is not None else _resolve_main_lock_path()
+    verdict: dict[str, Any] = {'state': HOLDER_ABSENT, 'holder': None, 'lock_path': str(path)}
     try:
-        return lock_path.read_text(encoding='utf-8').strip()
-    except OSError:
-        return ''
+        exists = path.exists()
+    except OSError as exc:
+        return {**verdict, 'state': HOLDER_UNREADABLE, 'error': f'lock path unreadable: {exc}'}
+    if not exists:
+        return verdict
+    try:
+        holder = path.read_text(encoding='utf-8').strip()
+    except OSError as exc:
+        return {**verdict, 'state': HOLDER_UNREADABLE, 'error': f'lock file unreadable: {exc}'}
+    if not holder:
+        return {**verdict, 'state': HOLDER_UNREADABLE, 'error': 'lock file names no holder'}
+    return {**verdict, 'state': HOLDER_HELD, 'holder': holder}
 
 
 def _try_atomic_create(lock_path: Path, holder: str) -> bool:
@@ -1631,10 +1689,13 @@ def run_check(args: Namespace) -> dict[str, Any]:
     """Non-blocking read of the current merge-lock holder, with a staleness verdict.
 
     Reads the lock file without attempting to create or mutate it, and never
-    touches the FIFO queue. Returns ``status: free`` when no lock file exists, or
+    touches the FIFO queue. Returns ``status: free`` when no lock file exists,
     ``status: held`` + ``holder_plan_id`` when one does (including a self-held
-    lock). On the ``held`` branch it also surfaces the authoritative main-anchored
-    ``staleness`` verdict (``fresh`` / ``stale`` / ``unknown``, from
+    lock), and ``status: unreadable`` + ``error`` when the file exists but its
+    holder cannot be read — the three-valued answer :func:`read_lock_holder`
+    publishes, which a caller proving ownership needs and a bare holder-or-``None``
+    read cannot give. On the ``held`` branch it also surfaces the authoritative
+    main-anchored ``staleness`` verdict (``fresh`` / ``stale`` / ``unknown``, from
     :func:`_locks_core.holder_staleness`) so the manual-release recovery recipe
     consults an authoritative, cwd-independent signal instead of a cwd-scoped
     ``manage-status list`` / ``worktree-list`` enumeration. This serves the
@@ -1647,18 +1708,26 @@ def run_check(args: Namespace) -> dict[str, Any]:
     except RuntimeError as exc:
         return make_error(str(exc), code=ErrorCode.NOT_FOUND, plan_id=plan_id)
 
-    if not lock_path.exists():
+    read = read_lock_holder(lock_path)
+    if read['state'] == HOLDER_ABSENT:
         return {
             'status': 'free',
             'plan_id': plan_id,
             'lock_path': str(lock_path),
         }
+    if read['state'] == HOLDER_UNREADABLE:
+        return {
+            'status': HOLDER_UNREADABLE,
+            'plan_id': plan_id,
+            'error': read.get('error'),
+            'lock_path': str(lock_path),
+        }
 
-    holder = _read_holder(lock_path)
+    holder = str(read['holder'])
     return {
         'status': 'held',
         'plan_id': plan_id,
-        'holder_plan_id': holder or None,
+        'holder_plan_id': holder,
         'staleness': holder_staleness(holder),
         'lock_path': str(lock_path),
     }
