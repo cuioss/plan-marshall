@@ -481,14 +481,24 @@ def _agent_id(value: str) -> str:
 
 
 def _take_subagent_type(block: list[str]) -> tuple[str | None, list[str]]:
-    """Hoist a block's own ``subagent_type:`` agent out of the block it names."""
+    """Hoist a block's own ``subagent_type:`` agent out of the block it names.
+
+    The field is looked for on every line at the block's own indentation, not
+    just the first: a dispatch body may lead with ``description:`` or another
+    field, and a deeper ``subagent_type:`` is prompt content, never the block's
+    agent.
+    """
+    base_indent: int | None = None
     for index, line in enumerate(block):
         if line.strip() == '':
             continue
+        if base_indent is None:
+            base_indent = len(line) - len(line.lstrip(' \t'))
+        if len(line) - len(line.lstrip(' \t')) != base_indent:
+            continue
         match = _SUBAGENT_TYPE_RE.match(line)
-        if match is None:
-            return None, block
-        return _agent_id(match.group('agent')), block[:index] + block[index + 1 :]
+        if match is not None:
+            return _agent_id(match.group('agent')), block[:index] + block[index + 1 :]
     return None, block
 
 

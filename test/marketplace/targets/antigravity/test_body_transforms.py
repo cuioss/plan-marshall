@@ -137,6 +137,24 @@ def test_an_unqualified_header_is_rewritten_too(rules):
     assert 'subagent_type: "diagnose-command"' in out
 
 
+def test_a_reordered_dispatch_body_still_yields_its_agent(rules):
+    """``subagent_type:`` after another field is still the block's own agent."""
+    block = 'Task:\n  description: run the build\n  subagent_type: pm-dev-builder:maven-builder\n  prompt: |\n    Run\n'
+    out = rewrite_dispatch_blocks(block, _dispatch_template(rules))
+    assert not _BARE_DISPATCH_RE.search(out)
+    assert 'subagent_type: "maven-builder"' in out
+    assert '    description: run the build\n' not in out
+    assert '  description: run the build\n' in out, 'the block keeps its other fields'
+
+
+def test_a_prompt_nested_subagent_type_is_not_the_blocks_agent(rules):
+    """A ``subagent_type:`` inside the carried prompt text is content, not the agent."""
+    block = 'Task:\n  prompt: |\n    subagent_type: pm-dev-builder:maven-builder\n'
+    out = rewrite_dispatch_blocks(block, _dispatch_template(rules))
+    assert _BARE_DISPATCH_RE.search(out), 'a block with no agent of its own must stay untouched'
+    assert out == block
+
+
 def test_a_quoted_subagent_type_is_hoisted_without_its_quotes(rules):
     """The hoisted agent carries no YAML quoting into the instruction."""
     block = 'Task:\n  subagent_type: "pm-dev-builder:maven-builder"\n  prompt: |\n    Run\n'
