@@ -698,7 +698,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 Extract the `target` field from the TOON output. Use that value as `{target}` in the dispatch below; the same seam call has already written the `[DISPATCH]` work-log line — its `role=` field carries the resolved role-key, or `phase-6-finalize` when no `--role` was passed — and its paired decision-log resolution record.
 
-**The resolve-with-context and the spawn are ONE indivisible pair.** The seam emission rides the resolve above; the `Task:` spawn below is its other half. Do NOT hand-write a separate `[DISPATCH]` line (that reintroduces the per-role blind spot the seam closes and double-emits), and never spawn under a `target` resolved by a bare query that carried no `--workflow` — the work-log would then carry no record that the dispatch happened, so the dispatch-audit chain could not attribute the step's cost, its target, or its role. Every firing re-resolves, so every firing re-emits; there is no separate logging step for a re-dispatch to skip.
+**The resolve-with-context and the spawn are ONE indivisible pair.** The seam emission rides the resolve above; the dispatch block below is its other half. Do NOT hand-write a separate `[DISPATCH]` line (that reintroduces the per-role blind spot the seam closes and double-emits), and never spawn under a `target` resolved by a bare query that carried no `--workflow` — the work-log would then carry no record that the dispatch happened, so the dispatch-audit chain could not attribute the step's cost, its target, or its role. Every firing re-resolves, so every firing re-emits; there is no separate logging step for a re-dispatch to skip.
 
 Dispatch:
 

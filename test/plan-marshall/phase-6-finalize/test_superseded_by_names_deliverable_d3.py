@@ -68,6 +68,15 @@ def _verdict(superseded_by: str) -> dict[str, Any]:
     }
 
 
+def _outline_with_two_successors() -> str:
+    """Three deliverables, so a supersede CHAIN has a real row at every hop."""
+    return (
+        _outline()
+        + '\n### 3. Retire the parser\n\n**Affected files:**\n- `src/retired.py` (write-new)\n\n'
+        + '**Success Criteria:**\n- the parser is retired\n'
+    )
+
+
 def _write_verdict(plan_dir: Path, tmp_path: Path, document: dict[str, Any]) -> str:
     """Seal ``document`` through the reviewer's own verb, then place it in the plan's slot.
 
@@ -169,3 +178,173 @@ def test_a_named_reference_may_be_followed_by_stated_prose(plan_context, tmp_pat
     payload = _snap.open_criteria(PLAN_ID)
 
     assert payload['open_count'] == 0, payload
+
+
+# --- the citation must name a CLOSING successor, not merely a number -----------------------
+
+
+def _two_row_verdict(first: dict[str, Any], second: dict[str, Any]) -> dict[str, Any]:
+    return {'deliverables': [first, second], 'unrequested_changes': [], 'self_reports': [], 'files_read': []}
+
+
+def test_a_self_citation_leaves_the_criteria_open_and_is_named(plan_context, tmp_path) -> None:
+    plan_dir = _plan(plan_context, freeze=True)
+    path = _write_verdict(plan_dir, tmp_path, _verdict('D1'))
+
+    payload = _snap.open_criteria(PLAN_ID)
+    validated = review_support.run_validate(PLAN_ID, 'functional', path, None)
+
+    assert payload['open_count'] == 1, payload
+    assert payload['open'][0]['deliverable'] == 1, payload
+    assert any('superseded_by' in error and 'itself' in error for error in validated['errors']), validated
+
+
+def test_a_supersede_cycle_leaves_both_deliverables_open_and_is_named(plan_context, tmp_path) -> None:
+    plan_dir = _plan(plan_context, freeze=True)
+    cycle = _two_row_verdict(
+        {'number': 1, 'verdict': 'superseded', 'superseded_by': 'D2'},
+        {'number': 2, 'verdict': 'superseded', 'superseded_by': 'D1'},
+    )
+    path = _write_verdict(plan_dir, tmp_path, cycle)
+
+    payload = _snap.open_criteria(PLAN_ID)
+    validated = review_support.run_validate(PLAN_ID, 'functional', path, None)
+
+    assert payload['open_count'] == 2, payload
+    assert {row['deliverable'] for row in payload['open']} == {1, 2}, payload
+    assert any('superseded_by' in error and 'cycle' in error for error in validated['errors']), validated
+
+
+def test_a_rejected_self_citation_keeps_even_a_graded_criterion_open(plan_context, tmp_path) -> None:
+    """The completion gate never runs the validator, so a graded criterion cannot rescue a bad verdict."""
+    plan_dir = _plan(plan_context, freeze=True)
+    _write_verdict(
+        plan_dir,
+        tmp_path,
+        {
+            'deliverables': [
+                {
+                    'number': 1,
+                    'verdict': 'superseded',
+                    'superseded_by': 'D1',
+                    'criteria': [
+                        {'criterion': 'parser accepts input', 'status': 'met', 'evidence': ['src/parser.py:1']}
+                    ],
+                },
+                {
+                    'number': 2,
+                    'verdict': 'met',
+                    'criteria': [
+                        {'criterion': 'usage is documented', 'status': 'met', 'evidence': ['doc/parser.md:1']}
+                    ],
+                },
+            ],
+            'unrequested_changes': [],
+            'self_reports': [],
+            'files_read': [],
+        },
+    )
+
+    payload = _snap.open_criteria(PLAN_ID)
+
+    assert payload['open_count'] == 1, payload
+    assert payload['open'][0]['deliverable'] == 1, payload
+
+
+def test_a_successor_graded_not_met_leaves_the_criteria_open(plan_context, tmp_path) -> None:
+    plan_dir = _plan(plan_context, freeze=True)
+    path = _write_verdict(
+        plan_dir,
+        tmp_path,
+        _two_row_verdict(
+            {'number': 1, 'verdict': 'superseded', 'superseded_by': 'D2'},
+            {
+                'number': 2,
+                'verdict': 'not_met',
+                'criteria': [{'criterion': 'usage is documented', 'status': 'not_met', 'evidence': []}],
+            },
+        ),
+    )
+
+    payload = _snap.open_criteria(PLAN_ID)
+    validated = review_support.run_validate(PLAN_ID, 'functional', path, None)
+
+    assert any(row['deliverable'] == 1 for row in payload['open']), payload
+    assert any(
+        'superseded_by' in error and 'not met or met_with_residuals' in error for error in validated['errors']
+    ), validated
+
+
+def test_a_successor_that_is_itself_superseded_is_refused(plan_context, tmp_path) -> None:
+    """D2 is superseded by a met D3: D1's citation names an intermediate, not a closing successor."""
+    plan_dir = _plan(plan_context)
+    (plan_dir / 'solution_outline.md').write_text(_outline_with_two_successors(), encoding='utf-8')
+    assert _snap.write_snapshot(PLAN_ID)['status'] == 'success'
+    path = _write_verdict(
+        plan_dir,
+        tmp_path,
+        {
+            'deliverables': [
+                {'number': 1, 'verdict': 'superseded', 'superseded_by': 'D2'},
+                {'number': 2, 'verdict': 'superseded', 'superseded_by': 'D3'},
+                {
+                    'number': 3,
+                    'verdict': 'met',
+                    'criteria': [
+                        {'criterion': 'the parser is retired', 'status': 'met', 'evidence': ['src/retired.py:1']}
+                    ],
+                },
+            ],
+            'unrequested_changes': [],
+            'self_reports': [],
+            'files_read': [],
+        },
+    )
+
+    payload = _snap.open_criteria(PLAN_ID)
+    validated = review_support.run_validate(PLAN_ID, 'functional', path, None)
+
+    assert any(row['deliverable'] == 1 for row in payload['open']), payload
+    assert any('superseded_by' in error and 'itself superseded' in error for error in validated['errors']), validated
+
+
+@pytest.mark.parametrize(
+    'cited',
+    [
+        'Deliverable 2',
+        'Deliverable #2',
+        'Deliverable D2',
+        '`D2`',
+        '**D2**',
+        '(D2)',
+        'D 2',
+        'D2 - the operator decision',
+    ],
+)
+def test_the_natural_reference_spellings_name_a_closing_successor(plan_context, tmp_path, monkeypatch, cited) -> None:
+    # The evidence-existence leg is not this clause's subject; the closed criteria are.
+    monkeypatch.setattr(review_support, '_main_checkout_root', lambda: None)
+    plan_dir = _plan(plan_context, freeze=True)
+    path = _write_verdict(plan_dir, tmp_path, _verdict(cited))
+
+    payload = _snap.open_criteria(PLAN_ID)
+    validated = review_support.run_validate(PLAN_ID, 'functional', path, None)
+
+    assert payload['open_count'] == 0, payload
+    assert validated['errors'] == [], validated
+
+
+def test_a_refused_spelling_and_a_refused_number_say_different_things(plan_context, tmp_path) -> None:
+    """The validator names WHY it refused; the two reasons are not one message."""
+    plan_dir = _plan(plan_context)
+    unreadable = review_support.run_validate(
+        PLAN_ID, 'functional', _write_verdict(plan_dir, tmp_path, _verdict('x')), None
+    )
+    unknown = review_support.run_validate(
+        PLAN_ID, 'functional', _write_verdict(plan_dir, tmp_path, _verdict('D9')), None
+    )
+
+    spelling_errors = [error for error in unreadable['errors'] if 'superseded_by' in error]
+    number_errors = [error for error in unknown['errors'] if 'superseded_by' in error]
+    assert spelling_errors and number_errors, (unreadable, unknown)
+    assert spelling_errors != number_errors, (spelling_errors, number_errors)

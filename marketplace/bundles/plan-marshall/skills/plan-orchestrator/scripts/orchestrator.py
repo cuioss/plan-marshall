@@ -925,6 +925,11 @@ READINESS_INDETERMINATE = 'indeterminate'
 #: only (ADR-020), and the arm's evidence says so beside the command.
 REGISTRY_REPIN_COMMAND = 'python3 marketplace/targets/claude/registry_pin.py --apply'
 
+#: The stamp ``generate_executor`` writes when no version was readable. It reads as
+#: a version to ``plugin_registry`` (a FOUND assignment), so the parity arm names it
+#: explicitly rather than letting it fall through as "could not be ordered".
+_UNVERSIONED_STAMP = 'unversioned'
+
 # --- the generated view and the compact stage -------------------------------
 #
 # START HERE and the Ordered Queue are DERIVED surfaces. They are rendered by ONE
@@ -6124,6 +6129,20 @@ def _cache_parity_signal(rows: list[dict[str, str | None]], version: str, popula
     )
 
 
+def _executor_stamp_note(executor_state: str, executor_version: str | None) -> str:
+    """The executor-side absence to append when the registry read cannot answer.
+
+    The registry branches return before the stamp branches, so without this a run
+    whose registry is unreadable never learns that its executor could not state a
+    version. ``''`` when the stamp is an ordinary version (nothing to add).
+    """
+    if executor_state == plugin_registry.EXECUTOR_VERSION_EMPTY:
+        return '; the executor also carries an empty version stamp (a generator that could not read one)'
+    if executor_version == _UNVERSIONED_STAMP:
+        return f'; the executor is also stamped {_UNVERSIONED_STAMP} (no version was readable when it was generated)'
+    return ''
+
+
 def _registry_parity_signal() -> dict[str, Any]:
     """Whether a restarted session would load the version the executor was generated at.
 
@@ -6149,13 +6168,40 @@ def _registry_parity_signal() -> dict[str, Any]:
     if registry_state == plugin_registry.REGISTRY_NO_PLAN_MARSHALL_ENTRY:
         return _parity_signal(
             READINESS_INDETERMINATE,
-            'plan-marshall is not installed through the plugin registry so there is no pin to compare',
+            'plan-marshall is not installed through the plugin registry so there is no pin to compare'
+            + _executor_stamp_note(executor_state, executor_version),
             population,
         )
     if registry_state != plugin_registry.REGISTRY_OK:
         return _parity_signal(
             READINESS_INDETERMINATE,
-            f'the plugin registry could not be read ({registry_state})',
+            f'the plugin registry could not be read ({registry_state})'
+            + _executor_stamp_note(executor_state, executor_version),
+            population,
+        )
+    if executor_state == plugin_registry.EXECUTOR_VERSION_EMPTY:
+        # An empty stamp is a specific, actionable defect rather than a generic
+        # unreadable store: the executor was generated when nothing readable
+        # supplied a version. Name the cause and the remedy — the generator now
+        # stamps ``unversioned`` and says which reads came back empty — so a
+        # restart decision can act on it instead of reporting "unanswerable".
+        return _parity_signal(
+            READINESS_INDETERMINATE,
+            'the executor carries an empty version stamp (empty): it was generated without a readable '
+            'version and cannot be ordered against the registry pin; regenerate the executor so it stamps '
+            'unversioned and the reason it could not read one',
+            population,
+        )
+    if executor_version == _UNVERSIONED_STAMP:
+        # The stamp this codebase now writes when nothing readable supplied a
+        # version. It was READ, so the generic tail would report it as a version
+        # that merely could not be ordered — the same silence, for the case the
+        # empty arm exists to explain.
+        return _parity_signal(
+            READINESS_INDETERMINATE,
+            'the executor is stamped unversioned: no version was readable when it was generated, so it '
+            'cannot be ordered against the registry pin; regenerate the executor where its manifest is '
+            'readable so the pin and the executor agree',
             population,
         )
     if executor_state != plugin_registry.EXECUTOR_VERSION_FOUND or executor_version is None:

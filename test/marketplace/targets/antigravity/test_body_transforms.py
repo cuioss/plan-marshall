@@ -3,14 +3,18 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
 
 from conftest import PROJECT_ROOT
 from marketplace.targets.body_transform_engine import (
+    UnmappedIdiomError,
+    assert_dispatch_template_complete,
     load_transform_rules,
     make_body_transformer,
+    rewrite_dispatch_blocks,
     rewrite_read_directives,
     rewrite_skill_directives,
 )
@@ -48,3 +52,161 @@ def test_make_body_transformer_integration(rules):
     assert 'view_file' in out
     assert 'plan-marshall-execute-task/SKILL.md' in out
     assert '/plan-marshall-automatic-review' in out
+
+
+#: A dispatch block as the source corpus writes it: the target-bearing header
+#: line plus its indented ``prompt:`` block, inside the fenced block that holds
+#: it. ``{target}`` is the value ``manage-config effort resolve-target`` returns.
+TARGETED_DISPATCH_BLOCK = (
+    '```text\nTask: plan-marshall:{target}\n  prompt: |\n    name: phase-5-execute\n    plan_id: {plan_id}\n```\n'
+)
+
+#: The bare header form: the agent is named by the block's own
+#: ``subagent_type:`` line instead of on the dispatch line.
+BARE_DISPATCH_BLOCK = (
+    '```text\n'
+    'Task:\n'
+    '  subagent_type: pm-dev-builder:maven-builder\n'
+    '  prompt: |\n'
+    '    Execute mvn clean verify, report results and coverage\n'
+    '```\n'
+)
+
+_BARE_DISPATCH_RE = re.compile(r'^\s*Task:[ \t]*$', re.MULTILINE)
+_TARGETED_DISPATCH_RE = re.compile(r'^\s*Task: plan-marshall:', re.MULTILINE)
+
+
+def _dispatch_template(rules) -> str:
+    template = rules.body_idiom_rewrites['Task:']['template']
+    return template if isinstance(template, str) else ''
+
+
+def test_dispatch_line_records_that_it_is_rewritten_with_a_target(rules):
+    """The mapping carries the dispatch-block disposition and its ``{target}`` template."""
+    record = rules.body_idiom_rewrites['Task:']
+    assert record['disposition'] == 'rewrite_dispatch_block'
+    assert '{target}' in record['template'], 'the dispatch instruction must name the resolved target'
+
+
+def test_a_dispatch_template_without_a_target_placeholder_fails_closed():
+    """The guard refuses a ``rewrite_dispatch_block`` record that would drop the agent."""
+    registry = {'Task:': {'disposition': 'rewrite_dispatch_block', 'template': 'Call the `invoke_subagent` tool:'}}
+
+    with pytest.raises(UnmappedIdiomError, match='rewrite_dispatch_block'):
+        assert_dispatch_template_complete(registry)
+
+
+def test_a_dispatch_record_under_another_key_fails_closed():
+    """The applier only matches ``Task:``, so any other key would never be applied."""
+    registry = {'Delegate:': {'disposition': 'rewrite_dispatch_block', 'template': 'Call ... `{target}`'}}
+
+    with pytest.raises(UnmappedIdiomError, match='Delegate:'):
+        assert_dispatch_template_complete(registry)
+
+
+def test_a_complete_dispatch_template_passes_the_guard():
+    registry = {'Task:': {'disposition': 'rewrite_dispatch_block', 'template': 'Call ... `{target}`'}}
+    assert_dispatch_template_complete(registry)
+
+
+def test_targeted_dispatch_block_becomes_an_invoke_subagent_instruction(rules):
+    out = rewrite_dispatch_blocks(TARGETED_DISPATCH_BLOCK, _dispatch_template(rules))
+    assert not _TARGETED_DISPATCH_RE.search(out), 'the bare Antigravity-meaningless dispatch line survived'
+    assert '`invoke_subagent`' in out
+    assert 'subagent_type: "{target}"' in out, 'the instruction must name the resolved agent unqualified'
+    assert 'plan-marshall:{target}' not in out, 'a bundle-qualified id resolves to no agent file on this target'
+    assert '    name: phase-5-execute\n' in out, 'the prompt body must survive the rewrite'
+
+
+def test_bare_dispatch_block_is_rewritten_from_its_own_subagent_type(rules):
+    """A header with no target takes the agent from the block's ``subagent_type:`` line."""
+    out = rewrite_dispatch_blocks(BARE_DISPATCH_BLOCK, _dispatch_template(rules))
+    assert not _BARE_DISPATCH_RE.search(out)
+    assert '`invoke_subagent`' in out
+    assert 'subagent_type: "maven-builder"' in out, 'the bundle namespace names no agent file on this target'
+    assert out.count('subagent_type') == 1, 'the agent must be named once, in the instruction'
+    assert '    Execute mvn clean verify, report results and coverage\n' in out
+
+
+def test_an_unqualified_header_is_rewritten_too(rules):
+    """A header naming one bare agent is a dispatch, not prose."""
+    block = 'Task: diagnose-command\n  prompt: |\n    Run the diagnosis\n'
+    out = rewrite_dispatch_blocks(block, _dispatch_template(rules))
+    assert not _BARE_DISPATCH_RE.search(out)
+    assert '`invoke_subagent`' in out
+    assert 'subagent_type: "diagnose-command"' in out
+
+
+def test_a_reordered_dispatch_body_still_yields_its_agent(rules):
+    """``subagent_type:`` after another field is still the block's own agent."""
+    block = 'Task:\n  description: run the build\n  subagent_type: pm-dev-builder:maven-builder\n  prompt: |\n    Run\n'
+    out = rewrite_dispatch_blocks(block, _dispatch_template(rules))
+    assert not _BARE_DISPATCH_RE.search(out)
+    assert 'subagent_type: "maven-builder"' in out
+    assert '    description: run the build\n' not in out
+    assert '  description: run the build\n' in out, 'the block keeps its other fields'
+
+
+def test_a_prompt_nested_subagent_type_is_not_the_blocks_agent(rules):
+    """A ``subagent_type:`` inside the carried prompt text is content, not the agent."""
+    block = 'Task:\n  prompt: |\n    subagent_type: pm-dev-builder:maven-builder\n'
+    out = rewrite_dispatch_blocks(block, _dispatch_template(rules))
+    assert _BARE_DISPATCH_RE.search(out), 'a block with no agent of its own must stay untouched'
+    assert out == block
+
+
+def test_a_quoted_subagent_type_is_hoisted_without_its_quotes(rules):
+    """The hoisted agent carries no YAML quoting into the instruction."""
+    block = 'Task:\n  subagent_type: "pm-dev-builder:maven-builder"\n  prompt: |\n    Run\n'
+    out = rewrite_dispatch_blocks(block, _dispatch_template(rules))
+    assert 'subagent_type: "maven-builder"' in out
+    assert '""' not in out
+
+
+def test_a_dispatch_mention_without_a_block_is_left_alone(rules):
+    """Prose naming the idiom is not a dispatch header, so it is preserved."""
+    raw = 'Task: plan-marshall:{target} is the dispatch idiom the orchestrator follows.\n'
+    assert rewrite_dispatch_blocks(raw, _dispatch_template(rules)) == raw
+
+
+def test_a_mention_with_an_indented_continuation_is_left_alone(rules):
+    """An indented explanatory line is not a dispatch body, so the mention survives."""
+    raw = 'Task: diagnose-command\n  This is a syntax example, not a dispatch.\n'
+    assert rewrite_dispatch_blocks(raw, _dispatch_template(rules)) == raw
+
+
+def test_an_indented_sentence_starting_with_a_field_name_is_left_alone(rules):
+    """The field name needs its colon; 'name the command…' is prose, not a field."""
+    raw = 'Task: diagnose-command\n  name the command being discussed.\n'
+    assert rewrite_dispatch_blocks(raw, _dispatch_template(rules)) == raw
+
+
+def test_dispatch_block_rewrite_is_idempotent(rules):
+    template = _dispatch_template(rules)
+    once = rewrite_dispatch_blocks(TARGETED_DISPATCH_BLOCK, template)
+    assert rewrite_dispatch_blocks(once, template) == once
+
+
+def test_a_dispatch_block_nested_in_a_prompt_body_is_rewritten_in_one_pass(rules):
+    """One pass reaches the fixed point, so the idempotency claim is not conditional on depth."""
+    template = _dispatch_template(rules)
+    nested = (
+        'Task: plan-marshall:{target}\n'
+        '  prompt: |\n'
+        '    Task: plan-marshall:{target}\n'
+        '      prompt: |\n'
+        '        name: inner\n'
+    )
+    once = rewrite_dispatch_blocks(nested, template)
+    assert '`invoke_subagent`' in once
+    assert '        name: inner\n' in once
+    assert once.count('`invoke_subagent`') == 2
+    assert rewrite_dispatch_blocks(once, template) == once
+    assert 'Task:' not in once
+
+
+def test_the_full_transformer_rewrites_a_dispatch_block(rules):
+    """A ``SKILL.md`` body goes through the dispatch applier too."""
+    out = make_body_transformer({}, rules)(TARGETED_DISPATCH_BLOCK, 'plan-marshall', 'skill')
+    assert not _TARGETED_DISPATCH_RE.search(out)
+    assert '`invoke_subagent`' in out

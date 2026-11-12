@@ -761,6 +761,11 @@ _BOOTSTRAP_BUNDLE = 'plan-marshall'
 
 _BOOTSTRAP_REGENERATE_TIMEOUT_SECONDS = 120
 
+#: The stamp ``generate_executor`` writes when no version was readable. It is an
+#: answered absence: the recovery decision below must treat it as a version-less
+#: executor, never as a version to compare against the cache.
+_UNVERSIONED_EXECUTOR_STAMP = 'unversioned'
+
 #: Remedy surfaced with every version-split warning: re-sync the installed
 #: plugin in place, reload the session plugin set so the refreshed cache is
 #: visible, then re-request the stage plan so the skill docs and the planner
@@ -1107,7 +1112,12 @@ def bootstrap_executor(
     except Exception:
         runtime_harness = None
     state, current = read_executor_version(executor_path, target=runtime_harness, fallback_on_empty=True)
-    executor_version = current if state == EXECUTOR_VERSION_FOUND else None
+    # The generator's ``unversioned`` stamp is an ANSWERED absence, not a version:
+    # it must not be compared against the cache. It is kept apart from a MISSING
+    # stamp on purpose — see ``needs_recovery`` below: an executor that merely
+    # could not state a version, but imports, needs consent before it is rewritten.
+    unversioned_stamp = state == EXECUTOR_VERSION_FOUND and current == _UNVERSIONED_EXECUTOR_STAMP
+    executor_version = None if unversioned_stamp else (current if state == EXECUTOR_VERSION_FOUND else None)
 
     # An executor can exist and carry the newest stamp and still fail to IMPORT:
     # the stamp is read as text, so the version comparison alone cannot see a
@@ -1133,7 +1143,14 @@ def bootstrap_executor(
     # absent, unreadable or version-less executor (executor_version is None) and
     # one whose probe observed an import failure (import_failure) — no plan can
     # run against a tool that cannot start.
-    needs_recovery = executor_version is None or bool(import_failure)
+    #
+    # An importable executor stamped ``unversioned`` is NOT in that class: it
+    # runs, it merely could not state a version at generation time. Rewriting it
+    # unasked would regenerate on every call on a machine with no readable
+    # manifest, so it takes the CONSENT gate — reported as regenerate_required and
+    # left untouched — while a missing/unreadable executor and an import failure
+    # keep the ungated recovery.
+    needs_recovery = (executor_version is None and not unversioned_stamp) or bool(import_failure)
     if action == 'regenerate_required' and not needs_recovery and not allow_regenerate:
         return {
             'status': 'success',
@@ -1199,19 +1216,26 @@ def bootstrap_executor(
                 'detail': 'regeneration attempted and failed; Stage 1 regenerate-executor remains the repair',
             }
         reread_state, reread = read_executor_version(executor_path, target=runtime_harness, fallback_on_empty=True)
-        if reread_state == EXECUTOR_VERSION_FOUND:
+        reread_absence = reread_state == EXECUTOR_VERSION_FOUND and reread == _UNVERSIONED_EXECUTOR_STAMP
+        if reread_state == EXECUTOR_VERSION_FOUND and not reread_absence:
             executor_version = reread
         else:
             # The regeneration succeeded but the stamp cannot confirm it: the
-            # reread state (unreadable / not_found / empty) is the fact, and
-            # the stale pre-regeneration version must not survive as if it
-            # were re-observed. Report unknown with a warning instead of a
-            # silent regenerated-with-empty-version.
+            # reread state (unreadable / not_found / empty / the unversioned
+            # absence) is the fact, and the stale pre-regeneration version must
+            # not survive as if it were re-observed. The absence is normalized
+            # here exactly as it is on the first read, so it is reported as an
+            # unconfirmed version rather than as a version split.
             executor_version = ''
-            warning = (
+            stamp_fact = f'the {_UNVERSIONED_EXECUTOR_STAMP} absence' if reread_absence else reread_state
+            # JOIN, never replace: a version split reported by
+            # ``resolve_bootstrap_action`` is an independent fact, and a fresh
+            # assignment here would hide it behind the stamp warning.
+            warning = _join_warnings(
+                warning,
                 f'executor regenerated from the newest cache at {newest} but its version '
-                f'stamp is {reread_state} — the regenerated version could not be confirmed. '
-                f'{_VERSION_SPLIT_REMEDY}'
+                f'stamp is {stamp_fact} — the regenerated version could not be confirmed. '
+                f'{_VERSION_SPLIT_REMEDY}',
             )
         action = 'regenerated'
 

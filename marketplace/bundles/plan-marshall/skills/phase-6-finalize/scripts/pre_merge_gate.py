@@ -1040,13 +1040,16 @@ def _check_participation(plan_id: str, pr_number: int, project_dir: str) -> dict
                 'an unknown verdict is never a pass'
             ),
         }
-    # The scope the predicate read under, and the rows it could not place. A legacy
-    # (pre-stamp) row on a store that spans several PRs is EXCLUDED from the read, so it
-    # never reaches the pending-finding input — which makes it a silent hole in a gate
-    # that decides a merge. It is named and refused rather than forwarded as a clean
-    # verdict: assigning such a row to this PR would be the silent join the scoping
-    # exists to prevent, and ignoring it would hide a pending finding.
+    # The scope the predicate read under, and the rows it could not place. A PENDING
+    # legacy (pre-stamp) row on a store that spans several PRs is EXCLUDED from the
+    # read, so it never reaches the pending-finding input — which makes it a silent
+    # hole in a gate that decides a merge. It is named and refused rather than
+    # forwarded as a clean verdict: assigning such a row to this PR would be the
+    # silent join the scoping exists to prevent, and ignoring it would hide a
+    # pending finding. A legacy row already resolved or rejected is excluded too,
+    # but is not named: it cannot hide a pending finding, so it decides nothing.
     unscoped_ids = list(checked.get('unscoped_stored_finding_ids') or [])
+    foreign_stored = int(checked.get('foreign_stored_findings') or 0)
     if unscoped_ids:
         return {
             'status': 'error',
@@ -1057,6 +1060,7 @@ def _check_participation(plan_id: str, pr_number: int, project_dir: str) -> dict
             'store_scope': checked.get('store_scope'),
             'unscoped_stored_findings': len(unscoped_ids),
             'unscoped_stored_finding_ids': unscoped_ids,
+            'foreign_stored_findings': foreign_stored,
             'reason': (
                 f'{len(unscoped_ids)} stored finding(s) could not be placed at any one PR '
                 f'({", ".join(unscoped_ids)}); the store spans more than one PR and these rows '
@@ -1074,6 +1078,10 @@ def _check_participation(plan_id: str, pr_number: int, project_dir: str) -> dict
         'bot_states': list(checked.get('bot_states') or []),
         'proves': checked.get('proves'),
         'store_scope': checked.get('store_scope'),
+        # A DISCLOSURE, not a gate: an earlier pull request's pending finding cannot
+        # decide this merge, but a reader of the verdict should see that the plan's
+        # store carries rows filed for other PRs.
+        'foreign_stored_findings': foreign_stored,
         # The predicate can answer ``participation_complete: false`` with every bot a
         # proofed participant — that is a required finding still ``pending`` once triage
         # has run (see ``review_completeness``). Name it here, so a refusal built from
@@ -1174,6 +1182,7 @@ def _participation_verdict(
             'unproven_bots': [],
             'bot_states': list(verdict.get('bot_states') or []),
             'required_bots': list(verdict.get('required_bots') or []),
+            'foreign_stored_findings': int(verdict.get('foreign_stored_findings') or 0),
             'authorization_kind': None,
             'authorizable': False,
             'code': None,
@@ -1203,6 +1212,7 @@ def _participation_verdict(
         'unproven_bots': list(verdict.get('unproven_bots') or []),
         'bot_states': list(verdict.get('bot_states') or []),
         'required_bots': list(verdict.get('required_bots') or []),
+        'foreign_stored_findings': int(verdict.get('foreign_stored_findings') or 0),
         'authorization_kind': authorization_kind,
         'authorizable': known_gap,
         'code': code,
@@ -1225,9 +1235,10 @@ def _participation_refusal(plan_id: str, head: str | None, verdict: dict[str, An
     whose rows belong to no known PR (``code: participation_scope_ambiguous``). The
     roster, provider and predicate all answered, so pointing the operator at making the
     gate readable would name work already done; the fault is in the STORE. The remedy is
-    to PLACE those rows — write the PR stamp into each row's ``detail``, or remove the
-    row — because disposition does not place a finding: resolving one changes its state
-    and leaves its provenance untouched, so no resolution clears this refusal.
+    to PLACE those rows — stamp the pull request into the row's ``detail`` with the
+    ``stamp-pr`` verb, or remove the row. Resolving a PENDING row also settles it out of
+    this refusal, because only a pending legacy row is reported; stamping is what keeps a
+    finding that must remain pending placeable.
 
     A gap that IS authorizable advertises the labels the remedy accepts, in
     ``override_options``. They are :data:`BARRIER_OVERRIDE_LABELS` itself — the one
@@ -1245,10 +1256,13 @@ def _participation_refusal(plan_id: str, head: str | None, verdict: dict[str, An
         # known PR, so the generic "make it readable" remedy names work already done.
         remedy = (
             'No merge authorization covers this: the findings store spans more than one PR and '
-            'carries rows with no PR stamp, so a pending finding may exist here that the gate '
-            "could neither place nor ignore. Write the PR stamp into those rows' detail (or "
-            "remove the rows) — a resolution changes a finding's disposition, never its "
-            'provenance, so it cannot clear this — before this merge can proceed.'
+            'carries pending rows with no PR stamp, so a pending finding may exist here that the '
+            'gate could neither place nor ignore. Stamp each such row with the pull request it '
+            'belongs to — `python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings '
+            'stamp-pr --plan-id {plan_id} --hash-id {hash_id} --pr-number {N}` — or remove it. '
+            'Resolving the row also settles it out of this refusal (only PENDING rows are '
+            'reported), but it leaves the finding unplaced for this PR; stamp it when the finding '
+            'must stay pending. '
         )
     elif authorizable:
         remedy = (
@@ -1273,6 +1287,7 @@ def _participation_refusal(plan_id: str, head: str | None, verdict: dict[str, An
         'required_bots': verdict['required_bots'],
         'unproven_bots': unproven,
         'bot_states': verdict['bot_states'],
+        'foreign_stored_findings': int(verdict.get('foreign_stored_findings') or 0),
         'dispatched': False,
         'message': (
             'Required review-bot participation is not proven on the merge candidate'
@@ -1873,6 +1888,11 @@ def merge(
         result['merge_authorization_kind'] = participation['authorization_kind']
         result['merge_authorization_gap'] = REVIEW_BARRIER_GAP_CLASS
         result['unproven_bots'] = participation['unproven_bots']
+    # The provenance disclosure travels with a CLEAN participation verdict too, so a
+    # reader of the merge record sees that the plan's store also holds findings filed
+    # for earlier pull requests. It is a disclosure, never a gate input.
+    if participation.get('foreign_stored_findings'):
+        result['foreign_stored_findings'] = participation['foreign_stored_findings']
     # The head binding ADMITTED this candidate; name what it did not validate, so
     # a waived step is distinguishable from a validated one at the record site.
     if head_evidence['waived_steps']:

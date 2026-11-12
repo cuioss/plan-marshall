@@ -409,6 +409,48 @@ class TestTheStoredFindingJoinIsScopedToOnePullRequest:
         assert read['unscoped_stored_finding_ids'] == [legacy]
         assert sorted(read['known_stored_prs']) == ['101', '102']
 
+    def test_a_resolved_legacy_row_on_a_two_pr_plan_is_not_reported_unscoped(self, plan_context):
+        """A SETTLED legacy row cannot hide a pending finding, so it does not block.
+
+        The store spans two PRs, but the unplaced row has already been dispositioned:
+        it can neither be joined silently nor decide this merge, so the refusal that
+        exists for an unplaceable PENDING row does not fire for it.
+        """
+        plan_id = 'trigger-b-legacy-resolved-two-prs'
+        plan_context.plan_dir_for(plan_id)
+        _seed_comment(plan_id, 'coderabbit', '101')
+        legacy = _seed_comment(plan_id, 'sourcery', None)
+        resolved = fc.resolve_finding(plan_id, legacy, 'fixed', 'addressed in the current PR')
+        assert resolved['status'] == 'success', resolved
+
+        read = rc._read_pr_comment_findings(plan_id, 102)
+
+        assert read['unscoped_stored_findings'] == 0
+        assert read['unscoped_stored_finding_ids'] == []
+        assert sorted(read['known_stored_prs']) == ['101', '102']
+
+    def test_stamping_a_pending_legacy_row_makes_the_same_check_scope_it(self, plan_context):
+        """The verb and the reader compose: stamp, then the SAME check places the row.
+
+        This is the composed chain the refusal's remedy promises — the verb writes the
+        producer's shape, and the reader parses that exact head line.
+        """
+        plan_id = 'trigger-b-legacy-stamped'
+        plan_context.plan_dir_for(plan_id)
+        _seed_comment(plan_id, 'coderabbit', '101')
+        legacy = _seed_comment(plan_id, 'sourcery', None)
+
+        before = rc._read_pr_comment_findings(plan_id, 102)
+        assert before['unscoped_stored_finding_ids'] == [legacy]
+
+        stamped = fc.stamp_finding_pr_number(plan_id, legacy, 102)
+        assert stamped['status'] == 'success', stamped
+        assert stamped['outcome'] == 'stamped'
+
+        after = rc._read_pr_comment_findings(plan_id, 102)
+        assert after['unscoped_stored_findings'] == 0
+        assert [f['bot_kind'] for f in after['findings']] == ['sourcery']
+
     def test_a_single_pr_plan_still_joins_its_legacy_rows(self, plan_context):
         """This holds at the base and must keep holding: one PR means no ambiguity.
 
@@ -475,16 +517,17 @@ _PR_RECOGNISER_SAMPLES = (
 )
 
 
-def test_the_two_pr_recognisers_agree_on_every_shape():
-    """One fact, two readers — held to the same answer on the producer's own shapes.
+def test_the_three_pr_recognisers_agree_on_every_shape():
+    """One fact, three users — held to the same answer on the producer's own shapes.
 
     The store's PR line is read by the producer verbatim
-    (``github_pr._PR_NUMBER_DETAIL``, which routes ``post_responses``) and by this
-    consumer (``review_completeness._FINDING_PR_NUMBER``, which scopes the quorum read).
-    A recogniser that drifted would split one review's provenance across two answers, so
-    the shapes below are run through both. ``importlib`` resolves ``github_ops`` first:
-    importing ``github_pr`` ahead of it closes an import cycle on a partially
-    initialised module.
+    (``github_pr._PR_NUMBER_DETAIL``, which routes ``post_responses``), by this
+    consumer (``review_completeness._FINDING_PR_NUMBER``, which scopes the quorum read),
+    and written by ``manage-findings stamp-pr`` (``_findings_core._PR_NUMBER_DETAIL``).
+    A recogniser that drifted would split one review's provenance across two answers — or
+    let the writer emit a shape neither reader places — so the shapes below are run
+    through all three. ``importlib`` resolves ``github_ops`` first: importing
+    ``github_pr`` ahead of it closes an import cycle on a partially initialised module.
     """
     import importlib
 
@@ -494,9 +537,14 @@ def test_the_two_pr_recognisers_agree_on_every_shape():
     for detail in _PR_RECOGNISER_SAMPLES:
         producer = github_pr._PR_NUMBER_DETAIL.match(detail)
         consumer = rc._FINDING_PR_NUMBER.match(detail)
-        assert (producer is None) == (consumer is None), f'recognisers disagree on presence for {detail!r}'
-        if producer is not None and consumer is not None:
-            assert producer.group('id') == consumer.group('id'), f'recognisers disagree on the id for {detail!r}'
+        writer = fc._PR_NUMBER_DETAIL.match(detail)
+        assert (producer is None) == (consumer is None) == (writer is None), (
+            f'recognisers disagree on presence for {detail!r}'
+        )
+        if producer is not None and consumer is not None and writer is not None:
+            assert producer.group('id') == consumer.group('id') == writer.group('id'), (
+                f'recognisers disagree on the id for {detail!r}'
+            )
 
     # The samples must actually exercise both answers, or the parity is vacuous.
     assert sum(1 for detail in _PR_RECOGNISER_SAMPLES if rc._FINDING_PR_NUMBER.match(detail)) >= 3
