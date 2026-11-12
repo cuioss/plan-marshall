@@ -1661,26 +1661,6 @@
           "action": "shell",
           "resource": "git clean *",
           "effect": "deny"
-        },
-        {
-          "action": "shell",
-          "resource": "python3 .plan/execute-script.py *",
-          "effect": "allow"
-        },
-        {
-          "action": "shell",
-          "resource": "git status *",
-          "effect": "allow"
-        },
-        {
-          "action": "shell",
-          "resource": "git log *",
-          "effect": "allow"
-        },
-        {
-          "action": "shell",
-          "resource": "git diff *",
-          "effect": "allow"
         }
       ]
     },
@@ -1810,26 +1790,6 @@
           "action": "shell",
           "resource": "git clean *",
           "effect": "deny"
-        },
-        {
-          "action": "shell",
-          "resource": "python3 .plan/execute-script.py *",
-          "effect": "allow"
-        },
-        {
-          "action": "shell",
-          "resource": "git status *",
-          "effect": "allow"
-        },
-        {
-          "action": "shell",
-          "resource": "git log *",
-          "effect": "allow"
-        },
-        {
-          "action": "shell",
-          "resource": "git diff *",
-          "effect": "allow"
         }
       ]
     },
@@ -1959,26 +1919,6 @@
           "action": "shell",
           "resource": "git clean *",
           "effect": "deny"
-        },
-        {
-          "action": "shell",
-          "resource": "python3 .plan/execute-script.py *",
-          "effect": "allow"
-        },
-        {
-          "action": "shell",
-          "resource": "git status *",
-          "effect": "allow"
-        },
-        {
-          "action": "shell",
-          "resource": "git log *",
-          "effect": "allow"
-        },
-        {
-          "action": "shell",
-          "resource": "git diff *",
-          "effect": "allow"
         }
       ]
     },
@@ -2108,26 +2048,6 @@
           "action": "shell",
           "resource": "git clean *",
           "effect": "deny"
-        },
-        {
-          "action": "shell",
-          "resource": "python3 .plan/execute-script.py *",
-          "effect": "allow"
-        },
-        {
-          "action": "shell",
-          "resource": "git status *",
-          "effect": "allow"
-        },
-        {
-          "action": "shell",
-          "resource": "git log *",
-          "effect": "allow"
-        },
-        {
-          "action": "shell",
-          "resource": "git diff *",
-          "effect": "allow"
         }
       ]
     },
@@ -2257,26 +2177,6 @@
           "action": "shell",
           "resource": "git clean *",
           "effect": "deny"
-        },
-        {
-          "action": "shell",
-          "resource": "python3 .plan/execute-script.py *",
-          "effect": "allow"
-        },
-        {
-          "action": "shell",
-          "resource": "git status *",
-          "effect": "allow"
-        },
-        {
-          "action": "shell",
-          "resource": "git log *",
-          "effect": "allow"
-        },
-        {
-          "action": "shell",
-          "resource": "git diff *",
-          "effect": "allow"
         }
       ]
     },
@@ -2406,26 +2306,6 @@
           "action": "shell",
           "resource": "git clean *",
           "effect": "deny"
-        },
-        {
-          "action": "shell",
-          "resource": "python3 .plan/execute-script.py *",
-          "effect": "allow"
-        },
-        {
-          "action": "shell",
-          "resource": "git status *",
-          "effect": "allow"
-        },
-        {
-          "action": "shell",
-          "resource": "git log *",
-          "effect": "allow"
-        },
-        {
-          "action": "shell",
-          "resource": "git diff *",
-          "effect": "allow"
         }
       ]
     },
@@ -2555,26 +2435,6 @@
           "action": "shell",
           "resource": "git clean *",
           "effect": "deny"
-        },
-        {
-          "action": "shell",
-          "resource": "python3 .plan/execute-script.py *",
-          "effect": "allow"
-        },
-        {
-          "action": "shell",
-          "resource": "git status *",
-          "effect": "allow"
-        },
-        {
-          "action": "shell",
-          "resource": "git log *",
-          "effect": "allow"
-        },
-        {
-          "action": "shell",
-          "resource": "git diff *",
-          "effect": "allow"
         }
       ]
     },
@@ -2704,26 +2564,6 @@
           "action": "shell",
           "resource": "git clean *",
           "effect": "deny"
-        },
-        {
-          "action": "shell",
-          "resource": "python3 .plan/execute-script.py *",
-          "effect": "allow"
-        },
-        {
-          "action": "shell",
-          "resource": "git status *",
-          "effect": "allow"
-        },
-        {
-          "action": "shell",
-          "resource": "git log *",
-          "effect": "allow"
-        },
-        {
-          "action": "shell",
-          "resource": "git diff *",
-          "effect": "allow"
         }
       ]
     }

@@ -399,8 +399,10 @@ so git alone shows which deliverables are committed.
   clean `status --porcelain`, and remove it first when either differs — the answer carries
   `detached: true`, `base_ref` and the tree's actual `head_sha`, refuses a tree that is on a branch
   (`worktree_target_conflict`), and re-produces the executor from that tree, never from main's copy.
-  A reuse answer whose `executor_in_worktree` is `absent` is not evidence: remove the tree and report
-  the blocker. That tree carries its own
+  A creation or reuse answer whose `executor_in_worktree` is `absent` is not evidence: remove the tree
+  and report the blocker. A tree without an executor cannot be trusted to contain its own bootstrap —
+  the bootstrap at that sha may still read a base-directory override from the environment — so never
+  run the base tests on that assumption. That tree carries its own
   `.plan/local` boundary and the executor the same seam produces — best effort, and the payload reports
   `executor_in_worktree`; the copy-from-main fallback is disabled for it, because a copied executor
   carries main's paths and would make a base run cite main's code — so the base tree's own test
@@ -410,7 +412,16 @@ so git alone shows which deliverables are committed.
   shell in the main checkout. The tree at the base commit does NOT contain the test the Done-when
   just added, so copy that committed test file from the plan's worktree into the same path in the
   base tree before the run — it is the plan's own test, not a harness file — and record the failing
-  output that names it; the copy dies with the base tree, the committed test does not. Four forms are
+  output that names it. Then return the base tree to its tracked state BEFORE the cleanliness check,
+  using file tools only — never `git checkout`/`restore`, which the Git rule forbids: when that path is
+  untracked at the base sha, delete the copy; when it is tracked there, save its original content under
+  `.plan/temp/` before overwriting it and copy it back afterwards. Delete the owner marker too before
+  the check. Anything left behind keeps
+  `status --porcelain` dirty and `git worktree remove` refuses. The copy dies with the base tree, the
+  committed test does not. A plan has ONE base tree: as soon as the tree exists, write your
+  `{sender_id}` to `{plan}-base/.plan/local/base-evidence-owner` (inside the boundary, so it never
+  dirties the tree), run its base-evidence work serially, and treat a reuse that finds ANOTHER sender
+  in that marker as a blocker — never as a spare. Four forms are
   NOT allowed, and a Done-when whose failing run used one
   is reported `not evidenced`: a `git clone`; a raw `git worktree add` into `.plan/temp`; a hand-run
   `generate_executor`; and an edit of a harness file in the base copy. The evidence must survive the
@@ -441,7 +452,8 @@ so git alone shows which deliverables are committed.
 - **`.plan/` state.** Write nothing under `.plan/` except `.plan/temp/`, a `ci` body slot at a path a
   `prepare-*` verb returned under `.plan/local/plans/NO_PLAN/work/ci-bodies/` (never a path written by
   hand — the slot must come back from the matching `prepare-body` / `prepare-comment` verb, whether
-  the `pr` or the `issue` one), and your one inbox message (step 8).
+  the `pr` or the `issue` one), the base tree's own `.plan/local/base-evidence-owner` marker (§1), and
+  your one inbox message (step 8).
   Never edit the spec or any file under `.plan/orchestrator/`.
 - **Stay inside the repository.** Never read, list or print anything outside the repository root:
   no credential files, config directories or environment dumps. Those hold secrets, and anything
