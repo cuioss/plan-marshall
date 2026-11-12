@@ -2014,12 +2014,29 @@ def test_standing_rules_drift_baseline_missing_without_bridge(tmp_path: pathlib.
 
 
 def test_standing_rules_drift_baseline_missing_with_bridge(tmp_path: pathlib.Path) -> None:
-    """No baseline but a bridge file reports baseline_missing with no needed bridge."""
-    from opencode_runtime import _bridge_rules_path, standing_rules_drift_status
+    """A bridge that still carries rules drifts when its baseline is gone.
+
+    The writer replaces that bridge with the marker-only stub, so a status that
+    called it current would hide the rewrite setup is about to perform.
+    """
+    from opencode_runtime import _bridge_body, _bridge_rules_path, standing_rules_drift_status
 
     bridge = _bridge_rules_path(tmp_path)
     bridge.parent.mkdir(parents=True)
-    bridge.write_text('bridge-version: 1\n', encoding='utf-8')
+    bridge.write_text(_bridge_body('# baseline\n\ncarried rule\n'), encoding='utf-8')
+
+    status = standing_rules_drift_status(str(tmp_path))
+
+    assert status == {'drift': True, 'needs_bridge': False, 'reason': 'baseline_missing'}
+
+
+def test_standing_rules_drift_baseline_missing_with_stub_bridge(tmp_path: pathlib.Path) -> None:
+    """A marker-only stub is current when there is no baseline to carry."""
+    from opencode_runtime import _bridge_body, _bridge_rules_path, standing_rules_drift_status
+
+    bridge = _bridge_rules_path(tmp_path)
+    bridge.parent.mkdir(parents=True)
+    bridge.write_text(_bridge_body(None), encoding='utf-8')
 
     status = standing_rules_drift_status(str(tmp_path))
 
@@ -2170,8 +2187,26 @@ def test_a_deleted_baseline_replaces_the_bridge_with_the_stub(runtime: OpenCodeR
     result = _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
 
     assert result['bridge_written'] is True
+    assert result['bridge_drift'] is True, 'replacing a bridge that carried rules is drift'
     assert result['bridge_reason'] == 'baseline_missing'
     assert 'stale rule' not in bridge.read_text(encoding='utf-8')
+
+
+def test_setup_reports_drift_for_a_hand_edited_bridge(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
+    """A body edit that keeps the marker and hash is still a bridge setup replaces."""
+    from opencode_runtime import _bridge_rules_path
+
+    (tmp_path / 'CLAUDE.md').write_text('# Project rules\n\nrule\n', encoding='utf-8')
+    first = _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
+    assert first['bridge_written'] is True
+    bridge = _bridge_rules_path(tmp_path)
+    bridge.write_text(bridge.read_text(encoding='utf-8') + '\nhand edit\n', encoding='utf-8')
+
+    result = _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
+
+    assert result['bridge_written'] is True
+    assert result['bridge_drift'] is True, 'a rewrite of an existing bridge is drift even when the hash matches'
+    assert 'hand edit' not in bridge.read_text(encoding='utf-8')
 
 
 def test_doc_surfaces_carry_the_missing_plugin_rule() -> None:

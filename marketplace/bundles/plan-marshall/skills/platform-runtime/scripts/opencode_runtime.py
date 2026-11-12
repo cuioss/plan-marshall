@@ -218,13 +218,28 @@ def standing_rules_drift_status(project_dir: str) -> dict[str, Any]:
     but no recorded hash predates content tracking and is reported as
     ``source_hash_missing`` rather than assumed current. Bridge bytes that are
     not UTF-8 are decoded with replacement, so a malformed bridge is judged
-    rather than raised on.
+    rather than raised on. With no baseline file a bridge that still carries
+    rules is ``drift`` (the writer replaces it with the stub) while the
+    marker-only stub the writer produces is current.
     """
     proj = Path(project_dir).resolve()
     baseline = proj / STANDING_RULES_BASELINE
     bridge = _bridge_rules_path(proj)
     if not baseline.is_file():
-        return {'drift': False, 'needs_bridge': not bridge.is_file(), 'reason': 'baseline_missing'}
+        if not bridge.is_file():
+            return {'drift': False, 'needs_bridge': True, 'reason': 'baseline_missing'}
+        try:
+            stub_candidate = bridge.read_text(encoding='utf-8', errors='replace')
+        except OSError:
+            return {'drift': True, 'needs_bridge': False, 'reason': 'baseline_missing'}
+        # A stub carries no rules, so a deleted baseline loses nothing and the
+        # bridge is current; a bridge that still carries rules is stale — the
+        # writer replaces it with the stub, which is drift.
+        return {
+            'drift': stub_candidate != _bridge_body(None),
+            'needs_bridge': False,
+            'reason': 'baseline_missing',
+        }
     if not bridge.is_file():
         return {'drift': False, 'needs_bridge': True, 'reason': 'bridge_missing'}
     try:
@@ -1582,11 +1597,18 @@ class OpenCodeRuntime(Runtime):
             )
 
         resolved = pathlib.Path(project_dir).resolve()
+        bridge_file = _bridge_rules_path(resolved)
+        bridge_present = bridge_file.is_file()
         # The verdict is taken BEFORE the heal: a setup that rewrites the
         # bridge has just found it drifted, and reporting the post-write
         # ``in_sync`` would tell the operator nothing needed attention.
         drift = standing_rules_drift_status(str(resolved))
         bridge_written = _write_rules_bridge(resolved)
+        # A write over an EXISTING bridge replaced one that differed from what
+        # was written, which is drift however the pre-heal status classified
+        # it. A first write that creates the bridge is not a heal and stays
+        # clean.
+        bridge_drift = drift['drift'] or (bridge_written and bridge_present)
 
         persisted_checkable = False
         persisted_warnings: list[dict[str, Any]] = []
@@ -1610,7 +1632,7 @@ class OpenCodeRuntime(Runtime):
                 'project_dir': str(proj.resolve()),
                 'marshal_written': False,
                 'bridge_written': bridge_written,
-                'bridge_drift': drift['drift'],
+                'bridge_drift': bridge_drift,
                 'bridge_reason': drift['reason'],
                 'settings_path': settings_path,
                 'permissions_applied': defaults.get('applied', False),
