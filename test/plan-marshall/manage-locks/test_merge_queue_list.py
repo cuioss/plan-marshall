@@ -282,8 +282,11 @@ class TestRetentionField:
         _stub_locator(monkeypatch, {'live-plan': 'current', 'marker-only': 'not_found', 'ghost': 'not_found'})
 
         emitted = {entry['retention'] for entry in _queue_list()['entries']}
+        # The vocabulary's owner is `_locks_core`, which declares the closed set;
+        # `merge_lock` re-exports only the members it uses.
+        core = sys.modules[merge_lock.waiter_retention.__module__]
 
-        assert emitted <= merge_lock.RETENTION_STATES
+        assert emitted <= core.RETENTION_STATES
         # Anti-vacuity: every ANSWERABLE member is reachable from staged state, so the
         # subset assertion above is not passing over a one-value population. The fourth
         # member (`unknown`) is pinned by the unanswerable-consult case below, which
