@@ -915,7 +915,15 @@ def test_no_worktree_write_refusal_guard_symbol_present():
 #: locate the SAME line — one asserting its presence, one anchoring a positional
 #: ordering check on it — and a guard edit that updated only one of them would
 #: leave the other silently searching for a string the template no longer has.
-_BUILD_LEDGER_GUARD = 'if _is_build_class_notation(notation, subcommand) and not _mentions_help(script_args):'
+#: The value is CAPTURED before the subprocess runs and reused at the boundary,
+#: so one evaluation governs both the dispatch-time tree capture and the
+#: completion-time ledger row.
+_BUILD_LEDGER_GUARD = (
+    '_is_build_dispatch = _is_build_class_notation(notation, subcommand) and not _mentions_help(script_args)'
+)
+
+#: The boundary's own branch on that captured value.
+_BUILD_LEDGER_BRANCH = 'if _is_build_dispatch:'
 
 
 def test_template_contains_build_ledger_append_at_dispatch_boundary():
@@ -933,9 +941,13 @@ def test_template_contains_build_ledger_append_at_dispatch_boundary():
     # Without it the surface derivation's own `{notation} run --help` probe
     # stamps one phantom kind=build row per build wrapper per regeneration.
     assert _BUILD_LEDGER_GUARD in source, (
-        'main() must guard the ledger append behind '
+        'main() must capture the build-class guard from '
         '_is_build_class_notation(notation, subcommand) AND '
         'not _mentions_help(script_args)'
+    )
+    assert _BUILD_LEDGER_BRANCH in source, (
+        'main() must branch on the captured _is_build_dispatch value so the dispatch-time '
+        'tree capture and the completion-time ledger row cannot disagree'
     )
     assert '_append_build_ledger_record(' in source, (
         'main() must invoke _append_build_ledger_record at the dispatch boundary'
@@ -1015,11 +1027,16 @@ def test_template_build_ledger_append_fires_after_dispatch_not_before():
     assert dispatch_idx != -1, 'subprocess.run dispatch not found in template'
 
     # The call site inside main() is guarded by the predicate; locate the guard
-    # and the call that follows it.
+    # and the call that follows it. The guard's VALUE is captured before the
+    # dispatch (so the tree capture and the row share one evaluation); the
+    # append itself must still come after the dispatch.
     guard_idx = source.find(_BUILD_LEDGER_GUARD)
     assert guard_idx != -1, 'build-class guard not found in main()'
 
-    call_site_idx = source.find('_append_build_ledger_record(', guard_idx)
+    branch_idx = source.find(_BUILD_LEDGER_BRANCH)
+    assert branch_idx != -1, 'build-class branch not found in main()'
+
+    call_site_idx = source.find('_append_build_ledger_record(', branch_idx)
     assert call_site_idx != -1, 'ledger append call site not found after the guard'
 
     assert call_site_idx > dispatch_idx, (

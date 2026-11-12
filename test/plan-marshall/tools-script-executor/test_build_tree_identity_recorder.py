@@ -125,7 +125,7 @@ def worktree(tmp_path) -> Path:
 
 
 @pytest.fixture()
-def ledger_path(tmp_path) -> Path:
+def ledger_path(tmp_path: Path) -> Path:
     return tmp_path / 'change-ledger.jsonl'
 
 
@@ -280,13 +280,14 @@ def test_a_recorder_fault_never_fails_the_build(monkeypatch, ledger_path) -> Non
 
 def _load_gate_module() -> types.ModuleType:
     """Load the freshness gate's command module, unregistered under a unique name."""
-    return load_script_module(
+    module: types.ModuleType = load_script_module(
         'plan-marshall',
         'manage-tasks',
         '_cmd_pre_commit_verify_freshness.py',
         'freshness_gate_tree_identity_round_trip',
         register=False,
     )
+    return module
 
 
 def test_a_main_checkout_dispatch_is_read_fresh_against_the_worktree(

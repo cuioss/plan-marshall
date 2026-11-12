@@ -1563,17 +1563,27 @@ def _redirect_ledger(module, monkeypatch, ledger_path: Path, worktree_sha: str) 
     """Point the boundary writer at ``ledger_path`` and pin ``worktree_sha``.
 
     ``_append_build_ledger_record`` calls ``append_entry(record)`` (no path arg
-    → ``resolve_ledger_path()``) and ``compute_worktree_sha(os.getcwd())``, both
-    resolved from the rendered template module's namespace. Redirect the append
-    to the explicit tmp ``ledger_path`` (via ``append_entry``'s optional ``path``
-    parameter) and pin the currency hash so the test is deterministic and needs
-    no git working tree.
+    → ``resolve_ledger_path()``) and hashes the tree the row describes — the
+    plan's worktree root through the shared plan-context resolver, or the
+    working directory for a plan-less dispatch — both resolved from the rendered
+    template module's namespace. Redirect the append to the explicit tmp
+    ``ledger_path`` (via ``append_entry``'s optional ``path`` parameter) and pin
+    the currency hash so the test is deterministic and needs no git working tree.
     """
     import _ledger_core
 
     real_append = _ledger_core.append_entry
     monkeypatch.setattr(module, 'append_entry', lambda record: real_append(record, path=ledger_path))
     monkeypatch.setattr(module, 'compute_worktree_sha', lambda root: worktree_sha)
+    # A row naming a REAL plan resolves its tree through the shared plan-context
+    # resolver, which would shell out to manage-status; pin the resolver at a
+    # deterministic path under tmp so the stubbed currency hash is all that is
+    # hashed and no case depends on a live plan.
+    monkeypatch.setattr(
+        module,
+        'resolve_plan_context',
+        lambda _plan_id, ensure=False: types.SimpleNamespace(worktree_path=str(ledger_path.parent / 'plan-worktree')),
+    )
 
 
 def test_build_class_dispatch_writes_orchestrator_tier_kind_build_entry(tmp_path, monkeypatch):

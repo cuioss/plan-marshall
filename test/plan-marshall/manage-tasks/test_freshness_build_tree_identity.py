@@ -73,7 +73,8 @@ def _run_gate(plan_context, monkeypatch, tmp_path: Path, row: dict | list[dict])
     _write_status(plan_context.plan_dir_for(_PLAN_ID))
     _stub_worktree_sha(monkeypatch, _CURRENT_SHA)
     _stub_ledger_path(monkeypatch, _write_ledger(tmp_path, rows))
-    return cmd_pre_commit_verify_freshness(Namespace(plan_id=_PLAN_ID))
+    verdict: dict = cmd_pre_commit_verify_freshness(Namespace(plan_id=_PLAN_ID))
+    return verdict
 
 
 def _row(**extra) -> dict:
