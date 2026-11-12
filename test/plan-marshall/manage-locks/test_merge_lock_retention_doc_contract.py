@@ -2,21 +2,25 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Doc-contract pins for the merge-mutex proof and the queue-retention disclosure.
 
-Three facts a reader of the planning corpus acts on, and the documents that must state
-each one where the behaviour lives:
+Three facts a reader of the planning corpus acts on, and the document SECTION that must
+state each one:
 
 * the merge dispatch refuses a caller that does not provably hold the cross-plan merge
   mutex (``manage-locks/SKILL.md`` § ``merge_lock — check`` and
-  ``phase-6-finalize/standards/branch-cleanup.md`` § the pre-merge gate);
+  ``phase-6-finalize/standards/branch-cleanup.md`` § the pre-merge gate and its closed
+  dispatch set);
 * ``queue-list`` reports WHY admission keeps an entry, in a field beside ``liveness``
   (``manage-locks/SKILL.md`` § ``merge_lock — queue-list``);
 * a retained entry has a named exit, and the abandoned-waiter sentence in
-  ``branch-cleanup.md`` states that field and that exit rather than only the hazard.
+  ``branch-cleanup.md`` (§ Merge-Mutex Hold Window) states that field and that exit
+  rather than only the hazard.
 
-Each pin is a phrase the stating section carries. The negative control does not invent
-a check of its own: for every pinned document it plants the document's OWN retired
-wording at the same site and asserts the pin list now reports the statement missing, so
-a pin that could never fail is caught here rather than in a review.
+Each pin is a phrase the STATED section carries, not merely a phrase somewhere in the
+file: a statement pinned document-wide would stay green after moving to a section that
+does not state it. The negative control invents no check of its own — for every pinned
+document it plants that document's OWN retired wording at the same site and asserts the
+pin now reports the statement missing, so a pin that could never fail is caught here
+rather than in a review.
 """
 
 from __future__ import annotations
@@ -30,115 +34,171 @@ from conftest import get_skill_dir
 SKILL_MD = get_skill_dir('plan-marshall', 'manage-locks') / 'SKILL.md'
 BRANCH_CLEANUP_MD = get_skill_dir('plan-marshall', 'phase-6-finalize') / 'standards' / 'branch-cleanup.md'
 
-#: Each pin: the document, a phrase the stating section carries, and the wording the
-#: document carried at that site BEFORE this change (``None`` when the statement is
-#: wholly new, in which case the planted "old sentence" is the sentence's absence).
-PINS: tuple[tuple[Path, str, str | None], ...] = (
+#: Each pin: the document, the heading of the section that must state it, a phrase that
+#: section carries, and the wording the document carried at that site BEFORE this change
+#: (``None`` when the statement is wholly new at that site).
+PINS: tuple[tuple[Path, str, str, str | None], ...] = (
     (
         SKILL_MD,
+        '### merge_lock — check',
         '`pre_merge_gate merge` reads the merge-lock holder through `merge_lock.read_lock_holder`',
         None,
     ),
     (
         SKILL_MD,
+        '### merge_lock — check',
         'A lock held by another plan, an absent lock and an unreadable lock file are three distinct refusals',
         None,
     ),
     (
         SKILL_MD,
+        '### merge_lock — queue-list',
         'Each entry carries `position`, `plan_id`, `ts`, `liveness`, `retention` and `location`.',
         'Each entry carries `position`, `plan_id`, `ts`,\n`liveness` and `location`.',
     ),
     (
         SKILL_MD,
+        '### merge_lock — queue-list',
         'names what KEEPS the entry in the queue',
         None,
     ),
     (
         BRANCH_CLEANUP_MD,
+        '##### The dispatch set is CLOSED',
         'proves this plan holds the cross-plan merge mutex',
         'it evaluates the blocking-findings store and, only on a clean store, issues the verb its `--route` names.',
     ),
     (
         BRANCH_CLEANUP_MD,
+        '#### Pre-merge blocking-findings store gate',
+        'proves this plan holds the cross-plan merge mutex',
+        None,
+    ),
+    (
+        BRANCH_CLEANUP_MD,
+        '#### Pre-merge blocking-findings store gate',
         'it is no longer the only net',
         None,
     ),
     (
         BRANCH_CLEANUP_MD,
+        '## Merge-Mutex Hold Window (widened)',
         "`queue-list`'s `retention` field names the marker that keeps it",
         'because its plan directory still sits in its worktree the dead-waiter prune treats it as live and keeps the entry, so leaving it wedges every plan behind it.',
     ),
     (
         BRANCH_CLEANUP_MD,
+        '## Merge-Mutex Hold Window (widened)',
         "the one named in the `not_fifo_front` reply's `queue_front.exit_command`",
         None,
     ),
 )
 
 
-def _missing_pins(text: str, pins: tuple[tuple[Path, str, str | None], ...]) -> list[str]:
-    """Return the pins ``text`` does not carry, in declaration order."""
-    return [phrase for _document, phrase, _retired in pins if phrase not in text]
+def _section_text(text: str, heading: str) -> str:
+    """Return ``text``'s section for ``heading``, up to the next same-or-higher heading.
+
+    An absent heading yields the empty string, which fails every pin anchored there —
+    the fail-closed direction: a section that vanished states nothing.
+    """
+    target = heading.strip()
+    level = len(target) - len(target.lstrip('#'))
+    collected: list[str] = []
+    inside = False
+    for line in text.splitlines():
+        if not inside:
+            if line.strip() == target:
+                inside = True
+                collected.append(line)
+            continue
+        marker = line.lstrip()
+        if marker.startswith('#'):
+            marker_level = len(marker) - len(marker.lstrip('#'))
+            if marker_level <= level and marker[marker_level : marker_level + 1] == ' ':
+                break
+        collected.append(line)
+    return '\n'.join(collected)
 
 
-def _assert_document_states(text: str, pins: tuple[tuple[Path, str, str | None], ...]) -> None:
-    """Raise when ``text`` does not carry every pinned phrase."""
+def _pins_for(document: Path) -> tuple[tuple[Path, str, str, str | None], ...]:
+    return tuple(pin for pin in PINS if pin[0] == document)
+
+
+def _missing_pins(text: str, pins: tuple[tuple[Path, str, str, str | None], ...]) -> list[str]:
+    """Return the pins ``text`` does not carry IN THE SECTION EACH NAMES."""
+    missing: list[str] = []
+    for _document, heading, phrase, _retired in pins:
+        if phrase not in _section_text(text, heading):
+            missing.append(f'{heading} :: {phrase}')
+    return missing
+
+
+def _assert_document_states(text: str, pins: tuple[tuple[Path, str, str, str | None], ...]) -> None:
+    """Raise when ``text`` does not carry a pinned phrase in the section that states it."""
     missing = _missing_pins(text, pins)
-    assert missing == [], 'the document no longer states: ' + '; '.join(repr(m) for m in missing)
+    assert missing == [], 'the document no longer states: ' + '; '.join(repr(item) for item in missing)
 
 
-@pytest.mark.parametrize('document', sorted({document for document, _phrase, _retired in PINS}, key=str))
+@pytest.mark.parametrize('document', sorted({document for document, *_rest in PINS}, key=str))
 def test_every_pin_holds_on_the_changed_document(document: Path) -> None:
-    """The shipped document states each pinned fact."""
-    pins = tuple((path, phrase, retired) for path, phrase, retired in PINS if path == document)
-
-    _assert_document_states(document.read_text(encoding='utf-8'), pins)
+    """The shipped document states each pinned fact in the section that owns it."""
+    _assert_document_states(document.read_text(encoding='utf-8'), _pins_for(document))
 
 
-@pytest.mark.parametrize('document', sorted({document for document, _phrase, _retired in PINS}, key=str))
+@pytest.mark.parametrize('document', sorted({document for document, *_rest in PINS}, key=str))
 def test_planting_the_retired_wording_reddens_that_document_s_pins(document: Path) -> None:
     """The control: plant the document's own old wording and the pins must fail.
 
     For every pinned statement the document carried before this change, the old
-    sentence is substituted for the pinned one; where the statement is wholly new the
-    planted copy is its absence. Either way the checker must report the pin missing —
-    a pin that survived a plant would be asserting nothing.
+    sentence is substituted for the pinned one IN ITS OWN SECTION; where the statement
+    is wholly new the planted copy is its absence. Either way the checker must report
+    the pin missing — a pin that survived a plant would be asserting nothing.
     """
-    pins = tuple((path, phrase, retired) for path, phrase, retired in PINS if path == document)
+    pins = _pins_for(document)
     text = document.read_text(encoding='utf-8')
-    plantable = [pin for pin in pins if pin[2] is not None]
+    plantable = [pin for pin in pins if pin[3] is not None]
     assert plantable, f'{document} carries no pinned statement with retired wording to plant'
 
-    for _path, phrase, retired in plantable:
+    for _path, heading, phrase, retired in plantable:
         assert retired is not None
         assert retired not in text, (
             f'the retired wording is still present in {document}, so planting it would prove nothing: {retired!r}'
         )
-        planted = text.replace(phrase, retired)
+        planted = text.replace(phrase, retired, 1)
         assert planted != text, f'the pin {phrase!r} was not found in {document}, so nothing was planted'
+        assert phrase not in _section_text(planted, heading), (
+            f'the plant did not remove {phrase!r} from {heading!r}, so the control proves nothing'
+        )
         with pytest.raises(AssertionError):
             _assert_document_states(planted, pins)
 
 
-@pytest.mark.parametrize('document', sorted({document for document, _phrase, _retired in PINS}, key=str))
+@pytest.mark.parametrize('document', sorted({document for document, *_rest in PINS}, key=str))
 def test_planting_an_absence_reddens_a_wholly_new_statement(document: Path) -> None:
     """A statement this change introduced is pinned too: deleting it must redden."""
-    pins = tuple(pin for pin in PINS if pin[0] == document)
+    pins = _pins_for(document)
     text = document.read_text(encoding='utf-8')
 
-    for _path, phrase, _retired in pins:
-        planted = text.replace(phrase, '')
+    for _path, _heading, phrase, _retired in pins:
+        planted = text.replace(phrase, '', 1)
         assert planted != text
         with pytest.raises(AssertionError):
             _assert_document_states(planted, pins)
 
 
-def test_the_pin_census_covers_both_documents() -> None:
-    """Anti-vacuity: both documents are pinned, and each by more than one statement."""
-    per_document: dict[Path, int] = {}
-    for document, _phrase, _retired in PINS:
-        per_document[document] = per_document.get(document, 0) + 1
+def test_every_pinned_section_exists_in_its_document() -> None:
+    """Anti-vacuity: each pinned heading is a real heading, and both documents are pinned.
 
+    Without this, a renamed heading would silently empty a section and every pin
+    anchored there would fail as ``missing`` — correct, but the cause would be opaque.
+    """
+    per_document: dict[Path, list[str]] = {}
+    for document, heading, _phrase, _retired in PINS:
+        per_document.setdefault(document, []).append(heading)
     assert set(per_document) == {SKILL_MD, BRANCH_CLEANUP_MD}
-    assert all(count >= 2 for count in per_document.values()), per_document
+
+    for document, headings in per_document.items():
+        text = document.read_text(encoding='utf-8')
+        for heading in headings:
+            assert _section_text(text, heading), f'{document} has no section {heading!r}'
+        assert len(headings) >= 2, per_document
