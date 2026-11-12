@@ -278,7 +278,7 @@ Read `re_review_on_loopback` (default: `false`) off the returned `params` object
    - `trigger_bots[]` — every bot whose review is out of date, required bots first: the bots named in `{stale_participation_bots}`, joined with the bots that have stored findings when `{head_sha}` differs from `{reviewed_commit_sha}`. A bot in neither `required_bots` nor `optional_bots` is not listed; the return names it in `unclassified_bots[]`.
    - `required_stale_bots[]` — the required bots named in `{stale_participation_bots}`. A bot declaring `review_complete_after_handling` is not among them: its review is on record, so it owes no later head.
    - `review_complete_bots[]` — the flagged bots removed from the candidate population because the producer reports a finished review for them. Nothing is posted for one; the list exists so "done, no trigger owed" is distinguishable from "silent, trigger owed."
-   - `store_scope` — `pr` when the stored-finding join was scoped to `{pr_number}`, `unscoped` when it was not. ⛔ **The plan's findings store spans every PR the plan has worked**, so the join MUST be scoped or a different PR's review is re-triggered as if it were this PR's — which is what `--pr-number` above is for. A row whose PR could not be placed (a finding filed before the producer stamped one) is reported in `unscoped_stored_findings` / `unscoped_stored_finding_ids` and NOT joined: on a plan that spans more than one PR it belongs to no known PR, and assigning it to this one would be the silent join the scoping exists to prevent.
+   - `store_scope` — `pr` when the stored-finding join was scoped to `{pr_number}`, `unscoped` when it was not. ⛔ **The plan's findings store spans every PR the plan has worked**, so the join MUST be scoped or a different PR's review is re-triggered as if it were this PR's — which is what `--pr-number` above is for. A PENDING row whose PR could not be placed (a finding filed before the producer stamped one) is reported in `unscoped_stored_findings` / `unscoped_stored_finding_ids` and NOT joined: on a plan that spans more than one PR it belongs to no known PR, and assigning it to this one would be the silent join the scoping exists to prevent. A legacy row already resolved or rejected is excluded too but is NOT reported — it cannot hide a pending finding.
 
 5. Choose the bots this pass triggers, as `{bots_to_trigger}`:
 
@@ -560,10 +560,16 @@ an unquantified one. Either is `unknown` when unavailable; report it as unknown 
 substituting a default, and read the pair as an order-of-magnitude comparison, since the two carry
 different units by design.
 
+⛔ **Name EVERY unproven required bot, not only the one that refused.** Carry the return's
+`guard_unproven_bots` as the envelope's `{unproven_bots}` set and put that whole list in
+`display_detail`. Accepting the gap authorizes past all of them, so a prompt naming one would let an
+operator accept an absence they were never shown — the rule the pre-merge barrier's structural prompt
+states in the same words.
+
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO \
-  --message "(plan-marshall:automatic-review) refusal recovery SKIPPED — bot {bot_kind} refused STRUCTURALLY (cause=size, cap={cap}, rate_limit_class={rate_limit_class}); returning escalate_ask{reason: refusal_structural} rather than awaiting a diff-size ceiling that waiting does not move"
+  --message "(plan-marshall:automatic-review) refusal recovery SKIPPED — bot {bot_kind} refused STRUCTURALLY (cause=size, cap={cap}, rate_limit_class={rate_limit_class}); unproven_bots={unproven_bots}; returning escalate_ask{reason: refusal_structural} rather than awaiting a diff-size ceiling that waiting does not move"
 ```
 
 #### Branch 1 — `hard_quota` or `unknown` (and `cause` is not `size`): escalate, do not await, do not generate
@@ -1668,7 +1674,7 @@ disjoint from theirs:
 
 ```toon
 status: escalate_ask
-display_detail: "refusal structural — {bot_kind} over cap {cap} (pr {pr_number})"
+display_detail: "refusal structural — {bot_kind} over cap {cap}; unproven {unproven_bots} (pr {pr_number})"
 action: ask
 reason: refusal_structural
 timed_out: false
@@ -1711,6 +1717,7 @@ Field contract:
 - `head_sha`: present only on the `re_review_timeout` variant — the full worktree HEAD SHA the timed-out re-review was awaiting; the unreviewed commit the operator decision applies to. Omitted on the rate-window and structural variants (no HEAD advance is involved).
 - `timed_out`: `true` only for `rate_window_timeout` (a budget genuinely elapsed). `rate_window_await` reports `false` because its wait has not started; `rate_window_not_awaitable`, `rate_window_exhausted`, and `refusal_structural` escalate WITHOUT awaiting, so they report `false` too — reporting a timeout that never happened would misdescribe the escalation.
 - `bot_kind` / `refusal_class`: present on the rate-window and structural variants — which bot refused and under which class, so the operator sees whether the non-participation is awaitable at all.
+- `unproven_bots[]`: present ONLY on the `refusal_structural` variant — every REQUIRED bot the predicate could not prove, not only the one that refused. Accepting the coverage gap authorizes past all of them, so the list is what the operator is actually deciding about, and `display_detail` names it.
 - `expires_at` / `seconds_remaining`: present ONLY on `rate_window_await` — the claim's expiry instant and the seconds left to it, as `merge_lock` reported them. They name what the main-context wait is waiting for; the wait itself re-reads the claim rather than trusting either.
 - `rate_window_arming[]`: present on `rate_window_await`, and on the `rate_window_timeout` handling item 7a derives from it — the two envelopes a claimed window can produce. `rate_window_exhausted` is raised by Branch 2's own `recovery_cap_exhausted` refusal, BEFORE any claim exists, so it never carries a row: the only other route to it is the Branch 3 re-entry consult, and that consult passes `--attempt-held true`, under which the selector never returns `escalate_exhausted`. Same rows and same absence rule as on the main envelope above; `rate_window_not_awaitable` and `refusal_structural` escalate without claiming, so they never carry it either.
 - `refusal_cause` / `cap` / `measured_diff_size`: present ONLY on the `refusal_structural` variant. `refusal_cause` is always `size` there (it is what selected the variant); `cap` is the ceiling the notice stated and `measured_diff_size` is how big the refused diff was, each the literal `unknown` when unavailable. The pair is what makes an accepted gap auditable rather than asserted — and the two carry different units by design, so read them as an order-of-magnitude comparison, never as an equality check.
@@ -1742,9 +1749,9 @@ python3 .plan/execute-script.py plan-marshall:automatic-review:review_completene
 
 `--pr-number` scopes the findings read to one pull request. It is a store-scoping scalar, not a bot
 observation: the store is PLAN-scoped, so a different PR's findings join this PR's verdict unless the
-read is scoped. Omitting it is legal and reported (`store_scope: unscoped`), and a row whose PR could
-not be placed travels in `unscoped_stored_findings` rather than being joined on a plan that spans more
-than one PR.
+read is scoped. Omitting it is legal and reported (`store_scope: unscoped`), and a PENDING row whose
+PR could not be placed travels in `unscoped_stored_findings` rather than being joined on a plan that
+spans more than one PR; a legacy row already resolved or rejected is excluded too but is NOT reported.
 
 `--measured-diff-size` is **not** a list flag: it is a single scalar, because it measures the PR rather
 than a bot. Its value is nonetheless OPTIONAL, for the same transport reason every list flag's is —
@@ -1901,9 +1908,9 @@ the scope fields `store_scope` / `unscoped_stored_findings` / `unscoped_stored_f
 `--pr-number` scopes the stored-finding population to one pull request. The plan's findings store is
 plan-scoped, so without it a bot whose finding was filed for a DIFFERENT PR of the same plan is joined
 and triggered as though that review were out of date for this one. Omitted, every stored finding joins
-and `store_scope` says `unscoped`. A row whose PR could not be placed (written before the producer
-stamped one) is reported in `unscoped_stored_findings` and NOT joined when the store spans more than
-one PR.
+and `store_scope` says `unscoped`. A PENDING row whose PR could not be placed (written before the
+producer stamped one) is reported in `unscoped_stored_findings` and NOT joined when the store spans
+more than one PR; a legacy row already resolved or rejected is excluded too but is NOT reported.
 
 The list is the union of two sources. `--stale-participation-bots` takes the
 `stale_participation_bots[]` field of `github_pr fetch_findings` verbatim, as `bot_kind:evidence_kind`

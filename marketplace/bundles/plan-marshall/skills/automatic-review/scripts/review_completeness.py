@@ -225,8 +225,8 @@ Return TOON shape (trigger-bot):
     unclassified_bots[N]:                # candidates in neither list — not triggered
       - bot
     store_scope: pr|unscoped              # whether the stored-finding join was PR-scoped
-    unscoped_stored_findings: <n>         # emitted only when non-empty — stored rows
-    unscoped_stored_finding_ids[N]:       # whose PR could not be placed (legacy rows
+    unscoped_stored_findings: <n>         # emitted only when non-empty — PENDING stored
+    unscoped_stored_finding_ids[N]:       # rows whose PR could not be placed (legacy rows
       - hash_id                           # on a plan that spans more than one PR)
 
 Return TOON shape (check):
@@ -267,9 +267,11 @@ Return TOON shape (check):
     guard_prompt_options[N]:             # escalation only — never contains a wait
       - <operator option>
     store_scope: pr|unscoped             # whether the findings read was PR-scoped
-    unscoped_stored_findings: <n>        # emitted only when non-empty — stored rows
-    unscoped_stored_finding_ids[N]:      # whose PR could not be placed (legacy rows
+    unscoped_stored_findings: <n>        # emitted only when non-empty — PENDING stored
+    unscoped_stored_finding_ids[N]:      # rows whose PR could not be placed (legacy rows
       - hash_id                          # on a plan that spans more than one PR)
+    foreign_stored_findings: <n>         # emitted only when non-zero — rows filed for
+                                         # OTHER pull requests (a disclosure, never a gate)
 
 Return TOON shape (size-caps):
     status: success
@@ -1224,7 +1226,10 @@ def _scope_findings(findings: list[dict], pr_number: int | None) -> dict:
       population is the distinct numbers the rows DO carry plus ``pr_number`` itself: a
       store holding only PR 5's rows while PR 5 is asked about has one PR, so its legacy
       rows are that PR's; a store holding PR 4's rows while PR 5 is asked about spans
-      two, so its legacy rows are reported as ``unscoped`` rather than assigned.
+      two, so its legacy rows are reported as ``unscoped`` rather than assigned. On a
+      multi-PR store only a ``pending`` legacy row is reported: a resolved or rejected
+      legacy row has already been dispositioned, so it can neither hide a pending
+      finding nor decide this merge.
 
     ⚠ **The test is the STORE's evidence, not a plan-level PR registry — and no such
     registry exists** (``manage-status`` carries no PR field). A plan whose every legacy
@@ -1235,10 +1240,10 @@ def _scope_findings(findings: list[dict], pr_number: int | None) -> dict:
     PR since the field existed, so the population it affects is the pre-stamp tail of a
     plan that has since worked a second PR.
 
-    ⛔ **Unscoped is REPORTED, never joined silently.** A legacy row on a multi-PR plan
-    is a real finding nobody can place, and assigning it to the current PR is exactly
-    the silent join this function exists to stop. It travels back as its hash id so
-    the caller's envelope names it and an operator can act on it.
+    ⛔ **Unscoped is REPORTED, never joined silently.** A PENDING legacy row on a
+    multi-PR plan is a real finding nobody can place, and assigning it to the current PR
+    is exactly the silent join this function exists to stop. It travels back as its hash
+    id so the caller's envelope names it and an operator can act on it.
 
     ``pr_number is None`` means the caller asked no PR-scoped question at all: every
     row joins, and the scope is reported as ``unscoped`` so a reader can see the read
@@ -1269,10 +1274,18 @@ def _scope_findings(findings: list[dict], pr_number: int | None) -> dict:
     legacy_join = len(known_prs) <= 1
     if legacy_join:
         joined.extend(legacy)
+        unscoped: list[str] = []
+    else:
+        # Only a PENDING legacy row can still decide this merge. A resolved or
+        # rejected legacy row has already been dispositioned, so it cannot hide a
+        # pending finding — reporting it unscoped would refuse a merge the store
+        # does not hold a finding against. It is neither joined (its PR is
+        # unknown) nor reported as ambiguous.
+        unscoped = [str(row.get('hash_id') or '') for row in legacy if row.get('resolution') == 'pending']
     return {
         'joined': joined,
         'foreign_count': foreign,
-        'unscoped': [] if legacy_join else [str(row.get('hash_id') or '') for row in legacy],
+        'unscoped': unscoped,
         'known_prs': known_prs,
         'scope': 'pr',
     }
@@ -1912,6 +1925,13 @@ def _emit_toon(payload: dict) -> None:
         # nothing to place, and a permanent ``0`` beside a clean verdict is noise.
         emitted['unscoped_stored_findings'] = len(unscoped)
         emitted['unscoped_stored_finding_ids'] = unscoped
+    # The provenance disclosure, emitted only when the store holds rows filed for
+    # OTHER pull requests. ``pre_merge_gate`` reads this SERIALIZED response through
+    # the executor, so a count held only in the in-process dict would arrive as zero
+    # there and the merge record could never show it.
+    foreign = int(payload.get('foreign_stored_findings') or 0)
+    if foreign:
+        emitted['foreign_stored_findings'] = foreign
 
     print(serialize_toon(emitted))
 
@@ -2404,9 +2424,10 @@ def cmd_trigger_bot(args: argparse.Namespace) -> int:
     - ``--pr-number`` scopes that stored-finding population to the pull request being
       worked. This plan's findings store is plan-scoped, so without it a bot whose
       finding was filed for an EARLIER PR of the same plan is joined and triggered
-      here although nothing about it is out of date for this PR. Unplaceable (legacy,
-      no recorded PR) rows are reported in ``unscoped_stored_findings`` rather than
-      joined when the store spans more than one PR — see :func:`_scope_findings`.
+      here although nothing about it is out of date for this PR. Unplaceable PENDING
+      (legacy, no recorded PR) rows are reported in ``unscoped_stored_findings`` rather
+      than joined when the store spans more than one PR; a settled legacy row is
+      excluded too but is not reported — see :func:`_scope_findings`.
 
     The stored-finding bots are read from the plan's findings store here, not
     supplied by the caller. A store that cannot be read is the same structured
@@ -2730,9 +2751,9 @@ def main(argv: list[str] | None = None) -> int:
             "read to THAT PR's stored findings; the plan's findings store is plan-scoped, "
             'so an earlier PR of the same plan would otherwise join the current one. '
             'Omitted, every stored finding joins and the payload reports '
-            'store_scope: unscoped. A legacy row (no recorded PR) is reported in '
+            'store_scope: unscoped. A PENDING legacy row (no recorded PR) is reported in '
             'unscoped_stored_findings rather than joined when the store spans more than '
-            'one PR.'
+            'one PR; a settled legacy row is excluded too but is not reported.'
         ),
     )
     check_parser.set_defaults(func=cmd_check)

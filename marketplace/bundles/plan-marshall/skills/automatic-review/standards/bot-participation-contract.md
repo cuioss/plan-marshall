@@ -628,19 +628,19 @@ For a comment that names none:
 
 **An unreadable merge candidate withholds the credit on EVERY arm, not on one of them.** With no
 readable head SHA there is no commit for any arm to anchor against: a recorded SHA has nothing to
-equal, an edit proves a fresh review of *something* without saying of what, and a first observation
+equal, an edit says only that the bot touched its comment and credits nothing, and a first observation
 cannot be tied to the tree being merged. All of them therefore fail closed, and the bot is reported as
 `undecidable_participation` rather than as stale, since a re-review trigger cannot fix a failed read.
 The uniformity is itself load-bearing: failing closed on every arm is what keeps the verdict stable
 across a failed read, because a later fetch that likewise cannot resolve the head reaches the same
 blocking answer instead of flipping.
 
-A comment recorded against an **earlier** commit, unedited, fails the test. Because the test is an SHA
-comparison rather than a first-seen tally, re-running the fetch at the same HEAD — for as long as that
-HEAD stays resolvable — returns the same answer, so the credit no longer depends on how many times the
-plan has looked. Losing the ability to read the head is the one thing that moves the answer, and it
-moves it to the undecidable outcome rather than to a credit. No participation path reads the
-observation ledger (`observed_keys`) as a currency signal.
+A comment recorded against an **earlier** commit fails the test, edited or not: an edit credits
+nothing. Because the test is an SHA comparison rather than a first-seen tally, re-running the fetch at
+the same HEAD — for as long as that HEAD stays resolvable — returns the same answer, so the credit no
+longer depends on how many times the plan has looked. Losing the ability to read the head is the one
+thing that moves the answer, and it moves it to the undecidable outcome rather than to a credit. No
+participation path reads the observation ledger (`observed_keys`) as a currency signal.
 
 A failed currency test is **not the same as no evidence at all**, and the taxonomy keeps the two
 apart: the bot published in a declared shape, so the producer reports it in
