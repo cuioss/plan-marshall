@@ -990,8 +990,8 @@ class BotRegistry:
         This flag is NOT :meth:`quota_limited`. A quota-limited bot also reviews
         under an allowance, but it is still expected to review the current head when
         it can; this flag states the stronger rule that the handled review itself
-        completes the obligation. A bot declaring neither keeps the behaviour it had
-        before either flag existed.
+        completes the obligation. A bot declaring neither is re-triggered whenever
+        HEAD advances, and its review is expected to cover the current head.
 
         False (the default) for a bot whose record omits the field, declares it
         empty, or declares a non-boolean. Fail-closed in that direction on purpose:

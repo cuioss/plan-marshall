@@ -66,13 +66,18 @@ co-tenants the same store, and the storeless ``poll-delay`` computation:
     bounded call and adds ``waited_seconds`` + ``timed_out``), until admitted or its
     budget is exhausted, then the Pre-Merge Gate's
     ``AskUserQuestion`` last-resort escape hatch fires. ``blocked_reason`` (one of
-    :data:`BLOCKED_REASONS`) is what separates the two causes the single ``blocked``
-    label used to collapse: only the lock-contended one has a blocking plan to name,
+    :data:`BLOCKED_REASONS`) is what separates the three causes the single ``blocked``
+    label used to collapse: only the lock-contended ones have a blocking plan to name,
     so ``blocking_plan_id: null`` beside a non-zero ``waiting_count`` is EXPLAINED by
-    the payload rather than reading as a contradiction. A genuine error (resolution
+    the payload rather than reading as a contradiction; the ``not_fifo_front``
+    cause also carries ``queue_front`` — the entry in front with its ``liveness``,
+    its ``retention`` reason and the ``merge_lock dequeue`` command that withdraws
+    it. A genuine error (resolution
     failure, unremovable file) stays ``status: error``.
   * ``check`` — a non-blocking holder read: ``status: free`` when no lock file
-    exists, ``status: held`` + ``holder_plan_id`` when one does. Never attempts
+    exists, ``status: held`` + ``holder_plan_id`` when one does, and
+    ``status: unreadable`` when the path could not be read as a holder.
+    Never attempts
     to create or mutate the lock, and never touches the FIFO queue. On the
     ``held`` branch it also surfaces the authoritative main-anchored ``staleness``
     verdict (``fresh`` / ``stale`` / ``unknown``) so the manual-release recovery
@@ -81,7 +86,10 @@ co-tenants the same store, and the storeless ``poll-delay`` computation:
     ``check`` deliberately does not touch. Returns the ``waiting`` entries in FIFO
     (arrival) order, each with its holder's liveness resolved through
     ``git-workflow locate-plan-checkout`` — never a raw plans-directory read, which
-    is the re-implementation that pruned a live sibling plan's slot. It mutates
+    is the re-implementation that pruned a live sibling plan's slot — and each with
+    the ``retention`` reason the admission prune consults, beside that liveness, so
+    a retained entry and a pruned one are distinguishable from the payload alone. It
+    mutates
     nothing under any input, reports a point-in-time snapshot and says so in its
     own payload, and takes no ``--plan-id``: it asks about the queue, not about one
     plan.
@@ -311,12 +319,14 @@ from pathlib import Path
 from typing import Any
 
 from _locks_core import (
+    RETENTION_NONE,
     held_guard,
     holder_has_live_worktree,
     holder_is_dead,
     holder_staleness,
     log_lock_event,
     rmw_json,
+    waiter_retention,
 )
 from file_ops import get_executor_path
 from manage_terminal_title import TITLE_TOKEN_GLYPHS
@@ -508,16 +518,14 @@ def _prune_dead_waiting(waiting: list[dict[str, Any]]) -> list[dict[str, Any]]:
     — its entry is never released (the crash skipped the release), so without this
     prune it would block every live waiter behind it forever.
 
-    The live-worktree guard (:func:`_locks_core.holder_has_live_worktree`) narrows
-    the prune: a waiter judged dead-by-plan-dir but whose worktree directory is
-    still on disk may be MID-RECOVERY (an interrupted finalize move-back moved the
-    plan dir out but left the worktree), so it is RETAINED rather than silently
-    pruned. Only a waiter that is both plan-dir-dead AND worktree-absent is
-    genuinely gone and dropped.
+    RETAINED is everything the shared :func:`_locks_core.waiter_retention`
+    predicate does not answer ``none`` for — the plan-dir liveness above, the
+    worktree marker that may be a mid-recovery holder, and a consult that could not
+    be answered at all. Naming the retention through the SAME predicate
+    ``queue-list`` publishes as its ``retention`` field is what keeps the retainer
+    and the reporter from disagreeing about whether an entry is alive.
     """
-    return [
-        e for e in waiting if not holder_is_dead(e.get('plan_id', '')) or holder_has_live_worktree(e.get('plan_id', ''))
-    ]
+    return [e for e in waiting if waiter_retention(e.get('plan_id', '')) != RETENTION_NONE]
 
 
 def _fifo_front(waiting: list[dict[str, Any]]) -> dict[str, Any] | None:
@@ -549,10 +557,12 @@ def _enqueue_fifo(plan_id: str, ts: float) -> dict[str, Any]:
     to the back, mirroring ``build_queue.run_acquire``'s idempotent re-poll
     fast-path). Only a plan with no existing entry is appended to ``waiting`` with
     a fresh admit-``ts``. Returns a small outcome dict carrying ``is_front`` (True
-    when this plan is the FIFO front and therefore admission-eligible) and
-    ``waiting_count`` (the post-mutation queue depth) for the caller's ``[LOCK]``
-    correlation. The FIFO mutation is entirely inside ``rmw_json`` so two sessions
-    cannot both observe the same queue pre-state and both decide they are front.
+    when this plan is the FIFO front and therefore admission-eligible),
+    ``front_plan_id`` (the entry that IS the front, so a blocked reply can name what
+    holds the waiter) and ``waiting_count`` (the post-mutation queue depth) for the
+    caller's ``[LOCK]`` correlation. The FIFO mutation is entirely inside
+    ``rmw_json`` so two sessions cannot both observe the same queue pre-state and
+    both decide they are front.
 
     **Sibling-key preservation.** The mutator MERGES its ``waiting`` result into
     the state it was handed (``{**state, 'waiting': waiting}``) rather than
@@ -571,6 +581,10 @@ def _enqueue_fifo(plan_id: str, ts: float) -> dict[str, Any]:
             waiting.append({'plan_id': plan_id, 'ts': ts})
         front = _fifo_front(waiting)
         outcome['is_front'] = front is not None and front['plan_id'] == plan_id
+        # The entry a NON-front waiter is queued behind, read from the same
+        # post-mutation queue: only the front may attempt the lock, so it is the one
+        # entry that decides when this plan can advance.
+        outcome['front_plan_id'] = front['plan_id'] if front is not None else None
         outcome['waiting_count'] = len(waiting)
         return {**state, 'waiting': waiting}
 
@@ -912,11 +926,75 @@ def _release_rate_window(plan_id: str, bot_kind: str) -> dict[str, Any]:
 
 
 def _read_holder(lock_path: Path) -> str:
-    """Read the recorded holder from the lock file (best effort, '' on error)."""
+    """Read the recorded holder from the lock file (best effort, '' on error).
+
+    The best-effort projection of :func:`read_lock_holder`: callers that act on
+    "who holds it" without having to prove an identity keep their long-standing ''
+    shape, while the one reader below owns how the file is read.
+    """
+    return read_lock_holder(lock_path).get('holder') or ''
+
+
+#: The closed vocabulary :func:`read_lock_holder` publishes as ``state``.
+#:
+#: - ``held`` — the lock file exists and names a holder.
+#: - ``absent`` — no lock file at that path.
+#: - ``unreadable`` — the path could not be read as a holder: a read fault
+#:   (permission, a directory in its place, an unreadable parent, an I/O error),
+#:   bytes that are not UTF-8, or a file naming no holder. Existence is deliberately
+#:   not required for this answer — a parent nobody can traverse is not proof of
+#:   absence.
+#:   ⛔ NOT a synonym for ``absent``: a consumer that must PROVE it holds the lock
+#:   cannot read "a file nobody can read" as "no lock at all".
+HOLDER_HELD = 'held'
+HOLDER_ABSENT = 'absent'
+HOLDER_UNREADABLE = 'unreadable'
+HOLDER_STATES = frozenset({HOLDER_HELD, HOLDER_ABSENT, HOLDER_UNREADABLE})
+
+
+def read_lock_holder(lock_path: Path | None = None) -> dict[str, Any]:
+    """Read the merge-lock holder without mutating anything — three-valued.
+
+    The read-only holder query an authority-bearing consumer asks: is a lock there,
+    WHO holds it, or can it not be read at all. It never creates, reclaims or
+    removes anything, and it never touches the FIFO queue.
+
+    ``absent`` and ``unreadable`` are separate answers on purpose. A caller that
+    must prove it holds the mutex cannot treat "no lock file" and "a lock file
+    nobody can read" as the same state, so the distinction is made HERE, at the one
+    place the file is read, rather than by each consumer re-deriving the file's
+    shape. A file that exists but names no holder (empty, or whitespace only) is
+    ``unreadable`` for the same reason: it proves nothing about who holds it.
+
+    The read itself is the existence test: a missing file raises
+    ``FileNotFoundError`` and is ``absent``, while a read fault — a directory in the
+    lock's place, a permission fault, an unreadable parent, a byte sequence that is
+    not UTF-8 — is ``unreadable``. That ordering is what makes the three states total
+    rather than guessed.
+
+    Args:
+        lock_path: The lock file to read. Resolved against the MAIN checkout when
+            omitted (the shared main-anchored resolver, cwd-independent).
+
+    Returns:
+        ``{'state': 'held'|'absent'|'unreadable', 'holder': str|None,
+        'lock_path': str}``, plus ``error`` naming the fault on the
+        ``unreadable`` branch.
+    """
+    path = lock_path if lock_path is not None else _resolve_main_lock_path()
+    verdict: dict[str, Any] = {'state': HOLDER_ABSENT, 'holder': None, 'lock_path': str(path)}
     try:
-        return lock_path.read_text(encoding='utf-8').strip()
-    except OSError:
-        return ''
+        holder = path.read_text(encoding='utf-8').strip()
+    except FileNotFoundError:
+        return verdict
+    except (OSError, UnicodeError) as exc:
+        # UnicodeError is a ValueError, not an OSError: a lock file whose bytes are
+        # not UTF-8 is a holder nobody can read, and it must not escape as a crash
+        # from a query whose contract is three total answers.
+        return {**verdict, 'state': HOLDER_UNREADABLE, 'error': f'lock file unreadable: {exc}'}
+    if not holder:
+        return {**verdict, 'state': HOLDER_UNREADABLE, 'error': 'lock file names no holder'}
+    return {**verdict, 'state': HOLDER_HELD, 'holder': holder}
 
 
 def _try_atomic_create(lock_path: Path, holder: str) -> bool:
@@ -1321,15 +1399,17 @@ def _admitted_result(plan_id: str, action: str, lock_path: Path, reclaimed: bool
 
 
 #: The closed vocabulary every ``admission: blocked`` payload publishes as
-#: ``blocked_reason``. Two causes hide behind the one ``blocked`` label, and only
-#: one of them has a blocking plan to name:
+#: ``blocked_reason``. Three causes hide behind the one ``blocked`` label, and only
+#: ``not_fifo_front`` has no blocking plan to name — the two lock-contended causes
+#: name the holder:
 #:
 #: - ``not_fifo_front`` — this plan is not the queue front, so it never attempted
 #:   the ``O_EXCL`` create. There is no blocking plan BY CONSTRUCTION: what blocks
 #:   it is its own queue position, not a holder. ``blocking_plan_id`` is therefore
 #:   routinely ``null`` beside a ``waiting_count`` above zero, and that pairing —
-#:   which read as a self-contradiction when the two causes shared one label — is
-#:   explained by this reason rather than needing to be diagnosed by hand.
+#:   which read as a self-contradiction when the causes shared one label — is
+#:   explained by this reason rather than needing to be diagnosed by hand. This is
+#:   also the only cause whose reply carries ``queue_front``.
 #: - ``lock_held_by_live_holder`` — this plan IS the front and lost the ``O_EXCL``
 #:   race (or its stale reclaim) to a live foreign holder. That holder is named in
 #:   ``blocking_plan_id``.
@@ -1358,6 +1438,7 @@ def _blocked_result(
     *,
     blocked_reason: str,
     stale_holder_live_worktree: bool = False,
+    queue_front: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build the ``admission: blocked`` structured re-poll payload (NOT an error).
 
@@ -1365,7 +1446,9 @@ def _blocked_result(
     ``O_EXCL`` create against a foreign live holder. The consumer's poll/backoff
     loop re-polls (idempotently preserving FIFO position) against this signal until
     admitted or its wait budget is exhausted, then fires the Pre-Merge Gate's
-    last-resort ``AskUserQuestion`` carrying ``blocking_plan_id``.
+    last-resort ``AskUserQuestion`` naming the entry ahead — ``queue_front.plan_id``
+    on the ``not_fifo_front`` cause, ``blocking_plan_id`` (the lock holder) on the
+    other two.
 
     ``blocked_reason`` is REQUIRED and is one of :data:`BLOCKED_REASONS` — the
     machine-readable cause. It is not optional because the whole point is that the
@@ -1380,6 +1463,13 @@ def _blocked_result(
     operator to confirm rather than the primitive force-releasing a mid-recovery
     holder. The ordinary non-front / foreign-live-holder blocked payload omits the
     field entirely.
+
+    ``queue_front`` (default None) describes the entry a NON-front waiter is queued
+    behind — its plan id, ``liveness``, ``retention`` and the ``merge_lock dequeue``
+    command that withdraws it. Without it a waiter polls its whole budget against
+    an entry that will never leave on its own with nothing naming it; the ordinary
+    foreign-holder and stale-guard branches carry no queue-front entry and omit the
+    field.
     """
     result: dict[str, Any] = {
         'status': 'blocked',
@@ -1392,7 +1482,38 @@ def _blocked_result(
     }
     if stale_holder_live_worktree:
         result['stale_holder_live_worktree'] = True
+    if queue_front is not None:
+        result['queue_front'] = queue_front
     return result
+
+
+def _queue_front_detail(front_plan_id: str) -> dict[str, Any]:
+    """Describe the FIFO-front entry a blocked waiter is queued behind.
+
+    Names the entry, its liveness, WHY admission keeps it (the same
+    :func:`_locks_core.waiter_retention` predicate ``queue-list`` publishes) and the
+    command that withdraws it, so a waiter held behind an entry that will never
+    leave on its own learns that from the reply instead of polling to its budget.
+
+    A liveness consult that cannot be answered reads ``unknown`` — never
+    ``not_live``, on the shared rule that an unanswerable consult is not evidence of
+    death.
+    """
+    try:
+        liveness, location = _entry_liveness(front_plan_id)
+    # Broad by intent: this is a DISCLOSURE read on a blocked reply. Any failure of
+    # the locator hop must not turn a structured re-poll signal into a crash, and
+    # ``unknown`` is the honest answer for a read nobody could complete.
+    except Exception:
+        liveness, location = LIVENESS_UNKNOWN, None
+    return {
+        'plan_id': front_plan_id,
+        'position': 0,
+        'liveness': liveness,
+        'location': location,
+        'retention': waiter_retention(front_plan_id),
+        'exit_command': f'merge_lock dequeue --plan-id {front_plan_id}',
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -1522,6 +1643,10 @@ def _attempt_acquire(plan_id: str, set_title_token: bool) -> dict[str, Any]:
     # plan may contend for the lock, so a non-front plan never races the kernel.
     if not enqueue['is_front']:
         holder = _read_holder(lock_path) if lock_path.exists() else ''
+        front_plan_id = enqueue.get('front_plan_id')
+        # Name the entry this plan is queued behind, so a waiter held by an entry
+        # that can never leave on its own is told so instead of polling to budget.
+        queue_front = _queue_front_detail(front_plan_id) if isinstance(front_plan_id, str) else None
         _surface_lock_waiting(plan_id, set_title_token)
         log_lock_event(
             'merge',
@@ -1539,6 +1664,7 @@ def _attempt_acquire(plan_id: str, set_title_token: bool) -> dict[str, Any]:
             lock_path,
             waiting_count,
             blocked_reason=BLOCKED_NOT_FIFO_FRONT,
+            queue_front=queue_front,
         )
 
     # This plan is the FIFO front → it is admission-eligible. Attempt the atomic
@@ -1631,10 +1757,13 @@ def run_check(args: Namespace) -> dict[str, Any]:
     """Non-blocking read of the current merge-lock holder, with a staleness verdict.
 
     Reads the lock file without attempting to create or mutate it, and never
-    touches the FIFO queue. Returns ``status: free`` when no lock file exists, or
+    touches the FIFO queue. Returns ``status: free`` when no lock file exists,
     ``status: held`` + ``holder_plan_id`` when one does (including a self-held
-    lock). On the ``held`` branch it also surfaces the authoritative main-anchored
-    ``staleness`` verdict (``fresh`` / ``stale`` / ``unknown``, from
+    lock), and ``status: unreadable`` + ``error`` when the path could not be read
+    as a holder — the three-valued answer :func:`read_lock_holder`
+    publishes, which a caller proving ownership needs and a bare holder-or-``None``
+    read cannot give. On the ``held`` branch it also surfaces the authoritative
+    main-anchored ``staleness`` verdict (``fresh`` / ``stale`` / ``unknown``, from
     :func:`_locks_core.holder_staleness`) so the manual-release recovery recipe
     consults an authoritative, cwd-independent signal instead of a cwd-scoped
     ``manage-status list`` / ``worktree-list`` enumeration. This serves the
@@ -1647,18 +1776,26 @@ def run_check(args: Namespace) -> dict[str, Any]:
     except RuntimeError as exc:
         return make_error(str(exc), code=ErrorCode.NOT_FOUND, plan_id=plan_id)
 
-    if not lock_path.exists():
+    read = read_lock_holder(lock_path)
+    if read['state'] == HOLDER_ABSENT:
         return {
             'status': 'free',
             'plan_id': plan_id,
             'lock_path': str(lock_path),
         }
+    if read['state'] == HOLDER_UNREADABLE:
+        return {
+            'status': HOLDER_UNREADABLE,
+            'plan_id': plan_id,
+            'error': read.get('error'),
+            'lock_path': str(lock_path),
+        }
 
-    holder = _read_holder(lock_path)
+    holder = str(read['holder'])
     return {
         'status': 'held',
         'plan_id': plan_id,
-        'holder_plan_id': holder or None,
+        'holder_plan_id': holder,
         'staleness': holder_staleness(holder),
         'lock_path': str(lock_path),
     }
@@ -1748,6 +1885,16 @@ def run_queue_list(_args: Namespace) -> dict[str, Any]:  # args unused: store-wi
     IS arrival order (see :func:`_fifo_front`) — and are NOT re-sorted by ``ts``,
     ``plan_id``, or liveness. ``position`` is the 0-based index, so position ``0``
     is the front and the only admission-eligible entry.
+
+    Each entry carries TWO readings of its holder, deliberately different:
+    ``liveness`` (does a checkout hold the plan) and ``retention`` (WHY admission
+    keeps its queue entry). A holder with no checkout whose worktree still carries
+    a ``.git`` marker reads ``liveness: not_live`` and ``retention: git_marker``:
+    the pruning logic keeps it as a possible mid-recovery worktree, so an operator
+    who reads only ``liveness`` sees a dead holder beside a blocked queue with
+    nothing explaining it. ``retention`` comes from the same
+    :func:`_locks_core.waiter_retention` predicate the admission prune consults, so
+    the two cannot disagree about which entries survive.
     """
     try:
         queue_path = _resolve_merge_queue_path()
@@ -1766,6 +1913,7 @@ def run_queue_list(_args: Namespace) -> dict[str, Any]:  # args unused: store-wi
                 'ts': entry['ts'],
                 'liveness': liveness,
                 'location': location,
+                'retention': waiter_retention(entry['plan_id']),
             }
         )
 

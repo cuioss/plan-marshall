@@ -104,10 +104,23 @@ def _reconcile_standing_rules_bridge(harness: str, project_dir: Path) -> bool:
     :func:`bridge_reemit_command` for a stub that survived the setup writers;
     the installed target rules are never judged damaged for lacking a bridge
     marker. Claude carries no bridge file — its CLAUDE.md baseline is
-    authoritative — so the reconcile is a no-op success there. Returns True
+    authoritative — so the reconcile is a no-op success there. An OpenCode
+    project whose `CLAUDE.md` exists but cannot be decoded is not reconciled: the
+    bridge marker alone cannot show the bridge still matches a baseline this
+    process cannot read. Returns True
     only when the bridge is current.
     """
     proj = project_dir.resolve()
+    if harness == 'opencode':
+        # An unreadable baseline is not certifiable: setup keeps the existing
+        # bridge, and the recorded marker alone cannot show the bridge still
+        # matches a baseline this process cannot read.
+        baseline = proj / 'CLAUDE.md'
+        if baseline.is_file():
+            try:
+                baseline.read_text(encoding='utf-8')
+            except (OSError, UnicodeDecodeError):
+                return False
     if harness == 'claude':
         return (proj / 'CLAUDE.md').is_file()
     if harness == 'antigravity':

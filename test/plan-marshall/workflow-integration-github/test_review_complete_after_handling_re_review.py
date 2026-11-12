@@ -6,18 +6,20 @@ both halves of that rule at the two places a request can originate:
 
 - ``request_fresh_review`` — the one post chokepoint — refuses a flagged bot whose
   qualifying review is already on record on this pull request, and posts nothing; a
-  pull request with no qualifying review is triggered exactly as before, and so is
-  every bot without the flag.
+  pull request with no qualifying review is triggered, and so is every bot without
+  the flag.
 - ``resolve_recovery_action`` — the refusal derivation — settles a flagged bot with
   a credited or stale review instead of returning the trigger arm, while leaving
   every other bot's derivation unchanged.
 
-A qualifying review is the producer's own admitted evidence: a comment in one of the
-bot's declared ``participation_evidence`` publish shapes, carrying that shape's
-declared content marker where one is declared. A walkthrough posted before a review
-completes carries no declared marker and is not admitted; a refusal, an acknowledgment
-and a skip notice are not declared publish shapes at all. Those are the shapes that
-must keep the first trigger reachable.
+A qualifying review is the one reader's verdict (``_github_pr.is_finished_review``):
+a comment in one of the bot's declared ``participation_evidence`` publish shapes,
+carrying that shape's declared content marker where one is declared, and — for a
+formal review record — naming the commit it reviewed, in the provider's ``commit_id``
+or in a readable finished coverage marker that names one. A walkthrough posted before
+a review completes carries no declared marker and is not admitted; a refusal, an
+acknowledgment and a skip notice are never evidence for this question, whatever shape
+they arrive in. Those are the artifacts that must keep the first trigger reachable.
 """
 
 from __future__ import annotations
@@ -135,16 +137,35 @@ def test_a_marker_bearing_finished_review_refuses_the_trigger(monkeypatch):
     assert result['escalated'] is False
 
 
-def test_a_formal_review_record_refuses_the_trigger(monkeypatch):
-    """A review record is admitted evidence whatever commit it names — the head is not asked."""
+def test_a_formal_review_record_with_a_commit_refuses_the_trigger(monkeypatch):
+    """A review record is admitted evidence when it names the commit it reviewed.
+
+    The head is not asked: a review of an earlier commit is still a finished review.
+    """
     posted = _record_posts(monkeypatch)
-    _history(monkeypatch, [_comment('review_body', 'findings here', commit_id='')])
+    _history(monkeypatch, [_comment('review_body', 'findings here', commit_id=_EARLIER)])
 
     result = _request('coderabbit', monkeypatch)
 
     assert posted == []
     assert result['status'] == 'refused'
     assert result['reason'] == 'review_on_record_done'
+
+
+def test_a_formal_review_record_without_a_commit_does_not_refuse_the_trigger(monkeypatch):
+    """⛔ MOVED TO THE AGREED READING — an empty commit names no head.
+
+    The old reading admitted any non-refusal formal review here, while the producer
+    left the bot out of ``finished_review_bots`` and ``trigger-bot`` listed it. That
+    disagreement is the loop this plan closes.
+    """
+    posted = _record_posts(monkeypatch)
+    _history(monkeypatch, [_comment('review_body', 'findings here', commit_id='')])
+
+    result = _request('coderabbit', monkeypatch)
+
+    assert result['status'] == 'success'
+    assert posted == [(_PR, '@coderabbitai review')]
 
 
 def test_the_escalated_command_is_refused_too(monkeypatch):

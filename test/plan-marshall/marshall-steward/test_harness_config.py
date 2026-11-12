@@ -421,7 +421,11 @@ def test_dispatch_damaged_stub_returns_damaged_verdict(plan_env, monkeypatch: py
 
     import opencode_runtime
 
-    monkeypatch.setattr(opencode_runtime, '_write_rules_bridge', lambda _project_dir: False)
+    monkeypatch.setattr(
+        opencode_runtime,
+        '_write_rules_bridge',
+        lambda _project_dir: opencode_runtime._BridgeWrite(written=False, replaced=False),
+    )
 
     res = ch.dispatch_platform_runtime_setup('opencode', project_dir)
 
@@ -438,7 +442,11 @@ def test_outdated_bridge_version_is_damaged(plan_env, monkeypatch: pytest.Monkey
 
     import opencode_runtime
 
-    monkeypatch.setattr(opencode_runtime, '_write_rules_bridge', lambda _project_dir: False)
+    monkeypatch.setattr(
+        opencode_runtime,
+        '_write_rules_bridge',
+        lambda _project_dir: opencode_runtime._BridgeWrite(written=False, replaced=False),
+    )
 
     assert ch._reconcile_standing_rules_bridge('opencode', project_dir) is False
     assert ch.dispatch_platform_runtime_setup('opencode', project_dir)['bridge_verdict'] == 'damaged'
@@ -611,6 +619,20 @@ def test_configure_harness_stops_writers_when_setup_reports_failure(plan_env, mo
     assert calls == ['project_initial_setup']
     assert res['setup_failed'] is True
     assert res['bridge_verdict'] == 'missing'
+
+
+def test_an_unreadable_baseline_is_never_certified_current(plan_env):
+    """An unreadable CLAUDE.md is not certified: the marker alone cannot show a match."""
+    project_dir = plan_env['project_dir']
+    bridge = project_dir / '.opencode' / 'rules' / 'plan-marshall-standing-rules.md'
+    bridge.parent.mkdir(parents=True, exist_ok=True)
+    bridge.write_text('# bridge\n\nbridge-version: 1\n', encoding='utf-8')
+    (project_dir / 'CLAUDE.md').write_bytes(b'\xff\xfe not utf-8')
+
+    res = ch.dispatch_platform_runtime_setup('opencode', project_dir)
+
+    assert ch._reconcile_standing_rules_bridge('opencode', project_dir) is False
+    assert res['bridge_verdict'] != 'current', 'an unreadable baseline is not a verified bridge'
 
 
 def test_configure_harness_persisted_approval_warnings_in_result(plan_env, monkeypatch: pytest.MonkeyPatch):

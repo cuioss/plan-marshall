@@ -6,6 +6,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+import yaml
 
 from conftest import PROJECT_ROOT, load_script_module
 from marketplace.targets.opencode.frontmatter import (
@@ -19,6 +20,12 @@ from marketplace.targets.opencode.frontmatter import (
     transform_command_frontmatter,
     transform_skill_frontmatter,
 )
+
+#: The base policy an OpenCode 2 agent's ruleset begins with, observed at
+#: ``opencode v2.2.7`` (``GET /api/agent/execution-context-reader``): every
+#: action on every resource is allowed unless a later rule denies it. A
+#: restriction is therefore an explicit ``deny`` row, never an omitted grant.
+BASE_POLICY: dict[str, str] = {'action': '*', 'resource': '*', 'effect': 'allow'}
 
 # The closed `mode` vocabulary, read from the rule that OWNS it rather than
 # restated here. The plugin-doctor analyzer that fails a skill with no `mode`
@@ -113,33 +120,92 @@ class TestParseFrontmatter:
 # ---------------------------------------------------------------------------
 
 
-class TestToolPermissionMapping:
-    def test_known_tools_are_validated_and_emit_no_rule(self, mapping: dict[str, dict], rules: dict[str, list[str]]):
-        """A mapped tool is accepted, and no grant is emitted for it.
+def _rules(result: str) -> list[dict[str, str]]:
+    """Return the emitted ``permissions`` list from a transformed agent block."""
+    parsed = yaml.safe_load(result.split('---')[1])
+    assert isinstance(parsed, dict), 'the emitted frontmatter is not a mapping'
+    rules = parsed.get('permissions')
+    assert rules is None or isinstance(rules, list), 'permissions is not a list'
+    return rules or []
 
-        A grant can only be a ``resource: "*"`` catch-all for one action, and
-        agent rules are appended after the global ones, so any such grant
-        re-decides a resource a global deny already decided.
-        """
-        fm = {
-            'description': 'agent',
-            'tools': 'Read, Write, Bash',
-        }
-        result = transform_agent_frontmatter(fm, mapping, rules, source_label='agents/x.md')
-        assert 'description: agent' in result
-        assert 'permissions:' not in result
-        assert 'effect: allow' not in result
 
-    def test_a_duplicate_tool_mapping_does_not_change_the_result(
+def _effect(rules: list[dict[str, str]], action: str) -> str:
+    """Evaluate *action* the way OpenCode 2 does: base policy first, last match wins."""
+    hits = [rule for rule in [BASE_POLICY, *rules] if rule['action'] in (action, '*')]
+    return hits[-1]['effect']
+
+
+class TestToolRestrictionExpression:
+    """An agent's declared ``tools`` is expressed as the denies it leaves over."""
+
+    def test_a_restricted_agent_denies_what_it_does_not_grant(
         self, mapping: dict[str, dict], rules: dict[str, list[str]]
     ):
-        fm = {
-            'description': 'agent',
-            # Write and Edit both map to 'edit'
-            'tools': 'Write, Edit',
-        }
-        result = transform_agent_frontmatter(fm, mapping, rules, source_label='agents/x.md')
-        assert 'permissions:' not in result
+        """The reader's source grants read/web only, so edit and shell are denied.
+
+        The base policy is allow-all, so an omitted grant restricts nothing; the
+        emitted ``deny`` rows are what make the restriction real.
+        """
+        fm = {'description': 'reader', 'tools': 'WebSearch, WebFetch, Read, Grep'}
+        emitted = transform_agent_frontmatter(fm, mapping, rules, source_label='agents/reader.md')
+
+        emitted_rules = _rules(emitted)
+        assert _effect(emitted_rules, 'edit') == 'deny', 'the reader has no Write/Edit'
+        assert _effect(emitted_rules, 'shell') == 'deny', 'the reader has no Bash'
+        for action in ('webfetch', 'websearch', 'read', 'grep'):
+            assert _effect(emitted_rules, action) != 'deny', f'{action} is granted and must not be denied'
+
+    def test_an_agent_granting_bash_carries_no_shell_deny(self, mapping: dict[str, dict], rules: dict[str, list[str]]):
+        fm = {'description': 'agent', 'tools': 'Read, Write, Bash'}
+        emitted_rules = _rules(transform_agent_frontmatter(fm, mapping, rules, source_label='agents/x.md'))
+
+        assert emitted_rules, 'the emitter must express the restriction, not emit nothing'
+        assert _effect(emitted_rules, 'shell') == 'allow'
+        assert not [rule for rule in emitted_rules if rule['action'] == 'shell']
+
+    @pytest.mark.parametrize(
+        'tools',
+        [
+            'Read, Write, Bash',
+            'WebSearch, WebFetch, Read, Grep',
+            'Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion, Skill',
+            'Monitor',
+        ],
+    )
+    def test_emission_carries_no_allow_and_no_ask_row(
+        self, tools: str, mapping: dict[str, dict], rules: dict[str, list[str]]
+    ):
+        """The emitter never emits a grant of either kind (PLAN-LB-134's hazard)."""
+        emitted_rules = _rules(
+            transform_agent_frontmatter(
+                {'description': 'agent', 'tools': tools}, mapping, rules, source_label='agents/x.md'
+            )
+        )
+
+        assert emitted_rules, 'the emitter must express the restriction, not emit nothing'
+        assert all(rule['effect'] == 'deny' for rule in emitted_rules), emitted_rules
+
+    def test_a_duplicate_tool_mapping_emits_one_row_per_action(
+        self, mapping: dict[str, dict], rules: dict[str, list[str]]
+    ):
+        """``Write`` and ``Edit`` share the ``edit`` action, so a deny appears once."""
+        # Neither tool is granted, so the shared action is denied exactly once.
+        ungranted = _rules(
+            transform_agent_frontmatter(
+                {'description': 'agent', 'tools': 'Read'}, mapping, rules, source_label='agents/x.md'
+            )
+        )
+        actions = [rule['action'] for rule in ungranted]
+        assert actions.count('edit') == 1, 'Write and Edit must not emit two edit rows'
+        assert len(actions) == len(set(actions))
+
+        # Granting both shared-mapping tools leaves the shared action out entirely.
+        granted = _rules(
+            transform_agent_frontmatter(
+                {'description': 'agent', 'tools': 'Write, Edit'}, mapping, rules, source_label='agents/x.md'
+            )
+        )
+        assert 'edit' not in [rule['action'] for rule in granted]
 
     def test_unmapped_tool_raises(self, mapping: dict[str, dict], rules: dict[str, list[str]]):
         fm = {'description': 'agent', 'tools': 'Read, BogusTool'}
@@ -147,6 +213,7 @@ class TestToolPermissionMapping:
             transform_agent_frontmatter(fm, mapping, rules, source_label='agents/x.md')
 
     def test_no_tools_field_omits_permission_block(self, mapping: dict[str, dict], rules: dict[str, list[str]]):
+        """An agent that declares no restriction emits none — it grants nothing and denies nothing."""
         fm = {'description': 'agent'}
         result = transform_agent_frontmatter(fm, mapping, rules, source_label='agents/x.md')
         assert 'permissions:' not in result
@@ -155,9 +222,11 @@ class TestToolPermissionMapping:
 class TestTargetAbsentToolDisposition:
     """A `tool_permissions` key present with `null` is the target-absent sentinel.
 
-    The Claude tool exists but has no OpenCode analog, so the transform emits no
-    permission entry for it and does NOT raise. The fail-closed guard is narrowed
-    to a *missing key*, not removed.
+    The Claude tool exists but has no OpenCode analog, so it adds no grant and no
+    row of its own, and does NOT raise. The fail-closed guard is narrowed to a
+    *missing key*, not removed. An agent whose only tool is target-absent holds
+    no OpenCode capability at all, so the fail-closed direction is to deny the
+    mapped universe rather than leave the base policy's allow-all standing.
     """
 
     def test_target_absent_tool_transforms_without_raising(self, mapping: dict[str, dict], rules: dict[str, list[str]]):
@@ -165,20 +234,20 @@ class TestTargetAbsentToolDisposition:
         result = transform_agent_frontmatter(fm, mapping, rules, source_label='agents/x.md')
         assert 'description: agent' in result
 
-    def test_target_absent_tool_emits_no_permission_line(self, mapping: dict[str, dict], rules: dict[str, list[str]]):
+    def test_target_absent_tool_adds_no_row_of_its_own(self, mapping: dict[str, dict], rules: dict[str, list[str]]):
         fm = {'description': 'agent', 'tools': 'Monitor'}
         result = transform_agent_frontmatter(fm, mapping, rules, source_label='agents/x.md')
-        assert 'permissions:' not in result
-        assert 'Monitor' not in result
+        assert 'monitor' not in result.lower()
+        assert all(rule['action'] != 'monitor' for rule in _rules(result))
 
-    def test_target_absent_tool_alongside_mapped_tools_emits_no_rule(
+    def test_target_absent_tool_alongside_mapped_tools_adds_no_grant(
         self, mapping: dict[str, dict], rules: dict[str, list[str]]
     ):
         fm = {'description': 'agent', 'tools': 'Read, Monitor, Bash'}
-        result = transform_agent_frontmatter(fm, mapping, rules, source_label='agents/x.md')
-        assert 'description: agent' in result
-        assert 'permissions:' not in result
-        assert 'effect: allow' not in result
+        emitted_rules = _rules(transform_agent_frontmatter(fm, mapping, rules, source_label='agents/x.md'))
+        assert all(rule['effect'] == 'deny' for rule in emitted_rules)
+        assert _effect(emitted_rules, 'read') == 'allow'
+        assert _effect(emitted_rules, 'shell') == 'allow'
 
     def test_genuinely_unknown_tool_still_raises(self, mapping: dict[str, dict], rules: dict[str, list[str]]):
         """The fail-closed guard survives: a MISSING key still raises."""

@@ -129,6 +129,10 @@ def render_variant_frontmatter(
     or the ``inherit`` sentinel, no ``model:`` (and never a ``reasoningEffort:``)
     is emitted and the variant dispatches on the session model. ``level``
     selects the pin from the caller's pin map; the filename carries the level.
+
+    The tool restriction travels with the copy: every variant renders through
+    ``transform_agent_frontmatter``, so each ``-level-N`` file carries the same
+    ``deny`` rows its canonical does. A pin changes the model, never the tools.
     """
     variant_fm = dict(fm)
     variant_fm.pop('implements', None)

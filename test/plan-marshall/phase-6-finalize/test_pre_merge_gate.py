@@ -36,6 +36,25 @@ _PLAN_ID = 'pre-merge-gate-plan'
 _PROJECT_DIR = '/abs/worktree'
 _HEAD = 'abc1234def5678'
 
+
+@pytest.fixture(autouse=True)
+def _merge_mutex_held_by_this_plan(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Autouse: stand in for the merge-mutex reader, answering "held by this plan".
+
+    Every test in this module is about the store, head or participation logic, so
+    each one needs the mutex proof satisfied and none of them should depend on
+    whether the machine running the suite happens to hold the real repository's
+    ``.plan/local/merge.lock``. The proof itself is exercised by
+    ``test_pre_merge_gate_merge_lock_proof.py``, which drives the REAL reader
+    against an isolated main-anchored base.
+    """
+    monkeypatch.setattr(
+        gate,
+        '_merge_lock_holder_read',
+        lambda: {'state': 'held', 'holder': _PLAN_ID, 'lock_path': '<test>'},
+    )
+
+
 _CLEAN_VERDICT = {'status': 'success', 'plan_id': _PLAN_ID, 'phase': '6-finalize', 'blocking_count': 0}
 
 _BLOCKING_VERDICT = {

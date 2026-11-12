@@ -586,6 +586,137 @@ def review_coverage_names_commit(body: str) -> bool:
     return bool(covered)
 
 
+def _is_participation_evidence(comment: dict, bot_kind: str) -> bool:
+    """True if ``comment`` is ADMISSIBLE participation evidence for ``bot_kind``.
+
+    Two registry reads, both generic — no bot name appears here:
+
+    1. SHAPE — the comment's ``kind`` is one of the publish shapes the bot declares
+       in ``participation_evidence``.
+    2. CONTENT — when the bot declares ``participation_evidence_markers`` entries for
+       THAT shape, the body carries at least one of the declared literals. A shape a
+       bot publishes both before its review completes and after it finishes credits
+       only the artifact carrying a finished-review literal, so a pre-review
+       walkthrough in a declared shape is not evidence. An undeclared shape is
+       FAIL-OPEN and credits on the shape alone (see
+       ``bot_registry.participation_evidence_markers_for``).
+
+    This is the admissibility question only. The refusal exclusion and the
+    ``participation_requires_update`` currency test stay at the call site, because
+    they answer different questions: a refusal is admissible-shaped but is evidence
+    of NON-participation, and the currency test decides WHICH commit an admissible
+    comment reviewed. A comment this predicate rejects is therefore neither
+    credited nor stale — it is not a review artifact at all.
+    """
+    kind = comment.get('kind') or 'inline'
+    if kind not in bot_registry.participation_evidence(bot_kind):
+        return False
+    markers = bot_registry.participation_evidence_markers_for(bot_kind, kind)
+    if not markers:
+        return True
+    body = str(comment.get('body') or '')
+    return any(marker in body for marker in markers)
+
+
+def is_finished_review(comment: dict, bot_kind: str) -> bool:
+    """Whether ``comment`` is a FINISHED review by ``bot_kind`` — the ONE reader.
+
+    The done rule rests on one question — is a finished review on record — and this
+    is its only answer. The producer builds ``github_pr`` ``finished_review_bots[]``
+    with it, the post chokepoint (``github_re_review._qualifying_review_on_record``)
+    and the runbook lane's ``review-gate --required-reviewer`` check ask it too, so
+    the three sites cannot answer a formal review differently.
+
+    A comment is a finished review only when ALL of these hold:
+
+    - it is not a refusal notice that carries no readable finished marker. A refusal
+      submitted as a review object proves the bot did NOT review; the one exception
+      is a body that is a refusal AND carries a readable finished marker, which
+      CodeRabbit publishes when its summary keeps a later limit notice beside its
+      verdict (:func:`review_coverage_is_finished`). The refusal test is
+      :func:`_is_refusal_notice` — the producer's own — never the enumerative arm,
+      which runs at a different pipeline position and answers a different question.
+    - it is admissible participation evidence for the bot (:func:`_is_participation_evidence`):
+      the comment's kind is one of the bot's declared publish shapes, and carries
+      that shape's declared content marker where one is declared.
+    - a ``review_body`` names the commit it reviewed, in the provider's
+      ``commit_id`` or in a readable finished coverage marker that names one. An
+      empty commit names no head, so it is no finished review.
+    - an ``issue_comment`` carries a readable finished coverage marker that names a
+      covered commit (:func:`review_coverage_names_commit`).
+
+    Any other kind — an inline comment on its own, a walkthrough in an undeclared
+    shape — is not a finished review. An inline comment is a line comment BY a
+    review, and the review it belongs to carries the artifact this reads.
+    """
+    body = str(comment.get('body') or '')
+    if _is_refusal_notice(body, bot_kind) and not review_coverage_is_finished(body):
+        return False
+    if not _is_participation_evidence(comment, bot_kind):
+        return False
+    kind = comment.get('kind') or 'inline'
+    if kind == 'review_body':
+        return bool(str(comment.get('commit_id') or '').strip()) or review_coverage_names_commit(body)
+    if kind == 'issue_comment':
+        return review_coverage_names_commit(body)
+    return False
+
+
+#: A CommonMark fence run: three or more backticks or tildes.
+_FENCE_RUN = re.compile(r'`{3,}|~{3,}')
+
+
+def strip_fenced_regions(body: str) -> str:
+    """Remove fenced code blocks from a body a DISPLAY read flattened.
+
+    ``github_ops.flatten_comment_body`` replaces every newline with a space, so the
+    line-based fence reader cannot see the original lines. This reads fence state from
+    the fence RUNS themselves, conservatively:
+
+    - a run that STARTED a line in the original — here, one at the start of the body or
+      preceded by whitespace — may OPEN a fence;
+    - a run that ENDED a line in the original — here, one followed by whitespace or the
+      end of the body — may CLOSE it, when it uses the same character and is at least as
+      long as the opener.
+
+    A run that is neither — the `` ```not-a-close `` in `` ```text ```not-a-close … ``` ``
+    — is prose, exactly as the raw reader treats it. Re-inserting line boundaries
+    around every run instead would split that run onto a line of its own and make it a
+    closer, turning a quoted marker into a claim.
+
+    Text between an opener and its closer is removed, and an UNTERMINATED fence removes
+    everything to the end. A marker inside a quoted example therefore cannot be read as
+    the bot's own claim, and the failure direction is to withhold a review, never to
+    credit a quote.
+    """
+    text = body or ''
+    removals: list[tuple[int, int]] = []
+    opened: tuple[str, int, int] | None = None  # (character, length, start)
+    for match in _FENCE_RUN.finditer(text):
+        run = match.group(0)
+        character, length = run[0], len(run)
+        preceded_by_space = match.start() == 0 or text[match.start() - 1].isspace()
+        followed_by_space = match.end() == len(text) or text[match.end()].isspace()
+        if opened is None:
+            if preceded_by_space:
+                opened = (character, length, match.start())
+            continue
+        if followed_by_space and character == opened[0] and length >= opened[1]:
+            removals.append((opened[2], match.end()))
+            opened = None
+    if opened is not None:
+        removals.append((opened[2], len(text)))
+    if not removals:
+        return text
+    pieces: list[str] = []
+    cursor = 0
+    for start, end in removals:
+        pieces.append(text[cursor:start])
+        cursor = end
+    pieces.append(text[cursor:])
+    return ' '.join(pieces)
+
+
 def review_coverage_verdict(body: str, head_sha: str) -> bool | None:
     """Return what a review-coverage marker says about ``head_sha``, or no verdict.
 

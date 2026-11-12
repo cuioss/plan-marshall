@@ -3842,9 +3842,11 @@ def cmd_preflight(args: argparse.Namespace) -> dict:
       and ``executor_version`` are both readable, it derives ``marshal_status``
       from that pair — ``stale`` when the executor is ahead of the provisioned
       config seed, ``fresh`` otherwise — instead of reporting ``unknown`` over a
-      measurable drift. Only when neither version is readable does it report
-      ``marshal_status: unknown``. The warning is emitted on stderr and carried
-      in the return, and no verdict claims a freshness it cannot substantiate.
+      measurable drift. The ``unversioned`` stamp is an answered absence and does
+      NOT count as readable here: a pair holding it measures nothing. Only when
+      EITHER version is unreadable does it report ``marshal_status: unknown``. The
+      warning is emitted on stderr and carried in the return, and no verdict
+      claims a freshness it cannot substantiate.
 
     Multiple plugin-cache version dirs no longer trigger a preflight
     regeneration or any marker write: the executor resolves bundle script paths
@@ -3916,7 +3918,14 @@ def cmd_preflight(args: argparse.Namespace) -> dict:
     if installed_version == 'unknown':
         probe_paths = installed_manifest_probe_paths(base_path, target=resolved_target)
         probed = ', '.join(str(path) for path in probe_paths)
-        if marshal_version not in ('', 'unknown') and executor_version not in ('', 'unknown'):
+        # The generator's ``unversioned`` stamp is an ANSWERED absence, not a
+        # readable version: a "pair" holding it would derive a verdict from a
+        # comparison against nothing, which is exactly the vacuous freshness the
+        # docstring forbids. Treat it like an unreadable side — on EITHER side,
+        # because ``marshal.json`` can carry the legacy stamp too.
+        executor_readable = executor_version not in ('', 'unknown', UNVERSIONED_SENTINEL)
+        marshal_readable = marshal_version not in ('', 'unknown', UNVERSIONED_SENTINEL)
+        if marshal_readable and executor_readable:
             # The executor is the artifact a cache advance rewrites; an executor
             # ahead of the provisioned config seed is the drift the manifest
             # comparison would otherwise have measured.

@@ -21,8 +21,13 @@ Validation contract:
     ``tool_permissions``, raise ``UnmappedToolError`` so the CLI exits 2.
   * If an agent declares a tool whose ``tool_permissions`` key is present
     with a ``null`` value, that is the **target-absent** sentinel: the
-    Claude tool has no OpenCode analog. No permission entry is emitted for
-    it and no error is raised.
+    Claude tool has no OpenCode analog. No grant is recorded for it and no
+    error is raised.
+
+An agent that declares ``tools`` emits one ``deny`` rule per OpenCode action in
+the mapped universe that the source does not grant, and no ``allow`` or ``ask``
+row: the client's base policy is allow-all, so the denies are what express the
+restriction (see :func:`_deny_rows`).
 
 The body of the source markdown is returned untouched — body-text
 transforms are owned by the target-shared ``body_transform_engine``.
@@ -293,6 +298,61 @@ def transform_skill_frontmatter(
     return '\n'.join(lines)
 
 
+def _deny_rows(tool_permissions: dict[str, str | None], tools_raw: str) -> list[dict[str, str]]:
+    """Return the ``deny`` rules that express an agent's declared ``tools``.
+
+    An OpenCode 2 agent's ruleset begins with the client's base policy,
+    ``{action: "*", resource: "*", effect: allow}``, so an omitted grant
+    restricts nothing: a restriction is an explicit ``deny``. For every action
+    in the mapped universe the source does not grant, one
+    ``{action, resource: "*", effect: deny}`` row is emitted. A ``deny`` cannot
+    weaken a global ``deny`` for the same action — it only adds a later deny —
+    so it cannot re-open what PLAN-LB-134 closed by dropping the grants.
+
+    The universe is read from ``tool_permissions`` (the non-null values), never
+    hard-coded, so a tool the target cannot express adds no row. Order follows
+    the mapping file, and duplicates collapse — ``Write`` and ``Edit`` share
+    the ``edit`` action.
+    """
+    granted = {mapped for tool in _split_tools(tools_raw) if (mapped := tool_permissions.get(tool)) is not None}
+    universe: list[str] = []
+    for mapped in tool_permissions.values():
+        if mapped is not None and mapped not in universe:
+            universe.append(mapped)
+    return [{'action': action, 'resource': '*', 'effect': 'deny'} for action in universe if action not in granted]
+
+
+def _permission_block(fm: dict[str, str], mapping: dict[str, dict], source_label: str) -> list[str]:
+    """Return the frontmatter lines that express an agent's declared ``tools``.
+
+    An empty list means there is nothing to express: no ``tools`` field, or a
+    field whose every mapped action is granted. An unmapped tool raises
+    ``UnmappedToolError`` so the CLI exits with code 2.
+    """
+    tools_raw = fm.get('tools', '')
+    if not tools_raw:
+        return []
+    tool_permissions = mapping['tool_permissions']
+    unknown = [tool for tool in _split_tools(tools_raw) if tool not in tool_permissions]
+    if unknown:
+        raise UnmappedToolError(f'{source_label}: unmapped tool(s) in frontmatter: {", ".join(unknown)}')
+    denies = _deny_rows(tool_permissions, tools_raw)
+    if not denies:
+        return []
+    lines = ['permissions:']
+    lines.extend(
+        '\n'.join(
+            [
+                f'  - action: {row["action"]}',
+                '    resource: "' + row['resource'] + '"',
+                f'    effect: {row["effect"]}',
+            ]
+        )
+        for row in denies
+    )
+    return lines
+
+
 def transform_agent_frontmatter(
     fm: dict[str, str],
     mapping: dict[str, dict],
@@ -302,18 +362,18 @@ def transform_agent_frontmatter(
 ) -> str:
     """Transform Claude agent frontmatter into OpenCode 2 form.
 
-    Claude ``tools`` declarations are validated against
-    ``mapping['tool_permissions']`` and then deliberately emit NO permission
-    rule. OpenCode 2 appends an agent's rules AFTER the global ones, and a rule
-    there can only be a ``resource: "*"`` catch-all for one action — which
-    re-decides every resource a global ``deny`` already decided, including the
-    protected-path denies `permission fix protect-path` writes. The agent's own
-    base policy already decides what an unlisted action may do, so an emitted
-    grant adds no capability and costs the global denies.
+    An agent that declares ``tools`` carries one ``deny`` rule per OpenCode
+    action in the mapped universe that the source does not grant (see
+    :func:`_deny_rows`); it carries no ``allow`` and no ``ask`` row. The
+    client's base policy is allow-all, so the denies are what make the emitted
+    agent express the restriction its source declares. A ``deny`` for an action
+    the agent lacks only adds a deny after any global deny for it; it cannot
+    weaken one. An agent with no ``tools`` field emits no permission block.
 
     A tool with no key in ``tool_permissions`` raises ``UnmappedToolError``
     so the CLI exits with code 2; a key present with ``null`` is the
-    target-absent sentinel (the Claude tool has no OpenCode analog).
+    target-absent sentinel (the Claude tool has no OpenCode analog, so it adds
+    no grant and no row).
     """
     _ensure_required(fm, rules, source_label)
 
@@ -326,15 +386,7 @@ def transform_agent_frontmatter(
         if resolved:
             lines.append(f'model: {resolved}')
 
-    tools_raw = fm.get('tools', '')
-    if tools_raw:
-        unknown: list[str] = []
-        for tool in _split_tools(tools_raw):
-            mapped = mapping['tool_permissions'].get(tool, _TOOL_KEY_MISSING)
-            if mapped is _TOOL_KEY_MISSING:
-                unknown.append(tool)
-        if unknown:
-            raise UnmappedToolError(f'{source_label}: unmapped tool(s) in frontmatter: {", ".join(unknown)}')
+    lines.extend(_permission_block(fm, mapping, source_label))
 
     lines.append('---')
     return '\n'.join(lines)

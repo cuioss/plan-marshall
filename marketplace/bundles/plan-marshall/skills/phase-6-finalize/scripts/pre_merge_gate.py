@@ -25,7 +25,9 @@ Return shape (CLI emits TOON; programmatic callers consume the dict directly):
   (``error: blocking_findings_present`` with ``blocking_count`` /
   ``blocking_types`` / ``per_type``, ``error: query_failed``, or any other
   refusal the verdict source returns) plus ``dispatched: false``. The merge
-  runner was never invoked;
+  runner was never invoked. The mutex proof's own refusal —
+  ``error: merge_lock_not_held`` with the ``holder`` it read and the ``remedy`` —
+  travels the same shape;
 * the gate passed — the routed verb's payload verbatim plus
   ``findings_gate: clean`` and ``dispatched: true``. Branch on the verb's own
   ``status`` from here, exactly as on a direct verb call.
@@ -56,6 +58,16 @@ the payload names the kind that was relied on, so the step record can say so.
 grant lookup. An EMPTY roster is never read as a pass either: the verdict states
 whether the roster was READ, and a roster nobody could read is a refusal rather
 than a vacuous quorum.
+
+**The same dispatch also proves THIS PLAN HOLDS THE MERGE MUTEX.** A clean store,
+a gated head and a proven roster say nothing about whether the caller owns the
+cross-plan serializer: the merge may only be issued by the plan holding
+``merge_lock``. The gate reads the holder through that module's own read-only
+holder query (:func:`_merge_lock_holder_read`) and refuses with
+:data:`MERGE_LOCK_NOT_HELD` — naming the holder it read, the plan id it asked
+about and the remedy — unless the recorded holder is this plan. A lock held by
+another plan, an absent lock and an unreadable lock are three distinct refusals,
+and the last two fail closed.
 
 Two further subcommands keep the merge path's WORDING in this script rather than
 in an agent's hands:
@@ -133,6 +145,13 @@ MERGE_HEAD_NOT_GATED = 'merge_candidate_not_gated'
 #: HEAD-bound authorization can cover, while a state nobody could READ is not
 #: authorizable at all.
 MERGE_PARTICIPATION_UNPROVEN = 'merge_participation_unproven'
+
+#: Refusal code for a merge this plan cannot prove it may issue: the cross-plan
+#: merge mutex is held by ANOTHER plan, is absent, or cannot be read. One code for
+#: all three because the disposition is the same — acquire, then merge only on
+#: ``admission: admitted`` — and the payload's ``holder`` field names which of them
+#: it was (``{plan_id}`` / ``none`` / ``unreadable``).
+MERGE_LOCK_NOT_HELD = 'merge_lock_not_held'
 
 #: The gap class the pre-merge review barrier reports, and the only class that
 #: covers a participation gap. A recorded authorization over it admits the merge
@@ -1755,6 +1774,68 @@ def _findings_refusal(plan_id: str, findings_check: FindingsCheck | None) -> dic
     return None
 
 
+def _merge_lock_holder_read() -> dict[str, Any]:
+    """Ask the lock module's own reader who holds the cross-plan merge mutex.
+
+    ``merge_lock`` lives in another skill's script directory, so the import is
+    LAZY and guarded: an executor that cannot load it proves nothing about who
+    holds the lock, and a read that raises proves nothing either. Both answer
+    ``unreadable``, which the gate refuses on — never a pass, and never a crash on
+    the merge path.
+    """
+    try:
+        import merge_lock
+    except Exception as exc:  # any import failure is an unreadable lock, not a free one
+        return {'state': 'unreadable', 'holder': None, 'error': f'merge_lock module unreadable: {exc}'}
+    try:
+        return dict(merge_lock.read_lock_holder())
+    except Exception as exc:  # any read fault is an unreadable lock, not a held one
+        return {'state': 'unreadable', 'holder': None, 'error': f'merge-lock holder read failed: {exc}'}
+
+
+def _merge_lock_refusal(plan_id: str) -> dict[str, Any] | None:
+    """Refuse a merge this plan cannot prove it may issue, or ``None``.
+
+    The merge dispatch is the one site that advances a tree to the base branch, and
+    the cross-plan merge mutex exists to serialize exactly that. Until this check
+    ran, the only reader of the mutex's admission result was prose in
+    ``branch-cleanup.md``, so a run that chained the enqueue after an
+    ``admission: blocked`` answer merged anyway.
+
+    The holder is read through ``merge_lock``'s own reader — the gate never
+    re-derives the lock file's shape. A lock held by another plan, an absent lock
+    and an unreadable lock are three distinct refusals under one code, told apart
+    by the ``holder`` field (``{plan_id}`` / ``none`` / ``unreadable``), and the
+    last two fail closed.
+    """
+    read = _merge_lock_holder_read()
+    state = read.get('state')
+    if state == 'held' and read.get('holder') == plan_id:
+        return None
+    if state == 'held':
+        holder = str(read.get('holder') or 'unreadable')
+        detail = f'the cross-plan merge mutex is held by {holder}'
+    elif state == 'absent':
+        holder = 'none'
+        detail = 'no merge-lock file exists'
+    else:
+        holder = 'unreadable'
+        detail = f'the merge-lock file could not be read ({read.get("error") or "unknown read fault"})'
+    return {
+        'status': 'error',
+        'error': MERGE_LOCK_NOT_HELD,
+        'plan_id': plan_id,
+        'holder': holder,
+        'dispatched': False,
+        'remedy': 'merge_lock acquire, then read admission',
+        'message': (
+            f'{detail}, so this plan does not provably hold it and nothing was dispatched. '
+            f'Run `merge_lock acquire --plan-id {plan_id}` and merge only on '
+            '`admission: admitted`.'
+        ),
+    }
+
+
 def merge(
     plan_id: str,
     *,
@@ -1774,6 +1855,13 @@ def merge(
     classifier: ClassifierRunner | None = None,
 ) -> dict[str, Any]:
     """Issue the routed merge verb only when every pre-merge invariant is proven.
+
+    Five invariants, in this order: the invocation fits its route, this plan
+    provably holds the cross-plan merge mutex, the blocking-findings store is clean
+    on both readings, the merge candidate is the HEAD the head-dependent gates
+    validated, and every required reviewer's participation is proven. The mutex
+    proof runs before every other read, so a caller that does not hold the mutex is
+    named without paying for a store query or a provider fetch.
 
     Args:
         plan_id: Plan whose ``6-finalize`` findings store is evaluated. Not
@@ -1817,6 +1905,14 @@ def merge(
     )
     if refusal is not None:
         return refusal
+
+    # The mutex proof: the dispatch is legal only for the plan that owns the
+    # serializer. Asked first, before the store query and long before the
+    # participation fetch, so a caller that does not hold the mutex is named
+    # without paying for a provider read.
+    refusal_from_lock = _merge_lock_refusal(plan_id)
+    if refusal_from_lock is not None:
+        return refusal_from_lock
 
     refusal_from_store = _findings_refusal(plan_id, findings_check)
     if refusal_from_store is not None:
@@ -1957,17 +2053,18 @@ def build_parser() -> argparse.ArgumentParser:
     """Build the argparse parser with the merge-dispatch subcommands."""
     parser = argparse.ArgumentParser(
         description=(
-            'Evaluate the 6-finalize blocking-findings, head-binding and required-bot '
-            'participation invariants and, only when all three are proven, issue the routed '
-            'merge verb (ci pr safe-merge or ci pr merge-queue). Also renders and writes the '
-            'merge path wording the pre-merge questions and the step record carry.'
+            'Evaluate the blocking-findings, merge-mutex ownership, head-binding and '
+            'required-bot participation invariants and, only when all four are proven, '
+            'issue the routed merge verb (ci pr safe-merge or ci pr merge-queue). Also '
+            'renders and writes the merge path wording the pre-merge questions and the '
+            'step record carry.'
         ),
         allow_abbrev=False,
     )
     sub = parser.add_subparsers(dest='command_name', required=True)
     merge_parser = sub.add_parser(
         'merge',
-        help='Gate the merge dispatch on a clean store, a gated head and proven participation',
+        help='Gate the merge dispatch on a held mutex, a clean store, a gated head and proven participation',
         allow_abbrev=False,
     )
     merge_parser.add_argument('--plan-id', required=True, dest='plan_id', help='Plan identifier')

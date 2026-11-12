@@ -960,6 +960,76 @@ def test_a_flattened_summary_marker_names_its_commit() -> None:
     assert verdict['merge_allowed'] is True
 
 
+def test_a_marker_quoted_inside_a_fenced_block_is_not_a_qualifying_review() -> None:
+    """⛔ Flattening erases the fence lines, so the re-split must restore them too.
+
+    A marker quoted inside a fenced example is not the bot's own claim. Reading it as
+    one would let a walkthrough that shows the marker — as documentation, not as a
+    verdict — satisfy the done precondition and merge a pull request nobody reviewed.
+    """
+    flattened = 'A summary explains the marker: ```text ' + _finished_marker_body() + ' ``` and nothing else.'
+
+    verdict = _verdict(_read(_issue_comment(flattened)), reviewers=('coderabbit',))
+
+    assert verdict['merge_allowed'] is False
+    assert verdict['reason'] == 'required_review_missing'
+
+
+def test_a_flattened_body_keeps_a_marker_outside_any_fence() -> None:
+    """MATCHED CONTROL — the same marker outside a fence is still the bot's claim."""
+    flattened = 'Prose with a fenced example: ```text code ``` and then ' + _finished_marker_body()
+
+    verdict = _verdict(_read(_issue_comment(flattened)), reviewers=('coderabbit',))
+
+    assert verdict['merge_allowed'] is True
+
+
+def test_a_flattened_body_with_several_comments_splits_at_each_boundary() -> None:
+    """HOLDS AT THE BASE: every `<!--` boundary is restored, not only the first."""
+    flattened = 'first <!-- cr-comment:v1:aaaaaaaaaaaaaaaaaaaaaaaa --> second ' + _finished_marker_body()
+
+    verdict = _verdict(_read(_issue_comment(flattened)), reviewers=('coderabbit',))
+
+    assert verdict['merge_allowed'] is True
+
+
+def test_a_fence_like_run_in_prose_is_not_a_closing_fence() -> None:
+    """⛔ ```` ```not-a-close ```` is prose, not a closer.
+
+    Re-inserting a line boundary after every fence run would split that run onto its
+    own line and close the block, so the quoted marker would become the bot's claim.
+    The raw reader closes only a run with nothing after it; the flattened reader must
+    agree.
+    """
+    flattened = (
+        '```text ```not-a-close <!-- final_review_risk_coverage:'
+        '{"coveredCommitId":"' + 'a' * 40 + '","kind":"reviewed"} --> ```'
+    )
+
+    verdict = _verdict(_read(_issue_comment(flattened)), reviewers=('coderabbit',))
+
+    assert verdict['merge_allowed'] is False
+    assert verdict['reason'] == 'required_review_missing'
+
+
+def test_an_enumerative_refusal_with_a_commit_is_a_qualifying_review(monkeypatch) -> None:
+    """The lane asks the producer's predicate, so the enumerative arm changes nothing.
+
+    The arm answers a different question at a different pipeline position; the
+    producer's finished-review test reads ``_is_refusal_notice`` alone.
+    """
+    import _github_pr
+
+    monkeypatch.setattr(_github_pr, 'UNRECOGNISED_REFUSAL_MAX_CHARS', 200)
+    body = 'Please resubmit this pull request later.'
+    assert _github_pr._is_unrecognised_refusal(body, 'coderabbit') is True
+    assert _github_pr._is_refusal_notice(body, 'coderabbit') is False
+
+    verdict = _verdict(_read(_review_body(body, commit_id='b' * 40)), reviewers=('coderabbit',))
+
+    assert verdict['merge_allowed'] is True
+
+
 def test_a_marker_beside_a_refusal_notice_is_still_a_finished_review() -> None:
     """The producer admits this combination; the lane's check must agree with it."""
     body = '> ## Review limit reached\n' + _finished_marker_body()

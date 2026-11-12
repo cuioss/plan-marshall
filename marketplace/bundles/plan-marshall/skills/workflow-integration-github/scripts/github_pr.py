@@ -117,9 +117,11 @@ from _github_pr import (
     REFUSAL_LAYER_STRUCTURAL,
     RESOLVE_THREAD_MUTATION,
     THREAD_REPLY_MUTATION,
+    _is_participation_evidence,
     _is_refusal_notice,
     _is_unrecognised_refusal,
     get_viewer_login,
+    is_finished_review,
     measure_diff_size,
     named_commit_currency,
     refusal_cause,
@@ -127,7 +129,6 @@ from _github_pr import (
     refusal_layers,
     refusal_size_cap,
     review_coverage_is_finished,
-    review_coverage_names_commit,
     review_coverage_verdict,
 )
 from ci_base import extract_routing_args, register_subcommands, set_default_cwd
@@ -425,38 +426,6 @@ def _is_contentless_boilerplate(body: str, bot_kind: str | None) -> bool:
     if any(marker in body for marker in disqualifying):
         return False
     return _concern_sections_are_clean(body, kind)
-
-
-def _is_participation_evidence(comment: dict, bot_kind: str) -> bool:
-    """True if ``comment`` is ADMISSIBLE participation evidence for ``bot_kind``.
-
-    Two registry reads, both generic — no bot name appears here:
-
-    1. SHAPE — the comment's ``kind`` is one of the publish shapes the bot declares
-       in ``participation_evidence``.
-    2. CONTENT — when the bot declares ``participation_evidence_markers`` entries for
-       THAT shape, the body carries at least one of the declared literals. A shape a
-       bot publishes both before its review completes and after it finishes credits
-       only the artifact carrying a finished-review literal, so a pre-review
-       walkthrough in a declared shape is not evidence. An undeclared shape is
-       FAIL-OPEN and credits on the shape alone, exactly as before the gate existed
-       (see ``bot_registry.participation_evidence_markers_for``).
-
-    This is the admissibility question only. The refusal exclusion and the
-    ``participation_requires_update`` currency test stay at the call site, because
-    they answer different questions: a refusal is admissible-shaped but is evidence
-    of NON-participation, and the currency test decides WHICH commit an admissible
-    comment reviewed. A comment this predicate rejects is therefore neither
-    credited nor stale — it is not a review artifact at all.
-    """
-    kind = comment.get('kind') or 'inline'
-    if kind not in bot_registry.participation_evidence(bot_kind):
-        return False
-    markers = bot_registry.participation_evidence_markers_for(bot_kind, kind)
-    if not markers:
-        return True
-    body = str(comment.get('body') or '')
-    return any(marker in body for marker in markers)
 
 
 def _own_prose(body: str) -> str:
@@ -2152,9 +2121,11 @@ def cmd_fetch_findings(args):
             refusing_bots.add(_refusal_bot)
     participated: dict[str, str] = {}
     stale_participation: dict[str, str] = {}
-    # Bots holding an admitted FINISHED review of SOME commit on this pull request —
-    # a formal ``review_body`` record, or a summary whose coverage marker is readable,
-    # ``kind: reviewed`` and names a covered commit (``review_coverage_names_commit``).
+    # Bots holding an admitted FINISHED review of SOME commit on this pull request.
+    # The test is the ONE reader, ``is_finished_review`` — a formal ``review_body``
+    # record that names a commit (or a readable finished marker naming one), or a
+    # summary whose coverage marker is readable, ``kind: reviewed`` and names a covered
+    # commit.
     # This is the fact the done rule needs and ``stale_participation_bots`` cannot
     # carry: that set also contains marker-bearing comments which are NOT finished
     # reviews (an unreadable payload, a non-``reviewed`` kind, a marker naming no
@@ -2214,13 +2185,10 @@ def cmd_fetch_findings(args):
         if not _is_participation_evidence(_comment, _bot_kind):
             continue
         _kind = _comment.get('kind') or 'inline'
-        if _kind == 'review_body':
-            # A formal review counts only with the commit it reviewed, or with a
-            # finished marker that names one: an empty commit names no head, and the
-            # merge gate (and the lane's own check) rejects that same artifact.
-            if str(_comment.get('commit_id') or '').strip() or review_coverage_names_commit(_body):
-                finished_review.setdefault(_bot_kind, _kind)
-        elif _kind == 'issue_comment' and review_coverage_names_commit(_body):
+        # THE ONE FINISHED-REVIEW READER. The producer, the post chokepoint and the
+        # runbook lane all ask this predicate, so a formal review cannot be a review
+        # at one site and not at another.
+        if is_finished_review(_comment, _bot_kind):
             finished_review.setdefault(_bot_kind, _kind)
         # THE INLINE RULE, decided before every other arm. An inline comment is
         # credited only when the provider PLACES it (or the review it belongs to) at

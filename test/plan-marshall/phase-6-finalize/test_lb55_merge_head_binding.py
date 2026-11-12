@@ -20,6 +20,22 @@ HEAD_GATED = 'a' * 40
 HEAD_MERGED = 'b' * 40
 
 
+@pytest.fixture(autouse=True)
+def _merge_mutex_held(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Autouse: answer the merge-mutex proof "held by this plan".
+
+    The mutex proof is another gate's subject
+    (``test_pre_merge_gate_merge_lock_proof.py``); leaving the production reader in
+    place here would make every head-binding case depend on whether the machine
+    running the suite happens to hold the real ``.plan/local/merge.lock``.
+    """
+    monkeypatch.setattr(
+        gate,
+        '_merge_lock_holder_read',
+        lambda: {'state': 'held', 'holder': 'lb55-plan', 'lock_path': '<test>'},
+    )
+
+
 def _status(head_by_step: dict[str, str | None]) -> dict:
     """A status payload whose 6-finalize step records carry ``head_at_completion``."""
     steps = {
@@ -48,6 +64,11 @@ def _merge(status, head, **kwargs):
     binding: the production participation reader spawns its own provider and predicate
     subprocesses, and the participation behaviour has its own cases in
     ``test_pre_merge_gate.py``.
+
+    The merge-mutex proof is stubbed "held by this plan" for the same reason — it is
+    another gate's subject (``test_pre_merge_gate_merge_lock_proof.py``), and leaving
+    the production reader in place would make every case here depend on whether the
+    machine running the suite holds the real ``.plan/local/merge.lock``.
 
     Head-dependence discovery and the verdict-currency classifier are stubbed too, for
     the same reason: the production forms read the repository's own finalize-step docs
