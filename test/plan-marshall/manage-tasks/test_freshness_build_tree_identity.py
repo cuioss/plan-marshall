@@ -195,9 +195,7 @@ def test_a_root_mismatch_wins_over_a_rewrite(plan_context, monkeypatch, tmp_path
     assert result['reason'] == 'worktree_root_mismatch', result
 
 
-def test_a_rerun_on_the_committed_tree_clears_the_rewrite_verdict(
-    plan_context, monkeypatch, tmp_path
-) -> None:
+def test_a_rerun_on_the_committed_tree_clears_the_rewrite_verdict(plan_context, monkeypatch, tmp_path) -> None:
     """A rewrite refusal is CLEARABLE: commit the rewrite, re-run, read fresh.
 
     The refusal names a remedy — commit the rewrite and re-run — so the gate must
