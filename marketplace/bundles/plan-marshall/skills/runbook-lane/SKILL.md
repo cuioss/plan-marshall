@@ -412,9 +412,14 @@ so git alone shows which deliverables are committed.
   shell in the main checkout. The tree at the base commit does NOT contain the test the Done-when
   just added, so copy that committed test file from the plan's worktree into the same path in the
   base tree before the run — it is the plan's own test, not a harness file — and record the failing
-  output that names it; then DELETE the copy, before the cleanliness check, because an untracked file
-  makes `status --porcelain` dirty and `git worktree remove` refuses. The copy dies with the base
-  tree, the committed test does not. Four forms are
+  output that names it. Then return the base tree to its tracked state BEFORE the cleanliness check:
+  when that path is untracked at the base sha, delete the copy; when it is tracked there, restore it
+  from the base commit (`git -C` that tree `checkout --` the path — the base tree is disposable and
+  holds no work of its own). Anything left behind keeps `status --porcelain` dirty and
+  `git worktree remove` refuses. The copy dies with the base tree, the committed test does not.
+  A plan has ONE base tree: run its base-evidence work serially and never share `{plan}-base` with a
+  concurrent run — a second run that finds the tree in use treats it as a blocker, not as a spare.
+  Four forms are
   NOT allowed, and a Done-when whose failing run used one
   is reported `not evidenced`: a `git clone`; a raw `git worktree add` into `.plan/temp`; a hand-run
   `generate_executor`; and an edit of a harness file in the base copy. The evidence must survive the

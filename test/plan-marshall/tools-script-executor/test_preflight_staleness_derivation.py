@@ -76,3 +76,17 @@ def test_the_unversioned_stamp_is_not_a_readable_pair_side(tmp_path: Path, monke
     assert result['marshal_status'] == 'unknown'
     assert 'derived from the readable pair' not in result['warning']
     assert 'probed:' in result['warning']
+
+
+def test_the_unversioned_stamp_is_absent_on_the_marshal_side_too(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """`marshal.json` can carry the stamp as well; it is likewise no measurement.
+
+    With ``marshal_version == 'unversioned'`` and a real executor version, the
+    empty tuple would compare below the executor and report a false ``stale``.
+    """
+    _stub_readers(monkeypatch, tmp_path, marshal=ge.UNVERSIONED_SENTINEL, executor='0.1.1953')
+
+    result = ge.cmd_preflight(_args())
+
+    assert result['marshal_status'] == 'unknown'
+    assert 'derived from the readable pair' not in result['warning']

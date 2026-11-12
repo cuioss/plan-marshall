@@ -3844,7 +3844,7 @@ def cmd_preflight(args: argparse.Namespace) -> dict:
       config seed, ``fresh`` otherwise — instead of reporting ``unknown`` over a
       measurable drift. The ``unversioned`` stamp is an answered absence and does
       NOT count as readable here: a pair holding it measures nothing. Only when
-      neither version is readable does it report ``marshal_status: unknown``. The
+      EITHER version is unreadable does it report ``marshal_status: unknown``. The
       warning is emitted on stderr and carried in the return, and no verdict
       claims a freshness it cannot substantiate.
 
@@ -3919,11 +3919,13 @@ def cmd_preflight(args: argparse.Namespace) -> dict:
         probe_paths = installed_manifest_probe_paths(base_path, target=resolved_target)
         probed = ', '.join(str(path) for path in probe_paths)
         # The generator's ``unversioned`` stamp is an ANSWERED absence, not a
-        # readable version: a "pair" holding it would derive ``fresh`` from a
+        # readable version: a "pair" holding it would derive a verdict from a
         # comparison against nothing, which is exactly the vacuous freshness the
-        # docstring forbids. Treat it like an unreadable executor.
+        # docstring forbids. Treat it like an unreadable side — on EITHER side,
+        # because ``marshal.json`` can carry the legacy stamp too.
         executor_readable = executor_version not in ('', 'unknown', UNVERSIONED_SENTINEL)
-        if marshal_version not in ('', 'unknown') and executor_readable:
+        marshal_readable = marshal_version not in ('', 'unknown', UNVERSIONED_SENTINEL)
+        if marshal_readable and executor_readable:
             # The executor is the artifact a cache advance rewrites; an executor
             # ahead of the provisioned config seed is the drift the manifest
             # comparison would otherwise have measured.
