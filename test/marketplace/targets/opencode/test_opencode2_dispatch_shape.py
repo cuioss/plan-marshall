@@ -59,10 +59,10 @@ def test_no_bundle_standard_names_the_opencode_subagent_tool_as_task():
 
     The standards sweep keeps its original needle across every bundle. The
     OpenCode-only bundle is swept over its whole OpenCode-facing surface — its
-    ``SKILL.md``, its workflow documents and its README say which tool to call
-    just as its standards do — and there the needle widens to a backticked
-    ``task`` or ``bash`` anywhere on the line, because the target-rules skill
-    never carries the narrower literal.
+    ``SKILL.md``, its standards, its workflow documents and its README say which
+    tool to call — and there the needle widens to a backticked ``task`` or
+    ``bash`` anywhere on the line, because the target-rules skill never carries
+    the narrower literal.
     """
     bundles = Path(PROJECT_ROOT) / 'marketplace' / 'bundles'
     offenders: list[str] = []

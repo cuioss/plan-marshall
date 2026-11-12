@@ -31,7 +31,7 @@ mode: knowledge
 
 4. **Standing-Rules Bridge & Drift**:
    - The standing rules are bridged at project setup from the `CLAUDE.md` baseline into the workspace rules file; the baseline stays authoritative and this bridge is never edited by hand.
-   - Re-setup detects drift by content: the bridge records its baseline's `source-sha256`, and a changed baseline, a missing recorded hash or a missing version marker reports drift, while a baseline that is missing or unreadable reports drift when the bridge still carries rules; the steward upgrade path reconciles the bridge back to current.
+   - Re-setup detects drift by content: the bridge records its baseline's `source-sha256`, and a changed baseline, a missing recorded hash or a missing version marker reports drift; a missing baseline reports drift when the bridge still carries rules, and an unreadable baseline reports drift whether or not it does. The steward upgrade path reconciles the bridge back to current.
    - Subagent dispatch is conditional: the `subagent` tool fires only when available in the envelope, otherwise take the explicit logged inline branch with usage unknown.
 
 ## Available Standards

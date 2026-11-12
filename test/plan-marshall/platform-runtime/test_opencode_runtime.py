@@ -50,9 +50,10 @@ def runtime() -> OpenCodeRuntime:
 def machine_home(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> pathlib.Path:
     """Point the machine-global ``PLAN_MARSHALL_HOME`` root at a per-test directory.
 
-    Nothing a test reaches writes the developer's real machine-global home: the
-    variable is set for the whole test, in-process readers and the child executor
-    processes alike, so a machine-global read or write cannot leave the sandbox.
+    No machine-global WRITE leaves the sandbox: the variable is set for the whole
+    test, so in-process readers and the child executor processes alike resolve
+    that root there. What this cannot redirect is the developer's own OpenCode
+    configuration and session store, which setup reads and never writes.
     """
     home = tmp_path / 'machine-home'
     home.mkdir()
