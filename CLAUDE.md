@@ -85,7 +85,11 @@ These rules apply to ALL work in this repository — ad-hoc tasks, plan executio
 - **Temp files under `.plan/temp/`** — Use `.plan/temp/` for ALL temporary and generated files (covered by the `Edit(.plan/**)` permission).
 - **GitHub access** — Use the `gh` tool (via the CI abstraction), not MCP.
 
-## Standalone Plan Lane (`doc/plans/`)
+## Merge Authorization (Standing)
+
+Merging a pull request is part of the process, not a separate decision that needs fresh operator permission. A plan (`/plan-marshall`, phase-6-finalize) and a runbook lane (`plan-marshall:runbook-lane`, `doc/plans/`) merge their own PR once the merge gate passes — required checks green, required reviewers handled, no open blocking findings — and never stop to ask the operator whether to merge. The operator's request to run the plan or the lane is the authorization. This holds for every merge verb of the CI abstraction (`ci pr merge`, `safe-merge`, `auto-merge`, `merge-queue`).
+
+What this does not waive: the merge gate itself (a failing or unread gate still blocks the merge and is reported), the merge mutex, and the rule that an unrelated outward-facing action (force-push, deleting a branch the plan did not create, closing someone else's PR) still needs its own instruction.
 
 Plans under `doc/plans/` execute **outside the plan-marshall command lifecycle** — no `/plan-marshall`, no `/plan-orchestrator`, no `.plan/execute-script.py`, and none of the git-ignored `.plan/local/` state. The lane exists because `.plan/local/` is git-ignored: its state (plan directories, orchestrator ledgers, findings, locks, and the generated executor) lives only on the machine that created it, so a cloud session at claude.ai/code clones the repository and has none of it. Everything a `doc/plans/` plan needs is in git — including the git-tracked `.plan/marshal.json`, which the lane may read.
 
