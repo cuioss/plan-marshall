@@ -68,6 +68,7 @@ import re
 import shutil
 import sqlite3
 import subprocess
+import tempfile
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any, NamedTuple
@@ -272,6 +273,33 @@ def installed_rules_clobbered(project_dir: Path) -> bool:
 #: intent can never degrade to ``allow`` by reaching the bare-form default.
 _OPENCODE_GRANT_ACTIONS = ('allow', 'ask', 'deny')
 
+#: Every error code an OpenCode mutating permission operation can return. It is
+#: the vocabulary `standards/contract.md` and `SKILL.md` must list, and a doc
+#: test compares the two documents against it so a code the code emits cannot
+#: go undocumented.
+#: Why a settings ``permission`` value cannot be written: it is not an object,
+#: and replacing it would discard whatever the operator wrote.
+PERMISSION_NOT_OBJECT_MESSAGE = 'the `permission` value is not an object; refusing to reset it'
+
+#: Why a ``bash`` value cannot be written: it is neither a pattern map nor a
+#: category-wide effect string.
+BASH_NOT_PRESERVABLE_MESSAGE = 'the `bash` value is neither an object nor a string; refusing to replace it'
+
+OPENCODE_PERMISSION_ERROR_CODES = frozenset(
+    {
+        'invalid_scope',
+        'invalid_operation',
+        'invalid_settings',
+        'load_error',
+        'permission_conflict',
+        'wildcard_action_rule',
+        'io_error',
+        'permission_write_failed',
+        'marshal_not_found',
+        'invalid_marshal',
+    }
+)
+
 #: Bash binaries that can exfiltrate a file's contents. Guarded in BOTH the
 #: tilde and the absolute spelling of a protected directory, because either
 #: can appear in a command line. Mirrors the Claude runtime's vector set.
@@ -283,6 +311,47 @@ _OPENCODE_EXFILTRATION_BASH_VECTORS = ('cat', 'head', 'tail', 'less', 'more', 'c
 #: rule. The grammar has no escape, so the only fail-closed answer is to
 #: refuse. Mirrors ``claude_runtime._PATH_CHARS_THE_DSL_CANNOT_CARRY``.
 _OPENCODE_PATH_CHARS_THE_MAP_CANNOT_CARRY = ('(', ')', '*')
+
+
+def _contained_settings_path(candidate: Path, project_dir: Path) -> Path:
+    """Return *candidate* when it resolves inside *project_dir*, else the root file.
+
+    A `.opencode` directory that is a symlink out of the project — to the
+    user's global OpenCode directory, say — must not turn a project-scoped
+    write into a global one: the resolved target is checked for containment, and
+    an escaping one falls back to the project's own ``opencode.json``.
+    """
+    try:
+        resolved = candidate.resolve()
+        resolved_project = project_dir.resolve()
+    except OSError:
+        return project_dir / 'opencode.json'
+    if resolved_project in resolved.parents:
+        return resolved
+    return project_dir / 'opencode.json'
+
+
+# A settings-file path is produced by ``permission_settings_path`` — a scope
+# constant plus the config directory or the project root — so it is host
+# configuration, never file content. ``_safe_settings_path`` is a hardening
+# backstop for the read and write, not the primary boundary: a traversal-shaped
+# value is refused rather than opened.
+def _safe_settings_path(path: str) -> Path | None:
+    """Return the settings path, or ``None`` when it is not a usable path.
+
+    A path carrying a NUL or a control character, or a ``..`` segment, is
+    refused before it is read or written: traversal-shaped values never reach
+    the filesystem calls. Ordinary characters — spaces included, since a
+    project directory may contain them — are accepted.
+    """
+    if not path:
+        return None
+    if any(ord(char) < 0x20 or ord(char) == 0x7F for char in path):
+        return None
+    candidate = Path(path)
+    if '..' in candidate.parts:
+        return None
+    return candidate
 
 
 def _opencode_config_dir() -> Path:
@@ -435,11 +504,13 @@ def _protect_path_deny_entries(protected_dir: str) -> dict[str, dict[str, str]]:
 # ----------------------------------------------------------------------
 #
 # OpenCode 2 stores permissions as an ordered ``permissions`` list of
-# ``{action, resource, effect}`` rules evaluated last-match-wins, with no match
-# meaning ``ask``. The OpenCode 1 ``permission`` map is still READ so an
-# operator's existing file is not rewritten behind their back, but nothing is
-# ever written into a map beside a list: the normalizer concatenates the map
-# BEFORE the list, so a rule added there is overridden by the list's catch-all.
+# ``{action, resource, effect}`` rules evaluated last-match-wins, over a base
+# policy that is allow-all (OBSERVED at ``opencode v2.2.7``: the ruleset begins
+# ``{action: "*", resource: "*", effect: allow}``). The OpenCode 1 ``permission``
+# map is still READ so an operator's existing file is not rewritten behind their
+# back, but nothing is ever written into a map beside a list: the normalizer
+# concatenates the map BEFORE the list, so a rule added there is overridden by
+# the list's catch-all.
 #
 # ``to_opencode_grant`` keeps its internal ``bash`` category; the OpenCode 2
 # action for that category is ``shell``. Keeping the rename in ONE place means
@@ -484,6 +555,48 @@ def _set_map_catch_all(container: dict[str, Any], effect: str) -> None:
     container.update(rows)
 
 
+def _permission_map(settings: dict[str, Any]) -> dict[str, Any] | None:
+    """Return the OpenCode 1 ``permission`` map, creating it when absent.
+
+    ``None`` reports a ``permission`` value that is not an object. It is never
+    reset: overwriting it would discard whatever the operator wrote, so the
+    caller refuses with ``invalid_settings`` instead.
+    """
+    if 'permission' not in settings:
+        created: dict[str, Any] = {}
+        settings['permission'] = created
+        return created
+    value = settings['permission']
+    return value if isinstance(value, dict) else None
+
+
+def _bash_rows(perm: dict[str, Any]) -> dict[str, Any] | None:
+    """Return the ``bash`` pattern map, seeding a scalar as its ``*`` row.
+
+    Any string scalar is a category-wide effect and becomes the map's ``*``
+    row, whatever it is — ``allow`` included, so a requested ``deny`` or
+    ``ask`` is installed beside it instead of being discarded as "already
+    allowed". A writer that does not concern ``bash`` never calls this, so an
+    untouched scalar stays exactly as it was.
+
+    ``None`` means the value is neither an object nor a string (a JSON
+    ``null``, a number, a list): it cannot be preserved as a row, so the caller
+    refuses with ``invalid_settings`` rather than replacing it with a map.
+    """
+    value = perm.get('bash')
+    if isinstance(value, dict):
+        return value
+    if 'bash' not in perm:
+        rows: dict[str, Any] = {}
+        perm['bash'] = rows
+        return rows
+    if not isinstance(value, str):
+        return None
+    seeded: dict[str, Any] = {'*': value}
+    perm['bash'] = seeded
+    return seeded
+
+
 def _permission_rules(settings: dict[str, Any], *, create: bool = False) -> list[Any] | None:
     """Return the ``permissions`` list when the settings carry one, else ``None``.
 
@@ -505,6 +618,20 @@ def _permission_rules(settings: dict[str, Any], *, create: bool = False) -> list
         settings['permissions'] = created
         return created
     return None
+
+
+def _settings_error(settings: dict[str, Any]) -> tuple[str, str] | None:
+    """Return ``(error_code, message)`` for a settings payload that could not be used.
+
+    A payload the loader could not read at all defaults to ``load_error``; a
+    payload that parsed but carries a shape the writers cannot use names
+    ``invalid_settings`` in its own ``error_code``. One defect therefore reaches
+    every operation under one code, instead of the same unparseable file being
+    reported as two different things by two verbs.
+    """
+    if 'error' not in settings:
+        return None
+    return str(settings.get('error_code', 'load_error')), str(settings['error'])
 
 
 def _resource_matches(pattern: Any, resource: str) -> bool:
@@ -538,11 +665,88 @@ def _matching_rules(rules: list[Any], action: str, resource: str) -> list[dict[s
     ]
 
 
+def _glob_tokens(pattern: str) -> list[str | None]:
+    """Split a glob into single-character literals and ``None`` for each ``*``."""
+    return [None if char == '*' else char for char in pattern]
+
+
+def _glob_step(tokens: list[str | None], index: int, char: str) -> list[int]:
+    """Return the states reachable from *index* after consuming *char*.
+
+    A literal consumes itself and advances; a ``*`` consumes anything and stays
+    put (its exit is an epsilon move the caller closes over).
+    """
+    if index >= len(tokens):
+        return []
+    token = tokens[index]
+    if token is None:
+        return [index]
+    return [index + 1] if token == char else []
+
+
+def _glob_epsilon_closure(tokens: list[str | None], index: int) -> list[int]:
+    """Return every state reachable from *index* by consuming nothing."""
+    reachable = {index}
+    pending = [index]
+    while pending:
+        current = pending.pop()
+        if current < len(tokens) and tokens[current] is None and current + 1 not in reachable:
+            reachable.add(current + 1)
+            pending.append(current + 1)
+    return sorted(reachable)
+
+
+def _globs_intersect(first: str, second: str) -> bool:
+    """True when some string matches both globs.
+
+    Both globs denote regular languages over single-character literals and the
+    ``*`` wildcard, so their intersection is decided exactly by a product
+    construction: walk both token sequences together, following epsilon moves
+    out of ``*``, and ask whether the accepting pair is reachable. A fresh
+    character outside both alphabets stands in for "some character neither glob
+    names", which is what makes ``*`` vs ``*`` intersect.
+    """
+    tokens_a = _glob_tokens(first)
+    tokens_b = _glob_tokens(second)
+    literals = {token for token in tokens_a + tokens_b if token is not None}
+    fresh = next(chr(code) for code in range(1, 0x10000) if chr(code) not in literals)
+
+    seen: set[tuple[int, int]] = set()
+    queue: list[tuple[int, int]] = []
+    for index_a in _glob_epsilon_closure(tokens_a, 0):
+        for index_b in _glob_epsilon_closure(tokens_b, 0):
+            seen.add((index_a, index_b))
+            queue.append((index_a, index_b))
+
+    while queue:
+        index_a, index_b = queue.pop()
+        if index_a == len(tokens_a) and index_b == len(tokens_b):
+            return True
+        for char in [*literals, fresh]:
+            for next_a in _glob_step(tokens_a, index_a, char):
+                for next_b in _glob_step(tokens_b, index_b, char):
+                    for closed_a in _glob_epsilon_closure(tokens_a, next_a):
+                        for closed_b in _glob_epsilon_closure(tokens_b, next_b):
+                            pair = (closed_a, closed_b)
+                            if pair not in seen:
+                                seen.add(pair)
+                                queue.append(pair)
+    return False
+
+
 def _patterns_overlap(first: Any, second: Any) -> bool:
-    """True when two resource patterns can decide a common resource."""
-    return _resource_matches(first, second if isinstance(second, str) else '') or _resource_matches(
-        second, first if isinstance(first, str) else ''
-    )
+    """True when two resource patterns can decide a common resource.
+
+    Two globs whose matched sets intersect overlap even when neither is a
+    literal resource of the other — ``*--force*`` and ``git push *`` both match
+    ``git push --force x``. Treating only literal containment as an overlap let
+    the writer cross such a rule without reporting it, so the sets are compared
+    as sets. A resource that is not a string cannot be shown disjoint, so it is
+    treated as overlapping (the fail-closed direction).
+    """
+    if not isinstance(first, str) or not isinstance(second, str):
+        return True
+    return _globs_intersect(first, second)
 
 
 def _later_rule_is_broader(later_rule: dict[str, Any], action: str, resource: str) -> bool:
@@ -586,10 +790,12 @@ def _conflicting_rule(
 
     Only the rules the write actually OVERRIDES matter: a rule that ends up after
     the requested rule still decides its own resources, so it is not crossed. A
-    rule the requested pattern covers, with a DIFFERENT effect, decides a more
-    specific outcome the caller did not ask to change — overriding it is the
-    named conflict. A strictly BROADER rule is what the specific rule exists to
-    narrow, so it is never a conflict.
+    rule whose matched set overlaps the requested pattern, with a DIFFERENT
+    effect, decides a more specific outcome the caller did not ask to change —
+    overriding it is the named conflict. Overlap is set intersection, not
+    literal containment: ``*--force*`` and ``git push *`` share
+    ``git push --force x``. A strictly BROADER rule is what the specific rule
+    exists to narrow, so it is never a conflict.
     """
     for rule in rules[max(start, 0) : stop]:
         if not isinstance(rule, dict) or not _action_matches(rule.get('action'), action):
@@ -609,8 +815,8 @@ def _conflict_detail(action: str, resource: str, effect: str, rule: dict[str, An
     later_pattern = rule.get('resource')
     later_effect = _rule_effect(rule)
     return (
-        f'{action}({resource}) cannot be ensured as {effect}: the more specific later rule '
-        f'{action}({later_pattern}) decides {later_effect}, and changing it was not requested'
+        f'{action}({resource}) cannot be ensured as {effect}: the later rule '
+        f'{action}({later_pattern}) overlaps it and decides {later_effect}, and changing it was not requested'
     )
 
 
@@ -680,11 +886,12 @@ def _upsert_permission_rule(rules: list[Any], action: str, resource: str, effect
     Inserting after the catch-all is necessary but not sufficient: an existing
     later rule can still match the same resource and win. A requested effect
     the list does not already produce is made effective by moving the rule to
-    the end — but never past a later, more specific rule with a different
-    effect the caller did not ask to change. Only that move can cross a rule,
-    so only then is a conflict reported: the list is restored and nothing is
-    saved. A rule a later, broader row with the same effect already shadows is
-    refused too — writing it would decide nothing.
+    the end — but never past a later rule whose matched set intersects the
+    requested one with a different effect the caller did not ask to change.
+    Only that move can cross a rule, so only then is a conflict reported: the
+    list is restored and nothing is saved. A request the list already satisfies
+    — the effect holds through a later row, broader or not — adds nothing and
+    reports no change; it is never a conflict.
     """
     for index, rule in enumerate(rules):
         if isinstance(rule, dict) and rule.get('action') == action and rule.get('resource') == resource:
@@ -720,16 +927,21 @@ def _upsert_permission_rule(rules: list[Any], action: str, resource: str, effect
         return PermissionRuleWrite(True)
     # No move: the new rule is the last match for its own resource, so every
     # earlier rule it matches is one the caller asked to narrow. Nothing can be
-    # crossed here.
+    # crossed here. A later row that already produces the requested effect makes
+    # the write decide nothing, which is an idempotent success — the row is not
+    # added and the caller is not handed a conflict for a request that already
+    # holds.
     hits = _matching_rules(rules, action, resource)
     if hits and hits[-1] is not new_rule:
-        shadow = hits[-1].get('resource')
+        # The effect already holds through a later row. That is an idempotent
+        # success UNLESS a later rule with a different effect overlaps the
+        # request: such a row is a crossing hazard, and dropping it silently
+        # would hide the tension the caller has to resolve.
+        conflict = _conflicting_rule(rules, insert_at + 1, None, action, resource, effect)
         del rules[insert_at]
-        return PermissionRuleWrite(
-            False,
-            f'{action}({resource}) is shadowed by the later rule {action}({shadow}) with the same '
-            'effect, so writing it would decide nothing',
-        )
+        if conflict is not None:
+            return PermissionRuleWrite(False, _conflict_detail(action, resource, effect, conflict))
+        return PermissionRuleWrite(False)
     return PermissionRuleWrite(True)
 
 
@@ -792,8 +1004,9 @@ def _opencode2_skeleton() -> dict[str, Any]:
     catch-all ``ask`` there cannot survive the evaluation order: a project list
     is combined with the global one before the agent's, so a catch-all decides
     every command the global list already decided. No rule matches a command
-    the skeleton does not name, and OpenCode 2 answers ``ask`` for that case by
-    itself.
+    the skeleton does not name, and the client's base policy — OBSERVED at
+    ``opencode v2.2.7`` as ``{action: "*", resource: "*", effect: allow}`` —
+    allows it.
 
     No ``permission`` map is written either — the normalizer concatenates that
     map ahead of the list, which is what turns written deny rules into dead
@@ -1696,11 +1909,13 @@ class OpenCodeRuntime(Runtime):
 
         settings_path = self.permission_settings_path(scope, write=True)
         settings = self.permission_load_settings(settings_path)
-        if 'error' in settings:
+        failure = _settings_error(settings)
+        if failure is not None:
+            code, message = failure
             return toon_error(
                 'permission configure',
-                'load_error',
-                f'Failed to load settings from {settings_path}: {settings["error"]}',
+                code,
+                f'Failed to load settings from {settings_path}: {message}',
             )
         rules = _permission_rules(settings, create=True)
         if rules is not None:
@@ -1721,7 +1936,7 @@ class OpenCodeRuntime(Runtime):
                 if not self.permission_save_settings(settings_path, settings):
                     return toon_error(
                         'permission configure',
-                        'save_error',
+                        'io_error',
                         f'Failed to write settings to {settings_path}',
                     )
             return toon_success(
@@ -1734,32 +1949,32 @@ class OpenCodeRuntime(Runtime):
                 },
             )
 
-        perm = settings.setdefault('permission', {})
-        if not isinstance(perm, dict):
-            perm = {}
-            settings['permission'] = perm
-
-        bash_val = perm.get('bash')
-        if isinstance(bash_val, dict):
-            bash_map = bash_val
-        elif bash_val == 'allow':
-            bash_map = None
-        else:
-            bash_map = {}
-            perm['bash'] = bash_map
+        perm = _permission_map(settings)
+        if perm is None:
+            return toon_error(
+                'permission configure',
+                'invalid_settings',
+                PERMISSION_NOT_OBJECT_MESSAGE,
+            )
 
         added = 0
         for g in grants:
             rule = g.get('rule') or g.get('command') or str(g)
             cat, pat, act = to_opencode_grant(str(rule))
             if cat == 'bash':
-                if bash_map is not None:
-                    if bash_map.get(pat) != act:
-                        if pat == '*':
-                            _set_map_catch_all(bash_map, act)
-                        else:
-                            bash_map[pat] = act
-                        added += 1
+                bash_map = _bash_rows(perm)
+                if bash_map is None:
+                    return toon_error(
+                        'permission configure',
+                        'invalid_settings',
+                        BASH_NOT_PRESERVABLE_MESSAGE,
+                    )
+                if bash_map.get(pat) != act:
+                    if pat == '*':
+                        _set_map_catch_all(bash_map, act)
+                    else:
+                        bash_map[pat] = act
+                    added += 1
             else:
                 cat = _permission_map_key(cat)
                 cat_val = perm.get(cat)
@@ -1787,7 +2002,7 @@ class OpenCodeRuntime(Runtime):
             if not self.permission_save_settings(settings_path, settings):
                 return toon_error(
                     'permission configure',
-                    'save_error',
+                    'io_error',
                     f'Failed to write settings to {settings_path}',
                 )
 
@@ -1895,11 +2110,13 @@ class OpenCodeRuntime(Runtime):
 
         settings_path = self.permission_settings_path(scope, write=not dry_run)
         settings = self.permission_load_settings(settings_path)
-        if 'error' in settings:
+        failure = _settings_error(settings)
+        if failure is not None:
+            code, message = failure
             return toon_error(
                 'permission fix',
-                'load_error',
-                f'Failed to load settings from {settings_path}: {settings["error"]}',
+                code,
+                f'Failed to load settings from {settings_path}: {message}',
             )
         rules = _permission_rules(settings, create=True)
 
@@ -1991,28 +2208,34 @@ class OpenCodeRuntime(Runtime):
                 },
             )
 
-        perm = settings.setdefault('permission', {})
-        if not isinstance(perm, dict):
-            perm = {}
-            settings['permission'] = perm
-
-        bash_map = perm.setdefault('bash', {})
-        if not isinstance(bash_map, dict):
-            bash_map = {}
-            perm['bash'] = bash_map
+        perm = _permission_map(settings)
+        if perm is None:
+            return toon_error(
+                'permission fix',
+                'invalid_settings',
+                PERMISSION_NOT_OBJECT_MESSAGE,
+            )
 
         if operation in ('ensure', 'add'):
             added = 0
             for item in arguments:
                 cat, pat, act = to_opencode_grant(str(item))
                 if cat == 'bash':
-                    if bash_map.get(pat) != act:
-                        if not dry_run:
-                            if pat == '*':
-                                _set_map_catch_all(bash_map, act)
-                            else:
-                                bash_map[pat] = act
-                        added += 1
+                    bash_map = _bash_rows(perm)
+                    if bash_map is None:
+                        return toon_error(
+                            'permission fix',
+                            'invalid_settings',
+                            BASH_NOT_PRESERVABLE_MESSAGE,
+                        )
+                    if bash_map.get(pat) == act:
+                        continue
+                    if not dry_run:
+                        if pat == '*':
+                            _set_map_catch_all(bash_map, act)
+                        else:
+                            bash_map[pat] = act
+                    added += 1
                 else:
                     cat = _permission_map_key(cat)
                     existing = perm.get(cat)
@@ -2064,23 +2287,17 @@ class OpenCodeRuntime(Runtime):
         if operation == 'remove':
             removed = 0
             for item in arguments:
-                cat, pat, _ = to_opencode_grant(str(item))
+                cat, pat, act = to_opencode_grant(str(item))
                 map_key = _permission_map_key(cat)
-                if cat == 'bash' and pat in bash_map:
-                    if not dry_run:
-                        del bash_map[pat]
-                    removed += 1
-                    continue
                 existing = perm.get(map_key)
+                # The effect is part of the identity: naming an allow must never
+                # delete a deny or ask row that shares the pattern.
                 if isinstance(existing, dict):
-                    # The named pattern, or the map's own ``*`` row — never the
-                    # whole category, which may carry denies nobody named.
-                    entry = pat if pat in existing else ('*' if pat == '*' and '*' in existing else None)
-                    if entry is not None:
+                    if existing.get(pat) == act:
                         if not dry_run:
-                            del existing[entry]
+                            del existing[pat]
                         removed += 1
-                elif existing is not None and pat == '*':
+                elif pat == '*' and isinstance(existing, str) and existing == act:
                     if not dry_run:
                         del perm[map_key]
                     removed += 1
@@ -2155,11 +2372,13 @@ class OpenCodeRuntime(Runtime):
 
         settings_path = self.permission_settings_path(scope, write=not dry_run)
         settings = self.permission_load_settings(settings_path)
-        if 'error' in settings:
+        failure = _settings_error(settings)
+        if failure is not None:
+            code, message = failure
             return toon_error(
                 'permission fix',
-                'invalid_settings',
-                settings['error'],
+                code,
+                f'Failed to load settings from {settings_path}: {message}',
             )
 
         # De-duplicate ACROSS the named paths, not only within each: two paths
@@ -2195,10 +2414,13 @@ class OpenCodeRuntime(Runtime):
                     if write.changed:
                         changes_applied += 1
         else:
-            perm = settings.setdefault('permission', {})
-            if not isinstance(perm, dict):
-                perm = {}
-                settings['permission'] = perm
+            perm = _permission_map(settings)
+            if perm is None:
+                return toon_error(
+                    'permission fix',
+                    'invalid_settings',
+                    PERMISSION_NOT_OBJECT_MESSAGE,
+                )
 
             for tool, tool_entries in rendered.items():
                 # A blanket string action (``'allow'``) is OpenCode's catch-all; a
@@ -2263,19 +2485,23 @@ class OpenCodeRuntime(Runtime):
             )
         settings_path = self.permission_settings_path(scope, write=not dry_run)
         settings = self.permission_load_settings(settings_path)
-        if 'error' in settings:
+        failure = _settings_error(settings)
+        if failure is not None:
+            code, message = failure
             return toon_error(
                 'permission ensure-wildcards',
-                'load_error',
-                f'Failed to load settings from {settings_path}: {settings["error"]}',
+                code,
+                f'Failed to load settings from {settings_path}: {message}',
             )
         res = self.permission_ensure_defaults(settings, settings_path, dry_run=dry_run)
         if res.get('error'):
-            return toon_error(
-                'permission ensure-wildcards',
-                'permission_conflict' if res.get('conflicts') else 'io_error',
-                str(res['error']),
-            )
+            if res.get('error_code'):
+                code = str(res['error_code'])
+            elif res.get('conflicts'):
+                code = 'permission_conflict'
+            else:
+                code = 'io_error'
+            return toon_error('permission ensure-wildcards', code, str(res['error']))
         return toon_success('permission ensure-wildcards', res)
 
     def permission_ensure_steps(self, marshal_path: str, scope: str, dry_run: bool) -> str:
@@ -2339,11 +2565,13 @@ class OpenCodeRuntime(Runtime):
             )
         settings_path = self.permission_settings_path(scope, write=not dry_run)
         settings = self.permission_load_settings(settings_path)
-        if 'error' in settings:
+        failure = _settings_error(settings)
+        if failure is not None:
+            code, message = failure
             return toon_error(
                 'permission web-apply',
-                'load_error',
-                f'Failed to load settings from {settings_path}: {settings["error"]}',
+                code,
+                f'Failed to load settings from {settings_path}: {message}',
             )
         rules = _permission_rules(settings, create=True)
         changed = False
@@ -2364,16 +2592,37 @@ class OpenCodeRuntime(Runtime):
                     _remove_permission_rule(rules, 'webfetch', '*', 'allow')
                 changed = True
         else:
-            perm = settings.setdefault('permission', {})
-            if not isinstance(perm, dict):
-                perm = {}
-                settings['permission'] = perm
+            perm = _permission_map(settings)
+            if perm is None:
+                return toon_error(
+                    'permission web-apply',
+                    'invalid_settings',
+                    PERMISSION_NOT_OBJECT_MESSAGE,
+                )
 
-            if add and perm.get('webfetch') != 'allow':
+            current = perm.get('webfetch')
+            if 'webfetch' in perm and not isinstance(current, (dict, str)):
+                return toon_error(
+                    'permission web-apply',
+                    'invalid_settings',
+                    'the `webfetch` value is neither an object nor a string; refusing to replace it',
+                )
+            if isinstance(current, dict):
+                # A pattern map keeps its rows: the grant is the map's ``*`` row,
+                # written FIRST so a specific deny after it still decides.
+                if add and current.get('*') != 'allow':
+                    if not dry_run:
+                        _set_map_catch_all(current, 'allow')
+                    changed = True
+                elif remove and current.get('*') == 'allow':
+                    if not dry_run:
+                        del current['*']
+                    changed = True
+            elif add and current != 'allow':
                 if not dry_run:
                     perm['webfetch'] = 'allow'
                 changed = True
-            elif remove and perm.get('webfetch') == 'allow':
+            elif remove and current == 'allow':
                 if not dry_run:
                     del perm['webfetch']
                 changed = True
@@ -2382,7 +2631,7 @@ class OpenCodeRuntime(Runtime):
             if not self.permission_save_settings(settings_path, settings):
                 return toon_error(
                     'permission web-apply',
-                    'save_error',
+                    'io_error',
                     f'Failed to write settings to {settings_path}',
                 )
 
@@ -2521,39 +2770,27 @@ class OpenCodeRuntime(Runtime):
 
         - 'global': ~/.config/opencode/opencode.json (or $OPENCODE_CONFIG_DIR/opencode.json)
         - 'project': <project_dir>/opencode.json (prefers existing opencode.json or .opencode/opencode.json)
+
+        Resolution only: this does not create the file. The skeleton is laid
+        down by the FIRST successful write (``permission_save_settings``), so a
+        refusal, a conflict or a dry run that says "no rule was written" leaves
+        no file behind. A project path prefers an existing file, then the
+        ``.opencode/`` copy when that directory exists.
         """
         if scope == 'global':
-            g_path = _opencode_config_dir() / 'opencode.json'
-            if write and not g_path.is_file():
-                g_path.parent.mkdir(parents=True, exist_ok=True)
-                skeleton = _opencode2_skeleton()
-                try:
-                    g_path.write_text(json.dumps(skeleton, indent=2) + '\n', encoding='utf-8')
-                except OSError:
-                    pass
-            return str(g_path)
+            return str(_opencode_config_dir() / 'opencode.json')
 
         if scope == 'project':
             pd = Path(project_dir).resolve() if project_dir else Path.cwd().resolve()
             root_cfg = pd / 'opencode.json'
-            if root_cfg.is_file():
-                return str(root_cfg)
-            dot_cfg = pd / '.opencode' / 'opencode.json'
-            if dot_cfg.is_file():
-                return str(dot_cfg)
+            for candidate in (root_cfg, pd / '.opencode' / 'opencode.json'):
+                if candidate.is_file():
+                    return str(_contained_settings_path(candidate, pd))
 
             target_cfg = root_cfg
             if (pd / '.opencode').is_dir():
-                target_cfg = dot_cfg
-
-            if write and not target_cfg.is_file():
-                target_cfg.parent.mkdir(parents=True, exist_ok=True)
-                skeleton = _opencode2_skeleton()
-                try:
-                    target_cfg.write_text(json.dumps(skeleton, indent=2) + '\n', encoding='utf-8')
-                except OSError:
-                    pass
-            return str(target_cfg)
+                target_cfg = pd / '.opencode' / 'opencode.json'
+            return str(_contained_settings_path(target_cfg, pd))
 
         raise ValueError(f"Unsupported scope: {scope!r}; must be 'global' or 'project'")
 
@@ -2564,24 +2801,79 @@ class OpenCodeRuntime(Runtime):
         never as an empty settings object a writer would then save a skeleton
         over. Undecodable bytes are that case too: a UTF-8 decode failure means
         the file was not read, not that it holds no settings.
+
+        A file that PARSES but carries a shape no writer can use is also an
+        ``error`` (with ``error_code`` ``invalid_settings``): a root that is not
+        an object, a ``permissions`` value that is not a list, or a
+        ``permission`` value that is not an object. Those are valid JSON, so a
+        syntax check alone does not catch them, and rewriting them would clobber
+        an operator's file.
         """
-        p = Path(path)
+        p = _safe_settings_path(path)
+        if p is None:
+            return {'error': 'settings path carries a character outside the allowed set'}
         if not p.is_file():
             return {}
         try:
             data = json.loads(p.read_text(encoding='utf-8'))
-            return data if isinstance(data, dict) else {}
         except (OSError, json.JSONDecodeError, UnicodeDecodeError) as exc:
             return {'error': str(exc)}
+        if not isinstance(data, dict):
+            return {
+                'error': f'settings root is {type(data).__name__}, not an object',
+                'error_code': 'invalid_settings',
+            }
+        if 'permissions' in data and not isinstance(data['permissions'], list):
+            return {
+                'error': f'the `permissions` value is {type(data["permissions"]).__name__}, not a list',
+                'error_code': 'invalid_settings',
+            }
+        if 'permission' in data and not isinstance(data['permission'], dict):
+            return {
+                'error': f'the `permission` value is {type(data["permission"]).__name__}, not an object',
+                'error_code': 'invalid_settings',
+            }
+        return data
 
     def permission_save_settings(self, path: str, settings: dict[str, Any]) -> bool:
-        """Persist settings to an OpenCode JSON file."""
-        p = Path(path)
+        """Persist settings to an OpenCode JSON file.
+
+        The first successful write is what creates the file, so a refused
+        write leaves none behind. When the target is absent and the payload is
+        a fresh OpenCode 2 list, the skeleton's baseline allows are laid down
+        first and the payload's rules follow; a payload in the OpenCode 1 map
+        shape carries its own defaults and is written as it is.
+        """
+        p = _safe_settings_path(path)
+        if p is None:
+            return False
+        payload = settings
+        if not p.is_file() and isinstance(settings.get('permissions'), list) and 'permission' not in settings:
+            skeleton_rules = _opencode2_skeleton()['permissions']
+            extra = [rule for rule in settings['permissions'] if rule not in skeleton_rules]
+            payload = {**settings, 'permissions': skeleton_rules + extra}
+        content = json.dumps(payload, indent=2) + '\n'
+        temporary: Path | None = None
         try:
             p.parent.mkdir(parents=True, exist_ok=True)
-            p.write_text(json.dumps(settings, indent=2) + '\n', encoding='utf-8')
+            with tempfile.NamedTemporaryFile(
+                'w',
+                dir=p.parent,
+                prefix=f'.{p.name}.',
+                suffix='.tmp',
+                delete=False,
+                encoding='utf-8',
+            ) as handle:
+                temporary = Path(handle.name)
+                handle.write(content)
+            os.replace(temporary, p)
             return True
         except OSError:
+            if temporary is not None:
+                try:
+                    temporary.unlink()
+                except OSError:
+                    pass
             return False
 
     def permission_ensure_defaults(
@@ -2649,23 +2941,29 @@ class OpenCodeRuntime(Runtime):
             result['applied'] = bool(list_added and not dry_run and saved)
             return result
 
-        perm = settings.setdefault('permission', {})
-        if not isinstance(perm, dict):
-            perm = {}
-            settings['permission'] = perm
+        perm = _permission_map(settings)
+        if perm is None:
+            return {
+                'defaults_added': [],
+                'defaults_added_count': 0,
+                'defaults_removed': [],
+                'defaults_removed_count': 0,
+                'applied': False,
+                'error': PERMISSION_NOT_OBJECT_MESSAGE,
+            }
 
-        bash_map = perm.get('bash')
-        if not isinstance(bash_map, dict):
-            if bash_map == 'allow':
-                return {
-                    'defaults_added': [],
-                    'defaults_added_count': 0,
-                    'defaults_removed': [],
-                    'defaults_removed_count': 0,
-                    'applied': False,
-                }
-            bash_map = {}
-            perm['bash'] = bash_map
+        bash_map = _bash_rows(perm)
+        if bash_map is None:
+            # A non-string, non-object ``bash`` cannot be preserved as a row.
+            return {
+                'defaults_added': [],
+                'defaults_added_count': 0,
+                'defaults_removed': [],
+                'defaults_removed_count': 0,
+                'applied': False,
+                'error': BASH_NOT_PRESERVABLE_MESSAGE,
+                'error_code': 'invalid_settings',
+            }
 
         added: list[str] = []
         for cmd in OPENCODE_DEFAULT_PERMISSIONS:
