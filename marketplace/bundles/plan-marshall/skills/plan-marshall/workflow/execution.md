@@ -172,7 +172,7 @@ Forward `task_number: {N}` as the per-task runtime input, `envelope_id: {E}` as 
 
 Inside that single envelope, for each task:
 1. Read task details via `manage-tasks next --plan-id {plan_id}`
-2. Load `execute-task` in-context as a `Skill:` (leaf-legal in-context skill loading per `persona-plan-marshall-agent` — NOT a per-task `Task:` subagent dispatch; the new `Task:` block above is the orchestrator-to-execute-envelope dispatch, not a per-task subagent spawn) and run the profile-appropriate workflow
+2. Load `execute-task` in-context as a `Skill:` (leaf-legal in-context skill loading per `persona-plan-marshall-agent` — NOT a per-task `Task:` subagent dispatch; the dispatch block above is the orchestrator-to-execute-envelope dispatch, not a per-task subagent spawn) and run the profile-appropriate workflow
 3. Mark step/task complete via `manage-tasks finalize-step --plan-id {plan_id} --task-number {task_number} --step {step_number} --outcome done`
 
 **Orchestrator per-harness dispatch branch.** The envelope above is the dispatch unit on every harness; only the spawning tool differs per harness. This branch is the one place the sub-agent seam is resolved: a dispatched leaf cannot dispatch, so no leaf resolves it. Before the first dispatch, resolve the seam live for the resolved dispatch target (`{target}` from the `effort resolve-target` call above) and pass whether the spawning tool exists in this envelope:

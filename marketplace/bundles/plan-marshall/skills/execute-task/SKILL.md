@@ -70,9 +70,9 @@ Callers (the `phase-5-execute` envelope, itself dispatched as `execution-context
 
 All profiles share the steps below. Profile-specific steps are documented in each profile section.
 
-### Step: Seam-Dispatch Branch (all profiles)
+### Step: Subagent Seam (resolved by the orchestrator)
 
-This skill runs as a leaf inside the `execution-context` envelope and resolves no sub-agent seam: the main-context orchestrator resolved it per harness before dispatching the envelope — native where the harness exposes a spawning tool, otherwise the explicit logged inline branch under `dispatch_mode: inline` — and writes the envelope's one dispatch-boundary row when it returns (see [`../plan-marshall/workflow/execution.md`](../plan-marshall/workflow/execution.md) § "Orchestrator per-harness dispatch branch"). Every task therefore runs inline in the envelope it was given; a leaf that needs a further dispatch returns the signal to the orchestrator instead of dispatching. Before running any verification command that could exceed the leaf ceiling, re-resolve it live via `architecture resolve` and hand back without starting the run when the live tier is `orchestrator` (stamped values are advisory only); usage propagates as `unknown` on every path where no dispatch happened.
+The seam is resolved once per envelope by the main-context orchestrator's per-harness dispatch branch ([`../plan-marshall/workflow/execution.md`](../plan-marshall/workflow/execution.md) § "Orchestrator per-harness dispatch branch") before this skill runs, so this leaf resolves none itself: a task that needs a further dispatch returns the signal to the orchestrator instead of dispatching, and usage propagates as `unknown` on every path where no dispatch happened. Before running any verification command that could exceed the leaf ceiling, re-resolve it live via `architecture resolve` and hand back without starting the run when the live tier is `orchestrator` (stamped values are advisory only).
 
 ### Step: Resolve Stale Targets
 
