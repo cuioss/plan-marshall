@@ -2154,6 +2154,12 @@ _NON_FINDING_SECTION_LABELS = (
     # counted ``<details>`` block with a ``<picture>`` icon wrapper. It is a diagnostic
     # about what was NOT re-read, so it is neither a findings section nor a stop.
     'files skipped from review as they are similar to previous changes',
+    # OBSERVED on ``cuioss/plan-marshall#1971`` in an INCREMENTAL review: the files that
+    # carried no reviewable change in that pass, again a counted ``<details>`` block with
+    # a ``<picture>`` icon wrapper and one file row per entry. A file list that names
+    # nothing to review is not a findings section, and refusing it would make every
+    # incremental review body undecidable.
+    'files with no reviewable changes',
     'review details',
     'review info',
     'run configuration',
