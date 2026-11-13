@@ -104,7 +104,9 @@ def _append_build_row(repo: Path, tmp_path: Path) -> Path:
 def _read_row(ledger: Path) -> dict:
     lines = [line for line in ledger.read_text(encoding='utf-8').splitlines() if line.strip()]
     assert len(lines) == 1, lines
-    return json.loads(lines[0])
+    row = json.loads(lines[0])
+    assert isinstance(row, dict), row
+    return row
 
 
 class _PlanContext:
