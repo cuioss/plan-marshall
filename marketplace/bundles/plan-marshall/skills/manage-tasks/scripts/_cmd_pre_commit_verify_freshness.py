@@ -166,6 +166,7 @@ phase-6-finalize ``push`` — is documented in
 "Pre-Commit Verify Freshness".
 """
 
+from collections.abc import Callable
 from pathlib import Path
 
 from _freshness_crosscheck import (
@@ -300,25 +301,29 @@ _STALE_DISPATCH_HASH_UNREADABLE = (
     'was stable across the build. Re-dispatch the build.',
 )
 
-#: Why a row that carries the current hash was still not citable, in the order
-#: the reason is chosen when several routes apply. A root mismatch wins over a
-#: rewrite: the row is then about another tree entirely, and naming the rewrite
-#: would describe a tree this gate never asked about.
-_REFUSAL_PRECEDENCE: tuple[str, ...] = (
-    _STALE_ROOT_MISMATCH[0],
-    _STALE_REWRITTEN_BY_BUILD[0],
-    _STALE_ROOT_UNREADABLE[0],
-    _STALE_DISPATCH_HASH_UNREADABLE[0],
+#: The tree-identity refusal routes, ONE ordered registry: each entry carries the
+#: reason, its message and the verdict pair that selects it. Routing, precedence
+#: and message lookup all read this tuple, so a route added here is wired
+#: everywhere at once — and no route can name a message that no routing rule can
+#: produce (which is what a separately-maintained message table allowed, and what
+#: would have turned a missing entry into a StopIteration at the gate).
+#: A root mismatch wins over a rewrite: the row is then about another tree
+#: entirely, and naming the rewrite would describe a tree this gate never asked
+#: about.
+_REFUSAL_ROUTES: tuple[tuple[str, str, Callable[[str, str], bool]], ...] = (
+    (_STALE_ROOT_MISMATCH[0], _STALE_ROOT_MISMATCH[1], lambda root, _h: root == _DIFFERENT),
+    (_STALE_REWRITTEN_BY_BUILD[0], _STALE_REWRITTEN_BY_BUILD[1], lambda _r, hash_: hash_ == _DIFFERENT),
+    (_STALE_ROOT_UNREADABLE[0], _STALE_ROOT_UNREADABLE[1], lambda root, _h: root == _UNREADABLE),
+    (
+        _STALE_DISPATCH_HASH_UNREADABLE[0],
+        _STALE_DISPATCH_HASH_UNREADABLE[1],
+        lambda _r, hash_: hash_ == _UNREADABLE,
+    ),
 )
 
-_REFUSAL_MESSAGES: dict[str, str] = dict(
-    (
-        _STALE_ROOT_MISMATCH,
-        _STALE_REWRITTEN_BY_BUILD,
-        _STALE_ROOT_UNREADABLE,
-        _STALE_DISPATCH_HASH_UNREADABLE,
-    )
-)
+_REFUSAL_PRECEDENCE: tuple[str, ...] = tuple(reason for reason, _message, _rule in _REFUSAL_ROUTES)
+
+_REFUSAL_MESSAGES: dict[str, str] = {reason: message for reason, message, _rule in _REFUSAL_ROUTES}
 
 
 def _same_path(recorded: str, gate_root: Path) -> bool | None:
@@ -383,15 +388,14 @@ def _row_tree_verdicts(entry: dict, gate_root: Path) -> tuple[str, str]:
 
 
 def _refusal_route(root_verdict: str, hash_verdict: str) -> str | None:
-    """The route a candidate row is refused on, or ``None`` when it is citable."""
-    if root_verdict == _DIFFERENT:
-        return _STALE_ROOT_MISMATCH[0]
-    if hash_verdict == _DIFFERENT:
-        return _STALE_REWRITTEN_BY_BUILD[0]
-    if root_verdict == _UNREADABLE:
-        return _STALE_ROOT_UNREADABLE[0]
-    if hash_verdict == _UNREADABLE:
-        return _STALE_DISPATCH_HASH_UNREADABLE[0]
+    """The route a candidate row is refused on, or ``None`` when it is citable.
+
+    Reads :data:`_REFUSAL_ROUTES` in its declared order, so the route a row is
+    refused on and the precedence between routes cannot drift apart.
+    """
+    for reason, _message, rule in _REFUSAL_ROUTES:
+        if rule(root_verdict, hash_verdict):
+            return reason
     return None
 
 
