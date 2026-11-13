@@ -306,6 +306,25 @@ def test_a_corrupt_ledger_never_loses_the_daemon_result(home, ledger, monkeypatc
     assert 'exec_path' not in result
 
 
+def test_a_corrupt_ledger_on_the_reattach_path_answers_not_found(home, ledger, monkeypatch) -> None:
+    """Re-attach reads the ledger FIRST, so that read must be as forgiving.
+
+    `_latest_job_id_for_plan` runs before `_job_row` when the caller gave no
+    `--job-id`; a non-UTF-8 ledger raises there, and an uncaught exception would
+    answer `internal_error` instead of the documented NOT_FOUND.
+    """
+
+    def _corrupt():
+        raise UnicodeDecodeError('utf-8', b'\xff', 0, 1, 'invalid start byte')
+
+    monkeypatch.setattr(client, 'read_entries', _corrupt)
+
+    result = client.run_wait(_variant(_WAIT_ARGS, job_id=None, plan_id='p1', bound=1))
+
+    assert result['status'] == 'error', result
+    assert 'no --job-id' in result.get('error', result.get('message', '')), result
+
+
 def test_a_plan_scoped_submit_writes_no_global_line(home, ledger, captured_logs, monkeypatch) -> None:
     """CONTROL: the global line is the plan-less route only."""
     _queue(monkeypatch)

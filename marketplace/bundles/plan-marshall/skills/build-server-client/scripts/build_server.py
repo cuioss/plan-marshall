@@ -445,11 +445,14 @@ def _latest_job_id_for_plan(plan_id: str) -> str | None:
     """
     try:
         entries = read_entries()
-    except OSError:
+    except (OSError, ValueError):
         # Reading the ledger is best-effort on this path: an unreadable ledger
         # is indistinguishable, from the caller's point of view, from one that
         # holds no matching row. Returning None falls through to run_wait's
         # existing NOT_FOUND result instead of crashing the client.
+        # ``ValueError`` covers a corrupt (non-UTF-8) ledger, which
+        # ``read_entries`` does not swallow — this is the FIRST ledger read on
+        # the re-attach path, so it must be as forgiving as ``_job_row`` is.
         return None
     matches = [
         entry.get('job_id')
