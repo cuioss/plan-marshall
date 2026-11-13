@@ -294,11 +294,11 @@ means an edit after a clean-tree build changes the sha, and the gate correctly
 reports `stale`.
 
 **The hash is computed against the tree the wrapped build ran in, and the row
-says which tree that was.** The executor's dispatch boundary resolves that root
-through the same shared plan-context resolver this gate resolves
-(`resolve_plan_context`) — from the `--project-dir` the wrapper builds in, or
-else from the plan the wrapper's own `--plan-id` reads — and hashes it, so the
-writer and the reader describe ONE tree instead of the writer hashing whatever
+says which tree that was.** The executor's dispatch boundary resolves that root —
+from the `--project-dir` the wrapper builds in, or else through the same shared
+plan-context resolver this gate resolves (`resolve_plan_context`, on the plan the
+wrapper's own `--plan-id` reads) — and hashes it, so the writer and the reader
+describe ONE tree instead of the writer hashing whatever
 directory its process happened to be in. `--audit-plan-id` is attribution only:
 it names the plan a row is FILED under and never the tree. A plan-less dispatch
 records the tree it was dispatched from, or the `--project-dir` it names. The row

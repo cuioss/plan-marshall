@@ -65,8 +65,9 @@ alone converts a silent wrong-reason pass into a visible one, independently of
 whether the cross-check could be performed.
 
 **A matching hash is not the same claim as a matching TREE.** The row is hashed
-against the tree the wrapped build ran in — the recorder resolves that tree
-through the same shared plan-context resolver this gate resolves — and it records
+against the tree the wrapped build ran in — from the `--project-dir` the wrapper
+builds in, or else through the same shared plan-context resolver this gate
+resolves — and it records
 both the root it hashed and the tree hash it captured BEFORE the build ran. So the
 gate matches on three facts, not one: the currency hash, the root the row was
 hashed against, and the dispatch hash equalling the completion hash. A row hashed
@@ -352,8 +353,8 @@ def _row_tree_verdicts(entry: dict, gate_root: Path) -> tuple[str, str]:
     a difference means the build changed the tree while it ran, so the green it
     reports is about the rewritten tree.
 
-    Both are three-plus-one-valued: ``unrecorded`` (the KEY is absent — a row
-    written before the field existed, matched as today), ``same``, ``different``,
+    Both are three-plus-one-valued: ``unrecorded`` (the KEY is absent — the
+    legacy shape, matched on the completion hash), ``same``, ``different``,
     ``unreadable``.
 
     ⛔ **Presence of the key, not a null value, is the legacy test.** A writer
