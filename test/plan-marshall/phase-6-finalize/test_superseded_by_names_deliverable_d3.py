@@ -351,15 +351,19 @@ def test_a_refused_spelling_and_a_refused_number_say_different_things(plan_conte
     assert spelling_errors != number_errors, (spelling_errors, number_errors)
 
 
-@pytest.mark.parametrize('cited', ['D3_notes', 'D3x', 'D3é'])
+@pytest.mark.parametrize('cited', ['D2_notes', 'D2x', 'D2é'])
 def test_an_underscore_or_word_joined_token_is_not_a_citation(plan_context, tmp_path, cited) -> None:
     """A reference terminated by a WORD is prose, never a citation.
 
-    The trailing guard is what separates ``D3`` from ``D3_notes`` and from a longer
-    number: the italic marker the documents invite closes with an underscore that is
-    followed by nothing, while an underscore that JOINS another word is prose. Both
-    directions are pinned, because a guard loose enough to admit the first equally
-    admits the second unless it says so.
+    The trailing guard is what separates ``D2`` from ``D2_notes``: the italic marker
+    the documents invite closes with an underscore that is followed by nothing, while
+    an underscore that JOINS another word is prose. Both directions are pinned,
+    because a guard loose enough to admit the first equally admits the second unless
+    it says so.
+
+    The numbers name a deliverable the fixture REALLY has (2): with an unknown
+    number a wrongly-accepted spelling would still be refused as an unknown
+    deliverable, and the control would pass for a reason it does not test.
     """
     plan_dir = _plan(plan_context)
     validated = review_support.run_validate(

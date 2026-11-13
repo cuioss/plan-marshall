@@ -1119,17 +1119,20 @@ def _project_dir_arg(script_args: list[str]) -> str | None:
     """The explicit ``--project-dir`` value in the wrapper argv, if any.
 
     Read from the argv the WRAPPER sees, because that is the flag the wrapper
-    resolves its build tree from — one flag, both spellings argparse accepts. A
-    dangling flag (no value behind it) yields ``None`` and the root resolution
-    falls through to the plan id, which is the fail-closed direction: the wrapper
-    will reject the invocation itself.
+    resolves its build tree from — one flag, both spellings argparse accepts — and
+    the LAST occurrence wins, exactly as argparse's ``store`` action keeps it.
+    Taking the FIRST would hash a tree the wrapper did not build in whenever a
+    caller repeats the flag. A dangling flag (no value behind it) leaves the
+    selection ``None`` and the root resolution falls through to the plan id, which
+    is the fail-closed direction: the wrapper rejects the invocation itself.
     """
+    selected: str | None = None
     for index, token in enumerate(script_args):
         if token == '--project-dir':
-            return script_args[index + 1] if index + 1 < len(script_args) else None
-        if token.startswith('--project-dir='):
-            return token.split('=', 1)[1] or None
-    return None
+            selected = script_args[index + 1] if index + 1 < len(script_args) else None
+        elif token.startswith('--project-dir='):
+            selected = token.split('=', 1)[1] or None
+    return selected
 
 
 def _tree_state(root: str | None) -> tuple[str | None, str | None]:

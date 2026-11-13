@@ -740,12 +740,21 @@ def _gradle_subproject_scope(payload: list[str]) -> tuple[str, ...]:
     submodule row narrow against a change its own subproject requires — it could never
     be adequate for any change. The derived names, in first-seen order, are what
     :func:`_scope_adequate` compares with the change's module set.
+
+    A token with no INNER colon (``:test``, ``:build``) is a ROOT-project task: its
+    stripped path is the task itself, not a project path. It therefore contributes
+    no module — crediting the task name as a subproject would let a root run be
+    read as a claim about a module nobody built, and would refuse a whole-tree
+    change on the back of a name that names nothing.
     """
     modules: list[str] = []
     for token in payload:
         if not token.startswith(':'):
             continue
-        module = token.strip(':').rsplit(':', 1)[0]
+        project_path = token.strip(':')
+        if ':' not in project_path:
+            continue
+        module = project_path.rsplit(':', 1)[0]
         if module and module not in modules:
             modules.append(module)
     return tuple(modules)

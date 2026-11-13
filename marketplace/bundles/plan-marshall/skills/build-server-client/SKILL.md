@@ -136,12 +136,16 @@ failing the build:
 
 ## Interaction audit logging (non-silent)
 
-Every `submit` and `wait` interaction is logged to the plan's **work log** — the
-GLOBAL work log when the submission names no plan — at a
+Every `submit` and `wait` interaction that reaches the routing decision is logged
+to the plan's **work log** — the GLOBAL work log when the submission names no plan
+— at a
 captured level, through the same `plan_logging` substrate the `manage-logging`
 work verb writes through, so no interaction outcome is emitted only at an
 uncaptured Python log level: a `degraded` fallback or a `refused` submit stays
-visible at the captured threshold.
+visible at the captured threshold. An invocation the verb REFUSES before that
+point — an unparseable `--command`, a `wait` with neither a job id nor a
+re-attachable ledger row — answers from its own error payload and writes no
+interaction entry, because no job was submitted or waited on.
 
 - **Normal outcomes log at INFO.** A queued `submit` acceptance and a `wait`
   result each write one entry carrying the `job_id` — the same id written to the
@@ -162,8 +166,9 @@ visible at the captured threshold.
 - **The build-execute routing seam's own resolution line lands here too.** The
   routing decision (`[BUILD-SERVER] resolved build (requested=…, resolved=routed|in_process|fail-loud, reason=…)`)
   is written to the same work log through the same substrate, at the same
-  INFO-normal / WARNING-on-fallback levels, and is additionally mirrored to
-  stderr beside `[EXEC]` so a plan-less build stays observable. The emitting
+  INFO-normal / WARNING-on-fallback levels, and is ALWAYS mirrored to stderr
+  beside `[EXEC]` — the only sink a plan-less build has, because a plan-less
+  dispatch owns no plan work log and its line goes to stderr alone. The emitting
   module is `script-shared/scripts/build/_build_execute_factory.py` — see it for
   the format string and the level rule (not restated here).
 - **Secrets discipline.** A logged entry carries ONLY non-secret correlation

@@ -24,6 +24,7 @@ the push gate would halt with a remedy that only writes another refused row.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from argparse import Namespace
 from pathlib import Path
@@ -49,16 +50,27 @@ _PLAN_ID = 'lb-149-unrecorded-tree-row'
 
 _APPEND_SCRIPT = get_script_path('plan-marshall', 'manage-change-ledger', 'manage-change-ledger.py')
 
+#: Repository-location variables a test must NOT inherit. A suite run from inside a
+#: Git hook inherits them, and git would then target the CALLER's repository or
+#: index instead of the temporary one — the helper's own ``config``/``add``/
+#: ``commit`` calls would mutate a developer's checkout.
+_GIT_LOCATION_VARS = frozenset({'GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_OBJECT_DIRECTORY', 'GIT_COMMON_DIR'})
+
+
+def _git_env() -> dict[str, str]:
+    """The environment every git call in this module runs under."""
+    return {key: value for key, value in os.environ.items() if key not in _GIT_LOCATION_VARS}
+
 
 def _git(repo: Path, *args: str) -> None:
     """Run a git command in ``repo``, raising on failure."""
-    subprocess.run(['git', '-C', str(repo), *args], check=True, capture_output=True)
+    subprocess.run(['git', '-C', str(repo), *args], check=True, capture_output=True, env=_git_env())
 
 
 def _init_repo(repo: Path) -> Path:
     """Initialise a real git repo with one committed file."""
     repo.mkdir(parents=True)
-    subprocess.run(['git', 'init', '-q', '-b', 'main', str(repo)], check=True)
+    subprocess.run(['git', 'init', '-q', '-b', 'main', str(repo)], check=True, env=_git_env())
     _git(repo, 'config', 'user.email', 't@t.test')
     _git(repo, 'config', 'user.name', 'Test')
     (repo / 'tracked.py').write_text('value = 1\n', encoding='utf-8')

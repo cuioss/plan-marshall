@@ -1190,6 +1190,21 @@ def test_a_single_task_gradle_submodule_row_reads_as_a_narrow_scoped_row(monkeyp
     assert own_module['contributing'] == [0], own_module
 
 
+def test_a_root_project_task_names_no_subproject(monkeypatch) -> None:
+    """A ``:``-prefixed task with no INNER colon is a root task, never a module.
+
+    The stripped path of ``:test`` is the task itself, so deriving a subproject from
+    it credited the row with a blast radius nobody built — a change confined to a
+    module named ``test`` would have been judged covered — and refused a whole-tree
+    change on a name that names nothing. It contributes no module, so a lone one
+    leaves the row unreadable rather than whole-tree.
+    """
+    _stub_expected(monkeypatch, {_GRADLE})
+    row = _build_entry(notation=_GRADLE, args=_args_for(':test'), outcome=_outcome_for(120))
+
+    assert crosscheck.parse_row_scope(row) is None
+
+
 def test_a_payload_that_derives_no_subproject_is_unreadable_not_whole_tree(monkeypatch) -> None:
     """``: :`` carries no subproject path, so the row is unreadable, never whole-tree.
 

@@ -61,8 +61,8 @@ class _Pin:
     ``retired_provenance`` says what the control CLAIMS about history:
 
     * ``parent`` — the retired wording is quoted from the document as it stood
-      BEFORE the PLAN-LB-146 change, recorded in ``_PARENT_WORDING`` and checked
-      against it;
+      BEFORE the PLAN-LB-146 change, recorded ON THE PIN in ``parent_wording`` and
+      checked against it;
     * ``planted`` — the control makes NO history claim. The substituted text is a
       mutation planted to prove the pin is section-scoped, whether or not some
       earlier revision of the document happened to contain it.
@@ -77,6 +77,7 @@ class _Pin:
         snippet: str,
         retired: str,
         retired_provenance: str = 'planted',
+        parent_wording: str | None = None,
     ) -> None:
         self.label = label
         self.path = path
@@ -84,6 +85,7 @@ class _Pin:
         self.snippet = snippet
         self.retired = retired
         self.retired_provenance = retired_provenance
+        self.parent_wording = parent_wording
 
 
 #: How far past the marker the snippet may sit in a document with NO headings to
@@ -108,6 +110,10 @@ _PINS = (
         snippet="the tree's hash BEFORE the build ran",
         retired=_RETIRED_CWD_HASH,
         retired_provenance='parent',
+        parent_wording=(
+            ":func:`compute_worktree_sha` against the executor's cwd (pinned to the\n"
+            '    worktree in phase-5, the main checkout otherwise)'
+        ),
     ),
     _Pin(
         label='executor template — its module docstring states the same schema',
@@ -180,19 +186,6 @@ _PINS = (
         retired=_PARENT_PLAN_LESS_SILENCE,
     ),
 )
-
-
-#: The parent's own wording, recorded from the commit that retired it, per pin
-#: label. Only a pin whose control QUOTES history belongs here; a control that
-#: substitutes a line the parent never held is labelled ``planted`` on the pin and
-#: is deliberately absent — see
-#: ``test_every_retired_string_is_parent_text_or_labelled_a_planted_mutation``.
-_PARENT_WORDING: dict[str, str] = {
-    'executor template — the row names the root and both hashes': (
-        ":func:`compute_worktree_sha` against the executor's cwd (pinned to the\n"
-        '    worktree in phase-5, the main checkout otherwise)'
-    ),
-}
 
 
 def _section_span(text: str, marker: str, *, heading_bounded: bool) -> tuple[int, int] | None:
@@ -320,27 +313,21 @@ def test_every_retired_string_is_parent_text_or_labelled_a_planted_mutation(pin:
 
     A mutation control that substitutes wording the document never held proves less
     than it appears to: it shows the pin is section-scoped, not that the document
-    stopped making the retired claim. Every pin therefore declares where its
-    retired wording came from, and each one that claims history is checked against
-    the parent wording recorded here.
+    stopped making the retired claim. Each pin therefore carries its provenance ON
+    ITSELF — one source, so a renamed pin cannot leave a label-keyed table behind —
+    and a pin that claims history must record the parent wording its control quotes.
     """
     assert pin.retired_provenance in {'parent', 'planted'}, pin.label
     if pin.retired_provenance == 'planted':
+        assert pin.parent_wording is None, (
+            f'{pin.label}: a planted control records no history, so it must not carry parent wording'
+        )
         return
-    assert pin.label in _PARENT_WORDING, f'{pin.label}: the pin claims parent provenance but records no parent wording'
-    parent_text = _PARENT_WORDING[pin.label]
-    assert pin.retired in parent_text, (
-        f'{pin.label}: the retired string {pin.retired!r} is absent from the parent '
-        f'wording this pin records ({parent_text!r}) — label it a planted mutation '
-        'instead of presenting it as history'
+    assert pin.parent_wording is not None, (
+        f'{pin.label}: the pin claims parent provenance but records no parent wording'
     )
-
-
-def test_no_pin_is_labelled_a_history_quote_without_recording_one() -> None:
-    """The provenance table holds exactly the pins that claim it — no dead entries."""
-    declared_parent = {pin.label for pin in _PINS if pin.retired_provenance == 'parent'}
-
-    assert declared_parent == set(_PARENT_WORDING), (
-        f'pins claiming parent provenance: {sorted(declared_parent)}; recorded parent '
-        f'wording: {sorted(_PARENT_WORDING)}'
+    assert pin.retired in pin.parent_wording, (
+        f'{pin.label}: the retired string {pin.retired!r} is absent from the parent '
+        f'wording this pin records ({pin.parent_wording!r}) — label it a planted '
+        'mutation instead of presenting it as history'
     )

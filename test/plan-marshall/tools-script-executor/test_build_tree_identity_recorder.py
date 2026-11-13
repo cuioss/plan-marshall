@@ -47,10 +47,16 @@ _NOTATION = 'plan-marshall:build-pyproject:pyproject_build'
 
 _PLAN_ID = 'lb-146-tree-identity'
 
+#: Repository-location variables a test must NOT inherit. A suite run from inside a
+#: Git hook inherits them, and git would then target the CALLER's repository or
+#: index instead of the temporary one — the helper's own ``config``/``add``/
+#: ``commit`` calls would mutate a developer's checkout.
+_GIT_LOCATION_VARS = frozenset({'GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_OBJECT_DIRECTORY', 'GIT_COMMON_DIR'})
+
 #: Pinned author/committer identity and dates, so two checkouts of the same
 #: content carry the same HEAD sha and therefore the same currency hash.
 _GIT_ENV = {
-    **os.environ,
+    **{key: value for key, value in os.environ.items() if key not in _GIT_LOCATION_VARS},
     'GIT_AUTHOR_NAME': 'Test',
     'GIT_AUTHOR_EMAIL': 't@t.test',
     'GIT_AUTHOR_DATE': '2020-01-01T00:00:00 +0000',
@@ -331,6 +337,44 @@ def test_a_plan_less_dispatch_with_project_dir_records_that_tree(tmp_path, ledge
     assert Path(entry['worktree_root']).resolve() == built_tree.resolve()
     assert entry['worktree_sha'] == compute_worktree_sha(built_tree)
     assert entry['plan_id'] == NO_PLAN_SENTINEL
+
+
+def test_a_repeated_project_dir_records_the_last_value(tmp_path, ledger_path, monkeypatch) -> None:
+    """A repeated ``--project-dir`` resolves to the LAST value, as the wrapper does.
+
+    argparse's ``store`` action keeps the last occurrence, so the wrapper builds in
+    the second tree. Selecting the first here would name and hash a tree the build
+    never ran in — the wrong-tree credit this whole recorder exists to remove.
+    """
+    dispatch_from = _init_repo(tmp_path / 'launcher', tracked='launcher.py', content='launcher content\n')
+    first_tree = _init_repo(tmp_path / 'first-tree', tracked='first.py', content='first content\n')
+    last_tree = _init_repo(tmp_path / 'last-tree', tracked='last.py', content='last content\n')
+
+    module = _load_template_module()
+    _redirect_ledger(module, monkeypatch, ledger_path)
+    monkeypatch.setattr(module, 'resolve_notation', lambda _notation: str(_success_build_script(tmp_path)))
+    monkeypatch.setattr(
+        module.sys,
+        'argv',
+        [
+            'execute-script.py',
+            _NOTATION,
+            'run',
+            '--project-dir',
+            str(first_tree),
+            '--project-dir',
+            str(last_tree),
+        ],
+    )
+    monkeypatch.chdir(dispatch_from)
+
+    with pytest.raises(SystemExit) as exit_info:
+        module.main()
+
+    assert exit_info.value.code == 0
+    entry = read_entries(path=ledger_path)[0]
+    assert Path(entry['worktree_root']).resolve() == last_tree.resolve()
+    assert entry['worktree_sha'] == compute_worktree_sha(last_tree)
 
 
 # =============================================================================
