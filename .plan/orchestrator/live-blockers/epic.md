@@ -157,6 +157,37 @@ derive, for rows still live.
   harness sync is owed for the OpenCode target; no executor regeneration. The three Open Defects staged as its deliverables are retired to
   `settled.md`.
 
+- **PLAN-LB-149** (staged 2026-11-13 on the operator's word, runbook lane, WS-02) — plan D of the per-surface fix plans,
+  `plans/PLAN-LB-149-build-row-writers-and-freshness-truth.md`. Five deliverables on one surface (the build-row writers, the freshness gate and
+  their documents): D1 a writer that recorded nothing about the tree omits the two tree keys, and only a writer that tried and failed writes an
+  explicit null (closes PLAN-LB-146 F1: the gate refuses a present null for good, and the CLI and a not-yet-regenerated executor write one; the
+  trade-off, recorded: their rows read as the pre-change reading until the executor is regenerated, so regeneration no longer halts the push
+  gate); D2 the recorder hashes the tree the wrapper built, not the tree of the plan named by `--audit-plan-id` (F2, fail-open, traced by the
+  orchestrator at the plan-id line and by the leaf through the wrapper); D3 the pre-build tree hash gets a timeout and a failed git call is no
+  hash (the grounding found that today a failed call hashes as the clean tree); D4 a lone `:module:task` Gradle row is a scoped row, the
+  operator's decision 1, plus the empty-derivation `: :` case that reads whole-tree; D5 documents and pins (a vacuous sweep test, retired strings
+  the old documents never held, two documents contradicting each other, change-history wording). The operator's decision 2 is NOT in it (see the
+  Decisions entry). The surface comparison is determinate with no overlap with PLAN-LB-136 or PLAN-LB-148; `corpus spec-skills` reports
+  `emit_allowed` true, `corpus verdicts` blocking 0, and `corpus lint-done-whens` reports nothing for it. The template changes, so an executor
+  regeneration is owed after it.
+
+- **PLAN-LB-146** (shipped, PR #1971, 2026-11-13, runbook lane, `deepseek-v4.1-flash/high`) — see `landings/PLAN-LB-146.md`. Merge commit
+  `877a05ac7`, a squash commit with one parent `e81ddd6b1` (read with git before the leaf prompt named it); 20 changed paths counted from git,
+  12 more and 4 fewer than the 12 the spec declares (the new test modules and the ledger files; two hypothesis entries untouched). One
+  three-layer leaf read it with ten lane claims; the orchestrator re-read the ledger writer, the gate's verdict function and the plan-id lines
+  of the template, and says which points it did not re-read. The lane counts four of four deliverables done; the reading agrees for D2 and
+  D3. The message is `complete: false` on `total_tokens` alone (out of scope). The gate reads 0 unresolved threads and 9 findings; the
+  lane's 9 of 9 handled is not in its progress file (no per-finding line), the PR threads carry it. **No blocker; two majors in the freshness
+  path.** Closed: a build row names the root it hashed and both hashes, a rewriting build is named, a submit and its wait name the tree,
+  and a plan-less submit is work-logged. Open, one surface (the freshness gate, the ledger writers and their documents, now plan D, which
+  is unblocked): (F1) the gate reads a row as legacy by key presence but `build_record` always writes both new keys as null, so an executor
+  not yet regenerated and the `manage-change-ledger append --kind build` CLI write rows the gate refuses for good, and the refusal says
+  re-dispatch; (F2) a build run with `--audit-plan-id X` records X's worktree hash twice for a tree it did not build and reads fresh; the
+  dispatch capture runs untimed git before the build; a vacuous document sweep test; two documents contradict each other on null; old-behaviour
+  wording. The scope extension (the `files with no reviewable changes` label in `runbook_lane.py`) makes PLAN-LB-148 deliverable 3
+  redundant. The `-base` worktree of the lane remains (four untracked copied test files; owed cleanup, not forced). Executor regeneration is
+  owed and, because of F1, is now a prerequisite rather than housekeeping.
+
 - **PLAN-LB-148** (staged 2026-11-12 on the operator's word, runbook lane, WS-05) — plan A of the per-surface fix plans, `plans/PLAN-LB-148-required-review-check-truth.md`.
   Five deliverables on one surface (the lane's required-review check, the one finished-review predicate, the review-gate parser and their
   documents): D1 the lane reads the RAW comment bodies in-process and stops reconstructing fences and comment boundaries from the flattened
@@ -1642,6 +1673,51 @@ derive, for rows still live.
 - **Operator decisions the specs leave open** (each is a verify-first clause in its spec):
 
 ## Decisions
+
+- 2026-11-13 (open plans reviewed) — **Plan D is staged as PLAN-LB-149, plan C is not staged, PLAN-LB-148 is corrected, and decision 2 comes back
+  to the operator.** The operator said "go through the open plan / open / issues and cleanup / update the remaining plan(s) after that land and
+  emit". Two read-only grounding leaves ran at `877a05ac7`, one per surface, and the orchestrator re-read the writer, the gate's verdict
+  function, the recorder's plan-id line and the two specs' surfaces. **Plan C (the merge-lock verbs and the pre-merge gate) is NOT staged:**
+  the leaf graded every item minor or info, every fault path fails closed, nothing leads to a wrong merge or a hang, the worst stall heals
+  itself or needs a rare filesystem fault, and the strongest one (an escalation that recommends "wait and retry" behind an entry that cannot
+  leave) comes from the no-expiry decision of PLAN-LB-145 and not from wording; that was the operator's own rule for staging (a major or a
+  blocking item), so the PLAN-LB-145 residue stays recorded as minors with the items a later plan would carry. **PLAN-LB-148 is updated:** its
+  deliverable 3 asked for the label `files with no reviewable changes`, which PLAN-LB-146 already put on `main`, so the deliverable is
+  rewritten to what is left (the fixture PLAN-LB-146 added has placeholder icon URLs while its docstring says verbatim capture, and is replaced
+  by the real block captured from `cuioss/plan-marshall#1964`) and a Dependencies note records that `main` moved; edited in the spec, not by
+  a mailbox note, because a mailbox message is limited to three kinds and the lane's mailbox key is not stamped yet. **Decision 2 does not
+  hold as decided:** the operator chose "remove a retired deliverable from the outline and say so in the two documents", conditional on the
+  route working. The grounding shows it works only for a deliverable that is outline-only and has a `criteria-authorize` record for every frozen
+  criterion; for a deliverable whose spec or request Done-when is frozen (the normal case for an orchestrator spec) `_spec_clause_drift` and
+  `_request_clause_drift` raise a blocking `spec_criterion_missing` or `request_criterion_missing` with no authorization check, and
+  `review-rubric.md:43` says there is no drop route. So it is not in PLAN-LB-149 and is put to the operator again. Also graded by the leaf, not
+  staged: the PLAN-LB-144 residue outside plan D's files, of which one item is high for data integrity if it holds: `manage-findings` rewrites
+  its store by a non-atomic read, truncate and rewrite with no lock (`jsonl_store.py:76-95`, `_findings_core.py:341-356` and `:1342`), so a
+  concurrent append is lost and a crash truncates the store; not re-read here, so it needs its own grounding before a plan. A second item, a
+  legacy finding row with a missing `resolution` that is neither joined nor reported (`review_completeness.py:1283`), fails open silently.
+
+- 2026-11-13 (analysed, synced) — **PLAN-LB-146 is analysed and shipped; the operator ran /sync-harnesses.** The operator said "analyze
+  landed" and then asked why agents hit `undecidable_read`; the answer is that `main` has carried the `files with no reviewable changes`
+  label since PR #1971 and a copy that predates it refuses the title (`runbook_lane.py:2472` produces the detail, `:2807` the reason). The
+  landing has two majors (F1, F2) in the plan D surface; plan D is unblocked by this landing and is not staged without the operator word.
+  The sync: regeneration of the three trees succeeded (generate-claude needed a re-attach after 300 s queued), `sync.py` returned partial
+  only because the registry is behind (cache and trees at 0.1.2118, registry pinned 0.1.2116, project-scope entries 0.1.2114), the daemon
+  reconcile was a no-op, and the pin report is a dry run; the repin `--apply` and the restart are the operator's. **Consequence of F1 to
+  watch:** the plugin cache now holds the new `_ledger_core` while this repository's executor is still the old one (0.1.2076 at last read);
+  whether the old executor imports the cache copy was not read (the executor is a `.plan/` file), so whether builds in this repository now
+  write refused rows is unverified. The executor regeneration via /marshall-steward removes the question and is the operator's next step.
+
+- 2026-11-12 (landed and emitted) — **The ledger is landed and PLAN-LB-148 is emitted.** After the staging below, `land snapshot` pushed 62
+  paths for two epics (including 15 `lessons-routing` inbox files another session had written), PR #1975 was opened against `main` and bound,
+  `checks wait` returned green (`verify / conclusion` pass, `verify / verify` skipped by the footprint gate), the PR went through the merge
+  queue and merged as `e81ddd6b1`, and `land resync` returned `resynced` with the main checkout fast-forwarded and the remote branch already
+  absent. The land carried the ledger as it stood at the snapshot; everything written after it (this entry, the emit transition, the anchor)
+  rides the next land. PLAN-LB-148 moved from `staged` to `running` and its command is the spec's hand-off line; its `plan_marshall_plan_id`
+  and `pr` are stamped at the lane's first message. Slots: PLAN-LB-146, PLAN-LB-136 and PLAN-LB-148 are in flight, three of four in use.
+  One finding while resyncing, not fixed: `CLAUDE.md` on `main` no longer has the heading `## Standalone Plan Lane (doc/plans/)`. PR #1974
+  deleted that line while inserting the Merge Authorization section before it, so the paragraph that opens that section now sits under Merge
+  Authorization, and the link `#standalone-plan-lane-docplans` in the Hard Rules paragraph dangles. The fix is one line and belongs to the
+  operator's word.
 
 - 2026-11-12 (staged) — **Plan A is staged as PLAN-LB-148; the operator asked to stage, land and emit.** The operator said "yes. stage, land
   and emit". One read-only grounding leaf ran against `main` at `c9dcfd290` over eight claim groups; the orchestrator re-read the display

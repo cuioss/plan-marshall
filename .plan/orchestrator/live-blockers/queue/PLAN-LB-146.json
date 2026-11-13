@@ -2,10 +2,10 @@
   "id": "PLAN-LB-146",
   "slug": "build-result-names-the-tree-built",
   "workstream": "WS-02",
-  "status": "running",
+  "status": "shipped",
   "lane": "runbook",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "plan_marshall_plan_id": "rb-lb-146-build-result-names-the-tree-built",
+  "pr": "1971",
+  "landing": "landings/PLAN-LB-146.md",
   "seq": 146
 }
