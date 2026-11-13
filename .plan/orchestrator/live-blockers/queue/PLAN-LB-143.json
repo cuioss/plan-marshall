@@ -2,10 +2,10 @@
   "id": "PLAN-LB-143",
   "slug": "opencode-permission-writer-completion",
   "workstream": "WS-04",
-  "status": "staged",
+  "status": "shipped",
   "lane": "runbook",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "plan_marshall_plan_id": "rb-lb-143-opencode-permission-writer-completion",
+  "pr": "1964",
+  "landing": "landings/PLAN-LB-143.md",
   "seq": 143
 }

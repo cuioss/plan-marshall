@@ -976,6 +976,24 @@ Relocated verbatim from `epic.md` by `cleanup`; each origin keeps a pointer nami
   - PLAN-LB-30 — what to do if the organisation workflow release is not available; the two
     `project.yml` schema decisions; cutting the organisation release.
 
+## Open Defects closed by PLAN-LB-143 (PR #1964, 2026-11-12)
+
+Three Open Defects from the PLAN-LB-134 landing analysis, staged as deliverables 1 to 3 of PLAN-LB-143 on the operator's word of 2026-11-11 and
+relocated here when that plan shipped. Detail of what the landing closed and what it left is in `landings/PLAN-LB-143.md`.
+
+- **The OpenCode emitter expressed no tool restriction for any agent (D1, closed in code, not yet evidenced on an install).** The base policy was
+  read at `opencode v2.2.7` (`GET /api/agent/execution-context-reader` returned `{*,*,allow}` first and denied only `browser` and `skill:browser`),
+  so the reader could edit, write and run shell on the OpenCode target. The emitter now writes one `deny` row per mapped action an agent's source
+  does not grant, never an allow or an ask, and the reader blocks of `opencode.json` lost their shell allows. What stays open and is carried in the
+  landing report: the reader's restriction is not evidenced on an install until the OpenCode harness is synced and the same GET is read again, the
+  deny set is a closed blocklist over the mapping's non-null values, and the lane's account of which agent gets which denies is wrong while the code is right.
+- **`permission fix protect-path` and `ensure` refused a request a later broader row of the same effect already satisfied (D2, closed).** A satisfied
+  request is a success with nothing added; a crossing of a partially overlapping rule is a conflict. One false conflict remains in the satisfied branch
+  (a fully shadowed different-effect row before the satisfying row still counts as a crossing hazard; fail-closed).
+- **A scalar `permission.bash` value was replaced by an empty map in six writers (D3, closed).** The writers keep a scalar as the map's own `*` row or
+  leave `bash` alone; the map removal matches the effect; `web-apply` keeps a `webfetch` pattern map. `web-apply` still turns a `*` deny into `allow`
+  on a map, which the spec itself orders; carried in the landing report.
+
 ## Dropped 2026-10-15
 
 By operator instruction ("Drop (archive) low and medium findings on opencode runs. Focus on high

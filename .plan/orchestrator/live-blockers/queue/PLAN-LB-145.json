@@ -1,0 +1,11 @@
+{
+  "id": "PLAN-LB-145",
+  "slug": "merge-mutex-proof-and-stuck-waiter",
+  "workstream": "WS-01",
+  "status": "shipped",
+  "lane": "runbook",
+  "plan_marshall_plan_id": "rb-lb-145-merge-mutex-proof-and-stuck-waiter",
+  "pr": "1970",
+  "landing": "landings/PLAN-LB-145.md",
+  "seq": 145
+}

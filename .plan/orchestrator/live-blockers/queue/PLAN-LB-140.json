@@ -2,10 +2,10 @@
   "id": "PLAN-LB-140",
   "slug": "antigravity-native-dispatch",
   "workstream": "WS-04",
-  "status": "staged",
+  "status": "shipped",
   "lane": "runbook",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "plan_marshall_plan_id": "rb-lb-140-antigravity-native-dispatch",
+  "pr": "1968",
+  "landing": "landings/PLAN-LB-140.md",
   "seq": 138
 }
