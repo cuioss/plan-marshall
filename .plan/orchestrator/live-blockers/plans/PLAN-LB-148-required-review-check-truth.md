@@ -77,20 +77,23 @@ the code does.
    at all three sites. These hold at `c9dcfd290`: a refusal body whose finished marker names a commit is a finished review at all three
    sites; a refusal body with a commit and no marker is not.
 
-3. **The review-gate parser reads the CodeRabbit block "Files with no reviewable changes" as boilerplate.**
+3. **The review-gate parser's "Files with no reviewable changes" label is backed by the real CodeRabbit block.**
    - Skills: pm-dev-python:python-core, plan-marshall:ref-code-quality
    - Persona: implementer
-   - `_NON_FINDING_SECTION_LABELS` (`runbook_lane.py`) gains `files with no reviewable changes`, with the observed pull request and review in
-     the provenance comment the list's own rule requires. The allow-list stays CLOSED: an unlisted counted title is still refused as
-     `unreadable review-body section`, because a block that cannot be shown to be boilerplate is counted so it never gives a false pass.
-   - The fixture is the real block read from `cuioss/plan-marshall#1964`, a `<details>` whose `<summary>` is a `<picture>` icon wrapper
-     (`file-no-changes.svg`) followed by `Files with no reviewable changes: 1`, then a `<dl><dd>` listing `* opencode.json`. The lane re-reads
-     that body for the capture, so the repository holds one.
+   - The label `files with no reviewable changes` is ALREADY in `_NON_FINDING_SECTION_LABELS` (`runbook_lane.py`) on `main` since PLAN-LB-146
+     (`877a05ac7`, observed on `cuioss/plan-marshall#1971`), so the entry itself is not this plan's work; when the branch merges `main` the
+     entry is already there and must not be added a second time. What is left is the evidence: the test PLAN-LB-146 added
+     (`test_runbook_lane_review_gate.py` about L431-451) has the real block's SHAPE but placeholder icon URLs (`x-dark.svg` / `x.svg`) while its
+     docstring says "captured verbatim". This deliverable replaces that fixture with the real block read from `cuioss/plan-marshall#1964`: a
+     `<details>` whose `<summary>` is a `<picture>` icon wrapper (`file-no-changes-dark.svg` and `file-no-changes.svg` on
+     `storage.googleapis.com/coderabbit_public_assets/review-comment-icons-v1/`) followed by `Files with no reviewable changes: 1`, then a
+     `<dl><dd>` listing `* opencode.json`, and makes the docstring say where it was captured.
+   - The allow-list stays CLOSED: an unlisted counted title is still refused as `unreadable review-body section`, because a block that cannot be
+     shown to be boilerplate is counted so it never gives a false pass.
 
-   *Done when:* each of these fails at `c9dcfd290`: a review body that carries the captured block beside a findings section reads only the
-   findings, with no refusal (at `c9dcfd290` it answers `undecidable_read` with detail `unreadable review-body section: 'Files with no
-   reviewable changes: 1'`). These hold at `c9dcfd290`: a counted title that is neither a findings section nor a listed label is still
-   refused; the existing label tests pass.
+   *Done when:* this fails at `877a05ac7`: the label test's fixture carries the real icon URLs of the captured block (at `877a05ac7` it carries
+   the placeholders). These hold at `877a05ac7`: a review body that carries the block beside a findings section reads only the findings, with
+   no refusal; a counted title that is neither a findings section nor a listed label is still refused; the existing label tests pass.
 
 4. **The pins cover what the review found uncovered.**
    - Skills: pm-dev-python:python-core, pm-dev-python:pytest-testing
@@ -201,6 +204,10 @@ need a new flag, in which case the PR records the split.
 - Overlaps with: none. No running row declares a path of this plan (Claim Labels). PLAN-LB-146 runs on the build and freshness surface and PLAN-LB-136 on the Antigravity and manifest surface; the cross-check names the exact files.
 - Adjacent to: the findings parser's flattened read (`_body_findings` and the thread-concern reader), which stays as shipped; the `pre_merge_gate.py` readers of the producer's `finished_review_bots[]`, which this plan does not edit but whose tolerance of a narrower list is a hypothesis; the PLAN-LB-142 loop-back and the step-done guard, which the PLAN-LB-147 lane did not exercise and this plan does not touch.
 - The `Learnings`, `Action performed` and `Prompt for AI Agents` titles are not added: none carries a declared count, so none reaches the refusal; add a title only from an observed counted capture.
+
+- Staged against `c9dcfd290`; `main` has moved to `877a05ac7` (PLAN-LB-146, PR #1971), which touched `runbook_lane.py` and
+  `test_runbook_lane_review_gate.py` (the label above and its test). Every other line of this spec is unchanged by that merge: the other
+  deliverables' claims were grounded against `c9dcfd290` and the lane re-grounds them at its start.
 
 ## Hand-Off Command
 
