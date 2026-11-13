@@ -290,9 +290,9 @@ def _audit_log_plan_less(level: str, message: str) -> None:
     """Write a plan-less interaction outcome to the GLOBAL work log.
 
     A plan-less submission is a legitimate build — the main checkout's own
-    ``generate-*`` calls run that way — and its outcomes used to leave no trace at
-    all, so a green result for the main checkout was indistinguishable from a
-    green result for a plan's worktree beside it in the same journal. The global
+    ``generate-*`` calls run that way — and it is traced so a green result for the
+    main checkout is never indistinguishable from a green result for a plan's
+    worktree beside it in the same journal. The global
     fallback (``plan_id=None``) is the log that exists when no plan does; the
     caller states the plan-less identity IN the message, because the log path
     cannot.

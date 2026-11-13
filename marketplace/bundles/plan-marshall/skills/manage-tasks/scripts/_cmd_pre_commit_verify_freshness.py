@@ -65,22 +65,21 @@ alone converts a silent wrong-reason pass into a visible one, independently of
 whether the cross-check could be performed.
 
 **A matching hash is not the same claim as a matching TREE.** The row is hashed
-against the plan's worktree root — the recorder resolves that root through the
-same shared plan-context resolver this gate resolves — and it records both the
-root it hashed and the tree hash it captured BEFORE the build ran. So the gate
-matches on three facts, not one: the currency hash, the root the row was hashed
-against, and the dispatch hash equalling the completion hash. A row hashed
+against the tree the wrapped build ran in — the recorder resolves that tree
+through the same shared plan-context resolver this gate resolves — and it records
+both the root it hashed and the tree hash it captured BEFORE the build ran. So the
+gate matches on three facts, not one: the currency hash, the root the row was
+hashed against, and the dispatch hash equalling the completion hash. A row hashed
 against another root is a green for another tree (`worktree_root_mismatch`); a
 row whose dispatch hash differs from its completion hash describes a build that
 rewrote the tree while it ran, or that a concurrent edit slipped inside, so its
 green is about the rewritten tree and not the one it started from
 (`worktree_rewritten_by_build`). Both are refusals that NAME their cause and the
-rows they rejected, never a ``stale`` with no explanation. A row carrying
-neither field is read as today, with no mismatch claim: the fields were added to
-the row schema after rows already existed, and refusing every pre-existing row
-would fail closed on history rather than on evidence. A field that IS present
-but unreadable never matches — a root or hash nobody can read cannot be shown to
-describe this tree.
+rows they rejected, never a ``stale`` with no explanation. The pair is read by
+PRESENCE: a row carrying no such KEY records nothing about the tree — the legacy
+shape — and is matched on its completion hash, while a row carrying the key with
+a ``null`` records a capture that FAILED, and that never matches, because a
+failed capture cannot be shown to describe this tree.
 
 The primitive is the *working-tree* currency, NOT the committed ``HEAD``. This
 is a pre-commit gate: at gate time the plan's edits are still uncommitted, so a
@@ -960,9 +959,9 @@ def cmd_pre_commit_verify_freshness(args) -> dict:
     # ``ensure=False`` keeps this a routing lookup: a freshness check must not
     # materialize or existence-check the plan. A plan running against the main
     # checkout still needs a freshness gate, and the resolver supplies the
-    # cwd-relative checkout root for that case; the ``Path.cwd()`` fallback
-    # survives only for a genuinely unresolvable worktree, preserving the
-    # previous non-fatal behaviour.
+    # cwd-relative checkout root for that case; the ``Path.cwd()`` fallback keeps
+    # a genuinely unresolvable worktree non-fatal, so the gate rules on the tree it
+    # can see instead of crashing.
     try:
         worktree_root = Path(resolve_plan_context(plan_id, ensure=False).worktree_path)
     except WorktreeResolutionError:
@@ -1025,9 +1024,9 @@ def cmd_pre_commit_verify_freshness(args) -> dict:
     # in THIS tree: the row records the root it hashed and the two hashes it
     # captured, and a row that names another root — or that reports different
     # hashes at dispatch and completion, i.e. a build that rewrote the tree while
-    # running — is not evidence about this working tree. Refused rows are named
-    # in the verdict rather than dropped: a `stale` whose cause nobody can see is
-    # the failure this discrimination replaces.
+    # running — is not evidence about this working tree. Refused rows are named in
+    # the verdict rather than dropped, so a `stale` always shows the cause it was
+    # taken on.
     admitted, refused = _partition_candidates(candidates, worktree_root)
 
     if admitted:

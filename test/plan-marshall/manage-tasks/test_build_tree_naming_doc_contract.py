@@ -36,8 +36,15 @@ _SKILLS = get_skill_dir('plan-marshall', 'manage-tasks').parent
 _HEADING = re.compile(r'^(#{1,6})\s', re.MULTILINE)
 
 #: The sentence the change retired from the client's interaction-logging section.
-#: Quoted exactly as the document carried it.
-_RETIRED_PLAN_LESS_SILENCE = 'A plan-less build is silent by design.'
+#: The document carried it in BOLD, and the needle is the bare sentence so a
+#: surviving copy is caught in either spelling — the sweep is the whole-marketplace
+#: backstop, and a plural/singular or emphasis variant is the same claim.
+_RETIRED_PLAN_LESS_SILENCE = 'Plan-less builds are silent by design.'
+
+#: The sentence the parent document carried, verbatim: the exact wording a planted
+#: control uses, so the mutation reproduces the retired claim rather than a
+#: paraphrase of it.
+_PARENT_PLAN_LESS_SILENCE = '**Plan-less builds are silent by design.**'
 
 #: The wording the recorder's docstring used to describe its hash root.
 _RETIRED_CWD_HASH = "against the executor's cwd"
@@ -48,14 +55,33 @@ def _doc(*parts: str):
 
 
 class _Pin:
-    """One pinned document statement, with the control's planted sentence."""
+    """One pinned document statement, with the control's planted sentence.
 
-    def __init__(self, *, label: str, path, marker: str, snippet: str, retired: str) -> None:
+    ``retired_provenance`` says where ``retired`` came from: ``parent`` means the
+    parent document carried that text and the control quotes history; ``planted``
+    means the control substitutes wording the parent did NOT hold — a wrapped
+    line, or a sentence this pin needed and no document ever carried — and the
+    control is a mutation rather than a quotation. A control that silently claims
+    history it does not have proves less than a reader assumes, which is why the
+    provenance is part of the pin and is checked below.
+    """
+
+    def __init__(
+        self,
+        *,
+        label: str,
+        path,
+        marker: str,
+        snippet: str,
+        retired: str,
+        retired_provenance: str = 'planted',
+    ) -> None:
         self.label = label
         self.path = path
         self.marker = marker
         self.snippet = snippet
         self.retired = retired
+        self.retired_provenance = retired_provenance
 
 
 #: How far past the marker the snippet may sit in a document with NO headings to
@@ -79,6 +105,7 @@ _PINS = (
         marker='The row names the tree it hashed',
         snippet="the tree's hash BEFORE the build ran",
         retired=_RETIRED_CWD_HASH,
+        retired_provenance='parent',
     ),
     _Pin(
         label='executor template — its module docstring states the same schema',
@@ -102,11 +129,18 @@ _PINS = (
         retired='Re-run the build.',
     ),
     _Pin(
-        label='manage-tasks/SKILL.md — the recorder and the gate hash one root',
+        label='manage-tasks/SKILL.md — the recorder and the gate hash one tree',
         path=_doc('manage-tasks', 'SKILL.md'),
-        marker="**The hash is computed against the plan's worktree root",
-        snippet="same root's hash captured BEFORE the build ran",
+        marker='**The hash is computed against the tree the wrapped build ran in',
+        snippet='from the `--project-dir` the wrapper builds in',
         retired='The hash is computed against whatever directory the build process happened to run in.',
+    ),
+    _Pin(
+        label='manage-tasks/SKILL.md — absent and null say different things',
+        path=_doc('manage-tasks', 'SKILL.md'),
+        marker='**Absent and null say different things',
+        snippet='recorded nothing about the tree',
+        retired='both optional and None for a row written before they existed',
     ),
     _Pin(
         label='manage-tasks/SKILL.md — a rewriting build is named, with its remedy',
@@ -123,20 +157,40 @@ _PINS = (
         retired='Re-run the build.',
     ),
     _Pin(
+        label='manage-change-ledger/SKILL.md — the pair is read by presence',
+        path=_doc('manage-change-ledger', 'SKILL.md'),
+        marker='read by **presence**',
+        snippet='a writer that recorded nothing about the tree omits BOTH',
+        retired='both optional and `None` for a row written before they existed',
+    ),
+    _Pin(
         label='build-server-client/SKILL.md — both replies name the built tree',
         path=_doc('build-server-client', 'SKILL.md'),
         marker='### Both replies name the tree they built',
         snippet='`wait` states the SAME three',
-        retired=_RETIRED_PLAN_LESS_SILENCE,
+        retired=_PARENT_PLAN_LESS_SILENCE,
     ),
     _Pin(
         label='build-server-client/SKILL.md — a plan-less submit leaves a trace',
         path=_doc('build-server-client', 'SKILL.md'),
         marker='- **Every plan-less outcome is traced, not silent.**',
         snippet='GLOBAL work log',
-        retired=_RETIRED_PLAN_LESS_SILENCE,
+        retired=_PARENT_PLAN_LESS_SILENCE,
     ),
 )
+
+
+#: The parent's own wording, recorded from the commit that retired it, per pin
+#: label. Only a pin whose control QUOTES history belongs here; a control that
+#: substitutes a line the parent never held is labelled ``planted`` on the pin and
+#: is deliberately absent — see
+#: ``test_every_retired_string_is_parent_text_or_labelled_a_planted_mutation``.
+_PARENT_WORDING: dict[str, str] = {
+    'executor template — the row names the root and both hashes': (
+        ":func:`compute_worktree_sha` against the executor's cwd (pinned to the\n"
+        '    worktree in phase-5, the main checkout otherwise)'
+    ),
+}
 
 
 def _section_span(text: str, marker: str, *, heading_bounded: bool) -> tuple[int, int] | None:
@@ -211,6 +265,20 @@ def test_a_planted_copy_of_the_retired_wording_fails_every_pin(pin: _Pin) -> Non
     )
 
 
+def _shipped_documents() -> dict[str, str]:
+    """Every markdown document the marketplace ships, keyed by repo-relative path."""
+    marketplace = PROJECT_ROOT / 'marketplace'
+    return {
+        path.relative_to(PROJECT_ROOT).as_posix(): path.read_text(encoding='utf-8')
+        for path in sorted(marketplace.rglob('*.md'))
+    }
+
+
+def _documents_carrying(sentence: str, documents: dict[str, str]) -> list[str]:
+    """The documents in ``documents`` that still carry ``sentence``."""
+    return [name for name, text in sorted(documents.items()) if sentence in text]
+
+
 def test_no_document_still_describes_the_plan_less_submit_as_silent() -> None:
     """The retired claim is gone from the whole MARKETPLACE tree, not one bundle.
 
@@ -219,11 +287,58 @@ def test_no_document_still_describes_the_plan_less_submit_as_silent() -> None:
     while the other statement kept the old behaviour alive. The sweep therefore
     covers every bundle the marketplace ships, which is what the docstring claims.
     """
-    marketplace = PROJECT_ROOT / 'marketplace'
-    offenders = [
-        path.relative_to(PROJECT_ROOT).as_posix()
-        for path in sorted(marketplace.rglob('*.md'))
-        if _RETIRED_PLAN_LESS_SILENCE in path.read_text(encoding='utf-8')
-    ]
+    offenders = _documents_carrying(_RETIRED_PLAN_LESS_SILENCE, _shipped_documents())
 
     assert offenders == [], f'the retired plan-less-silence claim survives in: {offenders}'
+
+
+def test_the_sweep_catches_a_planted_copy_of_the_parents_sentence() -> None:
+    """Mutation control for the sweep: plant the PARENT's sentence, it is found.
+
+    The sweep is the one check here that reads the whole tree, so a sweep searching
+    a sentence no document ever carried would pass on every real tree while
+    catching nothing at all. The planted copy is the parent document's own bold
+    sentence, which is the exact wording the claim was retired in — and the needle
+    is the bare sentence, so either spelling is caught.
+    """
+    documents = _shipped_documents()
+    target = 'marketplace/bundles/plan-marshall/skills/build-server-client/SKILL.md'
+    assert _documents_carrying(_RETIRED_PLAN_LESS_SILENCE, documents) == [], (
+        'the shipped tree is not clean, so this control would be vacuous'
+    )
+
+    documents[target] = documents[target] + '\n' + _PARENT_PLAN_LESS_SILENCE + '\n'
+
+    assert _documents_carrying(_RETIRED_PLAN_LESS_SILENCE, documents) == [target]
+
+
+@pytest.mark.parametrize('pin', _PINS, ids=[pin.label for pin in _PINS])
+def test_every_retired_string_is_parent_text_or_labelled_a_planted_mutation(pin: _Pin) -> None:
+    """A control's ``retired`` string either QUOTES the parent or says it does not.
+
+    A mutation control that substitutes wording the document never held proves less
+    than it appears to: it shows the pin is section-scoped, not that the document
+    stopped making the retired claim. Every pin therefore declares where its
+    retired wording came from, and each one that claims history is checked against
+    the parent wording recorded here.
+    """
+    assert pin.retired_provenance in {'parent', 'planted'}, pin.label
+    if pin.retired_provenance == 'planted':
+        return
+    assert pin.label in _PARENT_WORDING, f'{pin.label}: the pin claims parent provenance but records no parent wording'
+    parent_text = _PARENT_WORDING[pin.label]
+    assert pin.retired in parent_text, (
+        f'{pin.label}: the retired string {pin.retired!r} is absent from the parent '
+        f'wording this pin records ({parent_text!r}) — label it a planted mutation '
+        'instead of presenting it as history'
+    )
+
+
+def test_no_pin_is_labelled_a_history_quote_without_recording_one() -> None:
+    """The provenance table holds exactly the pins that claim it — no dead entries."""
+    declared_parent = {pin.label for pin in _PINS if pin.retired_provenance == 'parent'}
+
+    assert declared_parent == set(_PARENT_WORDING), (
+        f'pins claiming parent provenance: {sorted(declared_parent)}; recorded parent '
+        f'wording: {sorted(_PARENT_WORDING)}'
+    )

@@ -136,7 +136,8 @@ failing the build:
 
 ## Interaction audit logging (non-silent)
 
-Every `submit` and `wait` interaction is logged to the **plan work log** at a
+Every `submit` and `wait` interaction is logged to the plan's **work log** — the
+GLOBAL work log when the submission names no plan — at a
 captured level, through the same `plan_logging` substrate the `manage-logging`
 work verb writes through — so no interaction outcome is emitted only at an
 uncaptured Python log level and silently lost. This closes the field-observed
@@ -161,7 +162,7 @@ it surfaced only below the captured threshold.
   never a plan-directory selector.
 - **The build-execute routing seam's own resolution line lands here too.** The
   routing decision (`[BUILD-SERVER] resolved build (requested=…, resolved=routed|in_process|fail-loud, reason=…)`)
-  is written to the same plan work log through the same substrate, at the same
+  is written to the same work log through the same substrate, at the same
   INFO-normal / WARNING-on-fallback levels, and is additionally mirrored to
   stderr beside `[EXEC]` so a plan-less build stays observable. The emitting
   module is `script-shared/scripts/build/_build_execute_factory.py` — see it for

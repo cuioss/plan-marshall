@@ -317,6 +317,7 @@ def test_a_successor_that_is_itself_superseded_is_refused(plan_context, tmp_path
         '`D2`',
         '**D2**',
         '(D2)',
+        '_D2_',
         'D 2',
         'D2 - the operator decision',
     ],

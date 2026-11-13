@@ -1,26 +1,28 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""The build-ledger recorder hashes the tree the freshness gate will hash.
+"""The build-ledger recorder hashes the tree the wrapped build ran in.
 
-The executor stamps each `kind=build` row at its dispatch boundary. It used to
-hash whatever directory the process happened to be in (`os.getcwd()`), while the
-gate hashes the plan's resolved worktree root — so a build dispatched from the
-main checkout with `--plan-dir {worktree}` recorded the wrong tree, and re-running
-it the same way could never clear the gate. These cases pin the fix:
+The executor stamps each `kind=build` row at its dispatch boundary against the
+tree the wrapper builds in — the `--project-dir` it was given, or else the
+worktree of the plan the wrapper's own `--plan-id` reads — and the gate hashes
+that same root. These cases pin the contract:
 
-* the row is hashed against the plan's worktree root, resolved through the same
+* the row is hashed against the tree the build ran in, resolved through the same
   shared plan-context resolver the gate uses;
+* `--audit-plan-id` is attribution only: it files the row under a plan and never
+  selects a tree, so a dispatch from another checkout records THAT checkout and
+  the gate refuses it for the plan it names;
 * the row NAMES the root it hashed, so the two readings can be compared;
-* a plan-less dispatch keeps the working directory, and a dispatch whose working
-  directory already IS the worktree root records the same hash as before;
-* a root that will not resolve records no hash at all — an unmatched row is the
-  fail-closed answer;
+* a plan-less `--project-dir` dispatch records that directory, and a plan-less
+  dispatch with neither keeps the working directory;
+* a root that will not resolve records an explicit null — a failed capture the
+  gate refuses, which is the fail-closed answer;
 * the row carries the tree hash captured at dispatch beside the completion hash,
   so a build that changed the tree under itself is visible; and
-* the last case is the round trip the whole change exists for: a build dispatched
-  from the MAIN CHECKOUT with a plan's `--plan-id` is read as FRESH by the gate
-  against that plan's worktree — with two real git trees whose content differs,
-  so a cwd-based hash cannot pass by coincidence.
+* the last case is the round trip the whole contract exists for: a build
+  dispatched from the MAIN CHECKOUT with a plan's `--plan-id` is read as FRESH by
+  the gate against that plan's worktree — with two real git trees whose content
+  differs, so a cwd-based hash cannot pass by coincidence.
 """
 
 from __future__ import annotations
