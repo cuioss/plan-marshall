@@ -25,6 +25,7 @@ it the same way could never clear the gate. These cases pin the fix:
 
 from __future__ import annotations
 
+import os
 import subprocess
 import types
 from argparse import Namespace
@@ -43,6 +44,18 @@ from conftest import load_script_module
 _NOTATION = 'plan-marshall:build-pyproject:pyproject_build'
 
 _PLAN_ID = 'lb-146-tree-identity'
+
+#: Pinned author/committer identity and dates, so two checkouts of the same
+#: content carry the same HEAD sha and therefore the same currency hash.
+_GIT_ENV = {
+    **os.environ,
+    'GIT_AUTHOR_NAME': 'Test',
+    'GIT_AUTHOR_EMAIL': 't@t.test',
+    'GIT_AUTHOR_DATE': '2020-01-01T00:00:00 +0000',
+    'GIT_COMMITTER_NAME': 'Test',
+    'GIT_COMMITTER_EMAIL': 't@t.test',
+    'GIT_COMMITTER_DATE': '2020-01-01T00:00:00 +0000',
+}
 
 
 def _load_template_module() -> types.ModuleType:
@@ -65,13 +78,18 @@ def _load_template_module() -> types.ModuleType:
 
 def _git(repo: Path, *args: str) -> None:
     """Run a git command in ``repo``, raising on failure."""
-    subprocess.run(['git', '-C', str(repo), *args], check=True, capture_output=True)
+    subprocess.run(['git', '-C', str(repo), *args], check=True, capture_output=True, env=_GIT_ENV)
 
 
 def _init_repo(repo: Path, *, tracked: str, content: str) -> Path:
-    """Initialise a real git repo with one committed file of ``content``."""
+    """Initialise a real git repo with one committed file of ``content``.
+
+    Author and committer dates are pinned so two repos built from the SAME content
+    get the SAME HEAD sha — the premise of the two-checkout cases below, which need
+    identical currency hashes for the root comparison to be what the gate judges.
+    """
     repo.mkdir(parents=True)
-    subprocess.run(['git', 'init', '-q', '-b', 'main', str(repo)], check=True)
+    subprocess.run(['git', 'init', '-q', '-b', 'main', str(repo)], check=True, env=_GIT_ENV)
     _git(repo, 'config', 'user.email', 't@t.test')
     _git(repo, 'config', 'user.name', 'Test')
     (repo / tracked).write_text(content, encoding='utf-8')
@@ -93,7 +111,9 @@ def _record(module: types.ModuleType, *, plan_id: str, dispatch_tree_state=None)
 
     ``stdout`` is a real TOON payload because the boundary derives the row's
     ``status`` from it: an empty payload stamps ``unknown``, which is
-    deliberately not a green the freshness gate accepts.
+    deliberately not a green the freshness gate accepts. ``tree_plan_id`` is the
+    WRAPPER-read plan id — here the same value as the attribution id, so each
+    case below isolates the root resolution it names.
     """
     extra = {} if dispatch_tree_state is None else {'dispatch_tree_state': dispatch_tree_state}
     module._append_build_ledger_record(
@@ -103,6 +123,7 @@ def _record(module: types.ModuleType, *, plan_id: str, dispatch_tree_state=None)
         exit_code=0,
         stdout='status: success\n',
         log_file=None,
+        tree_plan_id=plan_id,
         **extra,
     )
 
@@ -209,6 +230,105 @@ def test_an_unresolvable_root_records_no_hash(monkeypatch, main_checkout, ledger
     entry = read_entries(path=ledger_path)[0]
     assert entry['worktree_root'] is None
     assert entry['worktree_sha'] is None, 'a hash of some other tree would read as a match for it'
+
+
+# =============================================================================
+# WHICH tree — the wrapper's `--plan-id` and `--project-dir`, never the
+# attribution value `--audit-plan-id`
+# =============================================================================
+
+#: A stand-in build wrapper whose stdout carries a claimable success status.
+_SUCCESS_BUILD = "print('status: success')\n"
+
+
+def _success_build_script(tmp_path: Path) -> Path:
+    """Write the stand-in wrapper the cases below dispatch through ``main()``."""
+    script = tmp_path / 'success_build.py'
+    script.write_text(_SUCCESS_BUILD, encoding='utf-8')
+    return script
+
+
+def test_an_audit_plan_id_dispatch_records_the_tree_the_build_ran_in(tmp_path, ledger_path, monkeypatch) -> None:
+    """``--audit-plan-id X`` files the row under X; it does NOT name X's tree.
+
+    The executor strips ``--audit-plan-id`` before the wrapper runs, so the value
+    says nothing about where the build ran. Recording X's worktree made the gate
+    compare X with X: the row was credited as fresh for a tree that was never
+    built, and only the root the row NAMES can show that. The two checkouts here
+    hold identical content on purpose — with identical hashes the gate's primary
+    predicate matches and the ROOT comparison is what must refuse.
+    """
+    dispatch_from = _init_repo(tmp_path / 'main-checkout', tracked='same.py', content='identical\n')
+    plan_tree = _init_repo(tmp_path / 'plan-worktree', tracked='same.py', content='identical\n')
+    assert compute_worktree_sha(dispatch_from) == compute_worktree_sha(plan_tree), (
+        'the premise: identical content in two checkouts hashes identically'
+    )
+
+    module = _load_template_module()
+    _redirect_ledger(module, monkeypatch, ledger_path)
+    monkeypatch.setattr(module, 'resolve_notation', lambda _notation: str(_success_build_script(tmp_path)))
+    monkeypatch.setattr(
+        module.sys,
+        'argv',
+        ['execute-script.py', _NOTATION, 'run', '--audit-plan-id', _PLAN_ID],
+    )
+    monkeypatch.chdir(dispatch_from)
+
+    with patch_query_worktree_path(True, str(plan_tree)), pytest.raises(SystemExit) as exit_info:
+        module.main()
+
+    assert exit_info.value.code == 0
+    entry = read_entries(path=ledger_path)[0]
+    assert entry['plan_id'] == _PLAN_ID, 'the attribution value stays the plan the row is filed under'
+    assert Path(entry['worktree_root']).resolve() == dispatch_from.resolve()
+    assert entry['worktree_sha'] == compute_worktree_sha(dispatch_from)
+
+    gate = _load_gate_module()
+    monkeypatch.setattr(gate, '_build_necessity_verdict', lambda _plan_id: {'decision': 'build'})
+    monkeypatch.setattr(gate, 'resolve_ledger_path', lambda: ledger_path)
+    monkeypatch.setattr(gate, '_resolve_required_coverage', lambda _plan_id: (None, 'unused_in_this_case'))
+    monkeypatch.setattr(
+        _freshness_crosscheck,
+        'resolve_expected_notations',
+        lambda _project_dir: (frozenset({_NOTATION}), None),
+    )
+
+    with patch_query_worktree_path(True, str(plan_tree)):
+        verdict = gate.cmd_pre_commit_verify_freshness(Namespace(plan_id=_PLAN_ID))
+
+    assert verdict['status'] == 'stale', verdict
+    assert verdict['reason'] == 'worktree_root_mismatch', verdict
+    assert [row['reason'] for row in verdict['refused_rows']] == ['worktree_root_mismatch']
+
+
+def test_a_plan_less_dispatch_with_project_dir_records_that_tree(tmp_path, ledger_path, monkeypatch) -> None:
+    """A plan-less build dispatched with ``--project-dir Y`` records Y.
+
+    ``Y`` is the tree the wrapper builds in, and it is the tree the gate for a
+    lane build hashes. Recording the dispatch's working directory instead made
+    every lane build a root mismatch against the tree it actually built.
+    """
+    dispatch_from = _init_repo(tmp_path / 'launcher', tracked='launcher.py', content='launcher content\n')
+    built_tree = _init_repo(tmp_path / 'built-tree', tracked='built.py', content='built content\n')
+
+    module = _load_template_module()
+    _redirect_ledger(module, monkeypatch, ledger_path)
+    monkeypatch.setattr(module, 'resolve_notation', lambda _notation: str(_success_build_script(tmp_path)))
+    monkeypatch.setattr(
+        module.sys,
+        'argv',
+        ['execute-script.py', _NOTATION, 'run', '--project-dir', str(built_tree)],
+    )
+    monkeypatch.chdir(dispatch_from)
+
+    with pytest.raises(SystemExit) as exit_info:
+        module.main()
+
+    assert exit_info.value.code == 0
+    entry = read_entries(path=ledger_path)[0]
+    assert Path(entry['worktree_root']).resolve() == built_tree.resolve()
+    assert entry['worktree_sha'] == compute_worktree_sha(built_tree)
+    assert entry['plan_id'] == NO_PLAN_SENTINEL
 
 
 # =============================================================================
