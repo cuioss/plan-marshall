@@ -211,12 +211,13 @@ _D1_PUBLISHED_BRANCHES_COUNT = 10
 #: Branching consumers that joined the class after that survey was recorded. The
 #: surveyed count is a published figure and is not edited to absorb them; the
 #: growth is stated here instead, so the reconciliation below still fails on a
-#: member nobody accounted for. Five are the gate-owning slice's own suites —
+#: member nobody accounted for. Six are the gate-owning slice's own suites —
 #: three for rows credited together (union coverage, missing analyses, union
-#: controls), one for a row scoped to a narrow unit, and one for the tree
-#: identity a row must describe — and the sixth is the executor slice's recorder
-#: control for that same identity.
-_JOINED_IN_GATE_SLICE = 5
+#: controls), one for a row scoped to a narrow unit, one for the tree identity a
+#: row must describe, and one for the row a writer that recorded nothing about
+#: the tree emits — and the seventh is the executor slice's recorder control for
+#: that same identity.
+_JOINED_IN_GATE_SLICE = 6
 _JOINED_OUTSIDE_GATE_SLICE = 1
 _JOINED_SINCE_D1_SURVEY = _JOINED_IN_GATE_SLICE + _JOINED_OUTSIDE_GATE_SLICE
 

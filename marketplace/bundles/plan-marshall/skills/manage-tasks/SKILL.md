@@ -293,12 +293,14 @@ gate (a false-positive `fresh`). Folding the uncommitted state into the sha
 means an edit after a clean-tree build changes the sha, and the gate correctly
 reports `stale`.
 
-**The hash is computed against the plan's worktree root, and the row says which
-root that was.** The executor's dispatch boundary resolves that root through the
-same shared plan-context resolver this gate resolves (`resolve_plan_context`) and
-hashes it, so the writer and the reader describe ONE tree instead of the writer
-hashing whatever directory its process happened to be in. A plan-less dispatch
-keeps its working directory, which is the tree it was asked to build. The row
+**The hash is computed against the tree the wrapped build ran in, and the row
+says which tree that was.** The executor's dispatch boundary resolves that root —
+from the `--project-dir` the wrapper builds in, or else through the same shared
+plan-context resolver this gate resolves (`resolve_plan_context`, on the plan the
+wrapper's own `--plan-id` reads) — and hashes it, so the writer and the reader
+describe ONE tree. `--audit-plan-id` is attribution only:
+it names the plan a row is FILED under and never the tree. A plan-less dispatch
+records the tree it was dispatched from, or the `--project-dir` it names. The row
 carries `worktree_root` (the root it hashed) and `worktree_sha_at_dispatch` (the
 same root's hash captured BEFORE the build ran), and this gate matches on all
 three facts: the currency hash, the recorded root and the dispatch/completion
@@ -306,15 +308,16 @@ hash pair. A row hashed against another root is a green for another tree
 (`worktree_root_mismatch`); a row whose two hashes differ describes a build that
 rewrote the tree while it ran, or that a concurrent edit slipped inside, so its
 green is about the rewritten tree rather than the one it started from
-(`worktree_rewritten_by_build` — commit the rewrite and re-run). A row carrying
-neither KEY is read as today, with no mismatch claim: the fields were added to
-a schema that already held rows, and failing closed on history is not the same as
-failing closed on evidence. The two are judged SEPARATELY, so a row carrying
-only one of them is read as today for the dimension it does not record. Presence
-of the KEY — not a null value — is the legacy test: the current writer always
-writes both keys and writes `null` for a fact it could not establish, so a field
-PRESENT as `null` (or as anything but a non-empty string) is unreadable and never
-matches, while an ABSENT key is the pre-field shape.
+(`worktree_rewritten_by_build` — commit the rewrite and re-run).
+
+**Absent and null say different things, and the gate reads the pair by
+PRESENCE.** A row that carries no such KEY recorded nothing about the tree — the
+legacy shape, matched on its completion hash with no mismatch claim — while a row
+whose key is PRESENT with `null` (or with anything but a non-empty string)
+records a capture that FAILED, which never matches: a fact nobody could
+establish cannot be shown to describe this tree. The two dimensions are judged
+SEPARATELY, so a row carrying only one key is matched on the completion hash for
+the dimension it does not record.
 
 The ledger query's **primary predicate** filters on `kind`, `status`, and
 `worktree_sha` only — never `exit_code` or `plan_id` — so it stays
@@ -425,7 +428,7 @@ compared on **blast radius**:
 
 | Side | Source | What it yields |
 |---|---|---|
-| The row | `args`, at `--command-args` | The canonical it ran and its blast radius. Which positionals are scope depends on the row's own `notation`: a pyproject row takes the non-flag tokens that follow the canonical (its positionals are modules), an npm/Maven/Gradle row takes only a KNOWN scope-bearing flag's value (maven `-pl` / `--projects`, npm `--workspace`) because its positionals are goals, tasks or scripts. A known non-narrowing companion (`-am` / `--also-make`) is ignored. No scope tokens AND no flag means whole-tree. The Gradle submodule shape is the one positional exception: a MULTI-task `:module:`-prefixed list reads as the narrow scoped row it was (its scope is the subproject path derived from the task tokens), while a LONE `:module:`-prefixed task reads as a readable canonical-unknown inability (there is no second positional to narrow with). npm keeps the drop, so a `:`-prefixed script name still yields its `--workspace` scope. Two positionals under any other notation, and any OTHER flag, make the row unreadable, never whole-tree |
+| The row | `args`, at `--command-args` | The canonical it ran and its blast radius. Which positionals are scope depends on the row's own `notation`: a pyproject row takes the non-flag tokens that follow the canonical (its positionals are modules), an npm/Maven/Gradle row takes only a KNOWN scope-bearing flag's value (maven `-pl` / `--projects`, npm `--workspace`) because its positionals are goals, tasks or scripts. A known non-narrowing companion (`-am` / `--also-make`) is ignored. No scope tokens AND no flag means whole-tree. The Gradle submodule shape is the one positional exception: a `:module:`-prefixed task list — one task or several — reads as the narrow scoped row it was, its scope being the subproject path derived from the task tokens; a payload whose derivation is empty (`: :`) is unreadable, never whole-tree. npm keeps the drop, so a `:`-prefixed script name still yields its `--workspace` scope. Two positionals under any other notation, and any OTHER flag, make the row unreadable, never whole-tree |
 | The row | `outcome.tests_run` + `outcome.tests_population` | Whether it MEASURED that it executed zero tests |
 | The change | the live plan footprint via `_test_scope_divergence.resolve_test_scope`, with the registered targets and the bundle modules from the shared helpers `_test_scope_targets.resolve_registered_targets` and `resolve_bundle_modules` | The module set a scoped run must cover, and whether only a whole-tree run will do |
 
@@ -590,9 +593,9 @@ on observed evidence.
 - `status: fresh` — one or more `kind=build` entries with `status == success` and
   a matching `worktree_sha` exist, and each describes THIS tree (its recorded
   `worktree_root` matches, and its dispatch and completion hashes agree; the two
-  fields are judged SEPARATELY, so a row written before the fields existed — no
-  key at all — is read as it always was for the dimension it does not carry, with
-  no claim either way, while a field PRESENT as `null` is unreadable), AND the
+  keys are judged SEPARATELY, so a row carrying no such key is read on its
+  completion hash alone with no claim either way, while a key PRESENT as `null` —
+  a failed capture — is unreadable), AND the
   survivors are citable on BOTH cross-check dimensions
   as § "Joint selection" defines, so the gate is permitted to pass. Tree identity
   is the third admission step, taken before either cross-check dimension. The record
@@ -767,9 +770,10 @@ from inside the loop.
    A row lacking `status` never matches (fail-closed for pre-existing rows).
    Then split those candidates on tree identity: a row whose recorded
    `worktree_root` differs from the resolved root, whose dispatch hash differs
-   from its completion hash, or whose either field is present but unreadable is
+   from its completion hash, or whose either key is present but unreadable is
    NOT citable, and its route is reported when no candidate survives (see the
-   `stale` reason table). A row with either field absent is read as today.
+   `stale` reason table). A row carrying no such key is matched on its
+   completion hash alone.
 6. No candidate → `stale`, with the route derived from what the ledger holds.
 7. Candidates exist → cross-check them on **both** dimensions and select
    **jointly**. Per dimension, compute the set of candidates it admits — the rows
@@ -833,10 +837,10 @@ absence of a crash:
 |---|---|---|
 | Ledger absent or empty | `undecidable` / `no_registry` | No evidence exists at all. |
 | Working-tree sha uncomputable | `undecidable` / `head_unresolvable` | The primitive the whole gate compares on is undefined. |
-| Worktree unresolvable | **Not a refusal.** `WorktreeResolutionError` is caught and the root falls back to the process cwd; the sha and the ledger scan proceed against *that* tree | Preserves the pre-existing non-fatal behaviour for a plan running against the main checkout. ⚠ It means the gate can answer about a tree other than the one the caller had in mind, which is a real limitation and is recorded rather than papered over. A row that names the root it hashed makes the mismatch legible (`worktree_root_mismatch`) instead of invisible. |
+| Worktree unresolvable | **Not a refusal.** `WorktreeResolutionError` is caught and the root falls back to the process cwd; the sha and the ledger scan proceed against *that* tree | Keeps the gate answering for a plan running against the main checkout instead of crashing. ⚠ It means the gate can answer about a tree other than the one the caller had in mind, which is a real limitation and is recorded rather than papered over. A row that names the root it hashed makes the mismatch legible (`worktree_root_mismatch`) instead of invisible. |
 | Row records another root | `stale` / `worktree_root_mismatch` | The green is about that root, not this one. `refused_rows` names the row and the root it recorded. |
 | Row's dispatch hash differs from its completion hash | `stale` / `worktree_rewritten_by_build` | The build changed the tree under itself, so its green is about the rewritten tree. |
-| Row's `worktree_root` / `worktree_sha_at_dispatch` present but unreadable | `stale` / `worktree_root_unreadable` or `worktree_dispatch_hash_unreadable` | A field nobody can read cannot be shown to describe this tree — fail closed. |
+| Row's `worktree_root` / `worktree_sha_at_dispatch` present but unreadable | `stale` / `worktree_root_unreadable` or `worktree_dispatch_hash_unreadable` | A key present as `null` — a capture that FAILED — or as any non-string cannot be shown to describe this tree: fail closed. Only an ABSENT key is read on the completion hash alone. |
 | Status metadata missing | Irrelevant | The gate does not read it — the worktree root resolves through `resolve_plan_context`, and `status.metadata.worktree_path` is a decoy the tests pin as ignored. |
 | Architecture unresolvable | **Not a refusal on this dimension.** Attribution records `notation_cross_check: unverified` with the inability named and admits every candidate; the verdict is then whatever the coverage dimension leaves | An inability to *audit* evidence the primary predicate already accepted. Failing closed would refuse every transition in an un-crawled tree on strictly less evidence than the primary predicate supplied — see § "The notation cross-check". An unjudged dimension abstains; it does not overrule the other one's refusal. |
 | Coverage underivable | **Not a refusal on this dimension.** Coverage records `scope_cross_check: undetermined` with the inability named and admits every candidate; the verdict is then whatever attribution leaves | The mirror of the row above, for the same reason and with the same abstention semantics — see § "The scope cross-check". |

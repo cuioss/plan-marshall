@@ -65,22 +65,22 @@ alone converts a silent wrong-reason pass into a visible one, independently of
 whether the cross-check could be performed.
 
 **A matching hash is not the same claim as a matching TREE.** The row is hashed
-against the plan's worktree root — the recorder resolves that root through the
-same shared plan-context resolver this gate resolves — and it records both the
-root it hashed and the tree hash it captured BEFORE the build ran. So the gate
-matches on three facts, not one: the currency hash, the root the row was hashed
-against, and the dispatch hash equalling the completion hash. A row hashed
+against the tree the wrapped build ran in — from the `--project-dir` the wrapper
+builds in, or else through the same shared plan-context resolver this gate
+resolves — and it records
+both the root it hashed and the tree hash it captured BEFORE the build ran. So the
+gate matches on three facts, not one: the currency hash, the root the row was
+hashed against, and the dispatch hash equalling the completion hash. A row hashed
 against another root is a green for another tree (`worktree_root_mismatch`); a
 row whose dispatch hash differs from its completion hash describes a build that
 rewrote the tree while it ran, or that a concurrent edit slipped inside, so its
 green is about the rewritten tree and not the one it started from
 (`worktree_rewritten_by_build`). Both are refusals that NAME their cause and the
-rows they rejected, never a ``stale`` with no explanation. A row carrying
-neither field is read as today, with no mismatch claim: the fields were added to
-the row schema after rows already existed, and refusing every pre-existing row
-would fail closed on history rather than on evidence. A field that IS present
-but unreadable never matches — a root or hash nobody can read cannot be shown to
-describe this tree.
+rows they rejected, never a ``stale`` with no explanation. The pair is read by
+PRESENCE: a row carrying no such KEY records nothing about the tree — the legacy
+shape — and is matched on its completion hash, while a row carrying the key with
+a ``null`` records a capture that FAILED, and that never matches, because a
+failed capture cannot be shown to describe this tree.
 
 The primitive is the *working-tree* currency, NOT the committed ``HEAD``. This
 is a pre-commit gate: at gate time the plan's edits are still uncommitted, so a
@@ -263,10 +263,12 @@ _ROOT_FIELD = 'worktree_root'
 _DISPATCH_SHA_FIELD = 'worktree_sha_at_dispatch'
 
 # Row-verdict vocabulary for the two tree-identity dimensions. `unrecorded` is
-# the LEGACY state — the field is absent or null, which is what every row
-# written before it existed carries — and it matches, with no mismatch claim.
-# `unreadable` is a field that IS present but is not a non-empty string, and it
-# never matches: a name nobody can read cannot be shown to describe this tree.
+# the LEGACY state — the KEY IS ABSENT, which is what every row written before
+# the pair existed carries — and it matches, with no mismatch claim. `unreadable`
+# is a key that IS PRESENT but is not a non-empty string, an explicit `null`
+# included, and it never matches: a fact the writer tried and failed to establish
+# cannot be shown to describe this tree, and a failed capture is precisely the
+# case where a mid-build rewrite would be invisible.
 _UNRECORDED = 'unrecorded'
 _SAME = 'same'
 _DIFFERENT = 'different'
@@ -351,17 +353,18 @@ def _row_tree_verdicts(entry: dict, gate_root: Path) -> tuple[str, str]:
     a difference means the build changed the tree while it ran, so the green it
     reports is about the rewritten tree.
 
-    Both are three-plus-one-valued: ``unrecorded`` (the KEY is absent — a row
-    written before the field existed, matched as today), ``same``, ``different``,
+    Both are three-plus-one-valued: ``unrecorded`` (the KEY is absent — the
+    legacy shape, matched on the completion hash), ``same``, ``different``,
     ``unreadable``.
 
-    ⛔ **Presence of the key, not a null value, is the legacy test.** The current
-    writer ALWAYS writes both keys and writes ``None`` for a fact it could not
-    establish, so an explicit ``null`` means "this build could not capture it" and
-    refusing it is the fail-closed answer — admitting it would let a build whose
-    dispatch capture failed (the one case where a mid-build rewrite is invisible)
-    pass as fresh. A row written before the fields existed has no key at all, and
-    only that shape is read as before.
+    ⛔ **Presence of the key, not a null value, is the legacy test.** A writer
+    that recorded NOTHING about the tree emits no key at all, which is the
+    legacy shape and is matched on the completion hash as before. A writer that
+    TRIED and could not establish the fact emits the key with ``null`` — the
+    payload-less CLI writer and the routing seam omit the key instead, so a
+    present ``null`` can only be a failed capture, the one case where a mid-build
+    rewrite is invisible. Refusing it is the fail-closed answer: admitting it
+    would let exactly that build pass as fresh.
     """
     if _ROOT_FIELD not in entry:
         root_verdict = _UNRECORDED
@@ -957,9 +960,9 @@ def cmd_pre_commit_verify_freshness(args) -> dict:
     # ``ensure=False`` keeps this a routing lookup: a freshness check must not
     # materialize or existence-check the plan. A plan running against the main
     # checkout still needs a freshness gate, and the resolver supplies the
-    # cwd-relative checkout root for that case; the ``Path.cwd()`` fallback
-    # survives only for a genuinely unresolvable worktree, preserving the
-    # previous non-fatal behaviour.
+    # cwd-relative checkout root for that case; the ``Path.cwd()`` fallback keeps
+    # a genuinely unresolvable worktree non-fatal, so the gate rules on the tree it
+    # can see instead of crashing.
     try:
         worktree_root = Path(resolve_plan_context(plan_id, ensure=False).worktree_path)
     except WorktreeResolutionError:
@@ -1022,9 +1025,9 @@ def cmd_pre_commit_verify_freshness(args) -> dict:
     # in THIS tree: the row records the root it hashed and the two hashes it
     # captured, and a row that names another root — or that reports different
     # hashes at dispatch and completion, i.e. a build that rewrote the tree while
-    # running — is not evidence about this working tree. Refused rows are named
-    # in the verdict rather than dropped: a `stale` whose cause nobody can see is
-    # the failure this discrimination replaces.
+    # running — is not evidence about this working tree. Refused rows are named in
+    # the verdict rather than dropped, so a `stale` always shows the cause it was
+    # taken on.
     admitted, refused = _partition_candidates(candidates, worktree_root)
 
     if admitted:

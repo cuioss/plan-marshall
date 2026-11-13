@@ -93,6 +93,63 @@ def test_build_record_defaults_the_optional_fields_to_none() -> None:
 
 
 # ---------------------------------------------------------------------------
+# The tree-identity pair: ABSENT means "recorded nothing", NULL means "tried
+# and could not"
+# ---------------------------------------------------------------------------
+#
+# The two tree keys describe the tree a build ran in. The freshness gate reads
+# them by PRESENCE: an absent key is the legacy shape every pre-pair row carries
+# and matches on the completion hash, while a present ``null`` is a FAILED
+# capture — the one case where a mid-build rewrite would be invisible — and is
+# refused. A writer that knows nothing about the tree therefore says nothing;
+# presenting a null it cannot substantiate would halt the push gate for good.
+
+
+def test_build_record_omits_the_tree_pair_when_the_writer_recorded_nothing() -> None:
+    """No keyword argument means the writer never established the facts."""
+    import _ledger_core
+
+    record = _ledger_core.build_record(
+        notation='plan-marshall:build-pyproject:pyproject_build',
+        plan_id='my-plan',
+        args='run --command-args "module-tests"',
+        exit_code=0,
+        status='success',
+        worktree_sha='deadbeef',
+        log_file=None,
+    )
+
+    assert 'worktree_root' not in record
+    assert 'worktree_sha_at_dispatch' not in record
+    assert record['worktree_sha'] == 'deadbeef'
+
+
+def test_build_record_writes_an_explicit_null_for_a_fact_it_could_not_establish() -> None:
+    """A caller that TRIED and failed keeps the key, with ``null``.
+
+    That is the executor recorder's shape for an unresolvable root: the row must
+    say "this build could not capture its tree", which the executor's caller
+    expresses by passing the value it obtained — ``None``.
+    """
+    import _ledger_core
+
+    record = _ledger_core.build_record(
+        notation='plan-marshall:build-pyproject:pyproject_build',
+        plan_id='my-plan',
+        args='run',
+        exit_code=0,
+        status='success',
+        worktree_sha=None,
+        log_file=None,
+        worktree_root=None,
+        worktree_sha_at_dispatch=None,
+    )
+
+    assert record['worktree_root'] is None
+    assert record['worktree_sha_at_dispatch'] is None
+
+
+# ---------------------------------------------------------------------------
 # The never-null plan_id contract, asserted at the CLI VERB
 # ---------------------------------------------------------------------------
 

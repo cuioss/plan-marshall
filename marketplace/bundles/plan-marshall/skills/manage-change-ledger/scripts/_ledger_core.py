@@ -85,6 +85,19 @@ DERIVED_ONLY_BUILD_STATUSES = frozenset({'unknown'})
 BUILD_STATUSES = WRAPPER_CLAIMABLE_BUILD_STATUSES | DERIVED_ONLY_BUILD_STATUSES
 
 
+class _NotGiven:
+    """Type of the sentinel that means "the caller passed no value at all"."""
+
+    __slots__ = ()
+
+
+#: Distinguishes an OMITTED tree fact from an explicit ``None``. The two mean
+#: different things to every reader of a ``kind=build`` row: an absent key says
+#: the writer never recorded the fact, while a present ``null`` says the writer
+#: tried and could not establish it. Only the second is a failed capture.
+NOT_GIVEN = _NotGiven()
+
+
 def resolve_ledger_path() -> Path:
     """Resolve the single change-ledger path under the tracked-config dir.
 
@@ -149,8 +162,8 @@ def build_record(
     command_args: str | None = None,
     duration_seconds: float | None = None,
     outcome: dict[str, Any] | None = None,
-    worktree_root: str | None = None,
-    worktree_sha_at_dispatch: str | None = None,
+    worktree_root: str | None | _NotGiven = NOT_GIVEN,
+    worktree_sha_at_dispatch: str | None | _NotGiven = NOT_GIVEN,
     timestamp_iso: str | None = None,
 ) -> dict[str, Any]:
     """Construct a ``kind=build`` ledger record.
@@ -206,15 +219,20 @@ def build_record(
     stdout TOON as a dict, retained verbatim so a reader gets the wrapper's own
     report (log file path, per-error rows) without re-reading the build log.
 
-    **The tree the hash describes is recorded with it.** ``worktree_root`` is the
-    root ``worktree_sha`` was computed against, and
-    ``worktree_sha_at_dispatch`` is the same root hashed again BEFORE the build
-    ran. Both are optional and ``None`` when the writer could not establish them
-    — a hand-appended row, a row written before the fields existed, or a root
-    that would not resolve. A row carrying no ``worktree_sha`` cannot be read as
-    matching any tree; a row whose two hashes differ describes a build that
-    changed the tree underneath itself, and the freshness gate reports that
-    instead of crediting the completion hash as a green.
+    **The tree the hash describes is recorded with it, and omission is a
+    statement.** ``worktree_root`` is the root ``worktree_sha`` was computed
+    against, and ``worktree_sha_at_dispatch`` is the same root hashed again
+    BEFORE the build ran. The two keywords default to :data:`NOT_GIVEN`, so a
+    writer that recorded NOTHING about the tree writes no such KEY, while a
+    writer that tried and could not establish the fact passes ``None`` and keeps
+    the key with a ``null``. The freshness gate reads the pair by PRESENCE: an
+    absent key is the legacy shape every row written before the pair existed
+    carries, and it matches on the completion hash as it always did; a present
+    ``null`` is a failed capture, which is exactly the case where a mid-build
+    rewrite would be invisible, so the gate refuses it. A row carrying no
+    ``worktree_sha`` cannot be read as matching any tree; a row whose two hashes
+    differ describes a build that changed the tree underneath itself, and the
+    gate reports that instead of crediting the completion hash as a green.
 
     **Secrets discipline — a DELIBERATE divergence from the build-server audit
     log, not an oversight.** ``build_server._audit_log`` refuses to record the
@@ -250,11 +268,30 @@ def build_record(
         'exit_code': exit_code,
         'status': status,
         'worktree_sha': worktree_sha,
-        'worktree_root': worktree_root,
-        'worktree_sha_at_dispatch': worktree_sha_at_dispatch,
         'log_file': log_file,
         'timestamp_iso': timestamp_iso if timestamp_iso is not None else now_utc_iso(),
+        **_tree_identity_fields(worktree_root, worktree_sha_at_dispatch),
     }
+
+
+def _tree_identity_fields(
+    worktree_root: str | None | _NotGiven,
+    worktree_sha_at_dispatch: str | None | _NotGiven,
+) -> dict[str, str | None]:
+    """The tree-identity pair, carrying only the facts the caller SUPPLIED.
+
+    A keyword the caller left at :data:`NOT_GIVEN` contributes no key at all;
+    an explicit ``None`` contributes the key with a ``null``, which the freshness
+    gate reads as a failed capture. Reporting them through one helper keeps the
+    presence rule in one place instead of two independent ``if`` statements that
+    a later edit could drift apart.
+    """
+    fields: dict[str, str | None] = {}
+    if not isinstance(worktree_root, _NotGiven):
+        fields['worktree_root'] = worktree_root
+    if not isinstance(worktree_sha_at_dispatch, _NotGiven):
+        fields['worktree_sha_at_dispatch'] = worktree_sha_at_dispatch
+    return fields
 
 
 def change_record(

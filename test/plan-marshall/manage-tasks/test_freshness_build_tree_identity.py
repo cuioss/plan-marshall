@@ -4,10 +4,10 @@
 
 A `worktree_sha` match proves the CONTENT of two trees agreed at hash time. It
 does not prove the build ran in THIS tree: two checkouts of the same content hash
-identically, so a row written against another root used to read as a green for
-the wrong tree. The recorder now names the root it hashed and the tree hash it
-captured before the build ran, and these cases pin what the gate does with that
-record:
+identically, so a row written against another root is a green for the wrong tree
+unless the gate compares the roots. The recorder names the root it hashed and the
+tree hash it captured before the build ran, and these cases pin what the gate
+does with that record:
 
 * a row hashed against another root is refused as `worktree_root_mismatch`,
   naming both roots and the row, never as an unexplained `stale`;
@@ -15,10 +15,10 @@ record:
   `worktree_rewritten_by_build` — the build rewrote the tree it was building
   (or an edit slipped in underneath it), and the remedy is to commit the rewrite
   and re-run;
-* a row that records neither field is read as today, with no mismatch claim: the
-  fields were added after rows already existed, and failing closed on history is
-  not the same as failing closed on evidence;
-* a field that IS present but unreadable never matches, and
+* a row carrying no such KEY is read on its completion hash with no mismatch
+  claim: that absence is the legacy shape, and it is not the same as evidence;
+* a key that IS present but unreadable — an explicit `null` included — never
+  matches, and
 * the pre-existing `_stale_reason` routes keep their own reasons — the new
   discrimination must not hijack them.
 """
@@ -192,10 +192,12 @@ def test_another_plans_unrecorded_row_does_not_relabel_this_plans_mutation(plan_
 def test_an_explicit_null_dispatch_hash_never_matches(plan_context, monkeypatch, tmp_path) -> None:
     """A row that PRESENTS the key with ``null`` is refused, not read as legacy.
 
-    The current writer always writes both keys and writes ``null`` for a fact it
-    could not establish, so an explicit null means "this build could not capture
-    its tree" — the one case where a mid-build rewrite is invisible. Admitting it
-    would let exactly that build pass as fresh.
+    A writer that can establish the tree passes its value; the executor recorder,
+    which does capture it, writes ``null`` only for a fact it could not establish,
+    and the writers that know nothing about the tree omit the key instead. An
+    explicit null therefore means "this build could not capture its tree" — the one
+    case where a mid-build rewrite is invisible. Admitting it would let exactly
+    that build pass as fresh.
     """
     result = _run_gate(
         plan_context,

@@ -205,3 +205,66 @@ def test_missing_git_binary_returns_none(repo: Path, monkeypatch: pytest.MonkeyP
 
     # A subprocess failure surfaces as None, not a raised exception.
     assert digest is None
+
+
+# ---------------------------------------------------------------------------
+# A read that did not finish is NO hash — never the clean-tree digest
+# ---------------------------------------------------------------------------
+
+
+def test_a_timed_out_diff_read_is_no_hash(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A ``git diff`` that runs out of time is no hash, not the clean-tree one.
+
+    Discarding the read's return code folded an empty diff into the digest, so a
+    read that never finished produced exactly the digest of a tree with no edits
+    — a hash that matches a tree nobody measured, and a false fresh for the
+    freshness gate.
+    """
+    import worktree_sha
+
+    real_run = subprocess.run
+
+    def _timeout_on_diff(argv, **kwargs):
+        if 'diff' in argv:
+            raise subprocess.TimeoutExpired(cmd=argv, timeout=60)
+        return real_run(argv, **kwargs)
+
+    monkeypatch.setattr(worktree_sha.subprocess, 'run', _timeout_on_diff)
+
+    assert compute_worktree_sha(repo) is None
+
+
+@pytest.mark.parametrize('failing_read', ['diff', 'ls-files'])
+def test_a_failed_read_is_no_hash(repo: Path, monkeypatch: pytest.MonkeyPatch, failing_read: str) -> None:
+    """The same rule for a read that FAILED: no digest, never a guessed one."""
+    import worktree_sha
+
+    real_run = subprocess.run
+
+    def _fail_on(argv, **kwargs):
+        if failing_read in argv:
+            return subprocess.CompletedProcess(argv, 128, b'')
+        return real_run(argv, **kwargs)
+
+    monkeypatch.setattr(worktree_sha.subprocess, 'run', _fail_on)
+
+    assert compute_worktree_sha(repo) is None
+
+
+def test_every_git_read_carries_a_timeout(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every shell-out is BOUNDED, so a hung git cannot stall a build dispatch."""
+    import worktree_sha
+
+    timeouts: list[object] = []
+    real_run = subprocess.run
+
+    def _spy(argv, **kwargs):
+        timeouts.append(kwargs.get('timeout'))
+        return real_run(argv, **kwargs)
+
+    monkeypatch.setattr(worktree_sha.subprocess, 'run', _spy)
+
+    compute_worktree_sha(repo)
+
+    assert timeouts, 'the computation issued no git read at all'
+    assert all(timeout is not None for timeout in timeouts), timeouts
