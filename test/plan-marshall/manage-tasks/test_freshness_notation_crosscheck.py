@@ -1244,6 +1244,23 @@ def _whole_tree_submodule_ledger() -> list[dict]:
     ]
 
 
+def test_the_freshness_gate_over_a_lone_submodule_row_is_stale_narrow(plan_context, monkeypatch, tmp_path) -> None:
+    """The gate over a ledger whose ONLY same-sha row is ``:core:test`` is refused.
+
+    The Done-when names this exact combination: one narrow row, no companion, a
+    whole-tree change. The gate delegates the reason to the cross-check, so the
+    case is pinned at the gate to show the delegation cannot quietly drop it.
+    """
+    _stub_expected(monkeypatch, {_GRADLE})
+    _stub_required(monkeypatch, _required())
+    rows = [_build_entry(notation=_GRADLE, args=_args_for(':core:test'), outcome=_outcome_for(120))]
+
+    result = _run(plan_context, monkeypatch, tmp_path, rows, 'probe-gradle-lone')
+
+    assert result['status'] == 'stale', result
+    assert result['reason'] == crosscheck.REASON_SCOPE_NARROW, result
+
+
 def test_a_root_and_a_single_submodule_row_are_refused_for_a_whole_tree_change(monkeypatch) -> None:
     """The pair that used to pass: the submodule row is a NARROW row now.
 

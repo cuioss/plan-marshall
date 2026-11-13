@@ -74,8 +74,8 @@ tree it meant:
 | `plan_id` | The submitting plan, or the `NO_PLAN` sentinel STATED rather than left blank. |
 
 `submit` states them from the job spec it just built. `wait` states the SAME three
-by reading the `kind=job` row that submission wrote — the daemon side is
-unchanged, because the record the client already keeps is the one that knows. A
+by reading the `kind=job` row that submission wrote — the record the client keeps
+is the one that knows. A
 job whose row cannot be read, or a row written before the path fields existed,
 reports no PATH fields: an absent path is honest, a guessed one is not. The plan
 id the row itself states is still reported, so a legacy row answers with
@@ -139,10 +139,9 @@ failing the build:
 Every `submit` and `wait` interaction is logged to the plan's **work log** — the
 GLOBAL work log when the submission names no plan — at a
 captured level, through the same `plan_logging` substrate the `manage-logging`
-work verb writes through — so no interaction outcome is emitted only at an
-uncaptured Python log level and silently lost. This closes the field-observed
-defect class where a `degraded` fallback or a `refused` submit vanished because
-it surfaced only below the captured threshold.
+work verb writes through, so no interaction outcome is emitted only at an
+uncaptured Python log level: a `degraded` fallback or a `refused` submit stays
+visible at the captured threshold.
 
 - **Normal outcomes log at INFO.** A queued `submit` acceptance and a `wait`
   result each write one entry carrying the `job_id` — the same id written to the
@@ -156,8 +155,8 @@ it surfaced only below the captured threshold.
   so `_audit_log` routes every such entry to the GLOBAL work log with
   `plan=NO_PLAN` in the message (a log path cannot carry the plan-less identity).
   That covers queued, degraded and refused submits and the wait outcomes alike,
-  so a green main-checkout build leaves a trace beside the plans' own builds
-  instead of vanishing. The sentinel is truthy, so `_audit_log` tests for it
+  so a green main-checkout build leaves a trace beside the plans' own builds. The
+  sentinel is truthy, so `_audit_log` tests for it
   explicitly rather than relying on falsiness — it is a routing/ledger value,
   never a plan-directory selector.
 - **The build-execute routing seam's own resolution line lands here too.** The

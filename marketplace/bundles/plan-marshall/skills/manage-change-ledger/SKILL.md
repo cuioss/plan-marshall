@@ -122,7 +122,8 @@ Every entry carries a `kind` discriminator, a `worktree_sha`, and a
   claims `timeout`. Only `unknown` is **derived-only**: it records the absence
   of the very evidence a claim would be, so a wrapper printing it is not
   believed. Every member other than `success` fails the freshness gate closed),
-  `worktree_sha`, `worktree_root`, `worktree_sha_at_dispatch`, `log_file`,
+  `worktree_sha`, `worktree_root` / `worktree_sha_at_dispatch` (a PAIR, present
+  only when the writer recorded the tree — see below), `log_file`,
   `timestamp_iso`. `worktree_root` names the tree `worktree_sha` was computed
   against — the one the wrapped build ran in — and `worktree_sha_at_dispatch` is
   that same tree hashed BEFORE the build ran, so a build that rewrote the tree

@@ -147,11 +147,11 @@ SUPERSEDED = 'superseded'
 #: the punctuation the documents invite (a backtick, bold/italic markers, a parenthesis).
 #: Anchoring at the head is what separates a citation from a token that merely appears
 #: in prose ("see d3 notes"), and prose may still follow it ("D3 — the operator decision").
-#: The trailing guard refuses a longer NUMBER or word ("D33", "D3x") while admitting an
-#: italic marker that CLOSES right after the digits (``_D2_``), which ``\b`` cannot: an
-#: underscore is a word character, so ``\b`` fails between "2" and "_".
+#: The trailing guard refuses a longer NUMBER or word ("D33", "D3x", "D3_notes") while
+#: admitting the italic marker that CLOSES right after the digits (``_D2_``) — an
+#: underscore is a word character, so ``\b`` failed between "2" and "_".
 _DELIVERABLE_REFERENCE = re.compile(
-    r'^\s*[`*_(\s]*(?:[dD]\s?(\d+)|(?:[dD]eliverables?)\s+#?(?:[dD]\s?)?(\d+))(?![0-9A-Za-z])'
+    r'^\s*[`*_(\s]*(?:[dD]\s?(\d+)|(?:[dD]eliverables?)\s+#?(?:[dD]\s?)?(\d+))(?=$|[^\w]|_(?!\w))'
 )
 #: Why :func:`deliverable_reference_rejection` refused a ``superseded_by`` value.
 REFERENCE_UNREADABLE = 'reference_unreadable'

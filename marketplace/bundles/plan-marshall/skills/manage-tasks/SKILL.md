@@ -301,7 +301,7 @@ else from the plan the wrapper's own `--plan-id` reads — and hashes it, so the
 writer and the reader describe ONE tree instead of the writer hashing whatever
 directory its process happened to be in. `--audit-plan-id` is attribution only:
 it names the plan a row is FILED under and never the tree. A plan-less dispatch
-keeps its working directory, which is the tree it was asked to build. The row
+records the tree it was dispatched from, or the `--project-dir` it names. The row
 carries `worktree_root` (the root it hashed) and `worktree_sha_at_dispatch` (the
 same root's hash captured BEFORE the build ran), and this gate matches on all
 three facts: the currency hash, the recorded root and the dispatch/completion
@@ -317,8 +317,8 @@ legacy shape, matched on its completion hash with no mismatch claim — while a 
 whose key is PRESENT with `null` (or with anything but a non-empty string)
 records a capture that FAILED, which never matches: a fact nobody could
 establish cannot be shown to describe this tree. The two dimensions are judged
-SEPARATELY, so a row carrying only one key is read as today for the dimension it
-does not record.
+SEPARATELY, so a row carrying only one key is matched on the completion hash for
+the dimension it does not record.
 
 The ledger query's **primary predicate** filters on `kind`, `status`, and
 `worktree_sha` only — never `exit_code` or `plan_id` — so it stays
@@ -771,9 +771,10 @@ from inside the loop.
    A row lacking `status` never matches (fail-closed for pre-existing rows).
    Then split those candidates on tree identity: a row whose recorded
    `worktree_root` differs from the resolved root, whose dispatch hash differs
-   from its completion hash, or whose either field is present but unreadable is
+   from its completion hash, or whose either key is present but unreadable is
    NOT citable, and its route is reported when no candidate survives (see the
-   `stale` reason table). A row with either field absent is read as today.
+   `stale` reason table). A row carrying no such key is matched on its
+   completion hash alone.
 6. No candidate → `stale`, with the route derived from what the ledger holds.
 7. Candidates exist → cross-check them on **both** dimensions and select
    **jointly**. Per dimension, compute the set of candidates it admits — the rows

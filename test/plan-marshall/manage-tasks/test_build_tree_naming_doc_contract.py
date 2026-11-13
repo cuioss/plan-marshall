@@ -36,9 +36,10 @@ _SKILLS = get_skill_dir('plan-marshall', 'manage-tasks').parent
 _HEADING = re.compile(r'^(#{1,6})\s', re.MULTILINE)
 
 #: The sentence the change retired from the client's interaction-logging section.
-#: The document carried it in BOLD, and the needle is the bare sentence so a
-#: surviving copy is caught in either spelling — the sweep is the whole-marketplace
-#: backstop, and a plural/singular or emphasis variant is the same claim.
+#: The document carried it in BOLD, and the needle is the bare sentence so an
+#: emphasised or unemphasised copy is caught alike. A reworded variant (a singular
+#: verb, a different noun) is a DIFFERENT sentence and is not what this sweep
+#: claims to catch.
 _RETIRED_PLAN_LESS_SILENCE = 'Plan-less builds are silent by design.'
 
 #: The sentence the parent document carried, verbatim: the exact wording a planted
@@ -57,13 +58,14 @@ def _doc(*parts: str):
 class _Pin:
     """One pinned document statement, with the control's planted sentence.
 
-    ``retired_provenance`` says where ``retired`` came from: ``parent`` means the
-    parent document carried that text and the control quotes history; ``planted``
-    means the control substitutes wording the parent did NOT hold — a wrapped
-    line, or a sentence this pin needed and no document ever carried — and the
-    control is a mutation rather than a quotation. A control that silently claims
-    history it does not have proves less than a reader assumes, which is why the
-    provenance is part of the pin and is checked below.
+    ``retired_provenance`` says what the control CLAIMS about history:
+
+    * ``parent`` — the retired wording is quoted from the document as it stood
+      BEFORE the PLAN-LB-146 change, recorded in ``_PARENT_WORDING`` and checked
+      against it;
+    * ``planted`` — the control makes NO history claim. The substituted text is a
+      mutation planted to prove the pin is section-scoped, whether or not some
+      earlier revision of the document happened to contain it.
     """
 
     def __init__(

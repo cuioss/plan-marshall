@@ -349,3 +349,21 @@ def test_a_refused_spelling_and_a_refused_number_say_different_things(plan_conte
     number_errors = [error for error in unknown['errors'] if 'superseded_by' in error]
     assert spelling_errors and number_errors, (unreadable, unknown)
     assert spelling_errors != number_errors, (spelling_errors, number_errors)
+
+
+@pytest.mark.parametrize('cited', ['D3_notes', 'D3x', 'D3é'])
+def test_an_underscore_or_word_joined_token_is_not_a_citation(plan_context, tmp_path, cited) -> None:
+    """A reference terminated by a WORD is prose, never a citation.
+
+    The trailing guard is what separates ``D3`` from ``D3_notes`` and from a longer
+    number: the italic marker the documents invite closes with an underscore that is
+    followed by nothing, while an underscore that JOINS another word is prose. Both
+    directions are pinned, because a guard loose enough to admit the first equally
+    admits the second unless it says so.
+    """
+    plan_dir = _plan(plan_context)
+    validated = review_support.run_validate(
+        PLAN_ID, 'functional', _write_verdict(plan_dir, tmp_path, _verdict(cited)), None
+    )
+
+    assert any('superseded_by' in error for error in validated['errors']), validated

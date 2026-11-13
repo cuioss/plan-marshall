@@ -192,10 +192,12 @@ def test_another_plans_unrecorded_row_does_not_relabel_this_plans_mutation(plan_
 def test_an_explicit_null_dispatch_hash_never_matches(plan_context, monkeypatch, tmp_path) -> None:
     """A row that PRESENTS the key with ``null`` is refused, not read as legacy.
 
-    The current writer always writes both keys and writes ``null`` for a fact it
-    could not establish, so an explicit null means "this build could not capture
-    its tree" — the one case where a mid-build rewrite is invisible. Admitting it
-    would let exactly that build pass as fresh.
+    A writer that can establish the tree passes its value; the executor recorder,
+    which does capture it, writes ``null`` only for a fact it could not establish,
+    and the writers that know nothing about the tree omit the key instead. An
+    explicit null therefore means "this build could not capture its tree" — the one
+    case where a mid-build rewrite is invisible. Admitting it would let exactly
+    that build pass as fresh.
     """
     result = _run_gate(
         plan_context,
