@@ -263,10 +263,12 @@ _ROOT_FIELD = 'worktree_root'
 _DISPATCH_SHA_FIELD = 'worktree_sha_at_dispatch'
 
 # Row-verdict vocabulary for the two tree-identity dimensions. `unrecorded` is
-# the LEGACY state — the field is absent or null, which is what every row
-# written before it existed carries — and it matches, with no mismatch claim.
-# `unreadable` is a field that IS present but is not a non-empty string, and it
-# never matches: a name nobody can read cannot be shown to describe this tree.
+# the LEGACY state — the KEY IS ABSENT, which is what every row written before
+# the pair existed carries — and it matches, with no mismatch claim. `unreadable`
+# is a key that IS PRESENT but is not a non-empty string, an explicit `null`
+# included, and it never matches: a fact the writer tried and failed to establish
+# cannot be shown to describe this tree, and a failed capture is precisely the
+# case where a mid-build rewrite would be invisible.
 _UNRECORDED = 'unrecorded'
 _SAME = 'same'
 _DIFFERENT = 'different'
@@ -355,13 +357,14 @@ def _row_tree_verdicts(entry: dict, gate_root: Path) -> tuple[str, str]:
     written before the field existed, matched as today), ``same``, ``different``,
     ``unreadable``.
 
-    ⛔ **Presence of the key, not a null value, is the legacy test.** The current
-    writer ALWAYS writes both keys and writes ``None`` for a fact it could not
-    establish, so an explicit ``null`` means "this build could not capture it" and
-    refusing it is the fail-closed answer — admitting it would let a build whose
-    dispatch capture failed (the one case where a mid-build rewrite is invisible)
-    pass as fresh. A row written before the fields existed has no key at all, and
-    only that shape is read as before.
+    ⛔ **Presence of the key, not a null value, is the legacy test.** A writer
+    that recorded NOTHING about the tree emits no key at all, which is the
+    legacy shape and is matched on the completion hash as before. A writer that
+    TRIED and could not establish the fact emits the key with ``null`` — the
+    payload-less CLI writer and the routing seam omit the key instead, so a
+    present ``null`` can only be a failed capture, the one case where a mid-build
+    rewrite is invisible. Refusing it is the fail-closed answer: admitting it
+    would let exactly that build pass as fresh.
     """
     if _ROOT_FIELD not in entry:
         root_verdict = _UNRECORDED

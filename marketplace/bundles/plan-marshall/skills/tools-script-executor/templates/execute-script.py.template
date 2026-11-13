@@ -1127,8 +1127,10 @@ def _capture_dispatch_tree_state(plan_id: str) -> tuple[str | None, str | None]:
     Wrapped for the same reason the ledger writer is fire-and-forget: this runs
     in front of a build that must dispatch whatever the bookkeeping manages to
     establish. A capture that raises yields ``(None, None)``, and the row then
-    carries no dispatch hash — which the gate reads as "this row reports no
-    mid-build rewrite", never as a matching tree.
+    carries an explicit ``null`` for the dispatch hash — which the gate REFUSES as
+    unreadable, because a failed capture is the one case where a mid-build rewrite
+    would be invisible. It is never read as a matching tree and never as "this row
+    reports no mid-build rewrite".
     """
     try:
         return _tree_state(_ledger_tree_root(plan_id))
@@ -1164,13 +1166,15 @@ def _append_build_ledger_record(
     timestamp), and appends it via the pure-append :func:`append_entry`
     (which resolves the ledger path under the tracked-config ``work/`` dir).
 
-    The row names the tree it hashed (``worktree_root``) and, when the dispatch
-    boundary captured one, the tree's hash BEFORE the build ran
-    (``worktree_sha_at_dispatch``). Two hashes are what lets a reader — and the
-    gate — see that a build changed the tree underneath itself instead of
-    folding the rewrite into one green completion hash. A root that will not
-    resolve records no hash at all: an unmatched row is the fail-closed answer,
-    a guessed one is not.
+    The row names the tree it hashed (``worktree_root``) and the tree's hash
+    BEFORE the build ran (``worktree_sha_at_dispatch``). Two hashes are what lets
+    a reader — and the gate — see that a build changed the tree underneath itself
+    instead of folding the rewrite into one green completion hash. This writer
+    always passes BOTH values explicitly, so an unresolvable root records an
+    explicit ``null`` rather than the key's absence: a writer that tried and could
+    not establish the tree is a failed capture, which the gate refuses as
+    unreadable. Only a writer that recorded nothing at all omits the keys, and
+    that is the legacy shape the gate matches on the completion hash.
 
     ``args`` and ``command`` are recorded as two DISTINCT layers: ``args`` is
     the executor argv this function was handed, ``command`` is what the wrapper
