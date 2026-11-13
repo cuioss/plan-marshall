@@ -1162,9 +1162,9 @@ def test_a_single_task_gradle_submodule_row_reads_as_a_narrow_scoped_row(monkeyp
     A subproject task names the subproject whether it is dispatched alone or with
     its companions: the discoverer builds every task as ``:{module}:{task}``, so the
     head token is the canonical and the path derived from the task token is the
-    scope — exactly as for the two-task shape. Reading the lone row as canonical
-    unknown made its blast radius unreadable, and the whole-tree joint selection
-    then admitted a run that built one subproject.
+    scope — exactly as for the two-task shape. Its blast radius is therefore the
+    subproject it names, which is why the whole-tree joint selection cannot admit a
+    run that built one subproject.
     """
     _stub_expected(monkeypatch, {_GRADLE})
     row = _build_entry(notation=_GRADLE, args=_args_for(':core:test'), outcome=_outcome_for(120))
@@ -1262,7 +1262,7 @@ def test_the_freshness_gate_over_a_lone_submodule_row_is_stale_narrow(plan_conte
 
 
 def test_a_root_and_a_single_submodule_row_are_refused_for_a_whole_tree_change(monkeypatch) -> None:
-    """The pair that used to pass: the submodule row is a NARROW row now.
+    """A root row beside a lone submodule row: the set is refused as NARROW.
 
     A lone ``:core:test`` row asserts the blunt fact "one subproject was built", so
     a whole-tree change cannot rest on it — and a set carrying any narrow row is
