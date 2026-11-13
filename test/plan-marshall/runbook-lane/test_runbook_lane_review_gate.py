@@ -428,6 +428,28 @@ def test_a_captured_incremental_skip_notice_is_not_a_finding() -> None:
     assert verdict['review_body_findings_total'] == 0
 
 
+def test_a_captured_incremental_no_reviewable_changes_notice_is_not_a_finding() -> None:
+    """OBSERVED #1971: "Files with no reviewable changes" is a file list, not a stop.
+
+    Captured verbatim from the incremental review body on PR #1971, where the counted
+    title (``: 1``) inside a ``<picture>``-wrapped ``<summary>`` made the counted-title
+    rule refuse the whole body as unreadable. The block names files the reviewer found
+    nothing to say about, so it contributes no finding.
+    """
+    body = (
+        '<details>\n<summary><picture><source media="(prefers-color-scheme: dark)" '
+        'srcset="x-dark.svg"><img src="x.svg" width="16" height="16" align="absmiddle" '
+        'alt=""></picture> Files with no reviewable changes: 1</summary>\n<dl><dd>\n'
+        '* `test/plan-marshall/build-server/test_build_server_client.py`\n'
+        '</dd></dl>\n</details>\n'
+    )
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['merge_allowed'] is True, verdict
+    assert verdict['review_body_findings_total'] == 0
+
+
 def test_a_counted_non_finding_block_ends_the_span_of_the_section_before_it() -> None:
     """A non-finding block is a BOUNDARY, not content of the section above it.
 

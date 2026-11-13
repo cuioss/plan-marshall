@@ -255,12 +255,18 @@ def _handshake(sock_path: Path) -> tuple[dict[str, Any] | None, str | None]:
 def _audit_log(plan_id: str, level: str, message: str) -> None:
     """Write one captured work-log entry for a build-server interaction outcome.
 
-    No-ops for a plan-less build — anything :func:`names_real_plan` rejects,
-    which includes the ``NO_PLAN`` sentinel a plan-less submission carries on
-    the wire and in the ledger. Otherwise it delegates to the same
-    ``plan_logging`` substrate the ``manage-logging`` work verb writes through,
-    so no interaction outcome is emitted only at an uncaptured Python log level
-    and silently lost.
+    A plan-scoped outcome goes to the plan's work log. A plan-less one — anything
+    :func:`names_real_plan` rejects, which includes the ``NO_PLAN`` sentinel a
+    plan-less submission carries on the wire and in the ledger — has no
+    plan-scoped work log to write to, so it goes to the GLOBAL work log with its
+    plan-less identity prefixed onto the message (a log path cannot carry it).
+    Neither route is silent: every interaction outcome lands somewhere, which is
+    what `build-server-client/SKILL.md` promises and what keeps a green
+    main-checkout build visible beside the plans' own builds.
+
+    Otherwise it delegates to the same ``plan_logging`` substrate the
+    ``manage-logging`` work verb writes through, so no interaction outcome is
+    emitted only at an uncaptured Python log level and silently lost.
 
     Secrets discipline: callers pass ONLY non-secret correlation fields
     (``job_id`` / ``job_status`` / ``reason`` / ``notation`` / ``attached`` /
@@ -268,15 +274,38 @@ def _audit_log(plan_id: str, level: str, message: str) -> None:
     ``project_path``, env, or any spec field that may carry secrets.
 
     Args:
-        plan_id: Submitting plan id; empty or ``NO_PLAN`` for a plan-less build
-            (no-op).
+        plan_id: Submitting plan id; empty or ``NO_PLAN`` for a plan-less build,
+            which routes the entry to the global log.
         level: Captured log level — ``INFO`` for a normal outcome, ``WARNING``
             for a fallback / refusal.
         message: The pre-formatted, secret-free outcome message.
     """
     if not names_real_plan(plan_id):
+        _audit_log_plan_less(level, f'plan={NO_PLAN_SENTINEL} ' + message)
         return
     log_entry('work', plan_id, level, message)
+
+
+def _audit_log_plan_less(level: str, message: str) -> None:
+    """Write a plan-less interaction outcome to the GLOBAL work log.
+
+    A plan-less submission is a legitimate build — the main checkout's own
+    ``generate-*`` calls run that way — and its outcomes used to leave no trace at
+    all, so a green result for the main checkout was indistinguishable from a
+    green result for a plan's worktree beside it in the same journal. The global
+    fallback (``plan_id=None``) is the log that exists when no plan does; the
+    caller states the plan-less identity IN the message, because the log path
+    cannot.
+
+    Best-effort like every other audit write: :func:`log_entry` swallows a failed
+    append, so a logging fault never fails a submission.
+
+    Args:
+        level: Captured log level — ``INFO`` for a normal outcome, ``WARNING``
+            for a fallback / refusal.
+        message: The pre-formatted, secret-free outcome message.
+    """
+    log_entry('work', None, level, message)
 
 
 def _degraded(reason: str) -> dict[str, Any]:
@@ -320,7 +349,14 @@ def _render_job_status(response: dict[str, Any]) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
-def _record_job(job_id: str, plan_id: str, fingerprint: str, notation: str, project_path: str) -> None:
+def _record_job(
+    job_id: str,
+    plan_id: str,
+    fingerprint: str,
+    notation: str,
+    project_path: str,
+    exec_path: str,
+) -> None:
     """Persist a ``kind=job`` re-attach row to the change-ledger at submit time.
 
     ``plan_id`` is stored VERBATIM — a plan-less submission carries the
@@ -328,6 +364,12 @@ def _record_job(job_id: str, plan_id: str, fingerprint: str, notation: str, proj
     never-null contract as ``kind=build``. :func:`_latest_job_id_for_plan`
     matches on that same verbatim value, so the write and the re-attach read
     agree by construction.
+
+    ``project_path`` / ``exec_path`` are recorded so a later ``wait`` — a
+    separate process that never saw the submit's argv — can name the tree the
+    job built. They stay out of the work log (a path can carry a secret); the
+    ledger is the local, git-ignored store that already keeps this row's
+    ``worktree_sha``, the hash of exactly these paths.
     """
     append_entry(
         job_record(
@@ -336,8 +378,54 @@ def _record_job(job_id: str, plan_id: str, fingerprint: str, notation: str, proj
             fingerprint=fingerprint,
             notation=notation,
             worktree_sha=compute_worktree_sha(project_path),
+            exec_path=exec_path,
+            project_path=project_path,
         )
     )
+
+
+def _job_row(job_id: str) -> dict[str, Any] | None:
+    """Return the ``kind=job`` row for ``job_id``, or ``None`` when unreadable.
+
+    This is the reader side of the submit/wait pair: the daemon's status payload
+    carries the job's outcome and never its paths, so the wait reply takes the
+    tree from the record the submit wrote. An unreadable ledger and a row-less
+    job both answer ``None`` — the caller then reports no tree at all rather
+    than a guessed one.
+    """
+    try:
+        entries = read_entries()
+    except (OSError, ValueError):
+        # Reading the ledger is best-effort on this path. ``ValueError`` covers a
+        # corrupt (non-UTF-8) ledger, which ``read_entries`` does not swallow: a
+        # wait must report the daemon's result with no tree fields rather than
+        # fail with ``internal_error`` and lose a finished job.
+        return None
+    matching = [entry for entry in entries if entry.get('kind') == KIND_JOB and entry.get('job_id') == job_id]
+    return matching[-1] if matching else None
+
+
+def _job_tree_fields(row: dict[str, Any] | None) -> dict[str, Any]:
+    """Render the tree a job built, from its ``kind=job`` row.
+
+    The three fields a caller needs to compare "the tree built" with "the tree I
+    meant": ``exec_path``, ``project_path`` and ``plan_id``, the last stated as
+    the ``NO_PLAN`` sentinel rather than left blank. A row written before the
+    path fields existed carries neither, and then renders nothing — the absence
+    is the honest answer, and a fabricated path would be the one thing this
+    reply exists to prevent.
+    """
+    if row is None:
+        return {}
+    fields: dict[str, Any] = {}
+    for key in ('exec_path', 'project_path'):
+        value = row.get(key)
+        if isinstance(value, str) and value.strip():
+            fields[key] = value
+    plan_id = row.get('plan_id')
+    if isinstance(plan_id, str) and plan_id.strip():
+        fields['plan_id'] = plan_id
+    return fields
 
 
 def _latest_job_id_for_plan(plan_id: str) -> str | None:
@@ -357,11 +445,14 @@ def _latest_job_id_for_plan(plan_id: str) -> str | None:
     """
     try:
         entries = read_entries()
-    except OSError:
+    except (OSError, ValueError):
         # Reading the ledger is best-effort on this path: an unreadable ledger
         # is indistinguishable, from the caller's point of view, from one that
         # holds no matching row. Returning None falls through to run_wait's
         # existing NOT_FOUND result instead of crashing the client.
+        # ``ValueError`` covers a corrupt (non-UTF-8) ledger, which
+        # ``read_entries`` does not swallow — this is the FIRST ledger read on
+        # the re-attach path, so it must be as forgiving as ``_job_row`` is.
         return None
     matches = [
         entry.get('job_id')
@@ -436,8 +527,9 @@ def run_submit(args: Namespace) -> dict[str, Any]:
     exec_path = args.exec_path or project_path
     # A plan-less submission carries the NO_PLAN sentinel, not the empty
     # string, so the job spec on the wire and the kind=job ledger row match the
-    # kind=build row's never-null contract. `_audit_log` treats the sentinel as
-    # absent, so the plan-less no-op it always had is preserved.
+    # kind=build row's never-null contract. `_audit_log` still treats the
+    # sentinel as absent — there is no plan-scoped work log to write to — and
+    # the queued line is written to the GLOBAL work log instead, below.
     plan_id = args.plan_id or NO_PLAN_SENTINEL
     notation = _notation_from_command(command)
     # ``args.timeout`` is the caller's EXPLICIT build bound, forwarded onto the
@@ -498,7 +590,7 @@ def run_submit(args: Namespace) -> dict[str, Any]:
     job_id = str(response.get('job_id', ''))
     attached = bool(response.get('attached', False))
     try:
-        _record_job(job_id, plan_id, spec.fingerprint, notation, project_path)
+        _record_job(job_id, plan_id, spec.fingerprint, notation, project_path, exec_path)
     except OSError:
         # Ledger recording is best-effort — it appends an entry and computes the
         # worktree sha, either of which can raise OSError. The job IS queued on
@@ -506,17 +598,22 @@ def run_submit(args: Namespace) -> dict[str, Any]:
         # `wait` with no --job-id cannot find the row) rather than crash the
         # client and lose the job_id we are about to return.
         pass
-    _audit_log(
-        plan_id,
-        'INFO',
+    queued_message = (
         f'build-server submit queued: job_id={_sanitize_for_log(job_id)} job_status={STATUS_QUEUED} '
-        f'attached={attached} notation={notation} mechanism=daemon_longpoll',
+        f'attached={attached} notation={notation} mechanism=daemon_longpoll'
     )
+    _audit_log(plan_id, 'INFO', queued_message)
     return {
         'status': 'success',
         'job_status': STATUS_QUEUED,
         'job_id': job_id,
         'attached': attached,
+        # The tree this submission builds, stated rather than implied: a green
+        # result for this job is a fact about THIS tree, and a caller comparing
+        # it with the tree it meant needs the comparison in the reply.
+        'exec_path': exec_path,
+        'project_path': project_path,
+        'plan_id': plan_id,
         # The job running in the same directory, empty when there is none. A
         # caller that is about to wait learns here what it is behind, rather than
         # one `queued` wait later.
@@ -529,14 +626,23 @@ def run_wait(args: Namespace) -> dict[str, Any]:
     # Same resolution as `run_submit`, and load-bearing for re-attach: the
     # lookup below matches the ledger row VERBATIM, so an unresolved '' here
     # would never find the NO_PLAN row a plan-less submit wrote.
-    plan_id = args.plan_id or NO_PLAN_SENTINEL
-    job_id = args.job_id or _latest_job_id_for_plan(plan_id)
+    requested_plan_id = args.plan_id or NO_PLAN_SENTINEL
+    job_id = args.job_id or _latest_job_id_for_plan(requested_plan_id)
     if not job_id:
         return make_error(
             'no --job-id given and no kind=job ledger row to re-attach to'
             + (f' for plan {args.plan_id}' if names_real_plan(args.plan_id) else ''),
             code=ErrorCode.NOT_FOUND,
         )
+
+    # The job RECORD is read before the first audit call, so the wait's own log
+    # lines are routed by the submitted plan rather than by the caller's flags: a
+    # wait given only `--job-id` would otherwise write a plan-scoped job's outcome
+    # into the GLOBAL log under `plan=NO_PLAN`. The caller's value stays the
+    # fallback for a job whose record is missing or unreadable.
+    job_row = _job_row(job_id)
+    record_plan_id = (job_row or {}).get('plan_id')
+    plan_id = record_plan_id if isinstance(record_plan_id, str) and record_plan_id.strip() else requested_plan_id
 
     bound = args.bound if args.bound is not None else _DEFAULT_WAIT_BOUND
     _, reason = _handshake(_socket_path())
@@ -558,6 +664,11 @@ def run_wait(args: Namespace) -> dict[str, Any]:
         return _degraded(REASON_UNREACHABLE)
 
     result = _render_job_status(response)
+    # Name the tree from the submission record, never from the daemon payload:
+    # the daemon reports the job's OUTCOME and carries no paths. A job whose
+    # record cannot be read reports no path fields rather than a guessed one, so
+    # the caller sees the absence.
+    result.update(_job_tree_fields(job_row))
     # job_id may be a client-supplied `--job-id`, and job_status/elapsed/eta come
     # back from the daemon response; sanitize every one before interpolating it
     # into the line-oriented work log (CWE-117), exactly as notation is sanitized.

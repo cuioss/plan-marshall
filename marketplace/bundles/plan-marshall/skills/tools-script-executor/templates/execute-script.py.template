@@ -36,7 +36,12 @@ Runtime side-effects:
     wrapper's stdout TOON, so a timed-out build stamps status=timeout despite its exit
     code 0, and an exit-0 dispatch whose payload carries no wrapper-claimable status
     stamps status=unknown rather than a green nothing substantiates), worktree_sha (the
-    working-tree currency hash), log_file, and timestamp_iso. The stdout payload is
+    working-tree currency hash, computed against the plan's worktree root — the tree
+    pre-commit-verify-freshness hashes for the same plan — or against the working
+    directory for a plan-less dispatch), worktree_root (the root that hash describes),
+    worktree_sha_at_dispatch (the same root's hash captured BEFORE the build ran, so a
+    build that changed the tree under itself carries two differing hashes), log_file,
+    and timestamp_iso. The stdout payload is
     parsed exactly once and feeds status, command, duration_seconds and outcome
     together; an absent or unparseable payload leaves those three None and the status
     derivation falls back to the exit code (nonzero -> error, zero -> unknown).
@@ -432,6 +437,7 @@ try:
         append_entry,
         build_record,
     )
+    from file_ops import resolve_plan_context  # type: ignore[import-not-found]
     from marketplace_paths import NO_PLAN_SENTINEL  # type: ignore[import-not-found]
     from worktree_sha import compute_worktree_sha  # type: ignore[import-not-found]
 except ImportError as _bootstrap_import_error:
@@ -1056,6 +1062,80 @@ def _command_args_value(script_args: list[str]) -> str | None:
     return None
 
 
+def _ledger_tree_root(plan_id: str) -> str | None:
+    """Return the root a build row's hash must be computed against, or ``None``.
+
+    The recorder and the ``pre-commit-verify-freshness`` gate must hash ONE
+    tree, so this resolves the root the gate resolves: the plan's worktree root,
+    through the single shared plan-context resolver. A plan-less dispatch keeps
+    the working directory — that is the tree it was asked to build, and the
+    ``NO_PLAN`` sentinel names no worktree. A falsy ``plan_id`` is read the same
+    way: a direct caller (a test, an ad-hoc invocation) may pass none, and a
+    lookup for ``None`` would fail and silently record no hash at all.
+
+    The row describes the tree the PLAN names — the tree this resolution returns.
+    A dispatch that names a plan while its wrapper was pointed at a different
+    tree (``--audit-plan-id X`` together with a script-level ``--project-dir Y``)
+    therefore records X's tree, not Y's. That combination is off-spec: the
+    canonical resolution path routes a ``--project-dir`` build to an
+    UNATTRIBUTED command, and ``--audit-plan-id`` is documented as audit-only, so
+    no documented flow binds the two. The plan's tree is the reading the gate can
+    act on, and naming it is what makes the mismatch visible if a caller ever
+    does combine them.
+
+    Two spellings of "plan-less" meet here deliberately rather than by accident:
+    the resolver maps the sentinel to the checkout root, while this function
+    returns the process's working directory, because the spec for a plan-less
+    build is "the tree it was dispatched from". The two agree whenever the
+    dispatch happens at the checkout root, which is the case every caller in
+    this tree produces; a plan-less dispatch from a subdirectory records the
+    subdirectory and the gate reports a root mismatch rather than silently
+    matching the checkout.
+
+    ``None`` means the root could not be resolved. The caller then records no
+    hash at all rather than a hash of a tree nobody named: a row the gate cannot
+    match is the fail-closed answer, while a row hashed against this process's
+    working directory is precisely the defect this resolution removes. Such a row
+    is what the gate's ``build_tree_unrecorded`` route names, so the failure is
+    reported with its own cause and remedy instead of as an unexplained
+    ``worktree_mutated``.
+    """
+    if not plan_id or plan_id == NO_PLAN_SENTINEL:
+        return os.getcwd()
+    try:
+        return str(resolve_plan_context(plan_id, ensure=False).worktree_path)
+    except Exception:
+        return None
+
+
+def _tree_state(root: str | None) -> tuple[str | None, str | None]:
+    """Return ``(root, sha)`` for ``root``; ``(None, None)`` when no root is known.
+    ``root`` stays as given — it is the tree the row NAMES, whether or not the
+    tree's currency hash could be computed. An unresolvable ``HEAD`` therefore
+    yields ``(root, None)``: the root is a fact the writer established, and only
+    the hash is missing. A row carrying no hash can never match the gate, which
+    is the fail-closed direction and the reason nothing is guessed here.
+    """
+    if root is None:
+        return None, None
+    return root, compute_worktree_sha(root)
+
+
+def _capture_dispatch_tree_state(plan_id: str) -> tuple[str | None, str | None]:
+    """Capture ``(root, sha)`` BEFORE the build runs, without ever failing it.
+
+    Wrapped for the same reason the ledger writer is fire-and-forget: this runs
+    in front of a build that must dispatch whatever the bookkeeping manages to
+    establish. A capture that raises yields ``(None, None)``, and the row then
+    carries no dispatch hash — which the gate reads as "this row reports no
+    mid-build rewrite", never as a matching tree.
+    """
+    try:
+        return _tree_state(_ledger_tree_root(plan_id))
+    except Exception:
+        return None, None
+
+
 def _append_build_ledger_record(
     notation: str,
     plan_id: str,
@@ -1063,6 +1143,7 @@ def _append_build_ledger_record(
     exit_code: int,
     stdout: str,
     log_file: str | None,
+    dispatch_tree_state: tuple[str | None, str | None] = (None, None),
 ) -> None:
     """Append one ``kind=build`` change-ledger entry for a build-class dispatch.
 
@@ -1075,11 +1156,21 @@ def _append_build_ledger_record(
     and reads the resolved ``command``, the measured ``duration_seconds`` and
     the whole payload as ``outcome`` from that same parse. It then
     computes the working-tree currency hash via the shared
-    :func:`compute_worktree_sha` against the executor's cwd (pinned to the
-    worktree in phase-5, the main checkout otherwise), builds the record via
+    :func:`compute_worktree_sha` against the tree the freshness gate will hash
+    for this same plan — the plan's worktree root, resolved through the single
+    shared plan-context resolver; a plan-less dispatch keeps the working
+    directory — builds the record via
     :func:`build_record` (which stamps ``kind: "build"`` and the ISO
     timestamp), and appends it via the pure-append :func:`append_entry`
     (which resolves the ledger path under the tracked-config ``work/`` dir).
+
+    The row names the tree it hashed (``worktree_root``) and, when the dispatch
+    boundary captured one, the tree's hash BEFORE the build ran
+    (``worktree_sha_at_dispatch``). Two hashes are what lets a reader — and the
+    gate — see that a build changed the tree underneath itself instead of
+    folding the rewrite into one green completion hash. A root that will not
+    resolve records no hash at all: an unmatched row is the fail-closed answer,
+    a guessed one is not.
 
     ``args`` and ``command`` are recorded as two DISTINCT layers: ``args`` is
     the executor argv this function was handed, ``command`` is what the wrapper
@@ -1109,11 +1200,19 @@ def _append_build_ledger_record(
             source of the ``status`` derivation plus the recorded ``command``,
             ``duration_seconds`` and ``outcome``.
         log_file: The script-execution log path for this dispatch.
+        dispatch_tree_state: ``(root, sha)`` captured BEFORE the build ran. The
+            completion hash is computed against that same root, so the two
+            hashes describe one tree and their difference can only be the build
+            itself. ``(None, None)`` when nothing was captured, in which case the
+            root is resolved here instead.
     """
     try:
         payload = _parse_build_payload(stdout)
         status = _derive_build_status(exit_code, payload)
-        worktree_sha = compute_worktree_sha(os.getcwd())
+        dispatch_root, dispatch_sha = dispatch_tree_state
+        worktree_root, worktree_sha = _tree_state(
+            dispatch_root if dispatch_root is not None else _ledger_tree_root(plan_id)
+        )
         record = build_record(
             notation=notation,
             plan_id=plan_id,
@@ -1125,6 +1224,8 @@ def _append_build_ledger_record(
             exit_code=exit_code,
             status=status,
             worktree_sha=worktree_sha,
+            worktree_root=worktree_root,
+            worktree_sha_at_dispatch=dispatch_sha,
             log_file=log_file,
         )
         append_entry(record)
@@ -2311,6 +2412,16 @@ def main():
         # so a caller branching on the exit code needs no new case.
         sys.exit(2)
 
+    # Dispatch-side tree evidence. The build row's currency hash is captured
+    # AFTER the build, against the plan's worktree root; capturing that same root
+    # HERE, before the subprocess runs, is what lets the row carry both hashes,
+    # so a build that rewrote the tree (a formatter, a code generator) or that
+    # overlapped a concurrent edit is visible as two differing hashes instead of
+    # being folded silently into one green completion hash. Guarded: ledger
+    # bookkeeping never blocks the build it precedes.
+    _is_build_dispatch = _is_build_class_notation(notation, subcommand) and not _mentions_help(script_args)
+    _dispatch_tree_state = _capture_dispatch_tree_state(_ledger_plan_id) if _is_build_dispatch else (None, None)
+
     # Execute the script (with cleaned args, no --audit-plan-id)
     start = time.time()
     stdout_capture = ''
@@ -2404,7 +2515,11 @@ def main():
     # subcommand, and no help flag anywhere in argv - so a query verb, a bare
     # --help (which carries no subcommand), AND a `run --help` probe all write
     # no row: none of them ran a build, and a row stamped for one would satisfy
-    # the freshness gate without anything having been built.
+    # the freshness gate without anything having been built. It is EVALUATED
+    # before the subprocess runs (`_is_build_dispatch`, above) so the very same
+    # value governs both the dispatch-time tree capture and this completion-time
+    # row; two separate evaluations could disagree only if the argv changed
+    # mid-dispatch, which it cannot.
     #
     # The third conjunct lives HERE rather than inside
     # _is_build_class_notation because help-ness is a property of the whole
@@ -2434,7 +2549,7 @@ def main():
     # build and therefore resolves to the GLOBAL script log rather than a
     # NO_PLAN-scoped one. The writer is fire-and-forget — see
     # _append_build_ledger_record.
-    if _is_build_class_notation(notation, subcommand) and not _mentions_help(script_args):
+    if _is_build_dispatch:
         # get_log_path raises from two sources: it rejects a malformed plan_id
         # with ValueError, and its global-fallback branch (the one a plan-less
         # build reaches, because `_active_plan_id` stays None there) mkdirs the
@@ -2459,6 +2574,7 @@ def main():
             exit_code=exit_code,
             stdout=stdout_capture,
             log_file=_ledger_log_file,
+            dispatch_tree_state=_dispatch_tree_state,
         )
 
     sys.exit(exit_code)

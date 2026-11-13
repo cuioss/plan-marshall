@@ -149,6 +149,8 @@ def build_record(
     command_args: str | None = None,
     duration_seconds: float | None = None,
     outcome: dict[str, Any] | None = None,
+    worktree_root: str | None = None,
+    worktree_sha_at_dispatch: str | None = None,
     timestamp_iso: str | None = None,
 ) -> dict[str, Any]:
     """Construct a ``kind=build`` ledger record.
@@ -204,6 +206,16 @@ def build_record(
     stdout TOON as a dict, retained verbatim so a reader gets the wrapper's own
     report (log file path, per-error rows) without re-reading the build log.
 
+    **The tree the hash describes is recorded with it.** ``worktree_root`` is the
+    root ``worktree_sha`` was computed against, and
+    ``worktree_sha_at_dispatch`` is the same root hashed again BEFORE the build
+    ran. Both are optional and ``None`` when the writer could not establish them
+    — a hand-appended row, a row written before the fields existed, or a root
+    that would not resolve. A row carrying no ``worktree_sha`` cannot be read as
+    matching any tree; a row whose two hashes differ describes a build that
+    changed the tree underneath itself, and the freshness gate reports that
+    instead of crediting the completion hash as a green.
+
     **Secrets discipline — a DELIBERATE divergence from the build-server audit
     log, not an oversight.** ``build_server._audit_log`` refuses to record the
     resolved ``command``, ``exec_path``, ``project_path`` or any spec field on
@@ -238,6 +250,8 @@ def build_record(
         'exit_code': exit_code,
         'status': status,
         'worktree_sha': worktree_sha,
+        'worktree_root': worktree_root,
+        'worktree_sha_at_dispatch': worktree_sha_at_dispatch,
         'log_file': log_file,
         'timestamp_iso': timestamp_iso if timestamp_iso is not None else now_utc_iso(),
     }
@@ -279,6 +293,8 @@ def job_record(
     fingerprint: str,
     notation: str,
     worktree_sha: str | None,
+    exec_path: str | None = None,
+    project_path: str | None = None,
     timestamp_iso: str | None = None,
 ) -> dict[str, Any]:
     """Construct a ``kind=job`` ledger record.
@@ -301,6 +317,15 @@ def job_record(
     :func:`build_record`: a plan-less submission is recorded under the
     ``NO_PLAN`` sentinel. The re-attach lookup matches on that same value, so
     a plan-less submit stays recoverable.
+
+    ``exec_path`` and ``project_path`` are the tree the submitted job builds —
+    the two values the client handed the daemon. They are recorded so a later
+    ``wait`` reply can NAME the tree it reports on without a daemon-side change:
+    the daemon's status payload carries the job's outcome, never its paths, and
+    a green result whose tree is unnamed is indistinguishable from a green
+    result for another checkout. Both are optional and stay ``None`` for a row
+    written before the fields existed, so an old row is readable as "this row
+    does not name its tree" rather than as a tree.
     """
     return {
         'kind': KIND_JOB,
@@ -309,6 +334,8 @@ def job_record(
         'fingerprint': fingerprint,
         'notation': notation,
         'worktree_sha': worktree_sha,
+        'exec_path': exec_path,
+        'project_path': project_path,
         'timestamp_iso': timestamp_iso if timestamp_iso is not None else now_utc_iso(),
     }
 

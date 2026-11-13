@@ -211,10 +211,14 @@ _D1_PUBLISHED_BRANCHES_COUNT = 10
 #: Branching consumers that joined the class after that survey was recorded. The
 #: surveyed count is a published figure and is not edited to absorb them; the
 #: growth is stated here instead, so the reconciliation below still fails on a
-#: member nobody accounted for. All four are the gate-owning slice's own suites:
+#: member nobody accounted for. Five are the gate-owning slice's own suites —
 #: three for rows credited together (union coverage, missing analyses, union
-#: controls) and one for a row scoped to a narrow unit (narrow-unit control).
-_JOINED_SINCE_D1_SURVEY = 4
+#: controls), one for a row scoped to a narrow unit, and one for the tree
+#: identity a row must describe — and the sixth is the executor slice's recorder
+#: control for that same identity.
+_JOINED_IN_GATE_SLICE = 5
+_JOINED_OUTSIDE_GATE_SLICE = 1
+_JOINED_SINCE_D1_SURVEY = _JOINED_IN_GATE_SLICE + _JOINED_OUTSIDE_GATE_SLICE
 
 #: The two workflow documents in that class. A document "branches" by carrying a
 #: normative instruction that selects behaviour on the status VALUE.
@@ -223,23 +227,25 @@ _DOC_BRANCHING_CONSUMERS = (
     'marketplace/bundles/plan-marshall/skills/phase-5-execute/SKILL.md',
 )
 
-#: The code members of the class, declared by the SLICE that owns each one
-#: rather than by filename, so the DERIVED set below has something to be reconciled
-#: against without this module pinning another slice's file names. The derivation is
-#: what makes the check population-derived; this per-slice census is what makes a
-#: drift legible — a consumer appearing in a new slice, or leaving one, moves a
-#: count here, while a rename inside a slice moves nothing. A filename list would
-#: instead red this module for a rename that has nothing to do with the gate.
+#: The slices of the class that are DECLARED. Membership is the declared fact, and
+#: the per-slice distribution is DERIVED from the discovered population, so adding
+#: a consumer (or renaming a file) inside a declared slice needs no edit here — only
+#: a consumer appearing in an UNDECLARED slice fails, which is the drift worth
+#: seeing. A hard-coded per-slice COUNT would instead have to be re-synced on every
+#: such addition while proving nothing about the individual members, whose own
+#: behaviour checks run independently below.
 #: The slice that owns the gate. Its members drive ``cmd_pre_commit_verify_freshness``
 #: directly and build the verdict themselves; every member outside it is a CONSUMER
 #: pinning the gate's behaviour from another slice.
 _GATE_OWNING_SLICE = 'test/plan-marshall/manage-tasks'
 
-_CODE_CONSUMER_SLICES = {
-    _GATE_OWNING_SLICE: 6 + _JOINED_SINCE_D1_SURVEY,
-    'test/plan-marshall/manage-execution-manifest': 1,
-    'test/plan-marshall/tools-script-executor': 1,
-}
+_DECLARED_CONSUMER_SLICES = frozenset(
+    {
+        _GATE_OWNING_SLICE,
+        'test/plan-marshall/manage-execution-manifest',
+        'test/plan-marshall/tools-script-executor',
+    }
+)
 
 #: This module — the prover, excluded from its own population by explicit path.
 _SELF = 'test/plan-marshall/manage-tasks/test_freshness_exempt_vs_verified_discrimination.py'
@@ -374,9 +380,9 @@ def test_the_branching_population_is_derived_non_empty_and_reconciles() -> None:
         'assertion in this module would pass without examining anything'
     )
     by_slice = dict(Counter(path.rsplit('/', 1)[0] for path in derived))
-    assert by_slice == _CODE_CONSUMER_SLICES, (
-        f'the branching class is now distributed as {by_slice} against a declared '
-        f'{_CODE_CONSUMER_SLICES}; the derived members are {sorted(derived)}'
+    assert set(by_slice) == set(_DECLARED_CONSUMER_SLICES), (
+        f'the branching class now occupies {sorted(by_slice)} against the declared '
+        f'slices {sorted(_DECLARED_CONSUMER_SLICES)}; the derived members are {sorted(derived)}'
     )
 
     total = len(derived) + len(_DOC_BRANCHING_CONSUMERS)

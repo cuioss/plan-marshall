@@ -240,6 +240,11 @@ def test_submit_success_writes_job_id_to_ledger(home, ledger, monkeypatch):
     assert rows[0]['notation'] == 'a:b:c'
 
 
+# The reply's tree fields, and the plan-less work-log trace, live in
+# ``test_build_server_tree_reply.py``: they pin one contract — "the reply says
+# which tree it built" — rather than the submit/wait mechanics covered here.
+
+
 # =============================================================================
 # The plan-less submit — NO_PLAN on the wire, in the ledger, and on re-attach
 # =============================================================================
@@ -287,28 +292,6 @@ def test_plan_less_submit_records_the_sentinel_and_reattaches(home, ledger, monk
         'submit just wrote — the write and the read disagree on the sentinel.'
     )
     assert result['job_status'] == 'success'
-
-
-def test_plan_less_submit_writes_no_audit_log(home, ledger, monkeypatch):
-    """``_audit_log`` treats the sentinel as ABSENT — the plan-less no-op holds.
-
-    The sentinel is TRUTHY, so the pre-existing ``if not plan_id`` guard would
-    have started writing a plan-less build's interaction outcomes into a
-    ``NO_PLAN`` work log the moment the client began resolving to it.
-    """
-    root = str(home / 'proj')
-    written: list[tuple] = []
-    monkeypatch.setattr(client, 'log_entry', lambda *args: written.append(args))
-    monkeypatch.setattr(client, '_handshake', lambda _p: ({'version': '1'}, None))
-    monkeypatch.setattr(
-        client,
-        '_call_daemon',
-        lambda _req, timeout: {'status': 'queued', 'job_id': 'JOB-NP', 'attached': False},
-    )
-
-    client.run_submit(_submit_args(root, plan_id=None))
-
-    assert written == [], f'a plan-less submit wrote {written!r} to a plan work log'
 
 
 def test_a_real_plan_submit_still_writes_its_audit_log(home, ledger, monkeypatch):
@@ -792,20 +775,6 @@ def test_wait_degraded_logs_warning(captured_logs, monkeypatch):
         level == 'WARNING' and client.REASON_SOCKET_ABSENT in message and 'mechanism=in_process_fallback' in message
         for _t, _p, level, message in captured_logs
     ), 'a degraded wait must produce a captured WARNING entry naming the in-process fallback'
-
-
-def test_plan_less_submit_is_silent(home, ledger, captured_logs, monkeypatch):
-    # With no plan_id there is no per-plan work log to write to — logging no-ops.
-    monkeypatch.setattr(client, '_handshake', lambda _p: ({'version': '1'}, None))
-    monkeypatch.setattr(
-        client,
-        '_call_daemon',
-        lambda _req, timeout: {'status': 'queued', 'job_id': 'JOB-1', 'attached': False},
-    )
-
-    client.run_submit(_submit_args(str(home / 'proj'), plan_id=''))
-
-    assert captured_logs == []
 
 
 def test_no_logged_message_contains_raw_command_argv(home, ledger, captured_logs, monkeypatch):
