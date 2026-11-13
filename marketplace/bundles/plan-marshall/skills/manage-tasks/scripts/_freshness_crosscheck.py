@@ -767,10 +767,11 @@ def parse_row_scope(entry: dict[str, Any]) -> RowScope | None:
       positionals are dropped and contribute no scope, exactly as
       ``_build_examined.examined_analyses`` reads only the first token. The one
       exception is the Gradle submodule row, whose ``:module:``-prefixed task list
-      DOES name one subproject: a multi-task list keeps its positionals and reads
-      as the narrow scoped row it was, while a lone ``:``-prefixed task reads as a
-      readable canonical-unknown inability (there is no second positional to
-      narrow with). npm is exempt from that exception: a script name may begin
+      DOES name one subproject: the list — one task or several — reads as the
+      narrow scoped row the subproject run was, with the head task token as the
+      canonical and the derived subproject path as its scope, and a payload whose
+      derivation is empty (``: :``) is unreadable rather than whole-tree. npm is
+      exempt from that exception: a script name may begin
       with a colon without naming any project path, so it is dropped and the
       row's ``--workspace`` scope stands;
     * any other notation — absent or unknown — is read only when it carries ONE
@@ -867,21 +868,24 @@ def parse_row_scope(entry: dict[str, Any]) -> RowScope | None:
         # DO name a blast radius, and dropping them would assert whole-tree over a
         # run that built one subproject:
         #
-        #   * a MULTI-task ``:``-prefixed payload keeps its positionals, so the
-        #     row reads as the narrow scoped row the subproject run was — the head
-        #     task token is the canonical and the subproject path derived from the
-        #     task tokens is its scope;
-        #   * a LONE ``:``-prefixed task has no second positional to narrow with,
-        #     so it reads as a readable canonical-unknown inability (the token is
-        #     a task, not an analysis). Returning ``None`` for it made the whole-
-        #     tree joint selection refuse a ledger it could actually read.
+        #   * a ``:``-prefixed payload reads as the narrow scoped row the
+        #     subproject run was — whether it carries ONE task or several. The
+        #     head task token is the canonical and the subproject path derived from
+        #     the task tokens is its scope. One task names its subproject exactly
+        #     as two do;
+        #   * a ``:``-prefixed payload that derives NO subproject path (``: :``)
+        #     is UNREADABLE, never whole-tree: the derivation is what makes the
+        #     row narrow, and an empty one asserts no blast radius at all.
         #
         # No other goal-positional tool emits that shape — an npm script name may
         # also begin with a colon, but it selects no project path, so npm keeps
         # the drop and its ``--workspace`` scope stands.
         prefixed = any(token.startswith(':') for token in payload)
-        if notation != 'plan-marshall:build-npm:npm' and prefixed and len(payload) > 1:
-            return RowScope(canonical=payload[0], scope_tokens=_gradle_subproject_scope(payload) + tuple(scope))
+        if notation != 'plan-marshall:build-npm:npm' and prefixed:
+            derived = _gradle_subproject_scope(payload)
+            if not derived:
+                return None
+            return RowScope(canonical=payload[0], scope_tokens=derived + tuple(scope))
         payload = payload[:1]
     elif notation != _PYPROJECT_NOTATION and len(payload) > 1:
         return None
