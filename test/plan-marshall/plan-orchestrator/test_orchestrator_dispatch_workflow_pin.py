@@ -924,22 +924,27 @@ class TestDraftingDispatchWritePathContainment:
             f'list carries {len(entry_numbers)}: {entry_numbers}'
         )
 
-        analyze_count = _dispatch_index_entry_count(_ANALYZE_MD)
-        decompose_count = _dispatch_index_entry_count(_DECOMPOSE_MD)
-        handle_open_count = _dispatch_index_entry_count(_HANDLE_OPEN_MD)
+        # Derive the dispatching WORKFLOW documents from the same tree walk the
+        # pin above uses, never from a hard-coded list: a workflow added later
+        # that carries a dispatch invocation and a dispatchable sub-step is
+        # counted without an edit here. The population is the verb-doc directory,
+        # so the standard (which CONTAINS the index) and a standards document that
+        # merely documents the canonical form are both outside it.
+        workflow_dir = _PLAN_MARSHALL / 'plan-orchestrator' / 'workflow'
+        dispatching_workflows = [doc for doc in _dispatch_docs_under(_PLAN_MARSHALL) if doc.parent == workflow_dir]
+        counts = {doc.name: _dispatch_index_entry_count(doc) for doc in dispatching_workflows}
 
-        assert analyze_count > 0 and decompose_count > 0 and handle_open_count > 0, (
-            f'the per-verb-doc derivation is vacuous (analyze.md={analyze_count}, '
-            f'decompose.md={decompose_count}, handle-open.md={handle_open_count}) — a zero here '
+        assert counts and all(counts.values()), (
+            f'the per-verb-doc derivation is vacuous or zero for some doc: {counts} — a zero here '
             'would let the cross-check below pass trivially rather than by genuine agreement'
         )
 
-        derived_total = analyze_count + decompose_count + handle_open_count
+        derived_total = sum(counts.values())
         assert derived_total == claimed_count, (
             f'{_ORCHESTRATION_MODEL_MD.name} claims {claimed_count} sanctioned dispatchable sub-steps, '
-            f'but deriving independently from the verb docs gives {derived_total} '
-            f'(analyze.md={analyze_count}, decompose.md={decompose_count}, '
-            f'handle-open.md={handle_open_count}) — the index and the verb docs have drifted apart'
+            f'but deriving independently from the dispatching verb docs gives {derived_total} '
+            f'({", ".join(f"{name}={count}" for name, count in sorted(counts.items()))}) — the index '
+            'and the verb docs have drifted apart'
         )
 
     def test_a_doc_missing_its_dispatchable_bullets_drops_the_derived_count(self, tmp_path):

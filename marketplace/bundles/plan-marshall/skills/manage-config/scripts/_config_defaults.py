@@ -316,9 +316,10 @@ DEFAULT_ORCHESTRATOR = {
 # which runs the seed through `validate_orchestrator_block` and rejects any key
 # outside this set. So neither direction of drift can pass silently. NOTE this is
 # the FULL key set; the scalar-write whitelist
-# (`_cmd_orchestrator.ORCHESTRATOR_SCALAR_FIELDS`) is a deliberate subset —
-# `effort` is written through the `effort` noun, not the scalar `orchestrator set`
-# verb — so it is intentionally NOT derived from here.
+# (`_cmd_orchestrator.ORCHESTRATOR_SCALAR_FIELDS`) is DERIVED from it by excluding
+# `effort`, which has its own `effort` noun rather than the scalar `orchestrator
+# set` verb — so a key added here becomes settable there without a second edit,
+# and the two cannot drift.
 ORCHESTRATOR_KNOWN_KEYS = frozenset(
     {'auto_emit', 'decision_confidence_threshold', 'effort', 'parallelization_scope', 'use_worktree'}
 )

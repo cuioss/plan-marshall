@@ -764,3 +764,34 @@ def test_threshold_typo_is_refused_as_an_unknown_field(plan_context):
     assert get_result['status'] == 'error'
     assert get_result.get('error_type') == 'unknown_field'
     assert 'decision_confidence_thresholds' not in _read_marshal(plan_context.fixture_dir).get('orchestrator', {})
+
+
+def test_threshold_get_refuses_a_stored_out_of_range_value(plan_context):
+    """A hand-edited out-of-range value fails the READ closed, not open.
+
+    `set` never writes one, but `marshal.json` is a file an operator can edit.
+    Returning `-1` as a successful read would let every item whose confidence is
+    at least zero exceed the threshold, and the verb cannot tell that from a
+    deliberate setting — so the read refuses and the caller's fail-closed
+    fallback (`100`) applies.
+    """
+    for stored in (-1, 101):
+        _write_marshal(plan_context.fixture_dir, {'orchestrator': {_THRESHOLD_FIELD: stored}})
+
+        get_result = cmd_orchestrator_get(Namespace(field=_THRESHOLD_FIELD))
+
+        assert get_result['status'] == 'error', f'a stored {stored} was read as valid: {get_result}'
+        assert _THRESHOLD_FIELD in get_result['error']
+
+
+def test_the_scalar_whitelist_is_derived_from_the_known_keys(plan_context):
+    """The scalar whitelist IS the authoritative key set minus `effort`.
+
+    Pinned explicitly so a future key cannot be added to the block's known set and
+    seeded while the `orchestrator get/set` verb silently keeps rejecting it.
+    """
+    known = set(_config_defaults_mod.ORCHESTRATOR_KNOWN_KEYS)
+    scalar = set(_cmd_orchestrator_mod.ORCHESTRATOR_SCALAR_FIELDS)
+
+    assert known, 'ORCHESTRATOR_KNOWN_KEYS is empty — the derivation would be vacuous'
+    assert scalar == known - {'effort'}

@@ -57,7 +57,7 @@ from _config_core import (
     save_config,
     success_exit,
 )
-from _config_defaults import DEFAULT_ORCHESTRATOR, DEFAULT_PROJECT
+from _config_defaults import DEFAULT_ORCHESTRATOR, DEFAULT_PROJECT, ORCHESTRATOR_KNOWN_KEYS
 from command_forms import STEWARD_COMMAND
 from marketplace_paths import main_checkout_root
 from orchestrator_worktree import (
@@ -70,13 +70,11 @@ from orchestrator_worktree import (
 )
 
 # The orchestrator block's known scalar (non-effort) fields — the fail-closed
-# whitelist consulted by every scalar read/write.
-ORCHESTRATOR_SCALAR_FIELDS: tuple[str, ...] = (
-    'parallelization_scope',
-    'auto_emit',
-    'use_worktree',
-    'decision_confidence_threshold',
-)
+# whitelist consulted by every scalar read/write. DERIVED from the authoritative
+# key set rather than mirrored, so a key added to `ORCHESTRATOR_KNOWN_KEYS` is
+# settable through this verb without a second edit; `effort` is the one key with
+# its own noun and is excluded explicitly.
+ORCHESTRATOR_SCALAR_FIELDS: tuple[str, ...] = tuple(sorted(ORCHESTRATOR_KNOWN_KEYS - {'effort'}))
 
 # The base branch the cutover drift check compares against when the project
 # configures none — the same seeded default ``project.default_base_branch`` carries.
@@ -288,6 +286,14 @@ def cmd_orchestrator_get(args) -> dict:
     if isinstance(orch_block, dict) and field in orch_block:
         is_set = True
         value = orch_block[field]
+        # A stored value is re-validated on the read path: a hand-edited
+        # out-of-range threshold must fail closed here, because the consumer
+        # treats an unreadable threshold as `100` (nothing decided) and cannot
+        # tell a valid `-1` from an invalid one.
+        if field == 'decision_confidence_threshold':
+            ok, _, error = _coerce_decision_confidence_threshold(value)
+            if not ok:
+                return error_exit(error or 'invalid decision_confidence_threshold')
     else:
         is_set = False
         value = DEFAULT_ORCHESTRATOR.get(field)

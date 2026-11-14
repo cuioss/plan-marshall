@@ -75,19 +75,17 @@ _config_defaults_mod = load_script_module(
 SEEDED_FIGURE = _config_defaults_mod.DEFAULT_ORCHESTRATOR.get(KNOB)
 SEEDED_FIGURE_RE = re.compile(rf'\b{SEEDED_FIGURE}\b') if isinstance(SEEDED_FIGURE, int) else None
 
-#: The eight prohibitions of the contract's decision-acts bullet, in the order
-#: the contract states them. Each is matched against the emphasis-stripped text,
-#: so markdown bolding cannot make a present prohibition read as absent.
-PROHIBITIONS: tuple[str, ...] = (
-    'never stages a plan',
-    'never emits a command',
-    'never transitions a queue row',
-    'never edits the spec of a running row',
-    'never relocates settled narrative',
-    'never lands',
-    'never retires an item without a positive account',
-    'never records a plan-consequence decision without naming the follow-up',
-)
+#: The canonical prohibition population is read OUT of the contract's decision-acts
+#: bullet at test time, never mirrored here. A mirrored tuple would let the
+#: contract gain a prohibition while both document checks went on inspecting the
+#: old eight.
+_CONTRACT_PROHIBITION_RE = re.compile(r'NEVER \*\*(?P<phrase>[^*]+)\*\*')
+
+
+def _contract_prohibitions(text: str) -> list[str]:
+    """Every prohibition the contract's decision-acts bullet states, lowercased."""
+    return [f'never {phrase.strip().lower()}' for phrase in _CONTRACT_PROHIBITION_RE.findall(text)]
+
 
 #: The one-sentence form of the confidence-cap rule. Its DEFINITION belongs to
 #: the standard alone; any second carrier is a duplicate definition of one
@@ -166,9 +164,9 @@ def _restates_seeded_default(text: str) -> bool:
     return bool(SEEDED_FIGURE_RE.search(text)) if SEEDED_FIGURE_RE is not None else False
 
 
-def _missing_prohibitions(text: str) -> list[str]:
+def _missing_prohibitions(text: str, prohibitions: tuple[str, ...] | list[str]) -> list[str]:
     normalized = _normalized(text)
-    return [prohibition for prohibition in PROHIBITIONS if prohibition not in normalized]
+    return [prohibition for prohibition in prohibitions if prohibition not in normalized]
 
 
 def _carries_per_source_population(text: str) -> bool:
@@ -375,34 +373,33 @@ class TestPresentation:
 
 
 class TestProhibitions:
+    def test_the_contract_states_a_non_empty_prohibition_population(self):
+        prohibitions = _contract_prohibitions(_read(STANDARD))
+
+        assert prohibitions, 'the contract states no prohibition in its decision-acts bullet — the population is empty'
+        assert len(set(prohibitions)) == len(prohibitions), f'the contract states a prohibition twice: {prohibitions}'
+
     def test_the_workflow_names_every_prohibition_by_name(self):
         text = _read(WORKFLOW_DOC)
+        prohibitions = _contract_prohibitions(_read(STANDARD))
 
-        missing = _missing_prohibitions(text)
-
-        assert missing == [], (
-            f'{len(missing)} of {len(PROHIBITIONS)} prohibitions are not named by the workflow document: {missing}'
-        )
-
-    def test_the_contract_names_the_same_eight(self):
-        text = _read(STANDARD)
-
-        missing = _missing_prohibitions(text)
+        missing = _missing_prohibitions(text, prohibitions)
 
         assert missing == [], (
-            f'{len(missing)} of {len(PROHIBITIONS)} prohibitions are not named by the contract: {missing}'
+            f'{len(missing)} of {len(prohibitions)} prohibitions are not named by the workflow document: {missing}'
         )
 
     def test_a_dropped_prohibition_is_detected(self, tmp_path):
+        prohibitions = _contract_prohibitions(_read(STANDARD))
         complete = _normalized(_read(WORKFLOW_DOC))
-        dropped = PROHIBITIONS[2]
+        dropped = prohibitions[2]
         assert dropped in complete, 'the fixture source was supposed to carry the prohibition being dropped'
 
         seeded = complete.replace(dropped, '')
         fixture = tmp_path / 'dropped-prohibition.md'
         fixture.write_text(seeded, encoding='utf-8')
 
-        missing = _missing_prohibitions(_read(fixture))
+        missing = _missing_prohibitions(_read(fixture), prohibitions)
 
         assert missing == [dropped], f'the detector reported {missing} for a single dropped prohibition'
 

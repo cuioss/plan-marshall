@@ -77,7 +77,9 @@ The eight prohibitions hold here and need no restatement to bind, but this step 
 
 Present every item at or below the threshold in plain text, one item per turn, most consequential first: the analysis, the numbered proposals, the one marked recommended with its confidence and the reason, and a final "leave it open" proposal. Wait for the operator's answer before the next item. This verb never surfaces an item through the question tool — the plain-text, one-per-turn shape is the contract's, and a tool card cannot carry the analysis.
 
-Record each answer the same way Step 6 records a decision, before the next item: the chosen proposal, the `## Decisions` entry and the in-place marker. An answer of "stop" or "skip" leaves the item open and the report says so; it is a recorded outcome, never a silent skip.
+**Record the answer, and record it as the answer it was.** A chosen proposal is decided: log it, write the `## Decisions` entry, and mark the item in place exactly as Step 6 records a decision. "Leave it open", "stop" and "skip" are NOT decisions — record the outcome without the decided marker and without retiring the item, so it stays open and is eligible for the next run's inventory; the report names it as presented-and-open.
+
+**An answer can invalidate the analysis of items not yet presented.** When the operator's answer changes another item's premise — a fact, a constraint, a priority — re-analyse that item before presenting it, by the same rule Step 6 applies to an autonomous decision. Presenting a recommendation the answer just invalidated is the failure this sentence exists to prevent.
 
 ### Step 8: Log, rewrite the anchor, regenerate the view, commit the ledger
 
@@ -93,7 +95,9 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status update
   --plan-id {slug} --field resume_anchor --value "{next action}" --store orchestrator
 ```
 
-The anchor write REPLACES the whole value, so read the current anchor first, and after writing it check the written value with a word-diff against the committed one before the view is regenerated — a lost clause is visible in that diff and nowhere else. Then regenerate the view:
+The anchor write REPLACES the whole value, and the anchor is one of this verb's own inventory sources — an unanswered `OPERATOR DECISIONS` question lives there. So BUILD the replacement FROM the current anchor: read it first, carry every unresolved question and every other clause that still holds into the new value, and change only what this run settled. Never hand the seam a bare "{next action}" over an anchor that still carries open questions: the write cannot tell a settled question from a lost one.
+
+After writing it, check the written value with a word-diff against the value that was there BEFORE the write — an unresolved question or a standing clause that disappeared is visible in that diff and nowhere else, and a loss found there is restored before the view is regenerated. Then regenerate the view:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator regenerate-view \
@@ -108,7 +112,7 @@ Emit the report described under [Output](#output). The contract's Reporting rule
 
 ## Idempotence
 
-**Each decision is keyed by the item and its in-place marker.** An item already marked decided, with its `## Decisions` entry on record, is not decided again and is not presented again: a second run over an unchanged ledger decides nothing new, presents nothing, and reports the same item as `already_decided`. An item whose marker is missing is treated as open — the marker, not the memory of a previous run, is the record.
+**Each DECISION is keyed by the item and its in-place decided marker.** An item already marked decided, with its `## Decisions` entry on record, is not decided again and is not presented again: a second run over an unchanged ledger decides nothing new, presents nothing, and reports the same item as `already_decided`. An item whose marker is missing is treated as open — the marker, not the memory of a previous run, is the record. **An item the operator left open, skipped or stopped carries no decided marker**, so the next run re-presents it rather than reporting it as settled; presenting an item is not deciding it, and the marker is where the two are told apart.
 
 ## Output
 

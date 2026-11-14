@@ -38,6 +38,7 @@ from _cmd_finalize_steps import (
 )
 from _cmd_init import cmd_init
 from _cmd_interaction_mode import cmd_interaction_mode_get, cmd_interaction_mode_set
+from _cmd_orchestrator import ORCHESTRATOR_SCALAR_FIELDS as _ORCHESTRATOR_SCALAR_FIELDS
 from _cmd_orchestrator import cmd_orchestrator_get, cmd_orchestrator_set
 from _cmd_recipe_match import cmd_recipe_match
 from _cmd_skill_domains import (
@@ -606,11 +607,12 @@ def main() -> int:
     # Scalar (non-effort) knobs of the top-level `orchestrator` block. The
     # effort knobs live on the `effort` noun (`--role orchestrator.{surface}` /
     # `--scope orchestrator[.{surface}|.max]`); this noun owns only the
-    # provisioning scalars: parallelization_scope, auto_emit, use_worktree and
-    # decision_confidence_threshold.
+    # provisioning scalars, whose list is DERIVED from the handler's whitelist so
+    # the help text cannot drift from what the verb actually accepts.
     # use_worktree is main-anchored: get reports the main checkout's effective
     # value, and set refuses outside the main checkout or while a cutover would
     # strand ledger state.
+    scalar_fields = '|'.join(_ORCHESTRATOR_SCALAR_FIELDS)
     p_orch = subparsers.add_parser(
         'orchestrator',
         help='Manage the top-level orchestrator block scalar knobs (get/set --field)',
@@ -620,10 +622,7 @@ def main() -> int:
 
     orch_get = orch_sub.add_parser(
         'get',
-        help=(
-            'Get an orchestrator scalar field '
-            '(parallelization_scope|auto_emit|use_worktree|decision_confidence_threshold)'
-        ),
+        help=f'Get an orchestrator scalar field ({scalar_fields})',
         allow_abbrev=False,
     )
     add_field_arg(orch_get)
@@ -631,9 +630,8 @@ def main() -> int:
     orch_set = orch_sub.add_parser(
         'set',
         help=(
-            'Set an orchestrator scalar field (parallelization_scope|auto_emit|use_worktree|'
-            'decision_confidence_threshold; whitelist-guarded; decision_confidence_threshold is an '
-            'int 0 to 100; use_worktree only from the main checkout)'
+            f'Set an orchestrator scalar field ({scalar_fields}; whitelist-guarded; '
+            'decision_confidence_threshold is an int 0 to 100; use_worktree only from the main checkout)'
         ),
         allow_abbrev=False,
     )
