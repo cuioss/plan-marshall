@@ -49,13 +49,13 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config orches
   --field decision_confidence_threshold
 ```
 
-Carry the source of the resolved value — `argument`, `knob`, or `unset default` — into the report, so a reader sees where the number came from. Apply the contract's fail-closed reading: a threshold that cannot be read, or an argument that is not an integer `0` to `100`, resolves to `100` for the run and the report says so. This doc states no threshold value of its own and no default for the knob — the seeded default lives in `DEFAULT_ORCHESTRATOR` and is not restated here.
+Carry the source of the resolved value — `argument`, `knob`, `unset default`, or `fail_closed` when the fail-closed reading below applied — into the report, so a reader sees where the number came from. Apply the contract's fail-closed reading: a threshold that cannot be read, or an argument that is not an integer `0` to `100`, resolves to `100` for the run and the report says so. This doc states no threshold value of its own and no default for the knob — the seeded default lives in `DEFAULT_ORCHESTRATOR` and is not restated here.
 
 ### Step 3: Inventory the four sources and number the items
 
-Read the ledger documents directly — the [direct-file-write carve-out](../../persona-plan-orchestrator/standards/orchestration-model.md#carve-outs) permits the reads — and enumerate the closed subject set the contract defines: the `## Open Defects` entries, the `## Watches` entries, the open operator questions, and the unowned residue carried by those entries. Number every item in one run sequence and record, per item, its kind, its source and the pointer the rest of the run re-finds it by.
+Read the ledger documents directly — the [direct-file-write carve-out](../../persona-plan-orchestrator/standards/orchestration-model.md#carve-outs) permits the reads — and enumerate the closed subject set the contract defines: the `## Open Defects` entries, the `## Watches` entries, the open operator questions, and the unowned residue carried by those entries. The residue source is counted from the inventory entries that carry it, never by reading a landings directory of its own. Number every item in one run sequence and record, per item, its kind, its source and the pointer the rest of the run re-finds it by.
 
-Publish each source's population before analysing anything. A source that holds nothing reports as zero with its population; a source that could not be read is NAMED and is never counted as zero — the two are different lines, and a report that collapses them is the failure the contract's Reporting rule exists for.
+Publish each source's population, and each kind's, before analysing anything. A source that holds nothing reports zero with its population; a source that could not be read is NAMED and its counts are `unknown`, never `0` — the two are different lines, and a report that collapses them is the failure the contract's Reporting rule exists for.
 
 ### Step 4: Analyse every item
 
@@ -65,7 +65,7 @@ The envelope iterates over the whole inventory. A second envelope for the same r
 
 ### Step 5: Verify inline and assign the confidence
 
-Re-read every load-bearing point of the analysis at `file:line` in this run, and run the existing check before saying a fix is possible. Then assign the item's confidence under the contract's confidence cap: an item resting on a claim the leaf reported, on the ledger's own prose, or on an unsettled `HYPOTHESIS` is held at the threshold, so it cannot be decided without the operator. A leaf's number is never copied as the confidence.
+Re-read every load-bearing point of the analysis at `file:line` in this run, and run the existing check before saying a fix is possible. Then assign the item's confidence under the [§ Handle-Open Contract](../../persona-plan-orchestrator/standards/orchestration-model.md#handle-open-contract)'s confidence cap; that rule is stated there and nowhere here. A leaf's number is never copied as the confidence.
 
 ### Step 6: Decide every item above the threshold
 
@@ -104,7 +104,7 @@ Commit the ledger paths as `git -C {store_checkout}`. This is never a land: the 
 
 ### Step 9: Report
 
-Emit the report described under [Output](#output). Every count it carries rides with the population it was computed over, every decided item names who decided it, its confidence and the threshold it was decided against, and every declined or unanswered item is named rather than dropped.
+Emit the report described under [Output](#output). The contract's Reporting rule is the authority for what every count and every decided item must carry; this step adds only the emission instruction. Every declined or unanswered item is named rather than dropped.
 
 ## Idempotence
 
@@ -117,23 +117,30 @@ status: success | error
 display_detail: "handle-open {slug}: {D} decided, {P} presented, {U} unreadable"
 slug: {slug}
 threshold: {N}
-threshold_source: argument | knob | unset default | fail_closed_default
+threshold_source: argument | knob | unset default | fail_closed
 sources[S]{source,state,population,items}:
-  Open Defects,read,3,3
-  Watches,read,2,2
+  open_defects,read,2,2
+  watches,read,2,2
   operator_questions,read,1,1
-  landing_residue,unreadable,0,0
-decided[D]{number,kind,source,confidence,threshold,decision,evidence}:
-  2,defect,Open Defects,96,{threshold},"retired on positive account: {commit}","{file}:{line}"
-presented[P]{number,kind,source,confidence,proposal_count,recommended,answer}:
-  5,watch,Watches,72,3,"proposal 2","leave it open"
+  landing_residue,unreadable,unknown,unknown
+kinds[K]{kind,population,items}:
+  defect,2,2
+  watch,2,2
+  question,1,1
+  candidate,0,0
+decided[D]{number,kind,source,confidence,threshold,decided_by,decision,evidence}:
+  2,defect,open_defects,96,{threshold},orchestrator,"retired on positive account: {commit}","{file}:{line}"
+presented[P]{number,kind,source,confidence,proposal_count,recommended,answer,decided_by}:
+  3,watch,watches,72,3,"proposal 2","leave it open",operator
+  4,watch,watches,61,2,"proposal 1","proposal 1",operator
+  5,question,operator_questions,55,2,"proposal 1","stop",operator
 already_decided[A]{number,kind,source,marker}:
-  1,question,operator_questions,"## Decisions entry of 2026-11-10"
+  1,defect,open_defects,"## Decisions entry of 2026-11-10"
 unreadable[U]{source,reason}:
-  landing_residue,"{epic_dir}/landings/ not readable"
+  landing_residue,"the inventory entries carrying residue could not be read"
 resume_anchor: "{next action}"
 ```
 
 `display_detail` is ≤80 chars, ASCII, no trailing period.
 
-`sources[]` is the population every later count is computed over: its `state` distinguishes a source that holds nothing (`read`, population `0`) from one that could not be read (`unreadable`), and each row carries its own `items` count. `decided[]` names, per item, the confidence it earned, the threshold it was decided against, the act performed and the evidence the verification read. `presented[]` names the operator's answer per item, including `leave it open` and `stop`/`skip`. `already_decided[]` and `unreadable[]` are **required fields, never omitted**: a run that decided nothing new and read every source emits them empty rather than dropping them, because an absent key is indistinguishable from a check that never ran.
+`sources[]` and `kinds[]` are the two populations every later count is computed over: a row's `state` distinguishes a source that holds nothing (`read`, population `0`) from one that could not be read (`unreadable`, counts `unknown` — never `0`, and it also appears in `unreadable[]` with its reason). `decided_by` is `orchestrator` for a decision the verb made and `operator` for one the operator's answer settled, so the two are never conflated. `decided[]` names, per item, the confidence it earned, the threshold it was decided against, the act performed and the evidence the verification read. `presented[]` names the operator's answer per item, including `leave it open` and `stop`/`skip`. `already_decided[]` and `unreadable[]` are **required fields, never omitted**: a run that decided nothing new and read every source emits them empty rather than dropping them, because an absent key is indistinguishable from a check that never ran.

@@ -290,10 +290,11 @@ DEFAULT_PROJECT = {
 #
 # `decision_confidence_threshold` is the `handle-open` verb's decide-vs-present
 # boundary: an item is decided only when its confidence is STRICTLY greater than
-# this value, and `100` means nothing is decided without the operator. Its seeded
-# value is the operator's standing figure and lives HERE alone — the data-model
-# table that documents defaults is the only other place that restates the number,
-# and every other surface xrefs this constant.
+# this value, and `100` means nothing is decided without the operator. This
+# constant is the AUTHORITATIVE value; the one document that restates the figure
+# outside it is `manage-config/standards/data-model.md` (its `orchestrator`
+# structure examples and its `decision_confidence_threshold` default table), and
+# every other surface xrefs this constant rather than repeating the number.
 DEFAULT_ORCHESTRATOR = {
     'auto_emit': False,
     'decision_confidence_threshold': 90,
@@ -1427,7 +1428,7 @@ def validate_orchestrator_block(value: object) -> None:
     Raises:
         ValueError: If the block is not a dict, carries an unknown top-level key,
             or holds a malformed ``effort`` / ``parallelization_scope`` /
-            ``auto_emit`` / ``use_worktree`` value.
+            ``auto_emit`` / ``use_worktree`` / ``decision_confidence_threshold`` value.
     """
     from _cmd_effort import ALLOWED_LEVELS, ORCHESTRATOR_EFFORT_SET_KEYS
 

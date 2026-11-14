@@ -41,7 +41,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from conftest import MARKETPLACE_ROOT
+from conftest import MARKETPLACE_ROOT, load_script_module
 
 _BUNDLE = Path(MARKETPLACE_ROOT) / 'plan-marshall' / 'skills'
 WORKFLOW_DIR: Path = _BUNDLE / 'plan-orchestrator' / 'workflow'
@@ -62,9 +62,18 @@ DISPATCH_WORKFLOW_DOC = 'plan-marshall:plan-orchestrator/workflow/handle-open.md
 #: The knob the threshold is read through.
 KNOB = 'decision_confidence_threshold'
 
-#: The seeded figure. It must NOT appear in the workflow document: the default
-#: lives in `DEFAULT_ORCHESTRATOR` and is restated only by the data-model table.
-SEEDED_DEFAULT_FIGURE_RE = re.compile(r'\b90\b')
+#: The seeded figure, DERIVED from the constant that owns it rather than pinned as
+#: a literal. A hard-coded `90` here would silently stop guarding the moment the
+#: seed changed — and the pin's whole subject is that the workflow must not
+#: restate whatever the seed says.
+_config_defaults_mod = load_script_module(
+    'plan-marshall',
+    'manage-config',
+    '_config_defaults.py',
+    module_name='_config_defaults_for_handle_open_contract_test',
+)
+SEEDED_FIGURE = _config_defaults_mod.DEFAULT_ORCHESTRATOR.get(KNOB)
+SEEDED_FIGURE_RE = re.compile(rf'\b{SEEDED_FIGURE}\b') if isinstance(SEEDED_FIGURE, int) else None
 
 #: The eight prohibitions of the contract's decision-acts bullet, in the order
 #: the contract states them. Each is matched against the emphasis-stripped text,
@@ -83,6 +92,13 @@ PROHIBITIONS: tuple[str, ...] = (
 #: The one-sentence form of the confidence-cap rule. Its DEFINITION belongs to
 #: the standard alone; any second carrier is a duplicate definition of one
 #: concept, which the plan's Standing Constraints forbid.
+#:
+#: ⚠ Stated boundary: this is a LEXICAL detector. It catches the rule stated in
+#: the project's own vocabulary (a claim that is not re-read "caps the item"), not
+#: an arbitrary paraphrase of it. What keeps the boundary from being the whole
+#: guard is that the workflow also has to carry the contract xref and must not
+#: carry this marker, so a re-wording would have to be a deliberate restatement
+#: rather than a copy.
 CAP_DEFINITION_MARKER = 'caps the item'
 
 _STEP_HEADING_RE = re.compile(r'^### Step (\d+):', re.MULTILINE)
@@ -140,7 +156,13 @@ def _carries_fail_closed_sentence(text: str) -> bool:
 
 
 def _restates_seeded_default(text: str) -> bool:
-    return bool(SEEDED_DEFAULT_FIGURE_RE.search(text))
+    """Whether the text restates the seeded figure of the knob.
+
+    Returns ``False`` when no integer seed is resolvable (a tree whose
+    ``DEFAULT_ORCHESTRATOR`` predates the knob): there is no figure to restate,
+    which is exactly what the base-sha run looks at.
+    """
+    return bool(SEEDED_FIGURE_RE.search(text)) if SEEDED_FIGURE_RE is not None else False
 
 
 def _missing_prohibitions(text: str) -> list[str]:
@@ -177,13 +199,39 @@ def _persona_names_the_exception(text: str) -> bool:
     return False
 
 
+_ROUTER_ROW_RE = re.compile(r'^\|\s*`handle-open`\s*\|\s*`workflow/handle-open\.md`\s*\|', re.MULTILINE)
+
+
+def _routes_the_workflow_doc(text: str) -> bool:
+    """Whether the Verb Routing table carries the `handle-open` → doc row."""
+    return bool(_ROUTER_ROW_RE.search(text))
+
+
+#: The four facts a real dispatch resolve carries. `--workflow` is the one that
+#: makes the seam emit the [DISPATCH] record; the other three identify the caller
+#: and state that an epic is not a plan.
+DISPATCH_REQUIRED_FACTS: tuple[str, ...] = (
+    '--role orchestrator.analyze',
+    '--plan-id none',
+    '--caller plan-marshall:persona-plan-orchestrator',
+    '--workflow',
+)
+
+
+def _missing_dispatch_facts(invocation: str) -> list[str]:
+    return [fact for fact in DISPATCH_REQUIRED_FACTS if fact not in invocation]
+
+
 # =============================================================================
 # (a) Step order
 # =============================================================================
 
 
 class TestWorkflowStepOrder:
-    def test_the_document_exists_and_is_one_of_the_routed_workflow_docs(self):
+    def test_the_document_exists_among_the_workflow_docs(self):
+        # Existence only: whether the router ROUTES it is a separate pin
+        # (`TestContractPresence::test_the_router_routes_the_verb`), so a
+        # name that claims both would overstate what this one proves.
         workflow_docs = {path.name for path in WORKFLOW_DIR.glob('*.md')}
 
         assert workflow_docs, f'no workflow document enumerated under {WORKFLOW_DIR}'
@@ -227,6 +275,12 @@ class TestThresholdSurface:
 
         assert _names_knob(text), f'the workflow document never names the {KNOB!r} knob'
 
+    def test_a_document_that_never_names_the_knob_is_detected(self, tmp_path):
+        fixture = tmp_path / 'no-knob.md'
+        fixture.write_text('Read the configured threshold and compare.\n', encoding='utf-8')
+
+        assert not _names_knob(_read(fixture))
+
     def test_the_document_carries_the_fail_closed_sentence(self):
         assert _carries_fail_closed_sentence(_read(WORKFLOW_DOC)), (
             'the workflow document does not state that an unreadable threshold (or an out-of-range '
@@ -239,6 +293,14 @@ class TestThresholdSurface:
             'the workflow document restates the seeded default figure; the default lives in '
             'DEFAULT_ORCHESTRATOR and is restated only by the data-model table'
         )
+
+    def test_the_seeded_figure_is_resolved_from_the_constant(self):
+        # Non-vacuity: a renamed or removed seed would turn the pin above into a
+        # check that can never fire, which is the silent-retirement shape.
+        assert isinstance(SEEDED_FIGURE, int), (
+            f'DEFAULT_ORCHESTRATOR carries no integer {KNOB!r}, so the no-restatement pin guards nothing'
+        )
+        assert 0 <= SEEDED_FIGURE <= 100, f'the seeded figure {SEEDED_FIGURE} is outside the knob range'
 
     def test_a_hard_coded_default_is_detected(self, tmp_path):
         fixture = tmp_path / 'hard-coded-default.md'
@@ -359,6 +421,15 @@ class TestSingleCapDefinition:
             'the workflow document restates the confidence-cap rule instead of xrefing it'
         )
 
+    def test_a_workflow_that_does_not_xref_the_contract_is_detected(self, tmp_path):
+        fixture = tmp_path / 'no-xref.md'
+        fixture.write_text('A rule that caps the item, with no section named.\n', encoding='utf-8')
+
+        text = _read(fixture)
+
+        assert CONTRACT_HEADING not in text
+        assert CAP_DEFINITION_MARKER in text
+
     def test_a_second_definition_is_detected(self, tmp_path):
         (tmp_path / 'standard.md').write_text('A claim re-read nowhere caps the item.', encoding='utf-8')
         (tmp_path / 'second.md').write_text('A duplicated rule that also caps the item.', encoding='utf-8')
@@ -410,14 +481,9 @@ class TestDispatchPin:
             f'{DISPATCH_WORKFLOW_DOC}` across {len(invocations)} invocation(s) — the analysis dispatch '
             'must name the document the leaf loads, concretely'
         )
-        invocation = matching[0]
-        for fact in (
-            '--role orchestrator.analyze',
-            '--plan-id none',
-            '--caller plan-marshall:persona-plan-orchestrator',
-            '--workflow',
-        ):
-            assert fact in invocation, f'the analysis dispatch omits {fact!r}: {invocation!r}'
+        missing = _missing_dispatch_facts(matching[0])
+
+        assert missing == [], f'the analysis dispatch omits {missing}: {matching[0]!r}'
 
     def test_a_placeholder_workflow_argument_is_detected(self, tmp_path):
         fixture = tmp_path / 'placeholder.md'
@@ -431,6 +497,21 @@ class TestDispatchPin:
 
         assert len(invocations) == 1
         assert DISPATCH_WORKFLOW_DOC not in invocations[0]
+
+    def test_a_dispatch_missing_a_required_fact_is_detected(self, tmp_path):
+        # The four-fact loop's control: a whole-looking invocation that resolves
+        # the right surface on the right document but drops `--caller` leaves no
+        # attributable [DISPATCH] record and must be reported.
+        fixture = tmp_path / 'missing-caller.md'
+        fixture.write_text(
+            'Resolve via `manage-config effort resolve-target --role orchestrator.analyze --plan-id none '
+            f'--workflow {DISPATCH_WORKFLOW_DOC}`.\n',
+            encoding='utf-8',
+        )
+
+        invocation = _dispatch_invocations(_read(fixture))[0]
+
+        assert _missing_dispatch_facts(invocation) == ['--caller plan-marshall:persona-plan-orchestrator']
 
 
 # =============================================================================
@@ -450,11 +531,19 @@ class TestContractPresence:
         )
 
     def test_the_router_routes_the_verb(self):
-        text = _read(ROUTER)
-
-        assert re.search(r'^\|\s*`handle-open`\s*\|\s*`workflow/handle-open\.md`\s*\|', text, re.MULTILINE), (
+        assert _routes_the_workflow_doc(_read(ROUTER)), (
             'the Verb Routing table carries no `handle-open` row pointing at workflow/handle-open.md'
         )
+
+    def test_a_router_without_the_row_is_detected(self, tmp_path):
+        fixture = tmp_path / 'router.md'
+        fixture.write_text(
+            '| Verb | Workflow doc | Purpose |\n|------|--------------|---------|\n'
+            '| `cleanup` | `workflow/cleanup.md` | Reconcile the corpus |\n',
+            encoding='utf-8',
+        )
+
+        assert not _routes_the_workflow_doc(_read(fixture))
 
     def test_a_missing_section_heading_is_detected(self, tmp_path):
         fixture = tmp_path / 'no-section.md'
