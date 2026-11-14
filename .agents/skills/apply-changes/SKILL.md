@@ -90,6 +90,12 @@ When this skill is invoked:
    `unreadable`. Report it; a `behind` verdict after an `--apply` run is a failure
    of the write, not of the cache.
 
+   Read the verdict carefully. `in_parity` says the registry agrees with the cache
+   directory the script selected — the newest one for each bundle — not that the
+   version this run synced is the pinned one. Compare the `entries` rows against
+   the versions step 2's result reported, and report any difference as an
+   unresolved pin.
+
 Report every harness row whose own install did not sync, with that row's
 `summary_message`: for OpenCode and Antigravity a row `status` other than
 `success`, for Claude a `cache_status` other than `success`. A `summary_message`

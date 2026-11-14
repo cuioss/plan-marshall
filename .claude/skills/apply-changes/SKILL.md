@@ -122,6 +122,12 @@ therefore means the version this run synced is not the one the next session
 loads: report it as an unresolved pin and let the operator decide, rather than
 describing the carry as complete.
 
+Read the verdict carefully. `in_parity` says the registry agrees with the cache
+directory the script selected — the newest one for each bundle — not that the
+version this run synced is the pinned one. Compare the `entries` rows the script
+prints against the versions the step 2 result reported, and report any difference
+as an unresolved pin.
+
 The script prints one `entries` row per plan-marshall registry entry and ends
 with `registry_parity`. That last value is the run's final registry verdict:
 `in_parity`, `behind`, `ahead` or `unreadable`. Report it. A `behind` verdict
