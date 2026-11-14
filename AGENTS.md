@@ -74,6 +74,8 @@ After editing skills/agents/commands in `marketplace/bundles/`, sync the generat
 
 This syncs Claude Code, OpenCode and Antigravity through one engine, `marketplace/targets/sync.py`; `--target NAME` narrows the run to one harness. The Claude leg copies to `~/.claude/plugins/cache/plan-marshall/` via rsync `--delete`.
 
+`/apply-changes` is the one-command path after a bundle change: it runs that regeneration and sync, then adds the executor regeneration and the registry repin, and ends by naming the restart it cannot perform. `.claude/skills/apply-changes/SKILL.md` carries the sequence; `/sync-harnesses` stays the narrow form.
+
 ## Multi-Target Distribution
 
 `marketplace/targets/` is the authoritative multi-target generator framework. Run `./pw generate --target {name} --output {dir}` to emit per-target output trees; always go through the wrapper, because `uv` lives in the project-local `.pyprojectx/` tree and is not on `PATH`. Valid `{name}` values are **every target registered in `TARGET_REGISTRY`** (`marketplace/targets/__init__.py`), plus `all`, which runs every registered target sequentially. The generator derives its `--target` choices from that registry, so `./pw generate --help` always prints the live set — read it there rather than trusting an enumeration copied into prose. Open multi-target workstreams are tracked in the `multiplattform` orchestrator epic (`/plan-orchestrator status slug=multiplattform`); its ledger carries the architecture baseline and the plan queue.

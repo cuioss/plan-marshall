@@ -214,6 +214,8 @@ A registry path that is a symbolic link is never written: when an entry needs a 
 
 link:../../marketplace/targets/README.md[`marketplace/targets/README.md`] § Registry parity documents the block's row shape, the `--registry-path` and `--repin` flags and the exit codes.
 
+`/apply-changes` is the one-command path for the whole carry after a bundle change; xref:../../.claude/skills/apply-changes/SKILL.md[the `apply-changes` skill] carries the sequence it follows, and this section stays the reference for what that sequence means.
+
 === Derived-state finalize steps run under every execution profile
 
 For plan-marshall itself, the deploy steps — `project:finalize-step-deploy-target`, `project:finalize-step-sync-plugin-cache`, and the on-main executor regeneration — are correctness-required derived state, not optional ceremony. They carry `lane.class: derived-state` and run under *every* execution-profile posture by default (including `minimal`), so a lean posture cannot silently ship a stale cache. An operator may still override one to `off`, but that emits a loud correctness warning ("dropping sync-cache ships a broken cache") rather than a silent drop.
