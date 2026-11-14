@@ -900,8 +900,13 @@ def refusal_cause(body: str, bot_kind: str | None = None) -> str:
     structural recogniser matches ("exceeded / reached / hit your limit") is a quota
     shape, while a size ceiling ("larger than the review limit of") is invisible to it
     and reaches recognition only through a declared pattern.
+
+    The literal test folds CASE, exactly as the registry arm that recognised the body
+    does: a notice the stack read as a refusal keeps its own cause whatever case it was
+    written in, so recognition and classification cannot disagree about one body.
     """
-    if bot_kind and any(marker in body for marker in bot_registry.refusal_size_patterns(bot_kind)):
+    folded = body.casefold()
+    if bot_kind and any(marker.casefold() in folded for marker in bot_registry.refusal_size_patterns(bot_kind)):
         return REFUSAL_CAUSE_SIZE
     return REFUSAL_CAUSE_QUOTA
 
@@ -939,9 +944,13 @@ def refusal_condition(body: str, bot_kind: str | None = None) -> str:
 
     An unregistered bot, and a bot declaring no such pattern, yield ``rate_limited``:
     the condition that says nothing new is left to review is asserted only on a
-    literal the bot's own record declares.
+    literal the bot's own record declares. The literal test folds CASE, as the
+    registry arm does — a refusal recognised in any case keeps the condition its own
+    text states, so a reply that reports "nothing new to review" is never routed to a
+    wait for a window it does not open.
     """
-    if bot_kind and any(marker in body for marker in bot_registry.no_unreviewed_commit_patterns(bot_kind)):
+    folded = body.casefold()
+    if bot_kind and any(marker.casefold() in folded for marker in bot_registry.no_unreviewed_commit_patterns(bot_kind)):
         return REFUSAL_CONDITION_NO_UNREVIEWED_COMMIT
     return REFUSAL_CONDITION_RATE_LIMITED
 
