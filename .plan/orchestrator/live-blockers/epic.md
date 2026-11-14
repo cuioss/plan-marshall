@@ -53,6 +53,11 @@ derive, for rows still live.
   - PLAN-LB-31 in-house-reviewer — PLAN-LB-21, PLAN-LB-20 D4 and D5.
   - PLAN-LB-14 launch-gate-scope — unchanged.
 
+- **PLAN-LB-152** (staged 2026-11-14 on the operator's word, runbook lane, WS-05) — `plans/PLAN-LB-152-review-gate-single-read-cleanup.md`. The cleanup
+  of PR #1988 (merge `2bf7cd83d`): four deliverables (the contract and the unreachable `coverage_unavailable` branch and dead required-reviewer
+  guard, a classified flatten and a pinned import placement, tests that do not depend on the machine or leak the default cwd, and the
+  history wording). **Not in it: the HIGH CAUTION-shape parser defect**, which stays an Open Defect; a plan for it overlaps this one on
+  `runbook_lane.py` and is sequenced after it. Surface declarative, nine paths, no overlap with the two in-flight lanes.
 - **PLAN-LB-136** (shipped #1984, 2026-11-14, runbook lane, `deepseek-v4.1-flash/high`, WS-04) — see `landings/PLAN-LB-136.md`. Merge commit
   `ff6de5f06`, a squash commit with one parent `21c9a205d` (the PLAN-LB-148 landing, read with git). One three-layer leaf read it with the
   lane's claims passed one by one; the orchestrator re-read the shared bridge module (`standing_rules_bridge.py:100-330`), the per-task gate
@@ -1713,6 +1718,17 @@ derive, for rows still live.
 
 ## Decisions
 
+- 2026-11-14 (analysed PR 1988, staged PLAN-LB-152) — **PR #1988 (`2bf7cd83d`, the unplanned fix from the PLAN-LB-148 session) was analysed and a small
+  cleanup plan was staged on the operator's word.** One three-layer leaf read the merge (no spec, so the PR's six claims stood in as layer 1;
+  no blocker, no major, every defect fails closed) and the orchestrator re-read the decisive points. The MEDIUM two-snapshot Open Defect is closed
+  by the merged diff; the HIGH CAUTION-shape parser defect is untouched and stays open and unstaged. The operator said "create a small plan for
+  the fixes", then land and emit: PLAN-LB-152 (`review-gate-single-read-cleanup`, runbook lane, WS-05, four deliverables) carries the minors the
+  leaf and the re-reads confirmed, and nothing else; the parser defect is deliberately not in it (a fix plan for a defect the operator did not
+  name is not an operator word, and "small" read as the minors). It passed all three admission tests (declarative surface of nine paths,
+  determinate comparison with zero overlap against the two in-flight lanes, no blocking verdict, `emit_allowed: true`). `auto_emit` is false,
+  so no launched transition is recorded; the start stays operator-owned. Surface sweep done with `architecture search --content`
+  (inventory-scoped): `coverage_unavailable` also appears in two `manage-tasks` freshness scripts, held in the spec as a read-only hypothesis for
+  the lane to settle.
 - 2026-11-14 (re-grounded) — **Plan B, the OpenCode and Antigravity bridge writers, is not staged and is dropped as a candidate.** The operator
   said "re-ground and land" after the PLAN-LB-136 drain. One read-only leaf read the shared writer, both runtimes and the steward at main
   `ff6de5f06` against every residue item of PLAN-LB-135 and PLAN-LB-143 and the bridge-surface findings of the PLAN-LB-136 landing, and
@@ -2977,18 +2993,18 @@ derive, for rows still live.
   reported it as residue and the three-layer leaf, reading the code under the wrong shape, judged it not borne out. Reproduced here against
   the live body. Fix direction: read the section heading from the bold line as well, and count a CAUTION-block's `<summary>` rows as
   findings. Same surface as the entry below: `review-gate`. **Operator word, 2026-11-14: the findings were pasted into the still-open
-  PLAN-LB-148 lane session with the instruction to fix now.** No plan is staged and no row exists; retire this entry only against the
-  merged diff of the PR that session opens. **Seen again on #1984 (2026-11-14):** its live review body carries
+  PLAN-LB-148 lane session with the instruction to fix now.** No plan is staged and no row exists. **That session's PR (#1988, merged
+  `2bf7cd83d`) did not touch the parser** and says so in its own "Not in scope"; this entry stays OPEN, and the merged diff holds no change to
+  `_SUMMARY_RE`, the section table or `_body_findings`. **Seen again on #1984 (2026-11-14):** its live review body carries
   `Outside diff range comments (1)` and `review-gate` counts only the seven inline findings; the lane's own record handled that finding
   (`f8fa95cb4`), so the gate did not decide anything there. Two PRs of two read since the parser was last touched.
-- **MEDIUM — the review gate decides on two snapshots taken at different moments (PLAN-LB-148 landing, L3-1, 2026-11-14; NOT STAGED).**
-  `cmd_review_gate` (`runbook_lane.py:2920-2921`) takes the display read first and the raw read second; threads and body findings come from
-  the first, required-review presence from the second, and `_review_gate_verdict` (`:2834-2886`) combines them. A required reviewer's
-  review, or its inline threads, landing between the two reads is credited by the second read while its findings were never seen by the
-  first, so the gate answers `all_handled` / `merge_allowed: true` for a review it did not read. The window is seconds wide, and at the
-  base one read fed both. Fix direction: one `fetch_pr_comments_data`, then `flatten_comment_bodies` in-process for the findings parser.
-  Found by one leaf and re-read at the lines by the orchestrator. **Operator word, 2026-11-14: pasted into the still-open PLAN-LB-148
-  lane session with the instruction to fix now** (see the entry above); retire only against the merged diff.
+- **CLOSED by #1988 (`2bf7cd83d`, 2026-11-14) — the review gate decided on two snapshots (PLAN-LB-148 landing, L3-1).** The unplanned fix PR
+  from the PLAN-LB-148 session merged. Read against the merged diff: `_read_review_surfaces` (`runbook_lane.py:2620-2656`) now fetches once
+  in-process, `_display_read` (`:2659-2680`) flattens that one snapshot for the findings parser, `_review_gate_verdict` passes the same `read`
+  to the required-reviewer half, and `cmd_review_gate` (`:2894-2897`) takes no second read. The flatten is the same function `ci pr comments`
+  prints through (`_github_pr.py:2150`, default `unresolved_only` false), so the findings half sees the same text as before. Kept here as a
+  pointer; relocate to `settled.md` with the next relocation pass. Cost the PR states: on a project whose CI routes elsewhere the gate
+  answers `undecidable_read`.
 - **MEDIUM — the PLAN-LB-127 landing message is incomplete (2026-11-08).** `inbox landing-check` reports `complete: false` for
   `rb-lb-127-coderabbit-registry-summary-concerns-and-file-limit-001.md`, missing `total_tokens` (out of scope) and
   `unresolved_review_threads`, `review_body_findings_total`, `review_body_findings_handled`, `sonar_open_new_issues`. The lane text that
@@ -3797,7 +3813,40 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
   `BRIDGE_VERSION` unchanged, `opencode-rules.md:60` still says re-setup heals a drifted bridge (an unreadable baseline is never healed),
   `doc/developer/opencode.adoc:253` still says setup reports the drift verdict it healed, and two weak assertions in `test_harness_config.py`
   and `test_opencode_runtime.py`.
-- **The minors of the PLAN-LB-148 landing (2026-11-14; recorded, not staged).** None fails open beyond the two Open Defects above. Layer 1:
+- **The minors of the PLAN-LB-148 landing (2026-11-14; recorded, not staged).** **Closed by #1988 (`2bf7cd83d`), read against its diff:** the imports
+  and repo lookup now sit inside the read guard (`AttributeError`, `ImportError`, `TypeError` caught), `review_coverage_names_commit` takes
+  only an all-hex token (`_github_pr.py:602-605`; a hex-looking word such as `facade` or `dead` would still pass, a nit), the wording at
+  `_github_pr.py:252-254` and `_refusal_record` and the broken wrap in `SKILL.md` are repaired, and the first-comment loop test and the
+  `restore_default_cwd` fixtures are as claimed (a three-layer leaf read the test hunks; the orchestrator re-read the ones named in the PR #1988
+  entry below). Not closed: the change-history wording at `github_re_review.py:121` ("now VISIBLE") and the new history wording the PR adds
+  itself; the layer-1 spec premises (history), the D3 and D5 weak fixtures and the not-shown items. None fails open beyond the HIGH Open
+  Defect above.
+- **The minors of PR #1988 (`2bf7cd83d`, unplanned fix PR; three-layer leaf read 2026-11-14; recorded, not staged).** No blocker, no major; every
+  defect found fails closed. Claims C1 to C4 of the PR (one fetch, the widened guard, the hex commit id, the shared `resolve_ci_provider`) are
+  corroborated by the leaf; the points the orchestrator re-read at the line are marked. **The documented contract is false in one place
+  (re-read):** `runbook-lane/SKILL.md:213, 218-221` still say the read is `ci pr comments` and that a GitLab project answers
+  `coverage_unavailable`; the gate now answers `undecidable_read` for any project that does not route to GitHub (`runbook_lane.py:2653-2663`,
+  `:2765-2771`), and `coverage_unavailable` (`:2772-2784`, with a comment about "the GitLab read" at `:2775-2777`) cannot be reached from the real
+  read, because a successful GitHub fetch always publishes `complete` (`github_ops.py:984-994`, re-read). The leaf graded the SKILL line major;
+  graded minor here because the behaviour is still a stop. **Dead guard (re-read):** `_required_review_read_failure(read)` at
+  `runbook_lane.py:2856-2858` can never fire, because the failed, coverage-less and truncated reads already returned at `:2765, :2772, :2785`, so
+  the "truncated" and "failed" cases of `test_an_incomplete_raw_read_is_undecidable_never_missing` (test file `:1306-1319`) pass without it.
+  **Flatten outside the guard (re-read):** `_display_read` (`:2670-2680`) and `:2796` run outside the try, so a non-dict entry would raise where
+  it was filtered before; the real fetch builds only dicts, so it is not reachable today. **Tests (re-read):** `test_the_gate_fetches_the_surface_once_and_spawns_no_cli`
+  (`:954-978`) and the raising-read test (`:1322-1340`) carry no `restore_default_cwd` fixture although the real read sets the process default
+  cwd; the raising-read test patches the fetch, so it does not pin the import placement the PR claims; the section comment at `:1229-1233`
+  still describes two transport seams; `resolve_ci_provider` is not stubbed, so these tests depend on the ambient `.plan/marshal.json` routing
+  to GitHub (leaf; the repo's tracked file does today). **Leaf-only, not re-read:** the shape-table helper `_lane_admits`
+  (`test_finished_review_shape_table.py:149-187`) keeps dead `subprocess.run` and `parse_toon` stubs and a stale "two transport seams" comment;
+  `forbid_run` would not trip for a read routed through `run_cli`, which catches every exception, so the "no subprocess" half of the pin is
+  weaker than it reads; the hex test also tightens the non-refusal issue-comment and review-body-fallback arms at all three finished-review
+  sites (fails closed); `Path.resolve()` in `resolve_ci_provider` follows symlinks where the removed code did not. **Not shown by reading:** whether
+  the dropped TOON round trip was an identity for any body, whether an unlisted exception type (`KeyError`, an import-time error in
+  `bot_registry`) can escape the guard, and the test files and `runbook_lane.py` ranges the leaf did not read. **Design note, disclosed by the PR:**
+  the findings half now reads through the GitHub provider module in-process and gates on the literal `github`, bypassing the `ci` router; the
+  raw half already did so at the base. New change-history wording added by the diff ("used to", "now", "Without this test ... was exempt":
+  `_github_pr.py:595-597`, `test_runbook_lane_review_gate.py:957-961`) against the documentation standard. The HIGH CAUTION-shape parser gap is
+  confirmed untouched (no hunk in `runbook_lane.py:2120-2131, 2189, 2395-2482`). Layer 1:
   the spec's premise that every refusal consumer reads `refusal_layers` was false (`refusal_cause` and `refusal_condition` kept their own
   case-sensitive tests, folded only after the reviewer flagged them); its D1 Done-when "fails at `c9dcfd290` through the lane's real read
   seam" cannot hold as written, because the seam does not exist there and red is showable only by mutation. Layer 2 (leaf read; the test
