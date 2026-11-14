@@ -1760,6 +1760,11 @@ def _per_task_gate_commands(plan_id: str, tier_records: list[dict[str, str]]) ->
             continue
         resolved = _invoke_architecture_resolve(['--command', canonical], plan_id, top_level_plan_id=True)
         executable = resolved.get('executable') if isinstance(resolved, dict) else None
+        if isinstance(resolved, dict) and resolved.get('execution_tier') == 'orchestrator':
+            # The stamp is a snapshot; THIS lookup is the fresher verdict, and a
+            # gate the live resolve places at orchestrator tier is not run inline
+            # by any leaf, so it is not appended. The phase-level step stays.
+            continue
         if not (isinstance(executable, str) and executable):
             unresolved = True
             _emit_decision_log(

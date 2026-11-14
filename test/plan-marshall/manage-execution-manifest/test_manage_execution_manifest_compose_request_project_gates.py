@@ -194,6 +194,30 @@ def _stub_architecture_resolve(monkeypatch, tier: str, executable: str | None = 
     monkeypatch.setattr(_mem, '_invoke_architecture_resolve', _fake)
 
 
+def _stub_architecture_resolve_diverging(monkeypatch) -> None:
+    """Stamp ``per_task`` but report ``orchestrator`` on the attributed lookup.
+
+    The stamp is a snapshot; a probe that failed earlier stamps the permissive
+    ``per_task`` default, so the attributed lookup can find the gate at
+    orchestrator tier. That fresh verdict is the routing authority.
+    """
+
+    def _fake(_argv_extra, _plan_id, **kwargs):
+        tier = 'orchestrator' if kwargs.get('top_level_plan_id') else 'per_task'
+        return {
+            'status': 'success',
+            'command': 'quality-gate',
+            'executable': _RESOLVED_QUALITY_GATE,
+            'resolution_level': 'module',
+            'bash_timeout_seconds': 900 if tier == 'orchestrator' else 360,
+            'exceeds_bash_ceiling': tier == 'orchestrator',
+            'execution_tier': tier,
+            'hint': 'stubbed',
+        }
+
+    monkeypatch.setattr(_mem, '_invoke_architecture_resolve', _fake)
+
+
 def _seed_gate_plan(plan_context, plan_id: str) -> None:
     """Seed a plan whose composed gates carry the project's quality gate.
 
@@ -257,6 +281,26 @@ def test_gate_append_is_withdrawn_when_the_stamp_stops_covering_it(plan_context,
     verification = _read_task(plan_context.plans_dir, plan_id, 1)['verification']
     assert verification['commands'] == [], 'the appended gate is withdrawn with its stamp'
     assert 'per_task_gate_commands' not in verification
+
+
+def test_the_attributed_lookup_tier_decides_the_append(plan_context, monkeypatch):
+    """A stamp of `per_task` does not append a gate the fresh lookup places at orchestrator.
+
+    The stamp is a snapshot taken when the tier probe may have failed and fallen
+    back to the permissive default; the attributed lookup is fresher, so its tier
+    is what decides whether a leaf runs the gate inline.
+    """
+    plan_id = 'request-project-gates-diverging-tier'
+    _seed_gate_plan(plan_context, plan_id)
+    _stub_architecture_resolve_diverging(monkeypatch)
+
+    result = cmd_compose(_gate_only_ns(plan_id))
+
+    assert result is not None and result['status'] == 'success'
+    manifest = read_manifest(plan_id)
+    assert manifest is not None
+    assert 'verify:quality-gate' in manifest['phase_5']['verification_steps']
+    assert _read_task(plan_context.plans_dir, plan_id, 1)['verification']['commands'] == []
 
 
 def test_recorded_gate_command_survives_an_unresolved_lookup(plan_context, monkeypatch):
