@@ -117,7 +117,10 @@ registry is never part of the cache sync. Running this command is the operator's
 consent to the write — the machine-local `registry-repin` setting stays the
 opt-in of the `project:finalize-step-sync-plugin-cache` finalize step and is not
 read here. An entry pinned ahead of the synced version stays untouched and is
-reported, because the script never moves a pin backwards.
+reported, because the script never moves a pin backwards. An `ahead` verdict
+therefore means the version this run synced is not the one the next session
+loads: report it as an unresolved pin and let the operator decide, rather than
+describing the carry as complete.
 
 The script prints one `entries` row per plan-marshall registry entry and ends
 with `registry_parity`. That last value is the run's final registry verdict:

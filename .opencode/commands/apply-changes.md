@@ -87,7 +87,10 @@ Run every command with the `bash` tool, one command per call.
    ```
 
    An entry pinned ahead of the synced version stays untouched and is reported,
-   because the script never moves a pin backwards. The script prints one `entries`
+   because the script never moves a pin backwards. An `ahead` verdict therefore
+   means the version this run synced is not the one the next session loads:
+   report it as an unresolved pin and let the operator decide, rather than
+   describing the carry as complete. The script prints one `entries`
    row per plan-marshall registry entry and ends with `registry_parity`. That last
    value is the run's final registry verdict: `in_parity`, `behind`, `ahead` or
    `unreadable`. Report it; a `behind` verdict after an `--apply` run is a failure
