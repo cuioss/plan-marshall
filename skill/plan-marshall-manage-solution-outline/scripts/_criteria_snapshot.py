@@ -1,0 +1,2254 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
+"""The frozen success-criteria snapshot — shared read/write/diff seam.
+
+Background
+----------
+Every OpenCode plan so far was graded against criteria it had rewritten. The
+functional review's "verdict-currency freeze" compared the current outline with
+itself (``phase-6-finalize/workflow/functional-review.md`` § "Verdict-currency
+freeze — judge against outline approval"), so a criterion narrowed, reworded or
+dropped after outline approval was graded as though the plan had delivered it,
+and the review's own verdict file was rewritten in place with no record of what
+the reviewer had actually written.
+
+This module is the single deterministic seam that closes both halves:
+
+* :func:`build_snapshot` / :func:`write_snapshot` freeze, at outline approval,
+  the success criteria of every outline deliverable — together with the
+  request's Done-when text and, when the request names a spec document, each
+  spec deliverable's separate Done-when clause. Merging deliverables in a later
+  refine or outline pass cannot collapse them: the spec clauses are frozen as
+  their own rows, keyed by spec deliverable number.
+* :func:`criteria_drift` compares the CURRENT outline against the frozen rows
+  and reports every criterion the current outline no longer carries verbatim —
+  ``deleted`` or ``rewritten`` — unless an operator decision authorizes that
+  exact change (:func:`authorize_change`).
+* :func:`open_criteria` answers the finalize question "is any frozen criterion
+  still open?" from the snapshot plus the review's verdict file, so neither the
+  finalize triage source nor the finalize completion gate can exit on an empty
+  bot queue while a Done-when is unmet.
+
+Layering
+--------
+This module lives with ``_plan_parsing`` and is imported BY the phase-6-finalize
+scripts and by ``manage-status`` (the finalize completion gate). Nothing here
+imports from those higher layers, so there is no import cycle. The status record's
+integrity block is written through ``_locks_core``'s guard — the SAME shared
+coordination primitive ``manage-status`` commits ``status.json`` through — rather
+than by importing the status writer upward.
+
+Nothing in this module judges a plan. It reads documents, writes one JSON
+artifact and reports named differences; the grading that consumes its output
+stays in ``phase-6-finalize/scripts/_review_support_validate.py``.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import re
+import uuid
+from collections.abc import Callable, Iterable, Iterator, Mapping
+from contextlib import contextmanager
+from pathlib import Path
+from typing import Any
+
+from _locks_core import _GUARD_SUFFIX, held_guard
+from _plan_parsing import (
+    extract_deliverables,
+    parse_document_sections,
+    split_deliverable_blocks,
+)
+from file_ops import atomic_write_bytes, atomic_write_file, base_path, cwd_checkout_root
+from markdown_fence import fence_marker as _fence_marker
+
+#: Plan-relative path of the frozen snapshot artifact.
+SNAPSHOT_FILE = 'work/criteria-snapshot.json'
+#: The snapshot schema tag this module writes and the only one it reads.
+SCHEMA = 'criteria-snapshot/1'
+REQUEST_FILE = 'request.md'
+
+#: The success-criteria block marker. The block runs from it to the next bold
+#: field heading (or the end of the deliverable body) and is parsed by
+#: :func:`parse_success_criteria`, not by a line regex: a wrapped continuation and
+#: an indented sub-bullet belong to the bullet above them, and a `*` bullet is a
+#: criterion too.
+_SUCCESS_CRITERIA_MARKER_RE = re.compile(r'\*\*Success Criteria:\*\*[^\n]*\n?', re.IGNORECASE)
+#: A bold-field heading. The retired-parser replay uses this indented-tolerant form
+#: to mirror the retired rule; the live parser uses the column-0 form below.
+_SUCCESS_BLOCK_END_RE = re.compile(r'^\s*\*\*[A-Za-z][^*\n]*:\*\*')
+#: The same heading at column 0 — the only form the live parser treats as the end
+#: of the block.
+_SUCCESS_BLOCK_END_COLUMN_RE = re.compile(r'^\*\*[A-Za-z][^*\n]*:\*\*')
+
+
+def _legacy_fence_marker(line: str) -> tuple[str, int, str] | None:
+    """Return the PREVIOUS parser generation's fence marker for ``line``, or ``None``.
+
+    That generation ignored indentation entirely and did not restrict a backtick
+    info string, so a parser-2 replay must use this rule rather than the current
+    CommonMark one: otherwise a four-space-indented fence that parser 2 skipped is
+    read into the replay and an unchanged criterion looks rewritten.
+    """
+    stripped = line.strip()
+    if not stripped or stripped[0] not in '`~':
+        return None
+    character = stripped[0]
+    length = len(stripped) - len(stripped.lstrip(character))
+    if length < 3:
+        return None
+    return character, length, stripped[length:]
+
+
+#: One bullet, at any indent; the indentation decides top-level vs sub-bullet.
+_BULLET_RE = re.compile(r'^[-*][ \t]+(.*)$')
+#: A numbered bold deliverable heading in a request-named spec document.
+_SPEC_DELIVERABLE_RE = re.compile(r'^(\d+)\.\s+\*\*(.+?)\*\*', re.MULTILINE)
+#: The Done-when sentence of a spec deliverable, in any of the three spellings.
+#:
+#: The clause runs from its marker to the NEXT deliverable heading (``N. **``) or
+#: section heading, so a Done-when written as wrapped prose — or as a bullet list —
+#: is captured whole. The retired ``(.+)`` captured one line, which truncated
+#: every wrapped clause to its first line and read an outline that paraphrased the
+#: rest as a missing criterion.
+_SPEC_DONE_WHEN_RE = re.compile(
+    r'(?:\*Done[- ]when:\*|\*\*Done[- ]when:\*\*|Done[- ]when:)\s*(.+?)(?=\n\s*(?:\d+\.\s+\*\*|#{1,6}\s)|\Z)',
+    re.IGNORECASE | re.DOTALL,
+)
+#: A heading that introduces the request's own Done-when text.
+_REQUEST_DONE_WHEN_RE = re.compile(r'^\s*(?:#+\s*)?(?:\*\*)?Done[- ]when(?:\*\*)?\s*:?\s*$', re.IGNORECASE)
+#: A markdown path token in free request text (``.plan/x/PLAN-1.md``, ``doc/y.md``).
+_MD_PATH_RE = re.compile(r'(?:^|\s)([\w./-]+\.md)(?=[\s,.;:)]|$)', re.MULTILINE)
+
+DELETED = 'deleted'
+REWRITTEN = 'rewritten'
+#: A frozen criterion that is a PREFIX of the newly parsed one: the parser now
+#: reads a wrapped bullet in full. It is a named state, not drift — the criterion
+#: was not rewritten, the reader got better. Reported so the operator sees it, and
+#: never blocking.
+PARSER_EXTENDED = 'parser_extended'
+#: The snapshot field that records WHICH parser froze the criteria. A snapshot
+#: written by the current parser carries it; an older snapshot does not. That is
+#: the discriminator ``parser_extended`` needs: a prefix-extension of a frozen
+#: criterion is a migration only when the freeze predates this parser. Without it,
+#: an author's continuation-line append to a criterion the current parser froze is
+#: hidden as advisory.
+PARSER_KEY = 'parser'
+#: The parser generation that froze the criteria. Bumped when the parser OUTPUT
+#: changes for an unchanged outline, so a snapshot frozen by the older output is
+#: classified as a migration (`parser_extended`, advisory) instead of author drift.
+#: 3: a fenced block under a criterion is kept in the criterion instead of skipped.
+CURRENT_PARSER = 3
+#: The functional verdict that retires a deliverable: its criteria are not open.
+SUPERSEDED = 'superseded'
+#: The deliverable reference a ``superseded_by`` value must OPEN with: the outline's
+#: own ``D<n>`` form, the spelled ``deliverable <n>`` form, or one of those wrapped in
+#: the punctuation the documents invite (a backtick, bold/italic markers, a parenthesis).
+#: Anchoring at the head is what separates a citation from a token that merely appears
+#: in prose ("see d3 notes"), and prose may still follow it ("D3 — the operator decision").
+#: The trailing guard refuses a reference terminated by another WORD ("D3x",
+#: "D3_notes") while admitting the italic marker that CLOSES right after the digits
+#: (``_D2_``) — an underscore is a word character, so ``\b`` failed between "2" and
+#: "_". A longer NUMBER is not a guard case at all: ``\d+`` reads it as that
+#: deliverable, and existence does the refusing.
+_DELIVERABLE_REFERENCE = re.compile(
+    r'^\s*[`*_(\s]*(?:[dD]\s?(\d+)|(?:[dD]eliverables?)\s+#?(?:[dD]\s?)?(\d+))(?=$|[^\w]|_(?!\w))'
+)
+#: Why :func:`deliverable_reference_rejection` refused a ``superseded_by`` value.
+REFERENCE_UNREADABLE = 'reference_unreadable'
+REFERENCE_UNKNOWN = 'unknown_deliverable'
+REFERENCE_SELF = 'self_citation'
+REFERENCE_CYCLE = 'cycle'
+SUCCESSOR_NOT_MET = 'successor_not_met'
+SUCCESSOR_SUPERSEDED = 'successor_superseded'
+#: The verdicts that CLOSE a deliverable: only these may be the successor a
+#: ``superseded_by`` citation points at.
+CLOSING_VERDICTS = ('met', 'met_with_residuals')
+CRITERION_UNPARSED = 'criterion_unparsed'
+#: The named state an unterminated fenced block leaves in ``unparsed``. It is a
+#: coalesced marker (not the raw line) so a gate reads a state rather than text.
+UNTERMINATED_FENCE = 'unterminated fenced block'
+#: A spec deliverable's own Done-when that no outline criterion covers.
+SPEC_MISSING = 'spec_criterion_missing'
+#: The request's own Done-when that no outline criterion covers.
+REQUEST_MISSING = 'request_criterion_missing'
+
+#: The authorship marker the review's own script verb stamps onto a verdict file.
+AUTHORED_KEY = 'authored'
+AUTHORSHIP_SCHEMA = 'review-verdict-authorship/1'
+AUTHORSHIP_VERB = 'review_support author-verdict'
+
+#: The plan-relative file of the plan's status record — where the seal and the
+#: snapshot digest are bound outside the artifacts they protect.
+STATUS_FILE = 'status.json'
+#: The status-record metadata key holding those digests.
+INTEGRITY_KEY = 'criteria_integrity'
+#: The key INSIDE the integrity block that marks the snapshot as frozen.
+SNAPSHOT_FROZEN_KEY = 'snapshot_frozen'
+#: The status-record metadata list of heads at which an operator closed the
+#: functional review. Its owning writer is ``manage-status loop-back close``; the
+#: reader here and the protected-key guard in ``manage-status`` derive the name
+#: from this one definition.
+OVERRIDE_HEADS_KEY = 'functional_review_override_heads'
+#: The status-record metadata list of accepted test removals. The two writers are
+#: ``snapshot-criteria`` (which seeds it from the outline's ``Tests to remove``
+#: declarations) and ``loop-back close --accept`` on a ``weakened_test`` finding
+#: (which records the identities that finding removed). An identity entry is
+#: ``{identity, assertions_removed}`` — the D1 test identity plus the number of
+#: removed assertions; a row that carries no identity gets a path-level entry
+#: instead, naming the row KIND it covers (``{path, kind, acceptance_kind,
+#: assertions_removed}``) and, for a filter row, the PAIRED ``(test, marker)`` it
+#: covers (``{path, kind: test_filtered, pairs}``). The legacy display fields
+#: ``markers`` / ``marked_tests`` may ride along, but they are not the pairing. A
+#: generic ``metadata --set`` must refuse it, so it joins the protected set below.
+ACCEPTED_TEST_REMOVALS_KEY = 'accepted_test_removals'
+#: The status-record metadata keys whose only writers commit through their own
+#: guarded read-modify-write. ``_status_core.write_status`` must carry them
+#: forward from the live document, and a generic ``metadata --set`` must refuse
+#: them. The MEMBERSHIP is defined here once, so the carry set and the protected
+#: set cannot drift into covering different keys as a third owner-written key is
+#: added.
+PROTECTED_STATUS_METADATA_KEYS: tuple[str, ...] = (
+    INTEGRITY_KEY,
+    OVERRIDE_HEADS_KEY,
+    ACCEPTED_TEST_REMOVALS_KEY,
+)
+
+#: The key INSIDE the integrity block that carries the identity of the re-freeze
+#: authorization this process set. A withdrawal is conditioned on it, so a failed
+#: decision line removes only ITS OWN authorization and never a newer one another
+#: call has since recorded and logged.
+REFREEZE_TOKEN_KEY = 'refreeze_authorization_token'
+
+#: The key INSIDE the integrity block marking an authorization whose decision line
+#: has NOT been written yet. A call sets it with its authorization and clears it
+#: once the line lands; a withdrawal that finds a PRIOR authorization still
+#: carrying it must not restore that authorization, because doing so would put a
+#: decision back on the record whose line was never written — the fail-open this
+#: module exists to close. The marker is what makes a restoration safe across two
+#: calls whose lines both fail, including inside the guard's stale-reclaim window.
+REFREEZE_PENDING_KEY = 'refreeze_authorization_pending'
+
+#: Every outcome the two authorization writers can report for what became of an
+#: authorization whose decision line could not be written. Single-sourced so the
+#: documents that describe them — ``authorize_change``'s docstring and
+#: ``phase-6-finalize/standards/review-rubric.md`` (the frozen-record finding) —
+#: are checked against the code by a test instead of by a reader's memory:
+#: ``test_the_authorization_outcome_vocabulary_matches_its_documents`` fails when a
+#: term here is missing from either document.
+#:
+#: Nothing here judges a plan; the terms describe the STATE the artifact and its
+#: record were left in, which is what the operator needs to decide the repair.
+AUTHORIZATION_OUTCOMES: tuple[str, ...] = (
+    # authorize_refreeze: the withdrawal removed the authorization this call set.
+    'withdrawn',
+    'restored',
+    # authorize_refreeze: a re-freeze consumed it first — that decision wins.
+    'already_consumed',
+    # authorize_refreeze: a newer authorization replaced ours; it survives.
+    'superseded',
+    # authorize_refreeze: the withdrawal itself could not be written.
+    'not withdrawn',
+    # _commit_authorization: the edit was undone and its binding restored.
+    'rolled_back',
+    # _commit_authorization: the edit was undone but its binding could not be
+    # withdrawn, so the snapshot reads `tampered` — fail closed.
+    'tamper_flagged',
+    # _commit_authorization: the undo could not be completed at all.
+    'inconsistent',
+)
+
+
+def _status_doc(plan_id: str) -> dict[str, Any] | None:
+    """Return the plan's parsed status record, or ``None`` when it cannot be read."""
+    path = base_path('plans', plan_id, STATUS_FILE)
+    if not path.is_file():
+        return None
+    try:
+        parsed = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def integrity_record(plan_id: str) -> dict[str, Any]:
+    """Return the status record's criteria-integrity block, or ``{}`` when absent.
+
+    The block is the OUTSIDE-the-artifact half of the seal: the snapshot digest
+    and the verdict digests are recorded in the plan's status record — a DIFFERENT
+    FILE from the artifact — so a digest recomputed inside a rewritten artifact
+    does not reproduce the recorded one. An absent status record yields ``{}`` —
+    the legacy shape — never an empty freeze.
+    """
+    status = _status_doc(plan_id)
+    if status is None:
+        return {}
+    metadata = status.get('metadata')
+    block = metadata.get(INTEGRITY_KEY) if isinstance(metadata, dict) else None
+    return block if isinstance(block, dict) else {}
+
+
+def _merge_integrity(plan_id: str, merge: Callable[[dict[str, Any]], None]) -> bool:
+    """Merge into the status record's integrity block inside the status writers' guard.
+
+    The guard is the SAME file-level ``O_EXCL`` guard ``manage-status`` commits
+    ``status.json`` through (``_locks_core.rmw_json`` names it
+    ``{status.json}.lock``), so this read-modify-write cannot interleave with a
+    status writer's critical section: one of the two waits.
+
+    Serialization alone does not make the block survive, because a status writer
+    commits a WHOLE document assembled from a snapshot it read before the guard.
+    The other half of the contract is on that side: ``_status_core.write_status``
+    carries ``criteria_integrity`` forward from the document it reads inside the
+    guard, so a writer holding a pre-merge snapshot cannot restore its stale copy
+    over this merge. Neither half is sufficient alone.
+
+    A plan with no readable status record is left untouched and reports ``False``;
+    so does a guard that cannot be taken within its budget (``TimeoutError``) and
+    a commit that fails. The caller never reads such a ``False`` as "recorded".
+    """
+    path = base_path('plans', plan_id, STATUS_FILE)
+    try:
+        with held_guard(path.with_name(f'{path.name}{_GUARD_SUFFIX}')):
+            status = _status_doc(plan_id)
+            if status is None:
+                return False
+            metadata = status.get('metadata')
+            if not isinstance(metadata, dict):
+                metadata = {}
+                status['metadata'] = metadata
+            block = metadata.get(INTEGRITY_KEY)
+            if not isinstance(block, dict):
+                block = {}
+                metadata[INTEGRITY_KEY] = block
+            merge(block)
+            try:
+                atomic_write_file(path, json.dumps(status, indent=2, sort_keys=True) + '\n')
+            except OSError:
+                return False
+    except OSError:
+        return False
+    return True
+
+
+def _merge_metadata(plan_id: str, merge: Callable[[dict[str, Any]], None]) -> bool:
+    """Merge into the status record's top-level ``metadata`` inside the writers' guard.
+
+    The same guarded read-modify-write ``_merge_integrity`` uses, one level up: the
+    accepted-removal set is a sibling of the ``criteria_integrity`` block, not a
+    member of it. ``_status_core.write_status`` carries the protected keys forward
+    from the document it reads inside the guard, so a stale snapshot cannot restore
+    an older list over this merge.
+
+    Returns ``False`` for an absent/unreadable record, a guard timeout and a failed
+    commit — never read as "recorded".
+    """
+    path = base_path('plans', plan_id, STATUS_FILE)
+    try:
+        with held_guard(path.with_name(f'{path.name}{_GUARD_SUFFIX}')):
+            status = _status_doc(plan_id)
+            if status is None:
+                return False
+            metadata = status.get('metadata')
+            if not isinstance(metadata, dict):
+                metadata = {}
+                status['metadata'] = metadata
+            merge(metadata)
+            try:
+                atomic_write_file(path, json.dumps(status, indent=2, sort_keys=True) + '\n')
+            except OSError:
+                return False
+    except OSError:
+        return False
+    return True
+
+
+def accepted_test_removals(plan_id: str) -> list[dict[str, Any]]:
+    """Return the accepted-removal set recorded in the plan's status record.
+
+    One source, one freeze: ``snapshot-criteria`` seeds the set from the outline's
+    ``**Tests to remove:**`` declarations at outline approval, and ``loop-back
+    close --accept`` appends the identities an accepted ``weakened_test`` finding
+    removed. Reading the live outline as well would let a declaration added after
+    the freeze take effect with no operator decision — a second, unguarded
+    acceptance route — so it is deliberately not read.
+
+    Each entry names a test identity (``{identity, assertions_removed}``) or, for a
+    row that carries none, an explicit path-level key that also names the row KIND
+    (``{path, kind, acceptance_kind, assertions_removed}``, or ``{path, kind:
+    test_filtered, pairs}`` — the paired ``{test, marker}`` set).
+    ``assertions_removed`` is ``None`` for a declaration that names no count, which
+    accepts the identity for a REMOVAL only — never for a drop of a surviving test.
+    Deduplicated by the entry's own key.
+    """
+    entries: list[dict[str, Any]] = []
+    seen: set[tuple[Any, ...]] = set()
+    metadata = (_status_doc(plan_id) or {}).get('metadata')
+    recorded = metadata.get(ACCEPTED_TEST_REMOVALS_KEY) if isinstance(metadata, dict) else None
+    for entry in recorded if isinstance(recorded, list) else []:
+        if not isinstance(entry, dict):
+            continue
+        normalized = _normalized_removal_entry(entry)
+        if normalized is None:
+            continue
+        key = _removal_key(normalized)
+        if key in seen:
+            continue
+        seen.add(key)
+        entries.append(normalized)
+    return entries
+
+
+def _pair_key(entry: dict[str, Any]) -> tuple[tuple[str, str], ...]:
+    """The ``(test, marker)`` pairs an entry carries, sorted, as a hashable key."""
+    pairs = entry.get('pairs')
+    if not isinstance(pairs, list):
+        return ()
+    return tuple(
+        sorted(
+            (pair['test'], pair['marker'])
+            for pair in pairs
+            if isinstance(pair, dict) and isinstance(pair.get('test'), str) and isinstance(pair.get('marker'), str)
+        )
+    )
+
+
+def _removal_key(entry: dict[str, Any]) -> tuple[Any, ...]:
+    """The accepted-set key: everything the entry NAMES, not just its identity.
+
+    A filter acceptance names the PAIRED ``(test, marker)`` it covers; a path-level
+    acceptance names the row KIND it covers (mixed residual / file total / set
+    total) beside its count. Two entries that differ in ANY of those are different
+    acceptances, so the key must carry them — a key that omits them makes a second
+    close collide with the first. ``markers`` / ``marked_tests`` stay in the key as
+    the display form an older entry may carry; they are not the pairing.
+    """
+    return (
+        entry.get('identity'),
+        entry.get('path'),
+        entry.get('kind'),
+        entry.get('acceptance_kind'),
+        _pair_key(entry),
+        tuple(sorted(entry.get('markers') or [])),
+        tuple(sorted(entry.get('marked_tests') or [])),
+        entry.get('assertions_removed'),
+    )
+
+
+def _normalized_removal_entry(entry: dict[str, Any]) -> dict[str, Any] | None:
+    """One accepted-removal entry, normalized, or ``None`` when it names nothing."""
+    identity = entry.get('identity')
+    path = entry.get('path')
+    has_identity = isinstance(identity, str) and bool(identity)
+    has_path = isinstance(path, str) and bool(path)
+    if not has_identity and not has_path:
+        return None
+    count = entry.get('assertions_removed')
+    normalized: dict[str, Any] = {
+        'assertions_removed': count if isinstance(count, int) and not isinstance(count, bool) else None
+    }
+    if has_identity:
+        normalized['identity'] = identity
+    if has_path:
+        normalized['path'] = path
+    kind = entry.get('kind')
+    if isinstance(kind, str) and kind:
+        normalized['kind'] = kind
+    acceptance_kind = entry.get('acceptance_kind')
+    if isinstance(acceptance_kind, str) and acceptance_kind:
+        normalized['acceptance_kind'] = acceptance_kind
+    markers = entry.get('markers')
+    if isinstance(markers, list):
+        normalized['markers'] = [marker for marker in markers if isinstance(marker, str)]
+    marked_tests = entry.get('marked_tests')
+    if isinstance(marked_tests, list):
+        normalized['marked_tests'] = [identity for identity in marked_tests if isinstance(identity, str)]
+    pairs = entry.get('pairs')
+    if isinstance(pairs, list):
+        normalized_pairs = [
+            {'test': pair['test'], 'marker': pair['marker']}
+            for pair in pairs
+            if isinstance(pair, dict) and isinstance(pair.get('test'), str) and isinstance(pair.get('marker'), str)
+        ]
+        if normalized_pairs:
+            normalized['pairs'] = normalized_pairs
+    return normalized
+
+
+def record_accepted_removals(plan_id: str, entries: list[dict[str, Any]]) -> bool:
+    """Union ``entries`` into the plan's accepted-removal set; return success.
+
+    The one writer shape both owning verbs call: ``snapshot-criteria`` seeds it
+    from the outline's declarations, and ``loop-back close --accept`` appends the
+    identities a ``weakened_test`` finding removed. The merge is a union keyed by
+    :func:`_removal_key`, so re-seeding a re-freeze neither duplicates an entry nor
+    drops one an operator accepted, while a second close that names a DIFFERENT
+    marker set or row kind is a new entry.
+
+    Success means every requested entry is in the set afterwards — appended now or
+    already present. An entry that normalizes to nothing was neither appended nor
+    present, so it makes the call fail rather than reporting a silent success.
+    """
+    wanted: list[dict[str, Any]] = []
+    unnamed = 0
+    for entry in entries:
+        if not isinstance(entry, dict):
+            unnamed += 1
+            continue
+        normalized = _normalized_removal_entry(entry)
+        if normalized is None:
+            unnamed += 1
+            continue
+        wanted.append(normalized)
+    if unnamed:
+        return False
+    if not wanted:
+        return True
+
+    def _apply(metadata: dict[str, Any]) -> None:
+        current = metadata.get(ACCEPTED_TEST_REMOVALS_KEY)
+        values = list(current) if isinstance(current, list) else []
+        existing = {_removal_key(value) for value in values if isinstance(value, dict)}
+        for entry in wanted:
+            key = _removal_key(entry)
+            if key not in existing:
+                values.append(entry)
+                existing.add(key)
+        metadata[ACCEPTED_TEST_REMOVALS_KEY] = values
+
+    return _merge_metadata(plan_id, _apply)
+
+
+def record_integrity(plan_id: str, *, drop: tuple[str, ...] = (), **fields: Any) -> bool:
+    """Merge ``fields`` into the status record's integrity block; return success.
+
+    The read, the merge and the write are one critical section on the guard the
+    ``manage-status`` writers commit through, so a concurrent status write either
+    lands before this merge (and is carried forward) or waits for it. The earlier
+    design read the document and rewrote it outside any lock, so a status writer
+    committing in that window lost the digest — the frozen artifact then had
+    nothing binding it.
+
+    ``drop`` names keys the same merge REMOVES. It exists for a caller that
+    retires part of the block's state in the same commit that writes the rest (the
+    consumed re-freeze authorization drops its identity and pending markers); a
+    second merge would trade one atomic update for two.
+
+    A plan with no readable status record is left untouched and reports ``False``;
+    the caller's artifact is rolled back rather than left only half-bound.
+    """
+
+    def _merge(block: dict[str, Any]) -> None:
+        block.update(fields)
+        for key in drop:
+            block.pop(key, None)
+
+    return _merge_integrity(plan_id, _merge)
+
+
+def path_digest(path: Path) -> str:
+    """Return the SHA-256 of a file's exact bytes."""
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def snapshot_state(plan_id: str) -> str:
+    """Classify the frozen snapshot's binding outside itself.
+
+    * ``present`` — a snapshot file exists with no recorded freeze (legacy).
+    * ``frozen`` — a snapshot file exists and its recorded digest matches.
+    * ``tampered`` — the status record froze a snapshot whose bytes no longer
+      match the recorded digest (edited in place).
+    * ``deleted`` — the status record froze a snapshot and the file is gone. The
+      deleted snapshot is the sharpest failure the old design allowed: every check
+      that reads a missing snapshot silently took the legacy path.
+    * ``absent`` — never frozen and no file (the legacy shape, no bindings).
+    """
+    info = integrity_record(plan_id)
+    frozen = bool(info.get(SNAPSHOT_FROZEN_KEY))
+    path = snapshot_path(plan_id)
+    if path.is_file():
+        recorded = info.get('snapshot_digest')
+        if frozen and (not isinstance(recorded, str) or path_digest(path) != recorded):
+            # A freeze with no digest string is not a binding: the record says the
+            # snapshot is frozen but nothing can verify it, so it is treated as
+            # tampered rather than trusted as 'frozen'.
+            return 'tampered'
+        return 'frozen' if frozen else 'present'
+    return 'deleted' if frozen else 'absent'
+
+
+def record_snapshot_digest(plan_id: str, *, consume_refreeze: bool = False) -> bool:
+    """Record the frozen snapshot's digest in the status record, outside the file.
+
+    ``consume_refreeze`` adds ``refreeze_authorized=False`` to the SAME guarded
+    update. A re-freeze must consume its authorization atomically with the digest
+    it authorizes: two writes would let a failed consumption leave the decision
+    active, so the next call could re-freeze without a new decision.
+    """
+    path = snapshot_path(plan_id)
+    if not path.is_file():
+        return False
+    try:
+        digest = path_digest(path)
+    except OSError:
+        # The file existed a moment ago; a concurrent delete or a permission change
+        # must report "not recorded" so the caller rolls its write back.
+        return False
+    fields: dict[str, Any] = {SNAPSHOT_FROZEN_KEY: True, 'snapshot_digest': digest}
+    if not consume_refreeze:
+        return record_integrity(plan_id, **fields)
+    # The re-freeze this authorization permitted has consumed it: the flag goes
+    # false and the identity/pending markers go away in the SAME merge, so no later
+    # reader sees an authorization that no longer exists.
+    fields['refreeze_authorized'] = False
+    return record_integrity(plan_id, drop=(REFREEZE_TOKEN_KEY, REFREEZE_PENDING_KEY), **fields)
+
+
+def record_verdict_digest(plan_id: str, kind: str, verdict_file: str | Path) -> bool:
+    """Record a sealed verdict's CONTENT digest in the status record, outside the file.
+
+    The value stored is :func:`canonical_digest` of the parsed verdict — the same
+    digest ``authorship_problem`` compares against — never the digest of the file's
+    exact bytes, which would be a different number for the same verdict and would
+    make every correctly sealed verdict read as modified.
+    """
+    path = Path(verdict_file)
+    if not path.is_file():
+        return False
+    try:
+        parsed = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return False
+    if not isinstance(parsed, dict):
+        return False
+    digest = canonical_digest(parsed)
+
+    def _merge(block: dict[str, Any]) -> None:
+        # The existing-verdicts read happens inside the critical section too, so a
+        # functional and a code seal committed at the same time cannot each write
+        # the other's entry away.
+        existing = block.get('verdicts')
+        verdicts = dict(existing) if isinstance(existing, dict) else {}
+        verdicts[kind] = {'digest': digest, 'path': str(path)}
+        block['verdicts'] = verdicts
+
+    return _merge_integrity(plan_id, _merge)
+
+
+def _log_failure_reason(logged: dict[str, Any]) -> str:
+    """The most informative field of a failed decision-log result."""
+    return str(logged.get('message') or logged.get('error') or 'unknown')
+
+
+def authorize_refreeze(plan_id: str, decision: str, phase: str = '3-outline') -> dict[str, Any]:
+    """Record an operator decision authorizing a re-freeze of the snapshot.
+
+    The authorization is recorded in the plan's status record and logged through
+    the same decision-log path ``criteria-authorize`` uses. The record commits
+    FIRST — its prior value captured in the same guarded merge — and the decision
+    line is written only for an authorization that landed: the line used to be
+    written before the record, so a record failure left a log line for an
+    authorization the status record does not carry.
+
+    **The whole record-then-log sequence runs under the plan-scoped snapshot
+    guard**, exactly as ``authorize_change`` does. Without it a ``write_snapshot``
+    could start in the window between the record and the line, consume an
+    authorization whose decision line is never written, and leave a snapshot
+    re-frozen on a decision nobody recorded. With it, that ``write_snapshot``
+    either waits for the guard or is refused as ``snapshot_busy``, and the
+    withdraw-or-log decision below is made on state no other writer can change.
+    The lock order is the one every caller of this module uses: snapshot guard →
+    status guard.
+
+    When the line cannot be written after a successful record, the authorization
+    is withdrawn — **only its own**. The record carries a token this call set, and
+    the withdrawal is conditioned on it, so an authorization another call has
+    since recorded (and logged) survives: the result reports ``superseded`` rather
+    than claiming an exact restore. A PRIOR authorization is restored only when its
+    own decision line had already landed: the record marks an authorization as
+    pending until that line is written, and a withdrawal that found one still
+    pending does not put it back, because doing so would resurrect a decision whose
+    line was never written. That is the failure two calls can produce when both of
+    their lines fail inside the guard's stale-reclaim window, and it is the
+    fail-open this function is guarded against. The other reported states are
+    ``withdrawn`` (this call's authorization removed), ``restored`` (returned to the
+    prior, logged authorization this call found), ``already_consumed`` (a re-freeze
+    used it first — that decision wins) and ``not withdrawn`` (the withdrawal itself
+    could not be written).
+    """
+    if not str(decision or '').strip():
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'decision_required',
+            'message': 'a snapshot re-freeze is authorized only by a named operator decision',
+        }
+    try:
+        with _snapshot_guard(plan_id):
+            return _authorize_refreeze_locked(plan_id, decision, phase)
+    except TimeoutError:
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'snapshot_busy',
+            'message': 'another writer holds the criteria snapshot; the authorization was not recorded',
+        }
+
+
+def _authorize_refreeze_locked(plan_id: str, decision: str, phase: str) -> dict[str, Any]:
+    """Record, log and (if the log fails) withdraw one authorization inside the guard."""
+    try:
+        import plan_logging
+    except ImportError as exc:  # pragma: no cover - import-time environment failure
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'decision_log_unavailable',
+            'message': f'plan_logging could not be imported ({exc}); the authorization was not recorded',
+        }
+    already_authorized: dict[str, Any] = {}
+    #: Identifies the authorization THIS call sets. A withdrawal compares it with
+    #: the token on disk and removes only a match, so a newer authorization — and
+    #: the decision line that went with it — survives an older call's failed log.
+    token = uuid.uuid4().hex
+
+    def _set_authorized(block: dict[str, Any]) -> None:
+        # Capture the prior value in the SAME guarded merge that sets it, so a
+        # withdrawal cannot restore a value read from an older document. Whether
+        # that prior value was itself a LANDED decision is captured with it: an
+        # authorization still marked pending has no decision line, so restoring it
+        # would resurrect an unlogged decision.
+        already_authorized['previous'] = block.get('refreeze_authorized')
+        already_authorized['previous_token'] = block.get(REFREEZE_TOKEN_KEY)
+        already_authorized['previous_pending'] = bool(block.get(REFREEZE_PENDING_KEY))
+        block['refreeze_authorized'] = True
+        block[REFREEZE_TOKEN_KEY] = token
+        block[REFREEZE_PENDING_KEY] = True
+
+    if not _merge_integrity(plan_id, _set_authorized):
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'status_record_unavailable',
+            'message': 'the plan status record could not be written, so the authorization was not recorded',
+        }
+    try:
+        logged = plan_logging.log_decision(
+            plan_id,
+            f'(criteria-integrity) Operator decision authorizes re-freezing the criteria snapshot — {decision}',
+            phase=phase,
+        )
+    except Exception as exc:  # a log call that raised is a failed log, not a reason to skip the withdrawal
+        logged = {'status': 'error', 'error': type(exc).__name__, 'message': str(exc)}
+    if logged.get('status') == 'success':
+        # The decision line landed, so this authorization is no longer pending. The
+        # token check keeps a late success from clearing a NEWER call's marker: the
+        # guard's stale-reclaim window can let a successor record behind this one.
+        def _line_landed(block: dict[str, Any]) -> None:
+            if block.get(REFREEZE_TOKEN_KEY) == token:
+                block.pop(REFREEZE_PENDING_KEY, None)
+
+        if not _merge_integrity(plan_id, _line_landed):
+            # Fail CLOSED and say so. The line landed but the record could not be
+            # marked usable, and an authorization still marked pending authorizes
+            # nothing (the re-freeze gate reads the marker), so reporting success
+            # here would tell the operator to trust a state that refuses the next
+            # re-freeze with "run criteria-refreeze-authorize" — the verb they just
+            # ran.
+            return {
+                'status': 'error',
+                'plan_id': plan_id,
+                'error': 'status_record_unavailable',
+                'message': (
+                    'the decision line was logged, but the pending marker could not be cleared in the plan '
+                    'status record, so the authorization is not usable; run criteria-refreeze-authorize again'
+                ),
+            }
+        return {'status': 'success', 'plan_id': plan_id, 'refreeze_authorized': True}
+    outcome: dict[str, str] = {}
+
+    def _withdraw(block: dict[str, Any]) -> None:
+        # Best-effort undo of THIS call's authorization only. The token decides:
+        # a newer authorization carries a different one and is left standing with
+        # its own decision line, and a re-freeze that consumed ours clears the
+        # token in the same merge that sets `refreeze_authorized` false
+        # (`record_snapshot_digest`), so both cases read as "not ours any more".
+        if block.get(REFREEZE_TOKEN_KEY) != token:
+            outcome['state'] = 'superseded' if block.get('refreeze_authorized') is True else 'already_consumed'
+            return
+        previous = already_authorized.get('previous')
+        previous_token = already_authorized.get('previous_token')
+        prior_was_pending = bool(already_authorized.get('previous_pending'))
+        block.pop(REFREEZE_TOKEN_KEY, None)
+        block.pop(REFREEZE_PENDING_KEY, None)
+        if previous is None or prior_was_pending:
+            # Either there was no prior authorization, or the one we found was still
+            # waiting for ITS decision line. Restoring the latter would put a
+            # decision back on the record whose line was never written — exactly the
+            # fail-open this function is guarded against, and reachable when two
+            # calls both fail inside the guard's stale-reclaim window.
+            block.pop('refreeze_authorized', None)
+            outcome['state'] = 'withdrawn'
+        else:
+            block['refreeze_authorized'] = previous
+            if previous_token is not None:
+                block[REFREEZE_TOKEN_KEY] = previous_token
+            outcome['state'] = 'restored' if previous else 'withdrawn'
+
+    withdrawn = _merge_integrity(plan_id, _withdraw)
+    if not withdrawn:
+        effect = 'NOT withdrawn; the status record may still authorize it'
+    elif outcome.get('state') == 'already_consumed':
+        effect = 'not withdrawn: a concurrent re-freeze already consumed it'
+    elif outcome.get('state') == 'superseded':
+        effect = 'not withdrawn: a newer authorization replaced it, and that one stands'
+    elif outcome.get('state') == 'restored':
+        effect = 'withdrawn back to its prior authorization, so a re-freeze remains authorized'
+    else:
+        effect = 'withdrawn'
+    return {
+        'status': 'error',
+        'plan_id': plan_id,
+        'error': 'decision_log_unavailable',
+        'message': (
+            f'the operator decision could not be logged ({_log_failure_reason(logged)}), so the '
+            'authorization was ' + effect
+        ),
+    }
+
+
+def plan_uses_worktree(plan_id: str) -> bool:
+    """Whether the plan's status record declares an isolated worktree.
+
+    Used to tell a plan that never had a worktree (graded against the main
+    checkout) from one whose worktree is materialized but currently unresolvable
+    (which must NOT be graded against a different tree).
+    """
+    status = _status_doc(plan_id)
+    if status is None:
+        return False
+    metadata = status.get('metadata')
+    return bool(metadata.get('use_worktree')) if isinstance(metadata, dict) else False
+
+
+def _review_closed_reason(plan_id: str) -> str | None:
+    """Return why the operator closed the functional review, or ``None``.
+
+    The rubric's round-cap override (§ 8) closes the HEAD the operator judged and
+    is recorded on the plan's status record — either as the override-head list or
+    as the review step's ``may_close: operator_override`` fact. A closed review's
+    criteria are not open: the operator decided the head ships unreviewed, so the
+    gate must not read the ungraded criteria as outstanding work.
+    """
+    status = _status_doc(plan_id)
+    if status is None:
+        return None
+    metadata = status.get('metadata')
+    if not isinstance(metadata, dict):
+        return None
+    heads = metadata.get(OVERRIDE_HEADS_KEY)
+    if isinstance(heads, list) and [head for head in heads if str(head).strip()]:
+        return 'the operator closed the functional review past its round cap'
+    phase_steps = metadata.get('phase_steps')
+    review = None
+    if isinstance(phase_steps, dict):
+        finalize = phase_steps.get('6-finalize')
+        if isinstance(finalize, dict):
+            review = finalize.get('functional-review')
+    facts = review.get('facts') if isinstance(review, dict) else None
+    if isinstance(facts, dict) and facts.get('may_close') == 'operator_override':
+        return 'the operator closed the functional review past its round cap'
+    return None
+
+
+def canonical_digest(payload: dict[str, Any]) -> str:
+    """Return the SHA-256 of a verdict's content, independent of key order and whitespace.
+
+    The digest covers the verdict WITHOUT its authorship marker, so re-serialising
+    the same verdict anywhere reproduces it, while any edit to a graded value does
+    not. It lives here, not in the review layer, because the finalize completion
+    gate reads the same verdict file and must apply the same rule.
+    """
+    body = {key: value for key, value in payload.items() if key != AUTHORED_KEY}
+    encoded = json.dumps(body, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode('utf-8')
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def seal_verdict(payload: dict[str, Any], kind: str) -> dict[str, Any]:
+    """Return ``payload`` carrying its authorship marker (the marker last)."""
+    sealed = {key: value for key, value in payload.items() if key != AUTHORED_KEY}
+    sealed[AUTHORED_KEY] = {
+        'schema': AUTHORSHIP_SCHEMA,
+        'kind': kind,
+        'verb': AUTHORSHIP_VERB,
+        'digest': canonical_digest(payload),
+    }
+    return sealed
+
+
+def authorship_problem(verdict: dict[str, Any], plan_id: str | None = None) -> str | None:
+    """Return why the verdict does not match the reviewer's recorded output, or ``None``.
+
+    A verdict the review's own script verb did not write has no marker; a verdict
+    edited after the verb wrote it has a marker whose digest no longer matches the
+    content. The failure is ``python3 -c`` editing the verdict file in place, and a
+    rewritten criterion graded in the author's own words reads as clean without
+    this check. The finalize completion gate applies it too, because an unsealed
+    verdict must not release a plan.
+
+    When ``plan_id`` names a plan whose status record holds a recorded verdict
+    digest, that OUTSIDE-the-file digest is authoritative: recomputing the marker
+    digest inside a rewritten verdict does not reproduce the recorded one, so an
+    edit-then-re-seal is refused. Without a recorded digest the check falls back to
+    the in-file marker digest (the legacy shape).
+    """
+    marker = verdict.get(AUTHORED_KEY)
+    if not isinstance(marker, dict) or marker.get('schema') != AUTHORSHIP_SCHEMA:
+        return f'the verdict was not written by {AUTHORSHIP_VERB}'
+    digest = canonical_digest(verdict)
+    recorded: Any = None
+    kind = marker.get('kind')
+    if plan_id and isinstance(kind, str):
+        entry = (integrity_record(plan_id).get('verdicts') or {}).get(kind)
+        recorded = entry.get('digest') if isinstance(entry, dict) else None
+    if isinstance(recorded, str):
+        if marker.get('digest') != recorded or digest != recorded:
+            return 'the verdict was modified after the reviewer wrote it'
+        return None
+    if not isinstance(marker.get('digest'), str) or marker['digest'] != digest:
+        return 'the verdict was modified after the reviewer wrote it'
+    return None
+
+
+def normalize_criterion(text: Any) -> str:
+    """Collapse internal whitespace so two spellings of one criterion compare equal."""
+    return ' '.join(str(text or '').split())
+
+
+def snapshot_path(plan_id: str) -> Path:
+    """Return the absolute path of the plan's criteria snapshot artifact."""
+    return base_path('plans', plan_id, SNAPSHOT_FILE)
+
+
+def parse_success_criteria(body: str, *, keep_fences: bool = True) -> tuple[list[str], list[str]]:
+    """Parse a deliverable body's ``**Success Criteria:**`` block.
+
+    Returns ``(criteria, unparsed)``. Every top-level bullet is one criterion —
+    ``-`` and ``*`` both — together with its continuation lines and nested
+    sub-bullets. A continuation is a line indented under the bullet, a nested
+    bullet (contributes its text, not its marker), or a lazy continuation line
+    directly following the bullet. A blank line between bullets is allowed.
+
+    A line inside the block that is neither a bullet nor part of one — a paragraph
+    after a blank line — is returned in ``unparsed`` and never dropped: a criterion
+    the parser could not read must be visible, or the review grades part of a
+    deliverable without saying so. An indented bold field under a criterion is a
+    continuation of that criterion, not the end of the block; only a column-0
+    bold-field heading ends it. A fenced code block is KEPT in the criterion it sits
+    under, so a ``- `` line inside it is not read as a criterion and an edit to the
+    example is an edit to the criterion; an unterminated fence is reported in
+    ``unparsed`` as a named state.
+
+    ``keep_fences=False`` replays the PREVIOUS generation (fences skipped), so a
+    snapshot frozen by it can be told from an author's edit when a parser upgrade
+    changes the output for an unchanged outline.
+    """
+    marker = _SUCCESS_CRITERIA_MARKER_RE.search(body)
+    if marker is None:
+        return [], []
+    criteria: list[list[str]] = []
+    unparsed: list[str] = []
+    current: list[str] | None = None
+    after_blank = False
+    in_fence: tuple[str, int] | None = None
+    for line in body[marker.end() :].splitlines():
+        stripped = line.strip()
+        fence = _fence_marker(line) if keep_fences else _legacy_fence_marker(line)
+        if in_fence is not None:
+            if keep_fences:
+                if current is not None:
+                    current.append(stripped)
+                else:
+                    unparsed.append(stripped)
+            if fence is not None and fence[0] == in_fence[0] and fence[1] >= in_fence[1] and not fence[2].strip():
+                in_fence = None
+            continue
+        if fence is not None:
+            if keep_fences:
+                if current is not None:
+                    current.append(stripped)
+                else:
+                    unparsed.append(stripped)
+            in_fence = (fence[0], fence[1])
+            continue
+        if not stripped:
+            after_blank = True
+            continue
+        if _SUCCESS_BLOCK_END_COLUMN_RE.match(line):
+            break
+        indented = line[: len(line) - len(line.lstrip())] != ''
+        bullet = _BULLET_RE.match(stripped)
+        if not indented and bullet:
+            current = [bullet.group(1).strip()]
+            criteria.append(current)
+        elif indented:
+            if current is not None:
+                current.append((bullet.group(1) if bullet else stripped).strip())
+            else:
+                unparsed.append(stripped)
+        elif current is not None and not after_blank:
+            current.append(stripped)
+        else:
+            unparsed.append(stripped)
+        after_blank = False
+    if in_fence is not None:
+        # An unterminated fence would otherwise swallow every later criterion
+        # silently. Name it so the reader sees what the parser could not read.
+        unparsed.append(UNTERMINATED_FENCE)
+    return [normalize_criterion(' '.join(parts)) for parts in criteria if parts], unparsed
+
+
+def outline_deliverables(plan_id: str) -> list[dict[str, Any]] | None:
+    """Return the outline deliverables, each with its ordered ``success_criteria``.
+
+    ``None`` when the outline does not exist — the caller reports that, it never
+    reads an absent outline as an outline with no deliverables. This is the one
+    success-criteria parser in the tree; ``phase-6-finalize``'s attribution
+    module delegates here rather than keeping a second copy that could drift.
+
+    Each deliverable also carries ``unparsed_criteria`` — the lines inside its
+    success-criteria block that were neither a bullet nor part of one — so a
+    caller can report what the parser could not read instead of treating it as
+    absent.
+    """
+    path = base_path('plans', plan_id, 'solution_outline.md')
+    if not path.is_file():
+        return None
+    section = parse_document_sections(path.read_text(encoding='utf-8')).get('deliverables', '')
+    bodies = {block['number']: block['content'] for block in split_deliverable_blocks(section)}
+    deliverables = extract_deliverables(section)
+    for deliverable in deliverables:
+        body = str(bodies.get(deliverable['number'], ''))
+        criteria, unparsed = parse_success_criteria(body)
+        deliverable['success_criteria'] = criteria
+        deliverable['unparsed_criteria'] = unparsed
+        # The PREVIOUS generation's reading of the same body: a snapshot frozen by
+        # it can be told from an author's edit when this generation's output differs
+        # for an unchanged outline.
+        deliverable['generation_2_criteria'] = parse_success_criteria(body, keep_fences=False)[0]
+        deliverable['retired_criteria'] = _retired_criteria(body)
+    return deliverables
+
+
+def _retired_criteria(body: str) -> list[str]:
+    """The criteria the RETIRED parser would have produced for this body.
+
+    The retired rule kept only the first unbroken run of ``- `` lines, first line
+    only, starting immediately after the marker (blank lines allowed). It is
+    replayed here so the migration state can be told from an author's edit: a frozen
+    criterion is ``parser_extended`` only when this rule would still have produced
+    it. Prose before the first bullet stops the replay with nothing, exactly as the
+    retired rule matched nothing there; a ``*`` bullet or a blank line inside the
+    run stops it too.
+    """
+    marker = _SUCCESS_CRITERIA_MARKER_RE.search(body)
+    if marker is None:
+        return []
+    retired: list[str] = []
+    for line in body[marker.end() :].splitlines():
+        stripped = line.strip()
+        # The retired rule kept only a contiguous run of ``- `` lines: a fence line
+        # is not one, so the run ends there (skipping it would let a later criterion
+        # pass the retired-parser check).
+        if _fence_marker(line) is not None:
+            break
+        if not stripped:
+            if retired:
+                break
+            continue
+        if _SUCCESS_BLOCK_END_RE.match(line):
+            break
+        if line.startswith('- '):
+            retired.append(normalize_criterion(line[2:]))
+            continue
+        break
+    return retired
+
+
+def _request_text(plan_id: str) -> str:
+    """Return the request's clarified-request text, or ``''`` when unreadable."""
+    path = base_path('plans', plan_id, REQUEST_FILE)
+    if not path.is_file():
+        return ''
+    sections = parse_document_sections(path.read_text(encoding='utf-8'))
+    for key in ('clarified_request', 'original_input'):
+        body = sections.get(key)
+        if body and body.strip():
+            return body
+    return ''
+
+
+def request_done_when(text: str) -> list[str]:
+    """Extract the request's Done-when clauses (the paragraph after a Done-when heading)."""
+    lines = text.splitlines()
+    clauses: list[str] = []
+    for index, line in enumerate(lines):
+        if not _REQUEST_DONE_WHEN_RE.match(line):
+            continue
+        for following in lines[index + 1 :]:
+            stripped = following.strip()
+            if not stripped:
+                if clauses:
+                    break
+                continue
+            clauses.append(stripped.lstrip('-* ').strip())
+            if not stripped.startswith(('-', '*')):
+                break
+    return [clause for clause in clauses if clause]
+
+
+def _referenced_spec_path(plan_id: str, text: str) -> Path | None:
+    """First existing ``.md`` path the request text names, or ``None``.
+
+    Request text names the spec a plan implements (for a staged orchestrator plan
+    that is the one-line ``.plan/orchestrator/.../PLAN-LB-NN-*.md`` pointer). The
+    request document itself and the outline are never treated as the spec.
+
+    The path is constrained to the checkout: request text is untrusted input, and
+    an absolute path or a ``..`` traversal would otherwise let it name a file
+    outside the repository for this reader to open. A candidate that resolves
+    outside the checkout root is skipped exactly as a non-existent one is.
+    """
+    try:
+        root = Path(cwd_checkout_root()).resolve()
+    except Exception:
+        return None
+    for match in _MD_PATH_RE.finditer(text):
+        candidate = match.group(1).strip()
+        if candidate.endswith(REQUEST_FILE) or candidate.endswith('solution_outline.md'):
+            continue
+        resolved = (root / candidate).resolve()
+        if not resolved.is_relative_to(root):
+            continue
+        if resolved.is_file():
+            return resolved
+    return None
+
+
+def _spec_deliverables(spec_text: str) -> list[dict[str, Any]]:
+    """Split a spec's Deliverables section into per-deliverable Done-when rows."""
+    sections = parse_document_sections(spec_text)
+    body = sections.get('deliverables', spec_text)
+    matches = list(_SPEC_DELIVERABLE_RE.finditer(body))
+    rows: list[dict[str, Any]] = []
+    for index, match in enumerate(matches):
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(body)
+        block = body[match.start() : end]
+        done = _SPEC_DONE_WHEN_RE.search(block)
+        rows.append(
+            {
+                'spec_deliverable': f'D{match.group(1)}',
+                'title': match.group(2).strip(),
+                'done_when': normalize_criterion(done.group(1)) if done else '',
+            }
+        )
+    return rows
+
+
+def build_snapshot(plan_id: str) -> dict[str, Any]:
+    """Assemble the frozen criteria record for ``plan_id``.
+
+    Returns either the ``status: error`` payload for an absent outline, or the
+    snapshot object. The outline's criteria are frozen per deliverable in
+    outline order; the request's Done-when text is recorded verbatim; and, when
+    the request names a spec document, every spec deliverable's Done-when is
+    frozen as its OWN row, so a later merge of spec deliverables into one
+    outline deliverable cannot collapse two clauses into one criterion.
+    """
+    deliverables = outline_deliverables(plan_id)
+    if deliverables is None:
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'outline_not_found',
+            'message': 'solution_outline.md is absent; nothing was frozen',
+        }
+    request_text = _request_text(plan_id)
+    spec_path = _referenced_spec_path(plan_id, request_text)
+    spec: dict[str, Any] | None = None
+    if spec_path is not None:
+        spec = {
+            'path': str(spec_path),
+            'digest': hashlib.sha256(spec_path.read_bytes()).hexdigest(),
+            'deliverables': _spec_deliverables(spec_path.read_text(encoding='utf-8')),
+        }
+    return {
+        'schema': SCHEMA,
+        'plan_id': plan_id,
+        PARSER_KEY: CURRENT_PARSER,
+        'deliverables': [
+            {
+                'number': deliverable['number'],
+                'title': deliverable.get('title', ''),
+                'criteria': [normalize_criterion(text) for text in deliverable.get('success_criteria', [])],
+            }
+            for deliverable in deliverables
+        ],
+        'request': {
+            'done_when': request_done_when(request_text),
+            'source': 'clarified_request' if request_text else 'absent',
+        },
+        'spec': spec,
+        'authorized_changes': [],
+    }
+
+
+def read_snapshot(plan_id: str) -> dict[str, Any] | None:
+    """Return the frozen snapshot, or ``None`` when it is absent or unreadable.
+
+    An absent snapshot is the legacy shape (a plan that predates the freeze);
+    the caller reports it as "no snapshot", never as an empty freeze.
+    """
+    path = snapshot_path(plan_id)
+    if not path.is_file():
+        return None
+    try:
+        parsed = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(parsed, dict) or parsed.get('schema') != SCHEMA:
+        return None
+    return parsed
+
+
+def _roll_back_snapshot(path: Path, previous: bytes | None, *, expected: bytes | None = None) -> bool:
+    """Undo one snapshot write: restore the prior bytes, or remove a first freeze.
+
+    The prior content is carried as BYTES, not text: a corrupt snapshot that does
+    not decode must still be restorable, and decoding it would fail before the
+    digest is even recorded. Restoring goes through an atomic write-and-replace,
+    so a failure injected during the restore leaves the target holding its prior
+    contents rather than a truncated prefix.
+
+    ``expected`` makes the restore CONDITIONAL: it proceeds only when the target
+    still holds exactly those bytes. A writer whose log call outlived the guard's
+    stale threshold can find another writer has committed behind it; an
+    unconditional restore would then erase that newer authorization. A mismatch
+    returns ``False`` and changes nothing.
+
+    Returns ``False`` when the rollback itself failed or was refused, so the
+    caller reports that the artifact may still be on disk or hold another
+    writer's commit rather than claiming it was removed.
+    """
+    try:
+        if expected is not None and (not path.is_file() or path.read_bytes() != expected):
+            return False
+        if previous is None:
+            path.unlink(missing_ok=True)
+        else:
+            atomic_write_bytes(path, previous)
+    except OSError:
+        return False
+    return True
+
+
+@contextmanager
+def _snapshot_guard(plan_id: str) -> Iterator[None]:
+    """Serialize every rewrite of one plan's snapshot artifact.
+
+    The status guard protects the digest merge, but the authorization check and
+    the snapshot write happen BEFORE it. Two concurrent re-freezes could both read
+    ``refreeze_authorized: true`` and each write a snapshot on one decision. This
+    plan-scoped guard covers the whole check-write-record sequence; the status
+    guard is still taken inside it for the integrity record, so the lock order is
+    always snapshot guard → status guard.
+    """
+    path = snapshot_path(plan_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with held_guard(path.with_name(f'{path.name}{_GUARD_SUFFIX}')):
+        yield
+
+
+def write_snapshot(plan_id: str) -> dict[str, Any]:
+    """Freeze the current outline as the plan's criteria snapshot.
+
+    Serialized per plan against every other snapshot rewrite, so a single
+    re-freeze authorization admits exactly one re-freeze.
+    """
+    try:
+        with _snapshot_guard(plan_id):
+            return _write_snapshot_locked(plan_id)
+    except TimeoutError:
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'snapshot_busy',
+            'message': 'another writer holds the criteria snapshot; nothing was written',
+        }
+
+
+def _write_snapshot_locked(plan_id: str) -> dict[str, Any]:
+    """Freeze the current outline as the plan's criteria snapshot.
+
+    The FIRST freeze is unconditional: there is nothing to replace. A RE-freeze
+    requires an operator decision logged through ``criteria-refreeze-authorize``
+    (:func:`authorize_refreeze`), which records that decision in the plan's status
+    record. A phase rollback alone is not such a decision — the retired check let
+    ``set-phase 3-outline`` re-open the write, which let a plan re-freeze the
+    criteria it was failing. The authorization is consumed by the re-freeze it
+    permits, so one decision authorizes exactly one re-freeze — and an authorization
+    still marked PENDING (its decision line has not landed) is not a decision at all:
+    it is refused here, so a re-freeze cannot spend an authorization whose line goes
+    on to fail.
+    """
+    existing = read_snapshot(plan_id)
+    info = integrity_record(plan_id)
+    # An authorization whose decision line has NOT landed is not a decision yet, so
+    # it authorizes nothing: the pending marker is set from the record until the
+    # owning call clears it, and ignoring it here would let a re-freeze consume an
+    # authorization whose line goes on to fail (a stall past the guard's
+    # stale-reclaim threshold admits exactly that interleaving).
+    authorized = bool(info.get('refreeze_authorized')) and not info.get(REFREEZE_PENDING_KEY)
+    # The status record is the gate, not the file: deleting or corrupting the
+    # snapshot file makes read_snapshot return None, and `existing is not None`
+    # would then treat the call as a first freeze and leak a re-freeze without a
+    # decision. `snapshot_frozen` lives outside the file, so it still says "frozen".
+    previously_frozen = existing is not None or bool(info.get(SNAPSHOT_FROZEN_KEY))
+    if previously_frozen and not authorized:
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'refreeze_requires_decision',
+            'message': (
+                f'{SNAPSHOT_FILE} was frozen at outline approval; re-freezing it requires an operator '
+                f'decision logged through criteria-refreeze-authorize, not a phase rollback alone'
+            ),
+        }
+    snapshot = build_snapshot(plan_id)
+    if snapshot.get('status') == 'error':
+        return snapshot
+    if existing is not None:
+        # An operator decision authorizes a criterion change; a re-freeze must not
+        # silently revoke it.
+        snapshot['authorized_changes'] = list(existing.get('authorized_changes') or [])
+    path = snapshot_path(plan_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    previous = path.read_bytes() if path.is_file() else None
+    written_text = json.dumps(snapshot, indent=2, sort_keys=True) + '\n'
+    atomic_write_file(path, written_text)
+    # Bind the freeze OUTSIDE the file it protects: the status record (a different
+    # file) holds the digest, so editing or deleting the snapshot
+    # afterwards is detectable rather than silently read as the legacy shape.
+    # A permitted re-freeze consumes its authorization in the SAME guarded update.
+    consume_refreeze = previously_frozen and authorized
+    if not record_snapshot_digest(plan_id, consume_refreeze=consume_refreeze):
+        # No record, no freeze. A snapshot left behind here would be read as the
+        # legacy "present" shape and its digest could never be checked again, so
+        # the write is rolled back: the prior bytes when this was a re-freeze, and
+        # nothing at all on a first freeze.
+        rolled_back = _roll_back_snapshot(path, previous, expected=written_text.encode('utf-8'))
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'snapshot_integrity_unrecorded',
+            'message': (
+                'the snapshot digest could not be recorded in the plan status record, so no frozen '
+                'snapshot was kept' + ('' if rolled_back else ' (the partial snapshot could not be removed)')
+            ),
+        }
+    # Seed the accepted-removal set from the outline's declared removals. The
+    # declaration is an authoring-time decision, so freezing the criteria freezes
+    # it too; a re-freeze unions rather than replaces, so an entry an operator
+    # accepted is never dropped.
+    declared: list[dict[str, Any]] = []
+    live = outline_deliverables(plan_id) or []
+    for deliverable in live:
+        declared.extend(deliverable.get('declared_test_removals') or [])
+    removals_recorded = record_accepted_removals(plan_id, declared)
+    per_deliverable = [
+        {
+            'number': deliverable['number'],
+            'criterion_count': len(deliverable.get('success_criteria') or []),
+            'unparsed': list(deliverable.get('unparsed_criteria') or []),
+        }
+        for deliverable in live
+    ]
+    payload: dict[str, Any] = {
+        'status': 'success',
+        'plan_id': plan_id,
+        'file': SNAPSHOT_FILE,
+        'deliverable_count': len(snapshot['deliverables']),
+        'criterion_count': sum(len(row['criteria']) for row in snapshot['deliverables']),
+        'request_done_when_count': len(snapshot['request']['done_when']),
+        'spec_deliverable_count': len(snapshot['spec']['deliverables']) if snapshot['spec'] else 0,
+        'preserved_authorizations': len(snapshot['authorized_changes']),
+        'deliverables': per_deliverable,
+        'unparsed': [line for row in per_deliverable for line in row['unparsed']],
+        'declared_test_removals': len(declared),
+        'accepted_removals_recorded': removals_recorded,
+    }
+    if declared and not removals_recorded:
+        # The freeze itself is valid — the digest is recorded and the criteria are
+        # frozen — but the declared removals never reached the accepted set, so
+        # every later validate would raise them. Name it instead of leaving only a
+        # false flag a caller can overlook; re-running snapshot-criteria (with the
+        # re-freeze authorization) retries the write.
+        payload['accepted_removals_error'] = (
+            'the declared test removals could not be recorded in the plan status record; '
+            'they will be raised as weakened_test findings until a re-freeze records them'
+        )
+    return payload
+
+
+def _authorization(snapshot: dict[str, Any], number: Any, criterion: str) -> bool:
+    """True when an operator decision authorizes this exact criterion change."""
+    wanted = normalize_criterion(criterion)
+    for entry in snapshot.get('authorized_changes') or []:
+        if not isinstance(entry, dict):
+            continue
+        if entry.get('deliverable') == number and normalize_criterion(entry.get('criterion')) == wanted:
+            return True
+    return False
+
+
+def criteria_drift(plan_id: str, current: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
+    """Return the frozen criteria the current outline no longer carries verbatim.
+
+    One row per unauthorized difference, in snapshot order:
+
+    * ``deleted`` — the frozen criterion's text appears nowhere in the current
+      outline (a dropped clause), or the whole deliverable is gone.
+    * ``rewritten`` — the frozen position is occupied by different text (the
+      clause was narrowed or reworded in place).
+    * ``parser_extended`` — a frozen criterion whose text is exactly what an EARLIER
+      parser generation would have produced from the same outline body (a wrapped
+      bullet the v1 parser truncated, or a fence-skipped reading a parser-2 snapshot
+      froze). It is admitted only for a snapshot whose marker names that earlier
+      generation; a snapshot the current generation froze reports the same difference
+      as ``rewritten``. An author's append is not a parser output, so it is never
+      admitted.
+    * ``spec_criterion_missing`` — a spec deliverable's own frozen Done-when that
+      NO current outline criterion covers. The failure it prevents: four
+      spec deliverables merged into one outline deliverable, three generic
+      criteria graded, and the dropped clause's Done-when never graded at all.
+      Because each spec clause is frozen as its own row, a merge cannot remove it
+      from the record, and the row below is what makes its absence a finding.
+    * ``criterion_unparsed`` — a named line the success-criteria parser could not
+      place (today: an unterminated fenced block). It is reported rather than left
+      in the freeze payload for nobody to consume.
+
+    A criterion an operator decision authorizes the change of is not reported.
+    An absent snapshot reports nothing — there is nothing to compare against.
+    """
+    snapshot = read_snapshot(plan_id)
+    if snapshot is None:
+        return []
+    if current is None:
+        current = outline_deliverables(plan_id)
+    if current is None:
+        return []
+    by_number = {row['number']: row for row in current if isinstance(row, dict) and 'number' in row}
+    drift: list[dict[str, Any]] = []
+    for row in snapshot.get('deliverables') or []:
+        if not isinstance(row, dict):
+            continue
+        number = row.get('number')
+        frozen = [normalize_criterion(text) for text in row.get('criteria') or []]
+        live_row = by_number.get(number)
+        live = [normalize_criterion(text) for text in (live_row or {}).get('success_criteria') or []]
+        for index, criterion in enumerate(frozen):
+            if not criterion or _authorization(snapshot, number, criterion):
+                continue
+            if criterion in live:
+                continue
+            # Migration: the frozen criterion equals what the PREVIOUS parser
+            # generation would have produced from this same outline body, while the
+            # current generation reads something else. That is a parser upgrade, not
+            # an author's change — and it is admitted for the generation that actually
+            # froze the snapshot, so a parser-2 append to a single-line criterion is
+            # still `rewritten` (the gen-2 replay of the CURRENT body carries the
+            # append, so the frozen text is not a gen-2 output).
+            gen2 = [normalize_criterion(text) for text in (live_row or {}).get('generation_2_criteria') or []]
+            retired = [normalize_criterion(text) for text in (live_row or {}).get('retired_criteria') or []]
+            marker = snapshot.get(PARSER_KEY)
+            migrated = False
+            if marker == 2:
+                migrated = criterion in gen2
+            elif not isinstance(marker, int) or marker < 2:
+                extended_v1 = next(
+                    (
+                        candidate
+                        for candidate in live
+                        if candidate.startswith(criterion) and len(candidate) > len(criterion)
+                    ),
+                    None,
+                )
+                migrated = extended_v1 is not None and criterion in retired
+            if migrated:
+                drift.append(
+                    {
+                        'deliverable': number,
+                        'kind': PARSER_EXTENDED,
+                        'criterion': criterion,
+                        'current': live[index] if index < len(live) else '',
+                    }
+                )
+                continue
+            kind = REWRITTEN if index < len(live) else DELETED
+            drift.append(
+                {
+                    'deliverable': number,
+                    'kind': kind,
+                    'criterion': criterion,
+                    'current': live[index] if index < len(live) else '',
+                }
+            )
+    drift.extend(_spec_clause_drift(snapshot, by_number))
+    drift.extend(_request_clause_drift(snapshot, by_number))
+    drift.extend(_unparsed_clause_drift(by_number))
+    return drift
+
+
+def _unparsed_clause_drift(by_number: dict[Any, dict[str, Any]]) -> list[dict[str, Any]]:
+    """One row per unterminated fenced block the parser could not close.
+
+    The named ``unterminated fenced block`` state is a criterion the parser could not
+    read, so the gate reports it rather than leaving it in the freeze payload for
+    nobody to consume. Ordinary free text the parser does not place stays visible in
+    that payload's ``unparsed`` list; only the unterminated fence is a gate state.
+    """
+    rows: list[dict[str, Any]] = []
+    for number, row in by_number.items():
+        for line in row.get('unparsed_criteria') or []:
+            text = normalize_criterion(line)
+            if text == UNTERMINATED_FENCE:
+                rows.append({'deliverable': number, 'kind': CRITERION_UNPARSED, 'criterion': text, 'current': ''})
+    return rows
+
+
+def _covered_by_outline(clause: str, outline: list[str]) -> bool:
+    """Whether some outline criterion covers ``clause`` (loose containment either way)."""
+    return any(clause in candidate or candidate in clause for candidate in outline if candidate)
+
+
+def _outline_text(by_number: dict[Any, dict[str, Any]]) -> list[str]:
+    return [normalize_criterion(text) for row in by_number.values() for text in (row.get('success_criteria') or [])]
+
+
+def _request_clause_drift(snapshot: dict[str, Any], by_number: dict[Any, dict[str, Any]]) -> list[dict[str, Any]]:
+    """One row per request Done-when clause no current outline criterion covers.
+
+    The request's Done-when is frozen for the same reason the spec's clauses are:
+    it is part of what the plan was asked to deliver, and a plan graded only
+    against its own outline can quietly deliver something else.
+    """
+    clauses = (snapshot.get('request') or {}).get('done_when') or []
+    if not clauses:
+        return []
+    outline = _outline_text(by_number)
+    return [
+        {
+            'deliverable': None,
+            'spec_deliverable': f'request:{index}',
+            'kind': REQUEST_MISSING,
+            'criterion': normalize_criterion(clause),
+            'current': '',
+        }
+        for index, clause in enumerate(clauses, start=1)
+        if normalize_criterion(clause) and not _covered_by_outline(normalize_criterion(clause), outline)
+    ]
+
+
+def _spec_clause_drift(snapshot: dict[str, Any], by_number: dict[Any, dict[str, Any]]) -> list[dict[str, Any]]:
+    """One row per spec deliverable Done-when no current outline criterion covers.
+
+    Coverage is deliberately loose — either the clause contains the criterion or
+    the criterion contains the clause, on normalized text — because the outline
+    is expected to state the clause in its own words rather than to quote it. A
+    clause nothing covers is not covered.
+    """
+    spec_rows = (snapshot.get('spec') or {}).get('deliverables') or []
+    if not spec_rows:
+        return []
+    outline = _outline_text(by_number)
+    rows: list[dict[str, Any]] = []
+    for index, row in enumerate(spec_rows, start=1):
+        if not isinstance(row, dict):
+            continue
+        clause = normalize_criterion(row.get('done_when'))
+        if not clause:
+            continue
+        if _covered_by_outline(clause, outline):
+            continue
+        rows.append(
+            {
+                'deliverable': None,
+                'spec_deliverable': row.get('spec_deliverable') or f'D{index}',
+                'kind': SPEC_MISSING,
+                'criterion': clause,
+                'current': '',
+            }
+        )
+    return rows
+
+
+def authorize_change(
+    plan_id: str, number: int, criterion: str, decision: str, phase: str = '3-outline'
+) -> dict[str, Any]:
+    """Record an operator decision authorizing one criterion change.
+
+    The authorization is written into the snapshot AND to the plan's decision
+    log, because "requires a logged operator decision" is the rule. The read, the
+    tamper check, the commit and the log line run under ONE plan-scoped snapshot
+    guard: a re-freeze that commits in the window would otherwise be rewritten
+    from the stale copy this function read before it took the guard, silently
+    reverting it. The decision line is written only after the commit succeeds, so
+    a ``snapshot_busy`` refusal — which is taken at the guard, before any read —
+    writes no line for an authorization that never happened. When the line still
+    cannot be written after a successful commit, the authorization is rolled back
+    rather than left as an unlogged edit — ``rolled_back``. A rollback whose
+    recorded digest cannot be withdrawn fails CLOSED (``tamper_flagged``: the edit
+    is gone, the record still binds it, so the snapshot reads ``tampered`` and is
+    refused until repaired) instead of keeping the edit standing with no decision
+    line, and a rollback that cannot be completed at all reports ``inconsistent``.
+    The whole vocabulary both authorization writers report is declared once in
+    :data:`AUTHORIZATION_OUTCOMES` and held to these docstrings by
+    ``test_the_authorization_outcome_vocabulary_matches_its_documents``.
+    """
+    if not str(decision or '').strip():
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'decision_required',
+            'message': 'a criterion change is authorized only by a named operator decision',
+        }
+    try:
+        with _snapshot_guard(plan_id):
+            return _authorize_change_locked(plan_id, number, criterion, decision, phase)
+    except TimeoutError:
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'snapshot_busy',
+            'message': 'another writer holds the criteria snapshot; the authorization was not recorded',
+        }
+
+
+def _authorize_change_locked(plan_id: str, number: int, criterion: str, decision: str, phase: str) -> dict[str, Any]:
+    """Read, check and commit one authorization inside the caller's snapshot guard."""
+    snapshot = read_snapshot(plan_id)
+    if snapshot is None:
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'snapshot_absent',
+            'message': f'{SNAPSHOT_FILE} does not exist; nothing can be authorized against it',
+        }
+    if snapshot_state(plan_id) == 'tampered':
+        # Authorizing against an edited snapshot would record the edited bytes as
+        # the new frozen baseline and silently retire the tamper detection.
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'snapshot_tampered',
+            'message': f'{SNAPSHOT_FILE} no longer matches its recorded digest; nothing can be authorized against it',
+        }
+    wanted = normalize_criterion(criterion)
+    known = {
+        normalize_criterion(text)
+        for row in snapshot.get('deliverables') or []
+        if row.get('number') == number
+        for text in row.get('criteria') or []
+    }
+    if wanted not in known:
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'criterion_not_frozen',
+            'message': f'deliverable {number} carries no frozen criterion {criterion!r}',
+        }
+    try:
+        import plan_logging
+    except ImportError as exc:  # pragma: no cover - import-time environment failure
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'decision_log_unavailable',
+            'message': f'plan_logging could not be imported ({exc}); the authorization was not recorded',
+        }
+    return _commit_authorization(plan_id, snapshot, number, criterion, decision, phase, plan_logging.log_decision)
+
+
+def _commit_authorization(
+    plan_id: str,
+    snapshot: dict[str, Any],
+    number: int,
+    criterion: str,
+    decision: str,
+    phase: str,
+    log_decision: Callable[..., dict[str, Any]],
+) -> dict[str, Any]:
+    """Rewrite the snapshot with one authorization, re-record its digest, then log it.
+
+    The decision line is written only after the commit lands, and a failed line
+    undoes the commit. The outcome vocabulary this can report is the one
+    :data:`AUTHORIZATION_OUTCOMES` declares for this path — ``rolled_back`` when
+    the edit was undone and its binding restored, ``tamper_flagged`` when the edit
+    was undone but the binding could not be withdrawn (the snapshot then reads
+    ``tampered`` and is refused until repaired: fail closed, because the retired
+    alternative left the edit standing with no decision line), and
+    ``inconsistent`` when the undo itself could not be completed — the snapshot or
+    its record may still hold the edit.
+    """
+    wanted = normalize_criterion(criterion)
+    entries = [
+        entry
+        for entry in snapshot.get('authorized_changes') or []
+        if not (
+            isinstance(entry, dict)
+            and entry.get('deliverable') == number
+            and normalize_criterion(entry.get('criterion')) == wanted
+        )
+    ]
+    entries.append({'deliverable': number, 'criterion': criterion, 'decision': decision, 'phase': phase})
+    snapshot['authorized_changes'] = entries
+    path = snapshot_path(plan_id)
+    previous = path.read_bytes() if path.is_file() else None
+    committed_text = json.dumps(snapshot, indent=2, sort_keys=True) + '\n'
+    committed = committed_text.encode('utf-8')
+    atomic_write_file(path, committed_text)
+    # Re-record the digest: the authorization rewrites the snapshot file, and a
+    # recorded digest left on the pre-authorization bytes would read as tampering.
+    # When it cannot be recorded the authorization is rolled back — the same
+    # no-snapshot-without-its-binding rule write_snapshot applies. The rollback is
+    # conditional on the file still holding THIS commit: a log call that outlived
+    # the guard's stale threshold can let another writer commit behind us, and
+    # restoring our prior bytes would erase that newer authorization.
+    if not record_snapshot_digest(plan_id):
+        rolled_back = _roll_back_snapshot(path, previous, expected=committed)
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'snapshot_integrity_unrecorded',
+            'message': (
+                'the rewritten snapshot digest could not be recorded, so the authorization was '
+                + ('rolled back' if rolled_back else 'NOT fully rolled back; the snapshot may hold the edit')
+            ),
+        }
+    # Only an authorization that LANDED gets a decision line. A line written
+    # before the commit claimed an authorization a later refusal had discarded.
+    try:
+        logged = log_decision(
+            plan_id,
+            f'(criteria-integrity) Operator decision authorizes changing frozen criterion '
+            f'D{number}: {criterion!r} — {decision}',
+            phase=phase,
+        )
+    except Exception as exc:  # a log call that raised is a failed log, not a reason to skip the withdrawal
+        logged = {'status': 'error', 'error': type(exc).__name__, 'message': str(exc)}
+    if logged.get('status') != 'success':
+        rolled_back = _roll_back_snapshot(path, previous, expected=committed)
+        if not rolled_back:
+            outcome = 'inconsistent'
+        elif record_snapshot_digest(plan_id):
+            outcome = 'rolled_back'
+        else:
+            # Fail closed. The edit is gone, but the status record still binds the
+            # COMMITTED bytes' digest, so the snapshot reads ``tampered`` and every
+            # consumer refuses it until an operator repairs the record. The retired
+            # branch re-committed the edit instead (``kept``) so the record matched
+            # its bytes — which left an authorization standing with no decision
+            # line, the fail-open this closes.
+            outcome = 'tamper_flagged'
+        message = {
+            'rolled_back': 'the authorization was rolled back',
+            'tamper_flagged': (
+                'the authorization was rolled back but its recorded digest could not be withdrawn, so the '
+                'snapshot now reads tampered and must be repaired before it is used again. Repair route: '
+                'criteria-refreeze-authorize (it never reads the tampered artifact), then snapshot-criteria, '
+                'which RE-FREEZES on the current outline and records the new digest — confirm the outline '
+                'carries only the change you mean to authorize'
+            ),
+            'inconsistent': 'the authorization was NOT fully rolled back; the snapshot or its record may hold the edit',
+        }[outcome]
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'decision_log_unavailable',
+            'message': (f'the operator decision could not be logged ({_log_failure_reason(logged)}), so {message}'),
+        }
+    return {
+        'status': 'success',
+        'plan_id': plan_id,
+        'file': SNAPSHOT_FILE,
+        'deliverable': number,
+        'criterion': criterion,
+        'authorized_count': len(entries),
+    }
+
+
+#: The plan-relative path of the functional review's verdict file.
+FUNCTIONAL_VERDICT_FILE = 'work/functional-review-verdict.json'
+#: The composed phase-6 manifest the dispatcher writes; the drop decision reads it.
+EXECUTION_FILE = 'execution.toon'
+#: The finalize step id whose absence means the review was dropped.
+FUNCTIONAL_REVIEW_STEP = 'functional-review'
+
+
+def _phase_6_manifest_steps(plan_id: str) -> set[str] | None:
+    """The composed phase-6 step ids, or ``None`` when the manifest is unreadable."""
+    path = base_path('plans', plan_id, EXECUTION_FILE)
+    try:
+        if not path.is_file():
+            return None
+        from toon_parser import parse_toon
+
+        data = parse_toon(path.read_text(encoding='utf-8'))
+    except Exception:
+        return None
+    if not isinstance(data, dict):
+        return None
+    phase_6 = data.get('phase_6')
+    if not isinstance(phase_6, dict):
+        return None
+    steps = phase_6.get('steps')
+    if not isinstance(steps, list):
+        return None
+    return {str(step) for step in steps if isinstance(step, str) and step}
+
+
+def functional_review_drop_reason(plan_id: str) -> str | None:
+    """Why the manifest dropped the functional review, or ``None`` when it did not.
+
+    The ONE reader both the finalize triage source and the finalize completion gate
+    use. It reads the composed phase-6 manifest (``execution.toon``): a manifest
+    that schedules the review, or cannot be read, drops nothing. A manifest that
+    does not schedule it is a drop, and the reason is the settled surgical scope or
+    the generic not-scheduled sentence.
+
+    The reason is DERIVED from the manifest and the plan's settled scope, never read
+    from a recorded key: no writer ever recorded one, so a recorded-key read could
+    only ever fall through to the same two fallbacks.
+
+    This module may not import ``manage-status`` (the layering rule in the module
+    docstring), so the decision lives here and ``manage-status`` delegates to it
+    rather than keeping a second copy.
+    """
+    steps = _phase_6_manifest_steps(plan_id)
+    if steps is None:
+        return None
+    scheduled = any(step == FUNCTIONAL_REVIEW_STEP or step.endswith(f':{FUNCTIONAL_REVIEW_STEP}') for step in steps)
+    if scheduled:
+        return None
+    metadata: dict[str, Any] = {}
+    document = _status_doc(plan_id)
+    if isinstance(document, dict) and isinstance(document.get('metadata'), dict):
+        metadata = document['metadata']
+    scope = metadata.get('scope_estimate')
+    if isinstance(scope, str) and scope.strip().lower() in ('surgical', 'single_module', 'micro', 'single-module'):
+        return 'surgical scope' if scope.strip().lower() == 'surgical' else f'{scope.strip()} scope'
+    return 'not scheduled in the phase-6 manifest'
+
+
+def _normalized_deliverable_number(value: object) -> int | None:
+    """The integer a deliverable number spells, or ``None`` when it names none."""
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    if isinstance(value, str) and value.strip().isdigit():
+        return int(value.strip())
+    return None
+
+
+def cited_deliverable_number(cited: object) -> int | None:
+    """The deliverable number a ``superseded_by`` value cites, or ``None``.
+
+    ``None`` covers both a value that opens with no reference at all (the
+    :data:`REFERENCE_UNREADABLE` case) and an empty value; the rejection function
+    is what tells them apart when it needs to.
+    """
+    text = str(cited or '').strip()
+    if not text:
+        return None
+    match = _DELIVERABLE_REFERENCE.match(text)
+    if match is None:
+        return None
+    raw = match.group(1) or match.group(2)
+    return int(raw) if raw is not None else None
+
+
+def _verdict_row(verdicts: Mapping[Any, Any], number: int) -> Mapping[str, Any] | None:
+    """The verdict row a map keyed by deliverable number holds for ``number``."""
+    for key in (number, str(number)):
+        row = verdicts.get(key)
+        if isinstance(row, Mapping):
+            return row
+    return None
+
+
+def deliverable_reference_rejection(
+    cited: object,
+    outline_numbers: Iterable[object],
+    *,
+    own_number: object,
+    verdicts: Mapping[Any, Any],
+) -> str | None:
+    """Why a ``superseded_by`` value does not name a real successor; ``None`` when it does.
+
+    A ``superseded`` verdict closes a deliverable's frozen criteria, so the citation
+    has to point at a deliverable that can actually take the work over:
+
+    * the value must OPEN with a deliverable reference — ``D2``, ``Deliverable 2``,
+      ``Deliverable #2``, ``Deliverable D2``, or one of those wrapped in a backtick,
+      bold/italic markers or a parenthesis; prose may follow it, never precede it —
+      :data:`REFERENCE_UNREADABLE` otherwise;
+    * the cited number must be one the caller's population carries —
+      :data:`REFERENCE_UNKNOWN`;
+    * it must not be the deliverable's own number — :data:`REFERENCE_SELF`; a
+      deliverable retired by operator decision with no successor has its own route
+      (``criteria-authorize``), so it does not supersede itself;
+    * following ``superseded_by`` from the successor must not come back to this
+      deliverable — :data:`REFERENCE_CYCLE`;
+    * the successor's own verdict must be a CLOSING one: :data:`SUCCESSOR_NOT_MET`
+      when it is not ``met``/``met_with_residuals`` (including an absent verdict,
+      the fail-closed direction), :data:`SUCCESSOR_SUPERSEDED` when the successor is
+      itself superseded.
+
+    ``verdicts`` is the same map each consumer grades — ``open_criteria`` the sealed
+    verdict map, the validator the verdict being validated — and ``own_number`` is
+    the deliverable the citation belongs to.
+    """
+    numbers = {n for n in (_normalized_deliverable_number(raw) for raw in outline_numbers) if n is not None}
+    target = cited_deliverable_number(cited)
+    if target is None:
+        return REFERENCE_UNREADABLE
+    if target not in numbers:
+        return REFERENCE_UNKNOWN
+    own = _normalized_deliverable_number(own_number)
+    if own is not None and target == own:
+        return REFERENCE_SELF
+    seen: set[int] = set()
+    cursor = target
+    while True:
+        if cursor in seen or (own is not None and cursor == own):
+            return REFERENCE_CYCLE
+        seen.add(cursor)
+        row = _verdict_row(verdicts, cursor)
+        if row is None or str(row.get('verdict') or '') != SUPERSEDED:
+            break
+        following = cited_deliverable_number(row.get('superseded_by'))
+        if following is None:
+            break
+        cursor = following
+    successor = _verdict_row(verdicts, target)
+    successor_verdict = str(successor.get('verdict') or '') if successor is not None else ''
+    if successor_verdict == SUPERSEDED:
+        return SUCCESSOR_SUPERSEDED
+    if successor_verdict not in CLOSING_VERDICTS:
+        return SUCCESSOR_NOT_MET
+    return None
+
+
+def superseded_by_names_deliverable(
+    cited: object,
+    outline_numbers: Iterable[object],
+    *,
+    own_number: object,
+    verdicts: Mapping[Any, Any],
+) -> bool:
+    """Does ``superseded_by`` name a deliverable that really supersedes this one?
+
+    The ONE rule the validator and :func:`open_criteria` share:
+    :func:`deliverable_reference_rejection` names every way a citation fails, and
+    this predicate is its ``None`` answer. Each caller applies it to its own
+    population — the validator to the CURRENT outline's deliverable numbers,
+    ``open_criteria`` to the numbers the frozen snapshot carries — so a citation
+    naming a deliverable only one of them holds is closed by that consumer and
+    reported as an error by the other. The RULE never differs; the population it
+    reads does, by design.
+    """
+    return deliverable_reference_rejection(cited, outline_numbers, own_number=own_number, verdicts=verdicts) is None
+
+
+def open_criteria(plan_id: str, verdict_file: Path | None = None) -> dict[str, Any]:
+    """Return the frozen criteria the plan has not yet graded ``met``.
+
+    The standing source for both the finalize triage loop and the finalize
+    completion gate: a plan whose criteria snapshot still holds an unmet clause
+    has open work even when the findings store is empty.
+
+    ``source`` is ``snapshot`` when a snapshot exists and nothing exempts it,
+    ``review_dropped`` when the manifest dropped the functional review (its frozen
+    rows are not outstanding work), and ``none`` when no snapshot exists (the
+    legacy shape — no frozen criteria, so nothing is reported open). The
+    ``frozen_deleted`` / ``frozen_tampered`` and ``review_closed`` sources are the
+    other answers.
+
+    A criterion counts as ``met`` only under three conditions, all of which the
+    validator would also enforce and none of which this reader may skip, because
+    the completion gate never runs the validator:
+
+    * the verdict carries the review's authorship seal and its digest matches, so
+      a file rewritten in place does not release the plan;
+    * the row's status is ``met`` AND it carries non-empty evidence;
+    * the row is matched by an explicit ``criterion_id`` or by EXACT normalised
+      text. Position alone is never a match: a paraphrased row without its id
+      leaves the criterion ungraded and open.
+
+    Anything else is open, which is the fail-closed direction. Four deliberate
+    states additionally close criteria rather than reading them as open work:
+
+    * an operator decision authorizes the exact change (``authorized_changes``);
+    * the deliverable's verdict is ``superseded`` AND its ``superseded_by`` names a
+      CLOSING successor the snapshot carries — not the deliverable itself, not a
+      cycle, and with a ``met`` / ``met_with_residuals`` verdict
+      (:func:`superseded_by_names_deliverable`); an operator-retired deliverable
+      with no successor is closed through ``criteria-authorize`` instead;
+    * the operator closed the review past its round cap (:func:`_review_closed_reason`);
+    * the manifest dropped the functional review (:func:`functional_review_drop_reason`)
+      — the completion gate exempts exactly this case, and ``source: review_dropped``
+      says so to the triage source.
+
+    One further state is NOT a closing: ``state`` reports a snapshot the status
+    record froze but which is now deleted or edited — the snapshot's own absence is
+    the open criterion, and every check refuses rather than falling back to the
+    legacy path. It is reported open REGARDLESS of a dropped review, because the
+    freeze is independent of it.
+    """
+    state = snapshot_state(plan_id)
+    if state in ('deleted', 'tampered'):
+        return {
+            'source': f'frozen_{state}',
+            'verdict_state': 'absent',
+            'open_count': 1,
+            'open': [
+                {
+                    'deliverable': None,
+                    'criterion': f'<the frozen criteria snapshot is {state}>',
+                    'criterion_index': 1,
+                    'status': 'ungraded',
+                }
+            ],
+        }
+    snapshot = read_snapshot(plan_id)
+    if snapshot is None:
+        return {'source': 'none', 'open_count': 0, 'open': []}
+    # A dropped functional review has no verdict to grade the criteria, so its
+    # frozen rows are not outstanding work. The SAME reader decides it for the
+    # completion gate, and a deleted/tampered snapshot was already refused above —
+    # turning this absence into "not applicable" would let deleting the snapshot
+    # disable the check the freeze exists for.
+    drop_reason = functional_review_drop_reason(plan_id)
+    if drop_reason is not None:
+        return {'source': 'review_dropped', 'drop_reason': drop_reason, 'open_count': 0, 'open': []}
+    # The operator's round-cap override closes the review FOR THE COMPLETION GATE:
+    # its criteria are not outstanding work. Head-specificity (rubric § 8) governs
+    # the REVIEW LOOP, which re-fires a delta round on a later head; the gate's job
+    # is only to stop reading an operator-closed review as open work.
+    closed_reason = _review_closed_reason(plan_id)
+    if closed_reason is not None:
+        return {'source': 'review_closed', 'closed_reason': closed_reason, 'open_count': 0, 'open': []}
+    path = verdict_file if verdict_file is not None else base_path('plans', plan_id, FUNCTIONAL_VERDICT_FILE)
+    verdict, verdict_state = _checked_verdict(path, plan_id)
+    snapshot_numbers = {row.get('number') for row in snapshot.get('deliverables') or [] if isinstance(row, dict)}
+    rows: list[dict[str, Any]] = []
+    for row in snapshot.get('deliverables') or []:
+        if not isinstance(row, dict):
+            continue
+        number = row.get('number')
+        graded_row = verdict.get(number) or {}
+        superseded = str(graded_row.get('verdict') or '') == SUPERSEDED
+        rejection = (
+            deliverable_reference_rejection(
+                graded_row.get('superseded_by'),
+                snapshot_numbers,
+                own_number=number,
+                verdicts=verdict,
+            )
+            if superseded
+            else None
+        )
+        if superseded and rejection is None:
+            continue
+        graded = graded_row.get('criteria') or []
+        for index, criterion in enumerate(row.get('criteria') or [], start=1):
+            raw = criterion.get('text') if isinstance(criterion, dict) else criterion
+            text = normalize_criterion(raw)
+            if _authorization(snapshot, number, text):
+                continue
+            # A REJECTED supersede closes nothing: the verdict itself is invalid, so
+            # its criteria stay open even where the reviewer graded one ``met``. The
+            # completion gate reads this answer without running the validator, so
+            # trusting those grades would let a self-citation release ungraded work.
+            status = 'ungraded' if superseded else _graded_status(graded, text, index, number)
+            if status == 'met':
+                continue
+            rows.append(
+                {
+                    'deliverable': number,
+                    'criterion': text,
+                    'criterion_index': index,
+                    'status': status,
+                }
+            )
+    return {
+        'source': 'snapshot',
+        'verdict_state': verdict_state,
+        'snapshot_deliverables': len(snapshot.get('deliverables') or []),
+        'open_count': len(rows),
+        'open': rows,
+    }
+
+
+def _checked_verdict(path: Path, plan_id: str | None = None) -> tuple[dict[Any, dict[str, Any]], str]:
+    """Return ``({deliverable: row}, state)`` for a verdict the gate may trust.
+
+    ``state`` is ``sealed`` when the authorship marker matches, ``unsealed`` when
+    the marker is absent or its digest does not match, and ``absent`` when there is
+    no readable verdict. Only a sealed verdict is returned; every other state
+    returns an empty map, so every frozen criterion reads ``ungraded`` — open.
+    """
+    if not path.is_file():
+        return {}, 'absent'
+    try:
+        parsed = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return {}, 'unreadable'
+    if not isinstance(parsed, dict) or authorship_problem(parsed, plan_id) is not None:
+        return {}, 'unsealed'
+    rows = parsed.get('deliverables')
+    result: dict[Any, dict[str, Any]] = {}
+    for row in rows if isinstance(rows, list) else []:
+        if not isinstance(row, dict):
+            continue
+        number = row.get('number')
+        if isinstance(number, str) and number.strip().isdigit():
+            number = int(number.strip())
+        result[number] = row
+    return result, 'sealed'
+
+
+_CRITERION_ID_RE = re.compile(r'(?:[Dd](\d+)\.)?[Cc](\d+)')
+
+
+def criterion_id_parts(criterion_id: Any) -> tuple[int | None, int | None]:
+    """Return ``(deliverable number, criterion position)`` named by a verdict id.
+
+    Both the bare ``C3`` and the deliverable-qualified ``D2.C3`` spellings are
+    accepted. ``(None, None)`` means the value names no frozen criterion at all —
+    a malformed id is not a match, and the caller reports it rather than guessing.
+    """
+    match = _CRITERION_ID_RE.fullmatch(str(criterion_id or '').strip())
+    if match is None:
+        return None, None
+    deliverable = int(match.group(1)) if match.group(1) else None
+    return deliverable, int(match.group(2))
+
+
+def verdict_row_matches(row: Any, criterion: str, index: int, deliverable: Any = None) -> bool:
+    """Whether a verdict row answers the frozen criterion at ``index``.
+
+    The stable id is tried first, then the exact normalised text. Position alone is
+    never a match: the positional fallback released a criterion the reviewer had
+    graded something else, which is the failure this predicate exists to close. A
+    deliverable-qualified id (``D2.C1``) answers only inside deliverable 2 when
+    ``deliverable`` is supplied.
+
+    ⛔ **An id-bearing row is answered by its id and nothing else**, exactly as
+    :func:`_graded_status` reads it. The text fallback is for rows that name no
+    criterion by id. Letting a row graded ``C9`` match criterion 1 by text made
+    this predicate and the gate disagree: the gate refused to read the row as
+    criterion 1's grade, while the validator's ``unmatched_criterion`` check —
+    which asks this predicate — believed criterion 1 was answered and reported
+    nothing, so the criterion the gate left open was never named to the author.
+    """
+    if not isinstance(row, dict):
+        return False
+    named_deliverable, named_position = criterion_id_parts(row.get('criterion_id'))
+    if named_position is not None:
+        if named_position != index:
+            return False
+        return named_deliverable is None or deliverable is None or named_deliverable == deliverable
+    return normalize_criterion(row.get('criterion')) == normalize_criterion(criterion)
+
+
+def _graded_status(criteria: list[Any], criterion: str, index: int, deliverable: Any = None) -> str:
+    """Status a sealed verdict gives one frozen criterion, matched by stable id or text.
+
+    A row carrying a parseable ``criterion_id`` wins and answers ONLY the criterion
+    that id names. Exact text is tried next, but only for rows that name no
+    criterion by a parseable id: a row graded ``C2`` whose text happens to equal
+    criterion 1's frozen text does not grade criterion 1. Otherwise the criterion
+    is ``ungraded``. There is no positional fallback: a verdict row that answers
+    something else is not evidence for this criterion, and its position mere
+    adjacency. A ``met`` row with no evidence is ``unevidenced`` here for the same
+    reason the validator treats it so.
+    """
+    wanted = normalize_criterion(criterion)
+    row: dict[str, Any] | None = None
+    for candidate in criteria:
+        if (
+            isinstance(candidate, dict)
+            and criterion_id_parts(candidate.get('criterion_id'))[1] == index
+            and verdict_row_matches(candidate, criterion, index, deliverable)
+        ):
+            row = candidate
+            break
+    if row is None:
+        for candidate in criteria:
+            if not isinstance(candidate, dict):
+                continue
+            if criterion_id_parts(candidate.get('criterion_id'))[1] is not None:
+                # An explicit id is the row's whole claim to a criterion. Matching
+                # it by text after the id arm refused it (another position, or a
+                # qualified id for another deliverable) would let a row graded
+                # against one criterion close a different one.
+                continue
+            if normalize_criterion(candidate.get('criterion')) == wanted:
+                row = candidate
+                break
+
+    if row is None:
+        return 'ungraded'
+    status = str(row.get('status') or 'ungraded')
+    evidence = row.get('evidence')
+    if status == 'met' and (not isinstance(evidence, list) or not [item for item in evidence if str(item).strip()]):
+        return 'unevidenced'
+    return status
+
+
+__all__ = [
+    'DELETED',
+    'FUNCTIONAL_VERDICT_FILE',
+    'INTEGRITY_KEY',
+    'OVERRIDE_HEADS_KEY',
+    'PROTECTED_STATUS_METADATA_KEYS',
+    'REQUEST_FILE',
+    'REWRITTEN',
+    'SCHEMA',
+    'SNAPSHOT_FILE',
+    'SNAPSHOT_FROZEN_KEY',
+    'SPEC_MISSING',
+    'STATUS_FILE',
+    'SUPERSEDED',
+    'authorize_change',
+    'authorize_refreeze',
+    'build_snapshot',
+    'criterion_id_parts',
+    'criteria_drift',
+    'integrity_record',
+    'normalize_criterion',
+    'open_criteria',
+    'outline_deliverables',
+    'path_digest',
+    'plan_uses_worktree',
+    'read_snapshot',
+    'record_integrity',
+    'record_snapshot_digest',
+    'record_verdict_digest',
+    'request_done_when',
+    'snapshot_path',
+    'snapshot_state',
+    'verdict_row_matches',
+    'write_snapshot',
+]
