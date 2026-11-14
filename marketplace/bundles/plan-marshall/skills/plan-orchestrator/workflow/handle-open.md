@@ -69,7 +69,7 @@ Re-read every load-bearing point of the analysis at `file:line` in this run, and
 
 ### Step 6: Decide every item above the threshold
 
-For each item whose confidence is strictly greater than the threshold, apply one of the contract's bounded decision acts and record it: log the decision through `manage-logging --store orchestrator`, write the `## Decisions` entry, and mark the item in place with a pointer to that record. An item whose decision changes another item's analysis makes that item re-analysed before it is decided.
+For each item the contract's threshold rule decides, apply one of the contract's bounded decision acts and record it: log the decision through `manage-logging --store orchestrator`, write the `## Decisions` entry, and mark the item in place with a pointer to that record. An item whose decision changes another item's analysis makes that item re-analysed before it is decided.
 
 The eight prohibitions hold here and need no restatement to bind, but this step names them so the checklist is complete: this verb NEVER **stages a plan**, NEVER **emits a command**, NEVER **transitions a queue row**, NEVER **edits the spec of a running row**, NEVER **relocates settled narrative**, NEVER **lands**, NEVER **retires an item without a positive account** of what closed it, and NEVER **records a plan-consequence decision without naming the follow-up**. A decision whose consequence is a plan is recorded as decided with that follow-up named, and the staging stays an act the operator words.
 
@@ -121,26 +121,26 @@ threshold_source: argument | knob | unset default | fail_closed
 sources[S]{source,state,population,items}:
   open_defects,read,2,2
   watches,read,2,2
-  operator_questions,read,1,1
-  landing_residue,unreadable,unknown,unknown
-kinds[K]{kind,population,items}:
-  defect,2,2
-  watch,2,2
-  question,1,1
-  candidate,0,0
+  operator_questions,unreadable,unknown,unknown
+  landing_residue,read,1,1
+kinds[K]{kind,state,population,items}:
+  defect,read,2,2
+  watch,read,2,2
+  question,unreadable,unknown,unknown
+  candidate,read,1,1
 decided[D]{number,kind,source,confidence,threshold,decided_by,decision,evidence}:
   2,defect,open_defects,96,{threshold},orchestrator,"retired on positive account: {commit}","{file}:{line}"
 presented[P]{number,kind,source,confidence,proposal_count,recommended,answer,decided_by}:
   3,watch,watches,72,3,"proposal 2","leave it open",operator
   4,watch,watches,61,2,"proposal 1","proposal 1",operator
-  5,question,operator_questions,55,2,"proposal 1","stop",operator
+  5,candidate,landing_residue,55,2,"proposal 1","stop",operator
 already_decided[A]{number,kind,source,marker}:
   1,defect,open_defects,"## Decisions entry of 2026-11-10"
 unreadable[U]{source,reason}:
-  landing_residue,"the inventory entries carrying residue could not be read"
+  operator_questions,"the OPERATOR DECISIONS block in resume_anchor.md could not be read"
 resume_anchor: "{next action}"
 ```
 
 `display_detail` is ≤80 chars, ASCII, no trailing period.
 
-`sources[]` and `kinds[]` are the two populations every later count is computed over: a row's `state` distinguishes a source that holds nothing (`read`, population `0`) from one that could not be read (`unreadable`, counts `unknown` — never `0`, and it also appears in `unreadable[]` with its reason). `decided_by` is `orchestrator` for a decision the verb made and `operator` for one the operator's answer settled, so the two are never conflated. `decided[]` names, per item, the confidence it earned, the threshold it was decided against, the act performed and the evidence the verification read. `presented[]` names the operator's answer per item, including `leave it open` and `stop`/`skip`. `already_decided[]` and `unreadable[]` are **required fields, never omitted**: a run that decided nothing new and read every source emits them empty rather than dropping them, because an absent key is indistinguishable from a check that never ran.
+`sources[]` and `kinds[]` are the two populations every later count is computed over, and both carry the SAME `state` vocabulary: a row that holds nothing is `read` with population `0`, and a row whose source could not be read is `unreadable` with `unknown` counts — never `0`, because a count nobody measured is not a measured zero. Every `unreadable` row also appears in `unreadable[]` with its reason. The example therefore shows a `question` kind as `unreadable/unknown` while its source is unreadable, and a `candidate` row as `read` from the residue the inventory entries carry. `decided_by` is `orchestrator` for a decision the verb made and `operator` for one the operator's answer settled, so the two are never conflated. `decided[]` names, per item, the confidence it earned, the threshold it was decided against, the act performed and the evidence the verification read. `presented[]` names the operator's answer per item, including `leave it open` and `stop`/`skip`. `already_decided[]` and `unreadable[]` are **required fields, never omitted**: a run that decided nothing new and read every source emits them empty rather than dropping them, because an absent key is indistinguishable from a check that never ran.

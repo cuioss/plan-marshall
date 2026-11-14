@@ -159,7 +159,7 @@ The `reader` surface resolves a LEVEL like the others; the dispatch site compose
 | `orchestrator.parallelization_scope` (int >= 1; project default) | User config (`manage-config orchestrator set --field parallelization_scope`) | plan-orchestrator init Step 4 (per-epic ask pre-fill) | - |
 | `orchestrator.auto_emit` (bool; default `false`) | User config (`manage-config orchestrator set --field auto_emit`) | plan-orchestrator post-landing queue-fill emit (stage-and-wait when `false`) | - |
 | `orchestrator.use_worktree` (bool; default `false`; repository-wide; read and written against the MAIN checkout's `marshal.json` only) | User config (`manage-config orchestrator set --field use_worktree`, main checkout only, cutover-guarded) | `tools-file-ops` orchestrator store seam (ledger store in the shared ledger worktree when `true`) | - |
-| `orchestrator.decision_confidence_threshold` (int `0..100`; the `handle-open` decide-vs-present boundary; `100` = nothing decided without the operator) | User config (`manage-config orchestrator set --field decision_confidence_threshold`); a per-run `threshold` argument overrides it for one run | plan-orchestrator `handle-open` verb | - |
+| `orchestrator.decision_confidence_threshold` (int `0..100`; the `handle-open` decide-vs-present boundary) | User config (`manage-config orchestrator set --field decision_confidence_threshold`); a per-run `threshold` argument overrides it for one run | plan-orchestrator `handle-open` verb (semantics at [`data-model.md`](../../manage-config/standards/data-model.md) § `orchestrator.decision_confidence_threshold`) | - |
 
 ### `orchestrator.auto_emit`
 

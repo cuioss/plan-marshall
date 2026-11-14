@@ -713,7 +713,12 @@ def test_threshold_set_accepts_an_integer_inside_the_range(plan_context):
 
 
 def test_threshold_get_unset_returns_the_seeded_default_with_set_false(plan_context):
-    """On a fresh seed, `get` reports the seeded figure and `set: false`."""
+    """On a block that does not carry the key, `get` reports the seeded figure and `set: false`.
+
+    The unset case is the one the Done-when's `set: false` clause describes; a
+    freshly seeded block materialises the key, so there the same figure reads back
+    with `set: true` (see `test_config_defaults.py`).
+    """
     _write_marshal(plan_context.fixture_dir, {})
 
     get_result = cmd_orchestrator_get(Namespace(field=_THRESHOLD_FIELD))

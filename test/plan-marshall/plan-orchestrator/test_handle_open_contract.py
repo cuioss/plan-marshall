@@ -158,9 +158,10 @@ def _carries_fail_closed_sentence(text: str) -> bool:
 def _restates_seeded_default(text: str) -> bool:
     """Whether the text restates the seeded figure of the knob.
 
-    Returns ``False`` when no integer seed is resolvable (a tree whose
-    ``DEFAULT_ORCHESTRATOR`` predates the knob): there is no figure to restate,
-    which is exactly what the base-sha run looks at.
+    Returns ``False`` when no integer seed is resolvable. That is a guard for a
+    FUTURE removal of the knob from ``DEFAULT_ORCHESTRATOR`` (the tree would then
+    have no figure for the workflow to restate); the base-sha run does not reach
+    it, because the module itself does not exist at that commit.
     """
     return bool(SEEDED_FIGURE_RE.search(text)) if SEEDED_FIGURE_RE is not None else False
 
@@ -189,6 +190,11 @@ def _dispatch_invocations(text: str) -> list[str]:
 
 def _has_section_heading(text: str, heading: str) -> bool:
     return any(line.strip() == f'## {heading}' for line in text.splitlines())
+
+
+def _xrefs_contract_without_restating_the_cap(text: str) -> bool:
+    """Whether the text names the contract section and carries no cap marker."""
+    return CONTRACT_HEADING in text and CAP_DEFINITION_MARKER not in text
 
 
 def _persona_names_the_exception(text: str) -> bool:
@@ -303,9 +309,12 @@ class TestThresholdSurface:
         assert 0 <= SEEDED_FIGURE <= 100, f'the seeded figure {SEEDED_FIGURE} is outside the knob range'
 
     def test_a_hard_coded_default_is_detected(self, tmp_path):
+        # The planted figure is INTERPOLATED from the constant, never typed: a
+        # literal here would go stale with the seed and make this control fail
+        # for the wrong reason the moment the seed moved.
         fixture = tmp_path / 'hard-coded-default.md'
         fixture.write_text(
-            f'The threshold defaults to 90 and is read from the {KNOB} knob. '
+            f'The threshold defaults to {SEEDED_FIGURE} and is read from the {KNOB} knob. '
             'A threshold that cannot be read resolves to `100` for the run.\n',
             encoding='utf-8',
         )
@@ -414,12 +423,24 @@ class TestSingleCapDefinition:
         )
 
     def test_the_workflow_xrefs_the_contract_instead_of_restating_the_cap(self):
-        text = _read(WORKFLOW_DOC)
-
-        assert CONTRACT_HEADING in text, f'the workflow document does not xref the {CONTRACT_HEADING!r} section by name'
-        assert CAP_DEFINITION_MARKER not in text, (
-            'the workflow document restates the confidence-cap rule instead of xrefing it'
+        assert _xrefs_contract_without_restating_the_cap(_read(WORKFLOW_DOC)), (
+            f'the workflow document does not xref the {CONTRACT_HEADING!r} section by name, or it '
+            'restates the confidence-cap rule instead of xrefing it'
         )
+
+    def test_a_workflow_that_does_not_xref_the_contract_is_detected(self, tmp_path):
+        fixture = tmp_path / 'no-xref.md'
+        fixture.write_text('A rule that caps the item, with no section named.\n', encoding='utf-8')
+
+        assert not _xrefs_contract_without_restating_the_cap(_read(fixture))
+
+    def test_a_workflow_that_xrefs_and_does_not_restate_is_accepted(self, tmp_path):
+        # The negative half of the control above: a well-formed xref must read as
+        # conforming, so the detector is not merely rejecting everything.
+        fixture = tmp_path / 'clean-xref.md'
+        fixture.write_text(f'See § {CONTRACT_HEADING} for the rule.\n', encoding='utf-8')
+
+        assert _xrefs_contract_without_restating_the_cap(_read(fixture))
 
     def test_a_workflow_that_does_not_xref_the_contract_is_detected(self, tmp_path):
         fixture = tmp_path / 'no-xref.md'
