@@ -722,7 +722,7 @@ def test_standing_rules_drift_bridge_missing(tmp_path: Path):
 def test_standing_rules_drift_in_sync_after_setup(
     runtime: AntigravityRuntime, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ):
-    """A setup bridge newer than its baseline reports in_sync."""
+    """A setup-written bridge whose hash matches its baseline reports in_sync."""
     from antigravity_runtime import standing_rules_drift_status
 
     (tmp_path / 'CLAUDE.md').write_text('# baseline\n', encoding='utf-8')
@@ -858,6 +858,47 @@ def test_resetup_reports_drift_for_a_bridge_it_rewrote(
     assert result['bridge_written'] is True
     assert result['bridge_drift'] is True, 'a setup that rewrote the bridge found it drifted'
     assert result['bridge_reason'] == 'baseline_changed'
+
+
+def test_refused_bridge_write_is_reported_not_read_as_clean(
+    runtime: AntigravityRuntime, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    """A rules directory the setup cannot write reports a failed bridge, never a clean one.
+
+    The writer's "nothing written" and "already current" answers are the same
+    shape, so a refused write that reported only ``bridge_written: false`` would
+    be indistinguishable from a bridge that needed nothing.
+    """
+    (tmp_path / 'CLAUDE.md').write_text(f'# baseline\n\n{_SENTINEL_RULE}\n', encoding='utf-8')
+    # A regular file where the rules directory belongs makes the parent mkdir
+    # fail, which is the writable-directory refusal without needing chmod.
+    (tmp_path / '.agents').mkdir()
+    (tmp_path / '.agents' / 'rules').write_text('not a directory\n', encoding='utf-8')
+    monkeypatch.setenv('GEMINI_CONFIG_DIR', str(tmp_path / 'gemini-config'))
+
+    result = _parse(runtime.project_initial_setup(str(tmp_path), 'antigravity'))
+
+    assert result['bridge_written'] is False
+    assert result['bridge_drift'] is True, 'a write the workspace refused is not a clean setup'
+    assert result['bridge_reason'] == 'bridge_write_failed'
+
+
+def test_reconcile_reports_an_undecodable_baseline_for_antigravity(tmp_path: Path):
+    """An Antigravity baseline that cannot be decoded is not certified current.
+
+    Setup keeps the existing bridge, and the recorded marker alone cannot show
+    the bridge still matches a baseline this process cannot read — the same
+    verdict the OpenCode reconcile gives.
+    """
+    from antigravity_runtime import _bridge_rules_path
+    from configure_harness import _reconcile_standing_rules_bridge
+
+    (tmp_path / 'CLAUDE.md').write_bytes(b'\xff\xfe not utf-8 \xff')
+    bridge = _bridge_rules_path(tmp_path)
+    bridge.parent.mkdir(parents=True)
+    bridge.write_text('# Plan Marshall standing rules (Antigravity bridge bridge-version: 1)\n', encoding='utf-8')
+
+    assert _reconcile_standing_rules_bridge('antigravity', tmp_path) is False
 
 
 def test_project_initial_setup_resestup_is_idempotent(

@@ -419,12 +419,12 @@ def test_dispatch_damaged_stub_returns_damaged_verdict(plan_env, monkeypatch: py
     bridge.parent.mkdir(parents=True, exist_ok=True)
     bridge.write_text('# damaged stub without marker\n', encoding='utf-8')
 
-    import opencode_runtime
+    import standing_rules_bridge
 
     monkeypatch.setattr(
-        opencode_runtime,
-        '_write_rules_bridge',
-        lambda _project_dir: opencode_runtime._BridgeWrite(written=False, replaced=False),
+        standing_rules_bridge,
+        'write_bridge',
+        lambda *_args, **_kwargs: standing_rules_bridge.BridgeWrite(written=False, replaced=False, failed=True),
     )
 
     res = ch.dispatch_platform_runtime_setup('opencode', project_dir)
@@ -440,12 +440,12 @@ def test_outdated_bridge_version_is_damaged(plan_env, monkeypatch: pytest.Monkey
     bridge.parent.mkdir(parents=True, exist_ok=True)
     bridge.write_text('# bridge\n\nbridge-version: 0\n', encoding='utf-8')
 
-    import opencode_runtime
+    import standing_rules_bridge
 
     monkeypatch.setattr(
-        opencode_runtime,
-        '_write_rules_bridge',
-        lambda _project_dir: opencode_runtime._BridgeWrite(written=False, replaced=False),
+        standing_rules_bridge,
+        'write_bridge',
+        lambda *_args, **_kwargs: standing_rules_bridge.BridgeWrite(written=False, replaced=False, failed=True),
     )
 
     assert ch._reconcile_standing_rules_bridge('opencode', project_dir) is False

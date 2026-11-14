@@ -74,6 +74,19 @@ class BridgeWrite(NamedTuple):
     failed: bool = False
 
 
+class SetupReport(NamedTuple):
+    """What one setup's bridge reconcile found and did — the payload a setup reports.
+
+    ``drift`` is the setup's verdict, not the pre-heal read: a bridge this setup
+    rewrote was drifted by definition, and a write the filesystem refused means
+    the reconcile did not happen.
+    """
+
+    written: bool
+    drift: bool
+    reason: str
+
+
 def baseline_text(project_dir: Path, baseline: str = BASELINE) -> str | None:
     """Return the standing-rules baseline's text, or ``None`` when unreadable.
 
@@ -193,12 +206,6 @@ def drift_status(
     baseline_path = project_dir / baseline
     baseline_present = baseline_path.is_file()
     carried = baseline_text(project_dir, baseline) if baseline_present else None
-    if baseline_present and carried is None:
-        return {
-            'drift': True,
-            'needs_bridge': not bridge.is_file(),
-            'reason': 'baseline_unreadable',
-        }
     if not baseline_present:
         if not bridge.is_file():
             return {'drift': False, 'needs_bridge': True, 'reason': 'baseline_missing'}
@@ -214,6 +221,14 @@ def drift_status(
             'needs_bridge': False,
             'reason': 'baseline_missing',
         }
+    if carried is None:
+        # The baseline exists and the rules are there, but this process cannot
+        # read them: the bridge is uncertifiable whatever it holds.
+        return {
+            'drift': True,
+            'needs_bridge': not bridge.is_file(),
+            'reason': 'baseline_unreadable',
+        }
     if not bridge.is_file():
         return {'drift': False, 'needs_bridge': True, 'reason': 'bridge_missing'}
     try:
@@ -222,11 +237,37 @@ def drift_status(
         return {'drift': True, 'needs_bridge': False, 'reason': 'bridge_unreadable'}
     if BRIDGE_MARKER not in text:
         return {'drift': True, 'needs_bridge': False, 'reason': 'marker_mismatch'}
-    if carried is None:
-        return {'drift': True, 'needs_bridge': False, 'reason': 'baseline_unreadable'}
     recorded = SOURCE_HASH_PATTERN.search(text)
     if recorded is None:
         return {'drift': True, 'needs_bridge': False, 'reason': 'source_hash_missing'}
     if recorded.group(1) != hashlib.sha256(carried.encode('utf-8')).hexdigest():
         return {'drift': True, 'needs_bridge': False, 'reason': 'baseline_changed'}
     return {'drift': False, 'needs_bridge': False, 'reason': 'in_sync'}
+
+
+def setup(
+    project_dir: Path,
+    bridge: Path,
+    label: str,
+    baseline: str = BASELINE,
+) -> SetupReport:
+    """Heal the bridge and report what the setup found and did.
+
+    The drift status is read BEFORE the heal: a setup that rewrites the bridge
+    has just found it drifted, and reporting the post-write ``in_sync`` would
+    tell the operator nothing needed attention. The writer's own observations
+    then add the two cases that pre-heal read cannot see — a body-only edit
+    whose recorded hash still matches (``bridge_body_replaced``), and a write the
+    filesystem refused (``bridge_write_failed``, which is the dominant fact
+    because the reconcile did not happen whatever the pre-heal verdict was).
+    """
+    drift = drift_status(project_dir, bridge, label, baseline)
+    write = write_bridge(project_dir, bridge, label, baseline)
+    setup_drift = drift['drift'] or write.replaced
+    reason = drift['reason']
+    if write.replaced and reason == 'in_sync':
+        reason = 'bridge_body_replaced'
+    if write.failed:
+        setup_drift = True
+        reason = 'bridge_write_failed'
+    return SetupReport(written=write.written, drift=setup_drift, reason=reason)

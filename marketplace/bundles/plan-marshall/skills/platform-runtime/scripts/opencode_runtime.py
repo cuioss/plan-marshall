@@ -136,11 +136,6 @@ _BRIDGE_MARKER_PATTERN = standing_rules_bridge.MARKER_PATTERN
 _BRIDGE_LABEL = 'OpenCode'
 
 
-def _baseline_text(project_dir: Path) -> str | None:
-    """Return the standing-rules baseline's text, or ``None`` when unreadable."""
-    return standing_rules_bridge.baseline_text(project_dir, STANDING_RULES_BASELINE)
-
-
 def _bridge_body(baseline_text: str | None) -> str:
     """Render the OpenCode bridge file for *baseline_text*.
 
@@ -149,29 +144,6 @@ def _bridge_body(baseline_text: str | None) -> str:
     byte for byte apart from the harness label.
     """
     return standing_rules_bridge.bridge_body(_BRIDGE_LABEL, baseline_text, STANDING_RULES_BASELINE)
-
-
-#: Aliased so the local call sites and the module's readers keep one name.
-_BridgeWrite = standing_rules_bridge.BridgeWrite
-
-
-def _write_rules_bridge(project_dir: Path) -> standing_rules_bridge.BridgeWrite:
-    """Write the bridge file that carries the baseline's standing rules.
-
-    Returns what the write did, including a write the filesystem refused. The
-    bridge owns its own file; the installed target rules shipped by
-    ``install.sh --emit-rules`` are never written here, so a setup can no longer
-    replace the full rules with a stub. The shared writer carries the two "no
-    text" cases (a missing baseline becomes the stub, an unreadable one leaves
-    the existing bridge untouched), the byte comparison, and the staged replace
-    that keeps a partial write from damaging the bridge.
-    """
-    return standing_rules_bridge.write_bridge(
-        project_dir,
-        _bridge_rules_path(project_dir),
-        _BRIDGE_LABEL,
-        STANDING_RULES_BASELINE,
-    )
 
 
 def standing_rules_drift_status(project_dir: str) -> dict[str, Any]:
@@ -1529,25 +1501,12 @@ class OpenCodeRuntime(Runtime):
             )
 
         resolved = pathlib.Path(project_dir).resolve()
-        # The status is read BEFORE the heal: a setup that rewrites the bridge
-        # has just found it drifted, and reporting the post-write ``in_sync``
-        # would tell the operator nothing needed attention.
-        drift = standing_rules_drift_status(str(resolved))
-        bridge_write = _write_rules_bridge(resolved)
-        # A write that replaced an existing differing bridge is a heal, and the
-        # writer's own observation says whether that is what it did. A first
-        # write that creates the bridge is not a heal and stays clean.
-        bridge_drift = drift['drift'] or bridge_write.replaced
-        bridge_reason = drift['reason']
-        if bridge_write.replaced and bridge_reason == 'in_sync':
-            # The status compares the recorded hash only, so a body-only edit
-            # reads in_sync; the write is the one witness that the body moved.
-            bridge_reason = 'bridge_body_replaced'
-        if bridge_write.failed:
-            # A refused write is the dominant fact: the reconcile did not
-            # happen, whatever the pre-heal verdict was.
-            bridge_drift = True
-            bridge_reason = 'bridge_write_failed'
+        bridge_report = standing_rules_bridge.setup(
+            resolved,
+            _bridge_rules_path(resolved),
+            _BRIDGE_LABEL,
+            STANDING_RULES_BASELINE,
+        )
 
         persisted_checkable = False
         persisted_warnings: list[dict[str, Any]] = []
@@ -1570,9 +1529,9 @@ class OpenCodeRuntime(Runtime):
                 'target': target,
                 'project_dir': str(proj.resolve()),
                 'marshal_written': False,
-                'bridge_written': bridge_write.written,
-                'bridge_drift': bridge_drift,
-                'bridge_reason': bridge_reason,
+                'bridge_written': bridge_report.written,
+                'bridge_drift': bridge_report.drift,
+                'bridge_reason': bridge_report.reason,
                 'settings_path': settings_path,
                 'permissions_applied': defaults.get('applied', False),
                 'permissions_added': defaults.get('defaults_added', []),

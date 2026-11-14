@@ -106,32 +106,9 @@ def installed_rules_clobbered(project_dir: Path) -> bool:
     return _BRIDGE_MARKER_PATTERN.search(text) is not None
 
 
-def _baseline_text(project_dir: Path) -> str | None:
-    """Return the standing-rules baseline's text, or ``None`` when unreadable."""
-    return standing_rules_bridge.baseline_text(project_dir, STANDING_RULES_BASELINE)
-
-
 def _bridge_body(baseline_text: str | None) -> str:
     """Render the Antigravity bridge file for *baseline_text*."""
     return standing_rules_bridge.bridge_body(_BRIDGE_LABEL, baseline_text, STANDING_RULES_BASELINE)
-
-
-def _write_rules_bridge(project_dir: Path) -> standing_rules_bridge.BridgeWrite:
-    """Write the bridge file that carries the baseline's standing rules.
-
-    Returns what the write did — including a write the filesystem refused — so
-    setup reports its own action rather than inferring it. The bridge owns its
-    own file: the installed target rules shipped by ``install.sh --emit-rules``
-    are never written here. The shared writer carries the two "no text" cases
-    (a missing baseline becomes the stub, an unreadable one leaves the existing
-    bridge alone) and the byte comparison the equality check rests on.
-    """
-    return standing_rules_bridge.write_bridge(
-        project_dir,
-        _bridge_rules_path(project_dir),
-        _BRIDGE_LABEL,
-        STANDING_RULES_BASELINE,
-    )
 
 
 def standing_rules_drift_status(project_dir: str) -> dict[str, Any]:
@@ -286,7 +263,12 @@ class AntigravityRuntime(Runtime):
         settings = self.permission_load_settings(settings_path)
         self.permission_ensure_defaults(settings, settings_path, dry_run=False)
 
-        bridge_written, bridge_drift, bridge_reason = self._bridge_setup_report(proj)
+        bridge_report = standing_rules_bridge.setup(
+            proj,
+            _bridge_rules_path(proj),
+            _BRIDGE_LABEL,
+            STANDING_RULES_BASELINE,
+        )
 
         return toon_success(
             'project initial-setup',
@@ -294,39 +276,14 @@ class AntigravityRuntime(Runtime):
                 'target': target,
                 'project_dir': str(proj),
                 'marshal_written': False,
-                'bridge_written': bridge_written,
-                'bridge_drift': bridge_drift,
-                'bridge_reason': bridge_reason,
+                'bridge_written': bridge_report.written,
+                'bridge_drift': bridge_report.drift,
+                'bridge_reason': bridge_report.reason,
                 'settings_path': settings_path,
                 'hook_installed': False,
                 'hook_skip_reason': 'Antigravity runs without PreToolUse lifecycle hooks',
             },
         )
-
-    def _bridge_setup_report(self, proj: Path) -> tuple[bool, bool, str]:
-        """Heal the bridge and report what the setup found and did.
-
-        The drift status is read BEFORE the heal: a setup that rewrites the
-        bridge has just found it drifted, and reporting the post-write
-        ``in_sync`` would tell the operator nothing needed attention. The
-        writer's own observation then adds the two cases the pre-heal read
-        cannot see — a body-only edit whose recorded hash still matches, and a
-        write the workspace refused.
-        """
-        drift = standing_rules_drift_status(str(proj))
-        bridge_write = _write_rules_bridge(proj)
-        bridge_drift = drift['drift'] or bridge_write.replaced
-        bridge_reason = drift['reason']
-        if bridge_write.replaced and bridge_reason == 'in_sync':
-            # The status compares the recorded hash only, so a body-only edit
-            # reads in_sync; the write is the one witness that the body moved.
-            bridge_reason = 'bridge_body_replaced'
-        if bridge_write.failed:
-            # A refused write is the dominant fact: the reconcile did not
-            # happen, whatever the pre-heal verdict was.
-            bridge_drift = True
-            bridge_reason = 'bridge_write_failed'
-        return bridge_write.written, bridge_drift, bridge_reason
 
     def project_install_hook(
         self,
