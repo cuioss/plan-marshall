@@ -249,9 +249,9 @@ def _is_refusal_notice(body: str, bot_kind: str | None = None) -> bool:
 # from here, so the records are directly comparable and there is exactly one place
 # a new arm is named.
 #
-# The two pre-existing spellings are preserved BYTE-IDENTICALLY from when they were
-# inline literals in ``github_re_review``: every stored envelope and every existing
-# assertion comparing against them keeps its meaning.
+# The two spellings below are part of the stored-envelope CONTRACT: every recorded
+# refusal and every assertion comparing against one uses these exact values, so a
+# rename would silently re-read old records as an arm nobody names.
 
 #: The acting bot's own declared ``refusal_patterns`` matched the body.
 REFUSAL_LAYER_REGISTRY = 'registry_refusal_patterns'
@@ -403,6 +403,10 @@ def bot_claimed_sha_matches_head(body: str, head_sha: str) -> bool:
 #: the one reader of those fields rather than duplicating them.
 _REVIEW_COVERAGE_MARKER = 'final_review_risk_coverage'
 _REVIEW_COVERAGE_REVIEWED_KIND = 'reviewed'
+#: A commit ID as a coverage marker may carry it: all hex, any length. The field is
+#: dedicated to the commit a review covered, so a hex value there IS a commit however
+#: abbreviated; a word that is not hex (``pending``, ``n/a``) names no commit at all.
+_HEX_TOKEN = re.compile(r'[0-9a-f]+')
 #: The fields the marker's JSON payload carries. One list, consumed by the parser
 #: below and by the runbook-lane guard, so neither restates a private vocabulary.
 REVIEW_COVERAGE_FIELDS = ('sourceCommitId', 'coveredCommitId', 'kind')
@@ -584,6 +588,13 @@ def review_coverage_names_commit(body: str) -> bool:
     nothing. The retired ``<!-- recent_review_start -->`` wrapper names no commit and
     therefore answers ``False`` here as well; it remains admissible participation
     EVIDENCE under the registry, which is a different question.
+
+    The value must be a COMMIT ID — an all-hex token (:data:`_HEX_TOKEN`). A dedicated
+    field names a commit, so any hex value in it is one however abbreviated; a
+    placeholder (``pending``, ``n/a``, ``unknown``) is not, and a marker carrying one
+    is a claim nobody can place. Without this test a refusal body beside
+    ``{"kind": "reviewed", "coveredCommitId": "pending"}`` was exempt from the refusal
+    exclusion at all three finished-review sites.
     """
     present, fields = _coverage_payload(body)
     if not present or fields is None:
@@ -591,7 +602,7 @@ def review_coverage_names_commit(body: str) -> bool:
     if str(fields.get('kind') or '').strip().lower() != _REVIEW_COVERAGE_REVIEWED_KIND:
         return False
     covered = str(fields.get('coveredCommitId') or '').strip() or str(fields.get('sourceCommitId') or '').strip()
-    return bool(covered)
+    return bool(_HEX_TOKEN.fullmatch(covered.lower()))
 
 
 def _is_participation_evidence(comment: dict, bot_kind: str) -> bool:

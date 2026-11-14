@@ -25,11 +25,9 @@ verb answers "refused", or the fixture proves nothing about what changed.
 from __future__ import annotations
 
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any
 from unittest.mock import patch
 
-import github_ops
 import github_re_review
 import pytest
 
@@ -164,7 +162,7 @@ def _args_with_reviewers(*reviewers: str):
 
 
 def _raw_read(comments: list[dict], *, complete: bool = True, status: str = 'success') -> dict:
-    """The RAW comment read the required-reviewer check asks its predicate about."""
+    """The ONE comment read the gate decides on — the provider's raw records."""
     if status != 'success':
         return {'status': 'error', 'operation': 'pr_comments', 'error': 'GraphQL query failed: boom'}
     return {
@@ -186,12 +184,7 @@ def _verdict(read: dict, *dispositions: str, reviewers: tuple[str, ...] = ()) ->
         argv += ['--disposition', disposition]
     for reviewer in reviewers:
         argv += ['--required-reviewer', reviewer]
-    with (
-        patch.object(lane, '_read_review_surfaces', return_value=read),
-        # The required-reviewer check takes its own RAW read, so a test stating one
-        # comment history hands the same records to both seams.
-        patch.object(lane, '_read_required_review_comments', return_value=_raw_read(read.get('comments') or [])),
-    ):
+    with patch.object(lane, '_read_review_surfaces', return_value=read):
         return cmd_review_gate(parse_ns('plan-marshall', 'runbook-lane', 'runbook_lane.py', *argv))
 
 
@@ -958,26 +951,44 @@ def test_the_verb_is_reachable_through_its_cli_surface() -> None:
     assert result.toon()['error'] == 'invalid_pr_number'
 
 
-def test_the_ci_read_is_the_abstraction_s_own_invocation(monkeypatch) -> None:
-    """The one seam D1 rests on: the read goes through `ci`, never a CLI of its own."""
-    seen: dict[str, Any] = {}
+def test_the_gate_fetches_the_surface_once_and_spawns_no_cli(monkeypatch) -> None:
+    """⛔ ONE fetch decides the whole verdict: threads, findings and reviews.
 
-    def fake_run(argv, **kwargs):
-        seen['argv'] = argv
-        seen['cwd'] = kwargs.get('cwd')
-        return SimpleNamespace(returncode=0, stdout='status: success\ncomplete: true\ncomments[0]:\n', stderr='')
+    The gate used to take the display read and the raw read as two snapshots, so a
+    review or thread landing between them was credited by one half and unseen by the
+    other. It now fetches the provider's data once, in-process, and derives the
+    flattened display form itself — asserted here by counting fetches AND by pinning
+    that no subprocess is spawned at all.
+    """
+    fetches: list[int] = []
 
-    monkeypatch.setattr('subprocess.run', fake_run)
+    def fake_fetch(pr_number, unresolved_only=False):
+        fetches.append(pr_number)
+        return _raw_read([])
 
-    lane._read_review_surfaces(7, Path('/tmp/project'))
+    def forbid_run(*_args, **_kwargs):
+        raise AssertionError('the review gate must not spawn a CLI for its read')
 
-    argv = seen['argv']
-    assert 'python' in str(argv[0])
-    assert str(argv[1]).endswith('execute-script.py')
-    assert argv[2] == 'plan-marshall:tools-integration-ci:ci', 'the read must go through the CI abstraction'
-    assert argv[3:6] == ['pr', 'comments', '--pr-number']
-    assert argv[6] == '7'
-    assert seen['cwd'] == '/tmp/project', 'the read runs in the project it was handed'
+    monkeypatch.setattr(github_re_review, 'fetch_pr_comments_data', fake_fetch)
+    monkeypatch.setattr('subprocess.run', forbid_run)
+
+    verdict = cmd_review_gate(_args_with_reviewers('coderabbit'))
+
+    assert fetches == [7], 'exactly one provider fetch per verdict'
+    assert verdict['reason'] == 'required_review_missing'
+
+
+def test_the_read_runs_in_the_project_it_was_handed(monkeypatch) -> None:
+    """The one fetch is routed to ``project_dir``, which is how ``gh`` finds the repo."""
+    import ci_base
+
+    original = ci_base.get_default_cwd()
+    monkeypatch.setattr(github_re_review, 'fetch_pr_comments_data', lambda _pr, unresolved_only=False: _raw_read([]))
+    try:
+        lane._read_review_surfaces(7, Path('/tmp/project'))
+        assert ci_base.get_default_cwd() == '/tmp/project'
+    finally:
+        ci_base.set_default_cwd(original)
 
 
 # ---------------------------------------------------------------------------
@@ -1073,8 +1084,13 @@ def test_a_marker_outside_a_fenced_example_keeps_its_claim() -> None:
 
 
 def test_several_comments_are_each_read_for_a_marker() -> None:
-    """HOLDS AT THE BASE: every comment is read, and each marker is the bot's claim."""
+    """HOLDS AT THE BASE: the check scans past the first comment.
+
+    The FIRST comment carries no marker, so a loop that reads only the first answers
+    `required_review_missing`; both later comments carry one, so every marker counts.
+    """
     comments = [
+        _issue_comment('## Walkthrough\n\nsome prose before the review completes'),
         _issue_comment('first comment\n' + _finished_marker_body()),
         _issue_comment('a second comment\n' + _finished_marker_body()),
     ]
@@ -1205,11 +1221,16 @@ _QUOTED_MARKER_CONSTRUCTIONS: dict[str, str] = {
 
 @pytest.fixture
 def restore_default_cwd():
-    """Undo the process-global working tree the raw read installs."""
-    yield
+    """Restore the process-global working tree the read installs.
+
+    Restores the value it FOUND, not ``None``: a test that resets the default
+    unconditionally would clobber one an earlier test on the same worker had set.
+    """
     import ci_base
 
-    ci_base.set_default_cwd(None)
+    original = ci_base.get_default_cwd()
+    yield
+    ci_base.set_default_cwd(original)
 
 
 def _verdict_through_the_read_seams(
@@ -1219,15 +1240,12 @@ def _verdict_through_the_read_seams(
     raw_read: dict | None = None,
     reviewers: tuple[str, ...] = ('coderabbit',),
 ) -> Any:
-    """Drive ``review-gate`` with only the two TRANSPORT seams stubbed."""
-    display_comments = [
-        {**comment, 'body': github_ops.flatten_comment_body(str(comment.get('body') or ''))} for comment in raw_comments
-    ]
-    monkeypatch.setattr(
-        'subprocess.run',
-        lambda *_a, **_kw: SimpleNamespace(returncode=0, stdout='status: success\n', stderr=''),
-    )
-    monkeypatch.setattr('toon_parser.parse_toon', lambda _text: _read(*display_comments))
+    """Drive ``review-gate`` with only the ONE provider fetch stubbed.
+
+    No subprocess and no TOON: the gate fetches once, in-process, and derives the
+    display form itself. A test that had to stub a second transport would be proof
+    the gate reads the surface twice.
+    """
     monkeypatch.setattr(
         github_re_review,
         'fetch_pr_comments_data',
@@ -1272,3 +1290,24 @@ def test_an_incomplete_raw_read_is_undecidable_never_missing(monkeypatch, label:
 
     assert verdict['merge_allowed'] is False, verdict
     assert verdict['reason'] == 'undecidable_read', verdict
+
+
+@pytest.mark.parametrize('raised', [AttributeError('owner is None'), ImportError('no provider module')])
+def test_a_read_that_raises_is_classified_never_a_traceback(monkeypatch, raised: Exception) -> None:
+    """⛔ The guard covers the imports and the repo lookup, not only the fetch.
+
+    ``get_repo_info`` dereferences its own JSON, so a malformed ``gh repo view`` reply
+    raises ``AttributeError`` one frame below the fetch; a broken provider import raises
+    ``ImportError``. Both must come back as a readable failure the gate can classify,
+    because a crash states no verdict at all.
+    """
+
+    def boom(*_args, **_kwargs):
+        raise raised
+
+    monkeypatch.setattr(github_re_review, 'fetch_pr_comments_data', boom)
+
+    read = lane._read_review_surfaces(7, Path('.'))
+
+    assert read['status'] == 'error'
+    assert str(raised) in read['error']

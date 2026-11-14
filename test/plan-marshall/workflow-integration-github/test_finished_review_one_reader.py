@@ -203,6 +203,29 @@ def test_a_commit_less_marker_does_not_lift_a_refusal(plan_context, monkeypatch)
     assert _chokepoint(monkeypatch, comments) is False
 
 
+@pytest.mark.parametrize(
+    ('covered', 'expected'),
+    [
+        ('a' * 40, True),
+        ('cf28a05db', True),
+        ('pending', False),
+        ('n/a', False),
+        ('', False),
+    ],
+)
+def test_the_commit_a_marker_names_must_be_a_commit_id(covered: str, expected: bool) -> None:
+    """⛔ A placeholder in the covered field is not a commit, so it is not a review.
+
+    The marker field is dedicated to the commit a review covered, so an all-hex value
+    in it IS a commit however abbreviated; a word that is not hex names no commit at
+    all. Before this test, a refusal body beside ``coveredCommitId: "pending"`` was
+    exempt from the refusal exclusion at all three finished-review sites.
+    """
+    body = f'<!-- final_review_risk_coverage:{{"coveredCommitId":"{covered}","kind":"reviewed"}} -->'
+
+    assert _github_pr.review_coverage_names_commit(body) is expected
+
+
 def test_a_refusal_naming_a_commit_and_no_marker_is_not_a_finished_review(plan_context, monkeypatch) -> None:
     """HOLDS AT THE BASE: the commit a refusal names is the head it DECLINED."""
     comments = [_comment('review_body', _REFUSAL, commit_id=_HEAD)]
