@@ -4,9 +4,11 @@
 The done rule asks one question — is a FINISHED review on record — and three sites
 answer it: the producer's ``finished_review_bots[]`` build, the post chokepoint
 (``github_re_review._qualifying_review_on_record``) and the runbook lane's
-``review-gate --required-reviewer`` check. Before this table they each read a
-different predicate, so a formal review with an empty commit was a review for the
-chokepoint and not for the producer.
+``review-gate`` verb. All three ask one predicate, so a formal review cannot be a
+review at one site and not at another. The lane's column is driven through the
+lane's own read seams — the display read production hands it and the raw read its
+required-reviewer check asks — so a second predicate planted at that site turns a
+row red.
 
 Every artifact below is driven through ALL THREE sites and asserted to one verdict.
 The second half pins the consequence: for one bot and one history, the chokepoint's
@@ -17,6 +19,7 @@ The second half pins the consequence: for one bot and one history, the chokepoin
 from __future__ import annotations
 
 import argparse
+from types import SimpleNamespace
 
 import github_pr
 import github_re_review
@@ -39,6 +42,10 @@ _MARKER_WITH_COMMIT = (
 _MARKER_WITHOUT_COMMIT = '<!-- final_review_risk_coverage:{"kind":"reviewed"} -->'
 _IN_PROGRESS_MARKER = '<!-- final_review_risk_coverage:{"coveredCommitId":"' + _HEAD + '","kind":"in_progress"} -->'
 _REFUSAL = '> [!WARNING]\n> ## Review limit reached\n> Please wait 12 minutes before requesting another review.'
+#: The REGISTRY arm's phrase in another letter case, with NO notice presentation —
+#: no alert callout, no heading, no service-notice tail. The structural arm needs a
+#: notice SHAPE beside the limit statement, so only the registry arm can read this.
+_REFUSAL_CASE_VARIANT = 'REVIEW LIMIT REACHED'
 _WALKTHROUGH = '## Walkthrough\n\nsome prose before the review completes'
 
 #: label -> (kind, body, commit_id, the one verdict every site must reach).
@@ -49,6 +56,18 @@ _SHAPES: dict[str, tuple[str, str, str, bool]] = {
     'marker without a commit': ('issue_comment', _MARKER_WITHOUT_COMMIT, '', False),
     'refusal with a marker': ('review_body', _REFUSAL + '\n' + _MARKER_WITH_COMMIT, '', True),
     'refusal without a marker': ('review_body', _REFUSAL, '', False),
+    # A refusal is a refusal even when the record names a commit: the commit says
+    # WHICH head the bot declined, never that it reviewed one.
+    'refusal with a commit and no marker': ('review_body', _REFUSAL, _HEAD, False),
+    'case-variant refusal with a commit': ('review_body', _REFUSAL_CASE_VARIANT, _HEAD, False),
+    # The exemption is a marker NAMING A COMMIT. A `kind: reviewed` marker naming
+    # none claims a review nobody can place, so it does not lift the refusal.
+    'refusal with a commit-less marker and a commit': (
+        'review_body',
+        _REFUSAL + '\n' + _MARKER_WITHOUT_COMMIT,
+        _HEAD,
+        False,
+    ),
     'in-progress summary': ('issue_comment', _IN_PROGRESS_MARKER, '', False),
     'walkthrough': ('issue_comment', _WALKTHROUGH, '', False),
 }
@@ -113,6 +132,57 @@ def _producer(plan_context, monkeypatch, comments: list[dict]) -> set[str]:
     return {str(row['bot_kind']) for row in result.get('finished_review_bots') or []}
 
 
+@pytest.fixture
+def restore_default_cwd():
+    """Undo the process-global working tree the lane's raw read installs."""
+    yield
+    import ci_base
+
+    ci_base.set_default_cwd(None)
+
+
+def _lane_admits(monkeypatch, comments: list[dict]) -> bool:
+    """The lane's own verdict, driven through its two TRANSPORT seams.
+
+    ``subprocess.run`` stands for ``ci pr comments`` — the display read — and
+    ``github_re_review.fetch_pr_comments_data`` for the raw read the required-reviewer
+    check asks. Neither the lane's read functions nor its predicate site is stubbed,
+    so a second predicate planted at the lane's site turns this column red.
+    """
+    monkeypatch.setattr(
+        'subprocess.run',
+        lambda *_a, **_kw: SimpleNamespace(returncode=0, stdout='status: success\n', stderr=''),
+    )
+    monkeypatch.setattr(
+        'toon_parser.parse_toon',
+        lambda _text: {
+            'status': 'success',
+            'operation': 'pr_comments',
+            'provider': 'github',
+            'complete': True,
+            'connections': [],
+            'comments': [],
+        },
+    )
+    monkeypatch.setattr(
+        github_re_review,
+        'fetch_pr_comments_data',
+        lambda _pr_number, unresolved_only=False: {
+            'status': 'success',
+            'provider': 'github',
+            'complete': True,
+            'comments': list(comments),
+            'total': len(comments),
+            'unresolved': 0,
+        },
+    )
+    verdict = lane.cmd_review_gate(
+        argparse.Namespace(pr_number=_PR, project_dir='.', disposition=[], required_reviewer=[_BOT])
+    )
+    return verdict.get('merge_allowed') is True
+
+
+@pytest.mark.usefixtures('restore_default_cwd')
 @pytest.mark.parametrize('label', sorted(_SHAPES))
 def test_every_site_reaches_one_verdict_per_artifact(plan_context, monkeypatch, label: str) -> None:
     """The shape table: producer, chokepoint and lane agree on every artifact."""
@@ -121,7 +191,7 @@ def test_every_site_reaches_one_verdict_per_artifact(plan_context, monkeypatch, 
 
     assert (_BOT in _producer(plan_context, monkeypatch, comments)) is expected
     assert github_re_review._qualifying_review_on_record(_PR, _BOT) is expected
-    assert (lane._required_reviewers_without_a_review(comments, [_BOT]) == []) is expected
+    assert _lane_admits(monkeypatch, comments) is expected
 
 
 @pytest.mark.parametrize('label', sorted(_SHAPES))

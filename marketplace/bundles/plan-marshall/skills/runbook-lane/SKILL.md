@@ -873,7 +873,10 @@ Merge only when all of these hold:
   on record** — a formal review with a commit id, or its marker-bearing summary whose readable
   `kind=reviewed` payload names a covered commit (the artifact clause 1 below states; rate-limit
   notices, marker-less walkthroughs, thread replies and a refusal submitted as a review do not
-  count). The flag alone is not the exemption: `review-gate` enforces it per reviewer when the lane
+  count — the one exception being a refusal whose body also carries a readable finished marker
+  naming the commit it covered, which a reviewer publishes when its summary keeps a later limit
+  notice beside its verdict). The flag alone is not the exemption: `review-gate` enforces it per
+  reviewer when the lane
   passes `--required-reviewer {bot}` for each required bot, and answers
   `required_review_missing` when one holds no such review. Given the review, every finding of it
   being handled makes it the review at ANY head of this PR: the currency demand does not apply, no
@@ -888,7 +891,9 @@ Merge only when all of these hold:
      `final_review_risk_coverage` marker the reviewer's summary comment carries; read it from the
      comment itself, because the marker names the head the review covered, and parse it with
      `_github_pr.review_coverage_verdict` — the one reader of `sourceCommitId`,
-     `coveredCommitId` and `kind`).
+     `coveredCommitId` and `kind`). That reader is the producer's and the await's: this lane's
+     `review-gate` path and the post chokepoint do not ask it, so a marker naming a commit outside
+     this pull request is not checked there.
      Rate-limit notices, marker-less walkthroughs and thread replies do not count;
   2. **every finding is handled** — each finding from that review and from any later one is fixed in
      a pushed commit, or answered with a reason, and every one of that reviewer's threads is
@@ -961,6 +966,11 @@ is never that selection. If you have only free text, ask the question with the t
 selection.
 
 **Enqueue and settle:**
+
+The enqueue takes no merge mutex: the platform queue serializes the merge and re-tests it against the
+updated base, so two enqueued pull requests cannot interleave their merge commits — the queue is the
+serialization the mutex would otherwise provide, and holding both would only serialize work that is
+already serialized.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr merge-queue --pr-number {N}

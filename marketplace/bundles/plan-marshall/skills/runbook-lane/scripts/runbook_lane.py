@@ -2672,6 +2672,57 @@ def _read_review_surfaces(pr_number: int, project_dir: Path) -> dict[str, Any]:
         return {'status': 'error', 'error': f'the CI read output was not parseable as TOON: {exc}'}
 
 
+def _read_required_review_comments(pr_number: int, project_dir: Path) -> dict[str, Any]:
+    """Read the RAW comment bodies the required-reviewer check asks its predicate about.
+
+    ``ci pr comments`` is a DISPLAY read: it flattens every body to one line, and a
+    flattened body cannot be read back into the answers the provider's text gives — a
+    coverage-marker opener is the bot's own claim only at the start of a line, and a
+    blockquoted, inline-coded or indented opener is a quote. Structure that was
+    destroyed cannot be reconstructed: a fence pairing inferred from the flattened
+    runs reads a quoted marker as a claim in some shapes and withholds a real one in
+    others. This check therefore takes its own in-process read of the provider data,
+    which is the text the producer and the post chokepoint already ask about.
+
+    The read is the provider data fetch, imported through ``github_re_review`` (the
+    import-order-safe entry into ``github_ops``) and routed to ``project_dir`` so
+    ``gh`` resolves the same repository the display read reads. It is GitHub's read: a
+    project whose CI abstraction routes elsewhere gets a failed read here, which the
+    gate reports as ``undecidable_read`` — never as a missing review.
+
+    The envelope is returned as the fetch built it. A failed read, a truncated one
+    (``complete`` not ``True``) and a whole one are told apart by the caller
+    (:func:`_required_review_read_failure`), because a review may sit in the part that
+    was not read.
+    """
+    from ci_base import set_default_cwd
+    from github_re_review import fetch_pr_comments_data
+
+    set_default_cwd(str(project_dir))
+    try:
+        return fetch_pr_comments_data(pr_number)
+    except (OSError, RuntimeError, ValueError) as exc:
+        return {'status': 'error', 'error': f'the raw review read could not run: {exc}'}
+
+
+def _required_review_read_failure(read: dict[str, Any] | None) -> str | None:
+    """Why ``read`` cannot decide the required-review question, or ``None`` when it can.
+
+    An incomplete or failed read is never "no review" and never "a review": a review
+    may sit in the part that was not read, so the gate stops on it. The chokepoint's
+    own ``None`` answer is a fail-open for a POST decision — posting a trigger is
+    harmless, skipping one is not — and the merge gate must not inherit it, because
+    here the same ``None`` would state a verdict on evidence nobody read.
+    """
+    if read is None:
+        return 'the raw review read was not taken'
+    if read.get('status') != 'success':
+        return str(read.get('error') or 'the raw review read failed')
+    if read.get('complete') is not True:
+        return 'the raw review read was truncated: a review may sit in the part that was not read'
+    return None
+
+
 def _required_reviewers_without_a_review(comments: list[dict[str, Any]], required_reviewers: list[str]) -> list[str]:
     """Return the required reviewers that hold no qualifying review on this read.
 
@@ -2682,28 +2733,24 @@ def _required_reviewers_without_a_review(comments: list[dict[str, Any]], require
     Nothing here decides what to do with the review — only that a review exists to be
     done.
 
-    ``ci pr comments`` is a DISPLAY read: it flattens every body to one line. The
-    marker parser requires its opener at the start of a line and its fence reader
-    requires a fence at the start of a line, so the flattened body is first stripped of
-    any FENCED region and its HTML-comment boundaries are then restored. The stripping
-    reads fence state from the fence runs themselves, so a finished marker quoted inside
-    a fenced example is not read as the bot's own claim — and a fence-like run in prose
-    (`` ```not-a-close ``) is never mistaken for a closing fence.
+    ``comments`` are the provider's RAW records
+    (:func:`_read_required_review_comments`), never a display-flattened copy: the
+    predicate places a coverage marker by its line position, so the text it reads must
+    still HAVE those lines. Nothing here strips, re-splits or otherwise rebuilds the
+    body.
     """
     # `github_re_review` owns the import-order-safe entry into `_github_pr` (it
     # imports `github_ops` first, which breaks that module's import cycle) and
-    # re-exports the one finished-review reader and the flattened-body fence stripper,
-    # so the lane never imports the cycle itself.
-    from github_re_review import is_finished_review, strip_fenced_regions
+    # re-exports the one finished-review reader, so the lane never imports the cycle
+    # itself.
+    from github_re_review import is_finished_review
 
     present: set[str] = set()
     for comment in comments:
         bot = _bot_of(comment)
         if not bot or bot not in required_reviewers:
             continue
-        body = strip_fenced_regions(str(comment.get('body') or ''))
-        restored = {**comment, 'body': body.replace('<!--', '\n<!--')}
-        if is_finished_review(restored, bot):
+        if is_finished_review(comment, bot):
             present.add(bot)
     return sorted(set(required_reviewers) - present)
 
@@ -2714,11 +2761,13 @@ def _review_gate_verdict(
     dispositions: list[dict[str, str]],
     refused: list[str],
     required_reviewers: list[str] | None = None,
+    required_read: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Decide whether the review surfaces admit the merge (section 7's condition).
 
-    The verdict is a pure function of the read and of the run's recorded
-    dispositions, so the merge condition is a decision a script makes:
+    The verdict is a pure function of the read, of the run's recorded dispositions and
+    of the RAW read the required-reviewer check asks about, so the merge condition is a
+    decision a script makes:
 
     - an unreadable or truncated read is ``undecidable_read`` — a stop, never a
       pass, because "no findings" is unknowable from a surface nobody read whole;
@@ -2728,6 +2777,9 @@ def _review_gate_verdict(
     - a resolved thread whose last BOT-authored comment states that the concern
       remains is ``thread_concern_remains`` — resolution is not silence, and a lane
       reply below the bot's restatement never discharges it;
+    - a required reviewer whose raw read is incomplete or failed is
+      ``undecidable_read``, and one holding no qualifying review is
+      ``required_review_missing``;
     - otherwise ``all_handled``.
     """
     base: dict[str, Any] = {'status': 'success', 'operation': 'review-gate', 'pr_number': pr_number}
@@ -2819,11 +2871,19 @@ def _review_gate_verdict(
         'review_body_findings_handled': len(findings) - len(undisposed),
         'unresolved_threads': unresolved,
     }
-    missing_reviews = (
-        _required_reviewers_without_a_review(comments, list(required_reviewers or [])) if required_reviewers else []
-    )
+    missing_reviews: list[str] = []
     if required_reviewers:
         verdict['required_reviewers'] = list(required_reviewers)
+        # Fail closed BEFORE asking the predicate: a read that did not complete cannot
+        # show that a review is absent, and the gate never states a verdict about a
+        # surface it did not read.
+        read_failure = _required_review_read_failure(required_read)
+        if read_failure is not None:
+            return {**verdict, 'merge_allowed': False, 'reason': 'undecidable_read', 'detail': read_failure}
+        missing_reviews = _required_reviewers_without_a_review(
+            [comment for comment in (required_read or {}).get('comments') or [] if isinstance(comment, dict)],
+            list(required_reviewers),
+        )
     if missing_reviews:
         # The done rule is "one handled review IS the review", never "the flag is
         # enough": a required reviewer the run names must actually hold a qualifying
@@ -2858,7 +2918,8 @@ def cmd_review_gate(args: argparse.Namespace) -> dict[str, Any]:
         str(bot).strip() for bot in (getattr(args, 'required_reviewer', None) or []) if str(bot).strip()
     ]
     read = _read_review_surfaces(pr_number, project_dir)
-    return _review_gate_verdict(pr_number, read, dispositions, refused, required_reviewers)
+    required_read = _read_required_review_comments(pr_number, project_dir) if required_reviewers else None
+    return _review_gate_verdict(pr_number, read, dispositions, refused, required_reviewers, required_read)
 
 
 def cmd_resolve(args: argparse.Namespace) -> dict[str, Any]:

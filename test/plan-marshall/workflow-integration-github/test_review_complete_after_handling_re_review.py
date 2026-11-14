@@ -153,11 +153,11 @@ def test_a_formal_review_record_with_a_commit_refuses_the_trigger(monkeypatch):
 
 
 def test_a_formal_review_record_without_a_commit_does_not_refuse_the_trigger(monkeypatch):
-    """⛔ MOVED TO THE AGREED READING — an empty commit names no head.
+    """⛔ An empty commit names no head, so the record is no finished review.
 
-    The old reading admitted any non-refusal formal review here, while the producer
-    left the bot out of ``finished_review_bots`` and ``trigger-bot`` listed it. That
-    disagreement is the loop this plan closes.
+    The chokepoint answers this question through ``_github_pr.is_finished_review``,
+    the same reader the producer builds ``finished_review_bots`` from, so a record
+    that is absent there is absent here and ``trigger-bot`` lists the bot.
     """
     posted = _record_posts(monkeypatch)
     _history(monkeypatch, [_comment('review_body', 'findings here', commit_id='')])
