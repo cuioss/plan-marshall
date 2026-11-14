@@ -100,7 +100,7 @@ all three run the same steps, in the same order, with the same commands.
 > **The run ends with a restart — this command cannot perform it.**
 >
 > 1. **Fully restart the session** — a session reads the plugin registry once,
->    when it starts, so only a new session loads the version the repin just wrote.
+>    when it starts, so only a new session loads the version the registry names.
 >
 > `/reload-plugins` alone is not sufficient. It can make newly emitted agents
 > visible to a running session, but skill bodies are still loaded from the version
