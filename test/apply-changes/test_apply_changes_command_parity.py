@@ -68,8 +68,12 @@ _ENTRY_POINTS: tuple[tuple[str, str], ...] = tuple(
 assert _ENTRY_POINTS, 'SYNC_TARGETS resolved no harness, so every entry-point check would be vacuous'
 
 #: The entry points that are skills. A skill declares its name in frontmatter; an
-#: OpenCode command is named by its file alone.
-_SKILL_HARNESSES: tuple[str, ...] = ('claude', 'antigravity')
+#: OpenCode command is named by its file alone. Derived from the declared paths,
+#: so a harness added as a skill is checked as one without a second list to edit.
+_SKILL_HARNESSES: tuple[str, ...] = tuple(
+    harness for harness, relative in _ENTRY_POINTS if relative.endswith('/SKILL.md')
+)
+assert _SKILL_HARNESSES, 'no entry point is a skill, so the frontmatter checks would be vacuous'
 
 #: The permission entries the Claude settings must allow for the skill to be
 #: invocable by name and by argument.
@@ -82,10 +86,14 @@ _ENGINE_CALL = f'{BARE_PYTHON_TARGETS_PREFIX}sync.py'
 _RECONCILE_CALL = f'{BARE_PYTHON_TARGETS_PREFIX}claude/reconcile_daemon.py'
 _REPIN_CALL = f'{BARE_PYTHON_TARGETS_PREFIX}claude/registry_pin.py --apply'
 _REGENERATE_CALL = 'python3 .plan/execute-script.py plan-marshall:tools-script-executor:generate_executor generate'
+
+#: The generation targets are the engine's own sync population, in its own order,
+#: so a harness added to `SYNC_TARGETS` is demanded of the entry points here rather
+#: than silently left ungenerated.
 _GENERATE_CALLS: tuple[str, ...] = tuple(
     'python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run '
     f'--command-args "generate-{target}"'
-    for target in ('claude', 'opencode', 'antigravity')
+    for target in SYNC_TARGETS
 )
 
 #: The whole prescribed sequence, in order: the three regenerations, the sync, the
@@ -113,6 +121,11 @@ _RELOAD_SENTENCE = f'`{_RELOAD_PLUGINS}` alone is not sufficient'
 
 #: The markers that would tie a description to one harness's install location.
 _HARNESS_LOCATION_MARKERS: tuple[str, ...] = ('plugin cache', '~/.claude', '.config/opencode', '.gemini')
+
+#: The restrictive conditions that BIND a follow-up step to its gate. A step that
+#: carries the gate literal without one of these runs unconditionally, which is the
+#: defect the gate pin exists to prevent.
+_RESTRICTIVE_MARKERS: tuple[str, ...] = ('only when', 'under the same')
 
 
 def _read(root: Path, relative: str) -> str:
@@ -233,6 +246,9 @@ def _gate_violations(text: str) -> list[str]:
             problems.append(f'step {number} should prescribe {script}')
         if 'cache_status: success' not in gated:
             problems.append(f'step {number} should gate on cache_status: success')
+        lowered = gated.casefold()
+        if not any(marker in lowered for marker in _RESTRICTIVE_MARKERS):
+            problems.append(f'step {number} states the gate without a restrictive condition')
     return problems
 
 
@@ -427,6 +443,11 @@ def test_ungated_step_controls(tmp_path: Path):
         assert f'step {occurrence + 2} should gate on cache_status: success' in reported, (
             f'stripping the gate from step {occurrence + 2} must be reported, got {reported}'
         )
+
+    _plant(tmp_path, {'claude': claude.replace('only when', 'regardless of whether', 1)})
+    assert 'step 3 states the gate without a restrictive condition' in _gate_violations(
+        _entry_texts(tmp_path)['claude']
+    ), 'a gate literal that no longer restricts its step must be reported'
 
     assert _gate_violations(claude) == [], 'the gated entry point must stay clean'
 
