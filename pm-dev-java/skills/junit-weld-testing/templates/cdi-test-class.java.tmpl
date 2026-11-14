@@ -1,0 +1,43 @@
+package ${PACKAGE};
+
+import static org.junit.jupiter.api.Assertions.*;
+
+import jakarta.inject.Inject;
+import org.jboss.weld.junit5.auto.AddBeanClasses;
+import org.jboss.weld.junit5.auto.ActivateScopes;
+import org.jboss.weld.junit5.auto.EnableAutoWeld;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
+
+/**
+ * CDI unit tests for {@link ${CLASS_UNDER_TEST}}.
+ */
+@EnableAutoWeld
+// @AddBeanClasses({ProducerClass.class})   -- uncomment for producers/interceptors
+// @ActivateScopes(RequestScoped.class)     -- uncomment for scoped beans
+@DisplayName("Tests for ${CLASS_UNDER_TEST}")
+class ${CLASS_UNDER_TEST}Test {
+
+    @Inject
+    ${CLASS_UNDER_TEST} underTest;
+
+    @Test
+    @DisplayName("Should be injectable")
+    void shouldBeInjectable() {
+        assertNotNull(underTest);
+    }
+
+    @Nested
+    @DisplayName("${METHOD_1}")
+    class ${Method1}Tests {
+
+        @Test
+        @DisplayName("Should ${EXPECTED_BEHAVIOR} when ${CONDITION}")
+        void should${ExpectedBehavior}When${Condition}() {
+            var result = underTest.${METHOD_1}(/* input */);
+
+            assertNotNull(result);
+        }
+    }
+}

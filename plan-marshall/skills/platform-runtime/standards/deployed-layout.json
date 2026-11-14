@@ -1,0 +1,35 @@
+{
+  "schema": "deployed-layout/1",
+  "description": "The deployed bundle-cache roots a harness really uses, as DATA, so the resolver (`platform_runtime layout bundle-cache-root`) and both enforcement guards read ONE layout instead of each carrying a hard-coded list. Each entry is expanded against the environment: `env` names an environment variable that replaces the base directory when set, `xdg` expands to $XDG_CONFIG_HOME (falling back to $HOME/.config) and `home` expands to $HOME; the value after the base is appended. Only the roots a target actually DEPLOYS bundles to are listed — a discovery-only skill root (a directory another tool reads skills from) is not a deploy root and is deliberately absent. The guards read every target's roots (a machine may carry more than one harness), and a root is compared after realpath, so a symlinked tree is never trusted lexically.",
+  "targets": {
+    "opencode": [
+      {
+        "env": "OPENCODE_CONFIG_DIR",
+        "append": "skills"
+      },
+      {
+        "xdg": "",
+        "append": "opencode/skills"
+      },
+      {
+        "home": "",
+        "append": ".config/opencode/skills"
+      }
+    ],
+    "claude": [
+      {
+        "home": "",
+        "append": ".claude/plugins/cache/plan-marshall"
+      }
+    ],
+    "antigravity": [
+      {
+        "home": "",
+        "append": ".gemini/config/plugins/plan-marshall/skills"
+      }
+    ]
+  },
+  "flat_skill_prefix": "plan-marshall-",
+  "nested_bundle_dir": "plan-marshall",
+  "version_marker": ".claude-plugin/plugin.json"
+}
