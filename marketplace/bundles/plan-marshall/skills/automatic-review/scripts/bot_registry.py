@@ -547,9 +547,9 @@ class BotRegistry:
         A DEDICATED field rather than a slice of :meth:`ignore_patterns`, because the
         two lists answer different questions — "is this comment a footer?" versus "is
         this whole comment boilerplate?" — and folding the footer into the drop set is
-        exactly what discarded a whole review body. An empty list is the default, so a
-        bot that has not opted in is filtered exactly as it was before this field
-        existed.
+        exactly what discarded a whole review body. An empty list is the default: a
+        bot that has not opted in has no footer to strip, and its bodies reach the
+        whole-comment signal test unmodified.
         """
         value = self._by_kind.get(bot_kind, {}).get('footer_patterns', [])
         return list(value) if isinstance(value, list) else []
@@ -573,9 +573,7 @@ class BotRegistry:
         having refused.
 
         An empty list is the default and means the bot posts no acknowledgment this
-        pipeline knows of: nothing is classified an acknowledgment for it, so a bot
-        that has not declared the field behaves exactly as it did before the field
-        existed.
+        pipeline knows of: nothing is classified an acknowledgment for it.
         """
         value = self._by_kind.get(bot_kind, {}).get('acknowledgment_patterns', [])
         return list(value) if isinstance(value, list) else []
@@ -727,8 +725,7 @@ class BotRegistry:
         broadens the suppression.
 
         An empty list is the FAIL-CLOSED default: the content-aware layer never
-        fires for a bot that declares no clean shape, so a bot that has not opted
-        in behaves exactly as it did before the layer existed. Consumed together
+        fires for a bot that declares no clean shape. Consumed together
         with :meth:`actionable_content_markers`, whose entries veto the drop, and
         with :meth:`contentless_review_headings`, which names WHICH of the bot's
         review comments the clean shape may sit under.
@@ -749,8 +746,8 @@ class BotRegistry:
         every :meth:`contentless_review_markers` entry.
 
         An empty list adds no heading condition, so a bot that has not declared the
-        field is judged by its conjunction alone — exactly as before the field
-        existed. The field never widens the drop on its own: with an empty
+        field is judged by its conjunction alone. The field never widens the drop on
+        its own: with an empty
         :meth:`contentless_review_markers` the layer stays off whatever this list
         declares.
         """
@@ -876,7 +873,7 @@ class BotRegistry:
 
         The gate reaches exactly the shapes a bot declares an entry for. Every other
         shape — including every shape of a bot that declares no map at all — credits
-        on the shape alone, exactly as it did before this field existed.
+        on the shape alone.
 
         An UNDECLARED shape is FAIL-OPEN: ``''``, which the producer reads as "no
         gate on this shape". That covers a bot declaring no marker map at all, a map
@@ -885,7 +882,7 @@ class BotRegistry:
         non-evidence, regressing a bot whose unconditional evidence shape carries no
         marker to ``absent`` — the same inert-by-default posture
         :meth:`contentless_review_markers` takes, so a bot that has not opted in
-        behaves exactly as it did before the gate existed.
+        credits on the shape alone.
 
         A DECLARED key is a different question, and the LOADER answers it:
         :func:`_validate_participation_evidence_markers` refuses a record whose

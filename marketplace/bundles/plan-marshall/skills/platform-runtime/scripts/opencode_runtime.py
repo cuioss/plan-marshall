@@ -61,7 +61,6 @@ All methods return a serialized TOON string via the helpers in runtime_base.
 from __future__ import annotations
 
 import fnmatch
-import hashlib
 import json
 import os
 import re
@@ -78,6 +77,7 @@ import claude_runtime
 import deployed_layout
 import runtime_info
 import session_binding
+import standing_rules_bridge
 from marketplace_paths import resolve_home
 from runtime_base import (
     PERMISSION_FIX_OPERATIONS,
@@ -106,202 +106,61 @@ OPENCODE_CONFIG_SCHEMA_MAJOR = 2
 
 DEFAULT_OPENCODE_COMMANDS = OPENCODE_DEFAULT_PERMISSIONS
 
-#: Version of the standing-rules bridge format written by project setup.
-STANDING_RULES_BRIDGE_VERSION = 1
+#: Version, marker, baseline and file names of the standing-rules bridge are
+#: owned by the module shared with the Antigravity runtime, so the two harnesses
+#: cannot disagree about the bridge format.
+STANDING_RULES_BRIDGE_VERSION = standing_rules_bridge.BRIDGE_VERSION
 
 #: Baseline source the bridge copies from. CLAUDE.md stays authoritative.
-STANDING_RULES_BASELINE = 'CLAUDE.md'
+STANDING_RULES_BASELINE = standing_rules_bridge.BASELINE
 
 #: Marker embedded in every bridge file so drift detection reads the marker,
 #: never rule prose.
-STANDING_RULES_BRIDGE_MARKER = f'bridge-version: {STANDING_RULES_BRIDGE_VERSION}'
+STANDING_RULES_BRIDGE_MARKER = standing_rules_bridge.BRIDGE_MARKER
 
 #: Filename of the bridge-owned standing-rules file. It is deliberately
 #: distinct from the installed target rules shipped by
 #: ``install.sh --emit-rules``, so a setup write can never land in the
 #: installed file.
-BRIDGE_RULES_FILENAME = 'plan-marshall-standing-rules.md'
+BRIDGE_RULES_FILENAME = standing_rules_bridge.BRIDGE_RULES_FILENAME
 
 #: Filename of the installed target rules shipped by ``install.sh --emit-rules``.
-INSTALLED_RULES_FILENAME = 'plan-marshall-target-rules.md'
+INSTALLED_RULES_FILENAME = standing_rules_bridge.INSTALLED_RULES_FILENAME
 
 #: Pattern matching a bridge stub a previous setup left in the installed
-#: target rules. Only the bridge marker spells ``bridge-version`` followed by
-#: a colon and a digit; the rule prose carries the bare words, so prose can
-#: never false-positive a clobber report.
-_BRIDGE_MARKER_PATTERN = re.compile(r'bridge-version\s*:\s*\d')
+#: target rules.
+_BRIDGE_MARKER_PATTERN = standing_rules_bridge.MARKER_PATTERN
 
-#: The content hash the bridge records for the baseline it was generated from.
-#: Drift is decided by comparing this hash to the CURRENT baseline, never by
-#: mtime: a checkout, a rebase or a ``touch`` moves mtime without changing a
-#: rule, and a mtime-only verdict would flag drift on every one of them.
-_SOURCE_HASH_PATTERN = re.compile(r'^source-sha256:\s*([0-9a-f]{64})$', re.MULTILINE)
-
-
-def _baseline_text(project_dir: Path) -> str | None:
-    """Return the standing-rules baseline's text, or ``None`` when unreadable.
-
-    Unreadable covers BOTH a file the process cannot read (``OSError``) and a
-    file whose bytes are not UTF-8 (``UnicodeDecodeError``): each leaves nothing
-    to bridge, so the caller keeps the existing bridge instead of failing.
-    """
-    try:
-        return (project_dir / STANDING_RULES_BASELINE).read_text(encoding='utf-8')
-    except (OSError, UnicodeDecodeError):
-        return None
+#: Harness label the shared bridge writer puts in the bridge heading. It is one
+#: of the only two things that differ between the harnesses' bridges.
+_BRIDGE_LABEL = 'OpenCode'
 
 
 def _bridge_body(baseline_text: str | None) -> str:
-    """Render the bridge file for *baseline_text*.
+    """Render the OpenCode bridge file for *baseline_text*.
 
-    The bridge CARRIES the baseline's rules — it is generated from ``CLAUDE.md``,
-    so an OpenCode agent reads them without a second source of truth — and
-    records the baseline's SHA-256 so drift is a content comparison. With no
-    readable baseline there is nothing to carry and the bridge stays a marker
-    plus a pointer, which is still an honest statement of what was bridged.
+    The bridge carries the baseline's rules and records their SHA-256; the
+    shared renderer owns both, so the OpenCode and Antigravity bridges agree
+    byte for byte apart from the harness label.
     """
-    if baseline_text is None:
-        return (
-            f'# Plan Marshall standing rules (OpenCode bridge {STANDING_RULES_BRIDGE_MARKER})\n\n'
-            f'Standing rules bridged from {STANDING_RULES_BASELINE} at project setup. '
-            'No readable baseline was present, so this file carries no rules yet; '
-            're-run setup once the baseline exists.\n'
-        )
-    digest = hashlib.sha256(baseline_text.encode('utf-8')).hexdigest()
-    return (
-        f'# Plan Marshall standing rules (OpenCode bridge {STANDING_RULES_BRIDGE_MARKER})\n\n'
-        f'source: {STANDING_RULES_BASELINE}\n'
-        f'source-sha256: {digest}\n\n'
-        f'<!-- Generated from {STANDING_RULES_BASELINE}; edit the baseline, not this file. -->\n\n'
-        f'{baseline_text}'
-    )
-
-
-class _BridgeWrite(NamedTuple):
-    """What one bridge write did.
-
-    ``written`` reports that a write happened; ``replaced`` reports that it
-    replaced an EXISTING file that differed from what was written. The second
-    field is the writer's OWN write-time observation, so a change made to the
-    bridge between the drift read and the write cannot hide a heal behind a
-    stale pre-check.
-    """
-
-    written: bool
-    replaced: bool
-
-
-def _write_rules_bridge(project_dir: Path) -> _BridgeWrite:
-    """Write the bridge file that carries the baseline's standing rules.
-
-    Returns what the write did. The bridge owns its own file; the installed
-    target rules shipped by ``install.sh --emit-rules`` are never written here,
-    so a setup can no longer replace the full rules with a stub.
-
-    The two "no text" cases are DIFFERENT and must not be collapsed:
-
-    * A MISSING baseline has nothing to carry, so the bridge becomes the
-      marker-only stub — a bridge that still carried rules from a deleted
-      baseline would present stale rules as current.
-    * A PRESENT but unreadable baseline leaves an existing bridge untouched:
-      replacing it with the stub would delete rules the operator still has on
-      disk for a transient read failure.
-
-    The equality check is over BYTES: replacement decoding would call an
-    invalid-UTF-8 body current whenever the baseline itself carries U+FFFD, and
-    the malformed bridge would stay on disk.
-    """
-    bridge = _bridge_rules_path(project_dir)
-    baseline = project_dir / STANDING_RULES_BASELINE
-    baseline_text = _baseline_text(project_dir)
-    if baseline_text is None and baseline.is_file() and bridge.is_file():
-        return _BridgeWrite(written=False, replaced=False)
-    desired = _bridge_body(baseline_text).encode('utf-8')
-    try:
-        # A symlinked bridge path is never taken as an owned, current bridge —
-        # even when its target already matches — because a later change to that
-        # target would change the workspace rules without changing the path.
-        if bridge.is_file() and not bridge.is_symlink() and bridge.read_bytes() == desired:
-            return _BridgeWrite(written=False, replaced=False)
-        replaced = bridge.is_file()
-        bridge.parent.mkdir(parents=True, exist_ok=True)
-        # Stage the bytes under a uniquely created name beside the bridge and
-        # REPLACE the path: a partial write can never leave a damaged bridge, a
-        # planted symlink at the staging name cannot be written through, and a
-        # symlinked bridge path becomes the bridge file itself.
-        handle, staging_name = tempfile.mkstemp(dir=bridge.parent, prefix=f'.{bridge.name}.', suffix='.tmp')
-        staging = Path(staging_name)
-        try:
-            with os.fdopen(handle, 'wb') as stream:
-                stream.write(desired)
-            staging.chmod(0o644)
-            staging.replace(bridge)
-        except BaseException:
-            staging.unlink(missing_ok=True)
-            raise
-        return _BridgeWrite(written=True, replaced=replaced)
-    except OSError:
-        return _BridgeWrite(written=False, replaced=False)
+    return standing_rules_bridge.bridge_body(_BRIDGE_LABEL, baseline_text, STANDING_RULES_BASELINE)
 
 
 def standing_rules_drift_status(project_dir: str) -> dict[str, Any]:
     """Detect drift of the OpenCode standing-rules bridge against its baseline.
 
-    Drift is decided by CONTENT: the ``source-sha256`` the bridge recorded is
-    compared with the current baseline's hash. ``baseline_changed`` means the
-    rules moved; a mtime change alone is ``in_sync``. A bridge with the marker
-    but no recorded hash predates content tracking and is reported as
-    ``source_hash_missing`` rather than assumed current. A baseline that exists
-    but cannot be decoded is ``baseline_unreadable`` — drift whatever the bridge
-    holds, because the rules exist and are not being read — and bridge bytes
-    that are not UTF-8 are ``bridge_unreadable``; neither raises. With no
-    baseline file at all, a bridge that still carries rules is ``drift`` (the
-    writer replaces it with the stub) while the marker-only stub the writer
-    produces is current.
+    Drift is decided by content, and the reasons are the shared vocabulary —
+    ``baseline_changed``, ``source_hash_missing``, ``marker_mismatch``,
+    ``baseline_unreadable``, ``bridge_unreadable``, ``baseline_missing`` and
+    ``in_sync``. See :func:`standing_rules_bridge.drift_status`.
     """
     proj = Path(project_dir).resolve()
-    baseline = proj / STANDING_RULES_BASELINE
-    bridge = _bridge_rules_path(proj)
-    baseline_present = baseline.is_file()
-    baseline_text = _baseline_text(proj) if baseline_present else None
-    if baseline_present and baseline_text is None:
-        return {
-            'drift': True,
-            'needs_bridge': not bridge.is_file(),
-            'reason': 'baseline_unreadable',
-        }
-    if not baseline_present:
-        if not bridge.is_file():
-            return {'drift': False, 'needs_bridge': True, 'reason': 'baseline_missing'}
-        try:
-            bridge_bytes = bridge.read_bytes()
-        except OSError:
-            return {'drift': True, 'needs_bridge': False, 'reason': 'baseline_missing'}
-        # A stub carries no rules, so a deleted baseline loses nothing and the
-        # bridge is current; a bridge that still carries rules is stale — the
-        # writer replaces it with the stub, which is drift.
-        return {
-            'drift': bridge_bytes != _bridge_body(None).encode('utf-8'),
-            'needs_bridge': False,
-            'reason': 'baseline_missing',
-        }
-    if not bridge.is_file():
-        return {'drift': False, 'needs_bridge': True, 'reason': 'bridge_missing'}
-    try:
-        text = bridge.read_text(encoding='utf-8')
-    except (OSError, UnicodeDecodeError):
-        return {'drift': True, 'needs_bridge': False, 'reason': 'bridge_unreadable'}
-    if STANDING_RULES_BRIDGE_MARKER not in text:
-        return {'drift': True, 'needs_bridge': False, 'reason': 'marker_mismatch'}
-    baseline_text = _baseline_text(proj)
-    if baseline_text is None:
-        return {'drift': True, 'needs_bridge': False, 'reason': 'baseline_unreadable'}
-    recorded = _SOURCE_HASH_PATTERN.search(text)
-    if recorded is None:
-        return {'drift': True, 'needs_bridge': False, 'reason': 'source_hash_missing'}
-    if recorded.group(1) != hashlib.sha256(baseline_text.encode('utf-8')).hexdigest():
-        return {'drift': True, 'needs_bridge': False, 'reason': 'baseline_changed'}
-    return {'drift': False, 'needs_bridge': False, 'reason': 'in_sync'}
+    return standing_rules_bridge.drift_status(
+        proj,
+        _bridge_rules_path(proj),
+        _BRIDGE_LABEL,
+        STANDING_RULES_BASELINE,
+    )
 
 
 def _rules_dir(project_dir: Path) -> Path:
@@ -1642,20 +1501,12 @@ class OpenCodeRuntime(Runtime):
             )
 
         resolved = pathlib.Path(project_dir).resolve()
-        # The status is read BEFORE the heal: a setup that rewrites the bridge
-        # has just found it drifted, and reporting the post-write ``in_sync``
-        # would tell the operator nothing needed attention.
-        drift = standing_rules_drift_status(str(resolved))
-        bridge_write = _write_rules_bridge(resolved)
-        # A write that replaced an existing differing bridge is a heal, and the
-        # writer's own observation says whether that is what it did. A first
-        # write that creates the bridge is not a heal and stays clean.
-        bridge_drift = drift['drift'] or bridge_write.replaced
-        bridge_reason = drift['reason']
-        if bridge_write.replaced and bridge_reason == 'in_sync':
-            # The status compares the recorded hash only, so a body-only edit
-            # reads in_sync; the write is the one witness that the body moved.
-            bridge_reason = 'bridge_body_replaced'
+        bridge_report = standing_rules_bridge.setup(
+            resolved,
+            _bridge_rules_path(resolved),
+            _BRIDGE_LABEL,
+            STANDING_RULES_BASELINE,
+        )
 
         persisted_checkable = False
         persisted_warnings: list[dict[str, Any]] = []
@@ -1678,9 +1529,9 @@ class OpenCodeRuntime(Runtime):
                 'target': target,
                 'project_dir': str(proj.resolve()),
                 'marshal_written': False,
-                'bridge_written': bridge_write.written,
-                'bridge_drift': bridge_drift,
-                'bridge_reason': bridge_reason,
+                'bridge_written': bridge_report.written,
+                'bridge_drift': bridge_report.drift,
+                'bridge_reason': bridge_report.reason,
                 'settings_path': settings_path,
                 'permissions_applied': defaults.get('applied', False),
                 'permissions_added': defaults.get('defaults_added', []),

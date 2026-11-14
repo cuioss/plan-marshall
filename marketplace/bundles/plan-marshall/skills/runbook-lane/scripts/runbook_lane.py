@@ -2264,11 +2264,6 @@ def _enclosing_sections(
 #: summary is the per-file grouping inside a section, and is content.
 _SECTION_DEPTH = 1
 
-#: The CI notation this verb reads through. The lane never calls ``gh``: the
-#: review surfaces come from the CI abstraction, whose provider module owns the
-#: ``gh`` invocation.
-_CI_NOTATION = 'plan-marshall:tools-integration-ci:ci'
-
 #: The record kinds the review-surface read publishes. A record of any OTHER kind
 #: is a surface this verb cannot read, so it stops the gate rather than being
 #: filtered away as "no findings".
@@ -2623,53 +2618,84 @@ def _parse_dispositions(values: list[str]) -> tuple[list[dict[str, str]], list[s
 
 
 def _read_review_surfaces(pr_number: int, project_dir: Path) -> dict[str, Any]:
-    """Read a pull request's review surfaces through the CI abstraction.
+    """Read a pull request's comment surfaces ONCE, raw, in-process.
 
-    The ONE seam this verb's provider read goes through, so the wiring can be
-    asserted without a live provider. The call is the executor's ``ci pr comments``
-    invocation: the lane never spells ``gh``, and the provider module owns both the
-    GraphQL query and its pagination.
+    One fetch is the point. The findings parser reads the DISPLAY form (every body
+    flattened to one line, which is what ``ci pr comments`` prints) and the
+    required-reviewer check reads the RAW form (a coverage-marker opener is the bot's
+    own claim only at the start of a line), and two fetches could show the two halves
+    different moments: a review or a thread landing between them would be credited by
+    one and unseen by the other, so the gate could answer ``all_handled`` over findings
+    it never read. The provider data is therefore fetched here, once, and the verdict
+    flattens its own copy (:func:`_display_read`).
+
+    The read is the data fetch the producer and the post chokepoint ask, imported
+    through ``github_re_review`` (the import-order-safe entry into ``github_ops``) and
+    routed to ``project_dir`` so ``gh`` resolves the same repository the lane is
+    gating. It is GitHub's read, so the project must ROUTE to GitHub
+    (:func:`ci_base.resolve_ci_provider`) before a comment is read at all: waiting for
+    ``gh`` to fail instead would leave a project configured for another provider
+    readable through a GitHub-resolvable checkout, and an empty GitHub set would answer
+    ``all_handled`` over comments that project never publishes. A mismatch, and an
+    unresolvable provider alike, answer ``status: error`` — which the gate reports as
+    ``undecidable_read``, never as a missing review.
+
+    Every failure is CLASSIFIED, never a traceback. The imports, the repo lookup
+    (:func:`github_ops.get_repo_info` dereferences its own JSON, so a malformed reply
+    raises ``AttributeError``) and the fetch itself all sit inside the guard, because a
+    crash is the one shape this verb cannot classify — and a read nobody can classify
+    is a stop, not a verdict.
     """
-    import subprocess
-    import sys
-
-    from file_ops import get_executor_path
-    from toon_parser import parse_toon
-
     try:
-        argv = [
-            sys.executable,
-            str(get_executor_path()),
-            _CI_NOTATION,
-            'pr',
-            'comments',
-            '--pr-number',
-            str(pr_number),
-        ]
-        completed = subprocess.run(
-            argv,
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=300,
-            cwd=str(project_dir),
-        )
-    except (RuntimeError, OSError, subprocess.SubprocessError) as exc:
-        # ``get_executor_path`` raises RuntimeError when it cannot anchor the
-        # executor, and an unresolvable executor is a failed read like any other —
-        # never a traceback, which is the one shape the lane cannot classify.
-        return {'status': 'error', 'error': f'the CI read could not run: {exc}'}
-    if completed.returncode != 0:
-        return {
-            'status': 'error',
-            'error': f'the CI read exited {completed.returncode}: {completed.stderr.strip() or "no stderr"}',
-        }
-    if not (completed.stdout or '').strip():
-        return {'status': 'error', 'error': 'the CI read produced no output'}
-    try:
-        return parse_toon(completed.stdout)
-    except Exception as exc:
-        return {'status': 'error', 'error': f'the CI read output was not parseable as TOON: {exc}'}
+        from ci_base import resolve_ci_provider, set_default_cwd
+        from github_re_review import fetch_pr_comments_data
+
+        provider = resolve_ci_provider(project_dir)
+        if provider != 'github':
+            # The read is GitHub's, so the project must ROUTE to GitHub before a comment
+            # is read at all. Waiting for ``gh`` to fail instead would leave a project
+            # configured for another provider readable through a GitHub-resolvable
+            # checkout: an empty GitHub set would answer ``all_handled`` over comments
+            # the project's own CI never publishes.
+            return {
+                'status': 'error',
+                'error': f'the review gate reads GitHub comment data; this project routes to {provider or "no resolvable CI provider"}',
+            }
+        set_default_cwd(str(project_dir))
+        return fetch_pr_comments_data(pr_number)
+    except (OSError, RuntimeError, ValueError, TypeError, AttributeError, ImportError) as exc:
+        return {'status': 'error', 'error': f'the review read could not run: {exc}'}
+
+
+def _display_read(read: dict[str, Any]) -> dict[str, Any]:
+    """The DISPLAY form of ``read`` — every body flattened — for the findings parser.
+
+    The parser counts sections off the flattened text the printed table carries, so the
+    flattening happens here, over the same snapshot the required-reviewer check reads.
+    A non-success envelope is returned unchanged, which keeps a failed read a failed
+    read for every consumer.
+    """
+    import github_ops
+
+    return github_ops.flatten_comment_bodies(read)
+
+
+def _required_review_read_failure(read: dict[str, Any] | None) -> str | None:
+    """Why ``read`` cannot decide the required-review question, or ``None`` when it can.
+
+    An incomplete or failed read is never "no review" and never "a review": a review
+    may sit in the part that was not read, so the gate stops on it. The chokepoint's
+    own ``None`` answer is a fail-open for a POST decision — posting a trigger is
+    harmless, skipping one is not — and the merge gate must not inherit it, because
+    here the same ``None`` would state a verdict on evidence nobody read.
+    """
+    if read is None:
+        return 'the review read was not taken'
+    if read.get('status') != 'success':
+        return str(read.get('error') or 'the review read failed')
+    if read.get('complete') is not True:
+        return 'the review read was truncated: a review may sit in the part that was not read'
+    return None
 
 
 def _required_reviewers_without_a_review(comments: list[dict[str, Any]], required_reviewers: list[str]) -> list[str]:
@@ -2682,28 +2708,23 @@ def _required_reviewers_without_a_review(comments: list[dict[str, Any]], require
     Nothing here decides what to do with the review — only that a review exists to be
     done.
 
-    ``ci pr comments`` is a DISPLAY read: it flattens every body to one line. The
-    marker parser requires its opener at the start of a line and its fence reader
-    requires a fence at the start of a line, so the flattened body is first stripped of
-    any FENCED region and its HTML-comment boundaries are then restored. The stripping
-    reads fence state from the fence runs themselves, so a finished marker quoted inside
-    a fenced example is not read as the bot's own claim — and a fence-like run in prose
-    (`` ```not-a-close ``) is never mistaken for a closing fence.
+    ``comments`` are the provider's RAW records (:func:`_read_review_surfaces`), never
+    the display-flattened copy: the predicate places a coverage marker by its line
+    position, so the text it reads must still HAVE those lines. Nothing here strips,
+    re-splits or otherwise rebuilds the body.
     """
     # `github_re_review` owns the import-order-safe entry into `_github_pr` (it
     # imports `github_ops` first, which breaks that module's import cycle) and
-    # re-exports the one finished-review reader and the flattened-body fence stripper,
-    # so the lane never imports the cycle itself.
-    from github_re_review import is_finished_review, strip_fenced_regions
+    # re-exports the one finished-review reader, so the lane never imports the cycle
+    # itself.
+    from github_re_review import is_finished_review
 
     present: set[str] = set()
     for comment in comments:
         bot = _bot_of(comment)
         if not bot or bot not in required_reviewers:
             continue
-        body = strip_fenced_regions(str(comment.get('body') or ''))
-        restored = {**comment, 'body': body.replace('<!--', '\n<!--')}
-        if is_finished_review(restored, bot):
+        if is_finished_review(comment, bot):
             present.add(bot)
     return sorted(set(required_reviewers) - present)
 
@@ -2717,7 +2738,7 @@ def _review_gate_verdict(
 ) -> dict[str, Any]:
     """Decide whether the review surfaces admit the merge (section 7's condition).
 
-    The verdict is a pure function of the read and of the run's recorded
+    The verdict is a pure function of the ONE raw read and of the run's recorded
     dispositions, so the merge condition is a decision a script makes:
 
     - an unreadable or truncated read is ``undecidable_read`` — a stop, never a
@@ -2728,6 +2749,9 @@ def _review_gate_verdict(
     - a resolved thread whose last BOT-authored comment states that the concern
       remains is ``thread_concern_remains`` — resolution is not silence, and a lane
       reply below the bot's restatement never discharges it;
+    - a required reviewer whose raw read is incomplete or failed is
+      ``undecidable_read``, and one holding no qualifying review is
+      ``required_review_missing``;
     - otherwise ``all_handled``.
     """
     base: dict[str, Any] = {'status': 'success', 'operation': 'review-gate', 'pr_number': pr_number}
@@ -2766,7 +2790,10 @@ def _review_gate_verdict(
             'detail': 'the review surface read was truncated: not every connection was drained',
         }
 
-    comments = [comment for comment in (read.get('comments') or []) if isinstance(comment, dict)]
+    # The findings parser reads the DISPLAY form, derived here from the one snapshot
+    # this verdict decides on: the required-reviewer check below reads the same
+    # snapshot's raw bodies. One fetch, two views, no window between them.
+    comments = [comment for comment in (_display_read(read).get('comments') or []) if isinstance(comment, dict)]
     unrecognised = sorted({str(comment.get('kind')) for comment in comments} - set(_RECORD_KINDS))
     if unrecognised:
         # A record shape this verb does not know is a surface it cannot read. The
@@ -2819,11 +2846,20 @@ def _review_gate_verdict(
         'review_body_findings_handled': len(findings) - len(undisposed),
         'unresolved_threads': unresolved,
     }
-    missing_reviews = (
-        _required_reviewers_without_a_review(comments, list(required_reviewers or [])) if required_reviewers else []
-    )
+    missing_reviews: list[str] = []
     if required_reviewers:
         verdict['required_reviewers'] = list(required_reviewers)
+        # Fail closed BEFORE asking the predicate: a read that did not complete cannot
+        # show that a review is absent, and the gate never states a verdict about a
+        # surface it did not read. This is the SAME envelope the findings above were
+        # counted from, so the two halves cannot disagree about a moment.
+        read_failure = _required_review_read_failure(read)
+        if read_failure is not None:
+            return {**verdict, 'merge_allowed': False, 'reason': 'undecidable_read', 'detail': read_failure}
+        missing_reviews = _required_reviewers_without_a_review(
+            [comment for comment in read.get('comments') or [] if isinstance(comment, dict)],
+            list(required_reviewers),
+        )
     if missing_reviews:
         # The done rule is "one handled review IS the review", never "the flag is
         # enough": a required reviewer the run names must actually hold a qualifying

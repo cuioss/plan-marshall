@@ -655,8 +655,35 @@ def test_permission_ensure_defaults_with_error(runtime: AntigravityRuntime):
 
 
 # =============================================================================
-# Standing-rules bridge: seeding, rule copy, and drift detection (D3)
+# Target rules carry the shared build-command rules
 # =============================================================================
+
+
+def _antigravity_rules_text() -> str:
+    """Return the Antigravity target-rules standard text."""
+    rules_path = get_skill_dir('plan-marshall-antigravity', 'target-rules') / 'standards' / 'antigravity-rules.md'
+    return str(rules_path.read_text(encoding='utf-8'))
+
+
+def test_antigravity_rules_carry_the_shared_build_command_rules() -> None:
+    """The target rules resolve build commands through the architecture and stop on a missing plugin.
+
+    The shared persona and the OpenCode target rules both carry these two rules,
+    so an Antigravity agent reading only its own rules must reach the same
+    behaviour: a guessed build command and a retried fully-qualified one are the
+    two ways a non-Claude harness diverges from the architecture's contract.
+    """
+    rules = ' '.join(_antigravity_rules_text().split())
+
+    assert 'architecture resolve' in rules, 'the rules must resolve build commands through the architecture'
+    assert 'No plugin found for prefix' in rules, 'the rules must make a missing plugin prefix a stop'
+
+
+# =============================================================================
+# Standing-rules bridge: content, drift and reconcile
+# =============================================================================
+
+_SENTINEL_RULE = 'The antigravity bridge sentinel rule holds.'
 
 
 def test_standing_rules_drift_baseline_missing_without_bridge(tmp_path: Path):
@@ -669,12 +696,12 @@ def test_standing_rules_drift_baseline_missing_without_bridge(tmp_path: Path):
 
 
 def test_standing_rules_drift_baseline_missing_with_bridge(tmp_path: Path):
-    """No baseline but a bridge file reports baseline_missing with no needed bridge."""
-    from antigravity_runtime import _bridge_rules_path, standing_rules_drift_status
+    """The marker-only stub the writer produces with no baseline is current."""
+    from antigravity_runtime import _bridge_body, _bridge_rules_path, standing_rules_drift_status
 
     bridge = _bridge_rules_path(tmp_path)
     bridge.parent.mkdir(parents=True)
-    bridge.write_text('bridge-version: 1\n', encoding='utf-8')
+    bridge.write_text(_bridge_body(None), encoding='utf-8')
 
     status = standing_rules_drift_status(str(tmp_path))
 
@@ -695,7 +722,7 @@ def test_standing_rules_drift_bridge_missing(tmp_path: Path):
 def test_standing_rules_drift_in_sync_after_setup(
     runtime: AntigravityRuntime, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ):
-    """A setup bridge newer than its baseline reports in_sync."""
+    """A setup-written bridge whose hash matches its baseline reports in_sync."""
     from antigravity_runtime import standing_rules_drift_status
 
     (tmp_path / 'CLAUDE.md').write_text('# baseline\n', encoding='utf-8')
@@ -711,15 +738,41 @@ def test_standing_rules_drift_in_sync_after_setup(
     }
 
 
-def test_standing_rules_drift_baseline_newer(
+def test_setup_bridges_the_baseline_content(
     runtime: AntigravityRuntime, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ):
-    """A baseline modified after the bridge was written reports baseline_newer drift."""
+    """Setup copies the CLAUDE.md rules into the bridge and records their content hash.
+
+    A pointer at the baseline delivers no rules to an agent that reads only the
+    workspace rules file, and an unhashed bridge leaves drift to modification
+    time — the two defects the content-carrying bridge closes.
+    """
+    from antigravity_runtime import _bridge_rules_path
+
+    (tmp_path / 'CLAUDE.md').write_text(f'# baseline\n\n{_SENTINEL_RULE}\n', encoding='utf-8')
+    monkeypatch.setenv('GEMINI_CONFIG_DIR', str(tmp_path / 'gemini-config'))
+
+    result = _parse(runtime.project_initial_setup(str(tmp_path), 'antigravity'))
+
+    assert result['bridge_written'] is True
+    bridge = _bridge_rules_path(tmp_path).read_text(encoding='utf-8')
+    assert _SENTINEL_RULE in bridge, 'the bridge must carry the baseline rules, not point at them'
+    assert 'source-sha256:' in bridge, 'the bridge must record the content hash it was generated from'
+
+
+def test_standing_rules_drift_ignores_a_newer_baseline_modification_time(
+    runtime: AntigravityRuntime, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    """A baseline touched newer with unchanged content is in sync — drift is by content.
+
+    A checkout, a rebase or a touch moves the timestamp without changing a rule,
+    so a timestamp verdict reports drift on every one of them.
+    """
     import os
 
     from antigravity_runtime import _bridge_rules_path, standing_rules_drift_status
 
-    (tmp_path / 'CLAUDE.md').write_text('# baseline\n', encoding='utf-8')
+    (tmp_path / 'CLAUDE.md').write_text(f'# baseline\n\n{_SENTINEL_RULE}\n', encoding='utf-8')
     monkeypatch.setenv('GEMINI_CONFIG_DIR', str(tmp_path / 'gemini-config'))
     _parse(runtime.project_initial_setup(str(tmp_path), 'antigravity'))
 
@@ -728,10 +781,228 @@ def test_standing_rules_drift_baseline_newer(
     os.utime(tmp_path / 'CLAUDE.md', (past + 60, past + 60))
 
     assert standing_rules_drift_status(str(tmp_path)) == {
+        'drift': False,
+        'needs_bridge': False,
+        'reason': 'in_sync',
+    }
+
+
+def test_standing_rules_drift_reports_changed_baseline_content(
+    runtime: AntigravityRuntime, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    """Editing the baseline rules reports baseline_changed drift."""
+    from antigravity_runtime import standing_rules_drift_status
+
+    (tmp_path / 'CLAUDE.md').write_text(f'# baseline\n\n{_SENTINEL_RULE}\n', encoding='utf-8')
+    monkeypatch.setenv('GEMINI_CONFIG_DIR', str(tmp_path / 'gemini-config'))
+    _parse(runtime.project_initial_setup(str(tmp_path), 'antigravity'))
+
+    (tmp_path / 'CLAUDE.md').write_text(f'# baseline\n\n{_SENTINEL_RULE}\n\nAn edited rule.\n', encoding='utf-8')
+
+    assert standing_rules_drift_status(str(tmp_path)) == {
         'drift': True,
         'needs_bridge': False,
-        'reason': 'baseline_newer',
+        'reason': 'baseline_changed',
     }
+
+
+def test_unreadable_baseline_keeps_the_existing_bridge(
+    runtime: AntigravityRuntime, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    """A baseline that cannot be decoded leaves the rules-bearing bridge untouched.
+
+    Replacing the bridge with the marker-only stub would delete rules the
+    operator still has on disk for a transient read failure.
+    """
+    import os
+
+    from antigravity_runtime import _bridge_rules_path
+
+    baseline = tmp_path / 'CLAUDE.md'
+    baseline.write_text(f'# baseline\n\n{_SENTINEL_RULE}\n', encoding='utf-8')
+    monkeypatch.setenv('GEMINI_CONFIG_DIR', str(tmp_path / 'gemini-config'))
+    _parse(runtime.project_initial_setup(str(tmp_path), 'antigravity'))
+    bridge = _bridge_rules_path(tmp_path)
+    carried = bridge.read_text(encoding='utf-8')
+
+    baseline.write_bytes(b'\xff\xfe not utf-8 \xff')
+    past = 1_000_000_000
+    os.utime(baseline, (past, past))
+    os.utime(bridge, (past + 60, past + 60))
+    result = _parse(runtime.project_initial_setup(str(tmp_path), 'antigravity'))
+
+    assert result['bridge_written'] is False
+    assert bridge.read_text(encoding='utf-8') == carried
+
+
+def test_antigravity_rules_describe_content_hash_drift() -> None:
+    """The target rules describe the recorded content hash, not modification-time drift."""
+    rules = ' '.join(_antigravity_rules_text().split())
+
+    assert 'source-sha256' in rules, 'the drift signal must name the content hash the bridge records'
+    assert 'baseline_newer' not in rules, 'the drift signal must not name the timestamp verdict'
+    assert 'modification times' not in rules, 'the drift signal must not compare modification times'
+
+
+def test_a_newer_bridge_version_is_not_taken_for_the_current_one(
+    runtime: AntigravityRuntime, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    """A `bridge-version: 10` heading does not satisfy the version-1 marker.
+
+    A substring test would read a newer format's bridge as current, and its
+    recorded hash — computed by that newer writer — would still match the
+    baseline, so nothing else would catch it.
+    """
+    import hashlib
+
+    from antigravity_runtime import _bridge_rules_path, standing_rules_drift_status
+
+    baseline = tmp_path / 'CLAUDE.md'
+    baseline.write_text(f'# baseline\n\n{_SENTINEL_RULE}\n', encoding='utf-8')
+    bridge = _bridge_rules_path(tmp_path)
+    bridge.parent.mkdir(parents=True)
+    digest = hashlib.sha256(baseline.read_text(encoding='utf-8').encode('utf-8')).hexdigest()
+    bridge.write_text(
+        f'# Plan Marshall standing rules (Antigravity bridge bridge-version: 10)\n\n'
+        f'source: CLAUDE.md\nsource-sha256: {digest}\n',
+        encoding='utf-8',
+    )
+
+    assert standing_rules_drift_status(str(tmp_path)) == {
+        'drift': True,
+        'needs_bridge': False,
+        'reason': 'marker_mismatch',
+    }
+
+
+def test_an_unreadable_existing_bridge_is_replaced(
+    runtime: AntigravityRuntime, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    """A bridge this process cannot read is replaced, not reported as a failed write.
+
+    The equality check reads the existing file; when that read is refused the
+    writer must fall through to the staged replacement rather than treat the
+    bridge as current-or-unwritable and leave it in place forever.
+    """
+    import os
+
+    from antigravity_runtime import _bridge_rules_path
+
+    (tmp_path / 'CLAUDE.md').write_text(f'# baseline\n\n{_SENTINEL_RULE}\n', encoding='utf-8')
+    bridge = _bridge_rules_path(tmp_path)
+    bridge.parent.mkdir(parents=True)
+    bridge.write_text('# unreadable body\n', encoding='utf-8')
+    os.chmod(bridge, 0o000)
+    if os.access(bridge, os.R_OK):
+        pytest.skip('running as a user that can read a mode-000 file (root); the arm is unreachable here')
+    monkeypatch.setenv('GEMINI_CONFIG_DIR', str(tmp_path / 'gemini-config'))
+
+    result = _parse(runtime.project_initial_setup(str(tmp_path), 'antigravity'))
+
+    assert result['bridge_written'] is True
+    assert 'source-sha256:' in bridge.read_text(encoding='utf-8')
+
+
+def test_a_bridge_directory_symlinked_outside_the_project_is_refused(
+    runtime: AntigravityRuntime, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    """Setup never follows a rules-directory symlink out of the project.
+
+    A `.agents` directory pointing at a global rules location would have this
+    project's rules written over that global bridge, so the write is refused and
+    the escaping destination is left untouched.
+    """
+    from antigravity_runtime import _bridge_rules_path
+
+    project = tmp_path / 'project'
+    project.mkdir()
+    (project / 'CLAUDE.md').write_text(f'# baseline\n\n{_SENTINEL_RULE}\n', encoding='utf-8')
+    outside = tmp_path / 'outside-rules'
+    outside.mkdir()
+    (project / '.agents').symlink_to(outside, target_is_directory=True)
+    monkeypatch.setenv('GEMINI_CONFIG_DIR', str(tmp_path / 'gemini-config'))
+
+    result = _parse(runtime.project_initial_setup(str(project), 'antigravity'))
+
+    assert result['bridge_written'] is False
+    assert result['bridge_reason'] == 'bridge_write_failed'
+    assert list(outside.iterdir()) == [], 'the escaping destination must not receive the project rules'
+    assert not _bridge_rules_path(project).exists()
+
+
+def test_bridge_mode_is_never_more_readable_than_the_baseline(
+    runtime: AntigravityRuntime, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    """A private baseline yields a private bridge, not a world-readable copy."""
+    import os
+
+    from antigravity_runtime import _bridge_rules_path
+
+    baseline = tmp_path / 'CLAUDE.md'
+    baseline.write_text(f'# baseline\n\n{_SENTINEL_RULE}\n', encoding='utf-8')
+    os.chmod(baseline, 0o600)
+    monkeypatch.setenv('GEMINI_CONFIG_DIR', str(tmp_path / 'gemini-config'))
+
+    _parse(runtime.project_initial_setup(str(tmp_path), 'antigravity'))
+
+    assert _bridge_rules_path(tmp_path).stat().st_mode & 0o077 == 0
+
+
+def test_resetup_reports_drift_for_a_bridge_it_rewrote(
+    runtime: AntigravityRuntime, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    """A re-setup that rewrote an existing bridge reports drift, never a clean bridge."""
+    (tmp_path / 'CLAUDE.md').write_text(f'# baseline\n\n{_SENTINEL_RULE}\n', encoding='utf-8')
+    monkeypatch.setenv('GEMINI_CONFIG_DIR', str(tmp_path / 'gemini-config'))
+    _parse(runtime.project_initial_setup(str(tmp_path), 'antigravity'))
+
+    (tmp_path / 'CLAUDE.md').write_text(f'# baseline\n\n{_SENTINEL_RULE}\n\nAn edited rule.\n', encoding='utf-8')
+    result = _parse(runtime.project_initial_setup(str(tmp_path), 'antigravity'))
+
+    assert result['bridge_written'] is True
+    assert result['bridge_drift'] is True, 'a setup that rewrote the bridge found it drifted'
+    assert result['bridge_reason'] == 'baseline_changed'
+
+
+def test_refused_bridge_write_is_reported_not_read_as_clean(
+    runtime: AntigravityRuntime, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    """A rules directory the setup cannot write reports a failed bridge, never a clean one.
+
+    The writer's "nothing written" and "already current" answers are the same
+    shape, so a refused write that reported only ``bridge_written: false`` would
+    be indistinguishable from a bridge that needed nothing.
+    """
+    (tmp_path / 'CLAUDE.md').write_text(f'# baseline\n\n{_SENTINEL_RULE}\n', encoding='utf-8')
+    # A regular file where the rules directory belongs makes the parent mkdir
+    # fail, which is the writable-directory refusal without needing chmod.
+    (tmp_path / '.agents').mkdir()
+    (tmp_path / '.agents' / 'rules').write_text('not a directory\n', encoding='utf-8')
+    monkeypatch.setenv('GEMINI_CONFIG_DIR', str(tmp_path / 'gemini-config'))
+
+    result = _parse(runtime.project_initial_setup(str(tmp_path), 'antigravity'))
+
+    assert result['bridge_written'] is False
+    assert result['bridge_drift'] is True, 'a write the workspace refused is not a clean setup'
+    assert result['bridge_reason'] == 'bridge_write_failed'
+
+
+def test_reconcile_reports_an_undecodable_baseline_for_antigravity(tmp_path: Path):
+    """An Antigravity baseline that cannot be decoded is not certified current.
+
+    Setup keeps the existing bridge, and the recorded marker alone cannot show
+    the bridge still matches a baseline this process cannot read — the same
+    verdict the OpenCode reconcile gives.
+    """
+    from antigravity_runtime import _bridge_rules_path
+    from configure_harness import _reconcile_standing_rules_bridge
+
+    (tmp_path / 'CLAUDE.md').write_bytes(b'\xff\xfe not utf-8 \xff')
+    bridge = _bridge_rules_path(tmp_path)
+    bridge.parent.mkdir(parents=True)
+    bridge.write_text('# Plan Marshall standing rules (Antigravity bridge bridge-version: 1)\n', encoding='utf-8')
+
+    assert _reconcile_standing_rules_bridge('antigravity', tmp_path) is False
 
 
 def test_project_initial_setup_resestup_is_idempotent(
@@ -776,29 +1047,6 @@ def test_resestup_heals_drifted_bridge(runtime: AntigravityRuntime, monkeypatch:
     assert standing_rules_drift_status(str(tmp_path))['reason'] == 'marker_mismatch'
 
     monkeypatch.setenv('GEMINI_CONFIG_DIR', str(tmp_path / 'gemini-config'))
-    result = _parse(runtime.project_initial_setup(str(tmp_path), 'antigravity'))
-
-    assert result['bridge_written'] is True
-    assert standing_rules_drift_status(str(tmp_path))['reason'] == 'in_sync'
-
-
-def test_resestup_clears_baseline_newer_drift(
-    runtime: AntigravityRuntime, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-):
-    """Re-setup re-affirms the bridge and clears a baseline_newer drift verdict."""
-    import os
-
-    from antigravity_runtime import _bridge_rules_path, standing_rules_drift_status
-
-    (tmp_path / 'CLAUDE.md').write_text('# baseline\n', encoding='utf-8')
-    monkeypatch.setenv('GEMINI_CONFIG_DIR', str(tmp_path / 'gemini-config'))
-    _parse(runtime.project_initial_setup(str(tmp_path), 'antigravity'))
-
-    past = 1_000_000_000
-    os.utime(_bridge_rules_path(tmp_path), (past, past))
-    os.utime(tmp_path / 'CLAUDE.md', (past + 60, past + 60))
-    assert standing_rules_drift_status(str(tmp_path))['reason'] == 'baseline_newer'
-
     result = _parse(runtime.project_initial_setup(str(tmp_path), 'antigravity'))
 
     assert result['bridge_written'] is True
