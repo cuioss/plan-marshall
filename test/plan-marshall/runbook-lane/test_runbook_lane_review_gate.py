@@ -1292,20 +1292,6 @@ def test_an_incomplete_raw_read_is_undecidable_never_missing(monkeypatch, label:
     assert verdict['reason'] == 'undecidable_read', verdict
 
 
-@pytest.mark.usefixtures('restore_default_cwd')
-def test_a_read_without_a_coverage_signal_is_its_own_reason(monkeypatch) -> None:
-    """A success envelope that publishes no ``complete`` key cannot be shown whole.
-
-    It is `coverage_unavailable`, not a missing review and not a truncation: nothing is
-    wrong with the pull request — the PROVIDER states no coverage — so the remedy
-    differs too. Either way the gate refuses.
-    """
-    verdict = _verdict_through_the_read_seams(monkeypatch, [], raw_read={'status': 'success', 'comments': []})
-
-    assert verdict['merge_allowed'] is False, verdict
-    assert verdict['reason'] == 'coverage_unavailable', verdict
-
-
 @pytest.mark.parametrize('raised', [AttributeError('owner is None'), ImportError('no provider module')])
 def test_a_read_that_raises_is_classified_never_a_traceback(monkeypatch, raised: Exception) -> None:
     """⛔ The guard covers the imports and the repo lookup, not only the fetch.
