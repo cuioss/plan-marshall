@@ -165,9 +165,11 @@ def dispatch_platform_runtime_setup(harness: str, project_dir: Path) -> dict[str
     - ``bridge_verdict``: `current`, `damaged` (bridge present without its
       version marker or unreadable), or `missing` (no bridge file). Judged
       after the setup writers ran, so a stub those writers heal reconciles
-      to `current`; `damaged` means a stub survived a failed write. When
-      setup itself fails, the verdict is `missing` and ``setup_failed`` is
-      True.
+      to `current`; `damaged` means a stub survived a failed write, or the
+      setup itself reported `bridge_write_failed` — the marker can still be
+      current while the rules behind it are stale, so that report is never
+      certified. When setup itself fails, the verdict is `missing` and
+      ``setup_failed`` is True.
     - ``setup_failed``: whether the setup itself raised or reported failure.
     - ``installed_rules_clobbered``: whether a previous setup left its stub
       in the installed target rules.
@@ -181,6 +183,7 @@ def dispatch_platform_runtime_setup(harness: str, project_dir: Path) -> dict[str
     proj = project_dir.resolve()
     clobbered = installed_rules_clobbered(harness, proj)
     setup_ok = True
+    bridge_write_failed = False
     persisted_warnings: list[dict[str, Any]] = []
 
     try:
@@ -196,6 +199,11 @@ def dispatch_platform_runtime_setup(harness: str, project_dir: Path) -> dict[str
                         if isinstance(setup_payload, dict) and setup_payload.get('status') != 'success':
                             setup_ok = False
                         if isinstance(setup_payload, dict):
+                            # A refused bridge write is the setup's own statement
+                            # that it could not reconcile: the marker can still be
+                            # current while the rules behind it are stale, so the
+                            # marker-only reconcile below must not certify it.
+                            bridge_write_failed = setup_payload.get('bridge_reason') == 'bridge_write_failed'
                             for entry in setup_payload.get('persisted_approval_warnings') or []:
                                 if not isinstance(entry, dict):
                                     continue
@@ -225,7 +233,9 @@ def dispatch_platform_runtime_setup(harness: str, project_dir: Path) -> dict[str
         verdict = 'current' if (proj / 'CLAUDE.md').is_file() else 'missing'
     elif harness in ('antigravity', 'opencode'):
         bridge = _antigravity_bridge_path(proj) if harness == 'antigravity' else _opencode_bridge_path(proj)
-        if _reconcile_standing_rules_bridge(harness, proj):
+        if bridge_write_failed:
+            verdict = 'damaged' if bridge.is_file() else 'missing'
+        elif _reconcile_standing_rules_bridge(harness, proj):
             verdict = 'current'
         else:
             verdict = 'damaged' if bridge.is_file() else 'missing'
