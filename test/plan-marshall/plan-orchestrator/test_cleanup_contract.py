@@ -146,6 +146,7 @@ _NUMBER_WORDS = {
     'ten': 10,
     'eleven': 11,
     'twelve': 12,
+    'thirteen': 13,
 }
 
 

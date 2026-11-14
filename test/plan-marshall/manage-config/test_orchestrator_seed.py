@@ -88,6 +88,13 @@ def test_use_worktree_bool_is_legal():
     validate_orchestrator_block({'use_worktree': False})
 
 
+def test_decision_confidence_threshold_int_in_range_is_legal():
+    """The ``decision_confidence_threshold`` knob is legal at both endpoints and inside."""
+    validate_orchestrator_block({'decision_confidence_threshold': 0})
+    validate_orchestrator_block({'decision_confidence_threshold': 42})
+    validate_orchestrator_block({'decision_confidence_threshold': 100})
+
+
 # =============================================================================
 # validate_orchestrator_block — rejected shapes
 # =============================================================================
@@ -116,6 +123,17 @@ def test_use_worktree_non_bool_is_rejected(value):
     """A non-bool ``use_worktree`` is rejected naming the knob (fail-closed)."""
     with pytest.raises(ValueError, match='orchestrator.use_worktree'):
         validate_orchestrator_block({'use_worktree': value})
+
+
+@pytest.mark.parametrize('value', [True, False, '90', 90.5, None, -1, 101])
+def test_decision_confidence_threshold_non_int_in_range_is_rejected(value):
+    """A bool, a string, a float, ``None`` and an out-of-range int are all rejected.
+
+    ``True`` is the load-bearing case: ``bool`` is an ``int`` subclass, so an
+    ``isinstance(value, int)`` check alone would accept it as ``1``.
+    """
+    with pytest.raises(ValueError, match='orchestrator.decision_confidence_threshold'):
+        validate_orchestrator_block({'decision_confidence_threshold': value})
 
 
 def test_bad_effort_string_level_is_rejected():
@@ -195,8 +213,15 @@ def test_seed_surfaces_every_orchestrator_knob():
     assert set(orch) == set(_config_defaults_mod.ORCHESTRATOR_KNOWN_KEYS)
     # Effective-default assertions, kept separate from the field-set check:
     # auto_emit safe-posture False, effort an empty (behaviourally-inert) object,
-    # scope its default of 1, use_worktree off.
-    assert orch == {'auto_emit': False, 'effort': {}, 'parallelization_scope': 1, 'use_worktree': False}
+    # scope its default of 1, use_worktree off, and the handle-open confidence
+    # boundary at the orchestrator's standing figure.
+    assert orch == {
+        'auto_emit': False,
+        'decision_confidence_threshold': 90,
+        'effort': {},
+        'parallelization_scope': 1,
+        'use_worktree': False,
+    }
     validate_orchestrator_block(orch)
 
 

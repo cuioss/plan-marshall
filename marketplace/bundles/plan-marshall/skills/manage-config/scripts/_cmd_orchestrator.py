@@ -25,6 +25,10 @@ Known scalar fields:
         when true the epic orchestrator auto-fills the emit queue on landing.
     ``use_worktree``  bool  — the repository-wide switch (default False) that
         routes the orchestrator ledger store through the shared ledger worktree.
+    ``decision_confidence_threshold``  int 0..100 — the confidence an open item
+        must STRICTLY exceed before the ``handle-open`` verb decides it; ``100``
+        means nothing is decided without the operator. Unset reads carry the
+        seeded default from ``DEFAULT_ORCHESTRATOR`` with ``set: false``.
 
 ``use_worktree`` is anchored on the MAIN checkout for both directions, so every
 checkout agrees on it. ``get`` reports the main-anchored effective value — the
@@ -67,7 +71,12 @@ from orchestrator_worktree import (
 
 # The orchestrator block's known scalar (non-effort) fields — the fail-closed
 # whitelist consulted by every scalar read/write.
-ORCHESTRATOR_SCALAR_FIELDS: tuple[str, ...] = ('parallelization_scope', 'auto_emit', 'use_worktree')
+ORCHESTRATOR_SCALAR_FIELDS: tuple[str, ...] = (
+    'parallelization_scope',
+    'auto_emit',
+    'use_worktree',
+    'decision_confidence_threshold',
+)
 
 # The base branch the cutover drift check compares against when the project
 # configures none — the same seeded default ``project.default_base_branch`` carries.
@@ -85,6 +94,33 @@ def _validate_parallelization_scope(value: object) -> tuple[bool, str | None]:
     if value < 1:
         return False, 'parallelization_scope must be an integer >= 1'
     return True, None
+
+
+def _coerce_decision_confidence_threshold(raw_value: object) -> tuple[bool, int | None, str | None]:
+    """Coerce and validate ``decision_confidence_threshold``, an int in ``0..100``.
+
+    ``bool`` is rejected explicitly even though it is an ``int`` subclass, and a
+    ``float`` (either a real one or the string form ``'90.5'``) is rejected rather
+    than truncated: a confidence threshold silently rounded from ``90.5`` to ``90``
+    would read as a deliberate setting, which it is not. A string must parse as a
+    whole integer.
+
+    Returns ``(ok, value, error)`` — ``error`` is ``None`` exactly when ``ok``.
+    """
+    if isinstance(raw_value, bool):
+        return False, None, 'decision_confidence_threshold must be an integer 0 to 100'
+    if isinstance(raw_value, int):
+        value = raw_value
+    elif isinstance(raw_value, str):
+        try:
+            value = int(raw_value.strip())
+        except ValueError:
+            return False, None, 'decision_confidence_threshold must be an integer 0 to 100'
+    else:
+        return False, None, 'decision_confidence_threshold must be an integer 0 to 100'
+    if value < 0 or value > 100:
+        return False, None, 'decision_confidence_threshold must be an integer 0 to 100'
+    return True, value, None
 
 
 def _coerce_bool(raw_value: object) -> bool | None:
@@ -295,6 +331,11 @@ def cmd_orchestrator_set(args) -> dict:
         coerced = _coerce_bool(raw_value)
         if coerced is None:
             return error_exit(f'{field} must be a boolean (true/false)')
+    elif field == 'decision_confidence_threshold':
+        ok, threshold, err = _coerce_decision_confidence_threshold(raw_value)
+        if not ok:
+            return error_exit(err or 'invalid decision_confidence_threshold')
+        coerced = threshold
     else:
         # Unreachable while the whitelist is fully enumerated above; the branch
         # keeps the coercion contract explicit as further fields are added.

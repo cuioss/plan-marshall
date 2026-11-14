@@ -606,7 +606,8 @@ def main() -> int:
     # Scalar (non-effort) knobs of the top-level `orchestrator` block. The
     # effort knobs live on the `effort` noun (`--role orchestrator.{surface}` /
     # `--scope orchestrator[.{surface}|.max]`); this noun owns only the
-    # provisioning scalars: parallelization_scope, auto_emit and use_worktree.
+    # provisioning scalars: parallelization_scope, auto_emit, use_worktree and
+    # decision_confidence_threshold.
     # use_worktree is main-anchored: get reports the main checkout's effective
     # value, and set refuses outside the main checkout or while a cutover would
     # strand ledger state.
@@ -619,15 +620,21 @@ def main() -> int:
 
     orch_get = orch_sub.add_parser(
         'get',
-        help='Get an orchestrator scalar field (parallelization_scope|auto_emit|use_worktree)',
+        help=(
+            'Get an orchestrator scalar field '
+            '(parallelization_scope|auto_emit|use_worktree|decision_confidence_threshold)'
+        ),
         allow_abbrev=False,
     )
     add_field_arg(orch_get)
 
     orch_set = orch_sub.add_parser(
         'set',
-        help='Set an orchestrator scalar field (parallelization_scope|auto_emit|use_worktree; '
-        'whitelist-guarded; use_worktree only from the main checkout)',
+        help=(
+            'Set an orchestrator scalar field (parallelization_scope|auto_emit|use_worktree|'
+            'decision_confidence_threshold; whitelist-guarded; decision_confidence_threshold is an '
+            'int 0 to 100; use_worktree only from the main checkout)'
+        ),
         allow_abbrev=False,
     )
     add_field_arg(orch_set)
