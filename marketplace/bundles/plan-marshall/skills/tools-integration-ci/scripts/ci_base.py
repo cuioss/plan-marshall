@@ -13,6 +13,7 @@ they need from ``ci_base`` alone.
 """
 
 import argparse
+import json
 import re
 import shlex
 import subprocess
@@ -809,6 +810,44 @@ def _split_at_subcommand(argv: list[str]) -> tuple[list[str], list[str]]:
         if token in tokens:
             return argv[:index], argv[index:]
     return list(argv), []
+
+
+def resolve_ci_provider(project_dir: Path | str | None = None) -> str | None:
+    """Return this project's configured CI provider key, or ``None``.
+
+    THE resolution path, shared by the ``ci`` router and every consumer that must know
+    which provider a project routes to before it reads anything. Walk up from
+    ``project_dir`` to the directory holding ``.plan/marshal.json``, scan
+    ``providers[]`` for the entry with ``category: ci``, and derive the key from its
+    ``skill_name`` (``…:workflow-integration-{provider}``).
+
+    ``None`` covers the three answers a caller must treat alike — no ``.plan``
+    directory, no ``ci`` provider declared, and a file that cannot be read or parsed —
+    because each leaves the provider unresolved, and an unresolved provider is a
+    reason to stop rather than a default to assume.
+    """
+    current = Path(project_dir if project_dir is not None else '.').resolve()
+    plan_dir: Path | None = None
+    for parent in [current, *current.parents]:
+        candidate = parent / '.plan'
+        if candidate.is_dir() and (candidate / 'marshal.json').exists():
+            plan_dir = candidate
+            break
+    if plan_dir is None:
+        return None
+    try:
+        config = json.loads((plan_dir / 'marshal.json').read_text(encoding='utf-8'))
+    except (OSError, ValueError) as exc:
+        print(f'Warning: Failed to read marshal.json: {exc}', file=sys.stderr)
+        return None
+    for entry in config.get('providers', []):
+        if not isinstance(entry, dict) or entry.get('category') != 'ci':
+            continue
+        name = str(entry.get('skill_name', '')).split(':')[-1]
+        prefix = 'workflow-integration-'
+        if name.startswith(prefix):
+            return name[len(prefix) :]
+    return None
 
 
 def set_default_cwd(cwd: str | None) -> None:

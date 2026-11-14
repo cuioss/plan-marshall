@@ -1588,10 +1588,10 @@ class _ReReviewStrategy:
         a ``refusal_patterns`` substring is skipped as a refusal. That is
         deliberate — a truthful non-match is recoverable, whereas a false
         ``head_sha_verified: true`` silently asserts review coverage that never
-        happened. It is now also VISIBLE: the skip is recorded, not swallowed. The
-        tradeoff is far narrower than it was when this layer read
-        ``ignore_patterns``, since a refusal marker is rare phrasing rather than a
-        heading every successful review emits.
+        happened. The tradeoff stays narrow because the registry arm reads the
+        declared `refusal_patterns` (rare phrasing a bot publishes only when it
+        declines), never `ignore_patterns` (headings every successful review emits),
+        and the skip is RECORDED rather than swallowed.
         """
         if layers := refusal_layers(body, bot_kind):
             layer = layers[0]
