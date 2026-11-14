@@ -44,7 +44,6 @@ Output: TOON format (from provider script)
 """
 
 import importlib
-import json
 import sys
 from pathlib import Path
 
@@ -53,6 +52,7 @@ from ci_base import (
     extract_project_dir,
     extract_routing_args,
     output_error,
+    resolve_ci_provider,
     safe_main,
     set_default_cwd,
 )
@@ -65,56 +65,16 @@ from command_forms import STEWARD_COMMAND
 __all__ = ['extract_project_dir', 'extract_routing_args']
 
 
-def find_plan_dir() -> Path | None:
-    """Find .plan directory by walking up from current directory."""
-    current = Path.cwd()
-    for parent in [current, *current.parents]:
-        plan_dir = parent / '.plan'
-        if plan_dir.is_dir() and (plan_dir / 'marshal.json').exists():
-            return plan_dir
-    return None
-
-
-def _derive_provider_key(skill_name: str) -> str | None:
-    """Derive provider key from skill_name dynamically.
-
-    Pattern: 'plan-marshall:workflow-integration-{provider}' -> '{provider}'
-    Also handles unprefixed: 'workflow-integration-{provider}' -> '{provider}'
-    """
-    # Strip bundle prefix if present
-    name = skill_name.split(':')[-1] if ':' in skill_name else skill_name
-    prefix = 'workflow-integration-'
-    if name.startswith(prefix):
-        return name[len(prefix) :]
-    return None
-
-
 def get_provider() -> str | None:
     """Find CI provider from marshal.json.
 
     Scans providers[] for the entry with category=ci and derives the provider
-    key from its skill_name. This is the canonical (and only) resolution path.
+    key from its skill_name. The resolution itself lives in
+    :func:`ci_base.resolve_ci_provider`, so this router and every consumer that must
+    know the provider before reading (the runbook lane's review gate included) read
+    ONE implementation rather than a copy each.
     """
-    plan_dir = find_plan_dir()
-    if not plan_dir:
-        return None
-
-    marshal_path = plan_dir / 'marshal.json'
-    try:
-        with open(marshal_path, encoding='utf-8') as f:
-            config = json.load(f)
-
-            for entry in config.get('providers', []):
-                if not isinstance(entry, dict) or entry.get('category') != 'ci':
-                    continue
-                skill_name = entry.get('skill_name', '')
-                key = _derive_provider_key(skill_name)
-                if key:
-                    return key
-            return None
-    except (OSError, json.JSONDecodeError) as e:
-        print(f'Warning: Failed to read marshal.json: {e}', file=sys.stderr)
-        return None
+    return resolve_ci_provider(Path.cwd())
 
 
 def _router_plan_id_value(argv: list[str]) -> str | None:

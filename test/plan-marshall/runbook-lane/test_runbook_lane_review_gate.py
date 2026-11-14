@@ -978,11 +978,38 @@ def test_the_gate_fetches_the_surface_once_and_spawns_no_cli(monkeypatch) -> Non
     assert verdict['reason'] == 'required_review_missing'
 
 
+@pytest.mark.parametrize('provider', ['gitlab', None])
+def test_a_project_that_does_not_route_to_github_is_never_read(monkeypatch, provider) -> None:
+    """⛔ The provider gate runs BEFORE the fetch, so no foreign surface is read.
+
+    Without it the read depended on ``gh`` failing: a project configured for another
+    provider, sitting in a GitHub-resolvable checkout, would have read an empty GitHub
+    comment set and answered ``all_handled`` over comments its own CI never publishes.
+    """
+    import ci_base
+
+    fetched: list[int] = []
+
+    def record_fetch(pr_number, **_kwargs):
+        fetched.append(pr_number)
+        return _raw_read([])
+
+    monkeypatch.setattr(ci_base, 'resolve_ci_provider', lambda _project_dir: provider)
+    monkeypatch.setattr(github_re_review, 'fetch_pr_comments_data', record_fetch)
+
+    read = lane._read_review_surfaces(7, Path('.'))
+
+    assert read['status'] == 'error'
+    assert (provider or 'no resolvable CI provider') in read['error']
+    assert fetched == [], 'the fetch must not run for a provider the gate cannot read'
+
+
 def test_the_read_runs_in_the_project_it_was_handed(monkeypatch) -> None:
     """The one fetch is routed to ``project_dir``, which is how ``gh`` finds the repo."""
     import ci_base
 
     original = ci_base.get_default_cwd()
+    monkeypatch.setattr(ci_base, 'resolve_ci_provider', lambda _project_dir: 'github')
     monkeypatch.setattr(github_re_review, 'fetch_pr_comments_data', lambda _pr, unresolved_only=False: _raw_read([]))
     try:
         lane._read_review_surfaces(7, Path('/tmp/project'))

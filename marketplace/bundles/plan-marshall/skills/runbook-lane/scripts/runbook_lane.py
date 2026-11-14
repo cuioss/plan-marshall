@@ -2632,8 +2632,13 @@ def _read_review_surfaces(pr_number: int, project_dir: Path) -> dict[str, Any]:
     The read is the data fetch the producer and the post chokepoint ask, imported
     through ``github_re_review`` (the import-order-safe entry into ``github_ops``) and
     routed to ``project_dir`` so ``gh`` resolves the same repository the lane is
-    gating. It is GitHub's read: a project whose CI routes elsewhere answers a failed
-    read, which the gate reports as ``undecidable_read`` — never as a missing review.
+    gating. It is GitHub's read, so the project must ROUTE to GitHub
+    (:func:`ci_base.resolve_ci_provider`) before a comment is read at all: waiting for
+    ``gh`` to fail instead would leave a project configured for another provider
+    readable through a GitHub-resolvable checkout, and an empty GitHub set would answer
+    ``all_handled`` over comments that project never publishes. A mismatch, and an
+    unresolvable provider alike, answer ``status: error`` — which the gate reports as
+    ``undecidable_read``, never as a missing review.
 
     Every failure is CLASSIFIED, never a traceback. The imports, the repo lookup
     (:func:`github_ops.get_repo_info` dereferences its own JSON, so a malformed reply
@@ -2642,9 +2647,20 @@ def _read_review_surfaces(pr_number: int, project_dir: Path) -> dict[str, Any]:
     is a stop, not a verdict.
     """
     try:
-        from ci_base import set_default_cwd
+        from ci_base import resolve_ci_provider, set_default_cwd
         from github_re_review import fetch_pr_comments_data
 
+        provider = resolve_ci_provider(project_dir)
+        if provider != 'github':
+            # The read is GitHub's, so the project must ROUTE to GitHub before a comment
+            # is read at all. Waiting for ``gh`` to fail instead would leave a project
+            # configured for another provider readable through a GitHub-resolvable
+            # checkout: an empty GitHub set would answer ``all_handled`` over comments
+            # the project's own CI never publishes.
+            return {
+                'status': 'error',
+                'error': f'the review gate reads GitHub comment data; this project routes to {provider or "no resolvable CI provider"}',
+            }
         set_default_cwd(str(project_dir))
         return fetch_pr_comments_data(pr_number)
     except (OSError, RuntimeError, ValueError, TypeError, AttributeError, ImportError) as exc:
