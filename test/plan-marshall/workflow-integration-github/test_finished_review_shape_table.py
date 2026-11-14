@@ -134,11 +134,16 @@ def _producer(plan_context, monkeypatch, comments: list[dict]) -> set[str]:
 
 @pytest.fixture
 def restore_default_cwd():
-    """Undo the process-global working tree the lane's raw read installs."""
-    yield
+    """Restore the process-global working tree the lane's read installs.
+
+    Restores the value it FOUND: a test that reset it to ``None`` would clobber one an
+    earlier test on the same worker had set.
+    """
     import ci_base
 
-    ci_base.set_default_cwd(None)
+    original = ci_base.get_default_cwd()
+    yield
+    ci_base.set_default_cwd(original)
 
 
 def _lane_admits(monkeypatch, comments: list[dict]) -> bool:
