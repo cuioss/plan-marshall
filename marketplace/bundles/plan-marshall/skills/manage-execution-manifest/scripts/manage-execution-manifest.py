@@ -1758,7 +1758,7 @@ def _append_per_task_gate_commands(
     plan_id: str,
     tier_records: list[dict[str, str]],
     pending_writes: list[tuple[Path, str]],
-) -> int:
+) -> tuple[int, int]:
     """Give each verification-bearing task the commands of its per_task gates.
 
     A task is applicable when it carries a ``verification`` dict with a
@@ -1768,8 +1768,8 @@ def _append_per_task_gate_commands(
     later compose can withdraw a command this pass added once its step is no
     longer stamped ``per_task``: without the record a tier flip would leave a
     gate command on the task forever, and the stamp's own volatility makes that
-    flip ordinary. Only a recorded command is ever withdrawn, so a command the
-    deriver or the plan authored is never touched.
+    flip ordinary. Only a command this pass recorded is ever withdrawn, so a
+    command the deriver or the plan authored is not claimed and not removed.
 
     The rewrite is STAGED into *pending_writes* rather than persisted: an
     already-staged payload for the same task is read back and updated in place,
@@ -1777,14 +1777,17 @@ def _append_per_task_gate_commands(
     task, and a compose that fails a later gate never leaves a task file
     mutated.
 
-    Returns the number of tasks the pass touched.
+    Returns the number of task lists the pass appended to and the number it
+    withdrew from — two counts because a withdrawal-only compose is not an
+    append, and one count would report the inverse of what happened.
     """
     gate_commands = _per_task_gate_commands(plan_id, tier_records)
     tasks_dir = get_plan_dir(plan_id) / 'tasks'
     if not tasks_dir.is_dir():
-        return 0
+        return 0, 0
     staged_index = {path: index for index, (path, _payload) in enumerate(pending_writes)}
-    touched = 0
+    appended_tasks = 0
+    withdrawn_tasks = 0
     for task_path in sorted(tasks_dir.glob('TASK-*.json')):
         try:
             staged = staged_index.get(task_path)
@@ -1809,8 +1812,12 @@ def _append_per_task_gate_commands(
             continue
         kept = [command for command in commands if command not in withdrawal]
         verification['commands'] = [*kept, *missing]
-        if gate_commands:
-            verification['per_task_gate_commands'] = list(gate_commands)
+        # The record owns only what THIS pass added plus what an earlier pass
+        # added and this one still covers — never a command that was already in
+        # the list, so a plan-authored literal is neither claimed nor withdrawn.
+        owned = [*[command for command in recorded_commands if command not in withdrawal], *missing]
+        if owned:
+            verification['per_task_gate_commands'] = owned
         else:
             verification.pop('per_task_gate_commands', None)
         task['verification'] = verification
@@ -1819,8 +1826,11 @@ def _append_per_task_gate_commands(
             pending_writes[staged] = (task_path, payload)
         else:
             pending_writes.append((task_path, payload))
-        touched += 1
-    return touched
+        if missing:
+            appended_tasks += 1
+        if withdrawal:
+            withdrawn_tasks += 1
+    return appended_tasks, withdrawn_tasks
 
 
 # =============================================================================
@@ -1850,9 +1860,11 @@ def _append_per_task_gate_commands(
 # performs when it runs the step — see
 # ``phase-5-execute/standards/canonical_verify.md`` § Workflow steps 1-2. The
 # leaf honours the tier that resolve returns AT EXECUTE TIME and never routes a
-# build on the stamp alone. The stamp's job is planning and observability: it
-# tells the orchestrator how many orchestrator-tier steps to expect and records
-# what the tier looked like when the plan was composed.
+# build on the stamp alone. Beyond the record list itself, the stamp's one
+# durable write is the converging per-task gate append below; otherwise its job
+# is planning and observability — it tells the orchestrator how many
+# orchestrator-tier steps to expect and records what the tier looked like when
+# the plan was composed.
 #
 # See ``ref-workflow-architecture/standards/agents.md`` § "Leaf cannot reap a
 # backgrounded build" and ``standards/decision-rules.md`` § "execution_tier
@@ -2807,12 +2819,15 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     # Per-task gate stamping. Runs AFTER the tier stamp (it reads the stamp) and
     # stages its task rewrites onto the same pending list the routing pass uses,
     # so the resolution gate below still guards every task-file write.
-    appended_gate_tasks = _append_per_task_gate_commands(plan_id, step_execution_tier, pending_task_rewrites)
-    if appended_gate_tasks:
+    appended_gate_tasks, withdrawn_gate_tasks = _append_per_task_gate_commands(
+        plan_id, step_execution_tier, pending_task_rewrites
+    )
+    if appended_gate_tasks or withdrawn_gate_tasks:
         _emit_decision_log(
             plan_id,
             '(plan-marshall:manage-execution-manifest:compose) [STATUS] per_task_gate_appended — '
-            f'appended the resolved gate command to {appended_gate_tasks} task verification list(s)',
+            f'appended the resolved gate command to {appended_gate_tasks} task verification list(s), '
+            f'withdrew it from {withdrawn_gate_tasks} list(s) the current stamp no longer covers',
         )
 
     # plan.phase-6-finalize ceremony-gate selection runs AFTER the six-row

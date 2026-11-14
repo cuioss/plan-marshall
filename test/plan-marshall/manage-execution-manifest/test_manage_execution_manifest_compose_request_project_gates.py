@@ -244,6 +244,9 @@ def test_gate_append_is_withdrawn_when_the_stamp_stops_covering_it(plan_context,
     assert appended['commands'] == [_RESOLVED_QUALITY_GATE]
     assert appended['per_task_gate_commands'] == [_RESOLVED_QUALITY_GATE]
 
+    # The routing pass must not be able to remove the command itself, or this
+    # test would pass without the withdrawal doing anything.
+    monkeypatch.setattr(_mem, '_resolve_command_tier', lambda *_args, **_kwargs: None)
     _stub_architecture_resolve(monkeypatch, 'orchestrator')
     assert cmd_compose(_gate_only_ns(plan_id))['status'] == 'success'
 
