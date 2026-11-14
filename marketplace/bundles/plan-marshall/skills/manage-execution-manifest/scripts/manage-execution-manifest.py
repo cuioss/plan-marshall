@@ -1696,6 +1696,109 @@ def _log_execution_tier_routing(plan_id: str, mutated_tasks: int, phase_5_steps:
 
 
 # =============================================================================
+# Per-task gate stamping (the gate reaches the task, not only the phase)
+# =============================================================================
+#
+# The six-row matrix and the request/project gate composition settle the phase-5
+# step list, and ``_route_task_verification_commands`` routes COMMANDS the other
+# way — from a task up to a step. Neither puts a gate INTO a task, so a gate
+# stamped ``per_task`` had no leaf that ran it: the tier says the step executes
+# inline with the work, and the task's own ``verification.commands`` is what the
+# dispatched sub-agent reads. This pass closes that gap for the gate canonicals.
+#
+# It is scoped to the quality gate on purpose. ``module-tests`` / ``compile`` /
+# ``verify`` reach a task through ``architecture derive-verification`` already,
+# so appending them here would run the same build twice; the quality gate is the
+# whole-tree check that carries no per-task derivation of its own.
+
+#: Gate canonicals whose resolved command belongs in a task's
+#: ``verification.commands`` when the composer stamps them ``per_task``.
+_PER_TASK_GATE_CANONICALS = frozenset({'quality-gate'})
+
+
+def _per_task_gate_commands(plan_id: str, tier_records: list[dict[str, str]]) -> list[str]:
+    """Resolved executables of the composed gates stamped ``per_task``.
+
+    Reads the stamp the composer just recorded and resolves each gate canonical
+    through ``architecture resolve`` — the seam phase 4 stamps derived task
+    commands with — so the appended string is the architecture's own executable
+    rather than a guess. An ``orchestrator``-tier gate is skipped: no leaf runs
+    it inline. An unresolvable gate contributes nothing, because the phase-level
+    step is already stamped and an invented command would be worse than its
+    absence.
+    """
+    gate_commands: list[str] = []
+    for record in tier_records:
+        if record.get('tier') != 'per_task':
+            continue
+        bare = canonicalize_step_key(record['step_id'])
+        if not bare.startswith(_CANONICAL_VERIFY_PREFIX):
+            continue
+        canonical = bare[len(_CANONICAL_VERIFY_PREFIX) :]
+        if canonical not in _PER_TASK_GATE_CANONICALS:
+            continue
+        resolved = _invoke_architecture_resolve(['--command', canonical], plan_id)
+        executable = resolved.get('executable') if isinstance(resolved, dict) else None
+        if isinstance(executable, str) and executable and executable not in gate_commands:
+            gate_commands.append(executable)
+    return gate_commands
+
+
+def _append_per_task_gate_commands(
+    plan_id: str,
+    tier_records: list[dict[str, str]],
+    pending_writes: list[tuple[Path, str]],
+) -> int:
+    """Append each ``per_task`` gate's command to every task's verification.
+
+    A task is applicable when it carries a ``verification`` dict with a
+    ``commands`` list — the same block the leaf reads — and the gate command is
+    appended after the commands the task already carried, de-duplicated, so a
+    re-compose converges instead of stacking copies. The rewrite is STAGED into
+    *pending_writes* rather than persisted: an already-staged payload for the
+    same task is read back and updated in place, so this pass cannot drop the
+    execution_tier routing pass's change to that task, and a compose that fails
+    a later gate never leaves a task file mutated.
+
+    Returns the number of tasks the append touched.
+    """
+    gate_commands = _per_task_gate_commands(plan_id, tier_records)
+    if not gate_commands:
+        return 0
+    tasks_dir = get_plan_dir(plan_id) / 'tasks'
+    if not tasks_dir.is_dir():
+        return 0
+    staged_index = {path: index for index, (path, _payload) in enumerate(pending_writes)}
+    touched = 0
+    for task_path in sorted(tasks_dir.glob('TASK-*.json')):
+        try:
+            staged = staged_index.get(task_path)
+            task = json.loads(pending_writes[staged][1]) if staged is not None else read_json(task_path, default=None)
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(task, dict):
+            continue
+        verification = task.get('verification')
+        if not isinstance(verification, dict):
+            continue
+        commands = verification.get('commands')
+        if not isinstance(commands, list):
+            continue
+        missing = [command for command in gate_commands if command not in commands]
+        if not missing:
+            continue
+        verification['commands'] = [*commands, *missing]
+        task['verification'] = verification
+        payload = json.dumps(task, indent=2) + '\n'
+        if staged is not None:
+            pending_writes[staged] = (task_path, payload)
+        else:
+            pending_writes.append((task_path, payload))
+        touched += 1
+    return touched
+
+
+# =============================================================================
 # Per-step execution_tier stamping (compose-time ADVISORY snapshot)
 # =============================================================================
 #
@@ -2671,6 +2774,17 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     )
     body['phase_5']['step_execution_tier'] = step_execution_tier
     _log_step_execution_tier_stamping(plan_id, step_execution_tier)
+
+    # Per-task gate stamping. Runs AFTER the tier stamp (it reads the stamp) and
+    # stages its task rewrites onto the same pending list the routing pass uses,
+    # so the resolution gate below still guards every task-file write.
+    appended_gate_tasks = _append_per_task_gate_commands(plan_id, step_execution_tier, pending_task_rewrites)
+    if appended_gate_tasks:
+        _emit_decision_log(
+            plan_id,
+            '(plan-marshall:manage-execution-manifest:compose) [STATUS] per_task_gate_appended — '
+            f'appended the resolved gate command to {appended_gate_tasks} task verification list(s)',
+        )
 
     # plan.phase-6-finalize ceremony-gate selection runs AFTER the six-row
     # matrix (and execution_tier routing). It forces each finalize ceremony

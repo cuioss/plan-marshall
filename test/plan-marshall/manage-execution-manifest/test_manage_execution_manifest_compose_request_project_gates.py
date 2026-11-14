@@ -12,6 +12,8 @@ misses and compose stamps no gates. The declarations live as siblings of
 
 from argparse import Namespace
 
+from _manage_execution_manifest_manage_execution_manifest_compose_fixtures import _read_task, _write_task
+
 from conftest import create_marshal_json, load_script_module
 
 _mem = load_script_module(
@@ -135,3 +137,109 @@ def test_step_map_decoy_does_not_compose(plan_context):
     steps = manifest['phase_5']['verification_steps']
     assert 'verify:quality-gate' in steps
     assert 'request_gates' not in steps
+
+
+# =============================================================================
+# Per-task quality-gate stamping
+# =============================================================================
+#
+# A gate stamped ``per_task`` executes inline with each task, so the task's own
+# ``verification.commands`` must name the resolved executable — a phase-level
+# step alone leaves the leaf nothing to run. An ``orchestrator``-tier gate is
+# the opposite case: no leaf runs it inline, so it must NOT be pushed into a
+# task. Both arms of that split, plus the phase-level step surviving either way,
+# are asserted below.
+
+_RESOLVED_QUALITY_GATE = (
+    'python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "quality-gate"'
+)
+
+
+def _stub_architecture_resolve(monkeypatch, tier: str) -> None:
+    """Answer every ``architecture resolve`` with the gate executable at *tier*.
+
+    The composer asks ``architecture resolve`` for both the tier stamp and the
+    executable, so one stub answers both deterministically without a live
+    architecture inventory.
+    """
+
+    def _fake(_argv_extra, _plan_id):
+        return {
+            'status': 'success',
+            'command': 'quality-gate',
+            'executable': _RESOLVED_QUALITY_GATE,
+            'resolution_level': 'module',
+            'bash_timeout_seconds': 360,
+            'exceeds_bash_ceiling': tier == 'orchestrator',
+            'execution_tier': tier,
+            'hint': 'stubbed',
+        }
+
+    monkeypatch.setattr(_mem, '_invoke_architecture_resolve', _fake)
+
+
+def _seed_gate_plan(plan_context, plan_id: str) -> None:
+    """Seed a plan whose composed gates carry the project's quality gate.
+
+    Task 1 carries no derived command and task 2 carries a non-build one, so the
+    gate append is observable on both a bare and an already-populated
+    verification block.
+    """
+    _seed_marshal(
+        plan_context,
+        {
+            'verification_steps': {'default:verify:module-tests': {}},
+            'project_gates': ['verify:quality-gate'],
+        },
+    )
+    _write_task(plan_context.plans_dir, plan_id, 1, [])
+    _write_task(plan_context.plans_dir, plan_id, 2, ['pytest test/plan-marshall/example_test.py'])
+
+
+def test_per_task_gate_reaches_every_task_verification(plan_context, monkeypatch):
+    """A per-task quality gate is appended to each verification-bearing task's commands."""
+    plan_id = 'request-project-gates-per-task'
+    _seed_gate_plan(plan_context, plan_id)
+    _stub_architecture_resolve(monkeypatch, 'per_task')
+
+    result = cmd_compose(_compose_ns(plan_id))
+
+    assert result is not None and result['status'] == 'success'
+    commands_by_task = {
+        number: _read_task(plan_context.plans_dir, plan_id, number)['verification']['commands'] for number in (1, 2)
+    }
+    assert commands_by_task[1] == [_RESOLVED_QUALITY_GATE], 'a task with no derived command still gets the gate'
+    assert commands_by_task[2] == ['pytest test/plan-marshall/example_test.py', _RESOLVED_QUALITY_GATE], (
+        'the gate is appended after the command the task already carried'
+    )
+
+
+def test_per_task_gate_leaves_the_phase_level_step_in_place(plan_context, monkeypatch):
+    """The phase-level gate step survives the per-task stamp."""
+    plan_id = 'request-project-gates-per-task-kept'
+    _seed_gate_plan(plan_context, plan_id)
+    _stub_architecture_resolve(monkeypatch, 'per_task')
+
+    result = cmd_compose(_compose_ns(plan_id))
+
+    assert result is not None and result['status'] == 'success'
+    manifest = read_manifest(plan_id)
+    assert manifest is not None
+    assert 'verify:quality-gate' in manifest['phase_5']['verification_steps']
+
+
+def test_orchestrator_tier_gate_is_not_pushed_into_a_task(plan_context, monkeypatch):
+    """An orchestrator-tier gate runs at the phase level only, never inline per task."""
+    plan_id = 'request-project-gates-orchestrator'
+    _seed_gate_plan(plan_context, plan_id)
+    _stub_architecture_resolve(monkeypatch, 'orchestrator')
+
+    result = cmd_compose(_compose_ns(plan_id))
+
+    assert result is not None and result['status'] == 'success'
+    manifest = read_manifest(plan_id)
+    assert manifest is not None
+    assert 'verify:quality-gate' in manifest['phase_5']['verification_steps']
+    for number in (1, 2):
+        commands = _read_task(plan_context.plans_dir, plan_id, number)['verification']['commands']
+        assert _RESOLVED_QUALITY_GATE not in commands, 'no leaf runs an orchestrator-tier gate inline'
