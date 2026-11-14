@@ -903,6 +903,51 @@ def test_an_unreadable_existing_bridge_is_replaced(
     assert 'source-sha256:' in bridge.read_text(encoding='utf-8')
 
 
+def test_a_bridge_directory_symlinked_outside_the_project_is_refused(
+    runtime: AntigravityRuntime, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    """Setup never follows a rules-directory symlink out of the project.
+
+    A `.agents` directory pointing at a global rules location would have this
+    project's rules written over that global bridge, so the write is refused and
+    the escaping destination is left untouched.
+    """
+    from antigravity_runtime import _bridge_rules_path
+
+    project = tmp_path / 'project'
+    project.mkdir()
+    (project / 'CLAUDE.md').write_text(f'# baseline\n\n{_SENTINEL_RULE}\n', encoding='utf-8')
+    outside = tmp_path / 'outside-rules'
+    outside.mkdir()
+    (project / '.agents').symlink_to(outside, target_is_directory=True)
+    monkeypatch.setenv('GEMINI_CONFIG_DIR', str(tmp_path / 'gemini-config'))
+
+    result = _parse(runtime.project_initial_setup(str(project), 'antigravity'))
+
+    assert result['bridge_written'] is False
+    assert result['bridge_reason'] == 'bridge_write_failed'
+    assert list(outside.iterdir()) == [], 'the escaping destination must not receive the project rules'
+    assert not _bridge_rules_path(project).exists()
+
+
+def test_bridge_mode_is_never_more_readable_than_the_baseline(
+    runtime: AntigravityRuntime, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    """A private baseline yields a private bridge, not a world-readable copy."""
+    import os
+
+    from antigravity_runtime import _bridge_rules_path
+
+    baseline = tmp_path / 'CLAUDE.md'
+    baseline.write_text(f'# baseline\n\n{_SENTINEL_RULE}\n', encoding='utf-8')
+    os.chmod(baseline, 0o600)
+    monkeypatch.setenv('GEMINI_CONFIG_DIR', str(tmp_path / 'gemini-config'))
+
+    _parse(runtime.project_initial_setup(str(tmp_path), 'antigravity'))
+
+    assert _bridge_rules_path(tmp_path).stat().st_mode & 0o077 == 0
+
+
 def test_resetup_reports_drift_for_a_bridge_it_rewrote(
     runtime: AntigravityRuntime, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ):

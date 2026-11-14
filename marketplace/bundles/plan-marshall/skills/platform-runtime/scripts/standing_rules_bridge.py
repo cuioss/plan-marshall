@@ -93,6 +93,41 @@ class SetupReport(NamedTuple):
     reason: str
 
 
+def _is_within(path: Path, root: Path) -> bool:
+    """Whether *path* resolves inside *root* (both resolved, symlinks followed).
+
+    A path that does not exist yet resolves its existing ancestors, which is what
+    the caller needs before creating the directory.
+    """
+    try:
+        resolved_path = path.resolve()
+        resolved_root = root.resolve()
+    except OSError:
+        return False
+    return resolved_path == resolved_root or resolved_root in resolved_path.parents
+
+
+#: The bridge mode when there is no baseline to inherit from.
+_DEFAULT_BRIDGE_MODE = 0o644
+
+
+def _bridge_mode(baseline_path: Path) -> int:
+    """The bridge's mode: never more readable than the baseline it copies.
+
+    The bridge republishes the baseline's text, so a private ``CLAUDE.md`` must
+    not become a world-readable bridge in a traversable project directory. Execute
+    bits are dropped — a rules file is never executable — and a baseline with no
+    read bits of its own yields a private bridge rather than a public one.
+    """
+    try:
+        baseline_mode = baseline_path.stat().st_mode & 0o666
+    except OSError:
+        return _DEFAULT_BRIDGE_MODE
+    if not baseline_path.is_file():
+        return _DEFAULT_BRIDGE_MODE
+    return baseline_mode or 0o600
+
+
 def baseline_text(project_dir: Path, baseline: str = BASELINE) -> str | None:
     """Return the standing-rules baseline's text, or ``None`` when unreadable.
 
@@ -161,6 +196,13 @@ def write_bridge(
     carried = baseline_text(project_dir, baseline)
     if carried is None and baseline_path.is_file() and bridge.is_file():
         return BridgeWrite(written=False, replaced=False)
+    # Containment: the bridge must land inside the project it describes. A
+    # ``.opencode``/``.agents`` directory that is a symlink elsewhere would
+    # otherwise have this project's rules written over a global bridge — the
+    # leaf-level symlink check cannot see that, because it inspects the file, not
+    # the path it resolves through.
+    if not _is_within(bridge, project_dir):
+        return BridgeWrite(written=False, replaced=False, failed=True)
     desired = bridge_body(label, carried, baseline).encode('utf-8')
     try:
         # A symlinked bridge path is never taken as an owned, current bridge —
@@ -185,7 +227,7 @@ def write_bridge(
         try:
             with os.fdopen(handle, 'wb') as stream:
                 stream.write(desired)
-            staging.chmod(0o644)
+            staging.chmod(_bridge_mode(baseline_path))
             staging.replace(bridge)
         except BaseException:
             staging.unlink(missing_ok=True)
