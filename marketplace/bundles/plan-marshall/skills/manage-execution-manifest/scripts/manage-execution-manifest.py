@@ -1668,12 +1668,13 @@ def _route_task_verification_commands(plan_id: str, body: dict[str, Any]) -> tup
 
 
 def _persist_task_rewrites(pending_writes: list[tuple[Path, str]]) -> None:
-    """Commit the staged task-file rewrites accumulated by routing.
+    """Commit the staged task-file rewrites accumulated by the compose passes.
 
     Called by ``cmd_compose`` only AFTER the compose-time step-resolution gate
     (``check_emitted_steps_resolvable``) passes, so a compose that fails
     ``unresolvable_step`` never mutates task files on disk — the original
-    verification commands survive for the retry.
+    verification commands survive for the retry. Two producers stage here: the
+    ``execution_tier`` command routing pass and the per-task gate append.
     """
     for task_path, payload in pending_writes:
         task_path.write_text(payload, encoding='utf-8')
@@ -1723,9 +1724,10 @@ def _per_task_gate_commands(plan_id: str, tier_records: list[dict[str, str]]) ->
     through ``architecture resolve`` — the seam phase 4 stamps derived task
     commands with — so the appended string is the architecture's own executable
     rather than a guess. An ``orchestrator``-tier gate is skipped: no leaf runs
-    it inline. An unresolvable gate contributes nothing, because the phase-level
-    step is already stamped and an invented command would be worse than its
-    absence.
+    it inline. A gate that resolves to no executable contributes nothing and is
+    named in a ``[STATUS]`` line, because a diagnosable skip is not a silent one
+    (the ADR-010 status-bearing-gate semantic every sibling pre-filter follows);
+    the phase-level step is already stamped either way.
     """
     gate_commands: list[str] = []
     for record in tier_records:
@@ -1739,7 +1741,15 @@ def _per_task_gate_commands(plan_id: str, tier_records: list[dict[str, str]]) ->
             continue
         resolved = _invoke_architecture_resolve(['--command', canonical], plan_id)
         executable = resolved.get('executable') if isinstance(resolved, dict) else None
-        if isinstance(executable, str) and executable and executable not in gate_commands:
+        if not (isinstance(executable, str) and executable):
+            _emit_decision_log(
+                plan_id,
+                '(plan-marshall:manage-execution-manifest:compose) [STATUS] per_task_gate_unresolvable — '
+                f'{canonical!r} is stamped per_task but no executable resolved; the phase-level step is '
+                'kept and no task command was appended',
+            )
+            continue
+        if executable not in gate_commands:
             gate_commands.append(executable)
     return gate_commands
 
@@ -1749,22 +1759,27 @@ def _append_per_task_gate_commands(
     tier_records: list[dict[str, str]],
     pending_writes: list[tuple[Path, str]],
 ) -> int:
-    """Append each ``per_task`` gate's command to every task's verification.
+    """Give each verification-bearing task the commands of its per_task gates.
 
     A task is applicable when it carries a ``verification`` dict with a
-    ``commands`` list — the same block the leaf reads — and the gate command is
-    appended after the commands the task already carried, de-duplicated, so a
-    re-compose converges instead of stacking copies. The rewrite is STAGED into
-    *pending_writes* rather than persisted: an already-staged payload for the
-    same task is read back and updated in place, so this pass cannot drop the
-    execution_tier routing pass's change to that task, and a compose that fails
-    a later gate never leaves a task file mutated.
+    ``commands`` list — the same block the leaf reads. The gate command is
+    appended after the commands the task already carried, de-duplicated, and the
+    append is RECORDED on the task (``verification.per_task_gate_commands``) so a
+    later compose can withdraw a command this pass added once its step is no
+    longer stamped ``per_task``: without the record a tier flip would leave a
+    gate command on the task forever, and the stamp's own volatility makes that
+    flip ordinary. Only a recorded command is ever withdrawn, so a command the
+    deriver or the plan authored is never touched.
 
-    Returns the number of tasks the append touched.
+    The rewrite is STAGED into *pending_writes* rather than persisted: an
+    already-staged payload for the same task is read back and updated in place,
+    so this pass cannot drop the execution_tier routing pass's change to that
+    task, and a compose that fails a later gate never leaves a task file
+    mutated.
+
+    Returns the number of tasks the pass touched.
     """
     gate_commands = _per_task_gate_commands(plan_id, tier_records)
-    if not gate_commands:
-        return 0
     tasks_dir = get_plan_dir(plan_id) / 'tasks'
     if not tasks_dir.is_dir():
         return 0
@@ -1784,10 +1799,20 @@ def _append_per_task_gate_commands(
         commands = verification.get('commands')
         if not isinstance(commands, list):
             continue
+        recorded = verification.get('per_task_gate_commands')
+        recorded_commands = (
+            [entry for entry in recorded if isinstance(entry, str)] if isinstance(recorded, list) else []
+        )
+        withdrawal = [command for command in recorded_commands if command not in gate_commands]
         missing = [command for command in gate_commands if command not in commands]
-        if not missing:
+        if not withdrawal and not missing:
             continue
-        verification['commands'] = [*commands, *missing]
+        kept = [command for command in commands if command not in withdrawal]
+        verification['commands'] = [*kept, *missing]
+        if gate_commands:
+            verification['per_task_gate_commands'] = list(gate_commands)
+        else:
+            verification.pop('per_task_gate_commands', None)
         task['verification'] = verification
         payload = json.dumps(task, indent=2) + '\n'
         if staged is not None:
@@ -2760,9 +2785,13 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     # (``per_task`` | ``orchestrator``) via ``architecture resolve`` and recorded
     # in ``phase_5.step_execution_tier`` (a uniform-array record list keyed by
     # step id — see _stamp_phase_5_step_execution_tier for why a record list
-    # rather than a TOON map). The record is ADVISORY: the tier derives from the
-    # adaptive learned build duration, so it drifts between compose and execute,
-    # and phase-5-execute re-resolves it live before running each step. The
+    # rather than a TOON map). The record is ADVISORY for ROUTING: the tier
+    # derives from the adaptive learned build duration, so it drifts between
+    # compose and execute, and phase-5-execute re-resolves it live before running
+    # each step. Its one durable consumer is the per-task gate append below,
+    # which is additive and re-derived on every compose — it records the commands
+    # it added, so a later compose whose stamp flipped withdraws them again and
+    # the task file converges on the fresh stamp rather than accumulating. The
     # leaf-no-background-build invariant is unchanged (only ``per_task`` steps run
     # inline; every ``orchestrator``-tier step yields to the orchestrator's
     # await-long-running seam) — it is the LIVE tier that enforces it. The list is
@@ -3019,9 +3048,10 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
         }
 
     # Resolution gate passed — NOW commit the staged task-file rewrites from the
-    # execution_tier routing pass. Persisting here (rather than inside the routing
-    # walk) guarantees that a compose which fails ``unresolvable_step`` above never
-    # dropped a task's original verification command from disk.
+    # execution_tier routing pass and the per-task gate append. Persisting here
+    # (rather than inside either walk) guarantees that a compose which fails
+    # ``unresolvable_step`` above never dropped a task's original verification
+    # command from disk.
     _persist_task_rewrites(pending_task_rewrites)
 
     # Snapshot the resolved per-step params for the FINAL selected steps into the

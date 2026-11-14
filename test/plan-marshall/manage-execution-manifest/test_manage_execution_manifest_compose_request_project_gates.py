@@ -62,6 +62,18 @@ def _seed_marshal(plan_context, phase_5: dict) -> None:
     )
 
 
+def _gate_only_ns(plan_id: str) -> Namespace:
+    """Compose namespace whose ONLY source of the quality gate is ``project_gates``.
+
+    ``_compose_ns`` already lists the gate in its phase-5 CSV, which would make a
+    project-gate seed decorative; this one leaves the CSV with module-tests alone,
+    so the gate in the composed list can only have come from the project surface.
+    """
+    namespace = _compose_ns(plan_id)
+    namespace.phase_5_steps = 'verify:module-tests'
+    return namespace
+
+
 def test_declared_gates_compose_into_verification_steps(plan_context):
     """Declared request/project gates land in the composed verification list."""
     plan_id = 'request-project-gates-compose'
@@ -197,14 +209,17 @@ def _seed_gate_plan(plan_context, plan_id: str) -> None:
 
 
 def test_per_task_gate_reaches_every_task_verification(plan_context, monkeypatch):
-    """A per-task quality gate is appended to each verification-bearing task's commands."""
+    """A project-declared quality gate stamped per_task reaches each task's commands."""
     plan_id = 'request-project-gates-per-task'
     _seed_gate_plan(plan_context, plan_id)
     _stub_architecture_resolve(monkeypatch, 'per_task')
 
-    result = cmd_compose(_compose_ns(plan_id))
+    result = cmd_compose(_gate_only_ns(plan_id))
 
     assert result is not None and result['status'] == 'success'
+    manifest = read_manifest(plan_id)
+    assert manifest is not None
+    assert 'verify:quality-gate' in manifest['phase_5']['verification_steps'], 'the gate came from project_gates'
     commands_by_task = {
         number: _read_task(plan_context.plans_dir, plan_id, number)['verification']['commands'] for number in (1, 2)
     }
@@ -214,13 +229,36 @@ def test_per_task_gate_reaches_every_task_verification(plan_context, monkeypatch
     )
 
 
+def test_gate_append_is_withdrawn_when_the_stamp_stops_covering_it(plan_context, monkeypatch):
+    """A re-compose whose tier flipped to orchestrator takes the gate command back out.
+
+    The stamp is an advisory snapshot, so the flip is ordinary; an append that
+    could not be withdrawn would leave a gate command on the task forever and the
+    task file would stop describing the manifest.
+    """
+    plan_id = 'request-project-gates-withdrawal'
+    _seed_gate_plan(plan_context, plan_id)
+    _stub_architecture_resolve(monkeypatch, 'per_task')
+    assert cmd_compose(_gate_only_ns(plan_id))['status'] == 'success'
+    appended = _read_task(plan_context.plans_dir, plan_id, 1)['verification']
+    assert appended['commands'] == [_RESOLVED_QUALITY_GATE]
+    assert appended['per_task_gate_commands'] == [_RESOLVED_QUALITY_GATE]
+
+    _stub_architecture_resolve(monkeypatch, 'orchestrator')
+    assert cmd_compose(_gate_only_ns(plan_id))['status'] == 'success'
+
+    verification = _read_task(plan_context.plans_dir, plan_id, 1)['verification']
+    assert verification['commands'] == [], 'the appended gate is withdrawn with its stamp'
+    assert 'per_task_gate_commands' not in verification
+
+
 def test_per_task_gate_leaves_the_phase_level_step_in_place(plan_context, monkeypatch):
     """The phase-level gate step survives the per-task stamp."""
     plan_id = 'request-project-gates-per-task-kept'
     _seed_gate_plan(plan_context, plan_id)
     _stub_architecture_resolve(monkeypatch, 'per_task')
 
-    result = cmd_compose(_compose_ns(plan_id))
+    result = cmd_compose(_gate_only_ns(plan_id))
 
     assert result is not None and result['status'] == 'success'
     manifest = read_manifest(plan_id)
@@ -234,7 +272,7 @@ def test_orchestrator_tier_gate_is_not_pushed_into_a_task(plan_context, monkeypa
     _seed_gate_plan(plan_context, plan_id)
     _stub_architecture_resolve(monkeypatch, 'orchestrator')
 
-    result = cmd_compose(_compose_ns(plan_id))
+    result = cmd_compose(_gate_only_ns(plan_id))
 
     assert result is not None and result['status'] == 'success'
     manifest = read_manifest(plan_id)
