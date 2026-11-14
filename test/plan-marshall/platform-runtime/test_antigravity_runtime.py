@@ -844,6 +844,65 @@ def test_antigravity_rules_describe_content_hash_drift() -> None:
     assert 'modification times' not in rules, 'the drift signal must not compare modification times'
 
 
+def test_a_newer_bridge_version_is_not_taken_for_the_current_one(
+    runtime: AntigravityRuntime, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    """A `bridge-version: 10` heading does not satisfy the version-1 marker.
+
+    A substring test would read a newer format's bridge as current, and its
+    recorded hash — computed by that newer writer — would still match the
+    baseline, so nothing else would catch it.
+    """
+    import hashlib
+
+    from antigravity_runtime import _bridge_rules_path, standing_rules_drift_status
+
+    baseline = tmp_path / 'CLAUDE.md'
+    baseline.write_text(f'# baseline\n\n{_SENTINEL_RULE}\n', encoding='utf-8')
+    bridge = _bridge_rules_path(tmp_path)
+    bridge.parent.mkdir(parents=True)
+    digest = hashlib.sha256(baseline.read_text(encoding='utf-8').encode('utf-8')).hexdigest()
+    bridge.write_text(
+        f'# Plan Marshall standing rules (Antigravity bridge bridge-version: 10)\n\n'
+        f'source: CLAUDE.md\nsource-sha256: {digest}\n',
+        encoding='utf-8',
+    )
+
+    assert standing_rules_drift_status(str(tmp_path)) == {
+        'drift': True,
+        'needs_bridge': False,
+        'reason': 'marker_mismatch',
+    }
+
+
+def test_an_unreadable_existing_bridge_is_replaced(
+    runtime: AntigravityRuntime, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    """A bridge this process cannot read is replaced, not reported as a failed write.
+
+    The equality check reads the existing file; when that read is refused the
+    writer must fall through to the staged replacement rather than treat the
+    bridge as current-or-unwritable and leave it in place forever.
+    """
+    import os
+
+    from antigravity_runtime import _bridge_rules_path
+
+    (tmp_path / 'CLAUDE.md').write_text(f'# baseline\n\n{_SENTINEL_RULE}\n', encoding='utf-8')
+    bridge = _bridge_rules_path(tmp_path)
+    bridge.parent.mkdir(parents=True)
+    bridge.write_text('# unreadable body\n', encoding='utf-8')
+    os.chmod(bridge, 0o000)
+    if os.access(bridge, os.R_OK):
+        pytest.skip('running as a user that can read a mode-000 file (root); the arm is unreachable here')
+    monkeypatch.setenv('GEMINI_CONFIG_DIR', str(tmp_path / 'gemini-config'))
+
+    result = _parse(runtime.project_initial_setup(str(tmp_path), 'antigravity'))
+
+    assert result['bridge_written'] is True
+    assert 'source-sha256:' in bridge.read_text(encoding='utf-8')
+
+
 def test_resetup_reports_drift_for_a_bridge_it_rewrote(
     runtime: AntigravityRuntime, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ):

@@ -36,6 +36,12 @@ BASELINE = 'CLAUDE.md'
 #: bridge from a stale or foreign one without parsing rule prose.
 BRIDGE_MARKER = f'bridge-version: {BRIDGE_VERSION}'
 
+#: The same marker as a BOUNDED match. A plain substring test lets a
+#: ``bridge-version: 10`` heading answer for version 1, so a bridge from a newer
+#: format would read as current; the trailing digit guard makes the version its
+#: own field.
+BRIDGE_MARKER_MATCH = re.compile(rf'bridge-version:\s*{BRIDGE_VERSION}(?!\d)')
+
 #: Filename of the bridge-owned standing-rules file. It is deliberately distinct
 #: from the installed target rules shipped by ``install.sh --emit-rules``, so a
 #: setup write can never land in the installed file.
@@ -159,8 +165,14 @@ def write_bridge(
     try:
         # A symlinked bridge path is never taken as an owned, current bridge —
         # even when its target already matches — because a later change to that
-        # target would change the workspace rules without changing the path.
-        if bridge.is_file() and not bridge.is_symlink() and bridge.read_bytes() == desired:
+        # target would change the workspace rules without changing the path. An
+        # unreadable existing bridge is not "already current" either: the read
+        # that would prove equality failed, so fall through and replace it.
+        try:
+            current = bridge.read_bytes() if bridge.is_file() and not bridge.is_symlink() else None
+        except OSError:
+            current = None
+        if current is not None and current == desired:
             return BridgeWrite(written=False, replaced=False)
         replaced = bridge.is_file()
         bridge.parent.mkdir(parents=True, exist_ok=True)
@@ -235,7 +247,7 @@ def drift_status(
         text = bridge.read_text(encoding='utf-8')
     except (OSError, UnicodeDecodeError):
         return {'drift': True, 'needs_bridge': False, 'reason': 'bridge_unreadable'}
-    if BRIDGE_MARKER not in text:
+    if BRIDGE_MARKER_MATCH.search(text) is None:
         return {'drift': True, 'needs_bridge': False, 'reason': 'marker_mismatch'}
     recorded = SOURCE_HASH_PATTERN.search(text)
     if recorded is None:
