@@ -21,7 +21,6 @@ from __future__ import annotations
 import argparse
 from types import SimpleNamespace
 
-import github_ops
 import github_pr
 import github_re_review
 import pytest

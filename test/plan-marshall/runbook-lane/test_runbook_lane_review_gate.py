@@ -489,6 +489,16 @@ def test_a_captured_incremental_no_reviewable_changes_notice_is_not_a_finding() 
     assert verdict['review_body_findings_total'] == 0
 
 
+def test_the_captured_block_beside_a_findings_section_reads_only_the_findings() -> None:
+    """The captured label is a BOUNDARY: it contributes nothing and hides nothing."""
+    body = _OUTSIDE_DIFF_BODY + _CAPTURED_NO_REVIEWABLE_CHANGES_BLOCK
+
+    verdict = _verdict(_read(_review_body(body)), 'coderabbit outside-diff outside-diff-1 — f1670af19')
+
+    assert verdict['reason'] == 'all_handled', verdict
+    assert verdict['review_body_findings_total'] == 1
+
+
 def test_the_no_reviewable_changes_block_is_the_captured_one() -> None:
     """The fixture IS the capture, so a placeholder icon would make it a reconstruction.
 
@@ -1063,15 +1073,16 @@ def test_a_marker_outside_a_fenced_example_keeps_its_claim() -> None:
 
 
 def test_several_comments_are_each_read_for_a_marker() -> None:
-    """HOLDS AT THE BASE: the check scans every comment, not only the first."""
+    """HOLDS AT THE BASE: every comment is read, and each marker is the bot's claim."""
     comments = [
-        _issue_comment('## Walkthrough\n\nsome prose before the review completes'),
-        _issue_comment('first\n<!-- cr-comment:v1:aaaaaaaaaaaaaaaaaaaaaaaa -->\nsecond\n' + _finished_marker_body()),
+        _issue_comment('first comment\n' + _finished_marker_body()),
+        _issue_comment('a second comment\n' + _finished_marker_body()),
     ]
 
     verdict = _verdict(_read(*comments), reviewers=('coderabbit',))
 
-    assert verdict['merge_allowed'] is True
+    assert verdict['merge_allowed'] is True, verdict
+    assert 'missing_required_reviews' not in verdict
 
 
 def test_a_fence_like_run_in_prose_is_not_a_closing_fence() -> None:

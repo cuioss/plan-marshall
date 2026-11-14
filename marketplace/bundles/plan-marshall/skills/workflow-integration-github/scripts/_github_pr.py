@@ -304,10 +304,11 @@ def refusal_layers(body: str, bot_kind: str | None = None) -> list[str]:
     feedback.
 
     The REGISTRY arm matches case-insensitively. A bot's registered phrases are
-    written in sentence case, and the same notice reworded in another case is still
-    the same refusal; matching case-sensitively filed it as review feedback, so a bot
-    that answered a quota question in capitals read as a bot that reviewed. Both arms
-    are decided here, once, because every refusal consumer reads this function.
+    written in sentence case, and the same notice reworded in another case is the
+    same refusal: a case-sensitive test files a notice in another case as review
+    feedback, reading a bot that answered a quota question in capitals as a bot that
+    had reviewed. Both arms are decided here, once, because every refusal consumer
+    reads this function.
     """
     if not body:
         return []
@@ -642,8 +643,8 @@ def is_finished_review(comment: dict, bot_kind: str) -> bool:
       marker that names the commit it covered, which CodeRabbit publishes when its
       summary keeps a later limit notice beside its verdict
       (:func:`review_coverage_names_commit`). A ``kind: reviewed`` marker that names
-      no commit claims a review nobody can place, so it is not a finished review —
-      the same answer the pre-``c9dcfd290`` chokepoint and lane gave. The refusal test
+      no commit claims a review nobody can place, so it is not a finished review and
+      does not exempt the refusal that carries it. The refusal test
       is :func:`_is_refusal_notice` — the producer's own — never the enumerative arm,
       which runs at a different pipeline position and answers a different question.
     - it is admissible participation evidence for the bot (:func:`_is_participation_evidence`):

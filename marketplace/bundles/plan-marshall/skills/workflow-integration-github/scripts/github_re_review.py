@@ -1507,14 +1507,12 @@ class _ReReviewStrategy:
         enumerative arm is consulted beside it because it runs at a later pipeline
         position and is deliberately not one of the layers.
 
-        **The surviving ``None`` now means what it says.** Before the enumerative
-        arm existed, ``None`` covered two different situations: no refusal, and a
-        refusal nobody could recognize. The second silently reached
+        **``None`` means one thing: no arm of the stack recognized this body.** The
+        two situations it would otherwise conflate are "no refusal" and "a refusal
+        nobody could recognize", and the second would silently reach
         :meth:`_match_review`, which admits a body that "is not a refusal notice" as
-        a genuine review — so an unrecognised refusal was reported with
-        ``head_sha_verified: true``, asserting that the new HEAD had been reviewed
-        by a bot that had in fact declined. ``None`` therefore means no arm of the
-        stack recognized this body, and nothing else.
+        a genuine review — reporting ``head_sha_verified: true`` while asserting that
+        the new HEAD had been reviewed by a bot that had in fact declined.
 
         **Fail-safe direction.** :func:`_is_unrecognised_refusal` returns ``False``
         when no threshold has been derived, so with none available this function
@@ -1894,7 +1892,7 @@ def _qualifying_review_on_record(pr_number: int | str, bot_kind: str) -> bool | 
     - an ``issue_comment`` counts with a readable finished coverage marker that
       names a covered commit;
     - a refusal submitted as a review object counts only when it also carries a
-      readable finished marker;
+      readable finished marker that NAMES a commit;
     - a comment in a shape the bot does not publish is not evidence for it.
 
     A marker-bearing comment that is NOT a finished review — an unreadable payload, a

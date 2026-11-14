@@ -176,11 +176,11 @@ def test_the_chokepoint_and_the_producer_agree_on_a_non_review(plan_context, mon
 
 
 def test_a_case_variant_refusal_is_a_refusal_at_both_sites(plan_context, monkeypatch) -> None:
-    """⛔ The registry arm matches case-insensitively, as the pre-fix sites did.
+    """⛔ The registry arm matches case-insensitively.
 
-    A bot that answers a quota question in capitals still declined. Matching the
-    registered phrases case-sensitively filed that body as review feedback, so a
-    review body naming a commit counted as a finished review nobody received.
+    A bot that answers a quota question in capitals has still declined. A
+    case-sensitive match files that body as review feedback, so a review body naming a
+    commit counts as a finished review nobody received.
     """
     assert _github_pr._is_rate_limit_notice(_REFUSAL_CASE_VARIANT) is False, (
         'the structural arm must not reach this body, or the case does not decide it'
