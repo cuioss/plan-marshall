@@ -661,9 +661,8 @@ def test_permission_ensure_defaults_with_error(runtime: AntigravityRuntime):
 
 def _antigravity_rules_text() -> str:
     """Return the Antigravity target-rules standard text."""
-    return (
-        get_skill_dir('plan-marshall-antigravity', 'target-rules') / 'standards' / 'antigravity-rules.md'
-    ).read_text(encoding='utf-8')
+    rules_path = get_skill_dir('plan-marshall-antigravity', 'target-rules') / 'standards' / 'antigravity-rules.md'
+    return str(rules_path.read_text(encoding='utf-8'))
 
 
 def test_antigravity_rules_carry_the_shared_build_command_rules() -> None:
