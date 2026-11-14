@@ -75,7 +75,7 @@ two completion signals, checked in that order of strength:
 BOTH discriminators additionally reject a **refusal notice** — a comment or a
 review body a bot posts to say it could NOT review — running the same
 refusal-recognition STACK the producer applies, arm for arm: the awaited bot's
-registry ``refusal_patterns`` (case-sensitive substring containment), the
+registry ``refusal_patterns`` (case-insensitive substring containment), the
 structural ``_is_rate_limit_notice`` for an unknown/unregistered bot or a
 notice-shaped phrasing not yet captured as data, and the enumerative
 ``_is_unrecognised_refusal`` for a body no earlier arm could read.
@@ -85,10 +85,11 @@ here. A refusal is the bot talking about itself, never evidence that the new HEA
 was reviewed, and that holds however weakly it was recognized.
 
 The enumerative arm is what closes the path's worst failure: a reworded refusal
-used to reach ``_match_review``, which admits any body that is "not a refusal
-notice" — so the envelope reported ``head_sha_verified: true`` for a HEAD the bot
-had declined to review. It is also fail-safe by construction: with no derived
-threshold the arm never fires and this module behaves exactly as it did before.
+that no earlier arm recognised reaches ``_match_review``, which admits any body
+that is "not a refusal notice" — so the envelope would report
+``head_sha_verified: true`` for a HEAD the bot had declined to review. It is also
+fail-safe by construction: with no derived threshold the arm never fires and no
+verdict moves.
 
 The registry arm reads ``refusal_patterns``, never ``ignore_patterns`` — the
 latter names sections of a *successful* review, so reading it here would report a
@@ -143,8 +144,8 @@ CodeRabbit wraps it in ``<!-- recent_review_start -->``, or in the current
 ``final_review_risk_coverage`` artifact. The same comment without any of them is a
 review that has not finished: the walkthrough, or the summary CodeRabbit edits to its
 in-progress state while a review runs. That in-progress summary names the head SHA as
-the end of the range under review, so before the gate it was eligible, verified the
-head, and ended the wait as ``head_sha_verified: true`` on a review still running.
+the end of the range under review, so it would otherwise be eligible, verify the
+head, and end the wait as ``head_sha_verified: true`` on a review still running.
 :meth:`_ReReviewStrategy._match_bot_comment` therefore admits a comment of such a
 bot only when its body carries one of the declared literals, read through the
 production parser: a coverage-marker literal inside a closed fence (a quote) or
@@ -237,7 +238,7 @@ no review by the bot on record (``review_on_record: absent``), the notice is not
 within the attempt budget (``escalate_exhausted`` once that is spent), and the
 caller posts the ordinary trigger once and claims the window after it. A caller
 that already holds a claim made on that notice passes ``attempt_held`` and is
-routed to the elapsed arms as before, so the event its claim bought is still
+routed to the elapsed arms, so the event its claim bought is still
 delivered.
 
 The escalated command passes through the same chokepoint as the ordinary one, so
@@ -274,27 +275,20 @@ from _github_pr import (
     REFUSAL_CONDITION_NO_UNREVIEWED_COMMIT,
     REFUSAL_CONDITIONS,
     REFUSAL_LAYER_ENUMERATIVE,
-    REFUSAL_LAYER_REGISTRY,
-    REFUSAL_LAYER_STRUCTURAL,
     REFUSAL_LAYERS,
     _extract_rate_limit_eta,
-    _is_rate_limit_notice,
     _is_unrecognised_refusal,
     commit_tokens,
     is_finished_review,
     rate_limit_eta_seconds,
     refusal_cause,
     refusal_condition,
+    refusal_layers,
     refusal_size_cap,
     review_coverage_is_finished,
     review_coverage_marker_present,
     review_coverage_verdict,
 )
-
-# Explicit re-export (`as` the same name): the runbook lane reads the flattened-body
-# fence stripper through this module, the import-order-safe entry into ``_github_pr``.
-# The `as` form is what tells ruff this is a re-export rather than an unused import.
-from _github_pr import strip_fenced_regions as strip_fenced_regions
 from ci_base import (
     DEFAULT_CI_INTERVAL,
     DEFAULT_CI_TIMEOUT,
@@ -306,6 +300,12 @@ from ci_base import (
     serialize_toon,
     set_default_cwd,
 )
+
+# Explicit re-export (`as` the same name): the runbook lane reads the provider's RAW
+# comment bodies through this module, the import-order-safe entry into ``github_ops``
+# and ``_github_pr``. The `as` form is what tells ruff this is a re-export rather than
+# an unused import.
+from github_ops import fetch_pr_comments_data as fetch_pr_comments_data
 
 register_subcommands({'re-review', 'recovery-action'})
 
@@ -904,7 +904,7 @@ def resolve_recovery_action(
        out reads the notice again afterwards, and by then the notice IS stale —
        its window is the one that was just waited for. Settling there would drop
        the event the held claim bought, so the held attempt is delivered through
-       the elapsed arms as before.
+       the elapsed arms.
 
        The arm needs both window observations, like every arm after step 4. A
        consult that carries neither is ``unmeasured`` whether or not the notice is
@@ -1495,31 +1495,28 @@ class _ReReviewStrategy:
         """Return a refusal RECORD when ``body`` is a refusal notice, else ``None``.
 
         The same recognition stack the producer applies, arm for arm: the awaited
-        bot's registry ``refusal_patterns`` (case-sensitive substring containment)
+        bot's registry ``refusal_patterns`` (case-insensitive substring containment)
         first, then the structural :func:`_is_rate_limit_notice` for an
         unknown/unregistered bot or a notice-shaped phrasing not yet captured as
         data, then the enumerative :func:`_is_unrecognised_refusal` for a body no
         earlier arm could read. When ``bot_kind`` is ``None`` neither the registry
         arm nor the enumerative arm can fire — both require a registered bot — so
-        only the structural test applies. This path keeps the arms open rather than
-        calling the ``_github_pr._is_refusal_notice`` boolean seam, because it must
-        REPORT which arm fired (the ``layer`` field below) and because that seam
-        covers only the arms answerable before the producer's noise filter; the
-        recognition rule is otherwise identical, and both callers reach the arms
-        through the same shared definitions.
+        only the structural test applies. The first two arms are read through
+        ``_github_pr.refusal_layers``, the provenance seam that reports WHICH arms
+        fired, so this path cannot drift from the producer's recognition rule; the
+        enumerative arm is consulted beside it because it runs at a later pipeline
+        position and is deliberately not one of the layers.
 
-        **The surviving ``None`` now means what it says.** Before the enumerative
-        arm existed, ``None`` covered two different situations: no refusal, and a
-        refusal nobody could recognize. The second silently reached
+        **``None`` means one thing: no arm of the stack recognized this body.** The
+        two situations it would otherwise conflate are "no refusal" and "a refusal
+        nobody could recognize", and the second would silently reach
         :meth:`_match_review`, which admits a body that "is not a refusal notice" as
-        a genuine review — so an unrecognised refusal was reported with
-        ``head_sha_verified: true``, asserting that the new HEAD had been reviewed
-        by a bot that had in fact declined. ``None`` now means no arm of the stack
-        recognized this body, and nothing else.
+        a genuine review — reporting ``head_sha_verified: true`` while asserting that
+        the new HEAD had been reviewed by a bot that had in fact declined.
 
         **Fail-safe direction.** :func:`_is_unrecognised_refusal` returns ``False``
         when no threshold has been derived, so with none available this function
-        behaves byte-identically to how it behaved before the arm was added. The
+        never fires. The
         enumerative arm can therefore never make this path stricter than the
         evidence supports.
 
@@ -1596,10 +1593,8 @@ class _ReReviewStrategy:
         ``ignore_patterns``, since a refusal marker is rare phrasing rather than a
         heading every successful review emits.
         """
-        if bot_kind and any(marker in body for marker in bot_registry.refusal_patterns(bot_kind)):
-            layer = REFUSAL_LAYER_REGISTRY
-        elif _is_rate_limit_notice(body):
-            layer = REFUSAL_LAYER_STRUCTURAL
+        if layers := refusal_layers(body, bot_kind):
+            layer = layers[0]
         elif _is_unrecognised_refusal(body, bot_kind):
             layer = REFUSAL_LAYER_ENUMERATIVE
         else:
@@ -1897,7 +1892,7 @@ def _qualifying_review_on_record(pr_number: int | str, bot_kind: str) -> bool | 
     - an ``issue_comment`` counts with a readable finished coverage marker that
       names a covered commit;
     - a refusal submitted as a review object counts only when it also carries a
-      readable finished marker;
+      readable finished marker that NAMES a commit;
     - a comment in a shape the bot does not publish is not evidence for it.
 
     A marker-bearing comment that is NOT a finished review — an unreadable payload, a

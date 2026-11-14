@@ -322,3 +322,76 @@ def test_a_planted_copy_of_each_old_statement_fails(label):
     assert not _states_done_rule(planted, marker, snippet), (
         f'a planted copy of the old wording still passes for {label}: the pin is too loose'
     )
+
+
+# ---------------------------------------------------------------------------
+# The required-review check: the raw read, the refusal exception and the
+# head-currency split
+# ---------------------------------------------------------------------------
+#
+# Each entry is (path, section marker, the corrected statement the section must
+# carry, the retired wording it replaces). The retired wording is the reading the
+# documents carried while the lane rebuilt line structure from a flattened body and
+# while a refusal was refused an exemption a commit-less marker had bought it.
+_REQUIRED_REVIEW_PINS: dict[str, tuple] = {
+    'SKILL.md head currency names the real callers': (
+        _doc('workflow-integration-github', 'SKILL.md'),
+        'The commit an admitted artifact names is accepted as the commit the review covered',
+        'the post chokepoint do **not** ask it',
+        'the head-currency question is a separate one, asked of the merge-candidate read',
+    ),
+    'SKILL.md undecidable arm names the finished review it yields to': (
+        _doc('workflow-integration-github', 'SKILL.md'),
+        'An `undecidable` review resolves `unmeasured`',
+        'the `_github_pr.is_finished_review` artifact, never the flag alone',
+        'the producer did not observe where the review stands',
+    ),
+    'branch-cleanup-rereview.md lists the refusal exception': (
+        _doc('phase-6-finalize', 'standards', 'branch-cleanup-rereview.md'),
+        'When the flag is declared but no qualifying review exists',
+        'a refusal — unless that refusal carries a readable finished marker naming the commit it covered',
+        'a refusal, an acknowledgment',
+    ),
+    'runbook-lane/SKILL.md refusal sentence carries the exception': (
+        _doc('runbook-lane', 'SKILL.md'),
+        'Every required reviewer reviewed the **current head**',
+        'the one exception being a refusal whose body also carries a readable finished marker',
+        'replies and a refusal submitted as a review do not',
+    ),
+    'runbook-lane/SKILL.md head currency names the split': (
+        _doc('runbook-lane', 'SKILL.md'),
+        '`_github_pr.review_coverage_verdict`',
+        '`review-gate` path and the post chokepoint do not ask it',
+        'the head-currency question is a separate one, asked of the merge-candidate read',
+    ),
+    'runbook-lane/SKILL.md states why the enqueue takes no mutex': (
+        _doc('runbook-lane', 'SKILL.md'),
+        '**Enqueue and settle:**',
+        'The enqueue takes no merge mutex',
+        'The enqueue takes the merge mutex.',
+    ),
+}
+
+
+@pytest.mark.parametrize('label', sorted(_REQUIRED_REVIEW_PINS))
+def test_each_required_review_statement_is_pinned_in_its_section(label):
+    """A document that drifts back to the retired reading fails HERE."""
+    path, marker, snippet, _old = _REQUIRED_REVIEW_PINS[label]
+    assert path.is_file(), f'{label} is missing at {path}'
+    assert _states_done_rule(path.read_text(encoding='utf-8'), marker, snippet), (
+        f'{label} does not state the current behaviour in the section opened by {marker!r}'
+    )
+
+
+@pytest.mark.parametrize('label', sorted(_REQUIRED_REVIEW_PINS))
+def test_a_planted_copy_of_each_retired_reading_fails(label):
+    """Mutation control per pin: the retired reading must make the pin go red."""
+    path, marker, snippet, old = _REQUIRED_REVIEW_PINS[label]
+    text = path.read_text(encoding='utf-8')
+    assert _states_done_rule(text, marker, snippet), f'{label} does not carry the statement to mutate'
+
+    planted = text.replace(snippet, old, 1)
+    assert planted != text, f'the statement is not in {label} — the control would be vacuous'
+    assert not _states_done_rule(planted, marker, snippet), (
+        f'a planted copy of the retired reading still passes for {label}: the pin is too loose'
+    )

@@ -677,7 +677,7 @@ class TestSummaryConcernIsFiled:
         CodeRabbit edits its one summary comment in place, so a comment that had been a
         finished review can present, later, as a rate-limit notice carrying its
         ``final_review_risk_coverage`` marker over an earlier head. The participation loop
-        reads that marker (``review_coverage_is_finished``) to keep the credit; the filing
+        reads that marker (``review_coverage_names_commit``) to keep the credit; the filing
         loop's refusal branch reads ``_is_refusal_notice`` alone, so the body is counted in
         ``count_skipped_refusal`` and files nothing. That behaviour is pinned, not changed:
         the live shape carries no concern section, so no finding is lost through it today,
