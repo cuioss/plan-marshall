@@ -60,10 +60,11 @@ _PLAN_MARSHALL = MARKETPLACE_ROOT / 'plan-marshall' / 'skills'
 _KNOWN_DISPATCH_DOCS: tuple[Path, ...] = (
     _PLAN_MARSHALL / 'plan-orchestrator' / 'workflow' / 'analyze.md',
     _PLAN_MARSHALL / 'plan-orchestrator' / 'workflow' / 'decompose.md',
+    _PLAN_MARSHALL / 'plan-orchestrator' / 'workflow' / 'handle-open.md',
     _PLAN_MARSHALL / 'persona-plan-orchestrator' / 'standards' / 'orchestration-model.md',
 )
 
-_ANALYZE_MD, _DECOMPOSE_MD, _ORCHESTRATION_MODEL_MD = _KNOWN_DISPATCH_DOCS
+_ANALYZE_MD, _DECOMPOSE_MD, _HANDLE_OPEN_MD, _ORCHESTRATION_MODEL_MD = _KNOWN_DISPATCH_DOCS
 
 #: One orchestrator dispatch resolve invocation. The workflow docs carry the
 #: call inline in prose, the standards doc carries it in a fenced block with
@@ -499,7 +500,7 @@ _SANCTIONED_INDEX_RE = re.compile(
 #: whose "(6)" is followed by "returns" and must NOT be double-counted as a
 #: second occurrence of entry 6).
 _PAREN_ENTRY_RE = re.compile(r'\((\d+)\)\s*(?=`|the\s)')
-_INDEX_NUMBER_WORDS = {'two': 2, 'five': 5, 'seven': 7, 'eight': 8}
+_INDEX_NUMBER_WORDS = {'two': 2, 'five': 5, 'seven': 7, 'eight': 8, 'nine': 9}
 
 #: A top-level dispatchable-declaring bullet in a verb doc's Step 2 section:
 #: "- **Dispatchable**" (the read) or "- **Two-stage for untrusted third-party
@@ -887,13 +888,13 @@ class TestDraftingDispatchWritePathContainment:
         )
 
     def test_the_sanctioned_dispatch_index_count_matches_the_verb_docs(self):
-        """orchestration-model.md's eight-entry index must agree with the verb docs.
+        """orchestration-model.md's dispatch index must agree with the verb docs.
 
-        The index asserts its own cardinality ("these **eight**, and this list is
-        a complete index of them") but nothing machine-checked it against
-        analyze.md and decompose.md before this test. A count derived
-        independently from the two verb docs — never from the index's own
-        parenthetical numbers — is what catches an added or removed entry.
+        The index asserts its own cardinality ("these **N**, and this list is
+        a complete index of them") but nothing machine-checked it against the
+        dispatching verb docs before this test. A count derived independently
+        from those verb docs — never from the index's own parenthetical
+        numbers — is what catches an added or removed entry.
         """
         text = _normalized(_ORCHESTRATION_MODEL_MD)
         match = _SANCTIONED_INDEX_RE.search(text)
@@ -925,19 +926,20 @@ class TestDraftingDispatchWritePathContainment:
 
         analyze_count = _dispatch_index_entry_count(_ANALYZE_MD)
         decompose_count = _dispatch_index_entry_count(_DECOMPOSE_MD)
+        handle_open_count = _dispatch_index_entry_count(_HANDLE_OPEN_MD)
 
-        assert analyze_count > 0 and decompose_count > 0, (
+        assert analyze_count > 0 and decompose_count > 0 and handle_open_count > 0, (
             f'the per-verb-doc derivation is vacuous (analyze.md={analyze_count}, '
-            f'decompose.md={decompose_count}) — a zero here would let the cross-check below pass '
-            'trivially rather than by genuine agreement'
+            f'decompose.md={decompose_count}, handle-open.md={handle_open_count}) — a zero here '
+            'would let the cross-check below pass trivially rather than by genuine agreement'
         )
 
-        derived_total = analyze_count + decompose_count
+        derived_total = analyze_count + decompose_count + handle_open_count
         assert derived_total == claimed_count, (
             f'{_ORCHESTRATION_MODEL_MD.name} claims {claimed_count} sanctioned dispatchable sub-steps, '
             f'but deriving independently from the verb docs gives {derived_total} '
-            f'(analyze.md={analyze_count}, decompose.md={decompose_count}) — the index and the verb '
-            'docs have drifted apart'
+            f'(analyze.md={analyze_count}, decompose.md={decompose_count}, '
+            f'handle-open.md={handle_open_count}) — the index and the verb docs have drifted apart'
         )
 
     def test_a_doc_missing_its_dispatchable_bullets_drops_the_derived_count(self, tmp_path):

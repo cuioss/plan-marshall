@@ -669,3 +669,93 @@ def test_an_unpinned_surface_tracks_plan_effort(plan_context):
             'plan.effort values, so the resolver is not reading the fallback at all and the '
             'pinned arm above proves nothing'
         )
+
+
+# =============================================================================
+# orchestrator get/set --field decision_confidence_threshold
+# =============================================================================
+#
+# The `handle-open` verb's decide-vs-present boundary. Its contract is
+# "an integer 0..100, strictly-greater semantics" — so the bounds are inclusive
+# at BOTH ends, a bool is not an int here, and a float is refused rather than
+# truncated (a silently rounded 90.5 would read as a deliberate 90).
+
+_THRESHOLD_FIELD = 'decision_confidence_threshold'
+
+
+def test_threshold_set_accepts_both_endpoints_and_reads_back(plan_context):
+    """`--value 0` and `--value 100` both persist and read back unchanged."""
+    for value in ('0', '100'):
+        _write_marshal(plan_context.fixture_dir, {})
+
+        set_result = cmd_orchestrator_set(Namespace(field=_THRESHOLD_FIELD, value=value))
+
+        assert set_result['status'] == 'success', f'--value {value} was refused: {set_result}'
+        assert set_result['value'] == int(value)
+        assert _read_marshal(plan_context.fixture_dir)['orchestrator'][_THRESHOLD_FIELD] == int(value)
+
+        get_result = cmd_orchestrator_get(Namespace(field=_THRESHOLD_FIELD))
+
+        assert get_result['status'] == 'success'
+        assert get_result['value'] == int(value)
+        assert get_result['set'] is True
+
+
+def test_threshold_set_accepts_an_integer_inside_the_range(plan_context):
+    """A mid-range value round-trips as an int, not as the string it arrived as."""
+    _write_marshal(plan_context.fixture_dir, {})
+
+    result = cmd_orchestrator_set(Namespace(field=_THRESHOLD_FIELD, value=' 42 '))
+
+    assert result['status'] == 'success'
+    assert result['value'] == 42
+    assert isinstance(result['value'], int)
+
+
+def test_threshold_get_unset_returns_the_seeded_default_with_set_false(plan_context):
+    """On a fresh seed, `get` reports the seeded figure and `set: false`."""
+    _write_marshal(plan_context.fixture_dir, {})
+
+    get_result = cmd_orchestrator_get(Namespace(field=_THRESHOLD_FIELD))
+
+    assert get_result['status'] == 'success'
+    assert get_result['value'] == _config_defaults_mod.DEFAULT_ORCHESTRATOR[_THRESHOLD_FIELD]
+    assert get_result['set'] is False
+
+
+def test_threshold_set_refuses_every_invalid_value_and_writes_nothing(plan_context):
+    """`101`, `-1`, `true`, `90.5` and `ninety` are refused with no write."""
+    for value in ('101', '-1', 'true', '90.5', 'ninety'):
+        _write_marshal(plan_context.fixture_dir, {})
+
+        result = cmd_orchestrator_set(Namespace(field=_THRESHOLD_FIELD, value=value))
+
+        assert result['status'] == 'error', f'--value {value!r} was accepted: {result}'
+        assert _THRESHOLD_FIELD not in _read_marshal(plan_context.fixture_dir).get('orchestrator', {}), (
+            f'--value {value!r} was refused but still written'
+        )
+
+
+def test_threshold_set_refuses_a_real_bool_and_a_real_float(plan_context):
+    """A bool and a float pass the CLI as objects too; both are refused, not coerced."""
+    for value in (True, 90.5):
+        _write_marshal(plan_context.fixture_dir, {})
+
+        result = cmd_orchestrator_set(Namespace(field=_THRESHOLD_FIELD, value=value))
+
+        assert result['status'] == 'error', f'{value!r} was accepted: {result}'
+        assert _THRESHOLD_FIELD not in _read_marshal(plan_context.fixture_dir).get('orchestrator', {})
+
+
+def test_threshold_typo_is_refused_as_an_unknown_field(plan_context):
+    """`decision_confidence_thresholds` is a typo, refused by the whitelist."""
+    _write_marshal(plan_context.fixture_dir, {})
+
+    set_result = cmd_orchestrator_set(Namespace(field='decision_confidence_thresholds', value='90'))
+    get_result = cmd_orchestrator_get(Namespace(field='decision_confidence_thresholds'))
+
+    assert set_result['status'] == 'error'
+    assert set_result.get('error_type') == 'unknown_field'
+    assert get_result['status'] == 'error'
+    assert get_result.get('error_type') == 'unknown_field'
+    assert 'decision_confidence_thresholds' not in _read_marshal(plan_context.fixture_dir).get('orchestrator', {})
