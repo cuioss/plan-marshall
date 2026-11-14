@@ -167,25 +167,29 @@ _RESOLVED_QUALITY_GATE = (
 )
 
 
-def _stub_architecture_resolve(monkeypatch, tier: str) -> None:
+def _stub_architecture_resolve(monkeypatch, tier: str, executable: str | None = _RESOLVED_QUALITY_GATE) -> None:
     """Answer every ``architecture resolve`` with the gate executable at *tier*.
 
     The composer asks ``architecture resolve`` for both the tier stamp and the
     executable, so one stub answers both deterministically without a live
-    architecture inventory.
+    architecture inventory. ``executable=None`` models a resolve that reported a
+    tier but no executable — the transient lookup failure whose verdict must not
+    withdraw a recorded command.
     """
 
-    def _fake(_argv_extra, _plan_id):
-        return {
+    def _fake(_argv_extra, _plan_id, **_kwargs):
+        resolved = {
             'status': 'success',
             'command': 'quality-gate',
-            'executable': _RESOLVED_QUALITY_GATE,
             'resolution_level': 'module',
             'bash_timeout_seconds': 360,
             'exceeds_bash_ceiling': tier == 'orchestrator',
             'execution_tier': tier,
             'hint': 'stubbed',
         }
+        if executable is not None:
+            resolved['executable'] = executable
+        return resolved
 
     monkeypatch.setattr(_mem, '_invoke_architecture_resolve', _fake)
 
@@ -253,6 +257,27 @@ def test_gate_append_is_withdrawn_when_the_stamp_stops_covering_it(plan_context,
     verification = _read_task(plan_context.plans_dir, plan_id, 1)['verification']
     assert verification['commands'] == [], 'the appended gate is withdrawn with its stamp'
     assert 'per_task_gate_commands' not in verification
+
+
+def test_recorded_gate_command_survives_an_unresolved_lookup(plan_context, monkeypatch):
+    """A resolve that reports the tier but no executable withdraws nothing.
+
+    The stamp still covers the gate, so a transient lookup failure must leave the
+    previously appended command on the task — otherwise a flaky resolve would
+    silently drop the gate from every task it had reached.
+    """
+    plan_id = 'request-project-gates-unresolved'
+    _seed_gate_plan(plan_context, plan_id)
+    _stub_architecture_resolve(monkeypatch, 'per_task')
+    assert cmd_compose(_gate_only_ns(plan_id))['status'] == 'success'
+
+    monkeypatch.setattr(_mem, '_resolve_command_tier', lambda *_args, **_kwargs: None)
+    _stub_architecture_resolve(monkeypatch, 'per_task', executable=None)
+    assert cmd_compose(_gate_only_ns(plan_id))['status'] == 'success'
+
+    verification = _read_task(plan_context.plans_dir, plan_id, 1)['verification']
+    assert verification['commands'] == [_RESOLVED_QUALITY_GATE], 'the stamp still covers the gate'
+    assert verification['per_task_gate_commands'] == [_RESOLVED_QUALITY_GATE]
 
 
 def test_per_task_gate_leaves_the_phase_level_step_in_place(plan_context, monkeypatch):

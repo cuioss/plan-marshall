@@ -1092,30 +1092,34 @@ def _log_ceremony_finalize_selection(
 
 
 @functools.cache
-def _invoke_architecture_resolve_cached(argv_extra: tuple[str, ...], plan_id: str) -> dict[str, Any] | None:
+def _invoke_architecture_resolve_cached(
+    argv_extra: tuple[str, ...],
+    plan_id: str,
+    top_level_plan_id: bool = False,
+) -> dict[str, Any] | None:
     """Cached core of :func:`_invoke_architecture_resolve` — one subprocess per distinct key.
 
-    Keyed by ``(argv_extra, plan_id)`` where ``argv_extra`` is the hashable tuple
-    form of the resolve argv tail. ``functools.cache`` requires hashable arguments,
-    which is why the public wrapper passes a tuple rather than the caller's list. The
-    cache is reset per compose by :func:`cmd_compose` (``.cache_clear()``), so it is
-    effectively compose-scoped — a re-compose in the same process re-derives from
-    the live architecture state rather than a stale prior-compose result. The cached
-    dict is only ever read by callers (never mutated), so sharing one instance
-    across cache hits is safe.
+    Keyed by ``(argv_extra, plan_id, top_level_plan_id)`` where ``argv_extra`` is the
+    hashable tuple form of the resolve argv tail. ``functools.cache`` requires
+    hashable arguments, which is why the public wrapper passes a tuple rather than
+    the caller's list. The cache is reset per compose by :func:`cmd_compose`
+    (``.cache_clear()``), so it is effectively compose-scoped — a re-compose in the
+    same process re-derives from the live architecture state rather than a stale
+    prior-compose result. The cached dict is only ever read by callers (never
+    mutated), so sharing one instance across cache hits is safe.
     """
     executor = _resolve_executor()
     if executor is None:
         return None
-    argv: list[str] = [
-        sys.executable,
-        str(executor),
-        'plan-marshall:manage-architecture:architecture',
-        'resolve',
-        *argv_extra,
-        '--audit-plan-id',
-        plan_id,
-    ]
+    argv: list[str] = [sys.executable, str(executor), 'plan-marshall:manage-architecture:architecture']
+    if top_level_plan_id:
+        # The TOP-LEVEL ``--plan-id`` written before the verb is what makes a
+        # resolved build attributable to the plan; ``--audit-plan-id`` only
+        # records the audit. A caller that persists the resolved executable onto
+        # a task needs the former, so the command it stamps carries the plan's
+        # build evidence.
+        argv.extend(['--plan-id', plan_id])
+    argv.extend(['resolve', *argv_extra, '--audit-plan-id', plan_id])
     try:
         proc = subprocess.run(
             argv,
@@ -1137,7 +1141,9 @@ def _invoke_architecture_resolve_cached(argv_extra: tuple[str, ...], plan_id: st
     return parsed_toon
 
 
-def _invoke_architecture_resolve(argv_extra: list[str], plan_id: str) -> dict[str, Any] | None:
+def _invoke_architecture_resolve(
+    argv_extra: list[str], plan_id: str, top_level_plan_id: bool = False
+) -> dict[str, Any] | None:
     """Subprocess ``architecture resolve`` and return the parsed status-success TOON dict.
 
     Shared by ``_resolve_command_tier`` (per-command, may add ``--module``),
@@ -1148,6 +1154,12 @@ def _invoke_architecture_resolve(argv_extra: list[str], plan_id: str) -> dict[st
     unresolvable executor, subprocess error, non-zero exit, empty stdout,
     unparseable TOON, or a non-``success`` status; callers apply their own
     safe default on ``None``.
+
+    ``top_level_plan_id`` additionally writes ``--plan-id`` BEFORE the verb, which
+    is what makes a resolved build attributable to the plan rather than merely
+    audited. It is opt-in: only a caller that PERSISTS the resolved executable
+    (the per-task gate stamp) needs the attribution, and the probe callers must
+    keep the project-directory routing they have always had.
 
     The composer subprocesses ``architecture resolve`` rather than
     importing its internals because the resolve flow is the canonical
@@ -1165,7 +1177,7 @@ def _invoke_architecture_resolve(argv_extra: list[str], plan_id: str) -> dict[st
     result instead of re-spawning the subprocess. This wrapper adapts the caller's
     list argument to the cache's hashable tuple key.
     """
-    return _invoke_architecture_resolve_cached(tuple(argv_extra), plan_id)
+    return _invoke_architecture_resolve_cached(tuple(argv_extra), plan_id, top_level_plan_id)
 
 
 def _resolve_command_tier(cmd: str, plan_id: str) -> dict[str, Any] | None:
@@ -1717,19 +1729,26 @@ def _log_execution_tier_routing(plan_id: str, mutated_tasks: int, phase_5_steps:
 _PER_TASK_GATE_CANONICALS = frozenset({'quality-gate'})
 
 
-def _per_task_gate_commands(plan_id: str, tier_records: list[dict[str, str]]) -> list[str]:
-    """Resolved executables of the composed gates stamped ``per_task``.
+def _per_task_gate_commands(plan_id: str, tier_records: list[dict[str, str]]) -> tuple[list[str], bool]:
+    """Resolved executables of the composed gates stamped ``per_task``, plus an unresolved flag.
 
     Reads the stamp the composer just recorded and resolves each gate canonical
     through ``architecture resolve`` — the seam phase 4 stamps derived task
     commands with — so the appended string is the architecture's own executable
-    rather than a guess. An ``orchestrator``-tier gate is skipped: no leaf runs
-    it inline. A gate that resolves to no executable contributes nothing and is
-    named in a ``[STATUS]`` line, because a diagnosable skip is not a silent one
+    rather than a guess, and passes the top-level ``--plan-id`` because the string
+    is persisted onto the task. An ``orchestrator``-tier gate is skipped: no leaf
+    runs it inline. A gate that resolves to no executable contributes nothing and
+    is named in a ``[STATUS]`` line, because a diagnosable skip is not a silent one
     (the ADR-010 status-bearing-gate semantic every sibling pre-filter follows);
     the phase-level step is already stamped either way.
+
+    The second return value says an APPLICABLE gate failed to resolve. That is not
+    the same fact as "no gate is stamped any more": an unresolvable lookup leaves
+    the caller's recorded commands in place, because a transient resolve failure
+    must not withdraw a command the current stamp still covers.
     """
     gate_commands: list[str] = []
+    unresolved = False
     for record in tier_records:
         if record.get('tier') != 'per_task':
             continue
@@ -1739,19 +1758,20 @@ def _per_task_gate_commands(plan_id: str, tier_records: list[dict[str, str]]) ->
         canonical = bare[len(_CANONICAL_VERIFY_PREFIX) :]
         if canonical not in _PER_TASK_GATE_CANONICALS:
             continue
-        resolved = _invoke_architecture_resolve(['--command', canonical], plan_id)
+        resolved = _invoke_architecture_resolve(['--command', canonical], plan_id, top_level_plan_id=True)
         executable = resolved.get('executable') if isinstance(resolved, dict) else None
         if not (isinstance(executable, str) and executable):
+            unresolved = True
             _emit_decision_log(
                 plan_id,
                 '(plan-marshall:manage-execution-manifest:compose) [STATUS] per_task_gate_unresolvable — '
                 f'{canonical!r} is stamped per_task but no executable resolved; the phase-level step is '
-                'kept and no task command was appended',
+                'kept, no task command was appended, and a previously appended command is preserved',
             )
             continue
         if executable not in gate_commands:
             gate_commands.append(executable)
-    return gate_commands
+    return gate_commands, unresolved
 
 
 def _append_per_task_gate_commands(
@@ -1777,11 +1797,15 @@ def _append_per_task_gate_commands(
     task, and a compose that fails a later gate never leaves a task file
     mutated.
 
+    A gate whose executable did not resolve this time does not withdraw anything:
+    the stamp still covers it, and a transient resolve failure is not a tier
+    change. Only a stamp that no longer covers a recorded command withdraws it.
+
     Returns the number of task lists the pass appended to and the number it
     withdrew from — two counts because a withdrawal-only compose is not an
     append, and one count would report the inverse of what happened.
     """
-    gate_commands = _per_task_gate_commands(plan_id, tier_records)
+    gate_commands, unresolved = _per_task_gate_commands(plan_id, tier_records)
     tasks_dir = get_plan_dir(plan_id) / 'tasks'
     if not tasks_dir.is_dir():
         return 0, 0
@@ -1807,6 +1831,11 @@ def _append_per_task_gate_commands(
             [entry for entry in recorded if isinstance(entry, str)] if isinstance(recorded, list) else []
         )
         withdrawal = [command for command in recorded_commands if command not in gate_commands]
+        if unresolved:
+            # The gate is still stamped, but its executable did not resolve this
+            # time. A transient lookup failure must not withdraw a command the
+            # current stamp still covers, so only appends happen.
+            withdrawal = []
         missing = [command for command in gate_commands if command not in commands]
         if not withdrawal and not missing:
             continue
