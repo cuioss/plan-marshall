@@ -456,11 +456,19 @@ def test_reload_and_restart_controls(tmp_path: Path):
     _plant(tmp_path, {'claude': f'{claude}\nRun {_RELOAD_PLUGINS} when the agents look stale.\n'})
     assert _mirror_violations(_entry_texts(tmp_path)), f'{_RELOAD_PLUGINS} outside the block must be reported'
 
-    _plant(tmp_path, {'claude': claude.replace('restart', 'relaunch')})
-    assert _mirror_violations(_entry_texts(tmp_path)), 'a block that never names the restart must be reported'
+    clean = _entry_texts()
+    _plant(tmp_path, {harness: text.replace('restart', 'relaunch') for harness, text in clean.items()})
+    assert 'the post-run block should name the restart' in _mirror_violations(_entry_texts(tmp_path)), (
+        'a block that never names the restart must be reported by its own check'
+    )
 
-    _plant(tmp_path, {'claude': claude.replace(_RELOAD_SENTENCE, 'a reload is usually enough')})
-    assert _mirror_violations(_entry_texts(tmp_path)), 'a block without the reload sentence must be reported'
+    _plant(
+        tmp_path,
+        {harness: text.replace(_RELOAD_SENTENCE, 'a reload is usually enough') for harness, text in clean.items()},
+    )
+    assert f'the post-run block should state that {_RELOAD_PLUGINS} alone is not sufficient' in _mirror_violations(
+        _entry_texts(tmp_path)
+    ), 'a block without the reload sentence must be reported by its own check'
 
     assert _mirror_violations(_entry_texts()) == [], 'the entry points name it only inside the block'
 
