@@ -27,6 +27,7 @@ The exit-code contract for every `python3 .plan/execute-script.py` call in this 
 /plan-orchestrator archive slug={slug}      # Relocate a closed epic to archived-orchestrators/
 /plan-orchestrator lessons                  # Lessons-handling mode (fixed lessons-routing epic)
 /plan-orchestrator cleanup slug={slug}      # Review and reconcile the spec corpus, then ledger, archive, and restart-readiness
+/plan-orchestrator handle-open slug={slug} [threshold=N]  # Walk every open defect, watch and question; decide the confident ones, put each remaining one to the operator
 /plan-orchestrator preflight plan={plan_id} # Write the per-plan client.toon pre-flight artifact (best-effort, never blocks)
 /plan-orchestrator land [requeue=true]      # Land the shared ledger worktree onto the base branch through one PR, then resync it
 ```
@@ -77,6 +78,7 @@ Resolve the verb from the invocation (default: `status`), then load and follow t
 | `archive` | `workflow/archive.md` | Relocate a closed epic tree to `archived-orchestrators/` (post-close, mechanical) |
 | `lessons` | `workflow/lessons-handling.md` | Lessons-handling mode: sweeps into the fixed `lessons-routing` epic, local dedup/aggregate, each cluster routed outward to its owning sibling epic over the inbox channel, cross-repo integrate-then-remove |
 | `cleanup` | `workflow/cleanup.md` | Review and reconcile the spec corpus, then call the ledger-compaction stage, the archive step, and the restart-readiness verdict |
+| `handle-open` | `workflow/handle-open.md` | Walk the epic's open defects, watches and questions; decide the items above the confidence threshold and present the rest to the operator one per turn in plain text |
 | `preflight` | `workflow/preflight.md` | Write the per-plan `client.toon` pre-flight artifact (best-effort, never blocks) |
 | `land` | `workflow/land.md` | Land the shared ledger worktree onto the base branch through one PR for all epics, then resync the worktree onto the new base (needs `orchestrator.use_worktree` on; takes no slug) |
 
