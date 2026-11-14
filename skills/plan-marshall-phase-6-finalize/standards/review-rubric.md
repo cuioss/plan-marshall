@@ -1,0 +1,162 @@
+# Review Rubric — the shared grading contract of the two finalize reviews
+
+Two finalize steps review a plan's change before it is pushed, and they ask different questions:
+
+| Step | Question it answers |
+|------|---------------------|
+| `default:functional-review` | Did the plan deliver every deliverable and every success criterion it was asked for, with evidence — and did it change only what it was asked to change, and say so truthfully? |
+| `default:code-review` | Is the change well made, judged against the rulebook of the domains it touches and the project's own conventions? |
+
+This document is the rubric both read. It is the **only** place the blocking line is stated: each step body states what it examines and how it records its outcome, and points here for how a finding is graded, what counts as evidence, where a blocking finding loops back to, and when a round may close. A step body that restates any of those rules is a second copy that can drift from this one; it cites the section instead.
+
+## 1. Severity vocabulary
+
+Every finding either review produces carries exactly one severity:
+
+| Severity | Meaning | Effect on the round |
+|----------|---------|---------------------|
+| `blocking` | The finding must be resolved before the change is pushed. | The round records `loop_back` to the target § 6 selects. The finding is written to the plan's finding store before the outcome is recorded. |
+| `advisory` | The finding is substantiated and reported, but the change may ship with it. | The round may close. The finding is recorded with the round's facts and reaches the reader; it does not loop. |
+
+There is no third severity and no unscored finding. A finding the reviewer cannot place on one side of the line is not yet substantiated — see § 3 and § 5 — and is not reported until it is.
+
+## 2. Functional grading — `default:functional-review`
+
+The functional review grades every outline deliverable with exactly one verdict:
+
+| Verdict | Meaning |
+|---------|---------|
+| `met` | Every success criterion of the deliverable carries evidence (§ 4). |
+| `met_with_residuals` | The deliverable's value is delivered, and the residuals — what is missing or partial — are named on the row. |
+| `not_met` | The deliverable's value is not delivered. |
+| `superseded` | The deliverable no longer applies. The row's `superseded_by` opens with the CLOSING deliverable that takes the work over — `D3`, `D 3`, `Deliverable 3`, `Deliverable #3`, `Deliverable D3`, or one of those wrapped in a backtick, bold/italic markers or a parenthesis — because that value is what closes the deliverable's frozen criteria. The cited deliverable must exist in the outline, must not be this deliverable itself, must not form a supersede cycle, and must be graded `met` or `met_with_residuals`; a value that fails any of these is a validation error that names which one, and a stray reference inside prose is not a citation. A deliverable retired by operator decision with no successor is not superseded — close it through `criteria-authorize`. State the operator decision or the refutation after the reference when a reader needs it. |
+
+The blocking line for the functional review:
+
+- A `not_met` deliverable is `blocking`.
+- A success criterion that is `unevidenced` (§ 4) is `blocking`.
+- A **residual** on a `met_with_residuals` row is graded by its consequence: `blocking` when the missing part is part of what the deliverable was asked to deliver, `advisory` when it is not.
+- An **unrequested change** — a file the change touches that no deliverable declares or is attributed — is graded by its consequence: `blocking` when it alters behaviour, a contract or a document a reader acts on, `advisory` when it does not.
+- A **false or stale self-report** — a task note, a commit message, a decision-log entry or a document line that claims something the change does not do — is graded by its consequence. A false claim a reader would act on is `blocking`; a claim no reader acts on is `advisory`.
+- A **weakened existing test** — a test that passed before the change and now asserts less: an assertion removed, a check narrowed, a negative case dropped, a filter or skip marker added, or a fixture changed in the same commit as the rule it exercises — is `blocking`. One finding per weakened test, naming the test and what it no longer checks. The `test-integrity` verb of the step's own helper enumerates the changed tests whose assertions the branch REMOVED or FILTERED, both of which it counts — a removed assertion, a dropped negative case and an added skip marker among them; it reads the branch as one test set, so a moved, renamed or split test file is not a loss, and it reads its pre-image at the merge base; a relaxed assertion that keeps its count, a narrowed check and a fixture change are the author's reading of the change, reported the same way. A loss is reported in exactly four cases: the set total drops, a named test disappears from every after-file, one test's count drops while that test still exists, or a surviving path's own total drops and no identity accounts for it. A declared removal is accepted, and an undeclared one blocks until an operator accepts it. A deliverable declares the tests it removes under `**Tests to remove:**`; an operator close of a `weakened_test` finding records the identities that finding removed. Both key the accepted set by what the entry NAMES: a test identity plus its removed count, a filter's paired `{test, marker}` set, or a path-level row kind (mixed residual / file total / set total) plus its count. The identity is `class::function` for a Python or Java/Kotlin method, the bare function name, the quoted JS/TS name qualified by its enclosing `describe` (`suite::renders`), or the class name where no method arm applies. A JVM test method is its own identity, so a second `@Disabled` in an accepted class is a new row; an acceptance recorded under the previous, UNPAIRED key re-raises its row rather than accepting more. A declaration without a count decides a removal only, never a drop of a surviving test. `validate` lists accepted removals as `accepted_removals` and raises no row for them. A deliverable that ASKS for the change is what justifies it through that declaration, and nothing weaker does.
+- A criterion the **frozen record** holds that the current outline no longer carries verbatim is `blocking`: `deleted` when the clause is gone, `rewritten` when its place is taken by different text, one finding per criterion. One state is NOT drift and never blocks: `parser_extended` — a frozen criterion that is a prefix of the criterion the current parser reads in full (a wrapped bullet a retired parser truncated), admitted only for a snapshot that predates the current parser's `parser` marker; a marker that is missing or not an integer is read as older. Once the current parser froze the snapshot, the same continuation append is `rewritten`. A snapshot whose `parser` marker is `2` admits the criterion as a **generation-2 replay**: the frozen text must equal one of the current body's `generation_2_criteria` (what the generation-2 parser would have produced from that same body), not merely be a prefix of it. `criterion_unparsed` names a frozen row the parser could not read: today that state is the unterminated fenced block a criterion's cut leaves behind, and it is filed as a **blocking** `criterion_unparsed` row. A non-bullet line or a candidate `### N.` heading inside a criteria block is reported in the payload's `unparsed` list but does not by itself become a blocking row. `validate` reports the `parser_extended` state as `criterion_parser_extended`, advisory, and the operation that retires it is a re-freeze. `validate` reports the frozen count per deliverable as `criteria_by_deliverable`. The frozen record is written at outline approval — the request's Done-when text, each outline deliverable's criteria, and each spec deliverable's own Done-when clause. Only a logged operator decision authorizing that exact change retires the outline-criterion finding; the `criteria-authorize` verb records the authorization and logs the decision only after that record lands — withdrawing the authorization when the log cannot be written, and reporting a withdrawal that itself fails. `criteria-refreeze-authorize` follows the same contract under the same plan-scoped guard, and its withdrawal removes only the authorization its own call set (`withdrawn`, `restored`; `superseded` when a newer authorization must survive, `already_consumed` when a re-freeze used it first, `not withdrawn` when the withdrawal itself cannot be written). A failed line on the change path undoes the commit (`rolled_back`); when the undo lands but its recorded digest cannot be withdrawn, the snapshot is left reading `tampered` and is refused until the record is repaired (`tamper_flagged`: `criteria-refreeze-authorize`, then `snapshot-criteria`, which re-freezes on the current outline and records the new digest), and an undo that cannot be completed reports `inconsistent`.
+- A **spec deliverable's own Done-when that no outline criterion covers** is `blocking` too, reported against that spec deliverable (`spec_criterion_missing`). Each spec clause is frozen as its OWN row, so a later pass that merges several spec deliverables into one outline deliverable cannot collapse two clauses into one criterion — and the clause it left out is a finding rather than an ungraded gap. The shape it prevents: four spec deliverables merged into one outline deliverable, three generic criteria graded, the fourth clause's Done-when never graded at all. The outline answers it by carrying the clause; a spec clause is part of what the plan was asked to deliver, so there is no "drop it" route.
+
+## 3. Code-review grading — `default:code-review`
+
+A code finding is **substantiated** only when it carries all three of:
+
+1. **A cited rule** in one of the forms § 5 lists.
+2. **A location** as `file:line`.
+3. **A failure scenario** — the input or state that triggers the finding, and what goes wrong.
+
+A finding missing any of the three is not a finding; it is rejected, not downgraded.
+
+The blocking line for the code review:
+
+- A substantiated finding whose failure scenario produces **a wrong result, lost data, a fail-open path, or a broken contract** is `blocking`.
+- Every other substantiated finding is `advisory`.
+
+The grade follows the failure scenario, never the reviewer's sense of how important the finding is: the charter in § 9 forbids withholding a substantiated finding as minor, and this section is what turns "reported" into "blocking" or "advisory".
+
+## 4. Evidence for a met criterion
+
+A success criterion is `met` only when the row cites at least one piece of evidence in one of these forms:
+
+| Form | Example shape |
+|------|---------------|
+| A code or document location | `path/to/file.py:42` |
+| A test identifier | `test/module/test_file.py::test_name` |
+| A recorded verification run | the step id or build run the plan recorded, with its outcome |
+
+A criterion claimed `met` without evidence is `unevidenced`, never `met`. The claim is not taken on trust and not upgraded by agreement with the plan's own notes: the plan's self-report is the thing being checked (§ 9, the intent clause), so it cannot also be the evidence for itself.
+
+Two further rules narrow which citations count. The first is graded `unevidenced`; the second is REFUSED, because a citation of something that does not exist is not a weak criterion but a verdict that cannot be trusted at all:
+
+- **A pre-fix criterion needs a pre-fix run.** A criterion whose own text makes a run against the tree WITHOUT the change its Done-when — "fails on the pre-fix tree", "fails at `<sha>`", "fails before the fix" — is `unevidenced` unless its evidence names a FAILING run against that tree: a failure token, no attribution to HEAD, and either an explicit pre-fix marker or the SHA of the tree it failed against. An entry that merely mentions the pre-fix tree ("the suite passes on the pre-fix tree") names no failure, and a run at HEAD — green or red — names the wrong tree, so neither satisfies one.
+- **A named test or file must exist at the graded head, or the verdict is refused.** A criterion that cites a path or a test identifier is checked against the tree the verdict was written for; a path the change never had, or a test name whose parts appear nowhere in the file it names, makes the verdict invalid rather than downgrading the criterion. A dotted name is checked segment by segment, so a class-scoped `path::Class.method` citation counts when the file holds its class and its method.
+
+**A citation the reviewer cannot evaluate is never silently accepted.** When no tree resolves for the graded head, the citation-existence check does not run at all — the review says so rather than reading the absence as a pass — and a cited file the check tries to read and cannot is refused with the rest of the citations, per § 11's not-run state. Neither reads as a clean `met`.
+
+## 5. Citation forms for a code finding
+
+A code finding cites its rule in one of these forms:
+
+| Form | What is cited |
+|------|---------------|
+| Pack rule | A bullet of a domain's `## Review Rules` block (§ 10), named by its skill and the rule text. |
+| Spine category | A cross-cutting category of the code-review spine. |
+| Project convention | A project convention file and the heading that states the convention. |
+| ADR | An architecture decision record, by number. |
+
+A finding that names no rule in any of these forms is uncited and is rejected (§ 3).
+
+## 6. Loop-back target selection
+
+A round with at least one `blocking` finding records `loop_back`. The target is chosen by what the fix needs:
+
+| The fix needs | Target | What happens |
+|---------------|--------|--------------|
+| New implementation — code, tests or documents that do not yet exist in the change | `5-execute` | The blocking findings become fix tasks, and execute runs them before finalize resumes. |
+| Only a correction to the diff in hand — a false note, a stale document line, a one-line amendment | `6-finalize` | Finalize replays inline and the correction is made on the branch in hand. |
+
+When the blocking set holds both kinds, the target is `5-execute`: one implementation gap is enough to need execute, and the corrections ride along as fix tasks.
+
+## 7. Author and verifier
+
+The party that authors a review's verdict is not the party that accepts it.
+
+- The **author** reads the inputs, grades every finding against this rubric, and produces the verdict — the deliverable rows for the functional review, the findings list for the code review.
+- The **verifier** is a second dispatch, issued from the inline dispatcher context — never from inside the author's envelope, because a dispatched envelope cannot dispatch further (see [`../../ref-workflow-architecture/standards/agents.md`](../../ref-workflow-architecture/standards/agents.md)). It files no finding and edits no file. It answers exactly two questions:
+  1. **Is the grading supported by the cited evidence?** — every verdict, severity and citation checked against the evidence the author named.
+  2. **May the round close?** — no `blocking` finding survives, and the verifier accepts the grading.
+
+A round closes only when both answers are yes. The author cannot close its own round.
+
+## 8. Delta rounds, the closing round, and operator overrides
+
+- **A re-fire after a fix is a delta round.** It covers the deliverables and files the fix touched — a deliverable is in the delta when it declares or is attributed a file the fix changed — not the whole change again.
+- **A clean delta round is followed by one closing round.** A round with no `blocking` finding is followed by one closing round over every deliverable before the verifier may accept closure. The closing round is what proves the fixes did not break a deliverable outside their own delta.
+- **An operator override of the round cap closes only the head the operator judged.** When the operator closes a review past its round cap, the override covers the HEAD that was in front of them and nothing later. Every later fix commit still gets a delta round, and that round is not charged against the round budget. Each override-closed head is recorded as a fact on the step, so a retrospective can name exactly what shipped unreviewed.
+
+## 9. Code-review charter
+
+The code review carries these four clauses verbatim. They are the same clauses the external review bot's spine carries, so the in-run reviewer and the bot work to one charter.
+
+**Substantiation:**
+
+For each finding, name the input or state that triggers it and what goes wrong. Overlap with other reviewers is acceptable — report the issue regardless of whether another tool might also catch it. Do not withhold a substantiated finding because it seems minor or obvious.
+
+**Anti-fabrication:**
+
+An empty list remains the correct answer when the diff genuinely carries nothing substantiable, and you must never invent a finding, pad the list, or report an issue whose mechanism you have not traced in the code shown. But do not return an empty list because nothing reached a bar of severity or importance. There is no such bar.
+
+**Intent as a claim:**
+
+If the pull request description states what the change is intended to do, treat that as a claim to be checked, not as established fact. Report where the implementation diverges from the stated intent, and never treat agreement with it as evidence that the code is correct.
+
+**Severity is not a threshold:**
+
+Severity is not a reporting threshold. Report a finding you can substantiate even when it is narrow, cheap to fix, or confined to test code — the reader decides what to act on, and a finding declined as minor costs one line of triage. Do not weigh whether an issue is important enough to mention.
+
+The charter governs **whether** a finding is reported; § 3 governs **how** a reported finding is graded. Reporting every substantiated finding and blocking only on the § 3 failure classes are two halves of one rule, not a contradiction.
+
+## 10. Harvestable review-rule blocks
+
+The code-review rulebook is harvested from the domain standards skills by the in-run code review. A standards skill contributes through two section headings in its `SKILL.md`:
+
+| Heading | Contents |
+|---------|----------|
+| `## Review Categories` | The domain's review categories — what kinds of defect a reviewer looks for in this domain. |
+| `## Review Rules` | The domain's review rules — the concrete rules a finding cites. |
+
+Every block follows four rules:
+
+- **One rule per bullet.** A bullet that carries two rules cannot be cited as one.
+- **Mechanism-naming wording.** A rule names the mechanism that goes wrong — what input or state, and what breaks — so a finding citing it can state a failure scenario.
+- **Addressed to a reviewer.** A rule states what to look for in the code, not how an author should work.
+- **No withholding language.** A rule never tells the reviewer to suppress a finding it could substantiate — no "do not duplicate", no "only when you can name the concrete input". A rule written that way makes the reviewer withhold a finding it could state, so the phrase is the defect and the rule is written without it.
+
+## 11. The not-run state
+
+A review that could not read its inputs reports `not_run`, never a clean verdict. An unreadable request, outline, task set, footprint or rulebook means nothing was evaluated, and a `clean` record for an unevaluated change is a green that no check ever produced. The `not_run` state is recorded separately from a clean result, with the reason the inputs could not be read, so a reader can tell "examined and found nothing" from "not examined". This is the same separation ADR-019 makes for every audit: what could not be evaluated is reported apart from what was evaluated and found wanting.
