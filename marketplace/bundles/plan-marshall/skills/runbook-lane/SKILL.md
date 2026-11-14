@@ -874,7 +874,7 @@ Merge only when all of these hold:
   `kind=reviewed` payload names a covered commit (the artifact clause 1 below states; rate-limit
   notices, marker-less walkthroughs, thread replies and a refusal submitted as a review do not
   count — the one exception being a refusal whose body also carries a readable finished marker
-  naming the commit it covered, which CodeRabbit publishes when its summary keeps a later limit
+  naming the commit it covered, which a reviewer publishes when its summary keeps a later limit
   notice beside its verdict). The flag alone is not the exemption: `review-gate` enforces it per
   reviewer when the lane
   passes `--required-reviewer {bot}` for each required bot, and answers
