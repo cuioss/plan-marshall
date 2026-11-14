@@ -2,10 +2,10 @@
   "id": "PLAN-LB-149",
   "slug": "build-row-writers-and-freshness-truth",
   "workstream": "WS-02",
-  "status": "staged",
+  "status": "shipped",
   "lane": "runbook",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "plan_marshall_plan_id": "rb-lb-149-build-row-writers-and-freshness-truth",
+  "pr": "1977",
+  "landing": "landings/PLAN-LB-149.md",
   "seq": 149
 }

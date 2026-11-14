@@ -1671,3 +1671,55 @@ attribution, lane text re-read after all three restarts, two restarts reported a
   reconciled as far as its facts go. Token and measurement work is out of scope under the focus rule; nothing is staged and no
   figure was recovered.
 
+## Open Defects closed by PLAN-LB-144, PLAN-LB-146 and PLAN-LB-149 (relocated 2026-11-14)
+
+- **CLOSED BY PLAN-LB-146 (PR #1971, merge `877a05ac7`, 2026-11-13) AND DECIDED 2026-11-12; the rest of the surface moved to PLAN-LB-148 (running).
+  Original entry:**
+  **MAJOR — the OpenCode review-gate parser refuses a counted CodeRabbit block it does not list, so a lane cannot decide a PR whose
+  review carries it (PLAN-LB-143 landing, 2026-11-12; new, not staged).** `runbook_lane review-gate --pr-number 1964` answers
+  `merge_allowed: false`, reason `undecidable_read`, detail `unreadable review-body section: 'Files with no reviewable changes: 1'`
+  (re-run by the orchestrator, same answer). `_NON_FINDING_SECTION_LABELS` (`runbook_lane.py:2149-2161`, re-read) names the counted
+  titles that are boilerplate and has no entry for that one, and `_body_findings` (`:2457-2467`, re-read) refuses a counted title that
+  is neither a findings section nor a listed label, which is the deliberate fail-closed direction; the cost is that every new block
+  title stops a lane until someone adds it (PR 1952 got `files skipped from review as they are similar to previous changes`, this PR
+  needs a second entry). The lane merged on the operator's recorded selection and reported its three review facts as unknown, so the
+  landing is incomplete on those keys and not only on `total_tokens`. No staged spec carries it; `runbook_lane.py` is on the
+  surface of PLAN-LB-147. Retire when the parser decides a PR carrying this block, and preferably when a counted title with no
+  findings content stops being a refusal. Needs the operator's word on whether it goes into PLAN-LB-147 or into the consolidated
+  residue plan.
+  *Account of the closure:* the label `files with no reviewable changes` is in `_NON_FINDING_SECTION_LABELS` on `main` since `877a05ac7`
+  (read in the squash diff, `runbook_lane.py` hunk at line 2154); the operator-settled decision 5 keeps the list closed, so a counted
+  title with no findings content stays a refusal by design; the placeholder-URL fixture is replaced by the real capture in PLAN-LB-148
+  deliverable 3.
+- **CLOSED BY PLAN-LB-144 DELIVERABLE 1 (PR #1965, merge `242617bcf`; landing `landings/PLAN-LB-144.md`); the one residue (a deliverable
+  retired with no successor) is operator decision 2, reopened 2026-11-13. Original entry:**
+  **MAJOR — a deliverable can supersede itself, or two can supersede each other, and its criteria close with no evidence
+  (PLAN-LB-133 landing, 2026-11-11; STAGED as PLAN-LB-144 deliverable 1, held until PLAN-LB-142 ships).**
+  `superseded_by_names_deliverable` (`_criteria_snapshot.py:1836-1867`, re-read) checks that the cited number is one of the
+  outline's own, never that it differs from the deliverable's own, and the validator (`_review_support_validate.py:444-450`, leaf)
+  and `open_criteria` share it. Not a regression (the base closed on any free text) and the lane recorded it as spec-literal, but the
+  rule now forces a reviewer who retires a deliverable by operator decision, with no successor, to name some deliverable, so naming
+  itself is the easy workaround, and one shipped fixture already does (`test_lb74_criterion_matching_d2.py`, re-read). A successor that
+  is itself unmet is accepted too. Retire when the rule rejects the deliverable's own number and a cycle.
+  *Account of the closure:* the PLAN-LB-144 landing reads D1 shipped-as-specified (a self-citation and a cycle are refused,
+  `REFERENCE_CYCLE`, an absent successor verdict gives `SUCCESSOR_NOT_MET`, `_criteria_snapshot.py:1923-1941`, re-read there).
+- **CLOSED BY PLAN-LB-144 DELIVERABLE 4 (PR #1965) AND PLAN-LB-149 DELIVERABLE 4 (PR #1977, merge `f3c926738`, 2026-11-13). Original entry:**
+  **HIGH — the freshness gate refuses a whole-tree change on a Gradle ledger that holds a submodule row beside a root row
+  (PLAN-LB-130 landing, 2026-11-10; STAGED as PLAN-LB-144 deliverable 4 on the operator's word of 2026-11-11, held until PLAN-LB-142 ships).** The PLAN-LB-124
+  defect (goal tokens read as module scope) is closed for npm, Maven and Gradle root rows. The PLAN-LB-130 lane added a carve-out the
+  spec did not ask for: `parse_row_scope` returns unreadable for any `:`-prefixed payload token on a Maven or Gradle row
+  (`_freshness_crosscheck.py:849-850`), and the Gradle discoverer prefixes every submodule task that way
+  (`_gradle_cmd_discover.py:492-498`; both re-read). Gradle canonicals are outside the vocabulary, so the ledger stays undetermined, and
+  the whole-tree refusal fires when ANY candidate row is unreadable (`:1386-1392`, re-read). Input: a whole-tree change with a root
+  `build` row and a `:core:test` row at the sha; it was fresh at the base and is stale now
+  (`build_scope_unreadable_for_whole_tree_change`), and a root-only re-run at the same sha cannot clear it. A ledger of submodule rows
+  alone is a correct refusal. Consumer projects on Gradle only; this repository (pyproject) is unaffected, so whether it is "normal use"
+  under the stop rule is the operator's call. Fix shape: read the module from the `:module:` token or treat the row as an inability like
+  a root row, and drop or justify the npm exemption. Detail: `landings/PLAN-LB-130.md` L2-1, L3-1. Related minor from the PLAN-LB-124
+  landing, still open: a `-Dtest` run with `failIfNoSpecifiedTests=false` and a `No tests to run.` line is `success` (its L3-2),
+  fail-open only if Surefire prints that line for a missed selector.
+  *Account of the closure:* PLAN-LB-144 D4 made a multi-task `:`-prefixed row a narrow scoped row; PLAN-LB-149 D4 (verified in the squash
+  commit body and the landing message; the leaf read of the code follows in `landings/PLAN-LB-149.md`) reads a lone `:module:task` row as
+  scoped too, so a root `build` row beside a lone `:core:test` row is refused for a whole-tree change as narrow and not as unreadable.
+  The related `-Dtest` minor stays open and is not part of this relocation.
+

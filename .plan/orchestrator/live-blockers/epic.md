@@ -157,6 +157,22 @@ derive, for rows still live.
   harness sync is owed for the OpenCode target; no executor regeneration. The three Open Defects staged as its deliverables are retired to
   `settled.md`.
 
+- **PLAN-LB-149** (shipped, PR #1977, 2026-11-13, runbook lane, `deepseek-v4.1-flash/high`) — see `landings/PLAN-LB-149.md`. Merge commit
+  `f3c926738`, a squash commit with one parent `d1d3ed2b2` (read with git before the leaf prompt named it); 21 changed paths counted from git,
+  the same number as the 21 the spec declares with 4 added and 4 missing (the `_criteria_snapshot.py` regex and three tests were added; the
+  two rubric documents and two conditional entries were not touched). One three-layer leaf read it with ten lane claims; the orchestrator
+  re-read the Gradle scope derivation and the recorder's plan-id lines and says which points it did not re-read. The lane counts five of five
+  deliverables done; the reading agrees. The message is `complete: false` on `total_tokens` alone (out of scope). Review numbers agree with
+  the provider (0 threads, 8 findings, 8 of 8 handled from the progress file; seven fixed, one declined with a sound reason). **No blocker
+  and no major.** Closed: PLAN-LB-146 F1 (a writer that recorded nothing omits the tree keys, so the CLI and a pre-change executor are read as
+  before) and F2 in the source (the recorder hashes the tree the build ran in, not the plan named by `--audit-plan-id`; stale executors keep
+  the old route until regeneration); the pre-build hash is bounded and a failed git call is no hash; a lone `:module:task` Gradle row is a
+  scoped row (operator decision 1). Open, minor and off-canonical, so no plan: a row of only root tasks (`:build :test`) now reads
+  unreadable where it read narrow, so a module-scoped change can pass (new); the recorder takes the first `--plan-id` where the wrapper takes
+  the last, and `--project-dir .` is hashed as the working directory (leftovers of F2's class); wrong cause named for a failed hash; four test
+  gaps; four document drifts and new change-history wording. Executor regeneration stays owed, now for F2 in the 877 template and the PLAN-LB-137
+  to PLAN-LB-146 verbs and flags, not as a halt of the push gate.
+
 - **PLAN-LB-149** (staged 2026-11-13 on the operator's word, runbook lane, WS-02) — plan D of the per-surface fix plans,
   `plans/PLAN-LB-149-build-row-writers-and-freshness-truth.md`. Five deliverables on one surface (the build-row writers, the freshness gate and
   their documents): D1 a writer that recorded nothing about the tree omits the two tree keys, and only a writer that tried and failed writes an
@@ -1674,6 +1690,29 @@ derive, for rows still live.
 
 ## Decisions
 
+- 2026-11-14 (analysed, cleaned up) — **PLAN-LB-149 is analysed and shipped, and the operator asked for a full cleanup and a land.** The operator
+  said "analyze landed, make a full cleanup, land". The only message was the merged landing of PLAN-LB-149 (PR #1977, merge `f3c926738`, one
+  parent `d1d3ed2b2`, 21 paths from git); the analysis is in `landings/PLAN-LB-149.md`: no blocker, no major, F1 closed, F2 closed in the source.
+  Cleanup, by the `cleanup` verb's own phases: **corpus** (enumerate: 149 rows and 149 specs reconcile both ways, 3 running rows excluded
+  from re-grounding, no staged spec exists so the re-grounding and distribution classes have nothing to apply to; `lint-done-whens` reports one
+  finding in the shipped PLAN-LB-119 spec, an audit record left as it is; `cross-check` is read-only and was not re-run beyond the staging
+  runs); **ledger** (`compact` returned `ok` for both invariants, 33 relocation pointers resolving; three Open Defects with a positive
+  account of their closure were relocated verbatim to `settled.md` under a new heading, and one minor (the `-Dtest` no-tests-to-run reading)
+  was carried back into Open Defects so nothing was lost; the remaining Open Defects, Watches and the Decisions section were not
+  relocated because each needs its own positive account of closure and the contract says to confirm the settled-versus-live call with the
+  operator, so the proposal is in the report); **archive** (refused by design: no epic-wide quiescence signal); **restart readiness**
+  (`not_ready`: three rows running and one message queued then, which the analysis cleared; registry parity indeterminate because the
+  registry pins 0.1.2114 and 0.1.2116 against an executor at 0.1.2076). Worktrees: the PLAN-LB-146 base-evidence worktree, which held only four
+  untracked copies of tests now on `main`, was removed on the operator's word; the PLAN-LB-149 base worktree was already gone. The five
+  remote branches without a PR were not touched, because deleting a remote branch needs its own instruction.
+
+- 2026-11-13 (landed and emitted) — **The ledger is landed again and PLAN-LB-149 is emitted.** After the staging bookkeeping below the land ran:
+  `land snapshot` pushed 18 paths for two epics (eight more `lessons-routing` inbox files from another session among them), PR #1976 was
+  opened and bound, `checks wait` returned green, the PR went through the merge queue as `d1d3ed2b2`, and `land resync` returned `resynced`
+  (main fast-forwarded, remote branch already absent). PLAN-LB-149 moved from `staged` to `running`; its command is the spec's hand-off line,
+  and its `plan_marshall_plan_id` and `pr` are stamped at the lane's first message. Slots: PLAN-LB-136, PLAN-LB-148 and PLAN-LB-149 are in
+  flight, three of four in use. The emit transition, this entry and the anchor ride the next land.
+
 - 2026-11-13 (open plans reviewed) — **Plan D is staged as PLAN-LB-149, plan C is not staged, PLAN-LB-148 is corrected, and decision 2 comes back
   to the operator.** The operator said "go through the open plan / open / issues and cleanup / update the remaining plan(s) after that land and
   emit". Two read-only grounding leaves ran at `877a05ac7`, one per surface, and the orchestrator re-read the writer, the gate's verdict
@@ -2837,46 +2876,17 @@ derive, for rows still live.
 
 ## Open Defects
 
-- **MAJOR — the OpenCode review-gate parser refuses a counted CodeRabbit block it does not list, so a lane cannot decide a PR whose
-  review carries it (PLAN-LB-143 landing, 2026-11-12; new, not staged).** `runbook_lane review-gate --pr-number 1964` answers
-  `merge_allowed: false`, reason `undecidable_read`, detail `unreadable review-body section: 'Files with no reviewable changes: 1'`
-  (re-run by the orchestrator, same answer). `_NON_FINDING_SECTION_LABELS` (`runbook_lane.py:2149-2161`, re-read) names the counted
-  titles that are boilerplate and has no entry for that one, and `_body_findings` (`:2457-2467`, re-read) refuses a counted title that
-  is neither a findings section nor a listed label, which is the deliberate fail-closed direction; the cost is that every new block
-  title stops a lane until someone adds it (PR 1952 got `files skipped from review as they are similar to previous changes`, this PR
-  needs a second entry). The lane merged on the operator's recorded selection and reported its three review facts as unknown, so the
-  landing is incomplete on those keys and not only on `total_tokens`. No staged spec carries it; `runbook_lane.py` is on the
-  surface of PLAN-LB-147. Retire when the parser decides a PR carrying this block, and preferably when a counted title with no
-  findings content stops being a refusal. Needs the operator's word on whether it goes into PLAN-LB-147 or into the consolidated
-  residue plan.
-- **MAJOR — a deliverable can supersede itself, or two can supersede each other, and its criteria close with no evidence
-  (PLAN-LB-133 landing, 2026-11-11; STAGED as PLAN-LB-144 deliverable 1, held until PLAN-LB-142 ships).**
-  `superseded_by_names_deliverable` (`_criteria_snapshot.py:1836-1867`, re-read) checks that the cited number is one of the
-  outline's own, never that it differs from the deliverable's own, and the validator (`_review_support_validate.py:444-450`, leaf)
-  and `open_criteria` share it. Not a regression (the base closed on any free text) and the lane recorded it as spec-literal, but the
-  rule now forces a reviewer who retires a deliverable by operator decision, with no successor, to name some deliverable, so naming
-  itself is the easy workaround, and one shipped fixture already does (`test_lb74_criterion_matching_d2.py`, re-read). A successor that
-  is itself unmet is accepted too. Retire when the rule rejects the deliverable's own number and a cycle.
+> ↪ Relocated to `settled.md` § "Open Defects closed by PLAN-LB-144, PLAN-LB-146 and PLAN-LB-149 (relocated 2026-11-14)" — the review-gate parser refusal (closed by PLAN-LB-146, the fixture left to PLAN-LB-148) and the self-superseding deliverable (closed by PLAN-LB-144 deliverable 1; the retired-with-no-successor residue is operator decision 2).
 - **MEDIUM — the PLAN-LB-127 landing message is incomplete (2026-11-08).** `inbox landing-check` reports `complete: false` for
   `rb-lb-127-coderabbit-registry-summary-concerns-and-file-limit-001.md`, missing `total_tokens` (out of scope) and
   `unresolved_review_threads`, `review_body_findings_total`, `review_body_findings_handled`, `sonar_open_new_issues`. The lane text that
   produced it predates the four required keys PLAN-LB-116 added; the lifecycle producer cannot emit them either (PLAN-LB-116 landing,
   layer 1). The merge state and the deliverable count were read from the PR and the diff instead. Retire when the finalize steps publish
   the four numbers.
-- **HIGH — the freshness gate refuses a whole-tree change on a Gradle ledger that holds a submodule row beside a root row
-  (PLAN-LB-130 landing, 2026-11-10; STAGED as PLAN-LB-144 deliverable 4 on the operator's word of 2026-11-11, held until PLAN-LB-142 ships).** The PLAN-LB-124
-  defect (goal tokens read as module scope) is closed for npm, Maven and Gradle root rows. The PLAN-LB-130 lane added a carve-out the
-  spec did not ask for: `parse_row_scope` returns unreadable for any `:`-prefixed payload token on a Maven or Gradle row
-  (`_freshness_crosscheck.py:849-850`), and the Gradle discoverer prefixes every submodule task that way
-  (`_gradle_cmd_discover.py:492-498`; both re-read). Gradle canonicals are outside the vocabulary, so the ledger stays undetermined, and
-  the whole-tree refusal fires when ANY candidate row is unreadable (`:1386-1392`, re-read). Input: a whole-tree change with a root
-  `build` row and a `:core:test` row at the sha; it was fresh at the base and is stale now
-  (`build_scope_unreadable_for_whole_tree_change`), and a root-only re-run at the same sha cannot clear it. A ledger of submodule rows
-  alone is a correct refusal. Consumer projects on Gradle only; this repository (pyproject) is unaffected, so whether it is "normal use"
-  under the stop rule is the operator's call. Fix shape: read the module from the `:module:` token or treat the row as an inability like
-  a root row, and drop or justify the npm exemption. Detail: `landings/PLAN-LB-130.md` L2-1, L3-1. Related minor from the PLAN-LB-124
-  landing, still open: a `-Dtest` run with `failIfNoSpecifiedTests=false` and a `No tests to run.` line is `success` (its L3-2),
-  fail-open only if Surefire prints that line for a missed selector.
+> ↪ Relocated to `settled.md` § "Open Defects closed by PLAN-LB-144, PLAN-LB-146 and PLAN-LB-149 (relocated 2026-11-14)" — the Gradle submodule-row freshness refusal, closed by PLAN-LB-144 deliverable 4 and PLAN-LB-149 deliverable 4; the related `-Dtest` minor stays open and is carried in that section.
+- **MINOR, still open (PLAN-LB-124 landing, L3-2; carried over from the relocated Gradle entry on 2026-11-14):** a `-Dtest` run with
+  `failIfNoSpecifiedTests=false` and a `No tests to run.` line reads as `success`; fail-open only if Surefire prints that line for a missed
+  selector. Not staged.
 > ↪ Relocated to `settled.md` § "Sonar closed by ruling, the PLAN-LB-100 merge-path half, and its incomplete-landing note" — the Sonar item closed by the ruling of 2026-10-28 (refined 2026-11-07, see Decisions), the merge-path half fixed by PLAN-LB-100, and one out-of-scope incomplete-landing note.
 - **MEDIUM — the merge-path participation check binds to the provider's candidate, the merge to the local head (PLAN-LB-100
   landing, 2026-10-29; NOT STAGED; a known limit the PR accepted).** `_check_participation` proves participation against the
