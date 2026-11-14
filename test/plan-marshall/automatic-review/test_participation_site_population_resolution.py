@@ -228,13 +228,14 @@ SITE_EXPECTATIONS: dict[str, SiteExpectation] = {
         'live_comment_scan',
         'commit_sha',
         'yes',
-        'The `review-gate` verb’s required-reviewer check reads the PR comment surface it '
-        'already fetches and asks, per named required reviewer, whether that bot holds a '
-        'qualifying review, through the ONE reader `_github_pr.is_finished_review` the '
-        'producer and the post chokepoint also ask. It anchors on the commit those artifacts '
-        'name (the head they covered is deliberately not compared — the done rule consumes any '
-        'PR head), is idempotent over one read, and is a REJECT check: a reviewer without such '
-        'an artifact refuses the merge, it never credits one.',
+        'The `review-gate` verb’s required-reviewer check reads the PR’s RAW comment '
+        'bodies, through its own in-process provider read, and asks whether each named '
+        'required reviewer holds a qualifying review — through the ONE reader '
+        '`_github_pr.is_finished_review` the producer and the post chokepoint also ask. '
+        'It anchors on the commit those artifacts name (the head they covered is '
+        'deliberately not compared — the done rule consumes any PR head), is idempotent '
+        'over one read, and is a REJECT check: a reviewer without such an artifact '
+        'refuses the merge, it never credits one.',
     ),
     f'{_SKILLS}/phase-6-finalize/SKILL.md': SiteExpectation(
         'normative_text',

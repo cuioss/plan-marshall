@@ -1148,6 +1148,24 @@ def test_refusal_cause_size_pattern_is_bot_scoped():
     assert github_pr.refusal_cause(_SOURCERY_SIZE_NOTICE, 'coderabbit') == 'quota'
 
 
+def test_refusal_cause_and_condition_fold_case_like_the_recognition_arm():
+    """⛔ A refusal recognised in any case keeps the cause and condition its text states.
+
+    The registry arm matches case-insensitively, so a notice written in capitals IS a
+    refusal. Classifying it case-sensitively would keep the body's RECOGNITION and its
+    two overlays disagreeing about the same record — and the condition is what tells a
+    caller whether waiting can move anything, so a "nothing new to review" reply in
+    capitals would be sent to wait for a window it never opens.
+    """
+    size = _SOURCERY_SIZE_NOTICE.upper()
+    assert github_pr._is_refusal_notice(size, 'sourcery') is True
+    assert github_pr.refusal_cause(size, 'sourcery') == 'size'
+
+    no_new = 'ALREADY REVIEWED THE LAST COMMIT.'
+    assert github_pr._is_refusal_notice(no_new, 'coderabbit') is True
+    assert github_pr.refusal_condition(no_new, 'coderabbit') == 'no_unreviewed_commit'
+
+
 def test_fetch_findings_reports_refusal_causes(plan_context, monkeypatch):
     """fetch_findings emits refused_causes[] — the size vs quota CAUSE per refusing bot.
 

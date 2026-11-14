@@ -1690,6 +1690,30 @@ derive, for rows still live.
 
 ## Decisions
 
+- 2026-11-14 (emitted, started, restart prepared) — **PLAN-LB-136 and PLAN-LB-148 are emitted and recorded as running on the operator's word.**
+  The operator said "emit both" and then "both are running. persist, land and prepare to restart". The start is recorded from that statement
+  and nothing else: at the moment of the transition no lane worktree, branch, pull request or progress file existed yet (the lanes had
+  just been launched), so the first lane signal still has to be read at the next `analyze` and the two rows must be checked against it. Both
+  gates were re-read before the emit and hold: `origin/main` had not moved, the surface comparison is determinate with no overlap, `emit_allowed`
+  is true. The restart check reads `not_ready` for two reasons that are expected and not defects: the two lanes are in flight, and the
+  registry parity is indeterminate because the executor is at 0.1.2076 while the registry pins 0.1.2114 and 0.1.2116; the phase, the corpus
+  reconciliation, the inbox and the worktree signals read ready. A restart of the orchestrator session is safe for the ledger: the anchor is
+  current and the ledger is landed (see the entries below); the lanes are separate sessions and keep running. Before restarting, the operator
+  runs the sync, the repin and the executor regeneration, in that order, so that the new session loads 0.1.2118 or later.
+
+- 2026-11-14 (corrected) — **PLAN-LB-136 and PLAN-LB-148 were never running; both rows are back to staged.** After the cleanup and land the
+  operator pointed out that no plan was running, against my report of two of four slots in use. The ground truth agrees with the operator: no
+  lane worktree exists for either plan (`git worktree list` shows the main checkout and the ledger worktree only), no remote branch, no open
+  pull request (`ci pr list --state open` returns none), no progress file under `.plan/temp/`, and no inbox message. The rows said `running`
+  only because the orchestrator moved them there at the emit and never recorded a start; the slot count in the reports of 2026-11-13 and
+  2026-11-14 repeated the ledger and was not checked against the lanes. The earlier rule applies and was not followed: an operator statement or
+  an absent detector about which plans run is asked about and checked, and a row emitted but not recorded as started is not counted as in
+  flight. The correction: both rows transitioned back to `staged`. Their gates were re-read on the same day and hold: the surface comparison is
+  determinate with no blocking candidate and no overlap with each other, `corpus spec-skills` reports `emit_allowed` true for both. PLAN-LB-136's
+  spec was grounded against `4ee75be3e` and carries the pointer to the PLAN-LB-135 landing; PLAN-LB-148's spec was grounded against
+  `c9dcfd290` and corrected on 2026-11-13 for the label already on `main`; the lane re-grounds both. Slots: none in use, four free; both plans
+  are emittable on the operator's word.
+
 - 2026-11-14 (analysed, cleaned up) — **PLAN-LB-149 is analysed and shipped, and the operator asked for a full cleanup and a land.** The operator
   said "analyze landed, make a full cleanup, land". The only message was the merged landing of PLAN-LB-149 (PR #1977, merge `f3c926738`, one
   parent `d1d3ed2b2`, 21 paths from git); the analysis is in `landings/PLAN-LB-149.md`: no blocker, no major, F1 closed, F2 closed in the source.
