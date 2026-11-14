@@ -242,8 +242,8 @@ manage-config orchestrator set --field decision_confidence_threshold --value 95
 ```
 
 An `--value` outside `0`–`100`, a bool, a float or a non-integer string is
-refused with nothing written; `--value 100` is accepted and makes every item
-operator-decided.
+refused with nothing written. What each accepted value means for a `handle-open`
+run is [`data-model.md`](data-model.md) § `orchestrator.decision_confidence_threshold`.
 
 ### Example: set use_worktree (from the main checkout)
 

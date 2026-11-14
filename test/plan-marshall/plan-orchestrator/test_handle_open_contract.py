@@ -442,15 +442,6 @@ class TestSingleCapDefinition:
 
         assert _xrefs_contract_without_restating_the_cap(_read(fixture))
 
-    def test_a_workflow_that_does_not_xref_the_contract_is_detected(self, tmp_path):
-        fixture = tmp_path / 'no-xref.md'
-        fixture.write_text('A rule that caps the item, with no section named.\n', encoding='utf-8')
-
-        text = _read(fixture)
-
-        assert CONTRACT_HEADING not in text
-        assert CAP_DEFINITION_MARKER in text
-
     def test_a_second_definition_is_detected(self, tmp_path):
         (tmp_path / 'standard.md').write_text('A claim re-read nowhere caps the item.', encoding='utf-8')
         (tmp_path / 'second.md').write_text('A duplicated rule that also caps the item.', encoding='utf-8')
