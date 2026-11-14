@@ -6,7 +6,7 @@ producer, the post chokepoint and the runbook lane must answer it the same way. 
 module pins the producer and the chokepoint against the SAME artifacts, so a formal
 review cannot be a review at one site and not at another.
 
-The artifacts below are the cases the three-site disagreement was observed on:
+The artifacts below are the cases the three sites must agree on:
 
 * a formal ``review_body`` with and without the commit it reviewed;
 * a marker-bearing ``issue_comment`` that names a covered commit;
@@ -30,6 +30,10 @@ _HEAD = 'a' * 40
 _LOGIN = 'coderabbitai'
 
 _REFUSAL = '> [!WARNING]\n> ## Review limit reached\n> Please wait 12 minutes before requesting another review.'
+#: The registry arm's phrase in another letter case and with no notice presentation:
+#: the structural arm needs a notice SHAPE as well as the limit statement, so only the
+#: registry arm can read this body.
+_REFUSAL_CASE_VARIANT = 'REVIEW LIMIT REACHED'
 #: Short, anchor-less, and matched by NO pre-noise-filter refusal arm — the one body
 #: the enumerative arm exists for. The arm is inert at its shipped (unmeasured)
 #: threshold, so the test below supplies a measured bound.
@@ -37,6 +41,8 @@ _ENUMERATIVE_REFUSAL = 'Please resubmit this pull request later.'
 _MARKER = (
     f'<!-- final_review_risk_coverage:{{"sourceCommitId":"{_HEAD}","coveredCommitId":"{_HEAD}","kind":"reviewed"}} -->'
 )
+#: A readable, finished marker that names NO commit — a claim nobody can place.
+_MARKER_WITHOUT_COMMIT = '<!-- final_review_risk_coverage:{"kind":"reviewed"} -->'
 _WALKTHROUGH = '## Walkthrough\n\nsome prose before the review completes'
 
 
@@ -103,9 +109,9 @@ def _chokepoint(monkeypatch, comments: list[dict]) -> bool | None:
 def test_the_chokepoint_refuses_an_empty_commit_review_body(plan_context, monkeypatch) -> None:
     """⛔ The empty-commit formal review proves no head, so it is no finished review.
 
-    The producer already excludes it; the chokepoint admitted any non-refusal formal
-    review, so a pull request could sit with a review that counts for the post
-    chokepoint and not for the done rule — the loop this plan closes.
+    Both sites ask ``is_finished_review``, so the record the producer leaves out of
+    ``finished_review_bots`` is the record the chokepoint does not refuse the trigger
+    for.
     """
     comments = [_comment('review_body', 'No actionable comments were generated', commit_id='')]
 
@@ -141,9 +147,9 @@ def test_the_chokepoint_and_the_producer_agree_on_an_enumerative_refusal(plan_co
     """⛔ A body only the ENUMERATIVE arm reads is not a refusal for this question.
 
     The enumerative arm answers "is this not review feedback" at a different pipeline
-    position. The producer's finished-review test reads ``_is_refusal_notice`` alone,
-    so a formal review with a commit is a finished review whatever that arm says. The
-    chokepoint's private copy added the arm and disagreed.
+    position, and ``_is_refusal_notice`` covers only the arms answerable before the
+    producer's noise filter. Both sites read that boolean, so a formal review naming a
+    commit is a finished review whatever the enumerative arm says.
     """
     monkeypatch.setattr(_github_pr, 'UNRECOGNISED_REFUSAL_MAX_CHARS', 200)
     assert _github_pr._is_unrecognised_refusal(_ENUMERATIVE_REFUSAL, 'coderabbit') is True
@@ -164,6 +170,42 @@ def test_the_chokepoint_and_the_producer_agree_on_an_enumerative_refusal(plan_co
 def test_the_chokepoint_and_the_producer_agree_on_a_non_review(plan_context, monkeypatch, body, commit_id) -> None:
     """MATCHED CONTROL — neither site admits an artifact that is not a review."""
     comments = [_comment('issue_comment', body, commit_id=commit_id)]
+
+    assert _producer_finished_bots(plan_context, monkeypatch, comments) == set()
+    assert _chokepoint(monkeypatch, comments) is False
+
+
+def test_a_case_variant_refusal_is_a_refusal_at_both_sites(plan_context, monkeypatch) -> None:
+    """⛔ The registry arm matches case-insensitively, as the pre-fix sites did.
+
+    A bot that answers a quota question in capitals still declined. Matching the
+    registered phrases case-sensitively filed that body as review feedback, so a
+    review body naming a commit counted as a finished review nobody received.
+    """
+    assert _github_pr._is_rate_limit_notice(_REFUSAL_CASE_VARIANT) is False, (
+        'the structural arm must not reach this body, or the case does not decide it'
+    )
+    comments = [_comment('review_body', _REFUSAL_CASE_VARIANT, commit_id=_HEAD)]
+
+    assert _producer_finished_bots(plan_context, monkeypatch, comments) == set()
+    assert _chokepoint(monkeypatch, comments) is False
+
+
+def test_a_commit_less_marker_does_not_lift_a_refusal(plan_context, monkeypatch) -> None:
+    """⛔ The refusal exemption is a marker NAMING A COMMIT, never merely `reviewed`.
+
+    A `kind: reviewed` marker naming no commit claims a review of some unknowable
+    head, so beside a refusal it leaves the refusal standing.
+    """
+    comments = [_comment('review_body', _REFUSAL + '\n' + _MARKER_WITHOUT_COMMIT, commit_id=_HEAD)]
+
+    assert _producer_finished_bots(plan_context, monkeypatch, comments) == set()
+    assert _chokepoint(monkeypatch, comments) is False
+
+
+def test_a_refusal_naming_a_commit_and_no_marker_is_not_a_finished_review(plan_context, monkeypatch) -> None:
+    """HOLDS AT THE BASE: the commit a refusal names is the head it DECLINED."""
+    comments = [_comment('review_body', _REFUSAL, commit_id=_HEAD)]
 
     assert _producer_finished_bots(plan_context, monkeypatch, comments) == set()
     assert _chokepoint(monkeypatch, comments) is False

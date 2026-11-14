@@ -29,6 +29,8 @@ from types import SimpleNamespace
 from typing import Any
 from unittest.mock import patch
 
+import github_ops
+import github_re_review
 import pytest
 
 from conftest import get_scripts_dir, load_script_module, parse_ns, run_script
@@ -161,18 +163,45 @@ def _args_with_reviewers(*reviewers: str):
     return parse_ns('plan-marshall', 'runbook-lane', 'runbook_lane.py', *argv)
 
 
+def _raw_read(comments: list[dict], *, complete: bool = True, status: str = 'success') -> dict:
+    """The RAW comment read the required-reviewer check asks its predicate about."""
+    if status != 'success':
+        return {'status': 'error', 'operation': 'pr_comments', 'error': 'GraphQL query failed: boom'}
+    return {
+        'status': 'success',
+        'operation': 'pr_comments',
+        'provider': 'github',
+        'pr_number': 7,
+        'total': len(comments),
+        'unresolved': 0,
+        'complete': complete,
+        'connections': [],
+        'comments': list(comments),
+    }
+
+
 def _verdict(read: dict, *dispositions: str, reviewers: tuple[str, ...] = ()) -> Any:
     argv = ['review-gate', '--pr-number', '7']
     for disposition in dispositions:
         argv += ['--disposition', disposition]
     for reviewer in reviewers:
         argv += ['--required-reviewer', reviewer]
-    with patch.object(lane, '_read_review_surfaces', return_value=read):
+    with (
+        patch.object(lane, '_read_review_surfaces', return_value=read),
+        # The required-reviewer check takes its own RAW read, so a test stating one
+        # comment history hands the same records to both seams.
+        patch.object(lane, '_read_required_review_comments', return_value=_raw_read(read.get('comments') or [])),
+    ):
         return cmd_review_gate(parse_ns('plan-marshall', 'runbook-lane', 'runbook_lane.py', *argv))
 
 
 def _finished_marker_body() -> str:
     return '<!-- final_review_risk_coverage:{"coveredCommitId":"' + 'a' * 40 + '","kind":"reviewed"} -->'
+
+
+def _finished_marker_without_commit() -> str:
+    """A readable, finished marker naming NO commit — a claim nobody can place."""
+    return '<!-- final_review_risk_coverage:{"kind":"reviewed"} -->'
 
 
 def _issue_comment(body: str, author: str = 'coderabbitai') -> dict:
@@ -428,26 +457,52 @@ def test_a_captured_incremental_skip_notice_is_not_a_finding() -> None:
     assert verdict['review_body_findings_total'] == 0
 
 
-def test_a_captured_incremental_no_reviewable_changes_notice_is_not_a_finding() -> None:
-    """OBSERVED #1971: "Files with no reviewable changes" is a file list, not a stop.
+#: CodeRabbit's "nothing to review here" block, captured verbatim from the review body
+#: on ``cuioss/plan-marshall#1964`` (review ``PRR_kwDOQ3xasM8AAAABXbfesw``). The icon
+#: URLs, the counted title and the listed file are the ones the reviewer posted; the
+#: line breaks are the ones its markup carries.
+_CAPTURED_NO_REVIEWABLE_CHANGES_BLOCK = (
+    '<details>\n'
+    '<summary><picture><source media="(prefers-color-scheme: dark)" '
+    'srcset="https://storage.googleapis.com/coderabbit_public_assets/review-comment-icons-v1/'
+    'file-no-changes-dark.svg"><img src="https://storage.googleapis.com/coderabbit_public_assets/'
+    'review-comment-icons-v1/file-no-changes.svg" width="16" height="16" align="absmiddle" '
+    'alt=""></picture> Files with no reviewable changes: 1</summary>\n'
+    '<dl><dd>\n'
+    '* opencode.json\n'
+    '</dd></dl>\n'
+    '</details>\n'
+)
 
-    Captured verbatim from the incremental review body on PR #1971, where the counted
-    title (``: 1``) inside a ``<picture>``-wrapped ``<summary>`` made the counted-title
-    rule refuse the whole body as unreadable. The block names files the reviewer found
+
+def test_a_captured_incremental_no_reviewable_changes_notice_is_not_a_finding() -> None:
+    """OBSERVED #1964: "Files with no reviewable changes" is a file list, not a stop.
+
+    Captured verbatim from the review body on PR #1964, where the counted title
+    (``: 1``) inside a ``<picture>``-wrapped ``<summary>`` made the counted-title rule
+    refuse the whole body as unreadable. The block names files the reviewer found
     nothing to say about, so it contributes no finding.
     """
-    body = (
-        '<details>\n<summary><picture><source media="(prefers-color-scheme: dark)" '
-        'srcset="x-dark.svg"><img src="x.svg" width="16" height="16" align="absmiddle" '
-        'alt=""></picture> Files with no reviewable changes: 1</summary>\n<dl><dd>\n'
-        '* `test/plan-marshall/build-server/test_build_server_client.py`\n'
-        '</dd></dl>\n</details>\n'
-    )
-
-    verdict = _verdict(_read(_review_body(body)))
+    verdict = _verdict(_read(_review_body(_CAPTURED_NO_REVIEWABLE_CHANGES_BLOCK)))
 
     assert verdict['merge_allowed'] is True, verdict
     assert verdict['review_body_findings_total'] == 0
+
+
+def test_the_no_reviewable_changes_block_is_the_captured_one() -> None:
+    """The fixture IS the capture, so a placeholder icon would make it a reconstruction.
+
+    The asset host, the two icon files and the listed path are the reviewer's own. A
+    fixture carrying placeholders reads identically locally while never having been
+    observed — the one thing a captured block exists to establish.
+    """
+    block = _CAPTURED_NO_REVIEWABLE_CHANGES_BLOCK
+
+    assert 'https://storage.googleapis.com/coderabbit_public_assets/review-comment-icons-v1/' in block
+    assert 'file-no-changes-dark.svg' in block
+    assert 'file-no-changes.svg' in block
+    assert 'Files with no reviewable changes: 1' in block
+    assert '* opencode.json' in block
 
 
 def test_a_counted_non_finding_block_ends_the_span_of_the_section_before_it() -> None:
@@ -974,61 +1029,60 @@ def test_a_review_body_without_a_commit_and_without_a_marker_is_refused() -> Non
     assert verdict['reason'] == 'required_review_missing'
 
 
-def test_a_flattened_summary_marker_names_its_commit() -> None:
-    """`ci pr comments` flattens newlines; the marker opener is restored before parsing."""
-    flattened = 'Some prose first. ' + _finished_marker_body()
-    verdict = _verdict(_read(_issue_comment(flattened)), reviewers=('coderabbit',))
+def test_a_marker_on_its_own_line_after_a_prose_line_names_its_commit() -> None:
+    """HOLDS AT THE BASE: prose, then the marker on its own line, is the bot's claim."""
+    body = 'Some prose first.\n' + _finished_marker_body() + '\n'
+
+    verdict = _verdict(_read(_issue_comment(body)), reviewers=('coderabbit',))
 
     assert verdict['merge_allowed'] is True
 
 
-def test_a_marker_quoted_inside_a_fenced_block_is_not_a_qualifying_review() -> None:
-    """⛔ Flattening erases the fence lines, so the re-split must restore them too.
+def test_a_marker_inside_a_plain_closed_fence_is_not_a_qualifying_review() -> None:
+    """⛔ A marker quoted inside a fenced example is not the bot's own claim.
 
-    A marker quoted inside a fenced example is not the bot's own claim. Reading it as
-    one would let a walkthrough that shows the marker — as documentation, not as a
-    verdict — satisfy the done precondition and merge a pull request nobody reviewed.
+    Reading it as one would let a walkthrough that shows the marker — as documentation,
+    not as a verdict — satisfy the done precondition and merge a pull request nobody
+    reviewed.
     """
-    flattened = 'A summary explains the marker: ```text ' + _finished_marker_body() + ' ``` and nothing else.'
+    body = 'A summary explains the marker:\n```text\n' + _finished_marker_body() + '\n```\n'
 
-    verdict = _verdict(_read(_issue_comment(flattened)), reviewers=('coderabbit',))
+    verdict = _verdict(_read(_issue_comment(body)), reviewers=('coderabbit',))
 
     assert verdict['merge_allowed'] is False
     assert verdict['reason'] == 'required_review_missing'
 
 
-def test_a_flattened_body_keeps_a_marker_outside_any_fence() -> None:
-    """MATCHED CONTROL — the same marker outside a fence is still the bot's claim."""
-    flattened = 'Prose with a fenced example: ```text code ``` and then ' + _finished_marker_body()
+def test_a_marker_outside_a_fenced_example_keeps_its_claim() -> None:
+    """MATCHED CONTROL — a fence-shaped span on a prose line opens no block."""
+    body = 'Prose with a fenced example: ```text code ```\n' + _finished_marker_body() + '\n'
 
-    verdict = _verdict(_read(_issue_comment(flattened)), reviewers=('coderabbit',))
+    verdict = _verdict(_read(_issue_comment(body)), reviewers=('coderabbit',))
 
     assert verdict['merge_allowed'] is True
 
 
-def test_a_flattened_body_with_several_comments_splits_at_each_boundary() -> None:
-    """HOLDS AT THE BASE: every `<!--` boundary is restored, not only the first."""
-    flattened = 'first <!-- cr-comment:v1:aaaaaaaaaaaaaaaaaaaaaaaa --> second ' + _finished_marker_body()
+def test_several_comments_are_each_read_for_a_marker() -> None:
+    """HOLDS AT THE BASE: the check scans every comment, not only the first."""
+    comments = [
+        _issue_comment('## Walkthrough\n\nsome prose before the review completes'),
+        _issue_comment('first\n<!-- cr-comment:v1:aaaaaaaaaaaaaaaaaaaaaaaa -->\nsecond\n' + _finished_marker_body()),
+    ]
 
-    verdict = _verdict(_read(_issue_comment(flattened)), reviewers=('coderabbit',))
+    verdict = _verdict(_read(*comments), reviewers=('coderabbit',))
 
     assert verdict['merge_allowed'] is True
 
 
 def test_a_fence_like_run_in_prose_is_not_a_closing_fence() -> None:
-    """⛔ ```` ```not-a-close ```` is prose, not a closer.
+    """⛔ ```` ```not-a-close ```` is prose, not a closer — in the raw body too.
 
-    Re-inserting a line boundary after every fence run would split that run onto its
-    own line and close the block, so the quoted marker would become the bot's claim.
-    The raw reader closes only a run with nothing after it; the flattened reader must
-    agree.
+    The reader closes a fence only on a run with nothing after it, so the marker on
+    the line below stays inside the block and is never the bot's claim.
     """
-    flattened = (
-        '```text ```not-a-close <!-- final_review_risk_coverage:'
-        '{"coveredCommitId":"' + 'a' * 40 + '","kind":"reviewed"} --> ```'
-    )
+    body = '```text\n```not-a-close\n' + _finished_marker_body() + '\n```\n'
 
-    verdict = _verdict(_read(_issue_comment(flattened)), reviewers=('coderabbit',))
+    verdict = _verdict(_read(_issue_comment(body)), reviewers=('coderabbit',))
 
     assert verdict['merge_allowed'] is False
     assert verdict['reason'] == 'required_review_missing'
@@ -1060,6 +1114,27 @@ def test_a_marker_beside_a_refusal_notice_is_still_a_finished_review() -> None:
     assert verdict['merge_allowed'] is True
 
 
+def test_a_case_variant_refusal_is_not_a_qualifying_review() -> None:
+    """⛔ A registered refusal phrase in another letter case is still a refusal.
+
+    The body carries a commit and no notice presentation, so only the registry arm can
+    read it — and that arm matches case-insensitively.
+    """
+    verdict = _verdict(_read(_review_body('REVIEW LIMIT REACHED', commit_id='b' * 40)), reviewers=('coderabbit',))
+
+    assert verdict['merge_allowed'] is False
+    assert verdict['reason'] == 'required_review_missing'
+
+
+def test_a_commit_less_marker_does_not_lift_a_refusal() -> None:
+    """⛔ The exemption is a marker NAMING A COMMIT, never merely `kind: reviewed`."""
+    body = '> ## Review limit reached\n' + _finished_marker_without_commit()
+    verdict = _verdict(_read(_review_body(body, commit_id='b' * 40)), reviewers=('coderabbit',))
+
+    assert verdict['merge_allowed'] is False
+    assert verdict['reason'] == 'required_review_missing'
+
+
 def test_a_marker_in_a_shape_the_bot_does_not_publish_is_not_evidence() -> None:
     """The producer admits only the bot's own declared shapes; Sourcery publishes no summary."""
     verdict = _verdict(_read(_issue_comment(_finished_marker_body(), author='sourcery-ai')), reviewers=('sourcery',))
@@ -1084,3 +1159,105 @@ def test_an_unnamed_reviewer_population_leaves_the_verdict_unchanged() -> None:
 
     assert verdict['merge_allowed'] is True
     assert 'required_reviewers' not in verdict
+
+
+# ---------------------------------------------------------------------------
+# The required-reviewer check reads the provider's RAW bodies
+# ---------------------------------------------------------------------------
+#
+# The lane asks its predicate about the provider's raw text. The shapes below are
+# the ones a flattened read could not decide: a marker quoted inside a fenced
+# example, and a marker written as a blockquote, an inline code span or an indented
+# code block. Every one of them is a place where the marker reader's opener rule —
+# the opener must start a line — refuses the claim, and a display read destroyed the
+# line structure that rule reads.
+#
+# These tests stub the TWO TRANSPORT seams only — ``subprocess.run`` (the display
+# read) and ``github_re_review.fetch_pr_comments_data`` (the raw read) — so the
+# lane's own read functions and its predicate site run for real. The display read is
+# stubbed with what the provider actually gives it: ``flatten_comment_body`` of the
+# raw text, the same call ``ci pr comments`` makes.
+
+_QUOTED_MARKER_CONSTRUCTIONS: dict[str, str] = {
+    # A: the fence's second line is content, so the marker never leaves the block.
+    'A-fence-then-content-line': '```\n``` not-closer\n{marker}\n```\n',
+    # B: prose carrying an inline span, then a real fence around the marker.
+    'B-inline-span-before-fence': 'See ```code```.\n```\n{marker}\n```\n',
+    # C: a four-space-indented run is indented code, not a fence, so the real one opens.
+    'C-indented-run-before-fence': '    ```\n```\n{marker}\n```\n',
+    # D: the three non-fence shapes the marker reader rejects by its opener position.
+    'D-blockquoted-marker': '> {marker}\n',
+    'D-inline-code-marker': '`{marker}`\n',
+    'D-indented-marker': '    {marker}\n',
+}
+
+
+@pytest.fixture
+def restore_default_cwd():
+    """Undo the process-global working tree the raw read installs."""
+    yield
+    import ci_base
+
+    ci_base.set_default_cwd(None)
+
+
+def _verdict_through_the_read_seams(
+    monkeypatch,
+    raw_comments: list[dict],
+    *,
+    raw_read: dict | None = None,
+    reviewers: tuple[str, ...] = ('coderabbit',),
+) -> Any:
+    """Drive ``review-gate`` with only the two TRANSPORT seams stubbed."""
+    display_comments = [
+        {**comment, 'body': github_ops.flatten_comment_body(str(comment.get('body') or ''))} for comment in raw_comments
+    ]
+    monkeypatch.setattr(
+        'subprocess.run',
+        lambda *_a, **_kw: SimpleNamespace(returncode=0, stdout='status: success\n', stderr=''),
+    )
+    monkeypatch.setattr('toon_parser.parse_toon', lambda _text: _read(*display_comments))
+    monkeypatch.setattr(
+        github_re_review,
+        'fetch_pr_comments_data',
+        lambda _pr_number, unresolved_only=False: raw_read if raw_read is not None else _raw_read(raw_comments),
+    )
+    return cmd_review_gate(_args_with_reviewers(*reviewers))
+
+
+@pytest.mark.usefixtures('restore_default_cwd')
+@pytest.mark.parametrize('label', sorted(_QUOTED_MARKER_CONSTRUCTIONS))
+def test_a_quoted_marker_is_not_a_qualifying_review(monkeypatch, label: str) -> None:
+    """⛔ Every quoted shape answers `required_review_missing` on the raw bodies."""
+    body = _QUOTED_MARKER_CONSTRUCTIONS[label].format(marker=_finished_marker_body())
+
+    verdict = _verdict_through_the_read_seams(monkeypatch, [_issue_comment(body)])
+
+    assert verdict['merge_allowed'] is False, verdict
+    assert verdict['reason'] == 'required_review_missing'
+
+
+@pytest.mark.usefixtures('restore_default_cwd')
+def test_the_raw_seam_still_admits_a_marker_on_its_own_line(monkeypatch) -> None:
+    """MATCHED CONTROL — the same seam admits an unquoted marker."""
+    body = 'Some prose first.\n' + _finished_marker_body() + '\n'
+
+    verdict = _verdict_through_the_read_seams(monkeypatch, [_issue_comment(body)])
+
+    assert verdict['merge_allowed'] is True, verdict
+
+
+@pytest.mark.usefixtures('restore_default_cwd')
+@pytest.mark.parametrize(
+    ('label', 'raw_read'),
+    [
+        ('truncated', {'status': 'success', 'complete': False, 'comments': []}),
+        ('failed', {'status': 'error', 'error': 'GraphQL query failed: boom'}),
+    ],
+)
+def test_an_incomplete_raw_read_is_undecidable_never_missing(monkeypatch, label: str, raw_read: dict) -> None:
+    """⛔ A read that did not complete answers neither "present" nor "missing"."""
+    verdict = _verdict_through_the_read_seams(monkeypatch, [], raw_read=raw_read)
+
+    assert verdict['merge_allowed'] is False, verdict
+    assert verdict['reason'] == 'undecidable_read', verdict
