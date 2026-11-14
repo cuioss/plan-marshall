@@ -287,8 +287,16 @@ DEFAULT_PROJECT = {
 # projects by `sync-defaults`' non-destructive deep-merge — no new provisioning
 # mechanism. See `manage-config/standards/data-model.md` for the canonical field
 # semantics.
+#
+# `decision_confidence_threshold` is the `handle-open` verb's decide-vs-present
+# boundary: an item is decided only when its confidence is STRICTLY greater than
+# this value, and `100` means nothing is decided without the operator. Its seeded
+# value is the operator's standing figure and lives HERE alone — the data-model
+# table that documents defaults is the only other place that restates the number,
+# and every other surface xrefs this constant.
 DEFAULT_ORCHESTRATOR = {
     'auto_emit': False,
+    'decision_confidence_threshold': 90,
     'effort': {},
     'parallelization_scope': 1,
     'use_worktree': False,
@@ -310,7 +318,9 @@ DEFAULT_ORCHESTRATOR = {
 # (`_cmd_orchestrator.ORCHESTRATOR_SCALAR_FIELDS`) is a deliberate subset —
 # `effort` is written through the `effort` noun, not the scalar `orchestrator set`
 # verb — so it is intentionally NOT derived from here.
-ORCHESTRATOR_KNOWN_KEYS = frozenset({'auto_emit', 'effort', 'parallelization_scope', 'use_worktree'})
+ORCHESTRATOR_KNOWN_KEYS = frozenset(
+    {'auto_emit', 'decision_confidence_threshold', 'effort', 'parallelization_scope', 'use_worktree'}
+)
 
 
 # PR-batching strategy enum (`project.pr_strategy` in marshal.json).
@@ -1357,7 +1367,8 @@ DEFAULT_BUILD_QUEUE = {'max_retries': 10}
 # The top-level `orchestrator` block default is `DEFAULT_ORCHESTRATOR`, defined
 # earlier in this module, where every knob is materialised with its effective
 # default (see that definition for the per-knob surfacing rationale). It seeds
-# `auto_emit` (`False`), the `effort` sub-block (empty `{}`),
+# `auto_emit` (`False`), `decision_confidence_threshold` (the `handle-open`
+# decide-vs-present boundary), the `effort` sub-block (empty `{}`),
 # `parallelization_scope` (`1`) and `use_worktree` (`False`) — every knob the block supports appears in the
 # seeded file so an operator reading their own marshal.json can discover it, per
 # the default-surfacing rule (recipe-marshal-json-config-audit Aspect 1). Each
@@ -1370,8 +1381,8 @@ DEFAULT_BUILD_QUEUE = {'max_retries': 10}
 # orchestrator effort surfaces + scalar knobs read/write through the
 # `orchestrator` noun and the `effort set --scope orchestrator[...]` writer.
 # Validated by validate_orchestrator_block below (the seeded shape is legal; a
-# populated block's effort + parallelization_scope + auto_emit + use_worktree
-# shapes are checked). `/marshall-steward`'s upgrade verb back-fills the block into existing
+# populated block's effort + parallelization_scope + auto_emit + use_worktree +
+# decision_confidence_threshold shapes are checked). `/marshall-steward`'s upgrade verb back-fills the block into existing
 # projects through the existing `sync-defaults` deep-merge — no new provisioning
 # mechanism.
 
@@ -1393,6 +1404,10 @@ def validate_orchestrator_block(value: object) -> None:
       seeded into every fresh block at its safe default ``False``.
     - ``use_worktree`` (optional) is a bool — the repository-wide switch routing
       the ledger store through the shared ledger worktree, seeded at ``False``.
+    - ``decision_confidence_threshold`` (optional) is an int in ``0..100`` — the
+      confidence an open item must strictly exceed before the ``handle-open``
+      verb decides it, seeded at the orchestrator's standing figure. ``bool`` and
+      any out-of-range value are rejected.
 
     An unknown top-level key in the block is rejected so a typo'd knob fails loud
     rather than persisting silently.
@@ -1466,6 +1481,13 @@ def validate_orchestrator_block(value: object) -> None:
         use_worktree = value['use_worktree']
         if not isinstance(use_worktree, bool):
             raise ValueError(f'Invalid orchestrator.use_worktree {use_worktree!r}: expected a bool.')
+
+    if 'decision_confidence_threshold' in value:
+        threshold = value['decision_confidence_threshold']
+        if isinstance(threshold, bool) or not isinstance(threshold, int) or not 0 <= threshold <= 100:
+            raise ValueError(
+                f'Invalid orchestrator.decision_confidence_threshold {threshold!r}: expected an int 0 to 100.'
+            )
 
 
 def get_default_config() -> dict:
