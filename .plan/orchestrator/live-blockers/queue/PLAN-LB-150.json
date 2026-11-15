@@ -2,10 +2,10 @@
   "id": "PLAN-LB-150",
   "slug": "apply-changes-skill",
   "workstream": "WS-04",
-  "status": "running",
+  "status": "shipped",
   "lane": "runbook",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "plan_marshall_plan_id": "rb-lb-150-apply-changes-skill",
+  "pr": "1986",
+  "landing": "landings/PLAN-LB-150.md",
   "seq": 150
 }
