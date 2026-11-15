@@ -2617,6 +2617,15 @@ def _parse_dispositions(values: list[str]) -> tuple[list[dict[str, str]], list[s
     return rows, refused
 
 
+_REVIEW_READ_EXCEPTIONS = (OSError, RuntimeError, ValueError, TypeError, AttributeError, ImportError)
+"""What the review read — its imports, its repo lookup and its fetch — may raise.
+
+The read classifies these as a failed read; the flatten of the same snapshot
+classifies the same set, so both halves of one verdict answer ``undecidable_read``
+rather than letting one of them escape as a traceback.
+"""
+
+
 def _read_review_surfaces(pr_number: int, project_dir: Path) -> dict[str, Any]:
     """Read a pull request's comment surfaces ONCE, raw, in-process.
 
@@ -2663,7 +2672,7 @@ def _read_review_surfaces(pr_number: int, project_dir: Path) -> dict[str, Any]:
             }
         set_default_cwd(str(project_dir))
         return fetch_pr_comments_data(pr_number)
-    except (OSError, RuntimeError, ValueError, TypeError, AttributeError, ImportError) as exc:
+    except _REVIEW_READ_EXCEPTIONS as exc:
         return {'status': 'error', 'error': f'the review read could not run: {exc}'}
 
 
@@ -2760,8 +2769,20 @@ def _review_gate_verdict(
 
     # The findings parser reads the DISPLAY form, derived here from the one snapshot
     # this verdict decides on: the required-reviewer check below reads the same
-    # snapshot's raw bodies. One fetch, two views, no window between them.
-    comments = [comment for comment in (_display_read(read).get('comments') or []) if isinstance(comment, dict)]
+    # snapshot's raw bodies. One fetch, two views, no window between them. The flatten
+    # reads every entry before the dict filter below reaches one, so an entry that is
+    # not a mapping raises here; the guard classifies that as a stop, because a crash
+    # states no verdict at all.
+    try:
+        display = _display_read(read)
+    except _REVIEW_READ_EXCEPTIONS as exc:
+        return {
+            **base,
+            'merge_allowed': False,
+            'reason': 'undecidable_read',
+            'detail': f'the review read could not be flattened into its display form: {exc}',
+        }
+    comments = [comment for comment in (display.get('comments') or []) if isinstance(comment, dict)]
     unrecognised = sorted({str(comment.get('kind')) for comment in comments} - set(_RECORD_KINDS))
     if unrecognised:
         # A record shape this verb does not know is a surface it cannot read. The

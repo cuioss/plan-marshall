@@ -25,6 +25,7 @@ verb answers "refused", or the fixture proves nothing about what changed.
 from __future__ import annotations
 
 import re
+import sys
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
@@ -1354,6 +1355,41 @@ def test_an_incomplete_raw_read_is_undecidable_never_missing(monkeypatch, label:
 
     assert verdict['merge_allowed'] is False, verdict
     assert verdict['reason'] == 'undecidable_read', verdict
+
+
+@pytest.mark.usefixtures('restore_default_cwd')
+def test_a_comment_entry_that_cannot_be_flattened_is_undecidable(monkeypatch) -> None:
+    """⛔ A malformed comment entry is classified, never a traceback.
+
+    The flatten reads every entry before the dict filter, so an entry that is not a
+    mapping raises there. A crash states no verdict at all, so the gate answers
+    ``undecidable_read`` and names the failure it hit.
+    """
+    verdict = _verdict_through_the_read_seams(
+        monkeypatch,
+        [],
+        raw_read={'status': 'success', 'complete': True, 'comments': ['not-a-comment']},
+    )
+
+    assert verdict['merge_allowed'] is False, verdict
+    assert verdict['reason'] == 'undecidable_read', verdict
+    assert verdict['detail'], verdict
+
+
+@pytest.mark.usefixtures('restore_default_cwd')
+def test_the_read_classifies_an_unimportable_provider_module(monkeypatch) -> None:
+    """⛔ The imports sit inside the guard, so a broken import is a classified stop.
+
+    A ``None`` entry in ``sys.modules`` makes the import statement itself raise
+    ``ImportError`` rather than the fetch, so a green classified read here is what
+    shows the imports were not hoisted above the ``try``.
+    """
+    monkeypatch.setitem(sys.modules, 'ci_base', None)
+
+    read = lane._read_review_surfaces(7, Path('.'))
+
+    assert read['status'] == 'error'
+    assert 'ci_base' in read['error']
 
 
 @pytest.mark.parametrize('raised', [AttributeError('owner is None'), ImportError('no provider module')])
