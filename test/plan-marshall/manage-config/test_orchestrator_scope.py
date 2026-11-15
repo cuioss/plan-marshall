@@ -784,6 +784,31 @@ def test_threshold_get_refuses_a_stored_out_of_range_value(plan_context):
         assert _THRESHOLD_FIELD in get_result['error']
 
 
+def test_threshold_get_refuses_a_stored_string_value(plan_context):
+    """A stored `"42"` is refused: `set` normalises, so a string was never written by it."""
+    _write_marshal(plan_context.fixture_dir, {'orchestrator': {_THRESHOLD_FIELD: '42'}})
+
+    get_result = cmd_orchestrator_get(Namespace(field=_THRESHOLD_FIELD))
+
+    assert get_result['status'] == 'error', f'a stored string was read as valid: {get_result}'
+    assert 'integer 0 to 100' in get_result['error']
+
+
+def test_orchestrator_get_refuses_a_malformed_block_instead_of_defaulting(plan_context):
+    """A PRESENT non-dict `orchestrator` block fails closed rather than reading as unset.
+
+    Falling back to the seeded default here would answer `success` with a value
+    no reader wrote — and for the threshold that means 90 instead of the
+    contract's fail-closed 100.
+    """
+    _write_marshal(plan_context.fixture_dir, {'orchestrator': []})
+
+    get_result = cmd_orchestrator_get(Namespace(field=_THRESHOLD_FIELD))
+
+    assert get_result['status'] == 'error'
+    assert 'not a dictionary' in get_result['error']
+
+
 def test_the_scalar_whitelist_is_derived_from_the_known_keys(plan_context):
     """The scalar whitelist IS the authoritative key set minus `effort`.
 

@@ -69,7 +69,7 @@ Re-read every load-bearing point of the analysis at `file:line` in this run, and
 
 ### Step 6: Decide every item above the threshold
 
-For each item the contract's threshold rule decides, apply one of the contract's bounded decision acts and record it: log the decision through `manage-logging --store orchestrator`, write the `## Decisions` entry, and mark the item in place with a pointer to that record. An item whose decision changes another item's analysis makes that item re-analysed before it is decided.
+For each item the contract's threshold rule decides, apply one of the contract's bounded decision acts and record it: log the decision through `manage-logging --store orchestrator`, write the `## Decisions` entry, and mark the item in place with a pointer to that record. An item whose decision changes another item's analysis is re-analysed — and its confidence reassigned — before it is either decided or presented: a decision here can leave a below-threshold item's recommendation stale for Step 7, and re-analysis before the DECISION alone would not catch that.
 
 The eight prohibitions hold here and need no restatement to bind, but this step names them so the checklist is complete: this verb NEVER **stages a plan**, NEVER **emits a command**, NEVER **transitions a queue row**, NEVER **edits the spec of a running row**, NEVER **relocates settled narrative**, NEVER **lands**, NEVER **retires an item without a positive account** of what closed it, and NEVER **records a plan-consequence decision without naming the follow-up**. A decision whose consequence is a plan is recorded as decided with that follow-up named, and the staging stays an act the operator words.
 

@@ -121,6 +121,18 @@ def _coerce_decision_confidence_threshold(raw_value: object) -> tuple[bool, int 
     return True, value, None
 
 
+def _is_stored_threshold_valid(value: object) -> bool:
+    """Whether a value READ FROM ``marshal.json`` is a well-formed threshold.
+
+    Stricter than :func:`_coerce_decision_confidence_threshold`, which also
+    accepts the CLI's string form. A stored value must be a real ``int`` in
+    ``0..100``: a stored ``"42"`` or ``90.5`` is a hand-edited or migrated file,
+    not a value this tool ever wrote, and returning it would hand the consumer a
+    threshold it cannot compare against.
+    """
+    return not isinstance(value, bool) and isinstance(value, int) and 0 <= value <= 100
+
+
 def _coerce_bool(raw_value: object) -> bool | None:
     """Coerce a CLI value into a bool, or ``None`` when it is not boolean-shaped.
 
@@ -277,6 +289,12 @@ def cmd_orchestrator_get(args) -> dict:
 
     config = load_config()
     orch_block = config.get('orchestrator')
+    # A PRESENT block of the wrong type is a malformed file, not an unset knob:
+    # falling through to the seeded default here would answer `success` with a
+    # value no reader wrote, which is the fail-OPEN direction the whole verb
+    # exists to avoid. Only an ABSENT block takes the default path.
+    if orch_block is not None and not isinstance(orch_block, dict):
+        return error_exit('orchestrator block in marshal.json is not a dictionary')
     # When the field is unset in the live block, fall back to the canonical
     # default from DEFAULT_ORCHESTRATOR (so `auto_emit` reads its seeded `False`
     # and `parallelization_scope` its seeded `1`). The value is advisory on an
@@ -286,14 +304,11 @@ def cmd_orchestrator_get(args) -> dict:
     if isinstance(orch_block, dict) and field in orch_block:
         is_set = True
         value = orch_block[field]
-        # A stored value is re-validated on the read path: a hand-edited
-        # out-of-range threshold must fail closed here, because the consumer
-        # treats an unreadable threshold as `100` (nothing decided) and cannot
-        # tell a valid `-1` from an invalid one.
-        if field == 'decision_confidence_threshold':
-            ok, _, error = _coerce_decision_confidence_threshold(value)
-            if not ok:
-                return error_exit(error or 'invalid decision_confidence_threshold')
+        # A stored threshold is re-validated STRICTLY on the read path: the
+        # consumer treats an unreadable threshold as `100` (nothing decided) and
+        # cannot tell a well-typed value from a hand-edited one.
+        if field == 'decision_confidence_threshold' and not _is_stored_threshold_valid(value):
+            return error_exit('decision_confidence_threshold in marshal.json must be an integer 0 to 100')
     else:
         is_set = False
         value = DEFAULT_ORCHESTRATOR.get(field)
