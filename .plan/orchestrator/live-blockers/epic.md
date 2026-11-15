@@ -75,8 +75,9 @@ derive, for rows still live.
   orchestrator's own authoring (a "holds at base" that needs the count word, a list entry that "fails at base", a "fresh seed" that is
   set). A harness sync is owed (this machine's cache, 0.1.2123, has no `handle-open`); no executor regeneration; existing projects gain
   the knob through the steward's `upgrade`.
-- **PLAN-LB-152** (staged 2026-11-14 on the operator's word, runbook lane, WS-05) — `plans/PLAN-LB-152-review-gate-single-read-cleanup.md`. The cleanup
-  of PR #1988 (merge `2bf7cd83d`): four deliverables (the contract and the unreachable `coverage_unavailable` branch and dead required-reviewer
+- **PLAN-LB-152** (shipped #1992, 2026-11-15, runbook lane, `deepseek-v4.1-flash/high`, WS-05) — see `landings/PLAN-LB-152.md`. Merge commit
+  `637b5048d`, seven files, three of four deliverables fully met (D3's default-cwd module clause cannot fail; the lane graded it so). The
+  cleanup of PR #1988 (merge `2bf7cd83d`), staged 2026-11-14 on the operator's word: four deliverables (the contract and the unreachable `coverage_unavailable` branch and dead required-reviewer
   guard, a classified flatten and a pinned import placement, tests that do not depend on the machine or leak the default cwd, and the
   history wording). **Not in it: the HIGH CAUTION-shape parser defect**, which stays an Open Defect; a plan for it overlaps this one on
   `runbook_lane.py` and is sequenced after it. Surface declarative, nine paths, no overlap with the two in-flight lanes.
@@ -1740,6 +1741,17 @@ derive, for rows still live.
 
 ## Decisions
 
+- 2026-11-15 (analysed PLAN-LB-152) — **The PLAN-LB-152 landing was reconciled from the inbox; PLAN-LB-152 is shipped and nothing was staged.** One
+  message (`rb-lb-152-review-gate-single-read-cleanup-001.md`), `complete: false` on `total_tokens` alone (no defect, ruling 2026-10-23). The
+  merge `637b5048d` (#1992, merged, merge-group `success`), the seven files and the review numbers were corroborated with the CI abstraction,
+  git, the lane's progress file and a `review-gate` re-run (0 threads and 1 finding agree; handled 1 agrees with the progress file's one
+  `finding:` line). One three-layer leaf read it; the orchestrator re-read the verdict arms and the flatten guard, the CodeRabbit-fixed docstring,
+  the stale `analyze.md` line and the reason-list pin. **No blocker and no major.** Row stamped `pr` 1992, `landing`, and `plan_marshall_plan_id`
+  `rb-lb-152-review-gate-single-read-cleanup` (from the sender). The two spec premises the lane refuted are this orchestrator's authoring
+  (a "holds at base" claim written without reading the base, and a Done-when no run can fail); two hypotheses are persisted `corroborated`
+  (claims 5 and 10 of the spec), though the spec is of a shipped plan. The minors are one Watch; the old PR #1988 minors Watch is marked
+  closed. The HIGH CAUTION-shape parser defect stays open and unstaged and is now free to sequence. A harness sync is owed for the four edited
+  bundle sources; no executor regeneration.
 - 2026-11-15 (analysed PLAN-LB-150 and PLAN-LB-151) — **Both landings were analysed from the inbox and reconciled; nothing was staged.** Two
   messages drained (`rb-lb-150-apply-changes-skill-001.md`, `rb-lb-151-handle-open-verb-001.md`), each `complete: false` on `total_tokens`
   alone (no defect, ruling 2026-10-23). The merge commits, file counts and review totals were corroborated with git and the `review-gate`
@@ -3829,6 +3841,20 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
 
 ## Watches
 
+- **The minors of the PLAN-LB-152 landing (#1992, `637b5048d`; one three-layer leaf read 2026-11-15; recorded, not staged).** No blocker, no
+  major; every defect fails closed and the gate has no new admit path (re-read at `runbook_lane.py:2758-2787`). **Re-read:**
+  `github_re_review.py:98-99` still says both discriminators "append every refusal they skip", which `:121-123` (added by the CodeRabbit fix) and
+  the code contradict, so the overstatement the fix targeted survives two paragraphs above it; `runbook_lane.py:2770` gives a missing-`complete`
+  envelope the detail "truncated: not every connection was drained", a cause that did not happen, and the test pins `'truncated'` (`:749`);
+  `analyze.md:155` still says `review-gate` is the parser "from `ci pr comments`" (outside the spec's declared surface); the reason-list pin
+  reads only the paragraph after "It answers `merge_allowed: false`" (`test_runbook_lane_review_gate.py:752-757`), so a stale reason in the
+  provider paragraph at `SKILL.md:217-221` would pass. **Leaf only, not re-read:** the gate list at `github_re_review.py:121` is exact for the
+  review arm only (the comment arm has no head-reference gate, and an acknowledgment-shaped refusal is not recorded); an exception outside
+  the tuple (`KeyError`, `IndexError`, `RecursionError`) in the flatten still escapes as a traceback, which fails closed; pre-existing history
+  wording in touched files (`runbook_lane.py:6`, `github_re_review.py:128-130`, `test_runbook_lane_review_gate.py:5-22, 976`);
+  `runbook_lane.py:2644-2650` and `:2664-2668` restate one rationale. **Not shown by reading:** the temp-directory run, the cited mutation
+  runs and the green gates. Three of the lane's four numbers were re-read and agree (0 threads, 1 finding; 1 handled from its progress file).
+  The refusal-record ordering CodeRabbit found is a candidate for the CAUTION-shape parser plan, which edits the same two files.
 - **The minors of PRs #1986 and #1987 (`aaa06bf44`, `2f0630bc0`; two three-layer leaves read 2026-11-15; recorded, not staged).** None fails open on
   an observed input beyond what is named. **#1986 (`apply-changes`).** (Re-read) the Claude skill states each gate sentence after the fence it
   gates (`SKILL.md:82/85, 99/102, 112/115`), where the mirrors and `sync-harnesses` state it first, so a top-down reader can run the command before
@@ -3877,7 +3903,11 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
   entry below). Not closed: the change-history wording at `github_re_review.py:121` ("now VISIBLE") and the new history wording the PR adds
   itself; the layer-1 spec premises (history), the D3 and D5 weak fixtures and the not-shown items. None fails open beyond the HIGH Open
   Defect above.
-- **The minors of PR #1988 (`2bf7cd83d`, unplanned fix PR; three-layer leaf read 2026-11-14; recorded, not staged).** No blocker, no major; every
+- **The minors of PR #1988 (`2bf7cd83d`, unplanned fix PR; three-layer leaf read 2026-11-14; recorded, not staged).** **Closed by PLAN-LB-152
+  (#1992, `637b5048d`, read against its diff; see `landings/PLAN-LB-152.md`):** the contract, the dead branch and the dead guard, the flatten
+  guard and the import pin, the provider fixture and `outside_repo_dir`, the `run_cli` pin, the `_lane_admits` stubs and the named history
+  wording are all fixed; what is left of this list is the new Watch above it and the HIGH CAUTION-shape parser defect, which stays open. The
+  text below is the record as first read. No blocker, no major; every
   defect found fails closed. Claims C1 to C4 of the PR (one fetch, the widened guard, the hex commit id, the shared `resolve_ci_provider`) are
   corroborated by the leaf; the points the orchestrator re-read at the line are marked. **The documented contract is false in one place
   (re-read):** `runbook-lane/SKILL.md:213, 218-221` still say the read is `ci pr comments` and that a GitLab project answers

@@ -2,10 +2,10 @@
   "id": "PLAN-LB-152",
   "slug": "review-gate-single-read-cleanup",
   "workstream": "WS-05",
-  "status": "running",
+  "status": "shipped",
   "lane": "runbook",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "plan_marshall_plan_id": "rb-lb-152-review-gate-single-read-cleanup",
+  "pr": "1992",
+  "landing": "landings/PLAN-LB-152.md",
   "seq": 152
 }

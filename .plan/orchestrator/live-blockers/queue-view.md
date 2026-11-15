@@ -4,10 +4,8 @@
 
 ## START HERE
 
-**Resume anchor**: PLAN-LB-152 (review-gate-single-read-cleanup, runbook lane, WS-05) is RUNNING, recorded on the operator word; at the transition no lane worktree, branch or PR was observable yet. NEXT: wait for the lane; confirm it by a worktree, a branch, a PR, a progress file under .plan/temp (rb-lb-152-review-gate-single-read-cleanup) or its first inbox message; stamp pr and plan_marshall_plan_id (queue --set-row) from its first rb- message; run analyze when a message arrives. OPERATOR ANSWERED 1a: the apply-changes self-invocation question stays open (proposal 1), no plan staged. OPERATOR WORDS STILL OWED, one per turn in plain text: decision (2) (recommend option a); a plan for the HIGH CAUTION-shape parser gap (sequenced after PLAN-LB-152, same file); (b) whether the handle-open leaf-document defect (the verb document is also the leaf document) and the null-block case in orchestrator get are worth one small plan. Harness sync is done (registry 0.1.2133, all three harnesses, executor regenerated); no executor regeneration owed. Not done: five remote branches with no PR untouched; local branch chore/uv-lock-ruff-0-17-5 still exists.
+**Resume anchor**: PLAN-LB-152 (review-gate-single-read-cleanup, PR 1992, merge 637b5048d) is analysed and shipped: landing report written, row stamped, message archived, inbox empty (live_count 0), no blocker and no major, minors are one Watch, nothing staged. No plan is staged, launched or running: nothing emittable until a plan is staged. HARNESS SYNC OWED: the four bundle sources PLAN-LB-152 edited (runbook-lane SKILL.md and runbook_lane.py, workflow-integration-github _github_pr.py and github_re_review.py) are merged on main but this machine's installs predate them; the operator's /apply-changes carries it (no executor regeneration owed). OPERATOR WORDS STILL OWED, one per turn in plain text: decision (2) (recommend option a); a plan for the HIGH CAUTION-shape review-body parser defect (now free to sequence; it edits runbook_lane.py and, if it carries the PLAN-LB-152 minors L3-1/L3-4 and the refusal-record ordering, github_re_review.py); whether the PLAN-LB-152 minors (one-line analyze.md:155 fix, github_re_review.py:98-99 docstring, the reason-list pin reach, the missing-complete detail wording) ride that plan or get no plan; (b) whether the handle-open leaf-document defect and the null-block case in orchestrator get are worth one small plan. The apply-changes self-invocation question stays open by operator word (1a). THE LEDGER IS NOT LANDED: commits ff910988a, ac9d66e87 and this analyze reconciliation sit on chore/orchestrator-ledger; land on the operator word. Not done: five remote branches with no PR untouched; local branch chore/uv-lock-ruff-0-17-5 still exists.
 **Phase**: orchestrating
-**Running**:
-- PLAN-LB-152 (WS-05)
 **Queue** (staged, in order):
 - (empty)
 - PLAN-LB-14 (WS-03) — plan=lb-14-launch-gate-scope — PR 1715 — landing=landings/PLAN-LB-14.md — status: shipped
@@ -161,9 +159,10 @@
 - PLAN-LB-149 (WS-02) — plan=rb-lb-149-build-row-writers-and-freshness-truth — PR 1977 — landing=landings/PLAN-LB-149.md — status: shipped
 - PLAN-LB-150 (WS-04) — plan=rb-lb-150-apply-changes-skill — PR 1986 — landing=landings/PLAN-LB-150.md — status: shipped
 - PLAN-LB-151 (WS-03) — plan=rb-lb-151-handle-open-verb — PR 1987 — landing=landings/PLAN-LB-151.md — status: shipped
+- PLAN-LB-152 (WS-05) — plan=rb-lb-152-review-gate-single-read-cleanup — PR 1992 — landing=landings/PLAN-LB-152.md — status: shipped
 
 ## Ordered Queue
 
 | # | Plan | Workstream | Status | Surface (expected) | Lane |
 |---|------|------------|--------|--------------------|------|
-| 1 | PLAN-LB-152 | WS-05 | running | marketplace/bundles/plan-marshall/skills/manage-tasks/scripts/_cmd_pre_commit_verify_freshness.py; marketplace/bundles/plan-marshall/skills/manage-tasks/scripts/_freshness_crosscheck.py; marketplace/bundles/plan-marshall/skills/runbook-lane/SKILL.md; marketplace/bundles/plan-marshall/skills/runbook-lane/scripts/runbook_lane.py; marketplace/bundles/plan-marshall/skills/workflow-integration-github/scripts/_github_pr.py; marketplace/bundles/plan-marshall/skills/workflow-integration-github/scripts/github_re_review.py; test/plan-marshall/runbook-lane/test_runbook_lane_review_gate.py; test/plan-marshall/workflow-integration-github/test_finished_review_one_reader.py; test/plan-marshall/workflow-integration-github/test_finished_review_shape_table.py | runbook |
+| — | (empty) | — | — | — | — |
