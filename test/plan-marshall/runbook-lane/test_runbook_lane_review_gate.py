@@ -25,7 +25,9 @@ verb answers "refused", or the fixture proves nothing about what changed.
 from __future__ import annotations
 
 import re
+import shutil
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
@@ -33,7 +35,7 @@ from unittest.mock import patch
 import github_re_review
 import pytest
 
-from conftest import get_scripts_dir, load_script_module, parse_ns, run_script
+from conftest import PROJECT_ROOT, get_scripts_dir, load_script_module, parse_ns, run_script
 
 lane = load_script_module('plan-marshall', 'runbook-lane', 'runbook_lane.py', 'runbook_lane_review_gate_mod')
 
@@ -989,14 +991,23 @@ def test_the_verb_is_reachable_through_its_cli_surface() -> None:
     assert result.toon()['error'] == 'invalid_pr_number'
 
 
-def test_the_gate_fetches_the_surface_once_and_spawns_no_cli(monkeypatch) -> None:
+def _forbid_cli(*_args, **_kwargs):
+    """The single-fetch pin: no CLI may be spawned for the gate's read.
+
+    ``pytest.fail`` raises a ``BaseException``, so ``ci_base.run_cli``'s blanket
+    ``except Exception`` cannot swallow it: a read routed through the CLI helper trips
+    this pin exactly as a direct ``subprocess.run`` does.
+    """
+    pytest.fail('the review gate must not spawn a CLI for its read')
+
+
+@pytest.mark.usefixtures('restore_default_cwd')
+def test_the_gate_fetches_the_surface_once_and_spawns_no_cli(monkeypatch, outside_the_repository) -> None:
     """⛔ ONE fetch decides the whole verdict: threads, findings and reviews.
 
-    The gate used to take the display read and the raw read as two snapshots, so a
-    review or thread landing between them was credited by one half and unseen by the
-    other. It now fetches the provider's data once, in-process, and derives the
-    flattened display form itself — asserted here by counting fetches AND by pinning
-    that no subprocess is spawned at all.
+    The gate takes the provider's data once, in-process, and derives the flattened
+    display form itself — asserted here by counting fetches AND by pinning that no CLI
+    is spawned at all, from a working tree that carries no project configuration.
     """
     fetches: list[int] = []
 
@@ -1004,16 +1015,30 @@ def test_the_gate_fetches_the_surface_once_and_spawns_no_cli(monkeypatch) -> Non
         fetches.append(pr_number)
         return _raw_read([])
 
-    def forbid_run(*_args, **_kwargs):
-        raise AssertionError('the review gate must not spawn a CLI for its read')
-
+    monkeypatch.chdir(outside_the_repository)
     monkeypatch.setattr(github_re_review, 'fetch_pr_comments_data', fake_fetch)
-    monkeypatch.setattr('subprocess.run', forbid_run)
+    monkeypatch.setattr('subprocess.run', _forbid_cli)
 
     verdict = cmd_review_gate(_args_with_reviewers('coderabbit'))
 
     assert fetches == [7], 'exactly one provider fetch per verdict'
     assert verdict['reason'] == 'required_review_missing'
+
+
+def test_the_no_cli_pin_trips_for_a_read_routed_through_run_cli(monkeypatch) -> None:
+    """⛔ ``ci_base.run_cli`` swallows every ``Exception``, so the pin is not one.
+
+    A second read routed through the CLI helper is invisible to a pin that raises an
+    ``Exception``: ``run_cli`` catches it and returns a failure tuple. This asserts the
+    pin's own escape, which is what makes such a read fail the single-fetch test
+    instead of passing silently.
+    """
+    import ci_base
+
+    monkeypatch.setattr('subprocess.run', _forbid_cli)
+
+    with pytest.raises(pytest.fail.Exception, match='must not spawn'):
+        ci_base.run_cli('gh', ['pr', 'view'])
 
 
 @pytest.mark.parametrize('provider', ['gitlab', None])
@@ -1261,14 +1286,12 @@ def test_an_unnamed_reviewer_population_leaves_the_verdict_unchanged() -> None:
 # the ones a flattened read could not decide: a marker quoted inside a fenced
 # example, and a marker written as a blockquote, an inline code span or an indented
 # code block. Every one of them is a place where the marker reader's opener rule —
-# the opener must start a line — refuses the claim, and a display read destroyed the
-# line structure that rule reads.
+# the opener must start a line — refuses the claim, and a display read would destroy
+# the line structure that rule reads.
 #
-# These tests stub the TWO TRANSPORT seams only — ``subprocess.run`` (the display
-# read) and ``github_re_review.fetch_pr_comments_data`` (the raw read) — so the
-# lane's own read functions and its predicate site run for real. The display read is
-# stubbed with what the provider actually gives it: ``flatten_comment_body`` of the
-# raw text, the same call ``ci pr comments`` makes.
+# These tests stub ONE seam only — ``github_re_review.fetch_pr_comments_data``, the
+# single in-process fetch — so the lane's own read functions and its predicate site
+# run for real.
 
 _QUOTED_MARKER_CONSTRUCTIONS: dict[str, str] = {
     # A: the fence's second line is content, so the marker never leaves the block.
@@ -1296,6 +1319,55 @@ def restore_default_cwd():
     original = ci_base.get_default_cwd()
     yield
     ci_base.set_default_cwd(original)
+
+
+@pytest.fixture(autouse=True)
+def github_provider(monkeypatch):
+    """Route the read to GitHub, independent of the ambient project configuration.
+
+    ``resolve_ci_provider`` walks up from the project directory the gate is handed, so
+    a read driven against ``'.'`` would otherwise depend on the ``.plan/marshal.json``
+    above whatever directory the suite happens to run from. Autouse, so no test that
+    drives the real read can forget it.
+    """
+    import ci_base
+
+    monkeypatch.setattr(ci_base, 'resolve_ci_provider', lambda _project_dir: 'github')
+
+
+@pytest.fixture
+def outside_the_repository():
+    """A temporary directory with no ``.plan/`` above it.
+
+    pytest's ``tmp_path`` roots under the repo-local ``--basetemp``, so a walk up from
+    it reaches this repository's ``.plan/marshal.json``. The system temp root is what
+    makes the CI provider genuinely unresolvable from the directory a test hands the
+    read.
+    """
+    path = Path(tempfile.mkdtemp(prefix='review-gate-outside-'))
+    assert PROJECT_ROOT not in path.parents
+    try:
+        yield path
+    finally:
+        shutil.rmtree(path, ignore_errors=True)
+
+
+@pytest.fixture(scope='module', autouse=True)
+def the_module_restores_the_process_default_cwd():
+    """The review-gate module leaves the process default working tree as it found it.
+
+    A read installs the process-global default cwd. ``test/conftest.py`` already clears
+    it on both sides of every test, so this module-scope check is the second, coarser
+    net: it catches a leak the per-test clear cannot see (a value installed outside a
+    test's window) rather than replacing the per-test restore each test takes.
+    """
+    import ci_base
+
+    original = ci_base.get_default_cwd()
+    yield
+    assert ci_base.get_default_cwd() == original, (
+        'a review-gate test left ci_base.get_default_cwd() changed: every test that sets it must restore it'
+    )
 
 
 def _verdict_through_the_read_seams(
@@ -1392,6 +1464,7 @@ def test_the_read_classifies_an_unimportable_provider_module(monkeypatch) -> Non
     assert 'ci_base' in read['error']
 
 
+@pytest.mark.usefixtures('restore_default_cwd')
 @pytest.mark.parametrize('raised', [AttributeError('owner is None'), ImportError('no provider module')])
 def test_a_read_that_raises_is_classified_never_a_traceback(monkeypatch, raised: Exception) -> None:
     """⛔ The guard covers the imports and the repo lookup, not only the fetch.

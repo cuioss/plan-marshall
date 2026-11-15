@@ -6,9 +6,8 @@ answer it: the producer's ``finished_review_bots[]`` build, the post chokepoint
 (``github_re_review._qualifying_review_on_record``) and the runbook lane's
 ``review-gate`` verb. All three ask one predicate, so a formal review cannot be a
 review at one site and not at another. The lane's column is driven through the
-lane's own read seams — the display read production hands it and the raw read its
-required-reviewer check asks — so a second predicate planted at that site turns a
-row red.
+lane's own read seam — the one in-process provider fetch — so a second predicate
+planted at that site turns a row red.
 
 Every artifact below is driven through ALL THREE sites and asserted to one verdict.
 The second half pins the consequence: for one bot and one history, the chokepoint's
@@ -19,13 +18,15 @@ The second half pins the consequence: for one bot and one history, the chokepoin
 from __future__ import annotations
 
 import argparse
-from types import SimpleNamespace
+import shutil
+import tempfile
+from pathlib import Path
 
 import github_pr
 import github_re_review
 import pytest
 
-from conftest import load_script_module
+from conftest import PROJECT_ROOT, load_script_module
 
 lane = load_script_module('plan-marshall', 'runbook-lane', 'runbook_lane.py', 'runbook_lane_shape_table_mod')
 rc = load_script_module('plan-marshall', 'automatic-review', 'review_completeness.py', register=False)
@@ -146,29 +147,39 @@ def restore_default_cwd():
     ci_base.set_default_cwd(original)
 
 
-def _lane_admits(monkeypatch, comments: list[dict]) -> bool:
-    """The lane's own verdict, driven through its two TRANSPORT seams.
+@pytest.fixture
+def github_provider(monkeypatch):
+    """Route the lane's read to GitHub, independent of the ambient project config."""
+    import ci_base
 
-    ``subprocess.run`` stands for ``ci pr comments`` — the display read — and
-    ``github_re_review.fetch_pr_comments_data`` for the raw read the required-reviewer
-    check asks. Neither the lane's read functions nor its predicate site is stubbed,
-    so a second predicate planted at the lane's site turns this column red.
+    monkeypatch.setattr(ci_base, 'resolve_ci_provider', lambda _project_dir: 'github')
+
+
+@pytest.fixture
+def outside_the_repository():
+    """A temporary directory with no ``.plan/`` above it.
+
+    pytest's ``tmp_path`` roots under the repo-local ``--basetemp``, so a walk up from
+    it reaches this repository's ``.plan/marshal.json``. The system temp root is what
+    makes the CI provider genuinely unresolvable from the directory a test hands the
+    read.
     """
-    monkeypatch.setattr(
-        'subprocess.run',
-        lambda *_a, **_kw: SimpleNamespace(returncode=0, stdout='status: success\n', stderr=''),
-    )
-    monkeypatch.setattr(
-        'toon_parser.parse_toon',
-        lambda _text: {
-            'status': 'success',
-            'operation': 'pr_comments',
-            'provider': 'github',
-            'complete': True,
-            'connections': [],
-            'comments': [],
-        },
-    )
+    path = Path(tempfile.mkdtemp(prefix='lane-column-outside-'))
+    assert PROJECT_ROOT not in path.parents
+    try:
+        yield path
+    finally:
+        shutil.rmtree(path, ignore_errors=True)
+
+
+def _lane_admits(monkeypatch, comments: list[dict]) -> bool:
+    """The lane's own verdict, driven through its ONE provider fetch.
+
+    ``github_re_review.fetch_pr_comments_data`` is the single seam stubbed: the gate
+    fetches the surfaces once, in-process, and derives the display form itself.
+    Neither the lane's read functions nor its predicate site is stubbed, so a second
+    predicate planted at the lane's site turns this column red.
+    """
     monkeypatch.setattr(
         github_re_review,
         'fetch_pr_comments_data',
@@ -187,7 +198,7 @@ def _lane_admits(monkeypatch, comments: list[dict]) -> bool:
     return verdict.get('merge_allowed') is True
 
 
-@pytest.mark.usefixtures('restore_default_cwd')
+@pytest.mark.usefixtures('restore_default_cwd', 'github_provider')
 @pytest.mark.parametrize('label', sorted(_SHAPES))
 def test_every_site_reaches_one_verdict_per_artifact(plan_context, monkeypatch, label: str) -> None:
     """The shape table: producer, chokepoint and lane agree on every artifact."""
@@ -197,6 +208,15 @@ def test_every_site_reaches_one_verdict_per_artifact(plan_context, monkeypatch, 
     assert (_BOT in _producer(plan_context, monkeypatch, comments)) is expected
     assert github_re_review._qualifying_review_on_record(_PR, _BOT) is expected
     assert _lane_admits(monkeypatch, comments) is expected
+
+
+@pytest.mark.usefixtures('restore_default_cwd', 'github_provider')
+def test_the_lane_column_does_not_depend_on_a_project_configuration(monkeypatch, outside_the_repository) -> None:
+    """⛔ The lane's verdict is the same from a directory that carries no config."""
+    monkeypatch.chdir(outside_the_repository)
+    comments = [_comment('review_body', 'No actionable comments were generated', commit_id=_HEAD)]
+
+    assert _lane_admits(monkeypatch, comments) is True
 
 
 @pytest.mark.parametrize('label', sorted(_SHAPES))
