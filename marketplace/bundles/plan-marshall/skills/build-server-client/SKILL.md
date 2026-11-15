@@ -60,6 +60,27 @@ The exit-code contract for every `python3 .plan/execute-script.py` call in this 
    expiry it returns a LIVE `running` OR `queued` status — the caller re-issues
    `wait`. The wait NEVER returns an empty / timeout-shaped body on bound expiry.
 
+### Both replies name the tree they built
+
+A green result says nothing about WHICH tree it is green for unless the reply
+names it, and the daemon's own status payload carries the job's outcome and never
+its paths. So both replies carry the three fields a caller compares against the
+tree it meant:
+
+| Field | Meaning |
+|-------|---------|
+| `exec_path` | The submitted tree root the daemon was handed (`--exec-path`, defaulting to `--project-path`). |
+| `project_path` | The build working directory the daemon was handed. |
+| `plan_id` | The submitting plan, or the `NO_PLAN` sentinel STATED rather than left blank. |
+
+`submit` states them from the job spec it just built. `wait` states the SAME three
+by reading the `kind=job` row that submission wrote — the record the client keeps
+is the one that knows. A
+job whose row cannot be read, or a row written before the path fields existed,
+reports no PATH fields: an absent path is honest, a guessed one is not. The plan
+id the row itself states is still reported, so a legacy row answers with
+`plan_id` and no `exec_path` / `project_path`.
+
 ## The status-TOON contract (two hard properties + `killed`)
 
 A `wait` result carries `job_status` — the daemon's own status vocabulary. Two
@@ -115,12 +136,16 @@ failing the build:
 
 ## Interaction audit logging (non-silent)
 
-Every `submit` and `wait` interaction is logged to the **plan work log** at a
+Every `submit` and `wait` interaction that reaches the routing decision is logged
+to the plan's **work log** — the GLOBAL work log when the submission names no plan
+— at a
 captured level, through the same `plan_logging` substrate the `manage-logging`
-work verb writes through — so no interaction outcome is emitted only at an
-uncaptured Python log level and silently lost. This closes the field-observed
-defect class where a `degraded` fallback or a `refused` submit vanished because
-it surfaced only below the captured threshold.
+work verb writes through, so no interaction outcome is emitted only at an
+uncaptured Python log level: a `degraded` fallback or a `refused` submit stays
+visible at the captured threshold. An invocation the verb REFUSES before that
+point — an unparseable `--command`, a `wait` with neither a job id nor a
+re-attachable ledger row — answers from its own error payload and writes no
+interaction entry, because no job was submitted or waited on.
 
 - **Normal outcomes log at INFO.** A queued `submit` acceptance and a `wait`
   result each write one entry carrying the `job_id` — the same id written to the
@@ -128,17 +153,22 @@ it surfaced only below the captured threshold.
   audit, and the ledger all correlate on one `job_id`.
 - **Every fallback and refusal logs at WARNING.** No `degraded` (fallback) or
   `refused` branch returns without a captured entry naming the `reason`.
-- **Plan-less builds are silent by design.** When no `--plan-id` is supplied the
-  submission is recorded under the `NO_PLAN` sentinel (so the ledger `kind=job`
-  row is never null), but there is still no per-plan work log to write to, so
-  the logging is a no-op. The sentinel is truthy, so `_audit_log` tests for it
+- **Every plan-less outcome is traced, not silent.** When no `--plan-id` is
+  supplied the submission is recorded under the `NO_PLAN` sentinel (so the ledger
+  `kind=job` row is never null), and there is no per-plan work log to write to —
+  so `_audit_log` routes every such entry to the GLOBAL work log with
+  `plan=NO_PLAN` in the message (a log path cannot carry the plan-less identity).
+  That covers queued, degraded and refused submits and the wait outcomes alike,
+  so a green main-checkout build leaves a trace beside the plans' own builds. The
+  sentinel is truthy, so `_audit_log` tests for it
   explicitly rather than relying on falsiness — it is a routing/ledger value,
   never a plan-directory selector.
 - **The build-execute routing seam's own resolution line lands here too.** The
   routing decision (`[BUILD-SERVER] resolved build (requested=…, resolved=routed|in_process|fail-loud, reason=…)`)
-  is written to the same plan work log through the same substrate, at the same
-  INFO-normal / WARNING-on-fallback levels, and is additionally mirrored to
-  stderr beside `[EXEC]` so a plan-less build stays observable. The emitting
+  is written to the same work log through the same substrate, at the same
+  INFO-normal / WARNING-on-fallback levels, and is ALWAYS mirrored to stderr
+  beside `[EXEC]` — the only sink a plan-less build has, because a plan-less
+  dispatch owns no plan work log and its line goes to stderr alone. The emitting
   module is `script-shared/scripts/build/_build_execute_factory.py` — see it for
   the format string and the level rule (not restated here).
 - **Secrets discipline.** A logged entry carries ONLY non-secret correlation
@@ -163,8 +193,8 @@ of three outcomes, doing NO daemon round-trip when the project is unregistered:
 
 | Verb | Purpose |
 |------|---------|
-| `submit` | S3-verify + submit a job; write `job_id` to the ledger; `degraded`/`refused` on failure |
-| `wait` | One bounded long-poll; terminal, or a live `running`/`queued` status-TOON; re-attach via the ledger |
+| `submit` | S3-verify + submit a job; write `job_id` to the ledger; reply names the built tree; `degraded`/`refused` on failure |
+| `wait` | One bounded long-poll; terminal, or a live `running`/`queued` status-TOON; reply names the built tree; re-attach via the ledger |
 | `ping` | Report the daemon identity (version + pid) or `down` + reason |
 | `preflight` | One call: `disabled` \| `ready` \| `down` + reason |
 

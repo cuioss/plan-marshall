@@ -3,28 +3,36 @@ sender_type=orchestrator
 sender_id=lessons-routing
 epic=live-blockers
 kind=finding
-created=2026-11-15T21:16:35Z
+created=2026-11-15T18:08:01Z
 
-# HIGH (plan-marshall, operator-graded): a dispatched branch-cleanup stalls on its own background merge-queue wait, and a skipped adr-propose is caught by no guard before the merge
+# Baseline-drift recovery cannot clear a conflicting drift: nothing in the recovery rebases the branch, so the second probe repeats the first
 
-Filed by the `lessons-routing` drain of 2026-11-15. Source message: `api-sheriff-security-hardening-tier-1-004` (API-Sheriff plan `plan-sec-03-pending-authorization-store-fairness`, PR #581, 2026-11-09). Bundle: `plan-marshall` (`phase-6-finalize` `branch-cleanup`, pre-merge gate, `adr-propose`). Severity: high. The operator graded it high from a borderline medium/high.
+**Severity:** high (operator grade, 2026-11-15 drain of the lessons-routing inbox)
+**Bundle:** plan-marshall (`plan-marshall` execution recovery, `phase-5-execute` Step 3, `phase-2-refine` Step 3d)
+**Checked at:** `34b92e0ca` (origin/main)
 
-## 1. `branch-cleanup` stalls on itself under `use_merge_queue: true`
+## What was reported
 
-- The step ran as a dispatched agent, enqueued the PR, then started a background wait for the queue landing and post-merge CI. A dispatched leaf is not woken by its own background task, so it stalled waiting on itself and had to be stopped.
-- The orchestrator then did the whole post-merge cleanup by hand: `integrate_into_main integrate`, `worktree-remove` from the main checkout, `switch-and-pull`, `prune-local-and-remote-ref`, and recording the merge on the step.
-- Sender's ask: make the merge-queue landing wait an orchestrator-owned barrier (the leaf enqueues and returns a wait signal; the orchestrator waits through `await-long-running`, then re-dispatches the post-merge half).
+pm-mcp-core plan `plan-v2-140`: `phase-5-execute` returned `baseline_drift` (7 upstream commits, one adjacent-line conflict in `doc/adr/README.adoc`). The orchestrator re-cycled through `phase-2-refine`, which resolved the Q-Gate finding as `taken_into_account` and moved the plan on, but changed no git state. The re-entered execute returned the same `baseline_drift` a second time (two consecutive rows at 21:42:18Z and 21:46:01Z). The orchestrator rebased the feature branch by hand, outside any phase, the operator had to say "rebase prior continuing", and the change-ledger remap then could not map the old commit `27d13e15`, so a row was appended by hand.
 
-## 2. A skipped `adr-propose` (order 62) before `branch-cleanup` (order 70) is caught by no guard
+Supporting evidence from an archived landing in this epic's sibling: `plan-lb-31-in-house-reviewer-002` records "3 consecutive baseline_drift recoveries hit the loop cap; operator authorized the merge of origin/main (65b71aa1c)", after which the loop converged.
 
-- Neither the re-entry check nor the merge gate noticed. It surfaced only at the tail, when the manifest still listed `adr-propose` with no record, after the branch was merged and the worktree removed. The only enforcement is the end-of-phase `phase_steps_complete` handshake, which fires after the point where the step could still have run in order.
-- This is the second recorded occurrence: API-Sheriff lessons `2026-10-12-07-004` / `-07-008` / `2026-10-13-14-005` ("adr-propose skipped after a hand-driven final round") are archived in `lessons-archive/` as an earlier occurrence.
-- Sender's ask: a pre-merge guard that refuses the merge while any manifest step ordered before `branch-cleanup` has no terminal record.
+## Ground truth at the checked commit
 
-## Related, not the same
+`marketplace/bundles/plan-marshall/skills/plan-marshall/standards/execution-recovery.md:9-32`: the recovery for `baseline_drift` with `conflict_count > 0` is to log, `set-phase 2-refine`, re-dispatch refine with the standard envelope, and re-enter execute. Line 9 names "re-cycling through phase-2-refine" the canonical absorption path, and line 30 says no input propagates the drift signal because refine's Step 3d `baseline-reconcile` already sees the upstream commits. No step in that procedure rebases or merges the branch.
 
-Local corpus lessons `2026-11-12-19-003` (branch-cleanup with `use_merge_queue=true` escalates on a squash message) and `-19-004` (branch-cleanup as a leaf cannot remove the worktree) sit in the same step; they are `ingest` scope and not folded here.
+`workflow-integration-git/SKILL.md:226`: `baseline-reconcile` is non-mutating on every classification: it never moves the branch ref and never merges. So refine can only JUDGE the conflict. A search of `execution-recovery.md` for `rebase`, `merge origin` and `force` finds no match relevant to this path.
 
-## Evidence
+`phase-2-refine/standards/refine-workflow-detail.md:260` and `:276` state the design: the probe "does NOT perform the merge", the reconcile is "deferred to the rebase steps", and "the actual `git rebase` against the new baseline happens later, in `phase-6-finalize` branch-cleanup". The same passage says phase-5 Step 3 "is strictly a 'still clean?' verification gate — it aborts on drift and does NOT merge/rebase". That is the defect: a drift WITH content conflicts makes phase-5 Step 3 abort every time, so execution never reaches the phase-6 rebase that the design leaves the reconcile to. The deferral is sound for `overlap_no_content_conflict` (phase-5 self-absorbs it, `conflict_count == 0`) and has no answer for the conflicting case.
 
-The sender's own observation; not re-run on the plan-marshall side and not checked in code at the drain. Please check both halves at the head `live-blockers` works from, and decide whether either is already owned by a shipped or running plan.
+`execution-recovery.md:34-51`: the loop is capped at 3 consecutive drift returns and then stops with `drift_loop_cap_exceeded` for manual intervention. The cap bounds the loop. It does not make a conflicting drift clearable, because each loop sees the same unchanged branch.
+
+An earlier index row (`pm 332`) records a different baseline-drift defect (drift checked against committed files only, not pending tasks' declared files). It does not cover this one.
+
+## What is asked
+
+Give the conflicting-drift path an explicit step that brings the branch onto the new base after refine accepts the conflict resolution, through the `git-workflow` verbs, remapping the change ledger for the rewritten commits (`PLAN-LB-91`'s remap). Or have refine return a `rebase_required` signal the orchestrator acts on before it re-dispatches execute. A second drift return whose probe equals the first should stop with a named reason, not run again.
+
+## Source
+
+- `pm-mcp-core-m2-m4-v2-028`, archived verbatim at `lessons-routing/inbox/archive/pm-mcp-core-m2-m4-v2/`.

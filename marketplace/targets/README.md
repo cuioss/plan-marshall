@@ -197,7 +197,7 @@ missing flag, generator error, plugin.json drift, unmapped tool, etc.).
    )
    ```
 
-   The new harness is then reached by `--target {name}` and by every all-targets run. Add the `sync-harnesses` command file in the harness's own project-local command location, running `python3 marketplace/targets/sync.py $ARGUMENTS` like the existing three, and add unit tests under `test/sync-harnesses/`.
+   The new harness is then reached by `--target {name}` and by every all-targets run. Add the `sync-harnesses` command file in the harness's own project-local command location, running `python3 marketplace/targets/sync.py $ARGUMENTS` like the existing three, and add unit tests under `test/sync-harnesses/`. Add the `apply-changes` entry point beside it, prescribing the same seven commands, because `test/apply-changes/test_apply_changes_command_parity.py` derives its population from `SYNC_TARGETS` and fails for a harness that carries only one of the two commands.
 
 ## Target Synchronization Engine (`sync.py`)
 
@@ -261,6 +261,16 @@ Each harness carries the same command in its own project-local location. All thr
 | Claude Code | `.claude/skills/sync-harnesses/SKILL.md` |
 | OpenCode | `.opencode/commands/sync-harnesses.md` |
 | Antigravity | `.agents/skills/sync-harnesses/SKILL.md` |
+
+### The `apply-changes` command files
+
+`/apply-changes` runs the same regeneration and sync, adds the executor regeneration and the registry write, and ends by naming the restart it cannot perform. Each harness carries it beside the `sync-harnesses` entry point, prescribing the same seven commands in the same order:
+
+| Harness | Command file |
+|---------|--------------|
+| Claude Code | `.claude/skills/apply-changes/SKILL.md` |
+| OpenCode | `.opencode/commands/apply-changes.md` |
+| Antigravity | `.agents/skills/apply-changes/SKILL.md` |
 
 ### Declarative Configuration (`TargetSyncConfig`)
 

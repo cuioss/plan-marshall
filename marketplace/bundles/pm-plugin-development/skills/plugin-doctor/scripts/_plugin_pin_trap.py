@@ -141,6 +141,13 @@ EXECUTOR_UNREADABLE = 'unreadable'
 EXECUTOR_NO_ANCHOR = 'no_anchor'
 EXECUTOR_SPLIT = 'split'
 
+#: The stamp a generator writes when NO version was readable from any manifest.
+#: It is an answered absence with the same meaning as the empty fresh-install
+#: sentinel: ``generated_version`` in ``generate_executor.py``. Reading it as a
+#: version would turn "the store could not state one" into a demonstrated
+#: divergence between the executor and the install path.
+UNVERSIONED_EXECUTOR_STAMP = 'unversioned'
+
 # Registry-entry statuses, kept distinct for the same reason. A plugin installed
 # in several scopes has one registry entry PER SCOPE; when those entries name
 # different versions the registry was read successfully and disagrees with
@@ -944,7 +951,9 @@ def read_executor_anchored_version(executor_path: Path) -> ExecutorAnchor:
       ``version``;
     * :data:`EXECUTOR_UNREADABLE` — the file could not be read at all;
     * :data:`EXECUTOR_NO_ANCHOR` — it was read and names no version: the
-      assignment is missing, or is the empty fresh-install sentinel.
+      assignment is missing, is the empty fresh-install sentinel, or is the
+      ``unversioned`` stamp a generator writes when no version was readable.
+      Any of those is an answered absence, not an established version.
 
     :data:`EXECUTOR_SPLIT` stays in the status vocabulary and the oracle still
     fails on it, but **this adapter no longer produces it**: one assignment
@@ -957,6 +966,10 @@ def read_executor_anchored_version(executor_path: Path) -> ExecutorAnchor:
     """
     state, version = read_executor_version(executor_path)
     if state == EXECUTOR_VERSION_FOUND and version is not None:
+        if version == UNVERSIONED_EXECUTOR_STAMP:
+            # An answered absence, never a demonstrated divergence from the
+            # install path: the generator states WHY no version exists.
+            return ExecutorAnchor(status=EXECUTOR_NO_ANCHOR)
         return ExecutorAnchor(status=EXECUTOR_ANCHORED, version=version, versions=(version,))
     if state == EXECUTOR_VERSION_UNREADABLE:
         return ExecutorAnchor(status=EXECUTOR_UNREADABLE)

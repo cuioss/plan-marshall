@@ -2,10 +2,10 @@
   "id": "PLAN-LB-130",
   "slug": "freshness-gate-scope-by-notation",
   "workstream": "WS-01",
-  "status": "running",
+  "status": "shipped",
   "lane": "runbook",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "plan_marshall_plan_id": "rb-lb-130-freshness-gate-scope-by-notation",
+  "pr": "1949",
+  "landing": "landings/PLAN-LB-130.md",
   "seq": 130
 }

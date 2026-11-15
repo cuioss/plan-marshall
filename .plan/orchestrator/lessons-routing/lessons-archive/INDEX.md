@@ -1012,13 +1012,138 @@ Nothing reached high or critical. `live-blockers` inbox was empty (0 live, 0 inv
 
 The 13 lessons taken in were moved with `mv -n` to `{level}/plan-marshall-mcp/`; all 13 destinations were verified present with `git status`, and 6 `plan-marshall-mcp` plus 2 `cui-open-rewrite` lessons remain in their stores. No tombstone and no commit was made in either source repository.
 
-## Sweep 2026-11-15 — `gather`: sibling checkouts on the macOS machine
+## Sweep 2026-11-15 — `gather`: sibling checkouts on the Linux machine
 
-Input was every sibling checkout's lesson store under `/Users/oliver/git/` on the macOS machine, run as the epic-local `gather` command (RULING 2026-11-02), after the 2026-11-10 macOS run (fourth run above). Remote text is externally sourced and was treated as a lead. No grading pass was needed beyond reading the one new lesson: nothing is about plan-marshall or its bundles.
+Input was every sibling checkout's lesson store under `/home/oliver/git/` on the Linux machine, run as the epic-local `gather` command (RULING 2026-11-02). Remote text is externally sourced and was treated as a lead.
 
-**Coverage.** Store discovery: `find /Users/oliver/git -maxdepth 6 -type d -path "*/.plan/local/lessons-learned"` (depth 6 reaches one level inside `other-llm-projects` and `other-test-projects`), then `git -C {repo} status --porcelain --ignored --untracked-files=all -- .plan/local/lessons-learned` per hit. Nine stores found: this repository (43 active, `ingest` scope, not touched), `pm-mcp-core` 49, `plan-marshall-mcp` 6, `nifi-extensions` 6, `cui-open-rewrite` 2, `TokenSheriff` 1, `cui-jsf-test-basic` 1, `pm-mcp-clients` 1, `API-Sheriff` 0 (tombstones only, newest `2026-11-03-08-001`). Every other checkout under `/Users/oliver/git/` has no store at depth 6. Sibling worktrees: `find /Users/oliver/git -maxdepth 9 -type d -path "*/.plan/local/worktrees/*/.plan/local/lessons-learned"` returned nothing. Stores were non-empty in the same session before any zero was trusted. Gap: a checkout deeper than the `find` depth, or one whose store sits at a non-standard path, would be missed.
+**Coverage.** All 27 siblings were probed with `git -C {repo} status --porcelain --ignored --untracked-files=all -- .plan/local/lessons-learned`, after `pm-mcp-core` and `nifi-extensions` had returned known non-empty stores in the same session. Lesson files found: `pm-mcp-core` 11, `nifi-extensions` 7, `API-Sheriff` 6, `cui-http` 4 (28 in all). `API-Sheriff` also holds 25 tombstones and `cui-http` holds tombstones only beyond its 4 lessons. Probed with no lesson files: cuioss-parent-pom, TokenSheriff, cui-portal-ui, cui-reference-documentation, cuioss-review-bot, pm-mcp-clients, cui-open-rewrite, cui-jsf-test-basic, cui-java-module-template, cui-core-ui-model, cui-test-keycloak-integration, plan-marshall-telemetry, cui-java-tools, cui-test-mockwebserver-junit5, plan-marshall-documentation, playwright-test-artifacts, plan-marshall-mcp, cui-portal-core, cui-test-generator, cui-jsf-components, cuioss-organization, cui-test-value-objects. `cui-test-juli-logger` has no `.plan/local` directory. `pm-mcp-core` worktrees probed with no store: `v2-67-main-hygiene-leftovers`, `v2-48-worker-vector-verify-not-resolve`, `v2-94-utility-classes-and-generic-catches`; `harness-icon-store` and `_orchestrator` have no `.plan/local` directory. This repository's own corpus belongs to `ingest` and was not touched. **Gap:** `other-llm-projects` and `other-test-projects` do not exist on this machine.
 
-**Left in source (all 66).** `plan-marshall-mcp` `2026-10-17-14-003`, `2026-10-21-05-001`, `2026-11-05-15-001`, `-15-002`, `-15-004`, `2026-11-06-16-001` and `cui-open-rewrite` `2026-07-20-23-001`, `-23-002` equal, id for id, the eight the fourth run left in place. `pm-mcp-core` 49, `nifi-extensions` 6, `TokenSheriff` 1 and `cui-jsf-test-basic` 1 were first compared by count only, as in the fourth run, and were then re-read and re-graded (see "Re-grade of the left-in-place lessons" below).
+**Already graded.** 20 files are the ones the 2026-11-02 third run graded not applicable and left in place: cui-http 4 (`2026-09-16-15-001`, `-15-007`, `-15-010`, `2026-10-05-07-001`), API-Sheriff 6 (`2026-08-09-07-002`, `-18-002` to `-18-005`, `-19-002`), nifi-extensions 7 (`2026-09-02-18-001`, `2026-09-04-10-003`, `2026-10-09-22-001` to `-22-005`), pm-mcp-core 3 (`2026-10-19-18-001` to `-18-003`). The counts are unchanged and none of these ids is among those the third run filed, archived or stored. They were not graded again.
+
+**New: 8 lessons, all `pm-mcp-core`, none in the index before this run.** Seven are project-only and stay. One, `2026-11-07-16-001`, was ruled in scope by the operator and moved to `low/pm-mcp-core/`. The headers of the 20 already-graded lessons were re-read for the same question and none touches plan-marshall tooling, so they stay.
+
+| Lesson | Subject | Why project-only |
+|---|---|---|
+| `2026-11-06-11-001` | Migrating a test to generated data loses its pinned boundary and collision cases | `pm-core` test-data conformance family and its CLAUDE.md test-data rule |
+| `2026-11-06-11-002` | Test-data helpers copied across about 27 `pm-core` test classes | `CoreGenerators` and ADR 012 of `pm-mcp-core` |
+| `2026-11-06-11-003` | Fixture values drawn in static initializers escape the generator seed | `cui-test-generator` use in `pm-mcp-core` tests |
+| `2026-11-06-11-004` | `LspClientTest.stubborn` fails under host load: 2-second initialize timeout | A `pm-runtime` test fixture. The build wrapper's six findings were resolved through the existing `accepted` (transient) path |
+| `2026-11-06-11-005` | A literal kept as a contract must name its contract category | `pm-mcp-core` CLAUDE.md test-data rule |
+| `2026-11-06-11-006` | Per-class literal counts came from five ad-hoc scripts | The `pm-mcp-core` conformance family's PR table |
+| `2026-11-06-17-001` | A test-JAR helper that gains a test-scope library breaks its consumers | `pm-runtime:tests` and the `plan-marshall-mcp` assembly |
+| `2026-11-07-16-001` | Bound a no-duplication criterion to data helpers so the functional review can close | **Moved to `low/pm-mcp-core/`.** Borderline low, ruled in scope by the operator: the failure it describes is a functional-review loop whose verdict depended on the round. Overlaps the functional-review paragraph of the `2026-11-06-11-002` recurrence, which stays |
+
+**Operator rulings this run.** `2026-11-07-16-001`, borderline low, graded in scope and low.
+
+### Dispositions
+
+| Disposition | Count |
+|---|---|
+| filed | 0 |
+| low, moved into the archive | 1 |
+| not applicable (left in source), already graded | 20 |
+| not applicable (left in source), new | 7 |
+| **total** | **28** |
+
+The one lesson taken in was moved with `mv -n` to `low/pm-mcp-core/`. The destination was verified present with `git status`, and the source store was re-probed: `pm-mcp-core` holds 10 lessons. No tombstone and no commit was made in any source repository.
+
+## Sweep 2026-11-15 (second run) — `ingest`: this repository's own corpus
+
+Input was this repository's `.plan/local/lessons-learned`, enumerated with `manage-lessons list --status all --full` (the default `list` shows active lessons only and returned none). One file: no active lesson, one superseded stub.
+
+### `medium/` (1, not filed)
+
+| Lesson | Subject | Disposition |
+|---|---|---|
+| `2026-09-05-14-002` | Bot acknowledgment notices are filed as findings and block the gate until triaged (`automatic-review`). A stub superseded by `2026-08-25-09-013`, which is not in the corpus | Archived, not filed |
+
+**Why medium and not filed.** The canonical lesson's subject is owned in `live-blockers`: `PLAN-LB-46-review-bot-signal-gaps.md:35` moves the CodeRabbit summary marker and `## Walkthrough` to the conditional `contentless_review_markers` / `actionable_content_markers` drop, and `PLAN-LB-127` extends that layer. A recurrence of an owned subject is archived, never refiled.
+
+**Checked at HEAD.** `Already reviewed the last commit` is handled: it is a refusal pattern (`coderabbit.md:96-99`, `bot_registry.py:56`). The stub's other phrasing, `GitHub couldn't provide a complete incremental comparison…` (the full-review fallback notice), and its point that the cost compounds with every re-review, are in no file under `automatic-review` or `workflow-integration-github` and in no `live-blockers` plan or epic record. Those two points are kept in the archived stub, so they are retrievable if `PLAN-LB-46` is reopened. Whether `PLAN-LB-46`'s conditional drop already covers that notice was not checked.
+
+The file was copied byte-identical to `medium/2026-09-05-14-002.md` (verified with `cmp`) and removed through `manage-lessons remove` with verdict `superseded`, which wrote a tombstone. The corpus is now empty: 0 active, 0 superseded, 0 removed-visible.
+
+| Disposition | Count |
+|---|---|
+| filed | 0 |
+| medium, archived | 1 |
+| **total** | **1** |
+
+## Sweep 2026-11-15 (third run) — inbox, 38 messages
+
+Input was this epic's own inbox: `api-sheriff-api-sheriff-0-2-0-079`..`-085` (7) and `api-sheriff-security-hardening-tier-1-001`..`-005` (5) from API-Sheriff, and `pm-mcp-core-m2-m4-v2-008`..`-033` (26) from the pm-mcp-core orchestrator. All 38 valid, all live, none a landing: 30 `candidate-lesson`, 8 `finding`. Corpus: 0. Grading was done in the orchestrator session. Message bodies stay verbatim in `inbox/archive/{sender}/`; no copy was made under `{level}/`. Abbreviations: `a02-NNN` = `api-sheriff-api-sheriff-0-2-0-NNN`, `sh-NNN` = `api-sheriff-security-hardening-tier-1-NNN`, `pm2-NNN` = `pm-mcp-core-m2-m4-v2-NNN`.
+
+**Operator rulings this run.** Three borderlines were put to the operator. The baseline-drift recovery (`pm2-028`) was graded **high**. The `verdict_inputs` cluster (`a02-079`, `sh-001`, `pm2-018`) stayed **medium**, and the branch-cleanup stall (`sh-004`) stayed **medium**. The gate-rewrite commit cluster (`pm2-009`, `-021`, `-023`) was graded **high** by the orchestrator, with the grounds stated below.
+
+**Checked at `34b92e0ca`:** `git-workflow.py:1033-1046` appends a change-ledger row "ONLY in `6-finalize`"; `PLAN-LB-126` (shipped, #1942) is the finalize half and keeps that phase gate; `execution-recovery.md:9-51` has no rebase step and `refine-workflow-detail.md:260`, `:276` defer the rebase to phase-6 while phase-5 Step 3 aborts on a conflicting drift; `review_completeness.py:2172`, `:2796` registers `roster` and `manage-logging.py:293`, `:315` registers `signal-scan`; `claude_runtime.py:2959-2961` resolves an agent from the plugin cache; `manage-lessons.py:1097-1103` maps EOF to "User declined removal"; `_github_pr.py:3547` ends a queue-settle wait on a failed poll with `pr_read_failed`; `ci_complete_precondition.py:906` sets `rewait_bound` from the constant `MAX_PENDING_REWAITS`; `verdict-currency.md:203` says no finalize step declares `verdict_inputs`; `automatic-review/SKILL.md:378-380` states no Bash timeout for `pr wait-for-comments`; no `agent-message` or hand-back frame is recognised under `platform-runtime`; `junit-core/SKILL.md:152` and `testing-junit-core.md:194` carry the mirrored-list rule; `plan-spec.md` says nothing about directory entries. Everything else rests on the message text.
+
+### Filed to `live-blockers` (2 filings, 4 sources)
+
+| Message | Level | Sources | Subject |
+|---|---|---|---|
+| `lessons-routing-087` | high | pm2-009, pm2-021, pm2-023 | A commit the phase-5 orchestrator makes for a quality-gate rewrite or a style fix has no change-ledger row, so the 5-to-6 transition refuses. Three plans in three days, 136k and 146k tokens per failed dispatch. The finalize half is `PLAN-LB-126`; the commit verb still appends only in `6-finalize` |
+| `lessons-routing-088` | high (operator) | pm2-028 | Baseline-drift recovery cannot clear a conflicting drift: it re-cycles through refine, which changes no git state, while phase-5 Step 3 aborts on the same drift and the rebase is deferred to phase-6. Corroborated by the `plan-lb-31` landing (cap hit, operator merged `origin/main`) |
+
+### Already covered (2, no new filing)
+
+| Messages | Covered by |
+|---|---|
+| pm2-020 | `-064` `weakened_test` re-raises intended removals; the same class as `as-014` of the 2026-11-10 inbox sweep (a spec-mandated rewrite not declared under Tests to remove) |
+| pm2-025 | `-078` (junit-core: tests that cannot fail, mirrored list). At HEAD `junit-core/SKILL.md:152` and `testing-junit-core.md:194` already carry the mirrored-list rule, and `testing-junit-core.md:8` says a spec-defined boundary is written exactly. The one residual point, a generated range that almost never hits the boundary, is the "default not reached" case of `-078` |
+
+### `stale/` (2)
+
+| Message | Why |
+|---|---|
+| sh-002 | Items 1 and 2 are refuted at HEAD: `review_completeness roster` is registered (`review_completeness.py:2172`, `:2796`) and so is `manage-logging signal-scan` (`manage-logging.py:293`, `:315`). The sender ran an older executor. Item 3 (an explicit `off` lane reported `binds=true` but kept under the `full` posture) was not verified: `_manifest_lanes.py:41` makes `full` the no-prune default, which is consistent with the report, so it is kept in the archived message as a medium lead |
+| pm2-017 | `prompt_not_found` for `execution-context-level-4` on a consumer repo: the stated cause (agent resolved only against a `marketplace/bundles` tree) does not match HEAD, where `claude_runtime._find_agent_file` resolves through the plugin cache (`claude_runtime.py:2959-2961`). The error text still says "marketplace tree". Not re-run on a consumer repo, and the "seam failure is only a decision-log WARNING" half was not checked |
+
+### `medium/` (24, not filed)
+
+| Cluster | Messages |
+|---|---|
+| Head-dependent verdicts re-fire on every HEAD advance because `verdict_inputs` are undeclared (the earlier medium cluster, now four reports from three repositories; one plan re-fired simplify and security-audit 15 times each; still true at `verdict-currency.md:203`). Cost, so held by the focus rule | a02-079, sh-001, pm2-018 |
+| Finalize loop-back cost: the pre-push gate goes whole-tree on a delta that is comment-only because an unmapped path is in the footprint; a no-content-conflict overlap forces a rebase that lapses every head-bound gate; reviews are re-run only at the merge barrier after a review-prompted correction commit; simplify and security-audit run in parallel and the audit goes stale | pm2-014, pm2-019, pm2-030, a02-082 (item 2) |
+| Finalize review gaps: a review closes on an operator override over a partial read and drops its counts; `landing-check` reports `complete: true` beside an unmeasured surface delta; a delta-round code-review author overwrites the previous round's findings | a02-083, pm2-010 |
+| Merge and CI waits: `ci pr wait-for-queue-settle` ends a wait with `pr_read_failed` on one failed poll after the PR merged (`_github_pr.py:3547`); `rewait_bound` is a constant and too small for a 21 to 45 minute job (`ci_complete_precondition.py:906`); `pr wait-for-comments` is called with no stated Bash timeout so the host backgrounds it (`SKILL.md:378-380`); the unlearned-key build timeout of 300 s clips a normal quality gate | a02-080, a02-081 (item 6), pm2-012, a02-082 (item 3) |
+| `git-workflow worktree-rebase-to` returns a generic error on a conflicting rebase and no verb continues or aborts it; a dispatched `branch-cleanup` stalled on its own background merge-queue wait; a skipped `adr-propose` is caught by no guard before the merge (a recurrence of the archived `API 2026-10-12-07-004` item) | sh-003, sh-004 |
+| Dispatch-boundary and execution accounting: no `--step-id`, zero usage on hand-back rows, no row for a finalize or a cancelled dispatch (the earlier medium accounting cluster; token and measurement work, held by the focus rule) | pm2-026, pm2-029, pm2-032 |
+| Chat signal: harness-framed subagent hand-backs count as operator turns (`operator_turn_count` 32 and 71 for about 3 and 6 operator messages; no hand-back frame is recognised at HEAD). `pm2-033` is a second report of `pm2-027` and folds into it | pm2-027, pm2-033 |
+| Triage and outline authoring: a fix task is scoped to the reported site, not the finding family, so each round finds the next sibling; a dispatched agent's report that a config file was fixed is accepted without a disk-state check | pm2-031, a02-084 (item 1) |
+| Spec and corpus tooling: `corpus surfaces` claims a whole tree for a bare directory entry and neither it nor `templates/plan-spec.md` warns the author (89 false overlaps in one epic); `manage-lessons list` shows an unparseable lesson with empty fields | pm2-008, a02-083 (item 1) |
+| Executor and landing: `review_completeness` crashed with a traceback from the `0.1.2114` cache while `0.1.2115` was installed (cause not established; the stale-executor cluster of `2026-10-07-07-002`); landing facts count review-body findings differently from `runbook_lane review-gate` (the Sonar half is not enabled and was ignored; `#1992` touched the review-gate contract and was not re-checked against this) | pm2-024, sh-005 |
+
+### `low/` (6, not filed)
+
+| Message | Subject |
+|---|---|
+| a02-085 | Three low items: the `landing-facts` step list needs a last-colon split (already stated in `analyze.md`, related to `PLAN-LB-107`), the architecture refresh keeps descriptor text that cites deleted paths, config staleness has no prompt. Two recurrences, already covered: no CI verb reads a `main` run by merge commit (backlog § 2.7), and `module-tests` DEGRADED at whole-tree scope (`-031`, `-058`) |
+| pm2-011 | `.pmwf` workflow fixtures are outside the `architecture search --content` inventory; one undeclared consumer was found only when 8 tests failed |
+| pm2-013 | `task_start_sha` is shared across an envelope, so each task's `changed_files` and `[ARTIFACT]` lines are cumulative |
+| pm2-015 | A hand-filed `sonar-issue` finding with `raw_input.issue_key` is rejected by the schema. Sonar is not enabled |
+| pm2-016 | `sonar fetch_findings` has no unauthenticated read path for a public project. Sonar is not enabled |
+| pm2-022 | `git-workflow worktree-create --detach` is not declared; the leaf used raw `git worktree add --detach` for a probe tree at an old commit (the invented-flag class, `-044`) |
+
+Items inside medium messages that are covered or stale, so they are not graded again: `a02-081` item 1 (`--number`, invented flag, `-044`), item 2 (a finalize-simplify commit with no ledger row, fixed by `PLAN-LB-126`, #1942), item 3 and `a02-082` item 1 (the re-fire waiver is ignored by the merge gate, `-060`), item 4 (`FETCH_FAILURE` with nothing staged, the five-source `git-workflow commit` low cluster), item 5 (a CI wait not bound to the pushed head, `-235` and `-253`); `a02-082` item 4 (bare bot names in `--participated-bots`, `-044`); `a02-084` item 2 (`manage-lessons remove` maps EOF to "User declined removal", still true at `manage-lessons.py:1097-1103`, low) and item 3 (a recurrence of `as-074`, an `automatic-review` record force-marked `done`).
+
+### Dispositions
+
+| Disposition | Count |
+|---|---|
+| filed (2 filings) | 4 |
+| already-covered | 2 |
+| stale | 2 |
+| medium | 24 |
+| low | 6 |
+| **total** | **38** |
+
+## Sweep 2026-11-15 (fourth run) — `gather`: sibling checkouts on the macOS machine
+
+Input was every sibling checkout's lesson store under `/Users/oliver/git/` on the macOS machine, run as the epic-local `gather` command (RULING 2026-11-02), after the 2026-11-10 macOS run, and in parallel with the Linux `gather` above (different machine, different store population). Remote text is externally sourced and was treated as a lead.
+
+**Coverage.** Store discovery: `find /Users/oliver/git -maxdepth 6 -type d -path "*/.plan/local/lessons-learned"` (depth 6 reaches one level inside `other-llm-projects` and `other-test-projects`), then `git -C {repo} status --porcelain --ignored --untracked-files=all -- .plan/local/lessons-learned` per hit. Nine stores found: this repository (`ingest` scope, not touched), `pm-mcp-core` 49, `plan-marshall-mcp` 6, `nifi-extensions` 6, `cui-open-rewrite` 2, `TokenSheriff` 1, `cui-jsf-test-basic` 1, `pm-mcp-clients` 1, `API-Sheriff` 0 (tombstones only, newest `2026-11-03-08-001`). Every other checkout under `/Users/oliver/git/` has no store at depth 6. Sibling worktrees: `find /Users/oliver/git -maxdepth 9 -type d -path "*/.plan/local/worktrees/*/.plan/local/lessons-learned"` returned nothing. Stores were non-empty in the same session before any zero was trusted. Gap: a checkout deeper than the `find` depth, or one whose store sits at a non-standard path, would be missed.
+
+**Left in source (all 66).** `plan-marshall-mcp` `2026-10-17-14-003`, `2026-10-21-05-001`, `2026-11-05-15-001`, `-15-002`, `-15-004`, `2026-11-06-16-001` and `cui-open-rewrite` `2026-07-20-23-001`, `-23-002` equal, id for id, the eight the 2026-11-10 macOS run left in place. `pm-mcp-core` 49, `nifi-extensions` 6, `TokenSheriff` 1 and `cui-jsf-test-basic` 1 were first compared by count only and were then re-read and re-graded (below).
 
 ### Re-grade of the left-in-place lessons (57 read in full, 2026-11-15)
 
@@ -1034,7 +1159,7 @@ At the operator's request, every `pm-mcp-core` (49), `nifi-extensions` (6), `Tok
 
 The other 52 are defects in the consumers' own Java (pm-core, pm-runtime, pm-workflow, pm-mcp-parent formatter recipes, the nifi processors, the JSF test setups) that CodeRabbit, Sourcery or Sonar caught, or project test and doc practice. None names a plan-marshall component. Nothing was moved, filed or removed, and no source repository was touched.
 
-### Not applicable — new since the last run (1)
+### Not applicable — new since the last macOS run (1)
 
 | Lesson | Why |
 |---|---|
@@ -1051,46 +1176,57 @@ The other 52 are defects in the consumers' own Java (pm-core, pm-runtime, pm-wor
 
 Nothing was moved, so no destination check applied. No tombstone and no commit was made in any source repository.
 
-## Sweep 2026-11-15 (second run) — inbox: 13 messages from two API-Sheriff epics
+## Sweep 2026-11-15 (fifth run) — inbox: 13 messages from two API-Sheriff epics (a second grading)
 
-Input was this epic's inbox: 13 live, valid messages, none a landing — `api-sheriff-api-sheriff-0-2-0-079`..`-085` (7, the close-out of epic `api-sheriff-0-2-0`) and `api-sheriff-security-hardening-tier-1-001`..`-006` (6, plans `plan-sec-02`..`-06`; `-005` is at revision 3). The first twelve were already queued at the 2026-11-10 run's end; `-006` arrived 2026-11-13. Grading follows RULING 2026-10-09 / 2026-11-02 and `live-blockers`' FOCUS RULE (high and blocking only). Message bodies stay verbatim in `inbox/archive/{sender}/`; no copy is made under `lessons-archive/{level}/`.
+⚠ **Duplicate of the third run for 12 of the 13 messages.** The Linux session's 38-message drain (third run above) read `api-sheriff-api-sheriff-0-2-0-079`..`-085` and `api-sheriff-security-hardening-tier-1-001`..`-005` the same day, from a ledger copy this session had not seen. This run graded them independently and archived them to the same paths (identical bytes). Only `-006` (arrived 2026-11-13) was read by this run alone. Where the two gradings differ, both stand in the ledger and the difference is named below. Grading follows RULING 2026-10-09 / 2026-11-02 and `live-blockers`' FOCUS RULE (high and blocking only). Message bodies stay verbatim in `inbox/archive/{sender}/`; no copy is made under `lessons-archive/{level}/`. Abbreviations as in the third run: `as-0-2-0-NNN` is `a02-NNN`, `t1-NNN` is `sh-NNN`.
 
-### Filed to `live-blockers` (3, `lessons-routing-087`..`-089`)
+### Filed to `live-blockers` (3, `lessons-routing-089`..`-091`)
+
+The filings are numbered above the Linux drain's `-087` and `-088`; they were renumbered when the two ledger branches were merged.
 
 | Filing | Grade | Content | Sources |
 |---|---|---|---|
-| `-087` | high (operator, `-005` from a borderline) | `review-gate` returns `undecidable_read` on CodeRabbit's "Files with no reviewable changes" section; landing `review_body_findings_*` and `sonar_open_new_issues` disagree with the provider re-read on three landings | t1-005, t1-006 |
-| `-088` | high (operator, from a borderline) | A dispatched `branch-cleanup` stalls on its own background merge-queue wait; a skipped `adr-propose` is caught by no guard before the merge | t1-004 |
-| `-089` | high, recurrence evidence only | Six subjects already owned: re-fire waiver vs the merge gate, `automatic-review` force-marked done, `module-tests` DEGRADED, no CI read by merge commit, script-surface drift (new members `review_completeness roster`, `manage-logging signal-scan`), CI wait unbound to the pushed head | 081 items 1, 3, 5; 082 items 1, 4; 084 recurrence; 085 recurrences A and B; t1-002 items 1-2 |
+| `-089` | high (operator, `-005` from a borderline) | `review-gate` returns `undecidable_read` on CodeRabbit's "Files with no reviewable changes" section; the landing `review_body_findings_*` disagree with the provider re-read on three landings. Carries no Sonar claim: Sonar is not enabled for `live-blockers` | t1-005, t1-006 |
+| `-090` | high (operator, from a borderline) | A dispatched `branch-cleanup` stalls on its own background merge-queue wait; a skipped `adr-propose` is caught by no guard before the merge | t1-004 |
+| `-091` | high, recurrence evidence only | Six subjects already owned: re-fire waiver vs the merge gate, `automatic-review` force-marked done, `module-tests` DEGRADED, no CI read by merge commit, script-surface drift (members `--number` and `--participated-bots` pairs), CI wait unbound to the pushed head | a02-081 items 1, 3, 5; a02-082 items 1, 4; a02-084 recurrence; a02-085 recurrences A and B |
+
+### Where this grading differs from the third run
+
+| Message | Third run (Linux) | This run |
+|---|---|---|
+| t1-004 | medium (operator kept it) | high (operator), filed `-090` |
+| t1-005 | medium; its Sonar half ignored (not enabled); `#1992` not re-checked | high (operator), filed `-089` without the Sonar half; `#1992` still not re-checked |
+| t1-002 items 1-2 | stale: `review_completeness roster` and `manage-logging signal-scan` are registered at HEAD | taken as live on the sender's word first; the third run's check at `34b92e0ca` refutes them, so they were removed from `-091` |
+| t1-006 | not read (arrived later) | high, filed `-089` |
 
 ### Per-message dispositions
 
 | Message | Disposition | Reason |
 |---|---|---|
-| as-0-2-0-079 | medium | `verdict_currency classify` returns `invalidated` / `verdict_inputs_undeclared` on every head advance because no step declares inputs; a cost cluster (the 2026-10-23 run withdrew the same cost cluster as medium). Recurs in t1-001 |
-| as-0-2-0-080 | medium | `ci pr wait-for-queue-settle` ends as `error` on one transient read while the PR had merged; recurrence of the 2026-10-12 late-arrival medium (messages 135..143) |
-| as-0-2-0-081 | filed in part (`-089` rows 1, 5, 6); rest medium or already covered | Item 1 `--number` (invented-flag class, `-044`); item 2 `execute_commits_unrecorded` after a finalize simplify commit (already covered by `-046`; local lesson `2026-11-13-14-015` is the same family); item 3 waiver vs gate (`-060`); item 4 `git-workflow commit` `FETCH_FAILURE` on an empty index (medium, now the sixth source); item 5 `pr checks --watch` unbound to the head; item 6 `ci_complete_precondition` `rewait_bound` 3 too small for a 21-45 minute job (medium: configuration) |
-| as-0-2-0-082 | filed in part (`-089` rows 1, 5); items 2-3 medium | Item 1 waiver vs gate recurrence; item 2 simplify and security-audit run in parallel so the audit goes stale (medium, re-fire cost class); item 3 builds for an unlearned command key clipped at the 300s default (medium, operator ruling); item 4 `--participated-bots` takes `bot_kind:evidence_kind` pairs (doc-drift, `-089` row 5) |
-| as-0-2-0-083 | medium | Three "a mechanism reports a result it never computed" items: `manage-lessons list` shows an unparseable lesson with empty fields (the `remove` half is fixed; `_lessons_query.py` `cmd_list` still reads `metadata.get(...)`; this epic's own subject, PLAN-LR-06 retired); `landing-check` `complete: true` over an unmeasured surface delta (the payload now carries a `surface_delta` field with an `unmeasured` state; `emit-landing` still supplies no footprint); a review closed on operator override over a partial read drops its facts |
-| as-0-2-0-084 | filed in part (`-089` row 2); items 1-2 medium | A dispatched agent's "fixed" report accepted with no disk-state check; `manage-lessons remove` without `--force` reports "User declined removal" on EOF; `automatic-review` force-marked done recurrence (`as-074`) |
-| as-0-2-0-085 | filed in part (`-089` rows 3, 4); items 1-3 low | `landing-facts` step list ambiguous (related to PLAN-LB-107); finalize architecture refresh misses a stale project description; config staleness has no prompt |
+| as-0-2-0-079 | medium | `verdict_currency classify` returns `invalidated` / `verdict_inputs_undeclared` on every head advance because no step declares inputs; a cost cluster. Recurs in t1-001 |
+| as-0-2-0-080 | medium | `ci pr wait-for-queue-settle` ends as `error` on one transient read while the PR had merged; recurrence of the 2026-10-12 late-arrival medium |
+| as-0-2-0-081 | filed in part (`-091` rows 1, 5, 6); rest medium or already covered | `--number` invented flag (`-044`); `execute_commits_unrecorded` after a finalize simplify commit (fixed by `PLAN-LB-126`); waiver vs gate (`-060`); `git-workflow commit` `FETCH_FAILURE` on an empty index (medium); `pr checks --watch` unbound to the head; `rewait_bound` 3 too small for a 21-45 minute job (medium) |
+| as-0-2-0-082 | filed in part (`-091` rows 1, 5); items 2-3 medium | Waiver vs gate recurrence; simplify and security-audit run in parallel so the audit goes stale (medium); builds for an unlearned command key clipped at 300s (medium, operator ruling); `--participated-bots` takes `bot_kind:evidence_kind` pairs |
+| as-0-2-0-083 | medium | Three "a mechanism reports a result it never computed" items: `manage-lessons list` with an unparseable lesson; `landing-check` `complete: true` over an unmeasured surface delta; a review closed on operator override over a partial read |
+| as-0-2-0-084 | filed in part (`-091` row 2); items 1-2 medium | A dispatched agent's "fixed" report accepted with no disk-state check; `manage-lessons remove` without `--force` reports "User declined removal" on EOF; `automatic-review` force-marked done recurrence |
+| as-0-2-0-085 | filed in part (`-091` rows 3, 4); items 1-3 low | `landing-facts` step list ambiguous; finalize architecture refresh misses a stale project description; config staleness has no prompt |
 | t1-001 | medium | Recurrence of as-079 with measured cost: 15 re-fires of simplify and security-audit, 7 of each review, 6 of the pre-push gate in one plan |
-| t1-002 | filed in part (`-089` row 5); item 3 medium | `review_completeness roster` and `manage-logging signal-scan` documented but not registered; an explicit `off` lane reported `binds=true` but not applied under the `full` profile (medium) |
-| t1-003 | medium | `worktree-rebase-to` returns a generic `status: error` on a conflicting rebase, and no `rebase-continue` / `rebase-abort` verb exists; recoverable by hand with `git -c core.editor=true rebase --continue` |
-| t1-004 | high, filed `-088` | See the filing table |
-| t1-005 | high, filed `-087` | See the filing table |
-| t1-006 | high, filed `-087` | See the filing table |
+| t1-002 | stale (items 1-2, refuted at HEAD by the third run); item 3 medium | `review_completeness roster` and `manage-logging signal-scan` are registered; an explicit `off` lane reported `binds=true` but kept under the `full` profile (medium, `_manifest_lanes.py:41`) |
+| t1-003 | medium | `worktree-rebase-to` returns a generic `status: error` on a conflicting rebase, and no `rebase-continue` / `rebase-abort` verb exists |
+| t1-004 | high, filed `-090` | See the filing table |
+| t1-005 | high, filed `-089` | See the filing table |
+| t1-006 | high, filed `-089` | See the filing table |
 
 ### Dispositions
 
 | Disposition | Messages |
 |---|---|
 | filed high, whole message | 3 (t1-004, t1-005, t1-006) |
-| filed in part as recurrence evidence (`-089`), the rest medium or low | 5 (as-081, -082, -084, -085, t1-002) |
+| filed in part as recurrence evidence (`-091`), the rest medium or low | 4 (as-081, -082, -084, -085) |
 | medium | 5 (as-079, -080, -083, t1-001, t1-003) |
-| stale / low-only / already-covered-whole | 0 |
+| stale items plus a medium item | 1 (t1-002) |
 | **total** | **13** |
 
-**Checked at this run.** The destination `live-blockers` was `phase: orchestrating` before routing, and its inbox held only the three earlier `lessons-routing` filings (`-084`..`-086`, undrained) and a runbook landing, so no recurrence could be added by `inbox amend`; `-060` and `-044` were already out of the live queue. The phrase "Files with no reviewable changes" occurs in no `marketplace/bundles` file (the inventory search finds it only in `test/plan-marshall/runbook-lane/test_runbook_lane_review_gate.py`, not read for what it asserts), which is consistent with but does not establish the parser not recognising it. Everything else rests on the senders' own observations and the message text; nothing was re-run. `live-blockers` PLAN-LB-129 (review-gate thread-and-count-truth) is RUNNING and may own part of `-087`.
+**Checked at this run.** The destination `live-blockers` was `phase: orchestrating` before routing. The phrase "Files with no reviewable changes" occurs in no `marketplace/bundles` file (the inventory search finds it only in `test/plan-marshall/runbook-lane/test_runbook_lane_review_gate.py`, not read for what it asserts), which is consistent with but does not establish the parser not recognising it. The roster and signal-scan items are refuted by the third run's check at `34b92e0ca`. Everything else rests on the senders' observations and the message text; nothing was re-run. `live-blockers` PLAN-LB-129 (review-gate thread-and-count-truth) is RUNNING and may own part of `-089`.
 
-**Operator rulings.** Three borderlines: `-005` graded high (filed with `-006`), `-004` graded high, as-082 item 3 graded medium.
+**Operator rulings.** Three borderlines: `-005` graded high (filed with `-006`), `-004` graded high, a02-082 item 3 graded medium.

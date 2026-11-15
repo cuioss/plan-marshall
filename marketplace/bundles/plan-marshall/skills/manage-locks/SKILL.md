@@ -348,7 +348,8 @@ consumer. It exposes:
   path evaluates this guard BEFORE the auto-reclaim branch and REFUSES to reclaim
   a plan-dir-dead-but-live-worktree holder (see the `stale_holder_live_worktree`
   blocked payload below); the FIFO prune retains such a waiter rather than
-  dropping it. Strengthening the predicate only NARROWS the refuse-reclaim set —
+  dropping it, through `waiter_retention` below, which is what `queue-list`
+  reports as the entry's `retention`. Strengthening the predicate only NARROWS the refuse-reclaim set —
   an orphaned shell now permits auto-reclaim while a genuine mid-recovery worktree
   stays protected. Anchored at main (cwd-independent) exactly like
   `holder_is_dead`; an empty/malformed holder → False.
@@ -362,6 +363,16 @@ consumer. It exposes:
   It is the guard against the sibling-worktree misjudgement: a holder live in a
   DIFFERENT worktree reads `fresh` regardless of the querying cwd, so it is never
   force-released. See [scope-limited-negative-is-unknown.md](standards/scope-limited-negative-is-unknown.md).
+- `waiter_retention(holder)` — WHY the FIFO admission prune KEEPS a holder's queue
+  entry, as the closed vocabulary `queue-list` publishes beside `liveness`:
+  `plan_dir` (the holder's plan directory exists), `git_marker` (no plan directory,
+  but `worktrees/{holder}` carries the `.git` marker, so the entry is retained as a
+  possible mid-recovery worktree), `none` (neither marker — the next prune drops
+  it), or `unknown` (the predicates could not be consulted; NEVER read as `none`,
+  ADR-009 fail-closed). It composes `holder_is_dead` and
+  `holder_has_live_worktree` rather than re-deriving either, and it is the ONE
+  predicate behind both the prune and the reported field, so the retainer and the
+  reporter cannot disagree about which entries survive.
 - `rmw_json(path, mutate)` — the TOCTOU-safe read-modify-write helper for JSON
   state files. It is path-agnostic: the CALLER resolves the path (main-anchored
   for the merge queue, machine-global under `home_root()` for the build queue). It
@@ -457,12 +468,19 @@ Output carries an `admission` discriminator:
 - **`status: blocked`, `admission: blocked`** — this plan is NOT the FIFO front,
   or is the front but a FOREIGN live holder holds the lock. A structured re-poll
   signal (NOT a hard error). Fields: `blocked_reason`, `blocking_plan_id`,
-  `lock_path`, `waiting_count`. The consumer re-issues `acquire --wait-seconds`
+  `lock_path`, `waiting_count`, and — on the `not_fifo_front` cause — `queue_front`
+  (`plan_id`, `position`, `liveness`, `location`, `retention`, `exit_command`), the
+  entry this plan is queued behind with its liveness, its retention reason and the
+  `merge_lock dequeue --plan-id {front}` command that withdraws it. The consumer
+  re-issues `acquire --wait-seconds`
   (preserving FIFO position) until `admission: admitted` or its wait budget is
-  exhausted, then fires the last-resort `AskUserQuestion`.
-  - **`blocked_reason`** names WHICH of the two causes produced the block, and is
-    present on every blocked payload. Two causes hid behind the one `blocked`
-    label, and only one of them has a blocking plan to name:
+  exhausted, then fires the last-resort `AskUserQuestion`. A `queue_front` whose
+  `retention` is `git_marker` will never leave on its own — that is the entry to
+  hand to the operator, with its `exit_command`, instead of polling to budget.
+  - **`blocked_reason`** names WHICH cause produced the block, and is
+    present on every blocked payload. Three causes hid behind the one `blocked`
+    label, and only `not_fifo_front` has no blocking plan to name — the two
+    lock-contended causes name the holder:
 
     | `blocked_reason` | Meaning | `blocking_plan_id` |
     |------------------|---------|--------------------|
@@ -503,12 +521,20 @@ python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock check \
   --plan-id PLAN_ID
 ```
 
-A non-mutating holder read: `status: free` when no lock file exists, or
-`status: held` + `holder_plan_id` when one does. On the `held` branch it also
+A non-mutating holder read: `status: free` when no lock file exists,
+`status: held` + `holder_plan_id` when one does, and `status: unreadable` +
+`error` when the path cannot be read as a holder (a read fault, an unreadable
+parent, a directory in its place, bytes that are not UTF-8, or a file naming no
+holder). On the `held` branch it also
 surfaces a `staleness` field (`fresh` / `stale` / `unknown`, from
 `holder_staleness`) — the authoritative main-anchored verdict the manual-release
 recovery recipe consults instead of a cwd-scoped `manage-status list` /
-`worktree-list` enumeration.
+`worktree-list` enumeration. The three-valued read is what
+`read_lock_holder` publishes, and `check` reports it rather than collapsing
+`unreadable` into `free`.
+
+**This is the proof the merge dispatch asks for.** `pre_merge_gate merge` reads the merge-lock holder through `merge_lock.read_lock_holder` — never by re-deriving the lock file's shape — and refuses with `merge_lock_not_held` unless the recorded holder is the plan asking to merge, naming the `holder` it read, the `plan_id` it asked about and the remedy. A lock held by another plan, an absent lock and an unreadable lock file are three distinct refusals, and the last two fail closed.
+
 
 ### merge_lock — queue-list
 
@@ -530,8 +556,7 @@ semantics including holder liveness, got it wrong, and pruned a live sibling
 plan's slot.
 
 Fields: `snapshot`, `queue_path`, `lock_path`, `lock_held`, `lock_holder`,
-`waiting_count`, `entries[]`. Each entry carries `position`, `plan_id`, `ts`,
-`liveness` and `location`.
+`waiting_count`, `entries[]`. Each entry carries `position`, `plan_id`, `ts`, `liveness`, `retention` and `location`.
 
 - **Order is arrival order.** `entries[]` is the stored `waiting` list order,
   which IS the FIFO order, and is NOT re-sorted by `ts`, `plan_id`, or liveness.
@@ -546,6 +571,18 @@ Fields: `snapshot`, `queue_path`, `lock_path`, `lock_held`, `lock_holder`,
   unanswerable consult as "dead" is precisely the inference that pruned a live
   slot. `location` carries the verb's own verdict (`current` / `worktree` /
   `not_found`), or `null` when it did not answer.
+- **`retention`** names what KEEPS the entry in the queue — the same
+  `_locks_core.waiter_retention` predicate the admission prune consults, so the
+  retainer and this report cannot disagree: `plan_dir` (the holder's plan
+  directory exists), `git_marker` (no plan directory, but `worktrees/{holder}`
+  carries a `.git` marker, so the entry is retained as a possible mid-recovery
+  worktree), `none` (the next prune drops it), or `unknown` (the predicate could
+  not be consulted — never read as `none`). `liveness` and `retention` are
+  deliberately separate readings: an entry can be `not_live` and still retained,
+  and that pairing is exactly the case where a dead-looking holder keeps every
+  waiter behind it. A retained entry does not expire on its own; the exit is
+  `merge_lock dequeue --plan-id {holder}`, which the `not_fifo_front` blocked
+  reply names in its `queue_front.exit_command` field.
 - **`snapshot: point_in_time`** says so in the payload: the read is deliberately
   unguarded, so a caller acting on an entry it saw is acting on a snapshot the
   front may already have moved past. The mitigation menu for the general shape is

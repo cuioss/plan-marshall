@@ -1511,8 +1511,17 @@ def _is_unsupplied(key: str, facts: dict[str, str]) -> bool:
 
 #: Matches the first ``landing-facts`` fenced block in a payload body. DOTALL so
 #: the body spans lines; non-greedy so it stops at the first closing fence.
+#: CommonMark permits spaces or tabs between a fence's backtick run and its info
+#: string, and the producer documents render that shape, so the gap is accepted
+#: here. The fence itself stays strict: an unindented run of exactly three
+#: backticks, the info string ``landing-facts`` and nothing else, and a bare
+#: closing fence.
+#:
+#: ``markdown_fence.fence_marker`` is NOT reused: it admits up to three spaces of
+#: indentation (the CommonMark rule), while a landing block must start at column
+#: zero, so delegating to it would silently widen what a landing fence is.
 _LANDING_FENCE_RE = re.compile(
-    r'^```' + LANDING_FACTS_FENCE + r'[ \t]*\n(?P<body>.*?)\n```[ \t]*$',
+    r'^```[ \t]*' + LANDING_FACTS_FENCE + r'[ \t]*\n(?P<body>.*?)\n```[ \t]*$',
     re.MULTILINE | re.DOTALL,
 )
 

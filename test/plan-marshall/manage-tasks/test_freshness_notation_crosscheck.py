@@ -1156,14 +1156,73 @@ def test_the_executor_run_flag_registry_names_the_flags_after_the_payload() -> N
     assert crosscheck._EXECUTOR_RUN_FLAGS == derived
 
 
-def test_a_gradle_submodule_multi_task_row_is_unreadable_not_whole_tree(monkeypatch) -> None:
-    """The submodule task list names ONE subproject, so dropping it would over-claim.
+def test_a_single_task_gradle_submodule_row_reads_as_a_narrow_scoped_row(monkeypatch) -> None:
+    """A lone ``:core:test`` is a SCOPED row of ``core``, not a whole-tree claim.
 
-    ``_gradle_cmd_discover`` prefixes every task with the subproject path, so
-    ``:core:test :core:jacocoTestReport`` is a coverage run of ``core`` alone.
-    Read as goals-only it would look whole-tree and credit a whole-tree change the
-    run never performed; the reader cannot recover Gradle's project paths, so the
-    row is an inability — which still refuses a change that needs the whole tree.
+    A subproject task names the subproject whether it is dispatched alone or with
+    its companions: the discoverer builds every task as ``:{module}:{task}``, so the
+    head token is the canonical and the path derived from the task token is the
+    scope — exactly as for the two-task shape. Its blast radius is therefore the
+    subproject it names, which is why the whole-tree joint selection cannot admit a
+    run that built one subproject.
+    """
+    _stub_expected(monkeypatch, {_GRADLE})
+    row = _build_entry(notation=_GRADLE, args=_args_for(':core:test'), outcome=_outcome_for(120))
+
+    parsed = crosscheck.parse_row_scope(row)
+    assert parsed is not None
+    assert (parsed.canonical, parsed.scope_tokens) == (':core:test', ('core',))
+
+    outcome = crosscheck.cross_check_candidates([row], '/nonexistent-project-dir', _required())
+
+    assert outcome['scope_verdict'] == crosscheck.NARROW
+    assert outcome['joint_reason'] == crosscheck.REASON_SCOPE_NARROW
+    assert outcome['row_scopes'] == [f':core:test core: {crosscheck.ROW_SCOPE_TOO_NARROW}']
+
+    # ... and it is ADEQUATE for a change confined to that same subproject, which
+    # is the reading the scope exists for.
+    own_module = crosscheck.cross_check_candidates(
+        [row],
+        '/nonexistent-project-dir',
+        _required(whole_tree=False, modules={'core'}),
+    )
+    assert own_module['scope_verdict'] != crosscheck.NARROW, own_module
+    assert own_module['contributing'] == [0], own_module
+
+
+def test_a_root_project_task_names_no_subproject(monkeypatch) -> None:
+    """A ``:``-prefixed task with no INNER colon is a root task, never a module.
+
+    The stripped path of ``:test`` is the task itself, so deriving a subproject from
+    it credited the row with a blast radius nobody built — a change confined to a
+    module named ``test`` would have been judged covered — and refused a whole-tree
+    change on a name that names nothing. It contributes no module, so a lone one
+    leaves the row unreadable rather than whole-tree.
+    """
+    _stub_expected(monkeypatch, {_GRADLE})
+    row = _build_entry(notation=_GRADLE, args=_args_for(':test'), outcome=_outcome_for(120))
+
+    assert crosscheck.parse_row_scope(row) is None
+
+
+def test_a_payload_that_derives_no_subproject_is_unreadable_not_whole_tree(monkeypatch) -> None:
+    """``: :`` carries no subproject path, so the row is unreadable, never whole-tree.
+
+    The derivation is what makes a lone task row narrow; when it produces nothing,
+    the second fail-open of this function is to read the empty scope as "the whole
+    tree". An unreadable row is the fail-closed answer.
+    """
+    _stub_expected(monkeypatch, {_GRADLE})
+    row = _build_entry(notation=_GRADLE, args=_args_for(': :'), outcome=_outcome_for(120))
+
+    assert crosscheck.parse_row_scope(row) is None
+
+
+def test_a_multi_task_gradle_submodule_row_reads_as_a_narrow_scoped_row(monkeypatch) -> None:
+    """``:core:test :core:jacocoTestReport`` is a coverage run of ``core`` alone, so it stays narrow.
+
+    The submodule tasks name one subproject, so the row is a scoped row — not a
+    whole-tree one, and not an unreadable one.
     """
     _stub_expected(monkeypatch, {_GRADLE})
     row = _build_entry(
@@ -1172,30 +1231,89 @@ def test_a_gradle_submodule_multi_task_row_is_unreadable_not_whole_tree(monkeypa
         outcome=_outcome_for(120),
     )
 
-    assert crosscheck.parse_row_scope(row) is None
+    parsed = crosscheck.parse_row_scope(row)
+    assert parsed is not None
+    assert (parsed.canonical, parsed.scope_tokens) == (':core:test', ('core',))
 
     outcome = crosscheck.cross_check_candidates([row], '/nonexistent-project-dir', _required())
 
-    assert outcome['contributing'] == []
-    assert outcome['joint_reason'] == crosscheck.REASON_SCOPE_UNREADABLE_WHOLE_TREE
+    assert outcome['scope_verdict'] == crosscheck.NARROW
+    assert outcome['joint_reason'] == crosscheck.REASON_SCOPE_NARROW
+
+    # The derived subproject path makes the row adequate for a change of ITS OWN module,
+    # so it is no longer "narrow against everything".
+    own_module = crosscheck.cross_check_candidates(
+        [row],
+        '/nonexistent-project-dir',
+        _required(whole_tree=False, modules={'core'}),
+    )
+    assert own_module['scope_verdict'] != crosscheck.NARROW, own_module
+    assert crosscheck.ROW_SCOPE_TOO_NARROW not in own_module['row_scopes']
 
 
-def test_a_single_task_gradle_submodule_row_is_also_unreadable(monkeypatch) -> None:
-    """A lone ``:core:test`` names the same subproject, so it must not read whole-tree.
+def _whole_tree_submodule_ledger() -> list[dict]:
+    """A root ``build`` row beside a single-task ``:core:test`` row, at one sha."""
+    return [
+        _build_entry(notation=_GRADLE, args=_args_for('build'), outcome=_outcome_for(120)),
+        _build_entry(notation=_GRADLE, args=_args_for(':core:test'), outcome=_outcome_for(120)),
+    ]
 
-    The project prefix lives on the FIRST task here, and reading the row as
-    goal-plus-no-scope would credit a whole-tree change a one-subproject run never
-    performed.
+
+def test_the_freshness_gate_over_a_lone_submodule_row_is_stale_narrow(plan_context, monkeypatch, tmp_path) -> None:
+    """The gate over a ledger whose ONLY same-sha row is ``:core:test`` is refused.
+
+    The Done-when names this exact combination: one narrow row, no companion, a
+    whole-tree change. The gate delegates the reason to the cross-check, so the
+    case is pinned at the gate to show the delegation cannot quietly drop it.
     """
     _stub_expected(monkeypatch, {_GRADLE})
-    row = _build_entry(notation=_GRADLE, args=_args_for(':core:test'), outcome=_outcome_for(120))
+    _stub_required(monkeypatch, _required())
+    rows = [_build_entry(notation=_GRADLE, args=_args_for(':core:test'), outcome=_outcome_for(120))]
 
-    assert crosscheck.parse_row_scope(row) is None
+    result = _run(plan_context, monkeypatch, tmp_path, rows, 'probe-gradle-lone')
 
-    outcome = crosscheck.cross_check_candidates([row], '/nonexistent-project-dir', _required())
+    assert result['status'] == 'stale', result
+    assert result['reason'] == crosscheck.REASON_SCOPE_NARROW, result
 
+
+def test_a_root_and_a_single_submodule_row_are_refused_for_a_whole_tree_change(monkeypatch) -> None:
+    """A root row beside a lone submodule row: the set is refused as NARROW.
+
+    A lone ``:core:test`` row asserts the blunt fact "one subproject was built", so
+    a whole-tree change cannot rest on it — and a set carrying any narrow row is
+    refused as narrow rather than credited for the rows beside it.
+    """
+    _stub_expected(monkeypatch, {_GRADLE})
+    rows = _whole_tree_submodule_ledger()
+
+    outcome = crosscheck.cross_check_candidates(rows, '/nonexistent-project-dir', _required())
+
+    assert outcome['joint_reason'] == crosscheck.REASON_SCOPE_NARROW
     assert outcome['contributing'] == []
-    assert outcome['joint_reason'] == crosscheck.REASON_SCOPE_UNREADABLE_WHOLE_TREE
+
+
+def test_a_rerun_that_appends_another_root_row_leaves_the_verdict_unchanged(monkeypatch) -> None:
+    """A re-run appends a fresh root ``build`` row; the verdict must not flip."""
+    _stub_expected(monkeypatch, {_GRADLE})
+    rows = _whole_tree_submodule_ledger()
+    first = crosscheck.cross_check_candidates(rows, '/nonexistent-project-dir', _required())
+
+    rerun = [*rows, _build_entry(notation=_GRADLE, args=_args_for('build'), outcome=_outcome_for(120))]
+    again = crosscheck.cross_check_candidates(rerun, '/nonexistent-project-dir', _required())
+
+    for key in ('verdict', 'scope_verdict', 'scope_reason', 'joint_reason', 'contributing', 'missing_analyses'):
+        assert again[key] == first[key], (key, first, again)
+
+
+def test_the_freshness_gate_over_the_submodule_ledger_is_stale_narrow(plan_context, monkeypatch, tmp_path) -> None:
+    """The gate over the same ledger is stale, and names the narrow scope."""
+    _stub_expected(monkeypatch, {_GRADLE})
+    _stub_required(monkeypatch, _required())
+
+    result = _run(plan_context, monkeypatch, tmp_path, _whole_tree_submodule_ledger(), 'scope-gradle-submodule')
+
+    assert result['status'] == 'stale', result
+    assert result['reason'] == crosscheck.REASON_SCOPE_NARROW, result
 
 
 def test_a_resolved_maven_module_row_is_read_as_a_narrow_scope() -> None:

@@ -122,6 +122,14 @@ def run_append(args: Namespace) -> dict[str, Any]:
     # cannot emit a null-plan_id row either.
     plan_id = args.plan_id or NO_PLAN_SENTINEL
 
+    # The tree-identity pair is deliberately NOT passed to build_record: this
+    # writer computes a currency hash at APPEND time, establishes no dispatch
+    # capture, and is asked about no particular tree (the root defaults to the
+    # current directory, whose literal `.` could never be recorded as a root a
+    # reader could compare). Recording a root without a dispatch hash would claim
+    # a tree it never observed across a build; omitting both keys is the legacy
+    # shape the freshness gate already matches on the completion hash.
+
     if args.kind == KIND_BUILD:
         if not args.notation:
             return make_error(

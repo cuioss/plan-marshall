@@ -117,16 +117,18 @@ from _github_pr import (
     REFUSAL_LAYER_STRUCTURAL,
     RESOLVE_THREAD_MUTATION,
     THREAD_REPLY_MUTATION,
+    _is_participation_evidence,
     _is_refusal_notice,
     _is_unrecognised_refusal,
     get_viewer_login,
+    is_finished_review,
     measure_diff_size,
     named_commit_currency,
     refusal_cause,
     refusal_condition,
     refusal_layers,
     refusal_size_cap,
-    review_coverage_is_finished,
+    review_coverage_names_commit,
     review_coverage_verdict,
 )
 from ci_base import extract_routing_args, register_subcommands, set_default_cwd
@@ -424,38 +426,6 @@ def _is_contentless_boilerplate(body: str, bot_kind: str | None) -> bool:
     if any(marker in body for marker in disqualifying):
         return False
     return _concern_sections_are_clean(body, kind)
-
-
-def _is_participation_evidence(comment: dict, bot_kind: str) -> bool:
-    """True if ``comment`` is ADMISSIBLE participation evidence for ``bot_kind``.
-
-    Two registry reads, both generic — no bot name appears here:
-
-    1. SHAPE — the comment's ``kind`` is one of the publish shapes the bot declares
-       in ``participation_evidence``.
-    2. CONTENT — when the bot declares ``participation_evidence_markers`` entries for
-       THAT shape, the body carries at least one of the declared literals. A shape a
-       bot publishes both before its review completes and after it finishes credits
-       only the artifact carrying a finished-review literal, so a pre-review
-       walkthrough in a declared shape is not evidence. An undeclared shape is
-       FAIL-OPEN and credits on the shape alone, exactly as before the gate existed
-       (see ``bot_registry.participation_evidence_markers_for``).
-
-    This is the admissibility question only. The refusal exclusion and the
-    ``participation_requires_update`` currency test stay at the call site, because
-    they answer different questions: a refusal is admissible-shaped but is evidence
-    of NON-participation, and the currency test decides WHICH commit an admissible
-    comment reviewed. A comment this predicate rejects is therefore neither
-    credited nor stale — it is not a review artifact at all.
-    """
-    kind = comment.get('kind') or 'inline'
-    if kind not in bot_registry.participation_evidence(bot_kind):
-        return False
-    markers = bot_registry.participation_evidence_markers_for(bot_kind, kind)
-    if not markers:
-        return True
-    body = str(comment.get('body') or '')
-    return any(marker in body for marker in markers)
 
 
 def _own_prose(body: str) -> str:
@@ -2151,6 +2121,18 @@ def cmd_fetch_findings(args):
             refusing_bots.add(_refusal_bot)
     participated: dict[str, str] = {}
     stale_participation: dict[str, str] = {}
+    # Bots holding an admitted FINISHED review of SOME commit on this pull request.
+    # The test is the ONE reader, ``is_finished_review`` — a formal ``review_body``
+    # record that names a commit (or a readable finished marker naming one), or a
+    # summary whose coverage marker is readable, ``kind: reviewed`` and names a covered
+    # commit.
+    # This is the fact the done rule needs and ``stale_participation_bots`` cannot
+    # carry: that set also contains marker-bearing comments which are NOT finished
+    # reviews (an unreadable payload, a non-``reviewed`` kind, a marker naming no
+    # commit), and a bot whose only artifact is one of those has NOT reviewed anything.
+    # The head is deliberately not compared: a finished review of another commit is
+    # exactly what the done rule consumes.
+    finished_review: dict[str, str] = {}
     # The THIRD outcome: a currency-subject bot whose comment was ALREADY admissible
     # evidence — a declared publish shape carrying its content marker where one is
     # declared — while the merge candidate itself could not be read. It is neither credited
@@ -2158,8 +2140,10 @@ def cmd_fetch_findings(args):
     # which cannot fix a failed head read), so it is carried in its own disjoint set.
     undecidable_participation: dict[str, str] = {}
     # Currency records staged for the ``participation_requires_update`` comments credited
-    # this fetch — written to the ledger after the loop so the NEXT fetch measures a fresh
-    # edit against THIS credit rather than against ``created_at``.
+    # this fetch — written to the ledger after the loop. The NEXT fetch compares the
+    # recorded SHA with the merge candidate; ``updated_at`` is stored as provenance and is
+    # never a credit test (an edit credits nothing, because it says the bot touched its
+    # comment, not which commit the comment reviews).
     currency_updates: dict[tuple[str, str], tuple[str, str]] = {}
     for _comment in raw_comments:
         _bot_kind = bot_kind_for_author(_comment.get('author') or 'unknown')
@@ -2182,16 +2166,18 @@ def cmd_fetch_findings(args):
         # that posted nothing but "review limit reached" would be credited as a
         # proven participant and satisfy the quorum on zero review coverage.
         #
-        # A READABLE coverage marker outranks the skip: CodeRabbit keeps its
-        # "Review limit reached" block in the summary comment AFTER a review
+        # A READABLE coverage marker NAMING A COMMIT outranks the skip: CodeRabbit
+        # keeps its "Review limit reached" block in the summary comment AFTER a review
         # finishes (observed on PR 1912), so a marker-bearing summary is a finished
         # review whose own text also carries a later limit notice. Skipping the whole
         # comment as a refusal throws the marker away and hands the bot's finished
         # review to the same summarizer that never sees it. The marker names the
         # commit it covered, so it can only credit that head; a marker naming another
-        # head is decided stale by the named-commit arm below.
+        # head is decided stale by the named-commit arm below. A marker naming NO
+        # commit is not a finished review — the read :func:`is_finished_review` makes
+        # — so it does not outrank the refusal.
         _body = str(_comment.get('body') or '')
-        if _is_refusal_notice(_body, _bot_kind) and not review_coverage_is_finished(_body):
+        if _is_refusal_notice(_body, _bot_kind) and not review_coverage_names_commit(_body):
             continue
         # Admissibility — the declared publish SHAPE, plus the declared content marker
         # when the bot gates that shape on one. Evaluated BEFORE the currency test, so a
@@ -2201,6 +2187,11 @@ def cmd_fetch_findings(args):
         if not _is_participation_evidence(_comment, _bot_kind):
             continue
         _kind = _comment.get('kind') or 'inline'
+        # THE ONE FINISHED-REVIEW READER. The producer, the post chokepoint and the
+        # runbook lane all ask this predicate, so a formal review cannot be a review
+        # at one site and not at another.
+        if is_finished_review(_comment, _bot_kind):
+            finished_review.setdefault(_bot_kind, _kind)
         # THE INLINE RULE, decided before every other arm. An inline comment is
         # credited only when the provider PLACES it (or the review it belongs to) at
         # the merge candidate, and a reply posted into an existing thread is never
@@ -2952,6 +2943,15 @@ def cmd_fetch_findings(args):
         # subtracted here — the same shape as the stale-participation subtraction
         # below. A bot with any genuine review keeps its credit.
         'participated_bots': [{'bot_kind': bot, 'evidence_kind': participated[bot]} for bot in credited_bots],
+        # DISCLOSURE AND DONE-RULE INPUT: bots holding an admitted FINISHED review of
+        # some commit on this pull request. Independent of the credit: a review of
+        # another head (stale), or one the reply-covered arm credited, is still a
+        # finished review. The consumers that apply the done rule key on THIS list,
+        # never on ``stale_participation_bots[]``, because that set also carries
+        # marker-bearing comments that are not finished reviews.
+        'finished_review_bots': [
+            {'bot_kind': bot, 'evidence_kind': finished_review[bot]} for bot in sorted(finished_review)
+        ],
         # The proven set is SUBTRACTED before emitting: a bot with one stale comment
         # and one fresh one is a participant, not a stale publisher. Without the
         # subtraction the same bot would appear in both sets and the classifier's

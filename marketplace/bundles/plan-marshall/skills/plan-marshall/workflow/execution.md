@@ -172,10 +172,21 @@ Forward `task_number: {N}` as the per-task runtime input, `envelope_id: {E}` as 
 
 Inside that single envelope, for each task:
 1. Read task details via `manage-tasks next --plan-id {plan_id}`
-2. Load `execute-task` in-context as a `Skill:` (leaf-legal in-context skill loading per `persona-plan-marshall-agent` — NOT a per-task `Task:` subagent dispatch; the new `Task:` block above is the orchestrator-to-execute-envelope dispatch, not a per-task subagent spawn) and run the profile-appropriate workflow
+2. Load `execute-task` in-context as a `Skill:` (leaf-legal in-context skill loading per `persona-plan-marshall-agent` — NOT a per-task `Task:` subagent dispatch; the dispatch block above is the orchestrator-to-execute-envelope dispatch, not a per-task subagent spawn) and run the profile-appropriate workflow
 3. Mark step/task complete via `manage-tasks finalize-step --plan-id {plan_id} --task-number {task_number} --step {step_number} --outcome done`
 
-**Orchestrator per-harness dispatch branch.** The envelope above is the dispatch unit on every harness; only the spawning tool differs per harness. Where the harness exposes a real sub-agent tool, the envelope runs dispatched through it (Claude `Task`, OpenCode `subagent` where available, Antigravity `invoke_subagent`); where no subagent tool exists in the envelope, the orchestrator takes the explicit logged inline branch per envelope — the same task loop runs inline in the main context with the seam's `no-op` reason logged at INFO. Inlining is per envelope and logged per envelope, never a silent fallback.
+**Orchestrator per-harness dispatch branch.** The envelope above is the dispatch unit on every harness; only the spawning tool differs per harness. For the phase-5 envelope this branch is the one place the sub-agent seam is resolved: a dispatched leaf cannot dispatch, so no leaf resolves it. Resolve it **before** executing the dispatch block above, once per envelope — not once per phase — for the resolved dispatch target (`{target}` from the `effort resolve-target` call above), and pass whether the spawning tool exists in this envelope:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime subagent dispatch \
+  --agent {target} \
+  --context '{"plan_id": "{plan_id}", "spawning_tool_available": {true|false}}'
+```
+
+- `status: success` — the envelope runs dispatched through the returned `invocation.tool`, carrying THIS envelope's `prompt:` body and `name:` from the block above as the invocation's prompt and description; the runtime's defaults do not replace them, because the prompt body is what tells the leaf its workflow, skills, `WORKTREE`, `task_number` and `envelope_id`.
+- `status: no-op` — the orchestrator takes the explicit inline branch: `dispatch_mode: inline`, the same task loop runs inline in the main context with that same prompt body, and the seam's `reason` is logged at INFO. Inlining is per envelope and logged per envelope, never a silent fallback.
+
+Either arm returns to this orchestrator, which records the envelope's boundary — exactly ONE `record-dispatch-boundary` row per envelope, the inline arm included — by the call in "After execution-context returns".
 
 The dispatch unit is the **execution envelope pre-computed at plan time** — neither per-task nor per-deliverable. phase-4-plan's bin-packer (`manage-tasks pack-envelopes`) grouped tasks into envelopes (in `depends_on` order, under `per_envelope_budget_tokens`), stamped each task with an `envelope_id`, and recorded `envelope_count` in the manifest. **The orchestrator drives exactly `envelope_count` phase-5-execute dispatches — one per envelope group — passing each its assigned `envelope_id`.** Each dispatched executor runs only the tasks whose `envelope_id` matches its group and yields at a TASK boundary when its group is exhausted (the next pending task belongs to a different envelope → `budget_yield`), on `triage_required` / `baseline_drift`, or when it hands an orchestrator-tier build back (`verification_handback`). The orchestrator re-dispatches the next envelope group to resume the loop until all tasks are done. There is no runtime cost-summing or budget read inside the envelope — the harness cannot self-measure mid-turn, so the continue-vs-yield decision was fully pre-computed at plan time and the executor only reads its `envelope_id` group.
 
@@ -191,7 +202,9 @@ emitted a "Returning control" line with pending tasks, was cancelled by the
 host platform, raised a fatal error, or returned for a reason the
 orchestrator cannot classify — the orchestrator MUST record the termination
 boundary by calling `manage-metrics record-dispatch-boundary` with parsed
-`<usage>` totals and a classified termination cause. The accumulating
+`<usage>` totals and a classified termination cause. An envelope that ran
+through the inline branch returns the same way and is recorded by the same
+call. The accumulating
 artifact at `work/metrics-dispatch-boundaries-5-execute.toon` is the
 audit trail that `plan-retrospective` correlates with `[OUTCOME]`-log
 coverage gaps to detect agent-initiated re-dispatch.
@@ -374,7 +387,7 @@ guard in `manage-tasks finalize-step`.
    - If `fix_tasks_created == 0` AND `overflow_deferred == 0` → mark the verification task complete (all findings suppressed / accepted / `taken_into_account`); resume the normal post-return classification.
    - If `overflow_deferred > 0` → leave the verification task `pending`; re-fire this triage dispatch on the next phase-5-execute entry (the iteration cap is unchanged).
 
-This dispatch lives in the main-context orchestrator so every cross-envelope `Task:` dispatch originates there, while the leaf retains all deterministic, store-mutating work (failure detection, scope cross-reference, planned-failure exception, iteration-cap check, and `manage-findings qgate add` finding persistence).
+This dispatch lives in the main-context orchestrator so every cross-envelope dispatch originates there, while the leaf retains all deterministic, store-mutating work (failure detection, scope cross-reference, planned-failure exception, iteration-cap check, and `manage-findings qgate add` finding persistence).
 
 ### Post-return `escalate_ask` batched deviation dispatch (conditional)
 

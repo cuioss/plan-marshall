@@ -5,7 +5,7 @@ OpenCode harness operational rules and runtime integration bundle for plan-marsh
 ## Purpose
 
 - Defines tool mapping and execution invariants for OpenCode environments.
-- Enforces command discipline (`bash` tool with single command per call).
+- Enforces command discipline (`shell` tool with single command per call).
 - Establishes deployed flat layout expectations (`~/.config/opencode/skills/{bundle}-{skill}/` or `.opencode/skills/{bundle}-{skill}/`).
 - Guarantees fail-safe access to `.plan/` via `python3 .plan/execute-script.py`.
 - Enables zero-token native rule delivery into `.opencode/rules/plan-marshall-target-rules.md`.

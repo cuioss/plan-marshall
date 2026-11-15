@@ -14,9 +14,9 @@ markers, its acknowledgment patterns, its refusal patterns, its no-unreviewed-co
 patterns, its contentless-review markers and headings, its actionable-content markers,
 its concern-section headings and clean-section verdicts,
 its participation-evidence publish shapes and the content literals each of those
-shapes must carry to count, its severity map, its rate-limit class, and its
-rate-limit ETA patterns) instead of hard-coding three bots across several code
-files.
+shapes must carry to count, whether one handled review completes it, its severity
+map, its rate-limit class, and its rate-limit ETA patterns) instead of hard-coding
+three bots across several code files.
 
 The loader is deliberately generic — there is no per-bot branch anywhere in it.
 Adding, removing, or re-configuring a bot is a pure data edit to a
@@ -547,9 +547,9 @@ class BotRegistry:
         A DEDICATED field rather than a slice of :meth:`ignore_patterns`, because the
         two lists answer different questions — "is this comment a footer?" versus "is
         this whole comment boilerplate?" — and folding the footer into the drop set is
-        exactly what discarded a whole review body. An empty list is the default, so a
-        bot that has not opted in is filtered exactly as it was before this field
-        existed.
+        exactly what discarded a whole review body. An empty list is the default: a
+        bot that has not opted in has no footer to strip, and its bodies reach the
+        whole-comment signal test unmodified.
         """
         value = self._by_kind.get(bot_kind, {}).get('footer_patterns', [])
         return list(value) if isinstance(value, list) else []
@@ -573,9 +573,7 @@ class BotRegistry:
         having refused.
 
         An empty list is the default and means the bot posts no acknowledgment this
-        pipeline knows of: nothing is classified an acknowledgment for it, so a bot
-        that has not declared the field behaves exactly as it did before the field
-        existed.
+        pipeline knows of: nothing is classified an acknowledgment for it.
         """
         value = self._by_kind.get(bot_kind, {}).get('acknowledgment_patterns', [])
         return list(value) if isinstance(value, list) else []
@@ -727,8 +725,7 @@ class BotRegistry:
         broadens the suppression.
 
         An empty list is the FAIL-CLOSED default: the content-aware layer never
-        fires for a bot that declares no clean shape, so a bot that has not opted
-        in behaves exactly as it did before the layer existed. Consumed together
+        fires for a bot that declares no clean shape. Consumed together
         with :meth:`actionable_content_markers`, whose entries veto the drop, and
         with :meth:`contentless_review_headings`, which names WHICH of the bot's
         review comments the clean shape may sit under.
@@ -749,8 +746,8 @@ class BotRegistry:
         every :meth:`contentless_review_markers` entry.
 
         An empty list adds no heading condition, so a bot that has not declared the
-        field is judged by its conjunction alone — exactly as before the field
-        existed. The field never widens the drop on its own: with an empty
+        field is judged by its conjunction alone. The field never widens the drop on
+        its own: with an empty
         :meth:`contentless_review_markers` the layer stays off whatever this list
         declares.
         """
@@ -876,7 +873,7 @@ class BotRegistry:
 
         The gate reaches exactly the shapes a bot declares an entry for. Every other
         shape — including every shape of a bot that declares no map at all — credits
-        on the shape alone, exactly as it did before this field existed.
+        on the shape alone.
 
         An UNDECLARED shape is FAIL-OPEN: ``''``, which the producer reads as "no
         gate on this shape". That covers a bot declaring no marker map at all, a map
@@ -885,7 +882,7 @@ class BotRegistry:
         non-evidence, regressing a bot whose unconditional evidence shape carries no
         marker to ``absent`` — the same inert-by-default posture
         :meth:`contentless_review_markers` takes, so a bot that has not opted in
-        behaves exactly as it did before the gate existed.
+        credits on the shape alone.
 
         A DECLARED key is a different question, and the LOADER answers it:
         :func:`_validate_participation_evidence_markers` refuses a record whose
@@ -977,6 +974,33 @@ class BotRegistry:
         commit is compared, so the ledger holds no row for it at all.
         """
         return bool(self._by_kind.get(bot_kind, {}).get('participation_requires_update', False))
+
+    def review_complete_after_handling(self, bot_kind: str) -> bool:
+        """Return whether ONE handled review completes ``bot_kind`` at any later head.
+
+        True for a bot whose review allowance is the scarce resource: once a
+        qualifying review of this pull request is on record and every finding of it
+        is handled, no later head needs another review from it. The review is DONE,
+        so no path posts a further trigger, awaits another review, or demands that
+        the recorded review cover the current head.
+
+        This flag is NOT :meth:`quota_limited`. A quota-limited bot also reviews
+        under an allowance, but it is still expected to review the current head when
+        it can; this flag states the stronger rule that the handled review itself
+        completes the obligation. A bot declaring neither is re-triggered whenever
+        HEAD advances, and its review is expected to cover the current head.
+
+        False (the default) for a bot whose record omits the field, declares it
+        empty, or declares a non-boolean. Fail-closed in that direction on purpose:
+        the done rule must stay OFF for every reviewer the project has not
+        positively marked, never switched on by an omission — an unflagged bot is
+        still re-triggered on a fresh head.
+
+        The declaration belongs in the bot's own record rather than in project
+        configuration because the rule is a property of the REVIEWER's allowance,
+        not of the repository that configures it.
+        """
+        return self._by_kind.get(bot_kind, {}).get('review_complete_after_handling') is True
 
     def rate_limit_class(self, bot_kind: str) -> str:
         """Return the rate-limit class for ``bot_kind``, fail-closed to ``'unknown'``.
@@ -1204,6 +1228,11 @@ def participation_evidence_markers(bot_kind: str) -> dict[str, str]:
 def participation_requires_update(bot_kind: str) -> bool:
     """Whether ``bot_kind``'s participation evidence requires the currency test."""
     return REGISTRY.participation_requires_update(bot_kind)
+
+
+def review_complete_after_handling(bot_kind: str) -> bool:
+    """Whether one handled review of this pull request completes ``bot_kind``."""
+    return REGISTRY.review_complete_after_handling(bot_kind)
 
 
 def rate_limit_class(bot_kind: str) -> str:

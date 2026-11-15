@@ -287,8 +287,17 @@ DEFAULT_PROJECT = {
 # projects by `sync-defaults`' non-destructive deep-merge — no new provisioning
 # mechanism. See `manage-config/standards/data-model.md` for the canonical field
 # semantics.
+#
+# `decision_confidence_threshold` is the `handle-open` verb's decide-vs-present
+# boundary: an item is decided only when its confidence is STRICTLY greater than
+# this value, and `100` means nothing is decided without the operator. This
+# constant is the AUTHORITATIVE value; the one document that restates the figure
+# outside it is `manage-config/standards/data-model.md` (its `orchestrator`
+# structure examples and its `decision_confidence_threshold` default table), and
+# every other surface xrefs this constant rather than repeating the number.
 DEFAULT_ORCHESTRATOR = {
     'auto_emit': False,
+    'decision_confidence_threshold': 90,
     'effort': {},
     'parallelization_scope': 1,
     'use_worktree': False,
@@ -307,10 +316,13 @@ DEFAULT_ORCHESTRATOR = {
 # which runs the seed through `validate_orchestrator_block` and rejects any key
 # outside this set. So neither direction of drift can pass silently. NOTE this is
 # the FULL key set; the scalar-write whitelist
-# (`_cmd_orchestrator.ORCHESTRATOR_SCALAR_FIELDS`) is a deliberate subset —
-# `effort` is written through the `effort` noun, not the scalar `orchestrator set`
-# verb — so it is intentionally NOT derived from here.
-ORCHESTRATOR_KNOWN_KEYS = frozenset({'auto_emit', 'effort', 'parallelization_scope', 'use_worktree'})
+# (`_cmd_orchestrator.ORCHESTRATOR_SCALAR_FIELDS`) is DERIVED from it by excluding
+# `effort`, which has its own `effort` noun rather than the scalar `orchestrator
+# set` verb — so a key added here becomes settable there without a second edit,
+# and the two cannot drift.
+ORCHESTRATOR_KNOWN_KEYS = frozenset(
+    {'auto_emit', 'decision_confidence_threshold', 'effort', 'parallelization_scope', 'use_worktree'}
+)
 
 
 # PR-batching strategy enum (`project.pr_strategy` in marshal.json).
@@ -1357,7 +1369,8 @@ DEFAULT_BUILD_QUEUE = {'max_retries': 10}
 # The top-level `orchestrator` block default is `DEFAULT_ORCHESTRATOR`, defined
 # earlier in this module, where every knob is materialised with its effective
 # default (see that definition for the per-knob surfacing rationale). It seeds
-# `auto_emit` (`False`), the `effort` sub-block (empty `{}`),
+# `auto_emit` (`False`), `decision_confidence_threshold` (the `handle-open`
+# decide-vs-present boundary), the `effort` sub-block (empty `{}`),
 # `parallelization_scope` (`1`) and `use_worktree` (`False`) — every knob the block supports appears in the
 # seeded file so an operator reading their own marshal.json can discover it, per
 # the default-surfacing rule (recipe-marshal-json-config-audit Aspect 1). Each
@@ -1370,8 +1383,8 @@ DEFAULT_BUILD_QUEUE = {'max_retries': 10}
 # orchestrator effort surfaces + scalar knobs read/write through the
 # `orchestrator` noun and the `effort set --scope orchestrator[...]` writer.
 # Validated by validate_orchestrator_block below (the seeded shape is legal; a
-# populated block's effort + parallelization_scope + auto_emit + use_worktree
-# shapes are checked). `/marshall-steward`'s upgrade verb back-fills the block into existing
+# populated block's effort + parallelization_scope + auto_emit + use_worktree +
+# decision_confidence_threshold shapes are checked). `/marshall-steward`'s upgrade verb back-fills the block into existing
 # projects through the existing `sync-defaults` deep-merge — no new provisioning
 # mechanism.
 
@@ -1393,6 +1406,10 @@ def validate_orchestrator_block(value: object) -> None:
       seeded into every fresh block at its safe default ``False``.
     - ``use_worktree`` (optional) is a bool — the repository-wide switch routing
       the ledger store through the shared ledger worktree, seeded at ``False``.
+    - ``decision_confidence_threshold`` (optional) is an int in ``0..100`` — the
+      confidence an open item must strictly exceed before the ``handle-open``
+      verb decides it, seeded at the orchestrator's standing figure. ``bool`` and
+      any out-of-range value are rejected.
 
     An unknown top-level key in the block is rejected so a typo'd knob fails loud
     rather than persisting silently.
@@ -1412,7 +1429,7 @@ def validate_orchestrator_block(value: object) -> None:
     Raises:
         ValueError: If the block is not a dict, carries an unknown top-level key,
             or holds a malformed ``effort`` / ``parallelization_scope`` /
-            ``auto_emit`` / ``use_worktree`` value.
+            ``auto_emit`` / ``use_worktree`` / ``decision_confidence_threshold`` value.
     """
     from _cmd_effort import ALLOWED_LEVELS, ORCHESTRATOR_EFFORT_SET_KEYS
 
@@ -1466,6 +1483,13 @@ def validate_orchestrator_block(value: object) -> None:
         use_worktree = value['use_worktree']
         if not isinstance(use_worktree, bool):
             raise ValueError(f'Invalid orchestrator.use_worktree {use_worktree!r}: expected a bool.')
+
+    if 'decision_confidence_threshold' in value:
+        threshold = value['decision_confidence_threshold']
+        if isinstance(threshold, bool) or not isinstance(threshold, int) or not 0 <= threshold <= 100:
+            raise ValueError(
+                f'Invalid orchestrator.decision_confidence_threshold {threshold!r}: expected an int 0 to 100.'
+            )
 
 
 def get_default_config() -> dict:
@@ -1600,6 +1624,12 @@ def compute_config_seed_fingerprint() -> str:
     return hashlib.md5(canonical.encode('utf-8'), usedforsecurity=False).hexdigest()[:8]
 
 
+#: The stamp ``generate_executor`` writes when no version was readable from any
+#: manifest. It is an answered absence, not a version: ``system.provisioned_version``
+#: holds a 0.1.N stamp (or nothing), so this sentinel is read as an empty read.
+UNVERSIONED_EXECUTOR_STAMP = 'unversioned'
+
+
 def read_provisioned_version() -> str:
     """Read the installed ``MARSHALL_VERSION`` to stamp as ``system.provisioned_version``.
 
@@ -1607,7 +1637,8 @@ def read_provisioned_version() -> str:
     ``MARSHALL_VERSION`` (itself stamped from the installed ``dist-manifest.json``
     at generation time). Reads it from the tracked executor at
     ``.plan/execute-script.py``. Returns the empty string when the executor is
-    absent or unstamped (fresh install) — an empty stamp, never an error.
+    absent, unstamped, or carries the generator's ``unversioned`` stamp — an
+    answered absence, never a version, and never an error.
 
     Returns:
         The embedded version string, or ``''`` on a fresh/unstamped install.
@@ -1623,7 +1654,10 @@ def read_provisioned_version() -> str:
         return ''
     match = re.search(r"^MARSHALL_VERSION\s*=\s*'([^']*)'", text, re.MULTILINE)
     if match:
-        return match.group(1)
+        version = match.group(1)
+        # The sentinel is an answered absence, not a version: `system.provisioned_version`
+        # is a 0.1.N stamp or empty, so the sentinel must not be written into it.
+        return '' if version == UNVERSIONED_EXECUTOR_STAMP else version
     return ''
 
 

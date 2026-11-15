@@ -70,11 +70,9 @@ Callers (the `phase-5-execute` envelope, itself dispatched as `execution-context
 
 All profiles share the steps below. Profile-specific steps are documented in each profile section.
 
-### Step: Seam-Dispatch Branch (all profiles)
+### Step: Subagent Seam (resolved by the orchestrator)
 
-This step does not apply on the Claude Code path (harness `claude`): a Claude leaf cannot dispatch a further subagent, so the task always runs inline in this envelope — skip the seam resolve below and take the explicit logged inline branch, logging the skip at INFO. Non-Claude routing is out of scope here.
-
-Before any profile work, resolve the harness-native subagent seam live via `platform_runtime subagent dispatch --agent execution-context --context {"plan_id": "{plan_id}"}`. On `status: success`, the task runs dispatched through the returned `invocation.tool`; on `status: no-op`, the task runs inline in this envelope and the returned `reason` is logged at INFO — the inline branch is explicit and logged, never silent. Before running any verification command that could exceed the leaf ceiling, re-resolve it live via `architecture resolve` and hand back without starting the run when the live tier is `orchestrator` (stamped values are advisory only); usage propagates as `unknown` on every path where no dispatch happened.
+The seam is resolved once per envelope by the main-context orchestrator's per-harness dispatch branch ([`../plan-marshall/workflow/execution.md`](../plan-marshall/workflow/execution.md) § "Orchestrator per-harness dispatch branch") before this skill runs, so this leaf resolves none itself: a task that needs a further dispatch hands it to the orchestrator, which owns it, and usage propagates as `unknown` on every path where no dispatch happened. Before running any verification command that could exceed the leaf ceiling, re-resolve it live via `architecture resolve` and hand back without starting the run when the live tier is `orchestrator` (stamped values are advisory only).
 
 ### Step: Resolve Stale Targets
 

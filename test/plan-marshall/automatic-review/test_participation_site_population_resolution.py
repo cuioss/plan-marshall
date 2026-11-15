@@ -224,6 +224,19 @@ SITE_EXPECTATIONS: dict[str, SiteExpectation] = {
         'PR’s heads and whose kind is reviewed. It points at review_coverage_verdict as the ONE '
         'parser of those fields and evaluates nothing itself.',
     ),
+    f'{_SKILLS}/runbook-lane/scripts/runbook_lane.py': SiteExpectation(
+        'live_comment_scan',
+        'commit_sha',
+        'yes',
+        'The `review-gate` verb’s required-reviewer check reads the PR’s RAW comment '
+        'bodies, through its own in-process provider read, and asks whether each named '
+        'required reviewer holds a qualifying review — through the ONE reader '
+        '`_github_pr.is_finished_review` the producer and the post chokepoint also ask. '
+        'It anchors on the commit those artifacts name (the head they covered is '
+        'deliberately not compared — the done rule consumes any PR head), is idempotent '
+        'over one read, and is a REJECT check: a reviewer without such an artifact '
+        'refuses the merge, it never credits one.',
+    ),
     f'{_SKILLS}/phase-6-finalize/SKILL.md': SiteExpectation(
         'normative_text',
         'commit_sha',
@@ -291,11 +304,14 @@ SITE_EXPECTATIONS: dict[str, SiteExpectation] = {
     ),
     f'{_SKILLS}/workflow-integration-github/scripts/_github_pr.py': SiteExpectation(
         'live_comment_scan',
-        'timestamp',
+        'both',
         'yes',
         'Hosts the wait predicate’s movement arm (_detect_movement_bots) and its answerability '
-        'read. It reads the fetched comment list and matches movement since the wait started; '
-        'it grants no participation credit.',
+        'read, and it is the ONE home of the participation-admissibility predicate '
+        '(_is_participation_evidence) and the finished-review reader (is_finished_review) that '
+        'the producer, the post chokepoint and the runbook lane all call. The wait arm matches '
+        'movement since the wait started and grants no participation credit; the finished-review '
+        'reader anchors on the commit a review or its coverage marker names.',
     ),
     f'{_SKILLS}/workflow-integration-github/scripts/github_pr.py': SiteExpectation(
         'currency_ledger',

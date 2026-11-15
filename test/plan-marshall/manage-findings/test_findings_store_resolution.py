@@ -131,6 +131,7 @@ _SHAPE_A_INVOCATIONS = {
     # Driven by finding, with a hash that is in no store: the by-task form would
     # answer an empty selection with a success, which says nothing about a refusal.
     'stamp_fix_commit': lambda core, pid: core.stamp_fix_commit(pid, _FIX_COMMIT, hash_id=_ABSENT_HASH),
+    'stamp_finding_pr_number': lambda core, pid: core.stamp_finding_pr_number(pid, _ABSENT_HASH, 42),
     'promote_finding': lambda core, pid: core.promote_finding(pid, _ABSENT_HASH, 'architecture'),
     'mark_finding_responded': lambda core, pid: core.mark_finding_responded(pid, _ABSENT_HASH),
     'update_finding_text': lambda core, pid: core.update_finding_text(
@@ -179,8 +180,8 @@ def test_the_roster_is_non_empty():
     assert len(_operation_roster()) > 0, 'the derivation found no operation surfaces at all'
 
 
-def test_the_roster_partitions_exhaustively_and_disjointly_into_18_plus_4():
-    """Shape A (18) and Shape C (4) cover the derived roster with no overlap.
+def test_the_roster_partitions_exhaustively_and_disjointly_into_19_plus_4():
+    """Shape A (19) and Shape C (4) cover the derived roster with no overlap.
 
     The two counts are asserted alongside the exhaustiveness so a function added
     to either surface module later fails HERE — landing in neither bucket, or
@@ -194,9 +195,9 @@ def test_the_roster_partitions_exhaustively_and_disjointly_into_18_plus_4():
     assert shape_a | shape_c == set(roster), (
         f'buckets do not cover the roster; unbucketed: {sorted(set(roster) - shape_a - shape_c)}'
     )
-    assert len(shape_a) == 18, f'expected 18 Shape-A surfaces, got {sorted(shape_a)}'
+    assert len(shape_a) == 19, f'expected 19 Shape-A surfaces, got {sorted(shape_a)}'
     assert len(shape_c) == 4, f'expected 4 Shape-C surfaces, got {sorted(shape_c)}'
-    assert len(roster) == 22
+    assert len(roster) == 23
 
 
 def test_the_roster_spans_every_surface_module():

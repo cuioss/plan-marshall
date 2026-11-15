@@ -25,6 +25,10 @@ Known scalar fields:
         when true the epic orchestrator auto-fills the emit queue on landing.
     ``use_worktree``  bool  — the repository-wide switch (default False) that
         routes the orchestrator ledger store through the shared ledger worktree.
+    ``decision_confidence_threshold``  int 0..100 — the confidence an open item
+        must STRICTLY exceed before the ``handle-open`` verb decides it; ``100``
+        means nothing is decided without the operator. Unset reads carry the
+        seeded default from ``DEFAULT_ORCHESTRATOR`` with ``set: false``.
 
 ``use_worktree`` is anchored on the MAIN checkout for both directions, so every
 checkout agrees on it. ``get`` reports the main-anchored effective value — the
@@ -53,7 +57,7 @@ from _config_core import (
     save_config,
     success_exit,
 )
-from _config_defaults import DEFAULT_ORCHESTRATOR, DEFAULT_PROJECT
+from _config_defaults import DEFAULT_ORCHESTRATOR, DEFAULT_PROJECT, ORCHESTRATOR_KNOWN_KEYS
 from command_forms import STEWARD_COMMAND
 from marketplace_paths import main_checkout_root
 from orchestrator_worktree import (
@@ -66,8 +70,11 @@ from orchestrator_worktree import (
 )
 
 # The orchestrator block's known scalar (non-effort) fields — the fail-closed
-# whitelist consulted by every scalar read/write.
-ORCHESTRATOR_SCALAR_FIELDS: tuple[str, ...] = ('parallelization_scope', 'auto_emit', 'use_worktree')
+# whitelist consulted by every scalar read/write. DERIVED from the authoritative
+# key set rather than mirrored, so a key added to `ORCHESTRATOR_KNOWN_KEYS` is
+# settable through this verb without a second edit; `effort` is the one key with
+# its own noun and is excluded explicitly.
+ORCHESTRATOR_SCALAR_FIELDS: tuple[str, ...] = tuple(sorted(ORCHESTRATOR_KNOWN_KEYS - {'effort'}))
 
 # The base branch the cutover drift check compares against when the project
 # configures none — the same seeded default ``project.default_base_branch`` carries.
@@ -85,6 +92,45 @@ def _validate_parallelization_scope(value: object) -> tuple[bool, str | None]:
     if value < 1:
         return False, 'parallelization_scope must be an integer >= 1'
     return True, None
+
+
+def _coerce_decision_confidence_threshold(raw_value: object) -> tuple[bool, int | None, str | None]:
+    """Coerce and validate ``decision_confidence_threshold``, an int in ``0..100``.
+
+    ``bool`` is rejected explicitly even though it is an ``int`` subclass, and a
+    ``float`` (either a real one or the string form ``'90.5'``) is rejected rather
+    than truncated: a confidence threshold silently rounded from ``90.5`` to ``90``
+    would read as a deliberate setting, which it is not. A string must parse as a
+    whole integer.
+
+    Returns ``(ok, value, error)`` — ``error`` is ``None`` exactly when ``ok``.
+    """
+    if isinstance(raw_value, bool):
+        return False, None, 'decision_confidence_threshold must be an integer 0 to 100'
+    if isinstance(raw_value, int):
+        value = raw_value
+    elif isinstance(raw_value, str):
+        try:
+            value = int(raw_value.strip())
+        except ValueError:
+            return False, None, 'decision_confidence_threshold must be an integer 0 to 100'
+    else:
+        return False, None, 'decision_confidence_threshold must be an integer 0 to 100'
+    if value < 0 or value > 100:
+        return False, None, 'decision_confidence_threshold must be an integer 0 to 100'
+    return True, value, None
+
+
+def _is_stored_threshold_valid(value: object) -> bool:
+    """Whether a value READ FROM ``marshal.json`` is a well-formed threshold.
+
+    Stricter than :func:`_coerce_decision_confidence_threshold`, which also
+    accepts the CLI's string form. A stored value must be a real ``int`` in
+    ``0..100``: a stored ``"42"`` or ``90.5`` is a hand-edited or migrated file,
+    not a value this tool ever wrote, and returning it would hand the consumer a
+    threshold it cannot compare against.
+    """
+    return not isinstance(value, bool) and isinstance(value, int) and 0 <= value <= 100
 
 
 def _coerce_bool(raw_value: object) -> bool | None:
@@ -243,6 +289,12 @@ def cmd_orchestrator_get(args) -> dict:
 
     config = load_config()
     orch_block = config.get('orchestrator')
+    # A PRESENT block of the wrong type is a malformed file, not an unset knob:
+    # falling through to the seeded default here would answer `success` with a
+    # value no reader wrote, which is the fail-OPEN direction the whole verb
+    # exists to avoid. Only an ABSENT block takes the default path.
+    if orch_block is not None and not isinstance(orch_block, dict):
+        return error_exit('orchestrator block in marshal.json is not a dictionary')
     # When the field is unset in the live block, fall back to the canonical
     # default from DEFAULT_ORCHESTRATOR (so `auto_emit` reads its seeded `False`
     # and `parallelization_scope` its seeded `1`). The value is advisory on an
@@ -252,6 +304,11 @@ def cmd_orchestrator_get(args) -> dict:
     if isinstance(orch_block, dict) and field in orch_block:
         is_set = True
         value = orch_block[field]
+        # A stored threshold is re-validated STRICTLY on the read path: the
+        # consumer treats an unreadable threshold as `100` (nothing decided) and
+        # cannot tell a well-typed value from a hand-edited one.
+        if field == 'decision_confidence_threshold' and not _is_stored_threshold_valid(value):
+            return error_exit('decision_confidence_threshold in marshal.json must be an integer 0 to 100')
     else:
         is_set = False
         value = DEFAULT_ORCHESTRATOR.get(field)
@@ -295,6 +352,11 @@ def cmd_orchestrator_set(args) -> dict:
         coerced = _coerce_bool(raw_value)
         if coerced is None:
             return error_exit(f'{field} must be a boolean (true/false)')
+    elif field == 'decision_confidence_threshold':
+        ok, threshold, err = _coerce_decision_confidence_threshold(raw_value)
+        if not ok:
+            return error_exit(err or 'invalid decision_confidence_threshold')
+        coerced = threshold
     else:
         # Unreachable while the whitelist is fully enumerated above; the branch
         # keeps the coercion contract explicit as further fields are added.

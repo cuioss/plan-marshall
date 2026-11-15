@@ -179,7 +179,28 @@ def holder_is_dead(holder: str, project_root: str | Path | None = None) -> bool:
         base = Path(project_root) / PLAN_DIR_NAME / 'local'
     main_plan = base / 'plans' / holder
     worktree_plan = base / 'worktrees' / holder / PLAN_DIR_NAME / 'local' / 'plans' / holder
-    return not (main_plan.exists() or worktree_plan.exists())
+    return not (_path_present(main_plan) or _path_present(worktree_plan))
+
+
+def _path_present(path: Path) -> bool:
+    """Return True when ``path`` exists, letting an UNANSWERABLE probe raise.
+
+    ``Path.exists()`` answers ``False`` for every ``OSError`` — a permission fault
+    on a parent directory is indistinguishable from a missing path — so a probe that
+    could not be performed would read as absence, the inference ADR-009 forbids. A
+    genuinely missing path (``FileNotFoundError``, or a non-directory in the middle
+    of the path) IS absence and answers ``False``; every other ``OSError``
+    propagates, so the caller answers ``unknown`` rather than ``dead``.
+
+    This is the ONE probe the liveness predicates below use, so their "resolution
+    failures propagate loudly" contract is real on every supported interpreter
+    rather than dependent on ``exists()``'s current exception handling.
+    """
+    try:
+        path.stat()
+    except (FileNotFoundError, NotADirectoryError):
+        return False
+    return True
 
 
 def holder_has_live_worktree(holder: str) -> bool:
@@ -245,7 +266,53 @@ def holder_has_live_worktree(holder: str) -> bool:
     git_marker = worktree_dir / '.git'
     # Live plan dir moved into the worktree (executing / mid-finalize).
     live_plan_dir = worktree_dir / PLAN_DIR_NAME / 'local' / 'plans' / holder
-    return git_marker.exists() or live_plan_dir.exists()
+    return _path_present(git_marker) or _path_present(live_plan_dir)
+
+
+#: The closed vocabulary naming WHY a FIFO admission prune KEEPS a holder's queue
+#: entry — the value ``merge_lock queue-list`` publishes as ``retention``.
+#:
+#: - ``plan_dir`` — the holder's plan directory is present (in the main checkout or
+#:   in its worktree), so it is an ordinary live waiter.
+#: - ``git_marker`` — no plan directory, but ``worktrees/{holder}`` carries a
+#:   ``.git`` marker: real git plumbing, so it may be a mid-recovery worktree. The
+#:   prune retains it precisely because dropping or reclaiming it here would steal
+#:   a live recovery.
+#: - ``none`` — neither marker: the next prune drops the entry.
+#: - ``unknown`` — the predicates could not be consulted. ⛔ NOT a synonym for
+#:   ``none``: reading an unanswerable consult as "not retained" is the same
+#:   inference that pruned a live sibling plan's slot by hand.
+RETENTION_PLAN_DIR = 'plan_dir'
+RETENTION_GIT_MARKER = 'git_marker'
+RETENTION_NONE = 'none'
+RETENTION_UNKNOWN = 'unknown'
+RETENTION_STATES = frozenset({RETENTION_PLAN_DIR, RETENTION_GIT_MARKER, RETENTION_NONE, RETENTION_UNKNOWN})
+
+
+def waiter_retention(holder: str) -> str:
+    """Return WHY the FIFO admission prune keeps ``holder``'s entry, or ``none``.
+
+    The ONE predicate behind both the prune and the ``retention`` field
+    ``merge_lock queue-list`` publishes, so the retainer and the reporter cannot
+    disagree: a queue entry advertised as retained is exactly one the prune keeps,
+    and an entry advertised ``none`` is one the next prune drops.
+
+    It composes the two existing main-anchored liveness predicates rather than
+    re-deriving either — plan-directory presence first (the ordinary live waiter),
+    then the stronger worktree marker that protects a mid-recovery holder.
+
+    A consult that cannot be answered is ``unknown``, never ``none``: the
+    resolution failure is surfaced rather than collapsed into absence (ADR-009),
+    and a caller that drops entries keeps one it could not judge.
+    """
+    try:
+        if not holder_is_dead(holder):
+            return RETENTION_PLAN_DIR
+        if holder_has_live_worktree(holder):
+            return RETENTION_GIT_MARKER
+    except (RuntimeError, OSError):
+        return RETENTION_UNKNOWN
+    return RETENTION_NONE
 
 
 def holder_staleness(holder: str, project_root: str | Path | None = None) -> Literal['fresh', 'stale', 'unknown']:

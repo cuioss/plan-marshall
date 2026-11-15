@@ -112,6 +112,13 @@ skill family (the execution manifest) and splits off first for size.
 - Depends on: PLAN-LB-64 (the separate bridge file, shipped).
 - Overlaps with: PLAN-LB-135 and PLAN-LB-134 on `opencode_runtime.py` and `test_opencode_runtime.py` (D2 lifts helpers out of the OpenCode runtime), and PLAN-LB-140 on `antigravity_runtime.py`; sequence this plan after PLAN-LB-135, and PLAN-LB-140 after this plan.
 - Adjacent to: the OpenCode target rules (not edited), the mapping and emitter of the Antigravity target (PLAN-LB-140).
+- PLAN-LB-135 and PLAN-LB-134 are shipped and PLAN-LB-140 is shipped too, so the OpenCode helpers this plan lifts are the form on `main`
+  now (a staged write that replaces the path, a `_BridgeWrite` result, strict decode, a drift verdict read from the write), not the form the
+  line numbers above describe. Read `landings/PLAN-LB-135.md` in the ledger before the outline: its L1-1 (the writer turns any `OSError`
+  into "nothing written", so an unwritable rules directory reads as a clean setup) and L1-6 (the Antigravity copy still catches only
+  `OSError`, reads the drift status after the heal, and judges drift by modification time) are the defects the shared helper either
+  carries or repeats. This adds no deliverable; the Standing Constraints "setup reports what it did" and "one helper for the bridge" apply
+  to the lifted write, and the outline records how the shared writer reports a write that failed.
 
 ## Hand-Off Command
 

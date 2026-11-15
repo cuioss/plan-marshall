@@ -122,8 +122,19 @@ Every entry carries a `kind` discriminator, a `worktree_sha`, and a
   claims `timeout`. Only `unknown` is **derived-only**: it records the absence
   of the very evidence a claim would be, so a wrapper printing it is not
   believed. Every member other than `success` fails the freshness gate closed),
-  `worktree_sha`, `log_file`,
-  `timestamp_iso`. A build is NOT a commit, so a `kind=build` entry does NOT
+  `worktree_sha`, `worktree_root` / `worktree_sha_at_dispatch` (a PAIR, present
+  only when the writer recorded the tree — see below), `log_file`,
+  `timestamp_iso`. `worktree_root` names the tree `worktree_sha` was computed
+  against — the one the wrapped build ran in — and `worktree_sha_at_dispatch` is
+  that same tree hashed BEFORE the build ran, so a build that rewrote the tree
+  under itself carries two differing hashes instead of one green. The pair is
+  read by **presence**: a writer that recorded nothing about the tree omits BOTH
+  keys (the legacy shape, matched on the completion hash), while a writer that
+  tried and could not establish the fact carries the key with `null` (a failed
+  capture, refused by the gate). The executor dispatch boundary, which does
+  capture the tree, always passes both values explicitly; the `append` verb,
+  which never saw a build run, passes neither. A build is NOT a commit, so a
+  `kind=build` entry DOES NOT
   carry `commit_sha` or `changed_paths`. The stamp is **tier-agnostic** —
   written at the executor dispatch boundary, it fires identically for an
   inline `per_task` build and for an `orchestrator`-tier build detached via
@@ -132,8 +143,9 @@ Every entry carries a `kind` discriminator, a `worktree_sha`, and a
   BEFORE the boundary runs and stamps nothing at all: **a missing row is
   itself a signal** (no row + zero output bytes is the whole-tree-kill
   signature). On the route that reads this ledger at all, the freshness gate
-  matches on `worktree_sha` + `status == success` alone and never inspects the
-  tier, the background flag, or the exit code. That route is not the gate's only
+  matches on `worktree_sha` + `status == success` + the recorded tree identity
+  (the root the row names, and its dispatch/completion hash pair), and never
+  inspects the tier, the background flag, or the exit code. That route is not the gate's only
   one — a footprint the build/no-build authority rules needs no build is exempted
   before any row is read, and the gate says so with its own status member. The
   contract lives in
@@ -153,7 +165,9 @@ Every entry carries a `kind` discriminator, a `worktree_sha`, and a
   plan-less submission carries the `NO_PLAN` sentinel, and the re-attach lookup
   matches on that same value), `fingerprint` (the idempotent-submit digest the daemon
   scheduler keys on), `notation` (the executor notation dispatched),
-  `worktree_sha`, `timestamp_iso`. Unlike `kind=build` (a completed build
+  `worktree_sha`, `exec_path` / `project_path` (the tree the job builds, so a
+  later `wait` — a separate process with no argv of its own — can NAME the tree
+  it reports a result for), `timestamp_iso`. Unlike `kind=build` (a completed build
   outcome) this is a **submission** record — the job may still be running — so it
   carries no `exit_code` or `status`. Its purpose is **re-attach**: a rebuilt or
   harness-reaped session reads the most recent `kind=job` row for its plan and
@@ -378,7 +392,7 @@ from _ledger_core import (
 - `resolve_ledger_path()` — `get_tracked_config_dir() / 'work' / 'change-ledger.jsonl'` (NOT plan-scoped).
 - `append_entry(record)` — append exactly one `json.dumps(record) + '\n'` line. Pure-append; no read-modify-write.
 - `read_entries()` — parse the JSONL line-by-line, skip malformed lines, return `[]` when absent. The library reader the gate imports directly.
-- `build_record(...)` / `change_record(...)` / `job_record(...)` — constructors that stamp `kind`, `worktree_sha`, `timestamp_iso` and the kind-specific fields, so every writer and the CLI produce identically-shaped entries. `build_record` keeps the invocation layers apart (`args` = executor argv, `command_args` = the single `--command-args` element, `command` = wrapper-resolved command) and carries the wrapper-reported `duration_seconds` / `outcome`; those optional fields are keyword-only with a `None` default, so the payload-less CLI writer needs no change. `change_record` stores the caller-supplied `changed_paths` verbatim — it does NOT compute changed paths. `job_record` persists a submit-time `job_id` (+ `fingerprint` / `notation`) for build re-attach.
+- `build_record(...)` / `change_record(...)` / `job_record(...)` — constructors that stamp `kind`, `worktree_sha`, `timestamp_iso` and the kind-specific fields, so every writer and the CLI produce identically-shaped entries. `build_record` keeps the invocation layers apart (`args` = executor argv, `command_args` = the single `--command-args` element, `command` = wrapper-resolved command) and carries the wrapper-reported `duration_seconds` / `outcome`; those optional fields are keyword-only with a `None` default, so a writer with no wrapper payload states nothing about them. It also carries the tree identity the freshness gate matches on — `worktree_root` and `worktree_sha_at_dispatch` — whose keywords default to a sentinel that OMITS the key: a writer that recorded nothing about the tree emits neither key (the legacy shape), and only a writer that passes an explicit `None` records the failed capture the gate refuses. `change_record` stores the caller-supplied `changed_paths` verbatim — it does NOT compute changed paths. `job_record` persists a submit-time `job_id` (+ `fingerprint` / `notation` / `exec_path` / `project_path`) for build re-attach and for naming the tree a `wait` reports on.
 - `remap_change_rows(...)` — the rewrite-remap: derive or consume an old-to-new map, then append one `remap_record` per affected row. Returns `remap_count`, `mappings`, `unmapped` / `unresolved` and the ledger path. Idempotent at the `(remapped_from, commit_sha)` pair level, so a repeated run appends nothing.
 - `remap_record(...)` — the mapped-row constructor: copies the source row's recorded facts and stamps `commit_sha` / `worktree_sha` / `timestamp_iso` / `remapped_from`.
 - `parse_sha_map_text(...)` — parse the map from JSON (`--emit-map` output) or lines of `old new` / `old:new` / `old=new`; a line that does not name two SHAs is refused rather than dropped, so a typo cannot read as a clean no-op.
@@ -389,14 +403,14 @@ from _ledger_core import (
 
 | Producer / Consumer | Direction | Notation |
 |---------------------|-----------|----------|
-| `tools-script-executor` dispatch boundary | produces | `append --kind build` (executor template `kind=build` writer) |
+| `tools-script-executor` dispatch boundary | produces | imports `build_record` + `append_entry`; writes the `kind=build` row after every build-executing dispatch |
 | `phase-5-execute` Step 10a chain-tail | produces | `append --kind change` after each per-deliverable commit |
 | `workflow-integration-git` `commit` verb | produces | appends the `kind=change` row of a `6-finalize` commit (its `changed_paths` from `git diff-tree`, its `deliverable_id` from `--step` or the constant `finalize-commit`) |
 | `phase-6-finalize` `sync-baseline` | produces | `remap` after a rebase rewrote the branch's SHAs (emit the map, then consume it) |
 | `manage-status` 5-execute boundary | reports (never writes) | carries the ready-to-run `remap` invocation in its `execute_commits_unrecorded` refusal; appends nothing itself |
 | `build-server-client` `submit` verb | produces | imports `job_record` + `append_entry`; writes `kind=job` at submit time for re-attach |
 | `build-server-client` `wait` re-attach | consumes | imports `read_entries`; reads the latest `kind=job` for the plan to recover `job_id` |
-| `manage-tasks:pre-commit-verify-freshness` gate | consumes | imports `read_entries` + `compute_worktree_sha`; scans `kind=build` by `status == success` + `worktree_sha`, then cross-checks each matching row's `notation` against the project's architecture-resolved build notations. This is the gate's ledger-reading route only — an exempted footprint returns before the scan and consumes no entry at all |
+| `manage-tasks:pre-commit-verify-freshness` gate | consumes | imports `read_entries` + `compute_worktree_sha`; scans `kind=build` by `status == success` + `worktree_sha`, splits the matches on the row's recorded tree identity (`worktree_root`, and `worktree_sha_at_dispatch` against `worktree_sha`), then cross-checks each surviving row's `notation` against the project's architecture-resolved build notations. This is the gate's ledger-reading route only — an exempted footprint returns before the scan and consumes no entry at all |
 | `plan-retrospective:analyze-logs` `summarize_build_ledger` | consumes | imports `read_entries`; keeps `kind=build` rows for one `plan_id` and partitions their `status` into `pass`/`error`/`timeout`/`killed`/`status_unknown` alongside the `duration_seconds` sum |
 
 The two `kind=build` consuming rows have a completeness FLOOR that can be

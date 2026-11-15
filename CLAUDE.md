@@ -85,7 +85,11 @@ These rules apply to ALL work in this repository — ad-hoc tasks, plan executio
 - **Temp files under `.plan/temp/`** — Use `.plan/temp/` for ALL temporary and generated files (covered by the `Edit(.plan/**)` permission).
 - **GitHub access** — Use the `gh` tool (via the CI abstraction), not MCP.
 
-## Standalone Plan Lane (`doc/plans/`)
+## Merge Authorization (Standing)
+
+Merging a pull request is part of the process, not a separate decision that needs fresh operator permission. A plan (`/plan-marshall`, phase-6-finalize) and a runbook lane (`plan-marshall:runbook-lane`, `doc/plans/`) merge their own PR once the merge gate passes — required checks green, required reviewers handled, no open blocking findings — and never stop to ask the operator whether to merge. The operator's request to run the plan or the lane is the authorization. This holds for every merge verb of the CI abstraction (`ci pr merge`, `safe-merge`, `auto-merge`, `merge-queue`).
+
+What this does not waive: the merge gate itself (a failing or unread gate still blocks the merge and is reported), the merge mutex, and the rule that an unrelated outward-facing action (force-push, deleting a branch the plan did not create, closing someone else's PR) still needs its own instruction.
 
 Plans under `doc/plans/` execute **outside the plan-marshall command lifecycle** — no `/plan-marshall`, no `/plan-orchestrator`, no `.plan/execute-script.py`, and none of the git-ignored `.plan/local/` state. The lane exists because `.plan/local/` is git-ignored: its state (plan directories, orchestrator ledgers, findings, locks, and the generated executor) lives only on the machine that created it, so a cloud session at claude.ai/code clones the repository and has none of it. Everything a `doc/plans/` plan needs is in git — including the git-tracked `.plan/marshal.json`, which the lane may read.
 
@@ -131,6 +135,8 @@ Every other rule — the rest of the documentation standards, and **No shell fil
 ## Harness Sync
 
 After editing files in `marketplace/bundles/`, changes don't take effect until the harness installs are synced. Run `/sync-harnesses` (project-local: `.claude/skills/sync-harnesses/` for Claude Code, with the same command at `.opencode/commands/sync-harnesses.md` and `.agents/skills/sync-harnesses/`), which syncs Claude, OpenCode and Antigravity through one engine, `marketplace/targets/sync.py`; `--target claude`, `--target opencode` or `--target antigravity` narrows the run to one harness. The Claude leg reads from `target/claude/` and mirrors bundles to `~/.claude/plugins/cache/plan-marshall/`. At finalize, `project:finalize-step-sync-plugin-cache` syncs all three harnesses and regenerates the on-main executor. This surface is meta-project-only — consumer projects of plan-marshall do not get it. For the deeper detail (registered marketplace path, one-time developer-machine migration, manual recovery when a commit landed without phase-6-finalize), see `doc/developer/marketplace-build.adoc` and `doc/developer/manual-sync-recovery.adoc`.
+
+`/apply-changes` is the one-command path after a bundle change: it runs that regeneration and sync, then adds the executor regeneration and the registry repin, and ends by naming the restart it cannot perform. `.claude/skills/apply-changes/SKILL.md` carries the sequence; `/sync-harnesses` stays the narrow form.
 
 ## Multi-Assistant Support
 

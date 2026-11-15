@@ -61,6 +61,7 @@ from typing import Any
 
 from _executor_slot import executor_landed, worktree_executor_path
 from file_ops import (
+    TRACKED_CONFIG_ENV_OVERRIDES,
     get_plan_dir,
     get_worktree_root,
 )
@@ -542,6 +543,11 @@ def _generate_worktree_executor(worktree_path: Path, plan_id: str, *, allow_copy
     # call produced one — the generator's plugin-cache failure mode exits 0 having
     # written nothing, and the pre-existing file would satisfy the landed test.
     before_mtime = _mtime_ns(wt_executor)
+    # The generator resolves its output from the ENVIRONMENT first, then the cwd
+    # walk. The cwd pin below already points at the worktree, but an inherited
+    # base-dir override outranks it — so the child gets an environment without
+    # them, exactly as the test bootstrap does (one list, from the resolver).
+    child_env = {key: value for key, value in os.environ.items() if key not in TRACKED_CONFIG_ENV_OVERRIDES}
     try:
         result = subprocess.run(
             [
@@ -552,6 +558,7 @@ def _generate_worktree_executor(worktree_path: Path, plan_id: str, *, allow_copy
                 str(worktree_path),
             ],
             cwd=str(worktree_path),
+            env=child_env,
             capture_output=True,
             text=True,
             check=False,

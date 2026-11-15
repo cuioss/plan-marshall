@@ -508,13 +508,81 @@ def _iter_bullets(lines: list[str], masked: list[bool], start: int, end: int) ->
     return bullets
 
 
+#: The suffixes that make a SINGLE-SEGMENT backticked span a bare FILE NAME rather
+#: than a dotted symbol. A bare filename (``b.py``) and an attribute path
+#: (``monkeypatch.delitem``) are the same shape to a parser, so the distinction is
+#: a stated vocabulary rather than an inference: these are the suffixes a
+#: repository's own files and documented artifacts carry. A single-segment span
+#: whose suffix is not here is read as a dotted symbol and never reaches
+#: ``unresolved``.
+_BARE_FILE_SUFFIXES = frozenset(
+    {
+        '.adoc',
+        '.bat',
+        '.bats',
+        '.cfg',
+        '.conf',
+        '.css',
+        '.csv',
+        '.gif',
+        '.go',
+        '.gradle',
+        '.html',
+        '.ini',
+        '.java',
+        '.jpeg',
+        '.jpg',
+        '.js',
+        '.json',
+        '.jsonl',
+        '.kt',
+        '.kts',
+        '.lock',
+        '.md',
+        '.mjs',
+        '.pdf',
+        '.png',
+        '.properties',
+        '.ps1',
+        '.psm1',
+        '.py',
+        '.pyi',
+        '.rst',
+        '.sh',
+        '.sql',
+        '.svg',
+        '.toml',
+        '.ts',
+        '.tsx',
+        '.txt',
+        '.xml',
+        '.yaml',
+        '.yml',
+    }
+)
+
+
+def _is_bare_file_name(span: str) -> bool:
+    """Whether a single-segment span names a FILE rather than a dotted symbol.
+
+    ``b.py`` is a filename; ``monkeypatch.delitem`` is an attribute path. Only a
+    span with a stem and one of :data:`_BARE_FILE_SUFFIXES` is the former.
+    """
+    if '/' in span or '*' in span:
+        return False
+    stem, separator, suffix = span.rpartition('.')
+    return bool(stem) and bool(separator) and f'.{suffix}'.casefold() in _BARE_FILE_SUFFIXES
+
+
 def _is_path_candidate(span: str, repo_root: Path) -> bool:
     """Whether a backticked span denotes a repository path.
 
-    A multi-segment span is a path. A single-segment span is one only when it
-    globs or actually exists at ``repo_root`` — which is what keeps
-    ``monkeypatch.delitem`` and the corpus's other dotted symbol names out,
-    while admitting ``pyproject.toml`` and ``test_*.py``.
+    A multi-segment span is a path. A single-segment span is one when it globs, is
+    a bare file NAME (:func:`_is_bare_file_name`), or actually exists at
+    ``repo_root``. The last two are what admit ``pyproject.toml`` and ``test_*.py``
+    while keeping ``monkeypatch.delitem`` and the corpus's other dotted symbol
+    names out: a bare filename is admitted even when it does not resolve, so it
+    can be REPORTED as unresolved instead of dropped in silence.
     """
     if not span or span.startswith('-'):
         return False
@@ -522,7 +590,7 @@ def _is_path_candidate(span: str, repo_root: Path) -> bool:
         return False
     if '/' in span:
         return True
-    return '*' in span or (repo_root / span).exists()
+    return '*' in span or _is_bare_file_name(span) or (repo_root / span).exists()
 
 
 def _is_rooted(span: str, repo_root: Path) -> bool:
@@ -685,6 +753,13 @@ def _collect_bullet(
             break
 
     for span, after_excluding in candidates:
+        if _is_bare_file_name(span) and not (repo_root / span).exists():
+            # A bare filename cannot be anchored. Joining it to the bullet's base
+            # would claim a path the author never wrote, and the authoring rule
+            # requires a full repo-relative path — so it is REPORTED, never
+            # guessed at.
+            unresolved.append(span)
+            continue
         if _is_rooted(span, repo_root):
             path = span
         else:

@@ -1815,6 +1815,22 @@ def cmd_transition(args: argparse.Namespace) -> dict[str, Any] | None:
     # the aged-token predicate (_status_core.title_token_is_stale), not a
     # transition-side one. A transition-side sweep only fires when a phase
     # happens to change, so a stranded token could outlive it indefinitely.
+    #
+    # The criteria-gate outcome is PERSISTED here, before the write, and not only
+    # returned: the transition payload is transient, while the status record is
+    # what the archive move, a landing read and an audit still see afterwards.
+    # The note exists only for a completion whose functional review the composed
+    # manifest dropped, so a graded completion carries none — and the write
+    # therefore also clears a note left by an earlier attempt.
+    criteria_gate: str | None = None
+    if args.completed in _COMPLETION_GUARD_PHASES:
+        criteria_gate = _criteria_gate_note(args.plan_id, status)
+        metadata = normalize_metadata(status)
+        if criteria_gate is not None:
+            metadata['criteria_gate'] = criteria_gate
+        else:
+            metadata.pop('criteria_gate', None)
+
     write_status(args.plan_id, status)
     # Persisted-title-state-write drive seam (best-effort, fire-and-forget):
     # a phase advance is a current_phase write, so bind + repaint fire here so
@@ -1827,14 +1843,11 @@ def cmd_transition(args: argparse.Namespace) -> dict[str, Any] | None:
     else:
         result['message'] = 'All phases completed'
 
-    # Record the criteria-gate outcome on the completion payload: when the plan's
-    # composed manifest dropped the functional review there is nothing to grade,
-    # and the exit says so (`criteria_gate: not_applicable (review dropped: …)`)
-    # rather than reading the ungraded criteria as outstanding work.
-    if args.completed in _COMPLETION_GUARD_PHASES:
-        gate = _criteria_gate_note(args.plan_id, status)
-        if gate is not None:
-            result['criteria_gate'] = gate
+    # The same note rides the payload, so a caller reading the exit alone still
+    # sees why nothing was graded (`criteria_gate: not_applicable (review
+    # dropped: …)`) instead of reading the ungraded criteria as outstanding work.
+    if criteria_gate is not None:
+        result['criteria_gate'] = criteria_gate
 
     # Mailbox check-point (roster key ``phase-transition``). Placed AFTER the
     # phase write and on the success payload alone: a refusal above is not a
@@ -1969,6 +1982,7 @@ def cmd_archive(args: argparse.Namespace) -> dict[str, Any] | None:
     # gate is about; which phase is nominally current is not.
     open_scan = in_progress_phases(status)
     exemption_report: dict[str, Any] | None = None
+    completion_gate_ran = False
     if reason is None or _normalize_archive_reason(reason) in _COMPLETION_ASSERTING_ARCHIVE_REASONS:
         # Fail CLOSED on an unexaminable record. This guard's job is to refuse, and a
         # scan that could not read the phase structure cannot establish that
@@ -1994,6 +2008,7 @@ def cmd_archive(args: argparse.Namespace) -> dict[str, Any] | None:
             findings_refusal = _finalize_findings_refusal(args.plan_id, status)
             if findings_refusal is not None:
                 return findings_refusal
+            completion_gate_ran = True
     else:
         exemption_report = _exempt_archive_findings_report(args.plan_id, status, reason)
 
@@ -2042,6 +2057,17 @@ def cmd_archive(args: argparse.Namespace) -> dict[str, Any] | None:
     # second commit of the same document, and after ``shutil.move`` the live plan path no
     # longer resolves — exactly the failure the atomic phase-close exists to avoid.
     metadata = normalize_metadata(status)
+    # The criteria-gate outcome is recorded on the SAME write that closes the phases,
+    # because this is the production finalize completion (``archive-plan``) and after
+    # ``shutil.move`` no second write can reach the live path. It is scoped to the
+    # completion archive that ran the completion gate: a deliberate close of an
+    # abandoned plan graded nothing, so it records nothing.
+    if completion_gate_ran:
+        criteria_gate = _criteria_gate_note(args.plan_id, status)
+        if criteria_gate is not None:
+            metadata['criteria_gate'] = criteria_gate
+        else:
+            metadata.pop('criteria_gate', None)
     loop_back_marker = metadata.pop('loop_back_reentry', None)
     if loop_back_marker is not None:
         # A structurally odd marker (not a dict) is still consumed rather than left

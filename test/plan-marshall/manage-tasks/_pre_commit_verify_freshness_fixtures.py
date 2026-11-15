@@ -149,6 +149,13 @@ def _build_entry(
     notations; it never widens or narrows the primary match itself.
     ``status=None`` omits the key entirely, modelling a pre-change row (which
     must fail closed to ``stale``).
+
+    ``worktree_root`` and ``worktree_sha_at_dispatch`` are NOT emitted here: they
+    are the TREE-IDENTITY pair, read in the step after the primary predicate, and
+    a case that exercises that step adds them to the row itself (see
+    ``test_freshness_build_tree_identity.py``). Omitting them here is what keeps
+    every other case in this suite modelling the legacy-row shape the gate must
+    keep reading as it always did.
     """
     entry = {
         'kind': 'build',

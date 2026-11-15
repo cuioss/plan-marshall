@@ -3,11 +3,14 @@
 """Pins for the repository's root ``opencode.json`` under OpenCode 2 semantics.
 
 OpenCode 2 merges the project ``permissions`` list with the agent's
-``permissions`` list and applies the LAST matching rule; no match means
-``ask``. A catch-all rule therefore has to come first in each list, or it
-overrides every specific rule before it. These tests evaluate the file the
-same way and pin the effects that matter, so a reordering that silently
-disables the deny rules fails here.
+``permissions`` list and applies the LAST matching rule. The base policy an
+agent's ruleset begins with was OBSERVED at ``opencode v2.2.7``
+(``GET /api/agent/execution-context-reader``) as
+``{action: "*", resource: "*", effect: allow}`` — so an action no rule names is
+allowed, not asked, and a catch-all rule has to come first in each list or it
+overrides every specific rule before it. These tests evaluate the file the same
+way and pin the effects that matter, so a reordering that silently disables the
+deny rules fails here.
 
 The guard plugin pin covers the other OpenCode 2 change: the shell tool is
 named ``shell`` (OpenCode 1 named it ``bash``).
@@ -35,6 +38,16 @@ _CONFIG = json.loads(_repo_file('opencode.json').read_text(encoding='utf-8'))
 _AGENTS = sorted(_CONFIG['agents'])
 assert _AGENTS, 'opencode.json declares no agents, so the per-agent pins would run over nothing'
 
+#: The agents whose source declares no ``Bash``/``Write``/``Edit``
+#: (``agents/execution-context-reader.md``: ``tools: WebSearch, WebFetch, Read,
+#: Grep``). Their blocks must give them no shell or edit allow.
+_READER_AGENTS = [name for name in _AGENTS if name.startswith('execution-context-reader')]
+assert _READER_AGENTS, 'opencode.json declares no reader agents, so the reader pins would run over nothing'
+
+#: The base policy observed at ``opencode v2.2.7``: allow-all, denied only by a
+#: later explicit row.
+_BASE_POLICY = {'action': '*', 'resource': '*', 'effect': 'allow'}
+
 
 def _matches(pattern: str, command: str) -> bool:
     regex = '^' + re.escape(pattern).replace(r'\*', '.*') + '$'
@@ -42,10 +55,10 @@ def _matches(pattern: str, command: str) -> bool:
 
 
 def _effect(agent: str, command: str) -> str:
-    """Evaluate a shell command the way OpenCode 2 does: last match wins, default ask."""
-    rules = list(_CONFIG['permissions']) + list(_CONFIG['agents'][agent].get('permissions', []))
-    hits = [r for r in rules if r['action'] == 'shell' and _matches(r['resource'], command)]
-    return hits[-1]['effect'] if hits else 'ask'
+    """Evaluate a shell command the way OpenCode 2 does: base policy, last match wins."""
+    rules = [_BASE_POLICY] + list(_CONFIG['permissions']) + list(_CONFIG['agents'][agent].get('permissions', []))
+    hits = [r for r in rules if r['action'] in ('shell', '*') and _matches(r['resource'], command)]
+    return hits[-1]['effect'] if hits else 'allow'
 
 
 @pytest.mark.parametrize('agent', _AGENTS)
@@ -67,8 +80,29 @@ def test_deny_rules_hold_for_every_agent(agent: str, command: str) -> None:
 
 
 @pytest.mark.parametrize('agent', _AGENTS)
-def test_executor_is_allowed_for_every_agent(agent: str) -> None:
-    assert _effect(agent, 'python3 .plan/execute-script.py a:b:c') == 'allow'
+def test_executor_is_allowed_for_every_write_capable_agent(agent: str) -> None:
+    """The executor permit stands for agents whose source declares ``Bash``.
+
+    A reader agent declares no ``Bash``, so its block must not hand it the
+    executor permit: the root configuration is reconciled with the source.
+    """
+    effect = _effect(agent, 'python3 .plan/execute-script.py a:b:c')
+    if agent in _READER_AGENTS:
+        assert effect != 'allow', f'{agent} declares no Bash but its block allows the executor'
+    else:
+        assert effect == 'allow'
+
+
+@pytest.mark.parametrize('agent', _READER_AGENTS)
+def test_reader_blocks_carry_no_allow_row(agent: str) -> None:
+    """A source declaring ``WebSearch, WebFetch, Read, Grep`` gains no allow.
+
+    The block may deny (a restriction) and may restate the catch-all ``ask``,
+    but an ``allow`` row would grant a shell or edit capability the source
+    does not declare.
+    """
+    allows = [rule for rule in _CONFIG['agents'][agent].get('permissions', []) if rule['effect'] == 'allow']
+    assert allows == [], f'{agent}: {allows}'
 
 
 def test_catch_all_is_first_in_every_rule_list() -> None:

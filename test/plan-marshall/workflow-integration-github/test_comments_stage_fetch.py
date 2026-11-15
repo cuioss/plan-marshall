@@ -419,7 +419,7 @@ class TestRefusalNoticeProducerFilter:
 
         The discriminator for the wording above. "Review limit reached" (the review
         SUMMARY notice) and "Review rate limited" (the COMMAND reply) differ by more
-        than presentation, and matching is case-sensitive substring containment — so a
+        than presentation, and matching is case-insensitive substring containment — so a
         registry holding only the first leaves the second invisible, which is exactly
         how a refusal was credited as a completion signal.
         """

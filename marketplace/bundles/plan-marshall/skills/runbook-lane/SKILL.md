@@ -177,9 +177,13 @@ python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane review-g
   --pr-number {N} [--project-dir DIR] [--disposition "{reviewer} {section} {id} — {sha|reason}" ...]
 ```
 
-Decides the merge gate's review condition (section 7) from the surfaces read on the head. It reads
-through the CI abstraction (never `gh`): the unresolved review threads with their `path:line`, and
-the body of every reviewer's review, whose `inline`, `duplicate`, `outside-diff`, `nitpick`,
+Decides the merge gate's review condition (section 7) from the surfaces read on the head. The verb
+fetches the provider's comment data ONCE, in-process, and derives both views it needs from that one
+snapshot: the raw bodies for the required-reviewer check, and the flattened display form for the
+finding parser. One fetch is the contract — two reads could show the halves different moments, and a
+review landing between them would be credited by one half and unseen by the other. From the
+snapshot it reads the unresolved review threads with their `path:line`, and the body of every
+reviewer's review, whose `inline`, `duplicate`, `outside-diff`, `nitpick`,
 `followup` and `additional` sections are parsed into individually identified findings. A section
 contributes the count its title declares (`(N)` or `: N`); with none declared, it contributes the
 larger of its per-row `cr-comment` markers and its nested per-file block counts, and a non-empty
@@ -205,16 +209,16 @@ a disposition line names no real evidence
 (`disposition_unparsable` — a commit sha or a stated reason; a placeholder such as `TBD`, `-` or
 `n/a` is not evidence); the read is undecidable, truncated, carries a review-body section the
 parser cannot read, carries a record kind the verb does not know, or carries a review body with no
-attributable author (`undecidable_read`); the provider
-publishes no coverage signal for the read (`coverage_unavailable`). An undecidable read is a stop,
+attributable author (`undecidable_read`). An undecidable read is a stop,
 never a pass. Otherwise it answers `merge_allowed: true` with `all_handled`, and reports
 `unresolved_review_threads`, `review_body_findings_total` and `review_body_findings_handled` for the
 landing.
 
-**The read's coverage signal is GitHub's.** `ci pr comments` publishes `complete` for the GitHub
-provider and no coverage field for GitLab, so on a GitLab project the verb answers
-`coverage_unavailable` and the merge gate cannot be satisfied until that provider publishes one. That
-is a stated limitation of this gate, not a pass: the lane records the verdict and stops.
+**The read is GitHub's, taken in-process.** `review-gate` fetches the pull request's comment data
+itself, through the provider's own data read, and derives the flattened display form from that one
+snapshot; it never shells out to `ci pr comments`. A project whose CI provider is not GitHub, or
+whose provider cannot be resolved, answers `undecidable_read`: the gate states no verdict about a
+surface the project does not publish, and no re-read changes that answer.
 
 ## 0. Input
 
@@ -390,6 +394,49 @@ so git alone shows which deliverables are committed.
     not count toward `deliverables_done`: it is graded exactly as a not-met Done-when, because a
     Done-when the run cannot show is a Done-when it did not meet as written.
   - Never cite a test, file or log you have not just read or run.
+- **Base-sha evidence (needs no clone).** A Done-when that says "fails at `{sha}`" is proved on a
+  detached base worktree, never by copying the repository:
+  `python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree-create --detach --plan-id {plan} --base {base_sha}`
+  materializes `{plan}-base` under the project's worktree root at that commit, with no branch, and
+  returns its absolute path as `worktree_path`. `error: worktree_exists` means the base tree already
+  exists: reuse it only when `git -C` at that path reports the same HEAD as `{base_sha}` **and** a
+  clean `status --porcelain`, and remove it first when either differs — the answer carries
+  `detached: true`, `base_ref` and the tree's actual `head_sha`, refuses a tree that is on a branch
+  (`worktree_target_conflict`), and re-produces the executor from that tree, never from main's copy.
+  A creation or reuse answer whose `executor_in_worktree` is `absent` is not evidence: remove the tree
+  and report the blocker. A tree without an executor cannot be trusted to contain its own bootstrap —
+  the bootstrap at that sha may still read a base-directory override from the environment — so never
+  run the base tests on that assumption. That tree carries its own
+  `.plan/local` boundary and the executor the same seam produces — best effort, and the payload reports
+  `executor_in_worktree`; the copy-from-main fallback is disabled for it, because a copied executor
+  carries main's paths and would make a base run cite main's code — so the base tree's own test
+  bootstrap short-circuits instead of resolving its walk into another checkout. The build seam runs
+  against the returned path like any other checkout:
+  `{build.module-tests} --project-dir` with that `worktree_path`, or the gate canonical, with the
+  shell in the main checkout. The tree at the base commit does NOT contain the test the Done-when
+  just added, so copy that committed test file from the plan's worktree into the same path in the
+  base tree before the run — it is the plan's own test, not a harness file — and record the failing
+  output that names it. Then return the base tree to its tracked state BEFORE the cleanliness check,
+  using file tools only — never `git checkout`/`restore`, which the Git rule forbids: when that path is
+  untracked at the base sha, delete the copy; when it is tracked there, save its original content under
+  `.plan/temp/` before overwriting it and copy it back afterwards. Delete the owner marker too before
+  the check. Anything left behind keeps
+  `status --porcelain` dirty and `git worktree remove` refuses. The copy dies with the base tree, the
+  committed test does not. A plan has ONE base tree: as soon as the tree exists, write your
+  `{sender_id}` to `{plan}-base/.plan/local/base-evidence-owner` (inside the boundary, so it never
+  dirties the tree), run its base-evidence work serially, and treat a reuse that finds ANOTHER sender
+  in that marker as a blocker — never as a spare. Four forms are
+  NOT allowed, and a Done-when whose failing run used one
+  is reported `not evidenced`: a `git clone`; a raw `git worktree add` into `.plan/temp`; a hand-run
+  `generate_executor`; and an edit of a harness file in the base copy. The evidence must survive the
+  base copy: the failing log identifier and the file that produced it go in the PR body, and a probe
+  file a Done-when cites by path is committed under the plan's test tree or its content is in the PR
+  body — a path that exists only in the removed base copy is not evidence. Remove the base worktree
+  with `git worktree remove`, never with force, once `git -C` at that returned `worktree_path` shows
+  a clean `status --porcelain`; when it cannot be removed the landing reports `cleanup_owed=true` and
+  names what remains, read from the tree, and no operator question about deleting it is asked before
+  that read has been stated. While it exists, `{plan}-base` is also what `plan-doctor` reports as a
+  dangling worktree: that report IS the owed cleanup, not a defect in the plan record.
 - **Executor only.**
   - Every script: `python3 .plan/execute-script.py {bundle}:{skill}:{script} …`.
   - Every build: the `build` commands the resolve result supplies (step 4).
@@ -406,9 +453,12 @@ so git alone shows which deliverables are committed.
   - Temp files go only under `.plan/temp/`.
   - Repository files (source, tests, docs) are created and edited **only inside the worktree**,
     never in the main checkout — not even a draft.
-- **`.plan/` state.** Write nothing under `.plan/` except `.plan/temp/`, the `ci` body slots under
-  `.plan/local/plans/NO_PLAN/work/ci-bodies/` that step 6 prescribes, and your one inbox message
-  (step 8). Never edit the spec or any file under `.plan/orchestrator/`.
+- **`.plan/` state.** Write nothing under `.plan/` except `.plan/temp/`, a `ci` body slot at a path a
+  `prepare-*` verb returned under `.plan/local/plans/NO_PLAN/work/ci-bodies/` (never a path written by
+  hand — the slot must come back from the matching `prepare-body` / `prepare-comment` verb, whether
+  the `pr` or the `issue` one), the base tree's own `.plan/local/base-evidence-owner` marker (§1), and
+  your one inbox message (step 8).
+  Never edit the spec or any file under `.plan/orchestrator/`.
 - **Stay inside the repository.** Never read, list or print anything outside the repository root:
   no credential files, config directories or environment dumps. Those hold secrets, and anything
   you read is sent to the model provider.
@@ -489,8 +539,9 @@ All commands run from the main checkout (the repository root).
 4. `git -C {worktree} push -u origin {branch}`. Make no edit before this push.
 5. **Check every named skill and persona exists.** The resolve result carries one row per spec
    deliverable with its `Skills:` and `Persona:` declarations. A `Skills:` entry is a
-   `bundle:skill` notation (comma-separated for several); a `Persona:` entry is the persona kind
-   (`implementer`) or its full skill name. Every named skill and persona must
+   `bundle:skill` notation (comma-separated for several); the literal `none` is an ANSWERED
+   absence ("the project configures no domain skills") and is never probed; a `Persona:` entry is
+   the persona kind (`implementer`) or its full skill name. Every other named skill and persona must
    exist in the installed bundles; `resolve` reports a name that does not as a
    `named_skill_not_found` error, and the run then **stops and asks the operator**. A bare name in a
    flat install whose `SKILL.md` records no bundle identity is the
@@ -554,7 +605,9 @@ For each deliverable, in the spec's order:
    landing report then says `skills: none named`.
 1. Confirm the spec's HYPOTHESIS lines for this deliverable by reading the code. Write down
    confirmed or refuted, with `file:line`.
-2. Write the Done-when tests and capture their evidence under the `order` §1 defines.
+2. Write the Done-when tests and capture their evidence under the `order` §1 defines — for a
+   Done-when whose clause fails at a base sha, that is §1's base-sha recipe: a detached `{plan}-base`
+   worktree, built through the build seam, never a clone.
 3. Implement. Run the tests; record them passing.
 4. If any `*.py` changed, run the quality gate (step 4) until clean.
 5. **Refresh the worktree executor after adding, removing or renaming a script verb**, before running
@@ -727,8 +780,8 @@ whether to continue at the limit. Record every finding and its disposition.
      carries, per Done-when, the `order` and verdict §1 defines, the test name, and the failing
      run's commit and output identifier only where the order is not `none`. No footer.
    - Then: `python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr create --plan-id NO_PLAN --head {branch} --base {base_branch} --title "{conventional title}"`
-2. **Trigger each reviewer** with a PR comment (`ci pr prepare-comment` + `ci pr reply`), posting
-   its resolved `trigger_comment`.
+2. **Trigger each reviewer** with a PR comment (`ci pr prepare-comment --for reply` + `ci pr reply`),
+   posting its resolved `trigger_comment`.
 3. **Wait for CI:** `python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci checks wait --pr-number {N} --timeout 540`.
 4. **Read the pull request's open Sonar findings** — after CI is green on the head and before the
    pull request is reported ready. Skip nothing when `sonar` is `configured`:
@@ -783,8 +836,8 @@ whether to continue at the limit. Record every finding and its disposition.
    or load-bearing, real or false-positive drift, and severity — before deciding whether it applies.
    Handle every comment:
    - fix it, commit and push; or
-   - answer it with `ci pr thread-reply` (the reason it does not apply), then close it with
-     `ci pr resolve-thread`.
+   - answer it with `ci pr prepare-comment --for thread-reply`, write the reason into the returned
+     path, and post it with `ci pr thread-reply`; then close it with `ci pr resolve-thread`.
 
    **A thread is resolved only after a reply that names a commit or a stated reason** — never to
    silence it: `ci pr thread-reply` first, `ci pr resolve-thread` second, in that order. Every
@@ -792,8 +845,13 @@ whether to continue at the limit. Record every finding and its disposition.
    in the progress file, `finding: {reviewer} {section} {id} — {sha|reason}`, and each line is handed
    to the merge gate's `review-gate` call (section 7) as one `--disposition` value, with the
    `finding: ` prefix dropped and `{reviewer}`/`{section}`/`{id}` exactly as the verb reports them.
-6. **After every push, re-trigger** a reviewer whose last review predates the head. Re-read the open
-   Sonar findings after every push too, on the same condition as step 4.
+6. **After every push, re-trigger** a reviewer whose last review predates the head, **except a
+   reviewer the resolve result marks `review_complete_after_handling` that holds a qualifying review
+   on record**: that review is the review, so a later head raises no obligation and no trigger is
+   posted. The resolve flag alone is not the exemption — establish the review from the PR's own
+   surfaces (§ 7 names the artifact) before leaving the reviewer out; a flagged reviewer with no
+   qualifying review is re-triggered exactly as any other. Re-read the open Sonar findings after
+   every push too, on the same condition as step 4.
 7. **Reviewer quota policy** ("review limit reached" or similar), for ANY required reviewer that
    refuses on quota **while no qualifying review exists** (see section 7):
    1. Wait 90 minutes. Record the refusal and the next allowed trigger time in the progress file,
@@ -814,9 +872,21 @@ whether to continue at the limit. Record every finding and its disposition.
 
 Merge only when all of these hold:
 
-- Every required reviewer reviewed the **current head**. **Exception — standing review
-  authorization, quota-limited reviewers only.** For a required reviewer that the resolve result
-  marks `quota_limited`, "reviewed the current head" may be replaced by ALL of:
+- Every required reviewer reviewed the **current head**. **Satisfied by done for a reviewer the
+  resolve result marks `review_complete_after_handling`, ONCE a qualifying review by that reviewer is
+  on record** — a formal review with a commit id, or its marker-bearing summary whose readable
+  `kind=reviewed` payload names a covered commit (the artifact clause 1 below states; rate-limit
+  notices, marker-less walkthroughs, thread replies and a refusal submitted as a review do not
+  count — the one exception being a refusal whose body also carries a readable finished marker
+  naming the commit it covered, which a reviewer publishes when its summary keeps a later limit
+  notice beside its verdict). The flag alone is not the exemption: `review-gate` enforces it per
+  reviewer when the lane passes `--required-reviewer {bot}` for each required bot, and answers
+  `required_review_missing` when one holds no such review. Given the review, every finding of it
+  being handled makes it the review at ANY head of this PR: the currency demand does not apply, no
+  re-trigger is posted for a later head, and the "which head it last reviewed" fact reports the head
+  that one review covered. **Exception — standing review authorization, quota-limited reviewers
+  only.** For a required reviewer that the resolve result marks `quota_limited` and does NOT mark
+  `review_complete_after_handling`, "reviewed the current head" may be replaced by ALL of:
   1. **a qualifying review exists** — a formal review by that reviewer on one of this PR's heads,
      listed by `ci pr reviews` with its commit id, or, where the reviewer publishes a clean review
      only as a summary comment, the marker-bearing summary comment whose `sourceCommitId` /
@@ -824,7 +894,9 @@ Merge only when all of these hold:
      `final_review_risk_coverage` marker the reviewer's summary comment carries; read it from the
      comment itself, because the marker names the head the review covered, and parse it with
      `_github_pr.review_coverage_verdict` — the one reader of `sourceCommitId`,
-     `coveredCommitId` and `kind`).
+     `coveredCommitId` and `kind`). That reader is the producer's and the await's: this lane's
+     `review-gate` path and the post chokepoint do not ask it, so a marker naming a commit outside
+     this pull request is not checked there.
      Rate-limit notices, marker-less walkthroughs and thread replies do not count;
   2. **every finding is handled** — each finding from that review and from any later one is fixed in
      a pushed commit, or answered with a reason, and every one of that reviewer's threads is
@@ -851,13 +923,16 @@ Merge only when all of these hold:
 - The review surfaces of the current head admit the merge: `review-gate` reports `merge_allowed:
   true` on a read taken after the last push — no unresolved review thread, every review-body finding
   carrying a disposition that names a commit or a stated reason, and no resolved thread whose last
-  BOT comment says the concern remains. Its `--disposition` values are this
+  BOT comment says the concern remains. Call it with `--required-reviewer {bot}` once per required
+  bot, so the done exemption is checked against a review that actually exists
+  (`required_review_missing` otherwise). Its `--disposition` values are this
   run's progress-file `finding:` lines. An undecidable or truncated read is a blocker and is retried.
   The standing review authorization never overrides a `review-gate` `false`.
 
 The reviewer quota policy (§ 6 step 7) applies only while no qualifying review exists. The standing
 authorization never applies to a reviewer that is not quota-limited, and never to a PR without a
-qualifying review.
+qualifying review. A `review_complete_after_handling` reviewer's own review on record is that
+qualifying review, so the quota policy does not apply to it either: nothing is asked of it again.
 
 **An unresolved review thread or an unhandled review-body finding on the merge head blocks the
 standing authorization.** A reviewer's thread that is still open, or a finding from any review-body
@@ -883,8 +958,9 @@ enqueue**, whatever else the gates say.
 `git -C {worktree} fetch origin {base_branch}`, then
 `git -C {worktree} merge origin/{base_branch} -m "merge: origin/{base_branch} into {branch}" -m "{commit_trailer}"`,
 so the merge commit it creates ends with the resolved `{commit_trailer}` line the Commit trailer rule
-requires. Run the build gate again, push, re-trigger the reviewers, re-read the Sonar findings, re-run
-the review gate, and repeat the reviewer quota policy (§ 6 step 7).
+requires. Run the build gate again, push, re-trigger the reviewers (leaving out every reviewer marked
+`review_complete_after_handling`), re-read the Sonar findings, re-run the review gate, and repeat the
+reviewer quota policy (§ 6 step 7).
 
 **Before enqueue, re-check the authorization rule:** merge only when every condition above holds, or
 when the operator **selected** an option in a question-tool call that names the exact gap (which
@@ -893,6 +969,11 @@ is never that selection. If you have only free text, ask the question with the t
 selection.
 
 **Enqueue and settle:**
+
+The enqueue takes no merge mutex: the platform queue serializes the merge and re-tests it against the
+updated base, so two enqueued pull requests cannot interleave their merge commits — the queue is the
+serialization the mutex would otherwise provide, and holding both would only serialize work that is
+already serialized.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr merge-queue --pr-number {N}
@@ -949,6 +1030,12 @@ sonar_open_new_issues={measured count|n/a|unknown}
 step.sonar-roundtrip.open_issue_rules={rules left open|none|unknown|n/a}
 ```
 
+- **Base copy (cleanup_owed):** a base worktree a Done-when's evidence used is removed with
+  `git worktree remove`, never with force, once `git -C` at its `worktree_path` shows a clean
+  `status --porcelain`, before this landing is written. When it is still on disk, set the landing's
+  single `cleanup_owed=true` fact — the branch-cleanup fact, which this also answers — and name in the
+  report which tree remains, read from the tree. An operator question about removing it states first
+  what exists, read from the tree; the lane never asks how to delete what it created before that read.
 - **Values:** for a required key, write `unknown` for anything you could not read, never `n/a` and
   never a guess. `deliverables_done` counts only fully met deliverables. The optional per-step facts
   below carry their own two sentinels, where `n/a` is a legal answered absence.

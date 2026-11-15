@@ -370,7 +370,9 @@ Two of those members are **refinements of `absent` whose remedies are its opposi
 consumer must not flatten them back together:
 
 - `participated_stale` — the bot DID publish; the review merely predates this HEAD. Remedy:
-  **re-trigger** the review.
+  **re-trigger** the review, except for a reviewer declaring `review_complete_after_handling`, whose
+  review on record completes it: that review is never re-triggered and the classifier reports it
+  `participated` / `participated_but_empty` instead.
 - `not_triggered` — nothing ran on account of the PR, so no bot was ever asked. Remedy: **trigger** the
   review at all.
 

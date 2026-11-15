@@ -915,7 +915,15 @@ def test_no_worktree_write_refusal_guard_symbol_present():
 #: locate the SAME line — one asserting its presence, one anchoring a positional
 #: ordering check on it — and a guard edit that updated only one of them would
 #: leave the other silently searching for a string the template no longer has.
-_BUILD_LEDGER_GUARD = 'if _is_build_class_notation(notation, subcommand) and not _mentions_help(script_args):'
+#: The value is CAPTURED before the subprocess runs and reused at the boundary,
+#: so one evaluation governs both the dispatch-time tree capture and the
+#: completion-time ledger row.
+_BUILD_LEDGER_GUARD = (
+    '_is_build_dispatch = _is_build_class_notation(notation, subcommand) and not _mentions_help(script_args)'
+)
+
+#: The boundary's own branch on that captured value.
+_BUILD_LEDGER_BRANCH = 'if _is_build_dispatch:'
 
 
 def test_template_contains_build_ledger_append_at_dispatch_boundary():
@@ -933,9 +941,13 @@ def test_template_contains_build_ledger_append_at_dispatch_boundary():
     # Without it the surface derivation's own `{notation} run --help` probe
     # stamps one phantom kind=build row per build wrapper per regeneration.
     assert _BUILD_LEDGER_GUARD in source, (
-        'main() must guard the ledger append behind '
+        'main() must capture the build-class guard from '
         '_is_build_class_notation(notation, subcommand) AND '
         'not _mentions_help(script_args)'
+    )
+    assert _BUILD_LEDGER_BRANCH in source, (
+        'main() must branch on the captured _is_build_dispatch value so the dispatch-time '
+        'tree capture and the completion-time ledger row cannot disagree'
     )
     assert '_append_build_ledger_record(' in source, (
         'main() must invoke _append_build_ledger_record at the dispatch boundary'
@@ -1015,12 +1027,30 @@ def test_template_build_ledger_append_fires_after_dispatch_not_before():
     assert dispatch_idx != -1, 'subprocess.run dispatch not found in template'
 
     # The call site inside main() is guarded by the predicate; locate the guard
-    # and the call that follows it.
+    # and the call that follows it. The guard's VALUE is captured before the
+    # dispatch (so the tree capture and the row share one evaluation); the
+    # append itself must still come after the dispatch.
     guard_idx = source.find(_BUILD_LEDGER_GUARD)
     assert guard_idx != -1, 'build-class guard not found in main()'
 
-    call_site_idx = source.find('_append_build_ledger_record(', guard_idx)
+    branch_idx = source.find(_BUILD_LEDGER_BRANCH)
+    assert branch_idx != -1, 'build-class branch not found in main()'
+
+    call_site_idx = source.find('_append_build_ledger_record(', branch_idx)
     assert call_site_idx != -1, 'ledger append call site not found after the guard'
+
+    # The guard's VALUE and the capture it gates must both come BEFORE the
+    # dispatch, so the tree capture is a pre-build observation. This positional
+    # pin is the cheap half; the behavioural half is
+    # ``test_main_captures_the_tree_before_the_build_edits_it`` in
+    # ``test_build_tree_identity_recorder.py``, which is what catches a capture
+    # moved behind the subprocess or a value dropped from the writer call.
+    capture_idx = source.find('_dispatch_tree_state = _capture_dispatch_tree_state(')
+    assert capture_idx != -1, 'dispatch-time tree capture not found in main()'
+    assert guard_idx < capture_idx < dispatch_idx, (
+        'the guard and the dispatch-time tree capture must both precede the subprocess '
+        f'dispatch (guard {guard_idx}, capture {capture_idx}, dispatch {dispatch_idx})'
+    )
 
     assert call_site_idx > dispatch_idx, (
         'ledger append must fire AFTER the subprocess dispatch, not before — '
@@ -1187,9 +1217,14 @@ def test_generate_substitutes_version_and_fingerprint_from_manifest(tmp_path, mo
     assert '{{MAPPINGS_FINGERPRINT}}' not in text, 'placeholder must be fully substituted'
 
 
-def test_generate_uses_empty_sentinel_on_fresh_install(tmp_path, monkeypatch):
-    """With no installed manifest, the version/fingerprint placeholders resolve
-    to the empty sentinel — no error, executor still generates."""
+def test_generate_stamps_unversioned_on_fresh_install(tmp_path, monkeypatch):
+    """With no installed manifest, the version is the ANSWERED absence ``unversioned``.
+
+    The fingerprint keeps its empty sentinel — nothing measured it — but the
+    version must not: an empty version is indistinguishable from a pre-stamp
+    executor and leaves every staleness comparison unanswerable. The payload
+    states the stamp and the reason nothing was readable.
+    """
     module = load_module()
 
     # Point PM_DIST_MANIFEST at a non-existent file so no manifest is found.
@@ -1201,9 +1236,11 @@ def test_generate_uses_empty_sentinel_on_fresh_install(tmp_path, monkeypatch):
 
     result = module.generate_executor({}, MARKETPLACE_ROOT, dry_run=False)
     assert result['status'] == 'success', f'fresh install (no manifest) must still generate the executor: {result}'
+    assert result['version'] == 'unversioned'
+    assert 'no readable version' in result['version_reason']
 
     text = (plan_dir / 'execute-script.py').read_text(encoding='utf-8')
-    assert "MARSHALL_VERSION = ''" in text, 'fresh install must stamp the empty version sentinel'
+    assert "MARSHALL_VERSION = 'unversioned'" in text, 'a fresh install must stamp the answered absence'
     assert "MAPPINGS_FINGERPRINT = ''" in text, 'fresh install must stamp the empty fingerprint sentinel'
 
 
@@ -1318,10 +1355,10 @@ def test_find_installed_manifest_path_resolves_marketplace_clone_root(tmp_path, 
     # Companion: the value the executor stamps as MARSHALL_VERSION is
     # manifest['version'] (read via read_installed_manifest at generation time),
     # so a resolvable clone-root manifest yields the real, non-empty version —
-    # never the empty sentinel a fresh install produces.
+    # never the `unversioned` absence a fresh install produces.
     stamped = module.read_installed_manifest(cache_base)
     assert stamped.get('version') == '0.1.1200', (
-        'the executor must stamp the real manifest version on a marketplace-cache install, not the empty sentinel'
+        'the executor must stamp the real manifest version on a marketplace-cache install, not the unversioned absence'
     )
 
 

@@ -42,8 +42,8 @@ in front of that filter at every one of the boolean's call sites.
 so the failure it can introduce — withholding a genuine short review — blocks a
 merge, while the failure it removes is silent. Every fallible input therefore has
 its own named NON-firing branch, and the absent-threshold branch in particular is
-non-firing by construction: with no measured threshold the arm never fires and
-every consumer behaves exactly as it did before the arm existed.
+non-firing by construction: with no measured threshold the arm never fires, so it
+cannot change a verdict.
 """
 
 import argparse
@@ -249,9 +249,9 @@ def _is_refusal_notice(body: str, bot_kind: str | None = None) -> bool:
 # from here, so the records are directly comparable and there is exactly one place
 # a new arm is named.
 #
-# The two pre-existing spellings are preserved BYTE-IDENTICALLY from when they were
-# inline literals in ``github_re_review``: every stored envelope and every existing
-# assertion comparing against them keeps its meaning.
+# The two spellings below are part of the stored-envelope CONTRACT: every recorded
+# refusal and every assertion comparing against one uses these exact values, so a
+# rename would silently re-read old records as an arm nobody names.
 
 #: The acting bot's own declared ``refusal_patterns`` matched the body.
 REFUSAL_LAYER_REGISTRY = 'registry_refusal_patterns'
@@ -302,11 +302,19 @@ def refusal_layers(body: str, bot_kind: str | None = None) -> list[str]:
     Returns ``[]`` when no arm here recognises the body — the same information the
     boolean's ``False`` carries, and never a claim that the body is review
     feedback.
+
+    The REGISTRY arm matches case-insensitively. A bot's registered phrases are
+    written in sentence case, and the same notice reworded in another case is the
+    same refusal: a case-sensitive test files a notice in another case as review
+    feedback, reading a bot that answered a quota question in capitals as a bot that
+    had reviewed. Both arms are decided here, once, because every refusal consumer
+    reads this function.
     """
     if not body:
         return []
+    folded = body.casefold()
     layers: list[str] = []
-    if bot_kind and any(marker in body for marker in bot_registry.refusal_patterns(bot_kind)):
+    if bot_kind and any(marker.casefold() in folded for marker in bot_registry.refusal_patterns(bot_kind)):
         layers.append(REFUSAL_LAYER_REGISTRY)
     if _is_rate_limit_notice(body):
         layers.append(REFUSAL_LAYER_STRUCTURAL)
@@ -395,6 +403,10 @@ def bot_claimed_sha_matches_head(body: str, head_sha: str) -> bool:
 #: the one reader of those fields rather than duplicating them.
 _REVIEW_COVERAGE_MARKER = 'final_review_risk_coverage'
 _REVIEW_COVERAGE_REVIEWED_KIND = 'reviewed'
+#: A commit ID as a coverage marker may carry it: all hex, any length. The field is
+#: dedicated to the commit a review covered, so a hex value there IS a commit however
+#: abbreviated; a word that is not hex (``pending``, ``n/a``) names no commit at all.
+_HEX_TOKEN = re.compile(r'[0-9a-f]+')
 #: The fields the marker's JSON payload carries. One list, consumed by the parser
 #: below and by the runbook-lane guard, so neither restates a private vocabulary.
 REVIEW_COVERAGE_FIELDS = ('sourceCommitId', 'coveredCommitId', 'kind')
@@ -565,6 +577,113 @@ def review_coverage_is_finished(body: str) -> bool:
     return str(fields.get('kind') or '').strip().lower() == _REVIEW_COVERAGE_REVIEWED_KIND
 
 
+def review_coverage_names_commit(body: str) -> bool:
+    """Whether ``body``'s coverage marker is a READABLE, FINISHED review naming a commit.
+
+    The head-free companion to :func:`review_coverage_verdict`, for the one question a
+    consumer can ask before any head is known: does this comment claim a finished
+    review of some commit? ``kind: reviewed`` alone is not enough — an unreadable
+    payload, a non-``reviewed`` kind and a marker naming no covered commit are all
+    claims nobody can evaluate, and PLAN-LB-132 established that such an edit credits
+    nothing. The retired ``<!-- recent_review_start -->`` wrapper names no commit and
+    therefore answers ``False`` here as well; it remains admissible participation
+    EVIDENCE under the registry, which is a different question.
+
+    The value must be a COMMIT ID — an all-hex token (:data:`_HEX_TOKEN`). A dedicated
+    field names a commit, so any hex value in it is one however abbreviated; a
+    placeholder (``pending``, ``n/a``, ``unknown``) is not, and a marker carrying one
+    is a claim nobody can place. A refusal body beside
+    ``{"kind": "reviewed", "coveredCommitId": "pending"}`` therefore carries no
+    exemption from the refusal exclusion at any of the three finished-review sites.
+    """
+    present, fields = _coverage_payload(body)
+    if not present or fields is None:
+        return False
+    if str(fields.get('kind') or '').strip().lower() != _REVIEW_COVERAGE_REVIEWED_KIND:
+        return False
+    covered = str(fields.get('coveredCommitId') or '').strip() or str(fields.get('sourceCommitId') or '').strip()
+    return bool(_HEX_TOKEN.fullmatch(covered.lower()))
+
+
+def _is_participation_evidence(comment: dict, bot_kind: str) -> bool:
+    """True if ``comment`` is ADMISSIBLE participation evidence for ``bot_kind``.
+
+    Two registry reads, both generic — no bot name appears here:
+
+    1. SHAPE — the comment's ``kind`` is one of the publish shapes the bot declares
+       in ``participation_evidence``.
+    2. CONTENT — when the bot declares ``participation_evidence_markers`` entries for
+       THAT shape, the body carries at least one of the declared literals. A shape a
+       bot publishes both before its review completes and after it finishes credits
+       only the artifact carrying a finished-review literal, so a pre-review
+       walkthrough in a declared shape is not evidence. An undeclared shape is
+       FAIL-OPEN and credits on the shape alone (see
+       ``bot_registry.participation_evidence_markers_for``).
+
+    This is the admissibility question only. The refusal exclusion and the
+    ``participation_requires_update`` currency test stay at the call site, because
+    they answer different questions: a refusal is admissible-shaped but is evidence
+    of NON-participation, and the currency test decides WHICH commit an admissible
+    comment reviewed. A comment this predicate rejects is therefore neither
+    credited nor stale — it is not a review artifact at all.
+    """
+    kind = comment.get('kind') or 'inline'
+    if kind not in bot_registry.participation_evidence(bot_kind):
+        return False
+    markers = bot_registry.participation_evidence_markers_for(bot_kind, kind)
+    if not markers:
+        return True
+    body = str(comment.get('body') or '')
+    return any(marker in body for marker in markers)
+
+
+def is_finished_review(comment: dict, bot_kind: str) -> bool:
+    """Whether ``comment`` is a FINISHED review by ``bot_kind`` — the ONE reader.
+
+    The done rule rests on one question — is a finished review on record — and this
+    is its only answer. The producer builds ``github_pr`` ``finished_review_bots[]``
+    with it, the post chokepoint (``github_re_review._qualifying_review_on_record``)
+    and the runbook lane's ``review-gate --required-reviewer`` check ask it too, so
+    the three sites cannot answer a formal review differently.
+
+    A comment is a finished review only when ALL of these hold:
+
+    - it is not a refusal notice that carries no readable finished marker NAMING A
+      COMMIT. A refusal submitted as a review object proves the bot did NOT review;
+      the one exception is a body that is a refusal AND carries a readable finished
+      marker that names the commit it covered, which CodeRabbit publishes when its
+      summary keeps a later limit notice beside its verdict
+      (:func:`review_coverage_names_commit`). A ``kind: reviewed`` marker that names
+      no commit claims a review nobody can place, so it is not a finished review and
+      does not exempt the refusal that carries it. The refusal test
+      is :func:`_is_refusal_notice` — the producer's own — never the enumerative arm,
+      which runs at a different pipeline position and answers a different question.
+    - it is admissible participation evidence for the bot (:func:`_is_participation_evidence`):
+      the comment's kind is one of the bot's declared publish shapes, and carries
+      that shape's declared content marker where one is declared.
+    - a ``review_body`` names the commit it reviewed, in the provider's
+      ``commit_id`` or in a readable finished coverage marker that names one. An
+      empty commit names no head, so it is no finished review.
+    - an ``issue_comment`` carries a readable finished coverage marker that names a
+      covered commit (:func:`review_coverage_names_commit`).
+
+    Any other kind — an inline comment on its own, a walkthrough in an undeclared
+    shape — is not a finished review. An inline comment is a line comment BY a
+    review, and the review it belongs to carries the artifact this reads.
+    """
+    body = str(comment.get('body') or '')
+    if _is_refusal_notice(body, bot_kind) and not review_coverage_names_commit(body):
+        return False
+    if not _is_participation_evidence(comment, bot_kind):
+        return False
+    kind = comment.get('kind') or 'inline'
+    if kind == 'review_body':
+        return bool(str(comment.get('commit_id') or '').strip()) or review_coverage_names_commit(body)
+    if kind == 'issue_comment':
+        return review_coverage_names_commit(body)
+    return False
+
+
 def review_coverage_verdict(body: str, head_sha: str) -> bool | None:
     """Return what a review-coverage marker says about ``head_sha``, or no verdict.
 
@@ -579,8 +698,8 @@ def review_coverage_verdict(body: str, head_sha: str) -> bool | None:
       commit, or its ``kind`` is anything else. A present marker is a claim, so a
       false one never falls back to a ledger arm that would credit an edit.
     - ``None`` — no verdict. The body carries no marker, or ``head_sha`` could not
-      be read. ``None`` is never a claim that the review is current; the caller
-      falls back to whatever rule it applied before this one existed.
+      be read. ``None`` is never a claim that the review is current; the caller keeps
+      its own rule for the case the marker does not speak to.
 
     ``coveredCommitId`` decides; ``sourceCommitId`` is the fallback when the
     covered field is absent. Both are compared for EQUALITY against ``head_sha``,
@@ -613,8 +732,8 @@ def named_commit_currency(body: str, head_sha: str) -> bool | None:
       ``head_sha``. The comment is about another commit, whatever its timestamps or
       edit history say.
     - ``None`` — no verdict. ``body`` names no commit, or ``head_sha`` could not be
-      read. The caller falls back to whatever rule it applied before this one
-      existed; ``None`` is never a claim that the review is current.
+      read. The caller keeps its own rule for that case; ``None`` is never a claim
+      that the review is current.
 
     A body naming several commits is current when ANY of them is ``head_sha``: a
     review that lists a base and a head, or quotes another commit beside the one it
@@ -652,9 +771,9 @@ def named_commit_currency(body: str, head_sha: str) -> bool | None:
 #: A guessed value is deliberately NOT substituted. This arm errs in the blocking
 #: direction — a genuine short review it mistakes for a refusal withholds real
 #: feedback and blocks a merge — so an unmeasured bound would trade a silent
-#: failure for a loud one on no evidence. With ``None`` the arm never fires and
-#: every consumer behaves exactly as it did before the arm existed, which is the
-#: non-firing branch by construction rather than by falling through an ``else``.
+#: failure for a loud one on no evidence. With ``None`` the arm never fires, so it
+#: cannot change a verdict — the non-firing branch by construction rather than by
+#: falling through an ``else``.
 #:
 #: Populate it from a real measurement over a non-empty corpus, never by estimate.
 UNRECOGNISED_REFUSAL_MAX_CHARS: int | None = None
@@ -721,7 +840,7 @@ def _is_unrecognised_refusal(body: str, bot_kind: str | None = None) -> bool:
     into the ``False`` branch would assert "this is not a refusal" on evidence
     nobody gathered. The absent-threshold branch is the one that matters most: with
     no measured bound the arm returns ``False`` for every input, so it is inert and
-    both consumers behave exactly as they did before it existed.
+    no verdict moves.
     """
     # Non-firing branch 1 — no derived threshold. Deliberately FIRST: with no
     # measured bound there is no admissible way to fire, whatever the other inputs
@@ -792,8 +911,13 @@ def refusal_cause(body: str, bot_kind: str | None = None) -> str:
     structural recogniser matches ("exceeded / reached / hit your limit") is a quota
     shape, while a size ceiling ("larger than the review limit of") is invisible to it
     and reaches recognition only through a declared pattern.
+
+    The literal test folds CASE, exactly as the registry arm that recognised the body
+    does: a notice the stack read as a refusal keeps its own cause whatever case it was
+    written in, so recognition and classification cannot disagree about one body.
     """
-    if bot_kind and any(marker in body for marker in bot_registry.refusal_size_patterns(bot_kind)):
+    folded = body.casefold()
+    if bot_kind and any(marker.casefold() in folded for marker in bot_registry.refusal_size_patterns(bot_kind)):
         return REFUSAL_CAUSE_SIZE
     return REFUSAL_CAUSE_QUOTA
 
@@ -831,9 +955,13 @@ def refusal_condition(body: str, bot_kind: str | None = None) -> str:
 
     An unregistered bot, and a bot declaring no such pattern, yield ``rate_limited``:
     the condition that says nothing new is left to review is asserted only on a
-    literal the bot's own record declares.
+    literal the bot's own record declares. The literal test folds CASE, as the
+    registry arm does — a refusal recognised in any case keeps the condition its own
+    text states, so a reply that reports "nothing new to review" is never routed to a
+    wait for a window it does not open.
     """
-    if bot_kind and any(marker in body for marker in bot_registry.no_unreviewed_commit_patterns(bot_kind)):
+    folded = body.casefold()
+    if bot_kind and any(marker.casefold() in folded for marker in bot_registry.no_unreviewed_commit_patterns(bot_kind)):
         return REFUSAL_CONDITION_NO_UNREVIEWED_COMMIT
     return REFUSAL_CONDITION_RATE_LIMITED
 
@@ -1057,8 +1185,7 @@ def notice_is_stale(written: datetime | None, eta_seconds: int | None, now: date
 
     ``True`` needs both figures: an unreadable write instant or a notice that
     stated no reset time yields ``False``. Nothing is called stale on the strength
-    of a figure nobody read, so such a record is handled exactly as it was before
-    this field existed.
+    of a figure nobody read, so such a record is decided by the caller's own rule.
     """
     if written is None or eta_seconds is None:
         return False
@@ -1290,9 +1417,9 @@ def _detector_answerability() -> tuple[bool, str]:
     """Return ``(detector_answerable, unanswerable_reason)`` from the REGISTRY alone.
 
     Distinguishes a timeout whose observable could never have moved from one
-    where the bots were simply silent — today both return an identical bare
-    ``timed_out: true`` (ADR-014: a working-but-empty substrate must be
-    distinguishable from an inert one).
+    where the bots were simply silent — a bare ``timed_out: true`` conflates the
+    two (ADR-014: a working-but-empty substrate must be distinguishable from an
+    inert one).
 
     The await is unanswerable in exactly two registry states, and
     ``unanswerable_reason`` names which one fired:
@@ -2026,8 +2153,9 @@ def cmd_pr_comments(args: argparse.Namespace) -> dict:
 def cmd_pr_wait_for_comments(args: argparse.Namespace) -> dict:
     """Handle 'pr wait-for-comments' — poll until a bot re-review lands or timeout.
 
-    Replaces the blocking shell ``sleep`` previously used by workflow-pr-doctor's
-    Automated Review Lifecycle Step 2. Snapshots the unresolved-comment count and
+    Consumed by workflow-pr-doctor's Automated Review Lifecycle Step 2, which needs
+    a bounded wait rather than a blocking shell ``sleep``. Snapshots the
+    unresolved-comment count and
     the wait-start time once, then polls on the standard CI interval and exits as
     soon as EITHER arm of the completion predicate fires, or the timeout is
     reached. Reuses the same ``poll_until`` helper that powers ``ci wait``:

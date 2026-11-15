@@ -35,8 +35,32 @@ open new-code findings — issues plus the security hotspots still to review —
 with `unknown` for a failed read and never `0`), and the Standing Constraints below say how a dismissal
 is obtained.
 
+⛔ **Every Done-when is authored against the sha it names.** A Done-when may say "fails at
+`{sha}`" only for behaviour that is NEW at that sha — behaviour this plan's own change introduces.
+A preservation or coverage clause says "holds at `{sha}`" instead, because nothing about it is
+expected to fail before the change. And a Done-when is never labelled "holds at" while a claim it
+rests on is still a `HYPOTHESIS` in this spec's Claim Labels: an unsettled claim is not something a
+Done-when may assume. `plan-marshall:plan-orchestrator:orchestrator corpus lint-done-whens` is the
+script that flags both contradictions in `cleanup` Step 5.
+
+⛔ **Every deliverable declares its `Skills:` and `Persona:` lines, and they are FILLED from the
+project, not guessed.** The two lines are child lines of the deliverable, in exactly the shape the
+runbook lane reads (`Skills:` / `Persona:` optionally after a bullet marker, both optional). Fill them
+with `plan-marshall:plan-orchestrator:orchestrator corpus spec-skills --slug {slug} --plan PLAN-NN`:
+its `suggested_skills` are the domain skills the project configures for the declared surface's files
+(an `unmapped` path is named, never guessed — then name the skills explicitly or record `none`), and
+its `suggested_persona` follows the path kind (source → `implementer`, test → `module-tester`,
+document → `documenter`). `Persona:` names one of `implementer`, `module-tester`,
+`integration-tester`, `security-expert`, `documenter`. A project that configures no domain skills for
+the module records `Skills: none`; the line is present, so the declaration is the author's answered
+absence rather than a missing line.
+
 1. {deliverable}
+   - Skills: {bundle:skill, …}
+   - Persona: {implementer|module-tester|integration-tester|security-expert|documenter}
 2. {deliverable}
+   - Skills: {bundle:skill, …}
+   - Persona: {implementer|module-tester|integration-tester|security-expert|documenter}
 
 ## Standing Constraints
 
@@ -115,6 +139,12 @@ PARTITION, and no admission decision consults it. An unswept entry therefore sti
 gate silently rather than being refused there.}
 
 - {OBSERVED|HYPOTHESIS}: `{path}`:{line} — `{symbol}` (verify-at-outline when HYPOTHESIS)
+
+⛔ **An entry is a FULL repo-relative path.** A bare FILE NAME whose suffix a repository file carries
+(`b.py`) is reported as unresolved by the reader rather than resolved against a sibling: write
+`marketplace/bundles/x/b.py`, never `b.py`. The reader's bare-name test is a stated suffix vocabulary,
+so an out-of-vocabulary or extensionless bare name is still dropped in silence — which is why the
+authoring rule is the full path, not the reader's report.
 
 ## Dependencies and Sequencing
 

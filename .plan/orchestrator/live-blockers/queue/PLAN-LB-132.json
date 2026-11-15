@@ -2,10 +2,10 @@
   "id": "PLAN-LB-132",
   "slug": "refusal-escalation-and-pr-scoped-staleness",
   "workstream": "WS-05",
-  "status": "staged",
+  "status": "shipped",
   "lane": "runbook",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "plan_marshall_plan_id": "rb-lb-132-refusal-escalation-and-pr-scoped-staleness",
+  "pr": "1952",
+  "landing": "landings/PLAN-LB-132.md",
   "seq": 139
 }

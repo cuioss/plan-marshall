@@ -17,6 +17,7 @@ from marketplace.targets.body_transform_engine import (
     build_user_invocable_lookup,
     load_transform_rules,
     make_body_transformer,
+    make_sub_file_transformer,
 )
 
 
@@ -55,6 +56,7 @@ class AntigravityTarget(TargetBase):
             self.config_dir,
             bundles=bundles,
             body_transformer=transformer,
+            sub_file_transformer=make_sub_file_transformer(rules),
             target_name=self.name,
         )
 

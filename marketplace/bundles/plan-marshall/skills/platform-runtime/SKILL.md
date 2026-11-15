@@ -77,13 +77,24 @@ evaluated last-match-wins). A settings file still in the OpenCode 1 `permission`
 map shape keeps being read and written through that map, so an operator's file
 is never converted behind their back.
 
-* The project-level list keeps the shell catch-all (`resource "*"`) FIRST and
-  follows it with never-legitimate deny rows, rare-legitimate ask rows and the
-  final allow rows. Specific rules therefore override the catch-all; a catch-all
-  written last would override everything before it. The executor agent is
-  confined to the `python3 .plan/execute-script.py *` permit plus deny on the
-  hard rules; the orchestrator agent preserves the small-ops carve-out
-  (read-only file ops, `git status/log` seen as information lookups) under ask.
+* The order matters more than the position within one list: the agent's rules
+  are appended after the global ones. The client's base policy is allow-all
+  (OBSERVED at `opencode v2.2.7`: the ruleset begins `{action: "*", resource:
+  "*", effect: "allow"}`), so an emitted agent expresses its source's `tools:`
+  as one `deny` row per OpenCode action the source does not grant — never an
+  `allow` or an `ask` row. A deny only adds a later deny for that action, so it
+  cannot weaken a global deny for it. The list the tooling creates for a new
+  project carries no shell
+  catch-all either — a project catch-all cannot be shown to sit before or after
+  the global rows, and leaving it out keeps every global deny decisive. The
+  OpenCode 1 map is the same hazard one shape older: its `*` row is written
+  first, so a specific deny after it still wins. The checked-in project list
+  keeps its shell catch-all (`resource "*"`) FIRST and follows it with
+  never-legitimate deny rows, rare-legitimate ask rows and the final allow rows.
+  The executor agent is confined to the `python3 .plan/execute-script.py *`
+  permit plus deny on the hard rules; the orchestrator agent preserves the
+  small-ops carve-out (read-only file ops, `git status/log` seen as information
+  lookups) under ask.
 * `to_opencode_grant` carries `allow`/`ask`/`deny` actions via the
   `allow(...)` / `ask(...)` / `deny(...)` wrapper grammar; bare forms
   default to `allow`, and the wrapper verb is peeled first so a deny
@@ -168,7 +179,13 @@ No-op policy and caller obligations: `standards/no-op-policy.md`
 | `prompt_not_found` | `subagent dispatch` prompt file not found |
 | `unknown_target` | `runtime.target` not in registry |
 | `hook_not_configured` | SessionStart hook missing; `$CLAUDE_CODE_SESSION_ID` unset |
-| `invalid_settings` | Settings file malformed (JSON parse error); fail-closed before write — `permission configure/fix/ensure-wildcards/ensure-steps/web-apply` |
+| `invalid_settings` | Settings file cannot be used as settings: a root that is not an object, a `permissions` value that is not a list, or a `permission` value that is not an object. Valid JSON, wrong shape — fail-closed before write — `permission configure/fix/ensure-wildcards/web-apply` |
+| `load_error` | The OpenCode settings file could not be read at all (unparseable JSON or non-UTF-8 bytes); this is the one code every unparseable-JSON case carries — `permission configure/fix/ensure-wildcards/web-apply` |
+| `permission_conflict` | The requested effect cannot be made effective without crossing a later rule whose matched set overlaps it with a different effect; nothing is written — `permission configure/fix/ensure-wildcards/web-apply` |
+| `wildcard_action_rule` | The grant to remove is decided by an `action: "*"` rule, so deleting the named rule would not remove the effect — `permission fix remove` |
+| `io_error` | The change was computed but the settings file could not be written; no counter is reported as applied — every mutating permission op (`permission configure/fix/ensure-wildcards/ensure-steps/web-apply`) |
+| `permission_write_failed` | The baseline permission list could not be written during `project initial-setup`, unreadable settings included; setup stops rather than report a configured project |
+| `invalid_operation` | The operation's required argument is missing or unusable (`protect-path` path), or a direct runtime call names an unknown operation (the CLI's argparse `choices` rejects an unknown `--operation` first) — `permission fix` |
 | `invalid_marshal` | `.plan/marshal.json` malformed (parse error); fail-closed instead of zero-step audit — `permission analyze/ensure-steps` |
 | `unsupported_observable` | `wait for --observable` names a kind outside the closed set |
 | `invalid_bound` | `wait for --bound-seconds` is not positive |

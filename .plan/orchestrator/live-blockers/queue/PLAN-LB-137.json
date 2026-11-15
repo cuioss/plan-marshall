@@ -2,10 +2,10 @@
   "id": "PLAN-LB-137",
   "slug": "base-sha-recipe-and-bootstrap-isolation",
   "workstream": "WS-04",
-  "status": "staged",
+  "status": "shipped",
   "lane": "runbook",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "plan_marshall_plan_id": "rb-lb-137-base-sha-recipe-and-bootstrap-isolation",
+  "pr": "1963",
+  "landing": "landings/PLAN-LB-137.md",
   "seq": 140
 }

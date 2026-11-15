@@ -434,3 +434,466 @@ class TestOpenCodePermissionWritesUseTheListShape:
 
         rules = self._rules(config)
         assert any(rule['action'] == 'read' and rule['effect'] == 'allow' for rule in rules)
+
+
+class TestOpenCodeOneMapWrites:
+    """The OpenCode 1 map knows ``task``, so a ``subagent`` grant lands there."""
+
+    def _map_settings(self, tmp_path):
+        config = tmp_path / 'opencode.json'
+        config.write_text(json.dumps({'permission': {'bash': {}}}), encoding='utf-8')
+        return config
+
+    def test_ensure_maps_subagent_to_task(self, monkeypatch, tmp_path, in_tmp_cwd):
+        config = self._map_settings(tmp_path)
+        force_opencode(monkeypatch)
+
+        result = pf.cmd_ensure(
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'ensure',
+                '--permissions',
+                'subagent',
+                '--target',
+                'project',
+            )
+        )
+
+        assert result['status'] == 'success'
+        perm = json.loads(config.read_text())['permission']
+        assert perm.get('task') == 'allow'
+        assert 'subagent' not in perm
+
+    def test_ensure_reports_an_effect_the_wildcard_action_already_produces(self, monkeypatch, tmp_path, in_tmp_cwd):
+        """An effect the wildcard-action rule already produces is not written twice."""
+        config = tmp_path / 'opencode.json'
+        config.write_text(
+            json.dumps({'permissions': [{'action': '*', 'resource': '*', 'effect': 'deny'}]}), encoding='utf-8'
+        )
+        before = config.read_bytes()
+        force_opencode(monkeypatch)
+
+        result = pf.cmd_ensure(
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'ensure',
+                '--permissions',
+                'deny(read)',
+                '--target',
+                'project',
+            )
+        )
+
+        assert result['status'] == 'success'
+        assert result['added_count'] == 0
+        assert 'read' in result['already_exists']
+        assert config.read_bytes() == before
+
+    def test_remove_leaves_an_unrelated_pattern_map_intact(self, monkeypatch, tmp_path, in_tmp_cwd):
+        """Removing a category grant never deletes a pattern map it does not name."""
+        config = tmp_path / 'opencode.json'
+        config.write_text(json.dumps({'permission': {'bash': {}, 'webfetch': {'a.com': 'allow'}}}), encoding='utf-8')
+        force_opencode(monkeypatch)
+
+        result = pf.cmd_remove(
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'remove',
+                '--permission',
+                'webfetch',
+                '--target',
+                'project',
+            )
+        )
+
+        assert result['action'] == 'not_found'
+        assert json.loads(config.read_text())['permission']['webfetch'] == {'a.com': 'allow'}
+
+    def test_add_keeps_a_pattern_map_when_the_grant_is_category_wide(self, monkeypatch, tmp_path, in_tmp_cwd):
+        """A category-wide grant becomes the map's own ``*`` row; the deny rows stay."""
+        config = tmp_path / 'opencode.json'
+        config.write_text(json.dumps({'permission': {'bash': {}, 'webfetch': {'evil.com': 'deny'}}}), encoding='utf-8')
+        force_opencode(monkeypatch)
+
+        result = pf.cmd_add(
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'add',
+                '--permission',
+                'webfetch',
+                '--target',
+                'project',
+            )
+        )
+
+        assert result['action'] == 'added'
+        rows = json.loads(config.read_text())['permission']['webfetch']
+        assert rows == {'evil.com': 'deny', '*': 'allow'}
+        assert list(rows) == ['*', 'evil.com'], 'the catch-all must precede the specific row'
+
+    def test_a_category_wide_grant_to_bash_sorts_before_the_specific_rows(self, monkeypatch, tmp_path, in_tmp_cwd):
+        """The map's ``*`` row goes first, so a specific deny still wins."""
+        config = tmp_path / 'opencode.json'
+        config.write_text(json.dumps({'permission': {'bash': {'git push *': 'deny'}}}), encoding='utf-8')
+        force_opencode(monkeypatch)
+
+        result = pf.cmd_add(
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'add',
+                '--permission',
+                'bash',
+                '--target',
+                'project',
+            )
+        )
+
+        assert result['action'] == 'added'
+        rows = json.loads(config.read_text())['permission']['bash']
+        assert list(rows) == ['*', 'git push *']
+        assert rows['git push *'] == 'deny'
+
+    def test_remove_matches_the_effect_on_the_map_path(self, monkeypatch, tmp_path, in_tmp_cwd):
+        """Naming an allow never deletes a deny row that shares the pattern."""
+        config = tmp_path / 'opencode.json'
+        config.write_text(json.dumps({'permission': {'bash': {'git push *': 'deny'}}}), encoding='utf-8')
+        force_opencode(monkeypatch)
+
+        result = pf.cmd_remove(
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'remove',
+                '--permission',
+                'allow(git push *)',
+                '--target',
+                'project',
+            )
+        )
+
+        assert result['action'] == 'not_found'
+        assert json.loads(config.read_text())['permission']['bash'] == {'git push *': 'deny'}
+
+
+class TestOpenCodeMapWritersPreserveAScalarBash:
+    """A blanket scalar ``bash`` value is a row, not something to overwrite."""
+
+    def _config(self, tmp_path):
+        config = tmp_path / 'opencode.json'
+        config.write_text(json.dumps({'permission': {'bash': 'deny'}}), encoding='utf-8')
+        return config
+
+    def test_ensure_leaves_a_scalar_bash_it_does_not_concern(self, monkeypatch, tmp_path, in_tmp_cwd):
+        """A ``webfetch`` grant never rewrites ``bash``."""
+        config = self._config(tmp_path)
+        force_opencode(monkeypatch)
+
+        pf.cmd_ensure(
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'ensure',
+                '--permissions',
+                'webfetch',
+                '--target',
+                'project',
+            )
+        )
+
+        assert json.loads(config.read_text())['permission']['bash'] == 'deny'
+
+    def test_ensure_keeps_a_scalar_deny_as_the_catch_all(self, monkeypatch, tmp_path, in_tmp_cwd):
+        """A ``bash`` grant lands beside the blanket deny, which becomes the ``*`` row."""
+        config = self._config(tmp_path)
+        force_opencode(monkeypatch)
+
+        pf.cmd_ensure(
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'ensure',
+                '--permissions',
+                'allow(git status *)',
+                '--target',
+                'project',
+            )
+        )
+
+        rows = json.loads(config.read_text())['permission']['bash']
+        assert rows['*'] == 'deny'
+        assert rows['git status *'] == 'allow'
+        assert list(rows) == ['*', 'git status *']
+
+    def test_ensure_wildcards_keeps_a_scalar_deny(self, monkeypatch, tmp_path, in_tmp_cwd):
+        """``ensure-wildcards`` seeds the scalar deny as ``*`` and installs the defaults."""
+        config = self._config(tmp_path)
+        marketplace_file = tmp_path / 'marketplace.json'
+        marketplace_file.write_text(json.dumps({'bundles': {}}))
+        force_opencode(monkeypatch)
+
+        result = pf.cmd_ensure_wildcards(
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'ensure-wildcards',
+                '--settings',
+                str(config),
+                '--marketplace-json',
+                str(marketplace_file),
+            )
+        )
+
+        assert result['status'] == 'success'
+        rows = json.loads(config.read_text())['permission']['bash']
+        assert rows['*'] == 'deny', 'the blanket deny must survive as the catch-all'
+        assert len(rows) > 1, 'the defaults must be installed beside the catch-all'
+
+    def test_ensure_executor_keeps_a_scalar_deny(self, monkeypatch, tmp_path, in_tmp_cwd):
+        """``ensure-executor`` seeds the scalar deny as ``*`` and adds the permit beside it."""
+        config = self._config(tmp_path)
+        force_opencode(monkeypatch)
+
+        result = pf.cmd_ensure_executor(
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'ensure-executor',
+                '--target',
+                'project',
+            )
+        )
+
+        assert result['success'] is True
+        rows = json.loads(config.read_text())['permission']['bash']
+        assert rows['*'] == 'deny', 'the blanket deny must survive as the catch-all'
+        assert 'python3 .plan/execute-script.py *' in rows
+
+
+class TestOpenCodeUnreadableInputIsReported:
+    """A file that does not parse is reported by every writing verb, and never overwritten."""
+
+    def _unparsable(self, tmp_path):
+        config = tmp_path / 'opencode.json'
+        config.write_text('not json', encoding='utf-8')
+        return config
+
+    def test_ensure_reports_an_unparsable_project_file(self, monkeypatch, tmp_path, in_tmp_cwd):
+        config = self._unparsable(tmp_path)
+        force_opencode(monkeypatch)
+
+        result = pf.cmd_ensure(
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'ensure',
+                '--permissions',
+                'deny(git push *)',
+                '--target',
+                'project',
+            )
+        )
+
+        assert result['status'] == 'error'
+        assert config.read_text(encoding='utf-8') == 'not json'
+
+    def test_ensure_executor_reports_an_unparsable_project_file(self, monkeypatch, tmp_path, in_tmp_cwd):
+        config = self._unparsable(tmp_path)
+        force_opencode(monkeypatch)
+
+        result = pf.cmd_ensure_executor(
+            parse_ns(
+                'plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'ensure-executor', '--target', 'project'
+            )
+        )
+
+        assert result['status'] == 'error'
+        assert config.read_text(encoding='utf-8') == 'not json'
+
+    def test_ensure_wildcards_performs_the_first_write_on_a_new_project(self, monkeypatch, tmp_path, in_tmp_cwd):
+        """A project with no settings file reaches the defaults writer, not "not found"."""
+        marketplace_file = tmp_path / 'marketplace.json'
+        marketplace_file.write_text(json.dumps({'bundles': {}}))
+        force_opencode(monkeypatch)
+
+        result = pf.cmd_ensure_wildcards(
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'ensure-wildcards',
+                '--settings',
+                str(tmp_path / 'opencode.json'),
+                '--marketplace-json',
+                str(marketplace_file),
+            )
+        )
+
+        assert result['status'] == 'success', result
+        assert (tmp_path / 'opencode.json').is_file(), 'the first write must create the file'
+
+    def test_ensure_wildcards_reports_an_unparsable_project_file(self, monkeypatch, tmp_path, in_tmp_cwd):
+        config = self._unparsable(tmp_path)
+        marketplace_file = tmp_path / 'marketplace.json'
+        marketplace_file.write_text(json.dumps({'bundles': {}}))
+        force_opencode(monkeypatch)
+
+        result = pf.cmd_ensure_wildcards(
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'ensure-wildcards',
+                '--settings',
+                str(config),
+                '--marketplace-json',
+                str(marketplace_file),
+            )
+        )
+
+        assert result['status'] == 'error'
+        assert config.read_text(encoding='utf-8') == 'not json'
+
+    def test_add_reports_an_unparsable_project_file(self, monkeypatch, tmp_path, in_tmp_cwd):
+        config = self._unparsable(tmp_path)
+        force_opencode(monkeypatch)
+
+        result = pf.cmd_add(
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'add',
+                '--permission',
+                'deny(git push *)',
+                '--target',
+                'project',
+            )
+        )
+
+        assert result['status'] == 'error'
+        assert config.read_text(encoding='utf-8') == 'not json'
+
+    def test_remove_reports_an_unparsable_project_file(self, monkeypatch, tmp_path, in_tmp_cwd):
+        config = self._unparsable(tmp_path)
+        force_opencode(monkeypatch)
+
+        result = pf.cmd_remove(
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'remove',
+                '--permission',
+                'deny(git push *)',
+                '--target',
+                'project',
+            )
+        )
+
+        assert result['status'] == 'error'
+        assert config.read_text(encoding='utf-8') == 'not json'
+
+    def test_apply_fixes_reports_an_unparsable_project_file(self, monkeypatch, tmp_path, in_tmp_cwd):
+        config = self._unparsable(tmp_path)
+        force_opencode(monkeypatch)
+
+        result = pf.cmd_apply_fixes(
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'apply-fixes',
+                '--scope',
+                'project',
+            )
+        )
+
+        assert result['status'] == 'error'
+        assert config.read_text(encoding='utf-8') == 'not json'
+
+    def test_add_and_remove_work_on_an_opencode2_list(self, monkeypatch, tmp_path, in_tmp_cwd):
+        config = tmp_path / 'opencode.json'
+        config.write_text(
+            json.dumps({'permissions': [{'action': 'shell', 'resource': '*', 'effect': 'ask'}]}), encoding='utf-8'
+        )
+        force_opencode(monkeypatch)
+
+        added = pf.cmd_add(
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'add',
+                '--permission',
+                'deny(git push *)',
+                '--target',
+                'project',
+            )
+        )
+        removed = pf.cmd_remove(
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'remove',
+                '--permission',
+                'deny(git push *)',
+                '--target',
+                'project',
+            )
+        )
+
+        assert added['status'] == 'success'
+        assert removed['status'] == 'success'
+        rules = json.loads(config.read_text())['permissions']
+        assert not [rule for rule in rules if rule['action'] == 'shell' and rule['resource'] == 'git push *']
+
+    def test_add_and_remove_work_on_an_opencode1_map(self, monkeypatch, tmp_path, in_tmp_cwd):
+        config = tmp_path / 'opencode.json'
+        config.write_text(json.dumps({'permission': {'bash': {}}}), encoding='utf-8')
+        force_opencode(monkeypatch)
+
+        added = pf.cmd_add(
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'add',
+                '--permission',
+                'deny(git push *)',
+                '--target',
+                'project',
+            )
+        )
+        removed = pf.cmd_remove(
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'remove',
+                '--permission',
+                'deny(git push *)',
+                '--target',
+                'project',
+            )
+        )
+
+        assert added['status'] == 'success'
+        assert removed['status'] == 'success'
+        assert json.loads(config.read_text())['permission']['bash'] == {}

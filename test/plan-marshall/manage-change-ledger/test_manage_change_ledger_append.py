@@ -120,6 +120,34 @@ def test_append_verb_row_carries_the_three_fields_as_null(env) -> None:
     assert entry['args'] == 'module-tests plan-marshall'
 
 
+def test_append_build_verb_omits_the_tree_identity_pair(env) -> None:
+    """The CLI writer records NOTHING about the build's tree.
+
+    It has no dispatch capture and is asked about no particular tree, so it
+    states neither fact. Asserted at the VERB because this is a production
+    construction site: a row that PRESENTED ``null`` here would be read as a
+    failed capture by the freshness gate and refused for good, halting the push
+    gate with a remedy that only writes another refused row.
+    """
+    result = env.run(
+        'append',
+        '--kind',
+        'build',
+        '--notation',
+        'plan-marshall:build-pyproject:pyproject_build',
+        '--exit-code',
+        '0',
+        '--status',
+        'success',
+    )
+
+    assert result.success, result.stderr
+    entry = _read_ledger(env.ledger_path)[0]
+    assert 'worktree_root' not in entry
+    assert 'worktree_sha_at_dispatch' not in entry
+    assert entry['worktree_sha'], 'the completion hash is still recorded'
+
+
 # ---------------------------------------------------------------------------
 # The never-null plan_id contract, asserted at the CLI VERB
 # ---------------------------------------------------------------------------

@@ -131,7 +131,7 @@ See [standards/jsonl-format.md](standards/jsonl-format.md) for the complete type
 
 ## CLI Commands
 
-**Parser architecture**: This script uses a two-level subparser pattern. Top-level subcommands (`add`, `list`, `get`, `resolve`, `stamp-fix-commit`, `promote`, `ingest`) handle plan-scoped findings directly. The `qgate` subcommand introduces a second parser level with its own subcommands (`qgate add`, `qgate list`, `qgate resolve`, `qgate resolve-evidenced`, `qgate resolve-by-rule`, `qgate clear`). The `assessment` subcommand introduces a third command group (`assessment add`, `assessment list`, `assessment get`, `assessment clear`). This mirrors the three storage scopes in the CLI surface.
+**Parser architecture**: This script uses a two-level subparser pattern. Top-level subcommands (`add`, `list`, `get`, `resolve`, `stamp-fix-commit`, `stamp-pr`, `promote`, `ingest`) handle plan-scoped findings directly. The `qgate` subcommand introduces a second parser level with its own subcommands (`qgate add`, `qgate list`, `qgate resolve`, `qgate resolve-evidenced`, `qgate resolve-by-rule`, `qgate clear`). The `assessment` subcommand introduces a third command group (`assessment add`, `assessment list`, `assessment get`, `assessment clear`). This mirrors the three storage scopes in the CLI surface.
 
 ### Plan-Scoped Finding Commands
 
@@ -164,6 +164,11 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 # a fix task owns (--task-number), or one finding (--hash-id, the inline-fix form)
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
   stamp-fix-commit --plan-id {plan_id} --commit-sha {commit_sha} --task-number {task_number}
+
+# Stamp the pull request a stored pr-comment finding belongs to: writes
+# "pr_number: N" as the detail's first line, placing a pre-stamp (legacy) row
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
+  stamp-pr --plan-id {plan_id} --hash-id {hash_id} --pr-number {pr_number}
 
 # Promote finding
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
@@ -512,6 +517,39 @@ hash_ids[2]:
   - b4e3d2
 ```
 
+### stamp-pr
+
+Places an unplaced `pr-comment` finding: the findings store is plan-scoped, so a
+plan that works several pull requests keeps every earlier PR's rows, and a consumer
+asking about ONE pull request reads a row's origin from the `pr_number:` line at the
+head of its `detail`. A row written before the producer stamped one carries no
+origin; this verb writes it.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings stamp-pr \
+  --plan-id PLAN_ID --hash-id HASH_ID --pr-number N
+```
+
+The stamp is written as the FIRST `detail` line in the producer's own shape
+(`pr_number: N`); the rest of the detail is preserved verbatim. It is the only
+mutation of a finding's PROVENANCE — a resolution changes its disposition and
+leaves its origin untouched.
+
+Return `outcome` is `stamped`, or `unchanged` when the row already carries the same
+number AS ITS FIRST `detail` line. A row already carrying a `pr_number:` line is
+otherwise refused (`error: pr_number_conflict`) and left byte-identical: a different
+number at the head, and any number below the head, are both conflicts because the
+readers only parse the head. Provenance is written once.
+A finding that is not a `pr-comment` row is refused (`error: not_pr_comment`), and a
+non-positive number is `error: invalid_pr_number`.
+
+```toon
+status: success
+hash_id: a3f2c1
+pr_number: 42
+outcome: stamped
+```
+
 ### promote
 
 ```bash
@@ -664,6 +702,9 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings as
 | `invalid_commit_sha` | `stamp-fix-commit` was given a `--commit-sha` that is not 7 to 40 hexadecimal characters. |
 | `fix_stamp_selector_required` | `stamp-fix-commit` was given neither `--task-number` nor `--hash-id`, or both. |
 | `finding_not_fixed` | `stamp-fix-commit --hash-id` named a finding whose resolution is not `fixed`. The payload carries its `resolution`. |
+| `invalid_pr_number` | `stamp-pr` was given a `--pr-number` that is not a POSITIVE integer. A non-numeric value never reaches the handler (argparse refuses it with exit 2); this code covers zero and negatives. Nothing is written. |
+| `pr_number_conflict` | `stamp-pr` named a `pr-comment` finding that already carries a `pr_number` line — a different number at the head, or any number below the head (the readers only parse the head, so stamping over it would leave two origins). The payload carries `existing_pr_number`; the row is left byte-identical. |
+| `not_pr_comment` | `stamp-pr` named a finding that is not a `pr-comment` row. The payload carries its `type`; the row is left byte-identical. |
 | `findings_store_unresolved` | `plans/{plan_id}/` is absent under the resolved root (`findings_store_state: plan_absent`), or no runtime-state root resolved at all (`unknown`). Returned by every surface — read, write and `add` — instead of a clean zero or a manufactured store. |
 | `finding_in_other_store` | The `hash_id` is absent from the plan-findings file set but present in a sibling store. The payload names the store (`found_in`) and the verb that owns it (`use_verb`); the sibling record is left byte-identical. |
 

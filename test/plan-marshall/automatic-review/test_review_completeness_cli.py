@@ -670,6 +670,19 @@ class TestLoadFailure:
         assert 'detail:' in captured.out
 
 
+def test_the_serialized_check_response_carries_the_foreign_findings_count(plan_context, capsys):
+    """The gate reads the SERIALIZED check response, so the disclosure must be emitted."""
+    plan_id = 'rc-check-foreign-emitted'
+    plan_context.plan_dir_for(plan_id)
+    _seed(plan_id, 'sourcery', detail='pr_number: 101\nkind: inline\nauthor: sourcery\n')
+
+    exit_code = rc.main(['check', '--plan-id', plan_id, '--required-bots', 'coderabbit', '--pr-number', '102'])
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert 'foreign_stored_findings: 1' in captured.out, captured.out
+
+
 def _trigger_bot(*argv: str) -> dict:
     """Run ``trigger-bot`` through the real CLI and return its parsed TOON.
 
@@ -730,12 +743,12 @@ class TestTriggerBot:
             '--required-bots',
             'sourcery',
             '--optional-bots',
-            'coderabbit',
+            'retired-bot',
             '--stale-participation-bots',
-            'coderabbit:inline,sourcery:review_body',
+            'retired-bot:inline,sourcery:review_body',
         )
 
-        assert parsed['trigger_bots'] == ['sourcery', 'coderabbit']
+        assert parsed['trigger_bots'] == ['sourcery', 'retired-bot']
         assert parsed['required_stale_bots'] == ['sourcery']
 
     def test_required_bots_keep_the_order_they_were_configured_in(self, plan_context):
@@ -746,13 +759,13 @@ class TestTriggerBot:
             '--plan-id',
             plan_id,
             '--required-bots',
-            'sourcery,coderabbit',
+            'sourcery,retired-bot',
             '--stale-participation-bots',
-            'coderabbit:inline,sourcery:review_body',
+            'retired-bot:inline,sourcery:review_body',
         )
 
-        assert parsed['trigger_bots'] == ['sourcery', 'coderabbit']
-        assert parsed['required_stale_bots'] == ['sourcery', 'coderabbit']
+        assert parsed['trigger_bots'] == ['sourcery', 'retired-bot']
+        assert parsed['required_stale_bots'] == ['sourcery', 'retired-bot']
 
     def test_a_stored_finding_bot_is_joined_when_head_moved_past_the_reviewed_commit(self, plan_context):
         plan_id = 'rc-trigger-stored-joined'
@@ -777,8 +790,9 @@ class TestTriggerBot:
         assert parsed['trigger_bots'] == ['retired-bot', 'coderabbit']
         assert parsed['stored_finding_bots'] == ['coderabbit']
         assert parsed['stored_findings_stale'] is True
-        # The stored-finding bot is listed, but it is not a required bot whose
-        # participation is stale.
+        # A stored finding is not proof a review FINISHED (the producer reports that
+        # separately), so the optional bot keeps its place in the join.
+        assert parsed.get('review_complete_bots') in (None, [])
         assert parsed['required_stale_bots'] == ['retired-bot']
 
     def test_a_stored_finding_bot_is_not_joined_when_head_is_the_reviewed_commit(self, plan_context):
@@ -821,6 +835,37 @@ class TestTriggerBot:
         assert not parsed.get('trigger_bots')
         assert parsed['stored_findings_stale'] is False
 
+    def test_pr_number_scopes_the_stored_finding_join_end_to_end(self, plan_context):
+        """The wiring under test is ``args.pr_number``, exercised through the real CLI.
+
+        Two PRs' findings sit in one plan-scoped store. Asking about PR 102 must join
+        only PR 102's bot; if ``cmd_trigger_bot`` drops the argument (reads the store
+        unscoped), both bots join and this assertion fails.
+        """
+        plan_id = 'rc-trigger-pr-scope'
+        plan_context.plan_dir_for(plan_id)
+        _seed(plan_id, 'sourcery', detail='pr_number: 101\nkind: inline\nauthor: sourcery\n')
+        _seed(plan_id, 'coderabbit', detail='pr_number: 102\nkind: inline\nauthor: coderabbit\n')
+
+        parsed = _trigger_bot(
+            '--plan-id',
+            plan_id,
+            '--required-bots',
+            'coderabbit',
+            '--optional-bots',
+            'sourcery',
+            '--reviewed-commit-sha',
+            'a' * 40,
+            '--head-sha',
+            'b' * 40,
+            '--pr-number',
+            '102',
+        )
+
+        assert parsed['stored_finding_bots'] == ['coderabbit']
+        assert parsed['trigger_bots'] == ['coderabbit']
+        assert parsed['store_scope'] == 'pr'
+
     def test_a_bot_in_neither_list_is_reported_and_not_triggered(self, plan_context):
         plan_id = 'rc-trigger-unclassified'
         plan_context.plan_dir_for(plan_id)
@@ -829,12 +874,12 @@ class TestTriggerBot:
             '--plan-id',
             plan_id,
             '--required-bots',
-            'coderabbit',
+            'retired-bot',
             '--stale-participation-bots',
-            'coderabbit:inline,sourcery:review_body',
+            'retired-bot:inline,sourcery:review_body',
         )
 
-        assert parsed['trigger_bots'] == ['coderabbit']
+        assert parsed['trigger_bots'] == ['retired-bot']
         assert parsed['unclassified_bots'] == ['sourcery']
 
     def test_an_optional_stale_bot_is_listed_but_is_not_a_required_stale_bot(self, plan_context):

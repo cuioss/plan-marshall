@@ -976,6 +976,24 @@ Relocated verbatim from `epic.md` by `cleanup`; each origin keeps a pointer nami
   - PLAN-LB-30 — what to do if the organisation workflow release is not available; the two
     `project.yml` schema decisions; cutting the organisation release.
 
+## Open Defects closed by PLAN-LB-143 (PR #1964, 2026-11-12)
+
+Three Open Defects from the PLAN-LB-134 landing analysis, staged as deliverables 1 to 3 of PLAN-LB-143 on the operator's word of 2026-11-11 and
+relocated here when that plan shipped. Detail of what the landing closed and what it left is in `landings/PLAN-LB-143.md`.
+
+- **The OpenCode emitter expressed no tool restriction for any agent (D1, closed in code, not yet evidenced on an install).** The base policy was
+  read at `opencode v2.2.7` (`GET /api/agent/execution-context-reader` returned `{*,*,allow}` first and denied only `browser` and `skill:browser`),
+  so the reader could edit, write and run shell on the OpenCode target. The emitter now writes one `deny` row per mapped action an agent's source
+  does not grant, never an allow or an ask, and the reader blocks of `opencode.json` lost their shell allows. What stays open and is carried in the
+  landing report: the reader's restriction is not evidenced on an install until the OpenCode harness is synced and the same GET is read again, the
+  deny set is a closed blocklist over the mapping's non-null values, and the lane's account of which agent gets which denies is wrong while the code is right.
+- **`permission fix protect-path` and `ensure` refused a request a later broader row of the same effect already satisfied (D2, closed).** A satisfied
+  request is a success with nothing added; a crossing of a partially overlapping rule is a conflict. One false conflict remains in the satisfied branch
+  (a fully shadowed different-effect row before the satisfying row still counts as a crossing hazard; fail-closed).
+- **A scalar `permission.bash` value was replaced by an empty map in six writers (D3, closed).** The writers keep a scalar as the map's own `*` row or
+  leave `bash` alone; the map removal matches the effect; `web-apply` keeps a `webfetch` pattern map. `web-apply` still turns a `*` deny into `allow`
+  on a map, which the spec itself orders; carried in the landing report.
+
 ## Dropped 2026-10-15
 
 By operator instruction ("Drop (archive) low and medium findings on opencode runs. Focus on high
@@ -1652,4 +1670,56 @@ attribution, lane text re-read after all three restarts, two restarts reported a
   `missing_keys`: `total_tokens`).** The lane wrote `total_tokens=unknown` (OpenCode measured none). The landing was drained and
   reconciled as far as its facts go. Token and measurement work is out of scope under the focus rule; nothing is staged and no
   figure was recovered.
+
+## Open Defects closed by PLAN-LB-144, PLAN-LB-146 and PLAN-LB-149 (relocated 2026-11-14)
+
+- **CLOSED BY PLAN-LB-146 (PR #1971, merge `877a05ac7`, 2026-11-13) AND DECIDED 2026-11-12; the rest of the surface moved to PLAN-LB-148 (running).
+  Original entry:**
+  **MAJOR — the OpenCode review-gate parser refuses a counted CodeRabbit block it does not list, so a lane cannot decide a PR whose
+  review carries it (PLAN-LB-143 landing, 2026-11-12; new, not staged).** `runbook_lane review-gate --pr-number 1964` answers
+  `merge_allowed: false`, reason `undecidable_read`, detail `unreadable review-body section: 'Files with no reviewable changes: 1'`
+  (re-run by the orchestrator, same answer). `_NON_FINDING_SECTION_LABELS` (`runbook_lane.py:2149-2161`, re-read) names the counted
+  titles that are boilerplate and has no entry for that one, and `_body_findings` (`:2457-2467`, re-read) refuses a counted title that
+  is neither a findings section nor a listed label, which is the deliberate fail-closed direction; the cost is that every new block
+  title stops a lane until someone adds it (PR 1952 got `files skipped from review as they are similar to previous changes`, this PR
+  needs a second entry). The lane merged on the operator's recorded selection and reported its three review facts as unknown, so the
+  landing is incomplete on those keys and not only on `total_tokens`. No staged spec carries it; `runbook_lane.py` is on the
+  surface of PLAN-LB-147. Retire when the parser decides a PR carrying this block, and preferably when a counted title with no
+  findings content stops being a refusal. Needs the operator's word on whether it goes into PLAN-LB-147 or into the consolidated
+  residue plan.
+  *Account of the closure:* the label `files with no reviewable changes` is in `_NON_FINDING_SECTION_LABELS` on `main` since `877a05ac7`
+  (read in the squash diff, `runbook_lane.py` hunk at line 2154); the operator-settled decision 5 keeps the list closed, so a counted
+  title with no findings content stays a refusal by design; the placeholder-URL fixture is replaced by the real capture in PLAN-LB-148
+  deliverable 3.
+- **CLOSED BY PLAN-LB-144 DELIVERABLE 1 (PR #1965, merge `242617bcf`; landing `landings/PLAN-LB-144.md`); the one residue (a deliverable
+  retired with no successor) is operator decision 2, reopened 2026-11-13. Original entry:**
+  **MAJOR — a deliverable can supersede itself, or two can supersede each other, and its criteria close with no evidence
+  (PLAN-LB-133 landing, 2026-11-11; STAGED as PLAN-LB-144 deliverable 1, held until PLAN-LB-142 ships).**
+  `superseded_by_names_deliverable` (`_criteria_snapshot.py:1836-1867`, re-read) checks that the cited number is one of the
+  outline's own, never that it differs from the deliverable's own, and the validator (`_review_support_validate.py:444-450`, leaf)
+  and `open_criteria` share it. Not a regression (the base closed on any free text) and the lane recorded it as spec-literal, but the
+  rule now forces a reviewer who retires a deliverable by operator decision, with no successor, to name some deliverable, so naming
+  itself is the easy workaround, and one shipped fixture already does (`test_lb74_criterion_matching_d2.py`, re-read). A successor that
+  is itself unmet is accepted too. Retire when the rule rejects the deliverable's own number and a cycle.
+  *Account of the closure:* the PLAN-LB-144 landing reads D1 shipped-as-specified (a self-citation and a cycle are refused,
+  `REFERENCE_CYCLE`, an absent successor verdict gives `SUCCESSOR_NOT_MET`, `_criteria_snapshot.py:1923-1941`, re-read there).
+- **CLOSED BY PLAN-LB-144 DELIVERABLE 4 (PR #1965) AND PLAN-LB-149 DELIVERABLE 4 (PR #1977, merge `f3c926738`, 2026-11-13). Original entry:**
+  **HIGH — the freshness gate refuses a whole-tree change on a Gradle ledger that holds a submodule row beside a root row
+  (PLAN-LB-130 landing, 2026-11-10; STAGED as PLAN-LB-144 deliverable 4 on the operator's word of 2026-11-11, held until PLAN-LB-142 ships).** The PLAN-LB-124
+  defect (goal tokens read as module scope) is closed for npm, Maven and Gradle root rows. The PLAN-LB-130 lane added a carve-out the
+  spec did not ask for: `parse_row_scope` returns unreadable for any `:`-prefixed payload token on a Maven or Gradle row
+  (`_freshness_crosscheck.py:849-850`), and the Gradle discoverer prefixes every submodule task that way
+  (`_gradle_cmd_discover.py:492-498`; both re-read). Gradle canonicals are outside the vocabulary, so the ledger stays undetermined, and
+  the whole-tree refusal fires when ANY candidate row is unreadable (`:1386-1392`, re-read). Input: a whole-tree change with a root
+  `build` row and a `:core:test` row at the sha; it was fresh at the base and is stale now
+  (`build_scope_unreadable_for_whole_tree_change`), and a root-only re-run at the same sha cannot clear it. A ledger of submodule rows
+  alone is a correct refusal. Consumer projects on Gradle only; this repository (pyproject) is unaffected, so whether it is "normal use"
+  under the stop rule is the operator's call. Fix shape: read the module from the `:module:` token or treat the row as an inability like
+  a root row, and drop or justify the npm exemption. Detail: `landings/PLAN-LB-130.md` L2-1, L3-1. Related minor from the PLAN-LB-124
+  landing, still open: a `-Dtest` run with `failIfNoSpecifiedTests=false` and a `No tests to run.` line is `success` (its L3-2),
+  fail-open only if Surefire prints that line for a missed selector.
+  *Account of the closure:* PLAN-LB-144 D4 made a multi-task `:`-prefixed row a narrow scoped row; PLAN-LB-149 D4 (verified in the squash
+  commit body and the landing message; the leaf read of the code follows in `landings/PLAN-LB-149.md`) reads a lone `:module:task` row as
+  scoped too, so a root `build` row beside a lone `:core:test` row is refused for a whole-tree change as narrow and not as unreadable.
+  The related `-Dtest` minor stays open and is not part of this relocation.
 

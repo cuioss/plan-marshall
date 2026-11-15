@@ -2,10 +2,10 @@
   "id": "PLAN-LB-128",
   "slug": "coderabbit-roster-save-and-summary-concern",
   "workstream": "WS-03",
-  "status": "running",
+  "status": "shipped",
   "lane": "runbook",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "plan_marshall_plan_id": "rb-lb-128-coderabbit-roster-save-and-summary-concern",
+  "pr": "1946",
+  "landing": "landings/PLAN-LB-128.md",
   "seq": 128
 }

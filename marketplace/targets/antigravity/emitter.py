@@ -14,9 +14,10 @@ target-shared ``body_transform_engine``.
 
 Beside the transformed ``SKILL.md`` a skill ships its whole directory: every
 file ``component_targets.iter_emitted_skill_files`` yields is copied
-byte-identical. That function holds the one statement of what is left out
-(cache directories, dot-files, ``targets:``-scoped files); there is no
-allow-list of sub-directory names here.
+byte-identical, except a Markdown file, which is written through the
+``sub_file_transformer`` when one is supplied. That function holds the one
+statement of what is left out (cache directories, dot-files,
+``targets:``-scoped files); there is no allow-list of sub-directory names here.
 """
 
 from __future__ import annotations
@@ -208,6 +209,30 @@ def _emit_user_invocable_wrapper(
     written.append(target)
 
 
+def _write_skill_file_copy(
+    source: Path,
+    target: Path,
+    sub_file_transformer: BodyTransformer | None,
+    bundle_name: str,
+) -> None:
+    """Copy one skill file, or write it through the sub-file transform.
+
+    Only a Markdown file is transformed, and only when the target supplied a
+    sub-file transformer. The bytes are read and written as bytes rather than
+    through a text-mode read, so a CRLF body keeps its line endings and a file
+    that is not UTF-8 falls back to a byte copy instead of failing the emit.
+    """
+    if sub_file_transformer is None or source.suffix != '.md':
+        shutil.copyfile(source, target)
+        return
+    try:
+        text = source.read_bytes().decode('utf-8')
+    except (OSError, UnicodeDecodeError):
+        shutil.copyfile(source, target)
+        return
+    target.write_bytes(sub_file_transformer(text, bundle_name, 'skill').encode('utf-8'))
+
+
 def _emit_skill(
     bundle_name: str,
     skill_dir: Path,
@@ -217,6 +242,7 @@ def _emit_skill(
     rules: dict[str, list[str]],
     body_transformer: BodyTransformer,
     written: list[Path],
+    sub_file_transformer: BodyTransformer | None = None,
 ) -> tuple[str, str | None] | None:
     skill_md = skill_dir / 'SKILL.md'
     if not skill_md.exists():
@@ -246,7 +272,7 @@ def _emit_skill(
 
     for source, target in copies:
         target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(source, target)
+        _write_skill_file_copy(source, target, sub_file_transformer, bundle_name)
         written.append(target)
 
     skill_rel = f'skills/{bundle_name}-{skill_name}'
@@ -425,6 +451,7 @@ def emit_bundles(
     *,
     bundles: Iterable[str] | None = None,
     body_transformer: BodyTransformer | None = None,
+    sub_file_transformer: BodyTransformer | None = None,
     target_name: str = ANTIGRAVITY_TARGET_NAME,
     level_pins: dict[str, Any] | None = None,
 ) -> list[Path]:
@@ -466,6 +493,7 @@ def emit_bundles(
                 rules=rules,
                 body_transformer=transform_body,
                 written=written,
+                sub_file_transformer=sub_file_transformer,
             )
             if skill_res is not None:
                 skill_rel, wrapper_rel = skill_res

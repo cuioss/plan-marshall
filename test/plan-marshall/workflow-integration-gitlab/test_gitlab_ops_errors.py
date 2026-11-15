@@ -132,6 +132,7 @@ def test_cmd_issue_comment_body_not_prepared(monkeypatch, tmp_path):
 
     assert result['status'] == 'error', result
     assert result['operation'] == 'issue_comment'
+    assert 'ci issue prepare-comment' in result['error'], result['error']
     assert captured == []
 
 

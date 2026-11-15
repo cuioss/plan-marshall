@@ -3,7 +3,9 @@
 """Tests for the unified ``manage-locks/merge_lock.py`` — the single main-anchored
 merge-to-main serializer fronted by a FIFO admission queue.
 
-Its one section: Live-worktree reclaim guard — orphaned shell auto-reclaims, genuine.
+Its sections: the blocked reply that names the retained FIFO-front entry beside its
+exit, and the live-worktree reclaim guard — orphaned shell auto-reclaims, genuine
+mid-recovery worktree stays protected.
 """
 
 from __future__ import annotations
@@ -23,6 +25,78 @@ from _manage_locks_merge_lock_fixtures import (
     isolated_base,
     merge_lock,
 )
+
+# =============================================================================
+# The blocked reply names the entry in front, why it is retained, and its exit
+# =============================================================================
+
+
+class TestBlockedReplyNamesTheFrontEntry:
+    """A non-front waiter is told WHICH entry holds it, its liveness, why admission
+    keeps it, and the command that frees it.
+
+    Without this the waiter polled to its budget against an entry that could never
+    leave on its own — an entry whose plan has no checkout but whose worktree still
+    carries a ``.git`` marker — and the only way to learn that was to hand-read
+    ``merge-queue.json``.
+    """
+
+    @staticmethod
+    def _seed(base: Path, queue_path: Path, waiting: list[dict]) -> None:
+        queue_path.write_text(json.dumps({'waiting': waiting}), encoding='utf-8')
+
+    @staticmethod
+    def _stage_git_marker(base: Path, plan_id: str) -> None:
+        worktree = base / 'worktrees' / plan_id
+        worktree.mkdir(parents=True, exist_ok=True)
+        (worktree / '.git').write_text(f'gitdir: /main/.git/worktrees/{plan_id}\n', encoding='utf-8')
+
+    def test_not_fifo_front_names_the_retained_entry_its_reason_and_the_exit(self, isolated_base: dict) -> None:
+        base: Path = isolated_base['base']
+        _make_live_plan(base, 'mine')
+        self._stage_git_marker(base, 'retained-front')
+        self._seed(base, isolated_base['queue_path'], [{'plan_id': 'retained-front', 'ts': 1.0}])
+
+        result = merge_lock.run_acquire(Namespace(plan_id='mine', set_title_token=False))
+
+        assert result['status'] == 'blocked'
+        assert result['blocked_reason'] == merge_lock.BLOCKED_NOT_FIFO_FRONT
+        front = result['queue_front']
+        assert front['plan_id'] == 'retained-front'
+        assert front['retention'] == 'git_marker'
+        assert front['liveness'] == merge_lock.LIVENESS_NOT_LIVE
+        assert front['exit_command'] == 'merge_lock dequeue --plan-id retained-front'
+
+    def test_the_ordinary_reply_names_a_live_front_entry(self, isolated_base: dict) -> None:
+        # Negative control for the retention reading: an ordinary live front entry
+        # is named with the plan directory that keeps it, not a worktree marker.
+        base: Path = isolated_base['base']
+        for name in ('front', 'mine'):
+            _make_live_plan(base, name)
+        self._seed(base, isolated_base['queue_path'], [{'plan_id': 'front', 'ts': 1.0}])
+
+        result = merge_lock.run_acquire(Namespace(plan_id='mine', set_title_token=False))
+
+        front = result['queue_front']
+        assert front['plan_id'] == 'front'
+        assert front['liveness'] == merge_lock.LIVENESS_LIVE
+        assert front['retention'] == 'plan_dir'
+
+    def test_an_entry_with_no_marker_is_pruned_and_the_next_waiter_is_admitted(self, isolated_base: dict) -> None:
+        # The pass-through case: a ghost entry (no plan dir, no worktree marker) is
+        # dropped by the prune, so the next waiter reaches the front in the SAME
+        # attempt rather than waiting out its budget.
+        base: Path = isolated_base['base']
+        _make_live_plan(base, 'mine')
+        self._seed(base, isolated_base['queue_path'], [{'plan_id': 'ghost', 'ts': 1.0}])
+
+        result = merge_lock.run_acquire(Namespace(plan_id='mine', set_title_token=False))
+
+        assert result['status'] == 'success', result
+        assert result['admission'] == 'admitted'
+        assert result['action'] == 'acquired'
+        assert 'queue_front' not in result
+
 
 # =============================================================================
 # Live-worktree reclaim guard — orphaned shell auto-reclaims, genuine

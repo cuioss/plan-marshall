@@ -24,11 +24,13 @@ verb answers "refused", or the fixture proves nothing about what changed.
 
 from __future__ import annotations
 
+import re
+import sys
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any
 from unittest.mock import patch
 
+import github_re_review
 import pytest
 
 from conftest import get_scripts_dir, load_script_module, parse_ns, run_script
@@ -38,6 +40,7 @@ lane = load_script_module('plan-marshall', 'runbook-lane', 'runbook_lane.py', 'r
 cmd_review_gate = lane.cmd_review_gate
 
 _SCRIPT = get_scripts_dir('plan-marshall', 'runbook-lane') / 'runbook_lane.py'
+_SKILL = get_scripts_dir('plan-marshall', 'runbook-lane').parent / 'SKILL.md'
 
 _NITPICK_BODY = (
     '**Actionable comments posted: 0**\n\n'
@@ -112,7 +115,7 @@ def _inline(
     }
 
 
-def _review_body(body: str, author: str = 'coderabbitai') -> dict:
+def _review_body(body: str, author: str = 'coderabbitai', commit_id: str = 'a' * 40) -> dict:
     return {
         'kind': 'review_body',
         'id': 'review-1',
@@ -124,7 +127,7 @@ def _review_body(body: str, author: str = 'coderabbitai') -> dict:
         'resolved': False,
         'created_at': '2026-11-07T10:00:00Z',
         'updated_at': '2026-11-07T10:00:00Z',
-        'commit_id': 'a' * 40,
+        'commit_id': commit_id,
         'reply_to_id': '',
         'thread_reply': False,
     }
@@ -154,9 +157,65 @@ def _args(*dispositions: str):
     return parse_ns('plan-marshall', 'runbook-lane', 'runbook_lane.py', *argv)
 
 
-def _verdict(read: dict, *dispositions: str) -> Any:
+def _args_with_reviewers(*reviewers: str):
+    argv = ['review-gate', '--pr-number', '7']
+    for reviewer in reviewers:
+        argv += ['--required-reviewer', reviewer]
+    return parse_ns('plan-marshall', 'runbook-lane', 'runbook_lane.py', *argv)
+
+
+def _raw_read(comments: list[dict], *, complete: bool = True, status: str = 'success') -> dict:
+    """The ONE comment read the gate decides on — the provider's raw records."""
+    if status != 'success':
+        return {'status': 'error', 'operation': 'pr_comments', 'error': 'GraphQL query failed: boom'}
+    return {
+        'status': 'success',
+        'operation': 'pr_comments',
+        'provider': 'github',
+        'pr_number': 7,
+        'total': len(comments),
+        'unresolved': 0,
+        'complete': complete,
+        'connections': [],
+        'comments': list(comments),
+    }
+
+
+def _verdict(read: dict, *dispositions: str, reviewers: tuple[str, ...] = ()) -> Any:
+    argv = ['review-gate', '--pr-number', '7']
+    for disposition in dispositions:
+        argv += ['--disposition', disposition]
+    for reviewer in reviewers:
+        argv += ['--required-reviewer', reviewer]
     with patch.object(lane, '_read_review_surfaces', return_value=read):
-        return cmd_review_gate(_args(*dispositions))
+        return cmd_review_gate(parse_ns('plan-marshall', 'runbook-lane', 'runbook_lane.py', *argv))
+
+
+def _finished_marker_body() -> str:
+    return '<!-- final_review_risk_coverage:{"coveredCommitId":"' + 'a' * 40 + '","kind":"reviewed"} -->'
+
+
+def _finished_marker_without_commit() -> str:
+    """A readable, finished marker naming NO commit — a claim nobody can place."""
+    return '<!-- final_review_risk_coverage:{"kind":"reviewed"} -->'
+
+
+def _issue_comment(body: str, author: str = 'coderabbitai') -> dict:
+    return {
+        'kind': 'issue_comment',
+        'id': 'issue-1',
+        'thread_id': '',
+        'author': author,
+        'body': body,
+        'path': '',
+        'line': 0,
+        'resolved': False,
+        'created_at': '2026-11-07T10:00:00Z',
+        'updated_at': '2026-11-07T10:00:00Z',
+        'commit_id': '',
+        'reply_to_id': '',
+        'thread_reply': False,
+    }
 
 
 def _only_unresolved_threads_stub(read: dict) -> bool:
@@ -394,6 +453,64 @@ def test_a_captured_incremental_skip_notice_is_not_a_finding() -> None:
     assert verdict['review_body_findings_total'] == 0
 
 
+#: CodeRabbit's "nothing to review here" block, captured verbatim from the review body
+#: on ``cuioss/plan-marshall#1964`` (review ``PRR_kwDOQ3xasM8AAAABXbfesw``). The icon
+#: URLs, the counted title and the listed file are the ones the reviewer posted; the
+#: line breaks are the ones its markup carries.
+_CAPTURED_NO_REVIEWABLE_CHANGES_BLOCK = (
+    '<details>\n'
+    '<summary><picture><source media="(prefers-color-scheme: dark)" '
+    'srcset="https://storage.googleapis.com/coderabbit_public_assets/review-comment-icons-v1/'
+    'file-no-changes-dark.svg"><img src="https://storage.googleapis.com/coderabbit_public_assets/'
+    'review-comment-icons-v1/file-no-changes.svg" width="16" height="16" align="absmiddle" '
+    'alt=""></picture> Files with no reviewable changes: 1</summary>\n'
+    '<dl><dd>\n'
+    '* opencode.json\n'
+    '</dd></dl>\n'
+    '</details>\n'
+)
+
+
+def test_a_captured_incremental_no_reviewable_changes_notice_is_not_a_finding() -> None:
+    """OBSERVED #1964: "Files with no reviewable changes" is a file list, not a stop.
+
+    Captured verbatim from the review body on PR #1964, where the counted title
+    (``: 1``) inside a ``<picture>``-wrapped ``<summary>`` made the counted-title rule
+    refuse the whole body as unreadable. The block names files the reviewer found
+    nothing to say about, so it contributes no finding.
+    """
+    verdict = _verdict(_read(_review_body(_CAPTURED_NO_REVIEWABLE_CHANGES_BLOCK)))
+
+    assert verdict['merge_allowed'] is True, verdict
+    assert verdict['review_body_findings_total'] == 0
+
+
+def test_the_captured_block_beside_a_findings_section_reads_only_the_findings() -> None:
+    """The captured label is a BOUNDARY: it contributes nothing and hides nothing."""
+    body = _OUTSIDE_DIFF_BODY + _CAPTURED_NO_REVIEWABLE_CHANGES_BLOCK
+
+    verdict = _verdict(_read(_review_body(body)), 'coderabbit outside-diff outside-diff-1 — f1670af19')
+
+    assert verdict['reason'] == 'all_handled', verdict
+    assert verdict['review_body_findings_total'] == 1
+
+
+def test_the_no_reviewable_changes_block_is_the_captured_one() -> None:
+    """The fixture IS the capture, so a placeholder icon would make it a reconstruction.
+
+    The asset host, the two icon files and the listed path are the reviewer's own. A
+    fixture carrying placeholders reads identically locally while never having been
+    observed — the one thing a captured block exists to establish.
+    """
+    block = _CAPTURED_NO_REVIEWABLE_CHANGES_BLOCK
+
+    assert 'https://storage.googleapis.com/coderabbit_public_assets/review-comment-icons-v1/' in block
+    assert 'file-no-changes-dark.svg' in block
+    assert 'file-no-changes.svg' in block
+    assert 'Files with no reviewable changes: 1' in block
+    assert '* opencode.json' in block
+
+
 def test_a_counted_non_finding_block_ends_the_span_of_the_section_before_it() -> None:
     """A non-finding block is a BOUNDARY, not content of the section above it.
 
@@ -615,17 +732,52 @@ def test_an_unrecognised_record_kind_refuses_the_merge() -> None:
     assert 'thread_comment' in verdict['detail']
 
 
-def test_a_read_without_a_coverage_signal_is_its_own_reason() -> None:
-    """A provider that publishes no coverage cannot be shown whole — not a truncation."""
+def test_a_read_without_a_coverage_signal_is_undecidable() -> None:
+    """A read that publishes no coverage signal cannot be shown whole.
+
+    The GitHub read always publishes ``complete``, so an envelope without it is a
+    malformed or truncated one: the gate stops on it, exactly as it stops on an
+    incomplete read, rather than inventing a verdict of its own.
+    """
     read = _read(_review_body('**Actionable comments posted: 0**'))
     del read['complete']
-    read['provider'] = 'gitlab'
 
     verdict = _verdict(read)
 
     assert verdict['merge_allowed'] is False
-    assert verdict['reason'] == 'coverage_unavailable'
-    assert verdict['provider'] == 'gitlab'
+    assert verdict['reason'] == 'undecidable_read'
+    assert 'truncated' in verdict['detail']
+
+
+def _documented_review_gate_reasons() -> set[str]:
+    """The reason tokens the lane text's ``review-gate`` refusal list names."""
+    text = _SKILL.read_text(encoding='utf-8')
+    section = text.split('### review-gate', 1)[1].split('\n## ', 1)[0]
+    paragraph = section.split('It answers `merge_allowed: false`', 1)[1].split('\n\n', 1)[0]
+    return set(re.findall(r'\(`([a-z][a-z_]*)`', paragraph))
+
+
+def _reasons_the_verdict_can_return() -> set[str]:
+    """The ``reason`` literals inside ``_review_gate_verdict`` — no other verb's."""
+    source = _SCRIPT.read_text(encoding='utf-8')
+    start = source.index('def _review_gate_verdict(')
+    end = source.index('\ndef cmd_review_gate(', start)
+    return set(re.findall(r"'reason': '([a-z][a-z_]*)'", source[start:end]))
+
+
+def test_the_lane_text_names_no_reason_the_verdict_cannot_return() -> None:
+    """⛔ Every reason the contract names is one the verdict can actually answer.
+
+    A refusal reason the verb cannot return describes a decision the code cannot make,
+    so a reader who hits it looks for a remedy that does not exist. The documented list
+    is read from the ``review-gate`` section and compared with the reason literals
+    ``_review_gate_verdict`` returns.
+    """
+    documented = _documented_review_gate_reasons()
+    produced = _reasons_the_verdict_can_return()
+
+    assert 'undecidable_read' in documented, 'the review-gate reason list was not found in the lane text'
+    assert documented <= produced, f'named in the lane text but unreachable: {sorted(documented - produced)}'
 
 
 def test_a_human_review_body_is_a_finding_source_too() -> None:
@@ -837,23 +989,466 @@ def test_the_verb_is_reachable_through_its_cli_surface() -> None:
     assert result.toon()['error'] == 'invalid_pr_number'
 
 
-def test_the_ci_read_is_the_abstraction_s_own_invocation(monkeypatch) -> None:
-    """The one seam D1 rests on: the read goes through `ci`, never a CLI of its own."""
-    seen: dict[str, Any] = {}
+def _forbid_cli(*_args, **_kwargs):
+    """The single-fetch pin: no CLI may be spawned for the gate's read.
 
-    def fake_run(argv, **kwargs):
-        seen['argv'] = argv
-        seen['cwd'] = kwargs.get('cwd')
-        return SimpleNamespace(returncode=0, stdout='status: success\ncomplete: true\ncomments[0]:\n', stderr='')
+    ``pytest.fail`` raises a ``BaseException``, so ``ci_base.run_cli``'s blanket
+    ``except Exception`` cannot swallow it: a read routed through the CLI helper trips
+    this pin exactly as a direct ``subprocess.run`` does.
+    """
+    pytest.fail('the review gate must not spawn a CLI for its read')
 
-    monkeypatch.setattr('subprocess.run', fake_run)
 
-    lane._read_review_surfaces(7, Path('/tmp/project'))
+@pytest.mark.usefixtures('restore_default_cwd')
+def test_the_gate_fetches_the_surface_once_and_spawns_no_cli(monkeypatch, outside_repo_dir) -> None:
+    """⛔ ONE fetch decides the whole verdict: threads, findings and reviews.
 
-    argv = seen['argv']
-    assert 'python' in str(argv[0])
-    assert str(argv[1]).endswith('execute-script.py')
-    assert argv[2] == 'plan-marshall:tools-integration-ci:ci', 'the read must go through the CI abstraction'
-    assert argv[3:6] == ['pr', 'comments', '--pr-number']
-    assert argv[6] == '7'
-    assert seen['cwd'] == '/tmp/project', 'the read runs in the project it was handed'
+    The gate takes the provider's data once, in-process, and derives the flattened
+    display form itself — asserted here by counting fetches AND by pinning that no CLI
+    is spawned at all. The directory carries no ``.plan/marshal.json``, so a route read
+    from the filesystem would stop the gate before the fetch; the module fixture pins
+    the route, and the fetch count is what proves the read happened exactly once.
+    """
+    fetches: list[int] = []
+
+    def fake_fetch(pr_number, unresolved_only=False):
+        fetches.append(pr_number)
+        return _raw_read([])
+
+    monkeypatch.chdir(outside_repo_dir)
+    monkeypatch.setattr(github_re_review, 'fetch_pr_comments_data', fake_fetch)
+    monkeypatch.setattr('subprocess.run', _forbid_cli)
+
+    verdict = cmd_review_gate(_args_with_reviewers('coderabbit'))
+
+    assert fetches == [7], 'exactly one provider fetch per verdict'
+    assert verdict['reason'] == 'required_review_missing'
+
+
+def test_the_no_cli_pin_trips_for_a_read_routed_through_run_cli(monkeypatch) -> None:
+    """⛔ ``ci_base.run_cli`` swallows every ``Exception``, so the pin is not one.
+
+    A second read routed through the CLI helper is invisible to a pin that raises an
+    ``Exception``: ``run_cli`` catches it and returns a failure tuple. This asserts the
+    pin's own escape, which is what makes such a read fail the single-fetch test
+    instead of passing silently.
+    """
+    import ci_base
+
+    monkeypatch.setattr('subprocess.run', _forbid_cli)
+
+    with pytest.raises(pytest.fail.Exception, match='must not spawn'):
+        ci_base.run_cli('gh', ['pr', 'view'])
+
+
+@pytest.mark.parametrize('provider', ['gitlab', None])
+def test_a_project_that_does_not_route_to_github_is_never_read(monkeypatch, provider) -> None:
+    """⛔ The provider gate runs BEFORE the fetch, so no foreign surface is read.
+
+    The read is gated on the route, not on ``gh`` failing: a project configured for
+    another provider, sitting in a GitHub-resolvable checkout, would otherwise read an
+    empty GitHub comment set and answer ``all_handled`` over comments its own CI never
+    publishes.
+    """
+    import ci_base
+
+    fetched: list[int] = []
+
+    def record_fetch(pr_number, **_kwargs):
+        fetched.append(pr_number)
+        return _raw_read([])
+
+    monkeypatch.setattr(ci_base, 'resolve_ci_provider', lambda _project_dir: provider)
+    monkeypatch.setattr(github_re_review, 'fetch_pr_comments_data', record_fetch)
+
+    read = lane._read_review_surfaces(7, Path('.'))
+
+    assert read['status'] == 'error'
+    assert (provider or 'no resolvable CI provider') in read['error']
+    assert fetched == [], 'the fetch must not run for a provider the gate cannot read'
+
+
+def test_the_read_runs_in_the_project_it_was_handed(monkeypatch) -> None:
+    """The one fetch is routed to ``project_dir``, which is how ``gh`` finds the repo."""
+    import ci_base
+
+    original = ci_base.get_default_cwd()
+    monkeypatch.setattr(ci_base, 'resolve_ci_provider', lambda _project_dir: 'github')
+    monkeypatch.setattr(github_re_review, 'fetch_pr_comments_data', lambda _pr, unresolved_only=False: _raw_read([]))
+    try:
+        lane._read_review_surfaces(7, Path('/tmp/project'))
+        assert ci_base.get_default_cwd() == '/tmp/project'
+    finally:
+        ci_base.set_default_cwd(original)
+
+
+# ---------------------------------------------------------------------------
+# The done rule's precondition: a named required reviewer must HAVE a review
+# ---------------------------------------------------------------------------
+
+
+def test_a_named_required_reviewer_with_no_review_refuses_the_merge() -> None:
+    """⛔ The flag alone never waives the currency demand: a review must exist."""
+    verdict = _verdict(_read(), reviewers=('coderabbit',))
+
+    assert verdict['merge_allowed'] is False
+    assert verdict['reason'] == 'required_review_missing'
+    assert verdict['missing_required_reviews'] == ['coderabbit']
+
+
+def test_a_named_required_reviewer_with_a_formal_review_passes() -> None:
+    """MATCHED CONTROL — the same read plus one formal review record admits the merge."""
+    verdict = _verdict(_read(_review_body('No actionable comments were generated')), reviewers=('coderabbit',))
+
+    assert verdict['merge_allowed'] is True
+    assert verdict['reason'] == 'all_handled'
+    assert verdict['required_reviewers'] == ['coderabbit']
+
+
+def test_a_named_required_reviewer_with_a_finished_marker_summary_passes() -> None:
+    """The other qualifying artifact: a readable kind=reviewed marker naming a commit."""
+    verdict = _verdict(_read(_issue_comment(_finished_marker_body())), reviewers=('coderabbit',))
+
+    assert verdict['merge_allowed'] is True
+
+
+def test_a_named_required_reviewer_with_only_a_walkthrough_is_refused() -> None:
+    """A marker-less walkthrough is not a review, so the done precondition fails."""
+    verdict = _verdict(_read(_issue_comment('## Walkthrough\n\nsome prose')), reviewers=('coderabbit',))
+
+    assert verdict['merge_allowed'] is False
+    assert verdict['reason'] == 'required_review_missing'
+
+
+def test_a_named_required_reviewer_with_only_a_refusal_is_refused() -> None:
+    """A refusal submitted as a review object is not a review either."""
+    verdict = _verdict(
+        _read(_review_body('> ## Review limit reached > Please wait 12 minutes before requesting another review.')),
+        reviewers=('coderabbit',),
+    )
+
+    assert verdict['merge_allowed'] is False
+    assert verdict['reason'] == 'required_review_missing'
+
+
+def test_a_review_body_without_a_commit_and_without_a_marker_is_refused() -> None:
+    """§ 7 requires a formal review WITH a commit id: an empty one proves no head."""
+    verdict = _verdict(
+        _read(_review_body('No actionable comments were generated', commit_id='')), reviewers=('coderabbit',)
+    )
+
+    assert verdict['merge_allowed'] is False
+    assert verdict['reason'] == 'required_review_missing'
+
+
+def test_a_marker_on_its_own_line_after_a_prose_line_names_its_commit() -> None:
+    """HOLDS AT THE BASE: prose, then the marker on its own line, is the bot's claim."""
+    body = 'Some prose first.\n' + _finished_marker_body() + '\n'
+
+    verdict = _verdict(_read(_issue_comment(body)), reviewers=('coderabbit',))
+
+    assert verdict['merge_allowed'] is True
+
+
+def test_a_marker_inside_a_plain_closed_fence_is_not_a_qualifying_review() -> None:
+    """⛔ A marker quoted inside a fenced example is not the bot's own claim.
+
+    Reading it as one would let a walkthrough that shows the marker — as documentation,
+    not as a verdict — satisfy the done precondition and merge a pull request nobody
+    reviewed.
+    """
+    body = 'A summary explains the marker:\n```text\n' + _finished_marker_body() + '\n```\n'
+
+    verdict = _verdict(_read(_issue_comment(body)), reviewers=('coderabbit',))
+
+    assert verdict['merge_allowed'] is False
+    assert verdict['reason'] == 'required_review_missing'
+
+
+def test_a_marker_outside_a_fenced_example_keeps_its_claim() -> None:
+    """MATCHED CONTROL — a fence-shaped span on a prose line opens no block."""
+    body = 'Prose with a fenced example: ```text code ```\n' + _finished_marker_body() + '\n'
+
+    verdict = _verdict(_read(_issue_comment(body)), reviewers=('coderabbit',))
+
+    assert verdict['merge_allowed'] is True
+
+
+def test_several_comments_are_each_read_for_a_marker() -> None:
+    """HOLDS AT THE BASE: the check scans past the first comment.
+
+    The FIRST comment carries no marker, so a loop that reads only the first answers
+    `required_review_missing`; both later comments carry one, so every marker counts.
+    """
+    comments = [
+        _issue_comment('## Walkthrough\n\nsome prose before the review completes'),
+        _issue_comment('first comment\n' + _finished_marker_body()),
+        _issue_comment('a second comment\n' + _finished_marker_body()),
+    ]
+
+    verdict = _verdict(_read(*comments), reviewers=('coderabbit',))
+
+    assert verdict['merge_allowed'] is True, verdict
+    assert 'missing_required_reviews' not in verdict
+
+
+def test_a_fence_like_run_in_prose_is_not_a_closing_fence() -> None:
+    """⛔ ```` ```not-a-close ```` is prose, not a closer — in the raw body too.
+
+    The reader closes a fence only on a run with nothing after it, so the marker on
+    the line below stays inside the block and is never the bot's claim.
+    """
+    body = '```text\n```not-a-close\n' + _finished_marker_body() + '\n```\n'
+
+    verdict = _verdict(_read(_issue_comment(body)), reviewers=('coderabbit',))
+
+    assert verdict['merge_allowed'] is False
+    assert verdict['reason'] == 'required_review_missing'
+
+
+def test_an_enumerative_refusal_with_a_commit_is_a_qualifying_review(monkeypatch) -> None:
+    """The lane asks the producer's predicate, so the enumerative arm changes nothing.
+
+    The arm answers a different question at a different pipeline position; the
+    producer's finished-review test reads ``_is_refusal_notice`` alone.
+    """
+    import _github_pr
+
+    monkeypatch.setattr(_github_pr, 'UNRECOGNISED_REFUSAL_MAX_CHARS', 200)
+    body = 'Please resubmit this pull request later.'
+    assert _github_pr._is_unrecognised_refusal(body, 'coderabbit') is True
+    assert _github_pr._is_refusal_notice(body, 'coderabbit') is False
+
+    verdict = _verdict(_read(_review_body(body, commit_id='b' * 40)), reviewers=('coderabbit',))
+
+    assert verdict['merge_allowed'] is True
+
+
+def test_a_marker_beside_a_refusal_notice_is_still_a_finished_review() -> None:
+    """The producer admits this combination; the lane's check must agree with it."""
+    body = '> ## Review limit reached\n' + _finished_marker_body()
+    verdict = _verdict(_read(_review_body(body, commit_id='')), reviewers=('coderabbit',))
+
+    assert verdict['merge_allowed'] is True
+
+
+def test_a_case_variant_refusal_is_not_a_qualifying_review() -> None:
+    """⛔ A registered refusal phrase in another letter case is still a refusal.
+
+    The body carries a commit and no notice presentation, so only the registry arm can
+    read it — and that arm matches case-insensitively.
+    """
+    verdict = _verdict(_read(_review_body('REVIEW LIMIT REACHED', commit_id='b' * 40)), reviewers=('coderabbit',))
+
+    assert verdict['merge_allowed'] is False
+    assert verdict['reason'] == 'required_review_missing'
+
+
+def test_a_commit_less_marker_does_not_lift_a_refusal() -> None:
+    """⛔ The exemption is a marker NAMING A COMMIT, never merely `kind: reviewed`."""
+    body = '> ## Review limit reached\n' + _finished_marker_without_commit()
+    verdict = _verdict(_read(_review_body(body, commit_id='b' * 40)), reviewers=('coderabbit',))
+
+    assert verdict['merge_allowed'] is False
+    assert verdict['reason'] == 'required_review_missing'
+
+
+def test_a_marker_in_a_shape_the_bot_does_not_publish_is_not_evidence() -> None:
+    """The producer admits only the bot's own declared shapes; Sourcery publishes no summary."""
+    verdict = _verdict(_read(_issue_comment(_finished_marker_body(), author='sourcery-ai')), reviewers=('sourcery',))
+
+    assert verdict['merge_allowed'] is False
+    assert verdict['reason'] == 'required_review_missing'
+
+
+def test_a_required_reviewer_with_findings_and_dispositions_is_admitted() -> None:
+    """Both inputs travel together: the reviewer check does not bypass finding dispositions."""
+    read = _read(_review_body(_NITPICK_BODY))
+    verdict = _verdict(read, 'coderabbit nitpick nitpick-1 — f1670af19', reviewers=('coderabbit',))
+
+    assert verdict['review_body_findings_total'] == 3
+    assert verdict['merge_allowed'] is False
+    assert verdict['reason'] == 'body_findings_undisposed'
+
+
+def test_an_unnamed_reviewer_population_leaves_the_verdict_unchanged() -> None:
+    """The new input is opt-in: a call that names no reviewer behaves exactly as before."""
+    verdict = _verdict(_read())
+
+    assert verdict['merge_allowed'] is True
+    assert 'required_reviewers' not in verdict
+
+
+# ---------------------------------------------------------------------------
+# The required-reviewer check reads the provider's RAW bodies
+# ---------------------------------------------------------------------------
+#
+# The lane asks its predicate about the provider's raw text. The shapes below are
+# the ones a flattened read could not decide: a marker quoted inside a fenced
+# example, and a marker written as a blockquote, an inline code span or an indented
+# code block. Every one of them is a place where the marker reader's opener rule —
+# the opener must start a line — refuses the claim, and a display read would destroy
+# the line structure that rule reads.
+#
+# These tests stub ONE read seam — ``github_re_review.fetch_pr_comments_data``, the
+# single in-process fetch — so the lane's own read functions and its predicate site run
+# for real. The provider resolver is stubbed too, by the module's ``github_provider``
+# fixture: it pins the route, not the data the gate reads.
+
+_QUOTED_MARKER_CONSTRUCTIONS: dict[str, str] = {
+    # A: the fence's second line is content, so the marker never leaves the block.
+    'A-fence-then-content-line': '```\n``` not-closer\n{marker}\n```\n',
+    # B: prose carrying an inline span, then a real fence around the marker.
+    'B-inline-span-before-fence': 'See ```code```.\n```\n{marker}\n```\n',
+    # C: a four-space-indented run is indented code, not a fence, so the real one opens.
+    'C-indented-run-before-fence': '    ```\n```\n{marker}\n```\n',
+    # D: the three non-fence shapes the marker reader rejects by its opener position.
+    'D-blockquoted-marker': '> {marker}\n',
+    'D-inline-code-marker': '`{marker}`\n',
+    'D-indented-marker': '    {marker}\n',
+}
+
+
+@pytest.fixture
+def restore_default_cwd():
+    """Restore the process-global working tree the read installs.
+
+    Restores the value it FOUND, not ``None``: a test that resets the default
+    unconditionally would clobber one an earlier test on the same worker had set.
+    """
+    import ci_base
+
+    original = ci_base.get_default_cwd()
+    yield
+    ci_base.set_default_cwd(original)
+
+
+@pytest.fixture(autouse=True)
+def github_provider(monkeypatch):
+    """Route the read to GitHub, independent of the ambient project configuration.
+
+    ``resolve_ci_provider`` walks up from the project directory the gate is handed, so
+    a read driven against ``'.'`` would otherwise depend on the ``.plan/marshal.json``
+    above whatever directory the suite happens to run from. Autouse, so no test that
+    drives the real read can forget it.
+    """
+    import ci_base
+
+    monkeypatch.setattr(ci_base, 'resolve_ci_provider', lambda _project_dir: 'github')
+
+
+def _verdict_through_the_read_seams(
+    monkeypatch,
+    raw_comments: list[dict],
+    *,
+    raw_read: dict | None = None,
+    reviewers: tuple[str, ...] = ('coderabbit',),
+) -> Any:
+    """Drive ``review-gate`` with only the ONE fetch stubbed.
+
+    No subprocess and no TOON: the gate fetches once, in-process, and derives the
+    display form itself. A test that had to stub a second transport would be proof
+    the gate reads the surface twice. The provider resolver is pinned by the module
+    fixture, so the outcome never depends on the ambient project configuration.
+    """
+    monkeypatch.setattr(
+        github_re_review,
+        'fetch_pr_comments_data',
+        lambda _pr_number, unresolved_only=False: raw_read if raw_read is not None else _raw_read(raw_comments),
+    )
+    return cmd_review_gate(_args_with_reviewers(*reviewers))
+
+
+@pytest.mark.usefixtures('restore_default_cwd')
+@pytest.mark.parametrize('label', sorted(_QUOTED_MARKER_CONSTRUCTIONS))
+def test_a_quoted_marker_is_not_a_qualifying_review(monkeypatch, label: str) -> None:
+    """⛔ Every quoted shape answers `required_review_missing` on the raw bodies."""
+    body = _QUOTED_MARKER_CONSTRUCTIONS[label].format(marker=_finished_marker_body())
+
+    verdict = _verdict_through_the_read_seams(monkeypatch, [_issue_comment(body)])
+
+    assert verdict['merge_allowed'] is False, verdict
+    assert verdict['reason'] == 'required_review_missing'
+
+
+@pytest.mark.usefixtures('restore_default_cwd')
+def test_the_raw_seam_still_admits_a_marker_on_its_own_line(monkeypatch) -> None:
+    """MATCHED CONTROL — the same seam admits an unquoted marker."""
+    body = 'Some prose first.\n' + _finished_marker_body() + '\n'
+
+    verdict = _verdict_through_the_read_seams(monkeypatch, [_issue_comment(body)])
+
+    assert verdict['merge_allowed'] is True, verdict
+
+
+@pytest.mark.usefixtures('restore_default_cwd')
+@pytest.mark.parametrize(
+    ('label', 'raw_read'),
+    [
+        ('truncated', {'status': 'success', 'complete': False, 'comments': []}),
+        ('failed', {'status': 'error', 'error': 'GraphQL query failed: boom'}),
+    ],
+)
+def test_an_incomplete_raw_read_is_undecidable_never_missing(monkeypatch, label: str, raw_read: dict) -> None:
+    """⛔ A read that did not complete answers neither "present" nor "missing"."""
+    verdict = _verdict_through_the_read_seams(monkeypatch, [], raw_read=raw_read)
+
+    assert verdict['merge_allowed'] is False, verdict
+    assert verdict['reason'] == 'undecidable_read', verdict
+
+
+@pytest.mark.usefixtures('restore_default_cwd')
+def test_a_comment_entry_that_cannot_be_flattened_is_undecidable(monkeypatch) -> None:
+    """⛔ A malformed comment entry is classified, never a traceback.
+
+    The flatten reads every entry before the dict filter, so an entry that is not a
+    mapping raises there. A crash states no verdict at all, so the gate answers
+    ``undecidable_read`` and names the failure it hit.
+    """
+    verdict = _verdict_through_the_read_seams(
+        monkeypatch,
+        [],
+        raw_read={'status': 'success', 'complete': True, 'comments': ['not-a-comment']},
+    )
+
+    assert verdict['merge_allowed'] is False, verdict
+    assert verdict['reason'] == 'undecidable_read', verdict
+    assert 'display form' in verdict['detail'], verdict
+
+
+@pytest.mark.usefixtures('restore_default_cwd')
+def test_the_read_classifies_an_unimportable_provider_module(monkeypatch) -> None:
+    """⛔ The imports sit inside the guard, so a broken import is a classified stop.
+
+    A ``None`` entry in ``sys.modules`` makes the import statement itself raise
+    ``ImportError`` rather than the fetch, so a green classified read here is what
+    shows the imports were not hoisted above the ``try``.
+    """
+    monkeypatch.setitem(sys.modules, 'ci_base', None)
+
+    read = lane._read_review_surfaces(7, Path('.'))
+
+    assert read['status'] == 'error'
+    assert 'ci_base' in read['error']
+
+
+@pytest.mark.usefixtures('restore_default_cwd')
+@pytest.mark.parametrize('raised', [AttributeError('owner is None'), ImportError('no provider module')])
+def test_a_read_that_raises_is_classified_never_a_traceback(monkeypatch, raised: Exception) -> None:
+    """⛔ The guard covers the imports and the repo lookup, not only the fetch.
+
+    ``get_repo_info`` dereferences its own JSON, so a malformed ``gh repo view`` reply
+    raises ``AttributeError`` one frame below the fetch; a broken provider import raises
+    ``ImportError``. Both must come back as a readable failure the gate can classify,
+    because a crash states no verdict at all.
+    """
+
+    def boom(*_args, **_kwargs):
+        raise raised
+
+    monkeypatch.setattr(github_re_review, 'fetch_pr_comments_data', boom)
+
+    read = lane._read_review_surfaces(7, Path('.'))
+
+    assert read['status'] == 'error'
+    assert str(raised) in read['error']

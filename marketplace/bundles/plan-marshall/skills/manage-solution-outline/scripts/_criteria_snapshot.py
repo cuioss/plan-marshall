@@ -49,7 +49,7 @@ import hashlib
 import json
 import re
 import uuid
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
@@ -142,6 +142,29 @@ PARSER_KEY = 'parser'
 CURRENT_PARSER = 3
 #: The functional verdict that retires a deliverable: its criteria are not open.
 SUPERSEDED = 'superseded'
+#: The deliverable reference a ``superseded_by`` value must OPEN with: the outline's
+#: own ``D<n>`` form, the spelled ``deliverable <n>`` form, or one of those wrapped in
+#: the punctuation the documents invite (a backtick, bold/italic markers, a parenthesis).
+#: Anchoring at the head is what separates a citation from a token that merely appears
+#: in prose ("see d3 notes"), and prose may still follow it ("D3 — the operator decision").
+#: The trailing guard refuses a reference terminated by another WORD ("D3x",
+#: "D3_notes") while admitting the italic marker that CLOSES right after the digits
+#: (``_D2_``) — an underscore is a word character, so ``\b`` failed between "2" and
+#: "_". A longer NUMBER is not a guard case at all: ``\d+`` reads it as that
+#: deliverable, and existence does the refusing.
+_DELIVERABLE_REFERENCE = re.compile(
+    r'^\s*[`*_(\s]*(?:[dD]\s?(\d+)|(?:[dD]eliverables?)\s+#?(?:[dD]\s?)?(\d+))(?=$|[^\w]|_(?!\w))'
+)
+#: Why :func:`deliverable_reference_rejection` refused a ``superseded_by`` value.
+REFERENCE_UNREADABLE = 'reference_unreadable'
+REFERENCE_UNKNOWN = 'unknown_deliverable'
+REFERENCE_SELF = 'self_citation'
+REFERENCE_CYCLE = 'cycle'
+SUCCESSOR_NOT_MET = 'successor_not_met'
+SUCCESSOR_SUPERSEDED = 'successor_superseded'
+#: The verdicts that CLOSE a deliverable: only these may be the successor a
+#: ``superseded_by`` citation points at.
+CLOSING_VERDICTS = ('met', 'met_with_residuals')
 CRITERION_UNPARSED = 'criterion_unparsed'
 #: The named state an unterminated fenced block leaves in ``unparsed``. It is a
 #: coalesced marker (not the raw line) so a gate reads a state rather than text.
@@ -1801,8 +1824,12 @@ def functional_review_drop_reason(plan_id: str) -> str | None:
     The ONE reader both the finalize triage source and the finalize completion gate
     use. It reads the composed phase-6 manifest (``execution.toon``): a manifest
     that schedules the review, or cannot be read, drops nothing. A manifest that
-    does not schedule it is a drop, and the reason is the recorded one, the settled
-    surgical scope, or the generic not-scheduled sentence.
+    does not schedule it is a drop, and the reason is the settled surgical scope or
+    the generic not-scheduled sentence.
+
+    The reason is DERIVED from the manifest and the plan's settled scope, never read
+    from a recorded key: no writer ever recorded one, so a recorded-key read could
+    only ever fall through to the same two fallbacks.
 
     This module may not import ``manage-status`` (the layering rule in the module
     docstring), so the decision lives here and ``manage-status`` delegates to it
@@ -1818,13 +1845,129 @@ def functional_review_drop_reason(plan_id: str) -> str | None:
     document = _status_doc(plan_id)
     if isinstance(document, dict) and isinstance(document.get('metadata'), dict):
         metadata = document['metadata']
-    recorded = metadata.get('functional_review_drop_reason')
-    if isinstance(recorded, str) and recorded.strip():
-        return recorded.strip()
     scope = metadata.get('scope_estimate')
     if isinstance(scope, str) and scope.strip().lower() in ('surgical', 'single_module', 'micro', 'single-module'):
         return 'surgical scope' if scope.strip().lower() == 'surgical' else f'{scope.strip()} scope'
     return 'not scheduled in the phase-6 manifest'
+
+
+def _normalized_deliverable_number(value: object) -> int | None:
+    """The integer a deliverable number spells, or ``None`` when it names none."""
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    if isinstance(value, str) and value.strip().isdigit():
+        return int(value.strip())
+    return None
+
+
+def cited_deliverable_number(cited: object) -> int | None:
+    """The deliverable number a ``superseded_by`` value cites, or ``None``.
+
+    ``None`` covers both a value that opens with no reference at all (the
+    :data:`REFERENCE_UNREADABLE` case) and an empty value; the rejection function
+    is what tells them apart when it needs to.
+    """
+    text = str(cited or '').strip()
+    if not text:
+        return None
+    match = _DELIVERABLE_REFERENCE.match(text)
+    if match is None:
+        return None
+    raw = match.group(1) or match.group(2)
+    return int(raw) if raw is not None else None
+
+
+def _verdict_row(verdicts: Mapping[Any, Any], number: int) -> Mapping[str, Any] | None:
+    """The verdict row a map keyed by deliverable number holds for ``number``."""
+    for key in (number, str(number)):
+        row = verdicts.get(key)
+        if isinstance(row, Mapping):
+            return row
+    return None
+
+
+def deliverable_reference_rejection(
+    cited: object,
+    outline_numbers: Iterable[object],
+    *,
+    own_number: object,
+    verdicts: Mapping[Any, Any],
+) -> str | None:
+    """Why a ``superseded_by`` value does not name a real successor; ``None`` when it does.
+
+    A ``superseded`` verdict closes a deliverable's frozen criteria, so the citation
+    has to point at a deliverable that can actually take the work over:
+
+    * the value must OPEN with a deliverable reference — ``D2``, ``Deliverable 2``,
+      ``Deliverable #2``, ``Deliverable D2``, or one of those wrapped in a backtick,
+      bold/italic markers or a parenthesis; prose may follow it, never precede it —
+      :data:`REFERENCE_UNREADABLE` otherwise;
+    * the cited number must be one the caller's population carries —
+      :data:`REFERENCE_UNKNOWN`;
+    * it must not be the deliverable's own number — :data:`REFERENCE_SELF`; a
+      deliverable retired by operator decision with no successor has its own route
+      (``criteria-authorize``), so it does not supersede itself;
+    * following ``superseded_by`` from the successor must not come back to this
+      deliverable — :data:`REFERENCE_CYCLE`;
+    * the successor's own verdict must be a CLOSING one: :data:`SUCCESSOR_NOT_MET`
+      when it is not ``met``/``met_with_residuals`` (including an absent verdict,
+      the fail-closed direction), :data:`SUCCESSOR_SUPERSEDED` when the successor is
+      itself superseded.
+
+    ``verdicts`` is the same map each consumer grades — ``open_criteria`` the sealed
+    verdict map, the validator the verdict being validated — and ``own_number`` is
+    the deliverable the citation belongs to.
+    """
+    numbers = {n for n in (_normalized_deliverable_number(raw) for raw in outline_numbers) if n is not None}
+    target = cited_deliverable_number(cited)
+    if target is None:
+        return REFERENCE_UNREADABLE
+    if target not in numbers:
+        return REFERENCE_UNKNOWN
+    own = _normalized_deliverable_number(own_number)
+    if own is not None and target == own:
+        return REFERENCE_SELF
+    seen: set[int] = set()
+    cursor = target
+    while True:
+        if cursor in seen or (own is not None and cursor == own):
+            return REFERENCE_CYCLE
+        seen.add(cursor)
+        row = _verdict_row(verdicts, cursor)
+        if row is None or str(row.get('verdict') or '') != SUPERSEDED:
+            break
+        following = cited_deliverable_number(row.get('superseded_by'))
+        if following is None:
+            break
+        cursor = following
+    successor = _verdict_row(verdicts, target)
+    successor_verdict = str(successor.get('verdict') or '') if successor is not None else ''
+    if successor_verdict == SUPERSEDED:
+        return SUCCESSOR_SUPERSEDED
+    if successor_verdict not in CLOSING_VERDICTS:
+        return SUCCESSOR_NOT_MET
+    return None
+
+
+def superseded_by_names_deliverable(
+    cited: object,
+    outline_numbers: Iterable[object],
+    *,
+    own_number: object,
+    verdicts: Mapping[Any, Any],
+) -> bool:
+    """Does ``superseded_by`` name a deliverable that really supersedes this one?
+
+    The ONE rule the validator and :func:`open_criteria` share:
+    :func:`deliverable_reference_rejection` names every way a citation fails, and
+    this predicate is its ``None`` answer. Each caller applies it to its own
+    population — the validator to the CURRENT outline's deliverable numbers,
+    ``open_criteria`` to the numbers the frozen snapshot carries — so a citation
+    naming a deliverable only one of them holds is closed by that consumer and
+    reported as an error by the other. The RULE never differs; the population it
+    reads does, by design.
+    """
+    return deliverable_reference_rejection(cited, outline_numbers, own_number=own_number, verdicts=verdicts) is None
 
 
 def open_criteria(plan_id: str, verdict_file: Path | None = None) -> dict[str, Any]:
@@ -1852,19 +1995,25 @@ def open_criteria(plan_id: str, verdict_file: Path | None = None) -> dict[str, A
       text. Position alone is never a match: a paraphrased row without its id
       leaves the criterion ungraded and open.
 
-    Anything else is open, which is the fail-closed direction. Five deliberate
+    Anything else is open, which is the fail-closed direction. Four deliberate
     states additionally close criteria rather than reading them as open work:
 
     * an operator decision authorizes the exact change (``authorized_changes``);
-    * the deliverable's verdict is ``superseded``;
+    * the deliverable's verdict is ``superseded`` AND its ``superseded_by`` names a
+      CLOSING successor the snapshot carries — not the deliverable itself, not a
+      cycle, and with a ``met`` / ``met_with_residuals`` verdict
+      (:func:`superseded_by_names_deliverable`); an operator-retired deliverable
+      with no successor is closed through ``criteria-authorize`` instead;
     * the operator closed the review past its round cap (:func:`_review_closed_reason`);
     * the manifest dropped the functional review (:func:`functional_review_drop_reason`)
       — the completion gate exempts exactly this case, and ``source: review_dropped``
-      says so to the triage source;
-    * ``state`` reports a snapshot the status record froze but which is now deleted
-      or edited — the snapshot's own absence is the open criterion, and every check
-      refuses rather than falling back to the legacy path. This state is reported
-      open REGARDLESS of a dropped review, because the freeze is independent of it.
+      says so to the triage source.
+
+    One further state is NOT a closing: ``state`` reports a snapshot the status
+    record froze but which is now deleted or edited — the snapshot's own absence is
+    the open criterion, and every check refuses rather than falling back to the
+    legacy path. It is reported open REGARDLESS of a dropped review, because the
+    freeze is independent of it.
     """
     state = snapshot_state(plan_id)
     if state in ('deleted', 'tampered'):
@@ -1901,13 +2050,25 @@ def open_criteria(plan_id: str, verdict_file: Path | None = None) -> dict[str, A
         return {'source': 'review_closed', 'closed_reason': closed_reason, 'open_count': 0, 'open': []}
     path = verdict_file if verdict_file is not None else base_path('plans', plan_id, FUNCTIONAL_VERDICT_FILE)
     verdict, verdict_state = _checked_verdict(path, plan_id)
+    snapshot_numbers = {row.get('number') for row in snapshot.get('deliverables') or [] if isinstance(row, dict)}
     rows: list[dict[str, Any]] = []
     for row in snapshot.get('deliverables') or []:
         if not isinstance(row, dict):
             continue
         number = row.get('number')
         graded_row = verdict.get(number) or {}
-        if str(graded_row.get('verdict') or '') == SUPERSEDED:
+        superseded = str(graded_row.get('verdict') or '') == SUPERSEDED
+        rejection = (
+            deliverable_reference_rejection(
+                graded_row.get('superseded_by'),
+                snapshot_numbers,
+                own_number=number,
+                verdicts=verdict,
+            )
+            if superseded
+            else None
+        )
+        if superseded and rejection is None:
             continue
         graded = graded_row.get('criteria') or []
         for index, criterion in enumerate(row.get('criteria') or [], start=1):
@@ -1915,7 +2076,11 @@ def open_criteria(plan_id: str, verdict_file: Path | None = None) -> dict[str, A
             text = normalize_criterion(raw)
             if _authorization(snapshot, number, text):
                 continue
-            status = _graded_status(graded, text, index, number)
+            # A REJECTED supersede closes nothing: the verdict itself is invalid, so
+            # its criteria stay open even where the reviewer graded one ``met``. The
+            # completion gate reads this answer without running the validator, so
+            # trusting those grades would let a self-citation release ungraded work.
+            status = 'ungraded' if superseded else _graded_status(graded, text, index, number)
             if status == 'met':
                 continue
             rows.append(

@@ -62,6 +62,7 @@ from pathlib import Path
 from typing import Any, NamedTuple
 
 import orchestrator_worktree
+import spec_skills
 from file_ops import output_toon, output_toon_error
 from marketplace_paths import PLAN_DIR_NAME, base_dir_override_active, main_checkout_root
 
@@ -402,19 +403,16 @@ def _split_csv(value: Any) -> list[str]:
     return [part.strip() for part in value.split(',') if part.strip()]
 
 
-#: The heading that opens a staged spec's deliverable list.
-_DELIVERABLES_HEADING = '## Deliverables'
-
-#: A numbered deliverable at column 0. Nested numbering is INDENTED, so the
-#: sub-conditions a deliverable states are never mistaken for further
-#: deliverables — a rule this parser depends on and a spec's own format supplies.
-_DELIVERABLE_HEAD_RE = re.compile(r'^(?P<number>\d+)\.\s+(?P<title>.+?)\s*$')
-
-#: The two per-deliverable declarations. Both are OPTIONAL: a spec staged before
-#: they existed carries neither, and the lane then falls back to the persona
-#: table's per-kind defaults with no domain skills.
-_SKILLS_DECL_RE = re.compile(r'^(?:\s*[-*]\s*)?Skills:\s*(?P<value>.+?)\s*$')
-_PERSONA_DECL_RE = re.compile(r'^(?:\s*[-*]\s*)?Persona:\s*(?P<value>.+?)\s*$')
+# --- the per-deliverable declaration: ONE reader, owned by script-shared -------
+#
+# The orchestrator's ``corpus spec-skills`` verb reads the same ``Skills:`` /
+# ``Persona:`` lines this lane loads, so the grammar, the declaration resolution
+# and the existence probe live in ``script-shared``'s ``spec_skills`` module. These
+# wrappers keep the lane's call sites — and its tests — on the lane's own surface
+# rather than turning the lane into a second reader.
+#
+# The lane's own bundle is what a BARE skill name resolves in, and it is the
+# shared module's answer for the install this lane ships in.
 
 
 def _lane_skill_dir() -> Path:
@@ -430,88 +428,22 @@ def _lane_skills_root() -> Path:
 def _lane_bundle() -> str | None:
     """The bundle the lane ships in, used to resolve a bare skill name.
 
-    In the source tree and the nested plugin cache the bundle is the lane's
-    grandparent directory name. In a flat deployment the lane's own directory is
-    the dash-joined ``{bundle}-{skill}``, which no separator position can split
-    back into the pair, so the bundle is read from the identity the flat emitters
-    record in the lane's ``SKILL.md``
-    (:func:`deployed_layout.read_flat_skill_identity`).
-
-    Returns ``None`` for a FLAT deployment whose ``SKILL.md`` records no
-    identity: the directory name cannot attribute it to a bundle, so every bare
-    name would silently miss. The caller turns that — for a spec that names a
-    bare skill or persona, and only then — into a named refusal instead of
-    probing a bundle that does not exist; a fully qualified name carries its own
-    bundle and needs this one not at all.
+    Delegates to the shared reader, whose anchor is its own install — the same
+    bundle and the same ``skills/`` root this lane ships beside. ``None`` means a
+    flat deployment records no identity, so the caller refuses a bare name rather
+    than probing a bundle that does not exist.
     """
-    from deployed_layout import is_flat_root, read_flat_skill_identity
-    from marketplace_bundles import extract_bundle_name
-
-    identity = read_flat_skill_identity(_lane_skill_dir())
-    if identity is not None:
-        return identity[0]
-    if is_flat_root(_lane_skills_root()):
-        return None
-    return extract_bundle_name(_lane_skill_dir().parents[1])
+    return spec_skills.installed_bundle(_lane_skill_dir())
 
 
 def _skill_probe_paths(notation: str, lane_bundle: str) -> list[Path]:
-    """Return every path the lane probes for *notation*, in probe order.
-
-    A bare name is qualified with ``lane_bundle`` first, so the lane's own skills
-    resolve beside it without the caller spelling a bundle. ONE enumeration feeds
-    both the existence answer and the "every probed path" error: the flat
-    ``{bundle}-{skill}`` candidates come from the same vocabulary
-    :func:`deployed_layout.resolve_skill_path` uses internally
-    (:func:`deployed_layout.skill_roots` plus
-    :func:`deployed_layout.flat_skill_dir_name`), and the nested bundle tree —
-    every version dir in it — through :func:`marketplace_bundles.resolve_bundle_path`.
-    A second, redundant ``resolve_skill_path`` call beside this enumeration is
-    what used to make the two disagree.
-    """
-    from deployed_layout import flat_skill_dir_name, skill_roots
-
-    bundle, separator, skill = notation.partition(':')
-    if not separator:
-        bundle, skill = lane_bundle, notation
-    subpath = f'skills/{skill}/SKILL.md'
-
-    candidates: list[Path] = [
-        root / flat_skill_dir_name(bundle, skill) / 'SKILL.md' for root in skill_roots(_lane_skills_root())
-    ]
-    try:
-        from marketplace_bundles import resolve_bundle_path, resolve_bundles_root, select_live_version_dir
-
-        bundles_root: Path | None = resolve_bundles_root(Path(__file__))
-    except Exception:
-        bundles_root = None
-    if bundles_root is not None:
-        # A VERSIONED bundle cache has one live version dir, and that is the
-        # path a probe actually reads. Naming the unversioned
-        # ``{bundle}/{subpath}`` fallback for such a cache reports a path that
-        # cannot exist on that machine, hiding which version was probed.
-        bundle_dir = bundles_root / bundle
-        live_version: Path | None = None
-        if bundle_dir.is_dir():
-            live_version = select_live_version_dir(
-                bundle_dir, lambda version_dir: (version_dir / '.claude-plugin' / 'plugin.json').is_file()
-            )
-        nested = (
-            live_version / subpath if live_version is not None else resolve_bundle_path(bundles_root, bundle, subpath)
-        )
-        if nested not in candidates:
-            candidates.append(nested)
-    return candidates
+    """Return every path the lane probes for *notation*, in probe order."""
+    return spec_skills.skill_probe_paths(notation, lane_bundle, skills_root=_lane_skills_root(), anchor=Path(__file__))
 
 
 def _skill_exists(notation: str, lane_bundle: str) -> bool:
-    """Whether *notation* names a skill installed in any deployed layout.
-
-    True when any :func:`_skill_probe_paths` candidate exists: the lane's own
-    ``skills/`` root in either shape, or the nested bundle tree a cross-bundle
-    name resolves through.
-    """
-    return any(path.is_file() for path in _skill_probe_paths(notation, lane_bundle))
+    """Whether *notation* names a skill installed in any deployed layout."""
+    return spec_skills.skill_exists(notation, lane_bundle, skills_root=_lane_skills_root(), anchor=Path(__file__))
 
 
 _EXECUTOR_SKEW_MATCH = 'match'
@@ -812,121 +744,17 @@ def cmd_executor_skew(args: argparse.Namespace) -> dict[str, Any]:
     return result
 
 
-def _spec_deliverables(spec: Path) -> list[dict[str, str]]:
-    """Read a staged spec's ``## Deliverables`` section into per-deliverable rows.
-
-    Each row carries its number, title, raw ``Skills:`` value and raw
-    ``Persona:`` value. Only lines INSIDE the section and outside a fenced block
-    are read, so a spec that quotes the declaration format in prose or in an
-    example does not declare anything by it.
-    """
-    try:
-        lines = spec.read_text(encoding='utf-8').splitlines()
-    except OSError:
-        return []
-    start = next((i for i, line in enumerate(lines) if line.strip() == _DELIVERABLES_HEADING), None)
-    if start is None:
-        return []
-    rows: list[dict[str, str]] = []
-    current: dict[str, str] | None = None
-    in_fence = False
-    for line in lines[start + 1 :]:
-        if line.strip().startswith('```'):
-            in_fence = not in_fence
-            continue
-        if in_fence:
-            continue
-        if line.startswith('## '):
-            break
-        head = _DELIVERABLE_HEAD_RE.match(line)
-        if head:
-            current = {
-                'number': head.group('number'),
-                'title': head.group('title').strip().strip('*').strip(),
-                'skills': '',
-                'persona': '',
-            }
-            rows.append(current)
-            continue
-        if current is None:
-            continue
-        skills = _SKILLS_DECL_RE.match(line)
-        if skills:
-            current['skills'] = skills.group('value')
-            continue
-        persona = _PERSONA_DECL_RE.match(line)
-        if persona:
-            current['persona'] = persona.group('value')
-    return rows
-
-
-def _declared_skills(value: str) -> list[str]:
-    """Split a ``Skills:`` value into its ``bundle:skill`` notations."""
-    return [part.strip().strip('`') for part in value.split(',') if part.strip().strip('`')]
-
-
-def _declared_persona(value: str) -> str:
-    """Normalise a ``Persona:`` value to a resolvable persona notation.
-
-    ``implementer`` and ``plan-marshall:persona-implementer`` name the same
-    skill. A KEEPS its bundle when it carries one — a persona in another bundle
-    must resolve there, not in the lane's own — while a bare kind is prefixed
-    with the canonical ``persona-`` marker and left bare, to be qualified with
-    the lane's own bundle at probe time.
-    """
-    persona = value.strip().strip('`')
-    if not persona:
-        return ''
-    bundle, separator, skill = persona.partition(':')
-    if not separator:
-        skill = persona
-    if not skill.startswith('persona-'):
-        skill = f'persona-{skill}'
-    return f'{bundle}:{skill}' if separator else skill
-
-
 def _resolve_deliverable_skills(spec: Path) -> dict[str, Any]:
     """Resolve every deliverable's named skills and persona, and verify each exists.
 
-    The declaration is authored by the ORCHESTRATOR when the spec is staged; the
-    lane only reads it. A name that does not resolve to an installed skill is
-    reported as missing so the run can stop and ask, rather than silently working
-    without the standard it was told to apply.
+    Delegates to the shared reader with the lane's own bundle and ``skills/``
+    anchor. A name that does not resolve to an installed skill is reported as
+    missing so the run can stop and ask, rather than silently working without the
+    standard it was told to apply.
     """
-    lane_bundle = _lane_bundle()
-    rows = _spec_deliverables(spec)
-    declared: list[str] = []
-    personas: list[str] = []
-    for row in rows:
-        skills = _declared_skills(row['skills'])
-        declared.extend(skills)
-        row['skills'] = ', '.join(skills)
-        row['persona'] = _declared_persona(row['persona'])
-        if row['persona']:
-            personas.append(row['persona'])
-    names = [*declared, *personas]
-    if lane_bundle is None:
-        # A flat layout that records no identity cannot attribute its own
-        # dash-joined directory to a bundle, so a BARE name has no bundle to
-        # resolve in. Refuse by name; a silent miss on every bare name would
-        # report the wrong cause. A qualified name carries its own bundle and
-        # needs this one not at all.
-        if any(':' not in name for name in names):
-            raise ValueError('flat_skill_identity_missing')
-        lane_bundle = ''
-    missing: list[str] = []
-    probed: list[str] = []
-    for name in names:
-        if _skill_exists(name, lane_bundle):
-            continue
-        missing.append(name)
-        probed.extend(str(candidate) for candidate in _skill_probe_paths(name, lane_bundle))
-    return {
-        'deliverables': rows,
-        'missing_skills': missing,
-        'missing_probed': probed,
-        'skills_note': 'declared' if declared or personas else 'none named',
-    }
+    return spec_skills.resolve_deliverable_skills(
+        spec, _lane_bundle(), skills_root=_lane_skills_root(), anchor=Path(__file__), skill_dir=_lane_skill_dir()
+    )
 
 
 def _resolve_sonar(marshal: dict[str, Any]) -> dict[str, Any]:
@@ -1017,6 +845,10 @@ def _resolve_bots(marshal: dict[str, Any]) -> tuple[list[dict[str, Any]], list[d
     current head"; see ``runbook-lane/SKILL.md`` § merge gate. Because the flag
     resolves ``False`` when a record declares nothing, the authorization stays off
     for every reviewer the project has not positively marked.
+
+    The row carries ``review_complete_after_handling`` beside it, from the same
+    record, so the lane reads one source for both: a flagged reviewer is done once
+    its qualifying review is handled, with no re-trigger, wait or currency demand.
     """
     plan_block = marshal.get('plan')
     steps = plan_block.get('phase-6-finalize', {}).get('steps', {}) if isinstance(plan_block, dict) else {}
@@ -1033,6 +865,7 @@ def _resolve_bots(marshal: dict[str, Any]) -> tuple[list[dict[str, Any]], list[d
                 'trigger_comment': bot_registry.trigger_comment(bot),
                 'escalated_trigger_comment': bot_registry.escalated_trigger_comment(bot),
                 'quota_limited': bot_registry.quota_limited(bot),
+                'review_complete_after_handling': bot_registry.review_complete_after_handling(bot),
             }
             for bot in names
         ]
@@ -2321,6 +2154,12 @@ _NON_FINDING_SECTION_LABELS = (
     # counted ``<details>`` block with a ``<picture>`` icon wrapper. It is a diagnostic
     # about what was NOT re-read, so it is neither a findings section nor a stop.
     'files skipped from review as they are similar to previous changes',
+    # OBSERVED on ``cuioss/plan-marshall#1971`` in an INCREMENTAL review: the files that
+    # carried no reviewable change in that pass, again a counted ``<details>`` block with
+    # a ``<picture>`` icon wrapper and one file row per entry. A file list that names
+    # nothing to review is not a findings section, and refusing it would make every
+    # incremental review body undecidable.
+    'files with no reviewable changes',
     'review details',
     'review info',
     'run configuration',
@@ -2424,11 +2263,6 @@ def _enclosing_sections(
 #: section block opens one ``<details>``, so its summary sits at depth 1; a deeper
 #: summary is the per-file grouping inside a section, and is content.
 _SECTION_DEPTH = 1
-
-#: The CI notation this verb reads through. The lane never calls ``gh``: the
-#: review surfaces come from the CI abstraction, whose provider module owns the
-#: ``gh`` invocation.
-_CI_NOTATION = 'plan-marshall:tools-integration-ci:ci'
 
 #: The record kinds the review-surface read publishes. A record of any OTHER kind
 #: is a surface this verb cannot read, so it stops the gate rather than being
@@ -2783,54 +2617,107 @@ def _parse_dispositions(values: list[str]) -> tuple[list[dict[str, str]], list[s
     return rows, refused
 
 
+_REVIEW_READ_EXCEPTIONS = (OSError, RuntimeError, ValueError, TypeError, AttributeError, ImportError)
+"""What the review read — its imports, its repo lookup and its fetch — may raise.
+
+The read classifies these as a failed read; the flatten of the same snapshot
+classifies the same set, so both halves of one verdict answer ``undecidable_read``
+rather than letting one of them escape as a traceback.
+"""
+
+
 def _read_review_surfaces(pr_number: int, project_dir: Path) -> dict[str, Any]:
-    """Read a pull request's review surfaces through the CI abstraction.
+    """Read a pull request's comment surfaces ONCE, raw, in-process.
 
-    The ONE seam this verb's provider read goes through, so the wiring can be
-    asserted without a live provider. The call is the executor's ``ci pr comments``
-    invocation: the lane never spells ``gh``, and the provider module owns both the
-    GraphQL query and its pagination.
+    One fetch is the point. The findings parser reads the DISPLAY form (every body
+    flattened to one line, which is what ``ci pr comments`` prints) and the
+    required-reviewer check reads the RAW form (a coverage-marker opener is the bot's
+    own claim only at the start of a line), and two fetches could show the two halves
+    different moments: a review or a thread landing between them would be credited by
+    one and unseen by the other, so the gate could answer ``all_handled`` over findings
+    it never read. The provider data is therefore fetched here, once, and the verdict
+    flattens its own copy (:func:`_display_read`).
+
+    The read is the data fetch the producer and the post chokepoint ask, imported
+    through ``github_re_review`` (the import-order-safe entry into ``github_ops``) and
+    routed to ``project_dir`` so ``gh`` resolves the same repository the lane is
+    gating. It is GitHub's read, so the project must ROUTE to GitHub
+    (:func:`ci_base.resolve_ci_provider`) before a comment is read at all: waiting for
+    ``gh`` to fail instead would leave a project configured for another provider
+    readable through a GitHub-resolvable checkout, and an empty GitHub set would answer
+    ``all_handled`` over comments that project never publishes. A mismatch, and an
+    unresolvable provider alike, answer ``status: error`` — which the gate reports as
+    ``undecidable_read``, never as a missing review.
+
+    Every failure is CLASSIFIED, never a traceback. The imports, the repo lookup
+    (:func:`github_ops.get_repo_info` dereferences its own JSON, so a malformed reply
+    raises ``AttributeError``) and the fetch itself all sit inside the guard, because a
+    crash is the one shape this verb cannot classify — and a read nobody can classify
+    is a stop, not a verdict.
     """
-    import subprocess
-    import sys
-
-    from file_ops import get_executor_path
-    from toon_parser import parse_toon
-
     try:
-        argv = [
-            sys.executable,
-            str(get_executor_path()),
-            _CI_NOTATION,
-            'pr',
-            'comments',
-            '--pr-number',
-            str(pr_number),
-        ]
-        completed = subprocess.run(
-            argv,
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=300,
-            cwd=str(project_dir),
-        )
-    except (RuntimeError, OSError, subprocess.SubprocessError) as exc:
-        # ``get_executor_path`` raises RuntimeError when it cannot anchor the
-        # executor, and an unresolvable executor is a failed read like any other —
-        # never a traceback, which is the one shape the lane cannot classify.
-        return {'status': 'error', 'error': f'the CI read could not run: {exc}'}
-    if completed.returncode != 0:
-        return {
-            'status': 'error',
-            'error': f'the CI read exited {completed.returncode}: {completed.stderr.strip() or "no stderr"}',
-        }
-    if not (completed.stdout or '').strip():
-        return {'status': 'error', 'error': 'the CI read produced no output'}
-    try:
-        return parse_toon(completed.stdout)
-    except Exception as exc:
-        return {'status': 'error', 'error': f'the CI read output was not parseable as TOON: {exc}'}
+        from ci_base import resolve_ci_provider, set_default_cwd
+        from github_re_review import fetch_pr_comments_data
+
+        provider = resolve_ci_provider(project_dir)
+        if provider != 'github':
+            # The read is GitHub's, so the project must ROUTE to GitHub before a comment
+            # is read at all. Waiting for ``gh`` to fail instead would leave a project
+            # configured for another provider readable through a GitHub-resolvable
+            # checkout: an empty GitHub set would answer ``all_handled`` over comments
+            # the project's own CI never publishes.
+            return {
+                'status': 'error',
+                'error': f'the review gate reads GitHub comment data; this project routes to {provider or "no resolvable CI provider"}',
+            }
+        set_default_cwd(str(project_dir))
+        return fetch_pr_comments_data(pr_number)
+    except _REVIEW_READ_EXCEPTIONS as exc:
+        return {'status': 'error', 'error': f'the review read could not run: {exc}'}
+
+
+def _display_read(read: dict[str, Any]) -> dict[str, Any]:
+    """The DISPLAY form of ``read`` — every body flattened — for the findings parser.
+
+    The parser counts sections off the flattened text the printed table carries, so the
+    flattening happens here, over the same snapshot the required-reviewer check reads.
+    A non-success envelope is returned unchanged, which keeps a failed read a failed
+    read for every consumer.
+    """
+    import github_ops
+
+    return github_ops.flatten_comment_bodies(read)
+
+
+def _required_reviewers_without_a_review(comments: list[dict[str, Any]], required_reviewers: list[str]) -> list[str]:
+    """Return the required reviewers that hold no qualifying review on this read.
+
+    The done rule's precondition, checked where the merge is decided. A qualifying
+    review is the producer's finished-review test — the ONE predicate
+    (``_github_pr.is_finished_review``) the producer, the post chokepoint and this
+    check all ask, so none of the three can answer a formal review differently.
+    Nothing here decides what to do with the review — only that a review exists to be
+    done.
+
+    ``comments`` are the provider's RAW records (:func:`_read_review_surfaces`), never
+    the display-flattened copy: the predicate places a coverage marker by its line
+    position, so the text it reads must still HAVE those lines. Nothing here strips,
+    re-splits or otherwise rebuilds the body.
+    """
+    # `github_re_review` owns the import-order-safe entry into `_github_pr` (it
+    # imports `github_ops` first, which breaks that module's import cycle) and
+    # re-exports the one finished-review reader, so the lane never imports the cycle
+    # itself.
+    from github_re_review import is_finished_review
+
+    present: set[str] = set()
+    for comment in comments:
+        bot = _bot_of(comment)
+        if not bot or bot not in required_reviewers:
+            continue
+        if is_finished_review(comment, bot):
+            present.add(bot)
+    return sorted(set(required_reviewers) - present)
 
 
 def _review_gate_verdict(
@@ -2838,20 +2725,26 @@ def _review_gate_verdict(
     read: dict[str, Any],
     dispositions: list[dict[str, str]],
     refused: list[str],
+    required_reviewers: list[str] | None = None,
 ) -> dict[str, Any]:
     """Decide whether the review surfaces admit the merge (section 7's condition).
 
-    The verdict is a pure function of the read and of the run's recorded
+    The verdict is a pure function of the ONE raw read and of the run's recorded
     dispositions, so the merge condition is a decision a script makes:
 
     - an unreadable or truncated read is ``undecidable_read`` — a stop, never a
-      pass, because "no findings" is unknowable from a surface nobody read whole;
+      pass, because "no findings" is unknowable from a surface nobody read whole, and
+      so is a comment entry the display flatten cannot read;
+    - a disposition line that names no commit and no stated reason is
+      ``disposition_unparsable``;
     - an unresolved thread is ``unresolved_review_threads``;
     - a body finding with no disposition naming a commit or a stated reason is
       ``body_findings_undisposed``;
     - a resolved thread whose last BOT-authored comment states that the concern
       remains is ``thread_concern_remains`` — resolution is not silence, and a lane
       reply below the bot's restatement never discharges it;
+    - a required reviewer holding no qualifying review is
+      ``required_review_missing``;
     - otherwise ``all_handled``.
     """
     base: dict[str, Any] = {'status': 'success', 'operation': 'review-gate', 'pr_number': pr_number}
@@ -2869,19 +2762,6 @@ def _review_gate_verdict(
             'reason': 'undecidable_read',
             'detail': str(read.get('error') or 'the review surface read failed'),
         }
-    if 'complete' not in read:
-        # A read that publishes no coverage signal cannot be shown whole. It is a
-        # separate reason from a truncation, because the remedy differs: nothing is
-        # wrong with the pull request, the PROVIDER does not report coverage (the
-        # GitLab read publishes none today), so the gate cannot decide the merge on
-        # it at all.
-        return {
-            **base,
-            'merge_allowed': False,
-            'reason': 'coverage_unavailable',
-            'provider': str(read.get('provider') or 'unknown'),
-            'detail': 'the provider reported no coverage signal for this read, so the surface cannot be shown whole',
-        }
     if read.get('complete') is not True:
         return {
             **base,
@@ -2890,7 +2770,22 @@ def _review_gate_verdict(
             'detail': 'the review surface read was truncated: not every connection was drained',
         }
 
-    comments = [comment for comment in (read.get('comments') or []) if isinstance(comment, dict)]
+    # The findings parser reads the DISPLAY form, derived here from the one snapshot
+    # this verdict decides on: the required-reviewer check below reads the same
+    # snapshot's raw bodies. One fetch, two views, no window between them. The flatten
+    # reads every entry before the dict filter below reaches one, so an entry that is
+    # not a mapping raises here; the guard classifies that as a stop, because a crash
+    # states no verdict at all.
+    try:
+        display = _display_read(read)
+    except _REVIEW_READ_EXCEPTIONS as exc:
+        return {
+            **base,
+            'merge_allowed': False,
+            'reason': 'undecidable_read',
+            'detail': f'the review read could not be flattened into its display form: {exc}',
+        }
+    comments = [comment for comment in (display.get('comments') or []) if isinstance(comment, dict)]
     unrecognised = sorted({str(comment.get('kind')) for comment in comments} - set(_RECORD_KINDS))
     if unrecognised:
         # A record shape this verb does not know is a surface it cannot read. The
@@ -2943,6 +2838,23 @@ def _review_gate_verdict(
         'review_body_findings_handled': len(findings) - len(undisposed),
         'unresolved_threads': unresolved,
     }
+    missing_reviews: list[str] = []
+    if required_reviewers:
+        verdict['required_reviewers'] = list(required_reviewers)
+        missing_reviews = _required_reviewers_without_a_review(
+            [comment for comment in read.get('comments') or [] if isinstance(comment, dict)],
+            list(required_reviewers),
+        )
+    if missing_reviews:
+        # The done rule is "one handled review IS the review", never "the flag is
+        # enough": a required reviewer the run names must actually hold a qualifying
+        # review before its currency demand can be waived.
+        return {
+            **verdict,
+            'merge_allowed': False,
+            'reason': 'required_review_missing',
+            'missing_required_reviews': missing_reviews,
+        }
     if unresolved:
         return {**verdict, 'merge_allowed': False, 'reason': 'unresolved_review_threads'}
     if undisposed:
@@ -2963,8 +2875,11 @@ def cmd_review_gate(args: argparse.Namespace) -> dict[str, Any]:
         }
     project_dir = Path(getattr(args, 'project_dir', None) or '.')
     dispositions, refused = _parse_dispositions(list(getattr(args, 'disposition', None) or []))
+    required_reviewers = [
+        str(bot).strip() for bot in (getattr(args, 'required_reviewer', None) or []) if str(bot).strip()
+    ]
     read = _read_review_surfaces(pr_number, project_dir)
-    return _review_gate_verdict(pr_number, read, dispositions, refused)
+    return _review_gate_verdict(pr_number, read, dispositions, refused, required_reviewers)
 
 
 def cmd_resolve(args: argparse.Namespace) -> dict[str, Any]:
@@ -3276,6 +3191,18 @@ def main() -> int:
         action='append',
         default=None,
         help=('One progress-file disposition line, repeatable: "{reviewer} {section} {id} — {sha|reason}"'),
+    )
+    review_parser.add_argument(
+        '--required-reviewer',
+        dest='required_reviewer',
+        action='append',
+        default=None,
+        help=(
+            'A REQUIRED reviewer bot kind, repeatable. When named, the gate also requires '
+            'that reviewer to hold a qualifying review on record (a formal review record, or '
+            'a summary marker that is readable, kind=reviewed and names a commit); one '
+            'without it answers merge_allowed: false, required_review_missing.'
+        ),
     )
 
     args = parser.parse_args()

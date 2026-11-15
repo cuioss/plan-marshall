@@ -54,14 +54,21 @@ from pathlib import Path
 
 _NULL = b'\0'
 
+#: Bound on every git read. A build dispatch hashes in front of the build, so a
+#: hung git process would stall the build itself (and, on the completion side,
+#: the row's write); the same bound as the house pattern for state-exemption git
+#: calls keeps one number in one place.
+_GIT_TIMEOUT_SECONDS = 60
+
 
 def _run_git(args: list[str], cwd: str | Path) -> tuple[int, bytes]:
     """Run a git command, returning ``(returncode, stdout_bytes)``.
 
-    Error-tolerant: a missing git binary or any subprocess failure surfaces as a
-    non-zero return code with empty stdout, so callers can map an unresolvable
-    HEAD to a ``None`` digest rather than raising. NEVER mutates anything — the
-    only commands passed are read-only plumbing.
+    Error-tolerant: a missing git binary, any subprocess failure or a read that
+    exceeded :data:`_GIT_TIMEOUT_SECONDS` surfaces as a non-zero return code with
+    empty stdout, so callers can map an unresolvable HEAD or a read that never
+    finished to a ``None`` digest rather than raising. NEVER mutates anything —
+    the only commands passed are read-only plumbing.
     """
     try:
         completed = subprocess.run(
@@ -69,8 +76,9 @@ def _run_git(args: list[str], cwd: str | Path) -> tuple[int, bytes]:
             cwd=str(cwd),
             capture_output=True,
             check=False,
+            timeout=_GIT_TIMEOUT_SECONDS,
         )
-    except (OSError, ValueError):
+    except (OSError, ValueError, subprocess.SubprocessError):
         return 1, b''
     return completed.returncode, completed.stdout
 
@@ -80,19 +88,26 @@ def compute_worktree_sha(worktree_root: str | Path) -> str | None:
 
     Returns the hex sha256 digest of (HEAD sha) + (tracked diff vs HEAD) +
     (sorted untracked-not-ignored content), or ``None`` when HEAD is
-    unresolvable (a non-git directory or a repo with no commit). The digest is
-    identical for identical working-tree state and differs whenever any tracked
-    edit (staged or unstaged) or any untracked-not-ignored file changes. Never
-    mutates the working tree, index, or refs.
+    unresolvable (a non-git directory or a repo with no commit) — or when either
+    of the two reads FAILED or timed out. A failed read contributes nothing to
+    the digest, so folding it in would produce the digest of a tree with no
+    edits: the clean-tree hash, which matches a tree nobody measured. The digest
+    is identical for identical working-tree state and differs whenever any
+    tracked edit (staged or unstaged) or any untracked-not-ignored file changes.
+    Never mutates the working tree, index, or refs.
     """
     head_rc, head_out = _run_git(['rev-parse', 'HEAD'], worktree_root)
     if head_rc != 0:
         return None
     head = head_out.strip()
 
-    _diff_rc, diff_out = _run_git(['diff', 'HEAD'], worktree_root)
+    diff_rc, diff_out = _run_git(['diff', 'HEAD'], worktree_root)
+    if diff_rc != 0:
+        return None
 
-    _others_rc, others_out = _run_git(['ls-files', '--others', '--exclude-standard'], worktree_root)
+    others_rc, others_out = _run_git(['ls-files', '--others', '--exclude-standard'], worktree_root)
+    if others_rc != 0:
+        return None
 
     hasher = hashlib.sha256()
     hasher.update(head)

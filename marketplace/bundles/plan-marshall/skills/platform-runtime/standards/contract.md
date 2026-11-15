@@ -46,13 +46,18 @@ alternative: <what the caller can do instead>
 | Code | Meaning |
 |------|---------|
 | `invalid_scope` | `--scope` not `project` or `global` |
+| `invalid_operation` | The operation's required argument is missing or unusable (`protect-path` path), or a direct runtime call names an unknown operation. The CLI routes `--operation` through argparse `choices`, so an unknown value stops there with an argparse rejection before this code can be returned |
 | `invalid_check` | `permission analyze --checks` contains an unknown check name |
 | `marshal_not_found` | `.plan/marshal.json` missing |
 | `prompt_not_found` | `subagent dispatch --prompt-file` path not found |
 | `unknown_target` | `runtime.target` value not in the target registry |
 | `unknown_overwrite_key` | `project install-hook --overwrite` names a conflict key the target does not define; rejected fail-closed before any write, so a typo never reads as "do not overwrite" |
 | `hook_not_configured` | SessionStart hook not installed; `$CLAUDE_CODE_SESSION_ID` unset |
-| `invalid_settings` | Settings file cannot be used as settings — **not only a JSON parse error**. Four shapes reach it: unparseable JSON; a JSON root that is not an object; a `permissions` value that is not an object; and a `permissions.deny` that is not a list (`protect-path` only, the sole branch that indexes it). The middle two are valid JSON, so a syntax check does not catch them. Fail-closed before any write, so a malformed file is never clobbered — returned by `permission configure`, `permission fix`, `permission ensure-wildcards`, `permission ensure-steps`, `permission web-apply` |
+| `invalid_settings` | Settings file cannot be used as settings — **not only a JSON parse error**. Two shapes reach it: a JSON root that is not an object, and a `permissions` value that is not a list, or a `permission` value that is not an object. Both are valid JSON, so a syntax check does not catch them. Fail-closed before any write, so a malformed file is never clobbered — returned by `permission configure`, `permission fix`, `permission ensure-wildcards`, `permission web-apply` |
+| `load_error` | The OpenCode settings file was not read — unparseable JSON or bytes that are not UTF-8. This is the ONE code every unparseable-JSON case carries: a file that cannot be parsed is never `invalid_settings`, and never loaded as an error skeleton and saved over — returned by `permission configure`, `permission fix` (every operation, `protect-path` included), `permission ensure-wildcards`, `permission web-apply` |
+| `permission_conflict` | The requested effect cannot be made effective without crossing a later rule whose matched set overlaps the requested one with a different effect the caller did not ask to change; no rule is written and the file is left as it was — returned by `permission configure`, `permission fix`, `permission ensure-wildcards`, `permission web-apply` |
+| `wildcard_action_rule` | The grant to remove is decided by a rule whose `action` is the `*` wildcard, so deleting the named rule would not remove the effect; nothing is written — returned by `permission fix` remove |
+| `permission_write_failed` | The baseline permission list could not be written during `project initial-setup`, including for an unreadable settings file; setup stops rather than report a configured project |
 | `io_error` | The change was computed but the settings file could not be written; nothing from the run reached disk, and the operation's counters are not reported — returned by every mutating permission op: `permission configure`, `permission fix` (all operations), `permission ensure-wildcards`, `permission ensure-steps`, `permission web-apply` |
 | `invalid_marshal` | `.plan/marshal.json` is malformed (parse error); fail-closed instead of degrading to a zero-step audit — returned by `permission analyze`, `permission ensure-steps` |
 | `unsupported_observable` | `wait for --observable` names a kind outside the closed enumerated set |
@@ -472,7 +477,7 @@ summary:
 
 `findings[]` and `summary` are emitted whether or not anything was found — a zero here is a measured zero, not an absent field.
 
-**OpenCode payload**: the findings model above is the Claude one. OpenCode has no redundant/suspicious rule model to audit, so it reports per-scope coverage instead: `analysis.<scope>` carries `settings_path`, `permission_shape` (`permissions` for the OpenCode 2 list, `permission` for the OpenCode 1 map, `none` when the file carries neither), `has_executor`, `missing_defaults`, and `deny_rules` — each `{action, resource, effect}`. The deny set is read from the `permissions` list when present and from the `permission` map otherwise, so the audit reports the rules the file actually has.
+**OpenCode payload**: the findings model above is the Claude one. OpenCode has no redundant/suspicious rule model to audit, so it reports per-scope coverage instead: `analysis.<scope>` carries `settings_path`, `permission_shape` (`permissions` for the OpenCode 2 list, `permission` for the OpenCode 1 map, `none` when the file carries neither), `has_executor`, `missing_defaults`, and `deny_rules` — each `{action, resource, effect}`. The deny set comes from one reader over the `permissions` list, the `permission` map beside it, and each `agent`/`agents` scope, so a hybrid file reports both shapes and one file cannot be read two ways. The two surfaces still differ in which FILES they read: the audit reports the scoped settings file alone, while the `health` contradiction check also reads the project's `.opencode/opencode.json` and the global config, so a deny that lives only in one of those appears in the health check and not in the audit.
 
 **Error**:
 ```toon
@@ -1334,6 +1339,8 @@ Return the platform-specific invocation parameters for spawning a focused subage
 
 **Arguments**: `--agent <name>` (required), `--prompt-file <path>` (optional), `--context <json>` (optional)
 
+The `--context` object carries the caller's dispatch attestations and its prompt substitutions. The two runtimes that carry an inline branch (OpenCode, Antigravity) consume two keys at the seam and never merge them into the prompt: `spawning_tool_available` (the spawning-tool signal — an explicit `false` declares the tool absent in this envelope) and `dispatch_mode` (an explicit `"inline"` pins the inline branch whether or not the tool exists; any other value is rejected as `invalid_argument`). Claude's `Task` tool is always present in the orchestrator's envelope, so its runtime has no inline branch and reads neither key; it merges the remaining `--context` into the prompt as a `## Context` block, where a caller that passes an attestation key sees it.
+
 Every target echoes the requested `--agent` back inside its invocation: as `invocation.subagent_type` on Claude and Antigravity, and as `invocation.agent` on OpenCode 2 (whose sub-agent tool takes `{agent, description, prompt}`). No target substitutes an agent of its own choosing, so a caller's selection always reaches the invocation.
 
 The admitted registry is `antigravity, claude, opencode` — derived live from `platform_runtime._REGISTRY` via `describe_targets`, never a hard-coded literal.
@@ -1341,8 +1348,10 @@ The admitted registry is `antigravity, claude, opencode` — derived live from `
 Per-harness dispatch outcomes:
 
 - **Claude** — `Task` tool with the agent frontmatter description; unmapped frontmatter tools decline as `no-op`.
-- **OpenCode** — `subagent` tool, conditional on verify-first clause 1 (tool available in the envelope) and clause 2 (the requested agent's frontmatter tools map onto the OpenCode tool set via `targets/opencode/mapping.json`). A caller passing `task_tool_available: False` (legacy) or the target-neutral `spawning_tool_available: False` in `--context` takes the explicit logged inline branch (`no-op` carrying the inline fallback) instead of a faux success; an agent requiring an unmapped tool takes the same inline branch. Both flags are consumed at this seam and never merged into the prompt.
-- **Antigravity** — `invoke_subagent` tool, keeping that mapping on every path, conditional on the same two verify-first clauses: `spawning_tool_available: False` in `--context` takes the explicit logged inline branch, and an agent requiring a tool outside `targets/antigravity/mapping.json` takes the same inline branch. When the agent file or the mapping is unreadable the clause-2 check is vacuous and the dispatch proceeds.
+- **OpenCode** — `subagent` tool, conditional on verify-first clause 1 (tool available in the envelope) and clause 2 (the requested agent's frontmatter tools map onto the OpenCode tool set via `targets/opencode/mapping.json`). A caller passing `task_tool_available: false` (legacy) or the target-neutral `spawning_tool_available: false` in `--context` takes the explicit logged inline branch (`no-op` carrying the inline fallback) instead of a faux success; a caller passing `dispatch_mode: "inline"` takes it by explicit request; an agent requiring an unmapped tool takes the same inline branch.
+- **Antigravity** — `invoke_subagent` tool, keeping that mapping on every path, conditional on the same two verify-first clauses: `spawning_tool_available: false` in `--context` takes the explicit logged inline branch, `dispatch_mode: "inline"` pins it by explicit request, and an agent requiring a tool outside `targets/antigravity/mapping.json` takes the same inline branch. When the agent file or the mapping is unreadable the clause-2 check is vacuous and the dispatch proceeds.
+
+Every inline-branch `no-op` of the two inline-capable runtimes (OpenCode, Antigravity) carries `dispatch_mode: inline` and `dispatch_boundary_rows: 1`: the caller records exactly one dispatch-boundary row for the inline envelope when it returns, so an inlined envelope is as visible in the metrics ledger as a dispatched one. Claude has no inline branch, so no Claude `no-op` carries them.
 
 Transcripts vocabulary: no dispatch has happened at this seam — the payload carries invocation parameters, not a run — so every success carries `usage: unknown` rather than a measured zero, and every inline-branch `no-op` propagates usage as unknown the same way. `unknown` here shares the manage-metrics unknown vocabulary: absent measurement is stated, never zero-filled.
 
@@ -1365,6 +1374,18 @@ status: no-op
 operation: subagent dispatch
 reason: OpenCode 'subagent' tool is not available in this envelope — take the explicit logged inline branch instead of dispatching
 alternative: Inline the agent logic in-turn and propagate usage as unknown
+dispatch_mode: inline
+dispatch_boundary_rows: 1
+```
+
+**No-op (inline branch pinned by `dispatch_mode`)**:
+```toon
+status: no-op
+operation: subagent dispatch
+reason: The caller pinned dispatch_mode=inline for this envelope — run the envelope inline and record one dispatch-boundary row for it when it returns
+alternative: Run the agent logic in-turn in the main context and propagate usage as unknown
+dispatch_mode: inline
+dispatch_boundary_rows: 1
 ```
 
 **Success (Claude)**:
@@ -1401,6 +1422,8 @@ status: no-op
 operation: subagent dispatch
 reason: "Agent team-coordinator-agent requires unmapped tools: SendMessage"
 alternative: Remove unsupported tools from agent frontmatter or inline the agent logic
+dispatch_mode: inline
+dispatch_boundary_rows: 1
 ```
 
 **Error (prompt file not found)**:

@@ -590,9 +590,43 @@ Checked at `64907fa3b`: the `ci-verify` producer vocabulary is pinned by a contr
 
 ⚠ **Land conflict.** This run's first land (PR #1956) was based on a ledger worktree that sat at #1905 while `main` had advanced to #1955 through the Linux session's lands, so its `epic.md`, `INDEX.md`, anchor and view conflicted. The branch was repaired by merging `origin/main` (no force-push), keeping `main`'s versions and re-adding this run's records.
 
-### 2026-11-15 — fourteenth `ingest` run (`gather`, cross-repo: macOS sibling checkouts)
+### 2026-11-15 — fourteenth `ingest` run (`gather`, cross-repo: Linux sibling checkouts)
 
-Run as the epic-local `gather` command (RULING 2026-11-02) on the macOS machine, after the 2026-11-10 macOS run. Stores found: pm-mcp-core (49), plan-marshall-mcp (6), nifi-extensions (6), cui-open-rewrite (2), TokenSheriff (1), cui-jsf-test-basic (1) and pm-mcp-clients (1, new since the last run); API-Sheriff holds tombstones only. 66 lesson files in all. Nothing is in scope: the 65 already in the stores at the last run are all left-in-place project-only lessons, and the one new lesson is about the pm-mcp-clients web client and mock runtime. Nothing was filed, moved or removed. Per-lesson dispositions and the probe list: `lessons-archive/INDEX.md` § Sweep 2026-11-15.
+Run as the epic-local `gather` command (RULING 2026-11-02) on the Linux machine. All 27 sibling checkouts under `/home/oliver/git/` and the five `pm-mcp-core` worktrees were probed, after `pm-mcp-core` and `nifi-extensions` had answered with known non-empty stores. 28 lesson files were found in four stores: `pm-mcp-core` 11, `nifi-extensions` 7, `API-Sheriff` 6, `cui-http` 4. 20 of them are the lessons the 2026-11-02 third run already graded not applicable and left in place (the counts cui-http 4, API-Sheriff 6, nifi-extensions 7 and pm-mcp-core 3 are unchanged, and the ids are not among those that run graded). 8 are new, all in `pm-mcp-core` (`2026-11-06-11-001` to `-006`, `2026-11-06-17-001`, `2026-11-07-16-001`), and all 8 are project-only: the `pm-mcp-core` test-data migration conformance family (PLAN-V2-83 to PLAN-V2-108), a flaky `LspClientTest` timeout, and a test-JAR classpath rule. Per-lesson dispositions and the full probe list: `lessons-archive/INDEX.md` § Sweep 2026-11-15.
+
+| Disposition | Lessons | Where |
+|---|---|---|
+| filed to `live-blockers` | 0 | — |
+| low, moved into the archive | 1 | `lessons-archive/low/pm-mcp-core/` |
+| not applicable, left in source | 27 | `pm-mcp-core` 10, `nifi-extensions` 7, `API-Sheriff` 6, `cui-http` 4 |
+
+One lesson was borderline low and the operator ruled it in scope: `pm-mcp-core 2026-11-07-16-001` (bound a no-duplication criterion in a spec so the functional review can close; the failure it describes is a functional-review loop whose verdict depended on the round). It was moved with `mv -n` and the destination verified. The headers of the 20 already-graded lessons were re-read for the same question and none touches plan-marshall tooling. No ground-truth check ran, since a low-graded lesson is archived on its text. No source-repo tombstone or commit.
+
+`API-Sheriff` holds 25 tombstones and 6 lessons on this machine. The count equals the 25 API-Sheriff lessons the macOS run could not find, but the ids were not compared, so the open item stays open.
+
+⚠ **Coverage gap, unchanged:** `other-llm-projects` and `other-test-projects` do not exist under `/home/oliver/git/` on this machine. `cui-test-juli-logger` and two `pm-mcp-core` worktrees (`harness-icon-store`, `_orchestrator`) have no `.plan/local` directory and are recorded as zero.
+
+### 2026-11-15 — fifteenth `ingest` run (this repository's own corpus)
+
+The corpus held no active lesson and one superseded stub, `2026-09-05-14-002` (bot acknowledgment notices filed as findings), which points at `2026-08-25-09-013`. That canonical lesson is not in the corpus, and its subject is owned in `live-blockers` (`PLAN-LB-46`, `PLAN-LB-127`), so the stub was graded medium and archived, not filed. At HEAD, `Already reviewed the last commit` is handled as a refusal pattern; the stub's other phrasing (the full-review fallback notice) and its per-re-review cost point appear nowhere in code or `live-blockers`, and are kept in the archived stub. Copied byte-identical to `lessons-archive/medium/2026-09-05-14-002.md` and removed through `manage-lessons remove` (verdict `superseded`). Corpus after the run: 0. Per-lesson record: `lessons-archive/INDEX.md` § Sweep 2026-11-15 (second run).
+
+### 2026-11-15 — inbox drain (38 messages, the `drain` action)
+
+Drained this epic's own inbox: 7 messages from `api-sheriff-api-sheriff-0-2-0`, 5 from `api-sheriff-security-hardening-tier-1` and 26 from `pm-mcp-core-m2-m4-v2`. All 38 valid, live, none a landing (30 `candidate-lesson`, 8 `finding`). Graded under RULING 2026-10-09 in the orchestrator session, with ground-truth checks at `34b92e0ca`. Per-message record: `lessons-archive/INDEX.md` § Sweep 2026-11-15 (third run).
+
+| Disposition | Messages | Where |
+|---|---|---|
+| filed to `live-blockers` | 4 | `lessons-routing-087` (high; pm2-009, -021, -023) and `lessons-routing-088` (high, operator; pm2-028) |
+| already-covered | 2 | `-064`, `-078` |
+| stale | 2 | refuted or outdated at HEAD |
+| medium | 24 | message text stays in `inbox/archive/{sender}/` |
+| low | 6 | the same |
+
+Operator rulings: the baseline-drift recovery graded **high**; the `verdict_inputs` cluster and the branch-cleanup stall kept **medium**. The gate-rewrite commit cluster was graded high by the orchestrator: a false block of a normal phase-5 hand-back on three plans, the same shape `PLAN-LB-126` ruled blocking for the finalize half. Items that name Sonar were ignored (Sonar is not enabled). The three `live-blockers` filings of the 2026-11-10 drain (`-084` to `-086`) are archived there, so that follow-up is closed.
+
+### 2026-11-15 — sixteenth `ingest` run (`gather`, cross-repo: macOS sibling checkouts)
+
+Run as the epic-local `gather` command (RULING 2026-11-02) on the macOS machine, in parallel with the Linux session's runs above, which hold a different store population. Stores found: pm-mcp-core (49), plan-marshall-mcp (6), nifi-extensions (6), cui-open-rewrite (2), TokenSheriff (1), cui-jsf-test-basic (1) and pm-mcp-clients (1, new since the 2026-11-10 macOS run); API-Sheriff holds tombstones only. 66 lesson files in all. Nothing is in scope: the 65 already in the stores at the last macOS run are left-in-place project-only lessons, and the one new lesson is about the pm-mcp-clients web client and mock runtime. Nothing was filed, moved or removed. Per-lesson dispositions and the probe list: `lessons-archive/INDEX.md` § Sweep 2026-11-15 (fourth run).
 
 | Disposition | Lessons | Where |
 |---|---|---|
@@ -600,21 +634,21 @@ Run as the epic-local `gather` command (RULING 2026-11-02) on the macOS machine,
 | moved to the archive | 0 | — |
 | not applicable, left in source | 66 | pm-mcp-core 49, plan-marshall-mcp 6, nifi-extensions 6, cui-open-rewrite 2, TokenSheriff 1, cui-jsf-test-basic 1, pm-mcp-clients 1 |
 
-Ids were compared this run only for `plan-marshall-mcp` (6) and `cui-open-rewrite` (2): they equal the ids the 2026-11-10 macOS run left in place. The other 57 (`pm-mcp-core` 49, `nifi-extensions` 6, `TokenSheriff` 1, `cui-jsf-test-basic` 1) were first compared by count only and then, at the operator's request the same day, **re-read in full and re-graded** (two read-only leaves given explicit file lists, because no listing tool was available to them): 52 are project-only, 5 were borderline and were re-read here and graded project-only; none is in scope. Nothing was moved or filed. Per-lesson reasons: `lessons-archive/INDEX.md` § Sweep 2026-11-15, "Re-grade of the left-in-place lessons". The probe used `find` for store discovery (the Glob tool was unavailable) and the ruling's `git status --ignored` for counts. **Closes the coverage gap** of the 2026-11-10 macOS run: `other-llm-projects` and `other-test-projects` are covered by a depth-6 `find` over `/Users/oliver/git`, which returned no store beyond the seven repositories above; sibling worktrees were probed with a depth-9 `find` and hold none. This repository's own corpus (43 active lessons) is `ingest` scope, not `gather`, and was not touched.
+Ids were compared for `plan-marshall-mcp` (6) and `cui-open-rewrite` (2): they equal the ids the 2026-11-10 macOS run left in place. The other 57 (`pm-mcp-core` 49, `nifi-extensions` 6, `TokenSheriff` 1, `cui-jsf-test-basic` 1) were first compared by count only and then, at the operator's request the same day, **re-read in full and re-graded** (two read-only leaves given explicit file lists, because no listing tool was available to them): 52 are project-only, 5 were borderline and were re-read here and graded project-only; none is in scope. Per-lesson reasons: `lessons-archive/INDEX.md` § Sweep 2026-11-15 (fourth run), "Re-grade of the left-in-place lessons". Store discovery used `find` (the Glob tool was unavailable) and the ruling's `git status --ignored` for counts. The 2026-11-10 macOS coverage gap is closed: a depth-6 `find` over `/Users/oliver/git` reaches one level inside `other-llm-projects` and `other-test-projects` and returned no store beyond the seven repositories above, and a depth-9 `find` found no store in a sibling worktree. This repository's own corpus is `ingest` scope and was not touched by this run.
 
-### 2026-11-15 — fifteenth `ingest` run (inbox, 13 messages)
+### 2026-11-15 — seventeenth `ingest` run (inbox, 13 messages; a second grading of messages the Linux drain also read)
 
-Corpus at start: 0 in the sweep stores (the 43 local lessons are untouched). Inbox at start: 13 live, valid messages, none a landing: `api-sheriff-api-sheriff-0-2-0-079`..`-085` and `api-sheriff-security-hardening-tier-1-001`..`-006`, all from API-Sheriff, all about the `plan-marshall` bundle. Per-message dispositions: `lessons-archive/INDEX.md` § Sweep 2026-11-15 (second run).
+⚠ **Duplicate drain.** 12 of these 13 messages (`api-sheriff-api-sheriff-0-2-0-079`..`-085`, `api-sheriff-security-hardening-tier-1-001`..`-005`) were also drained by the Linux session's 38-message drain above, which ran on a copy of the ledger this session had not seen. Both sessions graded them and archived them, to the same archive paths with identical bytes, so no message is lost; but this record and `lessons-archive/INDEX.md` § Sweep 2026-11-15 (third run) disagree in places. Only `-006` (arrived 2026-11-13) was read by this session alone. Per-message dispositions of this grading: `lessons-archive/INDEX.md` § Sweep 2026-11-15 (fifth run).
 
 | Disposition | Messages | Where |
 |---|---|---|
-| high, filed to `live-blockers` | 3 messages in 2 filings: `lessons-routing-087` (review-gate `undecidable_read` and landing-count disagreement), `-088` (branch-cleanup leaf stall, skipped `adr-propose`) | `live-blockers/inbox/` |
-| high, recurrence evidence | 5 messages carry items folded into `-089` (six already-owned subjects) | `live-blockers/inbox/` |
-| medium, archived | 5 whole messages, plus the medium items of the five above | `inbox/archive/{sender}/` |
+| high, filed to `live-blockers` | 3 messages in 2 filings: `lessons-routing-089` (review-gate `undecidable_read` and landing review-body counts), `-090` (branch-cleanup leaf stall, skipped `adr-propose`) | `live-blockers/inbox/` |
+| high, recurrence evidence | 4 messages carry items folded into `-091` (six already-owned subjects) | `live-blockers/inbox/` |
+| medium, archived | 5 whole messages, plus the medium items of the others | `inbox/archive/{sender}/` |
 
-Operator rulings: `-005` graded **high** (borderline), `-004` graded **high** (borderline), as-082 item 3 (300s default timeout for an unlearned command key) graded **medium**. Checked this run: `live-blockers` was `orchestrating` before routing; the phrase "Files with no reviewable changes" is in no bundle file. Nothing else was re-verified in code: the grades rest on the senders' observations. `live-blockers` PLAN-LB-129 is running and may own part of `-087`; the filing asks for a residual check. Bodies stay verbatim in `inbox/archive/`.
+Where the two gradings differ: `sh-004` (branch-cleanup stall, skipped `adr-propose`) and `sh-005` (landing counts) were kept medium in the Linux drain and graded **high** here by the operator; the later ruling is the one filed, and `-089` carries no Sonar claim because Sonar is not enabled for `live-blockers`. `sh-002` items 1 and 2 (`review_completeness roster`, `manage-logging signal-scan` unregistered) are refuted at HEAD by the Linux drain's check and were corrected out of `-091` before it landed. Operator rulings this run: `-005` high, `-004` high, `a02-082` item 3 (300s default timeout for an unlearned command key) medium.
 
-The `live-blockers` inbox now holds six undrained filings from this epic (`-084`..`-089`). Not landed by this run.
+The filings of this grading are numbered `-089`..`-091` because the Linux drain filed `-087` and `-088` first; they were renumbered when the two ledger branches were merged.
 
 ## START HERE
 

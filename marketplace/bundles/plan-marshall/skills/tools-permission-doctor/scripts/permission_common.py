@@ -151,7 +151,7 @@ def load_settings(path: str | None) -> tuple[dict, str | None]:
     except RuntimeError:
         return {}, f'No permission settings available on this target: {path}'
     if 'error' in data:
-        return {}, f'Invalid JSON in {path}: {data["error"]}'
+        return {}, f'Invalid settings in {path}: {data["error"]}'
     return data, None
 
 

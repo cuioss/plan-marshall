@@ -50,6 +50,19 @@ class TestCheck:
         assert result['status'] == 'held'
         assert result['holder_plan_id'] == 'plan-a'
 
+    def test_check_reports_an_unreadable_lock_file_rather_than_raising(self, isolated_base: dict) -> None:
+        """A lock file whose bytes are not UTF-8 is ``unreadable``, never a crash.
+
+        ``UnicodeDecodeError`` is a ``ValueError``, so a handler that only catches
+        ``OSError`` would let it escape a query whose contract is three total answers.
+        """
+        isolated_base['lock_path'].write_bytes(b'\xff\xfe\x00not-utf8')
+
+        result = merge_lock.run_check(Namespace(plan_id='plan-a'))
+
+        assert result['status'] == 'unreadable'
+        assert result['error']
+
     def test_check_reports_self_held(self, isolated_base: dict) -> None:
         """check reports the global lock state, including a self-held lock."""
         merge_lock.run_acquire(Namespace(plan_id='plan-a'))

@@ -386,14 +386,14 @@ _CONFIRMED_SITE_ROWS: tuple[tuple[str, str, str, str, int], ...] = (
         _FAMILY_A,
         'automatic-review/SKILL.md',
         'Step-done participation guard',
-        8,
+        9,
     ),
     (
         'family-a-premerge-barrier-predicate-2',
         _FAMILY_A,
         'phase-6-finalize/standards/branch-cleanup.md',
         'Predicate 2',
-        7,
+        8,
     ),
     (
         'family-b-producer-find',

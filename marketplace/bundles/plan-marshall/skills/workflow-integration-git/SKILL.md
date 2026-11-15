@@ -218,7 +218,7 @@ ledger_deliverable_id: pre-push-quality-gate
 | `prune-local-and-remote-ref` | `(--plan-id \| --project-dir --head) [--mode local_and_remote\|local_only]` | Delete local feature branch and optionally prune the remote-tracking ref after merge. Internal `show-ref` guard skips ref deletion when already absent. Default mode `local_and_remote`; use `local_only` in local-only plans. |
 | `branch-sync-state` | `--plan-id` | Report push parity of the plan's feature branch vs its `origin/{branch}` tracking ref: `ahead` \| `synced` \| `remote_absent_landed` \| `remote_absent_unverified` (a missing ref is disambiguated so a merged-and-deleted branch is never re-pushed), plus the `barrier_action` (`re-fire` \| `skip`) the push barrier's consumer branches on. Pure read-only comparison (`git rev-parse HEAD` vs `git rev-parse origin/{branch}`), no fetch. Resolves branch from `metadata.worktree_branch` and the tree via the canonical worktree-resolution channel. |
 | `worktree-path` | `--plan-id` | Resolve the persisted worktree path via `manage-status get-worktree-path` |
-| `worktree-create` | `--plan-id --branch [--base]` | Run `git worktree add`, project-state bookkeeping (`metadata.use_worktree`/`worktree_path`/`worktree_branch`), and produce the worktree's own executor (`executor_in_worktree`) |
+| `worktree-create` | `--plan-id (--branch \| --detach) [--base]` | Run `git worktree add` for a plan worktree (`--branch`, plus project-state bookkeeping and the worktree's own executor) or for the branchless base-sha evidence tree (`--detach`: `{plan-id}-base`, no branch, no bookkeeping, still its own `.plan/local` and executor) |
 | `worktree-executor-refresh` | `--plan-id` | Regenerate the worktree's executor through the production seam, reporting `executor_regenerated` and its detail (after a plan changes the script set) |
 | `worktree-remove` | `--plan-id [--force]` | Remove the worktree first, then delete the branch ref |
 | `worktree-list` | _(none)_ | List plans whose `status.metadata.use_worktree == true` |
@@ -244,7 +244,7 @@ ledger_deliverable_id: pre-push-quality-gate
 |---------|------------|-------------|
 | `integrate` | `--plan-id` | Atomic finalize move-back: in ONE call it ACQUIRES the cooperative merge lock (delegating to `merge_lock`, with a bounded admission wait), FOLDS the plan's own global logs into the plan dir, MOVES the plan directory back from the worktree to main, and RELEASES the lock it took. An acquire that takes no lock (blocked on expiry, an error, or a raise) is followed by a dequeue-only cleanup that removes the plan's FIFO entry and never touches `merge.lock`, so a lock a concurrent same-plan call created after the refused attempt survives; `dequeued` reports whether the cleanup landed. Once a non-reentrant acquire succeeded, the lock is released on every exit path after it — success, move-back rollback, a log-fold failure, and an unexpected exception, which becomes an error payload after the release. The release outcome is checked: a release that errors, raises, or does not report `action: released` yields an error payload with `lock_released: false` and `release_failure`, never plain success. A lock the same plan already held (reentrant acquire, `action: already_held`) is left to its holder. Does NOT regenerate the executor — on-main executor regeneration is the project-level `finalize-step-sync-plugin-cache` step's responsibility (meta-project-only), run after the cache sync. Runs while the worktree is STILL PRESENT (branch cleanup removes the worktree AFTER this returns). Atomic-with-rollback (a partial move-back rolls the plan dir back into the worktree and releases the lock only when this call took it), idempotent (already-integrated → no-op success). Does NOT change the caller's cwd and does NOT remove the worktree — the finalize orchestrator returns its own cwd to main after the call. See ADR-002. |
 
-The `worktree-*` subcommands implement the §9 two-state contract: `--plan-id` is mandatory (these verbs operate on a worktree), and path resolution flows through `manage-status get-worktree-path` so a single plan-id is sufficient — no `--project-dir`, no filesystem layout re-derivation. `worktree-create` is the only verb that materializes a path on disk; it computes `get_worktree_root() / <plan-id>`, runs `git worktree add`, and writes the resolved path back to status metadata so subsequent verbs resolve through the canonical channel. The worktree root also holds the reserved `_orchestrator` shared ledger worktree, which is not a plan worktree: no `worktree-*` verb creates, lists, or removes it — `worktree-create` and `worktree-remove` each refuse the reserved key with `error: reserved_worktree_name` before any path resolution or git call (see `standards/worktree-handling.md`).
+The `worktree-*` subcommands implement the §9 two-state contract: `--plan-id` is mandatory (these verbs operate on a worktree), and path resolution flows through `manage-status get-worktree-path` so a single plan-id is sufficient — no `--project-dir`, no filesystem layout re-derivation. `worktree-create` is the only verb that materializes a path on disk; it computes `get_worktree_root() / <plan-id>` (`/ <plan-id>-base` with `--detach`), runs `git worktree add`, and — for a plan worktree — writes the resolved path back to status metadata so subsequent verbs resolve through the canonical channel. The worktree root also holds the reserved `_orchestrator` shared ledger worktree, which is not a plan worktree: no `worktree-*` verb creates, lists, or removes it — `worktree-create` and `worktree-remove` each refuse the reserved key with `error: reserved_worktree_name` before any path resolution or git call (see `standards/worktree-handling.md`).
 
 **`merge_lock` is the single main-anchored resolver exception (ADR-002).** Every other path resolution in the codebase is uniform cwd-relative (phases 1-4 resolve to main because cwd is main; phase-5+ resolve to the pinned worktree because cwd is pinned there). `merge_lock` — and ONLY `merge_lock` — always resolves `.plan/local/merge.lock` against the MAIN checkout regardless of caller cwd, because cross-session coordination is inherently main-scoped: phase-5+ finalizes each run with cwd pinned to their own worktree, yet they must all contend for one shared lock. It MUST remain the only main-anchored resolver so the codebase cannot regrow a pervasive git-common-dir-style resolution hack. See ADR-002 and `tools-script-executor/standards/cwd-policy.md` (D6).
 
@@ -551,6 +551,8 @@ exists: true
 
 Run `git worktree add <resolved-path> <branch>` against the main checkout, materialize a REAL `.plan/local`, produce the worktree's own executor, best-effort bootstrap pyprojectx, and persist the resolved path/branch via `manage-status metadata --set` so subsequent verbs can resolve through the canonical channel. The path is computed from `get_worktree_root() / <plan-id>`.
 
+**`--detach` creates the base-sha evidence tree instead of a plan worktree.** A Done-when that must fail at a base commit needs a run at that commit. In this mode the verb materializes `get_worktree_root() / <plan-id>-base` at `--base` (`HEAD` when omitted) with NO branch, and writes NO plan-status bookkeeping — the tree is not the plan's worktree, so recording `worktree_path` for it would point every later verb at the probe. It still materializes the real `.plan/local` boundary and produces the executor through the same seam, because both are what keep that tree's own test bootstrap from resolving its writes into another checkout and what make a build against it behave like any other checkout. `--branch` and `--detach` are mutually exclusive; a missing `--branch` without `--detach` is refused as `branch_required`.
+
 **The executor is produced here, not only at the phase-5 move-in.** A routed build re-runs the worktree's own `.plan/execute-script.py`, and a plan whose lane text calls a verb it introduced in its branch needs that slot to resolve the call — so an absent slot costs every build its routed path and the plan its own new verbs. Production goes through the same seam the move-in uses (`prepare_execute`'s generate with `--marketplace-root {worktree}`, then the copy-from-main fallback), with the verdict taken from the file on disk. It is non-fatal: a worktree that cannot get an executor is still a usable worktree.
 
 A `present` slot is not a promise about its CONTENT: the copy-from-main fallback carries main's embedded surface, so a verb the worktree's branch introduces still needs `worktree-executor-refresh`.
@@ -560,12 +562,15 @@ It runs for **every** plan, not behind a lane-only flag: the executor is per-tre
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree-create \
   --plan-id EXAMPLE-PLAN --branch feature/EXAMPLE-PLAN [--base {base_branch}]
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree-create \
+  --plan-id EXAMPLE-PLAN --detach [--base {base_sha}]
 ```
 
 **Parameters**:
 - `--plan-id` (required): Plan identifier (mandatory).
-- `--branch` (required): Feature branch name to create.
-- `--base`: Base ref for the new branch (default: current HEAD).
+- `--branch`: Feature branch name to create. Required unless `--detach` is given; refused beside it.
+- `--detach`: Create the branchless base-sha evidence tree `{plan-id}-base` at `--base` (default `HEAD`); no plan-status bookkeeping.
+- `--base`: Base ref for the new branch, or the commit the detached tree is checked out at (default: current HEAD).
 
 **Output** (TOON):
 ```toon
@@ -577,6 +582,8 @@ plan_symlink: /repo/.plan/local/worktrees/EXAMPLE-PLAN/.plan
 bootstrap: ok
 executor_in_worktree: present
 ```
+
+With `--detach` the payload carries `detached: true` and `base_ref` in place of `branch` and `plan_symlink`.
 
 `executor_in_worktree` is `present` only when the slot holds a non-empty, non-symlink file. When it is `absent`, `executor_reason` names which mechanism was tried and why neither produced one.
 
@@ -951,6 +958,8 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workf
 python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree-create \
   --plan-id PLAN_ID --branch BRANCH \
   [--base BASE_REF]
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree-create \
+  --plan-id PLAN_ID --detach [--base BASE_REF]
 ```
 
 ### worktree-remove
@@ -1087,6 +1096,8 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-git:integrate
 | `worktree-create` against a path that already exists | Return `error: worktree_exists` with the conflicting path, and heal the executor slot in that worktree: the payload carries `executor_in_worktree` and, when absent, `executor_reason`. |
 | `worktree-create` `git worktree add` failure | Return `error: worktree_add_failed` with stderr from git. |
 | `worktree-create` `.plan` symlink helper rejects a real directory | Return `error: plan_symlink_failed`; the worktree exists but `.plan/local` is a real directory or file (refused so user data is never clobbered). |
+| `worktree-create` without `--branch` and without `--detach` | Return `error: branch_required`. The branch name is still mandatory for a plan worktree; the flag is simply no longer an argparse requirement, because `--detach` supplies a complete alternative. |
+| `worktree-create` with both `--branch` and `--detach` | Return `error: detach_takes_no_branch`. A detached base tree carries no branch; combining the two is refused before `git worktree add`. |
 | `worktree-remove` with `--plan-id _orchestrator` | Return `error: reserved_worktree_name`. The key is the reserved shared orchestrator ledger worktree (`marketplace_paths.ORCHESTRATOR_WORKTREE_KEY`), not a plan id, and `worktree-remove` never removes it. This is the verb's FIRST check: it fires before path resolution, the structural probe, any filesystem touch and any git call, and so precedes `plan_dir_not_moved_back` — the reserved key is never answered with a move-back remedy that does not apply to it. NOT overridable by `--force`. |
 | `worktree-remove` plan dir has not landed back on main | Return `error: plan_dir_not_moved_back`. The move-back precondition, probed through `resolve_main_anchored_path` (the same resolver `integrate_into_main` writes through) and satisfied by either the live plan directory `integrate_into_main` lands or the archived record `manage-status archive` writes: removing now would destroy the sole authoritative copy of the plan's state. Surface the error, run `integrate_into_main`, then re-run. NOT overridable by `--force` — that flag keeps its dirty-tree meaning only. |
 | `worktree-remove` cwd is the removal target or a directory beneath it | Return `error: cwd_inside_removal_target`, carrying the offending `cwd`. Git itself imposes no such condition — `git worktree remove` will delete a shell's own working directory with or without `--force` — so this refusal is ours, not git's. Change the working directory out of the worktree (to the main checkout) and re-run. NOT overridable by `--force`; the remedy is to leave the directory, not to insist harder. |

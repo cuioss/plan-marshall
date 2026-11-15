@@ -2,10 +2,10 @@
   "id": "PLAN-LB-135",
   "slug": "opencode-bridge-and-sweep",
   "workstream": "WS-04",
-  "status": "staged",
+  "status": "shipped",
   "lane": "runbook",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "plan_marshall_plan_id": "rb-lb-135-opencode-bridge-and-sweep",
+  "pr": "1972",
+  "landing": "landings/PLAN-LB-135.md",
   "seq": 134
 }

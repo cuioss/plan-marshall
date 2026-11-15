@@ -497,15 +497,17 @@ def read_executor_version(executor_path: Path | None = None) -> str | None:
 
     Reuses ``plugin_registry.read_executor_version`` rather than re-parsing the
     assignment, so the version's grammar has one definition. An executor that is
-    absent, unreadable or carries no usable assignment yields None — never a
-    substituted version.
+    absent or unreadable yields None. A present assignment is returned verbatim,
+    including the generator's ``unversioned`` stamp — an answered absence the
+    landing reports as the executor's state rather than a substituted version.
 
     Args:
         executor_path: The generated executor to read. When None, the executor
             of the current project (``{cwd}/.plan/execute-script.py``) is read.
 
     Returns:
-        The executor version string, or None when it could not be read.
+        The executor version string (or its ``unversioned`` stamp), or None when
+        no assignment was readable.
     """
     import plugin_registry
 

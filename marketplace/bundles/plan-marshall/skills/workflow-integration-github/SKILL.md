@@ -166,7 +166,7 @@ Both operations take the same `PRRT_` thread ID — pass the comment's `thread_i
    stale_participation_bots[N]{bot_kind,evidence_kind}:
    ```
 
-   Same record shape as `participated_bots[]`, and the proven set is **subtracted before emitting** — a bot with one stale comment and one fresh one appears only in `participated_bots[]`, never in both. Forward the list to `review_completeness check --stale-participation-bots` so the quorum layer classifies the bot `participated_stale` instead of `absent`. The two are not interchangeable and their remedies are opposite: a stale publish is **re-triggered** (the review exists, it merely predates this HEAD), while a true absence is **escalated** (there is no review to refresh). Discarding the failed currency test is what collapsed the two.
+   Same record shape as `participated_bots[]`, and the proven set is **subtracted before emitting** — a bot with one stale comment and one fresh one appears only in `participated_bots[]`, never in both. Forward the list to `review_completeness check --stale-participation-bots` so the quorum layer classifies the bot `participated_stale` instead of `absent`. The two are not interchangeable and their remedies are opposite: a stale publish is **re-triggered** (the review exists, it merely predates this HEAD), while a true absence is **escalated** (there is no review to refresh). Discarding the failed currency test is what collapsed the two. A bot declaring `review_complete_after_handling` is the one exception, and the quorum layer applies it: that review on record completes the bot, so it resolves `participated` / `participated_but_empty` and no later head is re-triggered.
 
    **One reply lifts a bot out of the stale set: its own statement that nothing is unreviewed.** A bot the currency test left stale is counted after all — moved into `participated_bots[]` and out of `stale_participation_bots[]` — when a reply of its with `condition: no_unreviewed_commit` was written AFTER the merge-candidate commit. The bot said every commit is already reviewed, and that commit existed when it said so, so its review on record covers it. Each bot counted this way is also named in:
 
@@ -338,6 +338,48 @@ The refusal is a **returned envelope, never an exception** — a caller branches
 
 ⛔ **A re-trigger inside an open window RESETS it rather than shortening it** (an advertised wait was observed going from 50 to 59 minutes) and spends quota doing so. That is why the guard refuses rather than merely warning, and why the recovery selector below never reaches a trigger arm while a claim is still running.
 
+#### The one handled review
+
+A bot whose registry record declares `review_complete_after_handling: true` owes a pull request ONE
+review. Once a qualifying review — a formal review record, or the bot's summary comment carrying a
+readable `kind: reviewed` coverage marker that names a commit; the producer reports these bots in
+`finished_review_bots[]` — is on record, every finding of it is handled and its threads are resolved,
+the review is DONE at any later head: no trigger is posted, no review is awaited, and no gate asks
+that the recorded review cover the current head. The recorded review may predate the head by any
+number of fix commits, a merge of the base branch or a branch-cleanup rebase, and that is the point.
+
+A marker-bearing comment that is not a finished review — an unreadable payload, a non-`reviewed` kind,
+a marker naming no commit — is evidence the bot published, never a review, so it neither completes the
+bot nor suppresses the first trigger.
+
+One reader answers the question: `_github_pr.is_finished_review`. The producer builds
+`finished_review_bots[]` with it, the post chokepoint (`github_re_review._qualifying_review_on_record`)
+asks it, and the runbook lane's `review-gate --required-reviewer` check asks it too, so no site can
+answer a formal review differently. A formal review is admitted only with a non-empty commit or a
+readable finished marker that names one; a refusal-shaped body is admitted only when it also carries
+that marker; and a comment in a shape the bot does not publish is not evidence for it.
+
+The commit an admitted artifact names is accepted as the commit the review covered. It is **not**
+checked against this pull request's heads, so a marker naming a commit outside the pull request
+satisfies this read. Head currency is a separate question, and `review_coverage_verdict` is its
+one reader of `sourceCommitId`, `coveredCommitId` and `kind`. Its callers are the producer's
+merge-candidate evidence read, its named-commit currency arm, and the re-review await
+(`github_re_review`), which asks it for the head each signal claims. The lane's `review-gate` path
+and the post chokepoint do **not** ask it: they credit the finished review the artifacts name and
+leave the currency question to the producer, so a marker naming a commit outside the pull request
+is not checked there.
+
+The rule is enforced where the post happens rather than left to prose: `request_fresh_review` reads
+the pull request's comments for a qualifying review by a flagged bot and returns `status: refused` /
+`reason: review_on_record_done` instead of posting, for the ordinary and escalated commands alike.
+The read is fail-open for the POST decision only — a history that could not be fetched in full (a
+failed fetch, or a capped connection) permits the post, for the same reason the rate-window guard
+does — while `review_completeness` treats an unreadable state as never done. A pull request with no
+qualifying review is untouched: the first trigger and the quota policy apply exactly as they do for
+every other bot. Done stops requests, never handling — a comment that arrives after done, a resolved
+thread whose last bot comment says the concern remains, or a finding an edit reset to pending still
+blocks the merge through `review-gate` and the pending-findings predicates.
+
 #### The escalated command
 
 A bot may declare a second command in its registry record, `escalated_trigger_comment` — the one that makes it review the whole changeset again rather than only what it has not reviewed yet. `re-review --escalated` posts that command in place of the ordinary trigger. It leaves through the same single `_github.post_pr_comment` call, so the rate-window guard above applies to it unchanged: into a claimed, unexpired window nothing is posted and the return is `status: refused` / `reason: window_open`.
@@ -375,7 +417,7 @@ The gates on the comment signal run in a fixed order: a refusal the stack can RE
 
 **An acknowledgment is not an answer.** CodeRabbit replies to `@coderabbitai review` with "Review triggered" and edits that reply to "Review finished"; it post-dates the trigger and names no commit, so admitting it ended the await on `matched: true` / `head_sha_verified: false` — a decline the bot never made. `is_acknowledgment_comment` in `github_re_review.py` recognises the class by a whitespace-normalised, case-insensitive substring test against the awaited bot's own comments — so CodeRabbit's `Full review triggered.` / `Full review finished.` replies to `@coderabbitai full review` meet the same literals — and the producer drops the same comments as noise through the same function (Workflow 2 step 1). A refusal the stack can READ still outranks it; the class displaces only the enumerative arm, so an acknowledgment yields no `refusals[]` record either. Which bodies are acknowledgments is registry data — see [`automatic-review/standards/bot-participation-contract.md`](../automatic-review/standards/bot-participation-contract.md) § "An acknowledgment is not an answer".
 
-**A comment without one of the bot's finished-review markers is not an answer.** A bot that declares `issue_comment` markers publishes its finished review inside one of them — CodeRabbit wraps it in `<!-- recent_review_start -->`, or in the current `final_review_risk_coverage` artifact. The same comment carrying none of them is a review that has not finished. CodeRabbit's summary edited to its in-progress state names the head SHA as the end of the range under review, so before this gate it was eligible, verified the head, and ended the wait as `head_sha_verified: true` on a review still running. The gate is the one the producer already applies to participation credit (Workflow 2 step 1), read from the same registry field; a bot declaring no marker for the shape is unaffected. When an admitted comment carries the coverage marker, that marker decides whether it names `--head-sha` — and whether its `kind` is a finished review — ahead of bare token extraction. See [`automatic-review/standards/coderabbit.md`](../automatic-review/standards/coderabbit.md) § "Participation evidence".
+**A comment without one of the bot's finished-review markers is not an answer.** A bot that declares `issue_comment` markers publishes its finished review inside one of them — CodeRabbit wraps it in `<!-- recent_review_start -->`, or in the current `final_review_risk_coverage` artifact. The same comment carrying none of them is a review that has not finished. CodeRabbit's summary edited to its in-progress state names the head SHA as the end of the range under review, so it would otherwise be eligible, verify the head, and end the wait as `head_sha_verified: true` on a review still running. The gate is the one the producer already applies to participation credit (Workflow 2 step 1), read from the same registry field; a bot declaring no marker for the shape is unaffected. When an admitted comment carries the coverage marker, that marker decides whether it names `--head-sha` — and whether its `kind` is a finished review — ahead of bare token extraction. See [`automatic-review/standards/coderabbit.md`](../automatic-review/standards/coderabbit.md) § "Participation evidence".
 
 **Any answer is withheld while the review is still running.** The completion read is the one `bot_completion` performs, taken at most once per poll and only when that poll would otherwise end on a match. An answer that names `--head-sha` is withheld too: naming the head is no evidence the review finished. Only a positive `in_progress: true` withholds: a concluded check, a check never posted, a bot with no `completion_check_name`, and a failed read all leave the match as it stands, so `matched: true` / `head_sha_verified: false` still reports a genuine decline once the review has ended. `answer_withheld_in_progress: true` beside `matched: false` therefore means "still reviewing" — never a decline and never a verified review.
 
@@ -389,7 +431,7 @@ acknowledgments[N]{source,bot_kind,body}:
 
 **Both** signals additionally reject a **refusal notice** — a bot declining to review (rate-limit, diff-size, quota). The rejection runs the SAME refusal-recognition stack the producer applies, arm for arm, and is identical on both paths: the awaited bot's registry `refusal_patterns` (its OBSERVED refusal strings — a DEDICATED field, never `ignore_patterns`, which lists the routine sections a bot emits on a *successful* review and would therefore over-match), the author-independent structural `_is_rate_limit_notice` for an unknown or renamed bot, and the enumerative `_is_unrecognised_refusal` for a body no earlier arm could read. `_github_pr.REFUSAL_LAYERS` is the single place those arms are named, and the list is open — an arm added there is nameable here with no count to correct. A refusal carries no review, so counting it as a completion signal would assert review coverage that never happened. This applies to the review path as much as the comment path: a bot may submit its refusal as a **review object** rather than an issue comment, and the review path resolves first — so without the check the strongest signal (`head_sha_verified: true`) would be the one most likely to be false.
 
-⛔ **The enumerative arm is what closes this path's worst failure.** Before it, a refusal no arm recognised fell through to the review matcher, which admits any body that is "not a refusal notice" — so the envelope reported `head_sha_verified: true` for a HEAD the bot had explicitly declined to review. It is also fail-safe: the arm requires a measured threshold, and with none derived it never fires, so this path behaves exactly as it did before the arm existed.
+⛔ **The enumerative arm is what closes this path's worst failure.** Without it, a refusal no other arm recognised reaches the review matcher, which admits any body that is "not a refusal notice" — so the envelope reports `head_sha_verified: true` for a HEAD the bot had explicitly declined to review. It is also fail-safe: the arm requires a measured threshold, and with none derived it never fires, so it cannot change a verdict.
 
 Every rejected refusal **the awaited bot wrote after the trigger** is **RECORDED, never a silent skip**. Authorship is gated first, exactly as for a match: a refusal another bot or a human wrote is skipped without a record. The time gate is the one a match passes: a review's `submitted_at`, or the later of a comment's `updated_at` / `created_at`, strictly after the trigger instant. A refusal written at or before it answered some other request, so it is skipped without a record — as is one with no readable timestamp — and a bot that then stays silent returns `refusal_detected: false` beside `timed_out: true`, an ordinary timeout. A refusal already on the PR before any trigger is the `pr wait-for-comments` `rate_limited_bots[]` record's to report, not this envelope's. The envelope carries `refusal_detected`, `refusal_class`, `refusal_eta` (the reset time the notice itself stated, or `""`), `refusal_eta_seconds` (that reset time as whole seconds, or `null`), `refusal_eta_extracted` (`false` when no reset time could be read), a `refusals[]` record per detected refusal, and **`refusal_layers[]`** — the declared `layer` vocabulary the producer emits, published so a consumer validates a value against the producer's own population rather than a hand-copied list:
 
@@ -1263,7 +1305,7 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github
 
 `--escalated` posts the bot's registry `escalated_trigger_comment` instead of its `trigger_comment`. It takes no value. See § "The escalated command" for when it is used and the guard that applies to it alone.
 
-The verb has three terminal shapes, not two: `status: success` (the trigger was posted and the await ran to a verdict), `status: error`, and `status: refused`. A refusal names its `reason`: `window_open` — the refusal re-trigger guard declining to post into an unexpired rate window, for either command (see § "The refusal re-trigger guard" for the envelope's field set) — or, under `--escalated` only, `no_escalated_command`, `escalated_command_already_posted` or `escalated_history_unreadable` (§ "The escalated command"). A `status: success` return carries `escalated: true|false`, naming which command was sent.
+The verb has three terminal shapes, not two: `status: success` (the trigger was posted and the await ran to a verdict), `status: error`, and `status: refused`. A refusal names its `reason`: `window_open` — the refusal re-trigger guard declining to post into an unexpired rate window, for either command (see § "The refusal re-trigger guard" for the envelope's field set) — or `review_on_record_done` — a bot declaring `review_complete_after_handling` already holds a qualifying review on this pull request, so one handled review is the review and no second request is posted (§ "The one handled review") — or, under `--escalated` only, `no_escalated_command`, `escalated_command_already_posted` or `escalated_history_unreadable` (§ "The escalated command"). A `status: success` return carries `escalated: true|false`, naming which command was sent.
 
 ### github_re_review recovery-action
 
@@ -1272,6 +1314,7 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github
   --bot-kind BOT_KIND \
   [--cause {size|quota}] [--condition {rate_limited|no_unreviewed_commit}] \
   [--review-on-record {credited|stale|undecidable|absent}] [--pending-findings N] \
+  [--finished-review {true|false}] \
   [--window-expired {true|false}] [--attempts-remaining N] \
   [--attempt-held {true|false}] [--notice-stale {true|false}] [--plan-id PLAN_ID]
 ```
@@ -1290,6 +1333,8 @@ DERIVES which recovery a detected refusal arms, from the bot registry plus the c
 
 `--condition` is the refusal record's `condition`. **Omit it when the record carries none** — an omitted condition reads as empty and takes the rate-limit derivation below. `no_unreviewed_commit` is resolved before the cause and the class: the bot said every commit is already reviewed, so there is no limit to classify and no window to claim. It resolves from two observations, each of which reads as `unmeasured` when omitted:
 
+`--finished-review` is the producer's done-rule observation: `true` exactly when the bot is named in `github_pr fetch_findings` `finished_review_bots[]`, `false` when the fetch reported the list without it. **Omit it when the observation was not made.** A bot declaring `review_complete_after_handling` with a review on record settles on the done arm before ANY cause, window or budget arm — including a later structural size refusal, which no re-review would cure — and only a positive observation takes that arm, so a stale report or a credited participation that is not a finished review keeps every pre-existing arm.
+
 - `--review-on-record` — where this bot's review stands for the merge candidate, read off the consuming step's `fetch_findings` return. That return has three disjoint per-bot participation lists, and the state is derived from all three:
 
   | Value | The bot on the `fetch_findings` return |
@@ -1302,12 +1347,14 @@ DERIVES which recovery a detected refusal arms, from the bot registry plus the c
   `fetch_findings` credits a stale bot whose own `no_unreviewed_commit` reply is strictly newer than the merge-candidate commit — on either ground it went stale on, a failed ledger test or a comment naming another commit — so `stale` here means the reply does not cover the merge candidate.
 - `--pending-findings` — how many of this bot's `pr-comment` findings are still pending.
 
-Only an `absent` review resolves `post_escalated_command`. A `credited` review resolves `accept_review_on_record` when no finding is pending and `await_triage` when one is; a `stale` review resolves `leave_to_stale_review`. An `undecidable` review resolves `unmeasured` with `reason: review_state_undecidable`, whatever `--pending-findings` carries: the producer did not observe where the review stands, and an unobserved review state never selects the arm that posts. `post_escalated_command` is the only action of this condition that posts: the other four — `accept_review_on_record`, `await_triage`, `leave_to_stale_review` and `unmeasured` — post nothing. For any other condition `--pending-findings` is ignored. Two arms read `--review-on-record` for a refusal: the stale-notice arm (`absent` resolves `trigger_stale_notice`; see `--notice-stale` above) and the ELAPSED arm (`credited` / `stale` keep an explicit-trigger bot on the re-trigger path instead of `close_and_reopen`). See [`../automatic-review/SKILL.md`](../automatic-review/SKILL.md) § "Rate-limit refusal recovery" Branch 6 for the step that gathers the two observations and acts on the result.
+Only an `absent` review resolves `post_escalated_command`. A `credited` review resolves `accept_review_on_record` when no finding is pending and `await_triage` when one is; a `stale` review resolves `leave_to_stale_review` — except for a bot declaring `review_complete_after_handling`, whose `credited`, `stale` OR `undecidable` review settles on `accept_review_on_record` (reason `review_on_record_done`) or `await_triage` (reason `review_on_record_done_findings_pending`) before every cause, window and budget arm. An `undecidable` review resolves `unmeasured` with `reason: review_state_undecidable`, whatever `--pending-findings` carries: the producer did not observe where the review stands, and an unobserved review state never selects the arm that posts. The done arm above outranks it: a bot declaring `review_complete_after_handling` whose finished review is on record — the `_github_pr.is_finished_review` artifact, never the flag alone — never reaches the `review_state_undecidable` arm, whatever `--pending-findings` carries. `post_escalated_command` is the only action of this condition that posts: the other four — `accept_review_on_record`, `await_triage`, `leave_to_stale_review` and `unmeasured` — post nothing. For any other condition `--pending-findings` is ignored. Two arms read `--review-on-record` for a refusal: the stale-notice arm (`absent` resolves `trigger_stale_notice`; see `--notice-stale` above) and the ELAPSED arm (`credited` / `stale` keep an explicit-trigger bot on the re-trigger path instead of `close_and_reopen`, while a `review_complete_after_handling` bot settles on the done arm). See [`../automatic-review/SKILL.md`](../automatic-review/SKILL.md) § "Rate-limit refusal recovery" Branch 6 for the step that gathers the two observations and acts on the result.
 
 The returned `action` is one of:
 
 | `action` | `reason` | Meaning |
 |----------|----------|---------|
+| `accept_review_on_record` | `review_on_record_done` | The bot declares `review_complete_after_handling` and its review is `credited`, `stale` or `undecidable`, with no pending finding. One handled review is the review, so the elapsed window settles without a post and the later head is not demanded. |
+| `await_triage` | `review_on_record_done_findings_pending` | The same done arm with findings of that review still pending. Post nothing; triage handles them, never a re-request. |
 | `accept_review_on_record` | `review_on_record_findings_handled` | The condition is `no_unreviewed_commit`, a review by the bot is credited for the merge candidate, and none of its findings is pending. Post nothing. |
 | `await_triage` | `findings_pending` | The condition is `no_unreviewed_commit`, a review by the bot is credited for the merge candidate, and findings of it are still pending. Post nothing; the triage that follows handles them. |
 | `leave_to_stale_review` | `merge_candidate_newer_than_reply` | The condition is `no_unreviewed_commit`, but the bot's review is stale and the reply does not cover the merge candidate: the merge candidate is newer than the reply. Post nothing; the stale review is re-triggered with the bot's ordinary trigger. A reply strictly newer than the merge-candidate commit never reaches this arm — `fetch_findings` credits that bot, a bot whose comment names another commit included. The one remainder is a reply whose order against the commit could not be read: `fetch_findings` fails closed, the bot stays stale, and this arm is returned for it too. |

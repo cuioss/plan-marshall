@@ -3,30 +3,35 @@ sender_type=orchestrator
 sender_id=lessons-routing
 epic=live-blockers
 kind=finding
-created=2026-11-15T21:16:30Z
+created=2026-11-15T18:07:58Z
 
-# HIGH (plan-marshall, operator-graded): the review-gate parser refuses a routine CodeRabbit section, and the landing review/Sonar counts disagree with the provider re-read
+# A commit the phase-5 orchestrator makes for a quality-gate rewrite or a style fix has no change-ledger row, so the 5-execute -> 6-finalize transition refuses
 
-Filed by the `lessons-routing` drain of 2026-11-15. Source messages: `api-sheriff-security-hardening-tier-1-005` (revision 3, three landings) and `-006`. Bundle: `plan-marshall` (`runbook-lane` `review-gate`, `emit-landing`, `workflow-integration-sonar`). Severity: high. The operator graded `-005` high from a borderline medium/high.
+**Severity:** high (orchestrator grade, 2026-11-15 drain of the lessons-routing inbox)
+**Bundle:** plan-marshall (`workflow-integration-git` `git-workflow commit`, `manage-status` transition guard, `phase-5-execute` orchestrator-tier hand-back)
+**Checked at:** `34b92e0ca` (origin/main)
 
-## 1. `review-gate` returns `undecidable_read` on "Files with no reviewable changes" (source -006, API-Sheriff PR #607, executor 0.1.2106)
+## What was reported
 
-- `runbook_lane review-gate --pr-number 607` returns `merge_allowed: false`, `reason: undecidable_read`, `detail: "unreadable review-body section: '<picture>...</picture> Files with no reviewable changes: 2'"`.
-- CodeRabbit emits that collapsible section whenever a push touches files it skips (formatter-only or generated files). The parser treats the unrecognised section as unreadable and refuses the whole read. The same path gates `merge_allowed`, so a plan relying on it pre-merge is blocked by a section that carries no finding.
-- Every such landing then writes `review_body_findings_total=unknown`, so `inbox landing-check` reports `complete: false`.
-- Sender's ask: treat "Files with no reviewable changes", "Files ignored due to path filters" and "Files selected for processing" as known non-finding sections; keep `undecidable_read` for genuinely unparseable bodies; add a fixture from a real review body.
+Three pm-mcp-core plans in three days ended phase 5 with a commit the orchestrator made OUTSIDE the per-deliverable settlement, and each one was refused at the transition with `error=execute_commits_unrecorded signature=bookkeeping_gap`:
 
-## 2. Landing counts differ from the provider re-read (source -005, PLAN-SEC-02 / -04 / -05, PRs #590, #589, #600, executor 0.1.2090)
+- `plan-v2-57-default-plan-lanes-and-run` (2026-11-11): `verify -Ppre-commit` rewrote two test files, committed as `c6c1767f`. 1 of 6 branch commits had no `kind=change` row. The re-dispatched execute leaf returned `status error` and asked the operator how to attribute a commit that spans two deliverables. The dispatch ended with `termination_cause=error` and 136,153 tokens.
+- `plan-v2-132-coverage-parser-hardening` (2026-11-12): the orchestrator ran the whole-tree `verify -Ppre-commit` after the hand-back and committed its rewrites (`f5f1931c`, 5 files) plus a Javadoc fix (`1f80e2ab`). 2 of 7 branch commits had no row. `termination_cause=error`, 146,533 tokens, rows appended by hand.
+- `plan-v2-40-envelope-packing` (2026-11-12): an import-order style commit (`4d9ff969`) and the whitespace rewrite of the pre-commit gate (`f87166ef`). 2 of 7 unrecorded. The refusal payload named each SHA with its own append call, so the repair was two `manage-change-ledger append --kind change` calls, and the whitespace commit also made the freshness gate stale, forcing a whole-tree re-verify.
 
-- `review_body_findings_total`: landing 2 / 4 / 4 against `review-gate` 13 / 6 / 7, all CodeRabbit `inline` rows embedded in review bodies. The plan's findings ledger files the same items as kind `inline` (all `fixed`); the emitter counts by the ledger kind and the parser counts by review-body section, so two producers classify one population differently.
-- `sonar_open_new_issues`: landing 0 against `sonar_rest search --pr` returning 6 / 5 issues. For PR #589 the plan's own `sonar-scan-summary.jsonl` shows four analyses: the 5 issues belong to the first, and the last three report 0. On PLAN-SEC-05 the landing wrote `unknown` (`count_status: undecidable`, `head_revision_unavailable`), so `landing-check` reports `complete: false` for every merged PR once the PR branch is gone.
-- Effect: `analyze.md` Step 4 tells the orchestrator to record a difference as a false claim, so a reader is told the plan misreported when it did not. The opposite failure is also possible: a real undisposed finding would look like the same artifact.
-- Sender's ask: derive the landing's `review_body_findings_total` / `_handled` from the parser `review-gate` uses (or have `review-gate` read the plan's disposition ledger); give `analyze` a Sonar read that answers "open at the merged head" or names the analysis sha it read.
+## Ground truth at the checked commit
 
-## Residual check requested
+`marketplace/bundles/plan-marshall/skills/workflow-integration-git/scripts/git-workflow.py:1033-1046`: `_record_finalize_change` appends the row "ONLY in `6-finalize`", and its docstring states why: at the `5-execute` boundary "`current_phase` is still `5-execute`, so the settlement owns its own row". A commit the orchestrator makes during phase 5 outside Step 10a, through this verb or raw, is therefore owned by nobody.
 
-`live-blockers` PLAN-LB-129 (review-gate thread-and-count-truth: declared section count, last-bot-comment rule) is RUNNING and may already own part of item 1 and the count half of item 2; PLAN-LB-105 / -118 / -119 / -122 shipped nearby fixes. Please check whether each point still reproduces at the head the running plan lands, rather than opening new work.
+`PLAN-LB-126` (shipped, #1942) closed the FINALIZE half: dispatcher item 5f(b), the triage inline fix and the architecture refresh now write their own rows. Its Deliverable 1 keeps the phase gate (appends only when the plan's `current_phase` is `6-finalize`), so it does not reach a phase-5 hand-back commit. The refusal itself still exists and still counts every branch commit.
 
-## Evidence
+No other `live-blockers` plan or message owns this: `PLAN-LB-91` (shipped) is the history-rewrite remap, and `PLAN-LB-146` is about which tree a build result names.
 
-Everything above is the senders' own measurement; nothing here was re-run on the plan-marshall side. Checked at the drain: the literal phrase "Files with no reviewable changes" occurs in no `marketplace/bundles` file (the inventory search returns only `test/plan-marshall/runbook-lane/test_runbook_lane_review_gate.py`, 3 matches, not read for what it asserts), which is consistent with, but does not establish, the parser not recognising it.
+## What is asked
+
+Give the commits the orchestrator makes at the orchestrator-tier hand-back (gate rewrites, style fixes, Javadoc fixes made after the envelope) one owner that writes their `kind=change` row at the point they are made, with a `deliverable_id` no reader mistakes for an outline deliverable. Either the commit verb appends in `5-execute` when the commit is made outside Step 10a, or the hand-back workflow commits gate output through a path that ledgers it. A commit that spans two deliverables must not need an operator decision.
+
+## Sources
+
+- `pm-mcp-core-m2-m4-v2-009`, `-021` and `-023`, archived verbatim at `lessons-routing/inbox/archive/pm-mcp-core-m2-m4-v2/`.
+- Related and already owned: `api-sheriff-api-sheriff-0-2-0-081` item 2 (a finalize-simplify commit with no row) is the finalize half, fixed by `PLAN-LB-126`.
