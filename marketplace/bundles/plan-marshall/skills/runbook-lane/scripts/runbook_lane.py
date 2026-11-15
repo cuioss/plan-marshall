@@ -2680,24 +2680,6 @@ def _display_read(read: dict[str, Any]) -> dict[str, Any]:
     return github_ops.flatten_comment_bodies(read)
 
 
-def _required_review_read_failure(read: dict[str, Any] | None) -> str | None:
-    """Why ``read`` cannot decide the required-review question, or ``None`` when it can.
-
-    An incomplete or failed read is never "no review" and never "a review": a review
-    may sit in the part that was not read, so the gate stops on it. The chokepoint's
-    own ``None`` answer is a fail-open for a POST decision — posting a trigger is
-    harmless, skipping one is not — and the merge gate must not inherit it, because
-    here the same ``None`` would state a verdict on evidence nobody read.
-    """
-    if read is None:
-        return 'the review read was not taken'
-    if read.get('status') != 'success':
-        return str(read.get('error') or 'the review read failed')
-    if read.get('complete') is not True:
-        return 'the review read was truncated: a review may sit in the part that was not read'
-    return None
-
-
 def _required_reviewers_without_a_review(comments: list[dict[str, Any]], required_reviewers: list[str]) -> list[str]:
     """Return the required reviewers that hold no qualifying review on this read.
 
@@ -2749,8 +2731,7 @@ def _review_gate_verdict(
     - a resolved thread whose last BOT-authored comment states that the concern
       remains is ``thread_concern_remains`` — resolution is not silence, and a lane
       reply below the bot's restatement never discharges it;
-    - a required reviewer whose raw read is incomplete or failed is
-      ``undecidable_read``, and one holding no qualifying review is
+    - a required reviewer holding no qualifying review is
       ``required_review_missing``;
     - otherwise ``all_handled``.
     """
@@ -2768,19 +2749,6 @@ def _review_gate_verdict(
             'merge_allowed': False,
             'reason': 'undecidable_read',
             'detail': str(read.get('error') or 'the review surface read failed'),
-        }
-    if 'complete' not in read:
-        # A read that publishes no coverage signal cannot be shown whole. It is a
-        # separate reason from a truncation, because the remedy differs: nothing is
-        # wrong with the pull request, the PROVIDER does not report coverage (the
-        # GitLab read publishes none today), so the gate cannot decide the merge on
-        # it at all.
-        return {
-            **base,
-            'merge_allowed': False,
-            'reason': 'coverage_unavailable',
-            'provider': str(read.get('provider') or 'unknown'),
-            'detail': 'the provider reported no coverage signal for this read, so the surface cannot be shown whole',
         }
     if read.get('complete') is not True:
         return {
@@ -2849,13 +2817,6 @@ def _review_gate_verdict(
     missing_reviews: list[str] = []
     if required_reviewers:
         verdict['required_reviewers'] = list(required_reviewers)
-        # Fail closed BEFORE asking the predicate: a read that did not complete cannot
-        # show that a review is absent, and the gate never states a verdict about a
-        # surface it did not read. This is the SAME envelope the findings above were
-        # counted from, so the two halves cannot disagree about a moment.
-        read_failure = _required_review_read_failure(read)
-        if read_failure is not None:
-            return {**verdict, 'merge_allowed': False, 'reason': 'undecidable_read', 'detail': read_failure}
         missing_reviews = _required_reviewers_without_a_review(
             [comment for comment in read.get('comments') or [] if isinstance(comment, dict)],
             list(required_reviewers),

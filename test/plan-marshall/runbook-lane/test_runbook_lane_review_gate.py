@@ -24,6 +24,7 @@ verb answers "refused", or the fixture proves nothing about what changed.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
@@ -38,6 +39,7 @@ lane = load_script_module('plan-marshall', 'runbook-lane', 'runbook_lane.py', 'r
 cmd_review_gate = lane.cmd_review_gate
 
 _SCRIPT = get_scripts_dir('plan-marshall', 'runbook-lane') / 'runbook_lane.py'
+_SKILL = get_scripts_dir('plan-marshall', 'runbook-lane').parent / 'SKILL.md'
 
 _NITPICK_BODY = (
     '**Actionable comments posted: 0**\n\n'
@@ -729,17 +731,52 @@ def test_an_unrecognised_record_kind_refuses_the_merge() -> None:
     assert 'thread_comment' in verdict['detail']
 
 
-def test_a_read_without_a_coverage_signal_is_its_own_reason() -> None:
-    """A provider that publishes no coverage cannot be shown whole — not a truncation."""
+def test_a_read_without_a_coverage_signal_is_undecidable() -> None:
+    """A read that publishes no coverage signal cannot be shown whole.
+
+    The GitHub read always publishes ``complete``, so an envelope without it is a
+    malformed or truncated one: the gate stops on it, exactly as it stops on an
+    incomplete read, rather than inventing a verdict of its own.
+    """
     read = _read(_review_body('**Actionable comments posted: 0**'))
     del read['complete']
-    read['provider'] = 'gitlab'
 
     verdict = _verdict(read)
 
     assert verdict['merge_allowed'] is False
-    assert verdict['reason'] == 'coverage_unavailable'
-    assert verdict['provider'] == 'gitlab'
+    assert verdict['reason'] == 'undecidable_read'
+    assert 'truncated' in verdict['detail']
+
+
+def _documented_review_gate_reasons() -> set[str]:
+    """The reason tokens the lane text's ``review-gate`` refusal list names."""
+    text = _SKILL.read_text(encoding='utf-8')
+    section = text.split('### review-gate', 1)[1].split('\n## ', 1)[0]
+    paragraph = section.split('It answers `merge_allowed: false`', 1)[1].split('\n\n', 1)[0]
+    return set(re.findall(r'\(`([a-z][a-z_]*)`', paragraph))
+
+
+def _reasons_the_verdict_can_return() -> set[str]:
+    """The ``reason`` literals inside ``_review_gate_verdict`` — no other verb's."""
+    source = _SCRIPT.read_text(encoding='utf-8')
+    start = source.index('def _review_gate_verdict(')
+    end = source.index('\ndef cmd_review_gate(', start)
+    return set(re.findall(r"'reason': '([a-z][a-z_]*)'", source[start:end]))
+
+
+def test_the_lane_text_names_no_reason_the_verdict_cannot_return() -> None:
+    """⛔ Every reason the contract names is one the verdict can actually answer.
+
+    A retired refusal reason left in the lane text describes a decision the code
+    cannot make, so a reader who hits it looks for a remedy that does not exist.
+    The documented list is read from the ``review-gate`` section and compared with
+    the reason literals ``_review_gate_verdict`` returns.
+    """
+    documented = _documented_review_gate_reasons()
+    produced = _reasons_the_verdict_can_return()
+
+    assert 'undecidable_read' in documented, 'the review-gate reason list was not found in the lane text'
+    assert documented <= produced, f'named in the lane text but unreachable: {sorted(documented - produced)}'
 
 
 def test_a_human_review_body_is_a_finding_source_too() -> None:
