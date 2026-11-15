@@ -110,10 +110,10 @@ record per detected refusal carrying its source, detecting layer, awaited
 ``bot_kind``, ETA with its seconds and extracted fields, the refusal ``cause``, the stated size ``cap``, the
 ``condition`` the reply reports, and a truncated body excerpt — see :meth:`_ReReviewStrategy._refusal_record` for the
 authoritative per-member contract). The refusal still does NOT
-count as a completed review — ``matched`` is unaffected — but the caller can now
-distinguish "the bot refused, and here is the recovery this arms" from "the bot
-never responded". Without the record the two were the same bare
-``matched: false`` / ``timed_out: true``, and the refusal vanished.
+count as a completed review — ``matched`` is unaffected — so the record is what
+lets the caller distinguish "the bot refused, and here is the recovery this arms"
+from "the bot never responded", which a bare ``matched: false`` /
+``timed_out: true`` cannot.
 
 Accepted tradeoff: a genuine review or comment whose body happens to quote a
 ``refusal_patterns`` substring is skipped — deliberate, because a truthful

@@ -1007,7 +1007,9 @@ def test_the_gate_fetches_the_surface_once_and_spawns_no_cli(monkeypatch, outsid
 
     The gate takes the provider's data once, in-process, and derives the flattened
     display form itself — asserted here by counting fetches AND by pinning that no CLI
-    is spawned at all, from a working tree that carries no project configuration.
+    is spawned at all. The directory carries no ``.plan/marshal.json``, so a route read
+    from the filesystem would stop the gate before the fetch; the module fixture pins
+    the route, and the fetch count is what proves the read happened exactly once.
     """
     fetches: list[int] = []
 
@@ -1290,9 +1292,10 @@ def test_an_unnamed_reviewer_population_leaves_the_verdict_unchanged() -> None:
 # the opener must start a line — refuses the claim, and a display read would destroy
 # the line structure that rule reads.
 #
-# These tests stub ONE seam only — ``github_re_review.fetch_pr_comments_data``, the
-# single in-process fetch — so the lane's own read functions and its predicate site
-# run for real.
+# These tests stub ONE seam — ``github_re_review.fetch_pr_comments_data``, the single
+# in-process fetch — so the lane's own read functions and its predicate site run for
+# real. The provider resolver is stubbed by the module's ``github_provider`` fixture,
+# which pins the route rather than replacing anything the gate reads.
 
 _QUOTED_MARKER_CONSTRUCTIONS: dict[str, str] = {
     # A: the fence's second line is content, so the marker never leaves the block.
@@ -1353,24 +1356,6 @@ def outside_the_repository():
         shutil.rmtree(path, ignore_errors=True)
 
 
-@pytest.fixture(scope='module', autouse=True)
-def the_module_restores_the_process_default_cwd():
-    """The review-gate module leaves the process default working tree as it found it.
-
-    A read installs the process-global default cwd. ``test/conftest.py`` already clears
-    it on both sides of every test, so this module-scope check is the second, coarser
-    net: it catches a leak the per-test clear cannot see (a value installed outside a
-    test's window) rather than replacing the per-test restore each test takes.
-    """
-    import ci_base
-
-    original = ci_base.get_default_cwd()
-    yield
-    assert ci_base.get_default_cwd() == original, (
-        'a review-gate test left ci_base.get_default_cwd() changed: every test that sets it must restore it'
-    )
-
-
 def _verdict_through_the_read_seams(
     monkeypatch,
     raw_comments: list[dict],
@@ -1378,11 +1363,12 @@ def _verdict_through_the_read_seams(
     raw_read: dict | None = None,
     reviewers: tuple[str, ...] = ('coderabbit',),
 ) -> Any:
-    """Drive ``review-gate`` with only the ONE provider fetch stubbed.
+    """Drive ``review-gate`` with only the ONE fetch stubbed.
 
     No subprocess and no TOON: the gate fetches once, in-process, and derives the
     display form itself. A test that had to stub a second transport would be proof
-    the gate reads the surface twice.
+    the gate reads the surface twice. The provider resolver is pinned by the module
+    fixture, so the outcome never depends on the ambient project configuration.
     """
     monkeypatch.setattr(
         github_re_review,

@@ -173,12 +173,13 @@ def outside_the_repository():
 
 
 def _lane_admits(monkeypatch, comments: list[dict]) -> bool:
-    """The lane's own verdict, driven through its ONE provider fetch.
+    """The lane's own verdict, driven through its ONE fetch seam.
 
-    ``github_re_review.fetch_pr_comments_data`` is the single seam stubbed: the gate
-    fetches the surfaces once, in-process, and derives the display form itself.
-    Neither the lane's read functions nor its predicate site is stubbed, so a second
-    predicate planted at the lane's site turns this column red.
+    ``github_re_review.fetch_pr_comments_data`` is the only seam replaced: the gate
+    fetches the surfaces once, in-process, and derives the display form itself. The
+    ``github_provider`` fixture pins the route, so no call site depends on the ambient
+    project configuration. Neither the lane's read functions nor its predicate site is
+    stubbed, so a second predicate planted at the lane's site turns this column red.
     """
     monkeypatch.setattr(
         github_re_review,
@@ -212,7 +213,13 @@ def test_every_site_reaches_one_verdict_per_artifact(plan_context, monkeypatch, 
 
 @pytest.mark.usefixtures('restore_default_cwd', 'github_provider')
 def test_the_lane_column_does_not_depend_on_a_project_configuration(monkeypatch, outside_the_repository) -> None:
-    """⛔ The lane's verdict is the same from a directory that carries no config."""
+    """⛔ The lane's verdict does not read the ambient project configuration.
+
+    The directory handed to the gate carries no ``.plan/marshal.json``, so a route read
+    from the filesystem would leave the provider unresolved and the column would answer
+    ``undecidable_read``. The ``github_provider`` fixture is what keeps the column
+    green from here: remove it and this test fails.
+    """
     monkeypatch.chdir(outside_the_repository)
     comments = [_comment('review_body', 'No actionable comments were generated', commit_id=_HEAD)]
 

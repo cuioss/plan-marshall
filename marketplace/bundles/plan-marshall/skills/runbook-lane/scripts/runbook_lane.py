@@ -2733,7 +2733,10 @@ def _review_gate_verdict(
     dispositions, so the merge condition is a decision a script makes:
 
     - an unreadable or truncated read is ``undecidable_read`` — a stop, never a
-      pass, because "no findings" is unknowable from a surface nobody read whole;
+      pass, because "no findings" is unknowable from a surface nobody read whole, and
+      so is a comment entry the display flatten cannot read;
+    - a disposition line that names no commit and no stated reason is
+      ``disposition_unparsable``;
     - an unresolved thread is ``unresolved_review_threads``;
     - a body finding with no disposition naming a commit or a stated reason is
       ``body_findings_undisposed``;
