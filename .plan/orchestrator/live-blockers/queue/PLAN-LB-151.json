@@ -2,10 +2,10 @@
   "id": "PLAN-LB-151",
   "slug": "handle-open-verb",
   "workstream": "WS-03",
-  "status": "running",
+  "status": "shipped",
   "lane": "runbook",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "plan_marshall_plan_id": "rb-lb-151-handle-open-verb",
+  "pr": "1987",
+  "landing": "landings/PLAN-LB-151.md",
   "seq": 151
 }

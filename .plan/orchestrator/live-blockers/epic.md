@@ -53,6 +53,28 @@ derive, for rows still live.
   - PLAN-LB-31 in-house-reviewer — PLAN-LB-21, PLAN-LB-20 D4 and D5.
   - PLAN-LB-14 launch-gate-scope — unchanged.
 
+- **PLAN-LB-150** (shipped, PR #1986, 2026-11-14, runbook lane, `deepseek-v4.1-flash/high`, WS-04) — see `landings/PLAN-LB-150.md`. Merge commit
+  `aaa06bf44`, a squash commit with one parent `ec155e334` (the #1990 ledger land, read with git); ten files counted from git. One three-layer
+  leaf read it with the lane's claims passed one by one; the orchestrator re-read the Claude skill and its frontmatter, the sibling skill's
+  frontmatter, the README checklist line, the two mirrors' heads, the three gate sentences and the control block of the parity test; the
+  `review-gate` re-run agrees with the landing's thread and finding totals (0 and 11; handled not re-verified). The message is `complete: false`
+  on `total_tokens` alone (out of scope). The lane counts three of four deliverables done; D4 is documents with no test, and its Done-when ("fails
+  at the base") was written by this orchestrator and cannot be evidenced, so the lane's grade is accurate and the PR body's `met` overstates.
+  **No blocker; one possible major, not shown by reading:** the skill has no field that stops a harness from invoking it on its own, `Skill(apply-changes)`
+  is pre-allowed, and it writes the plugin registry on the consent of the operator's own invocation (the sibling `sync-harnesses` has the same
+  frontmatter but writes no registry); goes to the operator as a question. The minors are in a Watch. No executor regeneration and no harness
+  sync is owed for this plan (no `marketplace/bundles/` file); it created the `/apply-changes` command, whose first real run is the operator's.
+- **PLAN-LB-151** (shipped, PR #1987, 2026-11-15, runbook lane, `deepseek-v4.1-flash/high`, WS-03) — see `landings/PLAN-LB-151.md`. Merge commit
+  `2f0630bc0`, a squash commit with one parent `aaa06bf44`; twenty files counted from git. One three-layer leaf read it with the lane's
+  claims passed one by one; the orchestrator read the whole `handle-open.md`, the `get`/`set` knob code and the diff hunks of the config
+  defaults, and re-read the null-block guard, the stale "unreachable" comment, the leaf-dispatch bullet, the two overclaimed pins and the one
+  dated example. The `review-gate` re-run agrees with the thread and finding totals (0 and 10). The message is `complete: false` on
+  `total_tokens` alone. All four deliverables are shipped; one file sits outside the declared surface (`test_cleanup_contract.py`,
+  disclosed and required). **No blocker; one major judgement (the verb document is also the analysis leaf's document, so a leaf that
+  follows it is handed write steps and the wrong return shape), reported to the operator, nothing staged.** Three spec defects of this
+  orchestrator's own authoring (a "holds at base" that needs the count word, a list entry that "fails at base", a "fresh seed" that is
+  set). A harness sync is owed (this machine's cache, 0.1.2123, has no `handle-open`); no executor regeneration; existing projects gain
+  the knob through the steward's `upgrade`.
 - **PLAN-LB-152** (staged 2026-11-14 on the operator's word, runbook lane, WS-05) — `plans/PLAN-LB-152-review-gate-single-read-cleanup.md`. The cleanup
   of PR #1988 (merge `2bf7cd83d`): four deliverables (the contract and the unreachable `coverage_unavailable` branch and dead required-reviewer
   guard, a classified flatten and a pinned import placement, tests that do not depend on the machine or leak the default cwd, and the
@@ -1718,6 +1740,18 @@ derive, for rows still live.
 
 ## Decisions
 
+- 2026-11-15 (analysed PLAN-LB-150 and PLAN-LB-151) — **Both landings were analysed from the inbox and reconciled; nothing was staged.** Two
+  messages drained (`rb-lb-150-apply-changes-skill-001.md`, `rb-lb-151-handle-open-verb-001.md`), each `complete: false` on `total_tokens`
+  alone (no defect, ruling 2026-10-23). The merge commits, file counts and review totals were corroborated with git and the `review-gate`
+  re-run; one three-layer leaf per landing; the orchestrator re-read the load-bearing points and the Watch names which. Both rows are
+  `shipped`, stamped `pr`, `landing` and `plan_marshall_plan_id`. **No blocker in either.** Two items are not decided by the orchestrator: whether
+  `/apply-changes` can be invoked by a model on its own (below the confidence, because it needs the harness's behaviour), and whether the
+  `handle-open` leaf-document defect is worth a plan (the operator's word). The minors are one Watch. Both plans' spec-owned defects are
+  this orchestrator's authoring: a Done-when that demands a failing run of a document with no test (PLAN-LB-150 D4), a "holds at base" that
+  needs a file outside the declared surface, a list entry that cannot fail at base, and a "fresh seed" that reads set (PLAN-LB-151 D1, D3);
+  for later specs, a "fails at {sha}" clause names the pin that fails there or says it is a base read. `corpus set-verdict` is not called: the
+  specs are those of shipped plans, not staged ones. The forced push of the lane's own branch (`--force-with-lease`, disclosed by the PLAN-LB-150 lane)
+  is recorded as the lane's rule break; the guard did not refuse it.
 - 2026-11-14 (analysed PR 1988, staged PLAN-LB-152) — **PR #1988 (`2bf7cd83d`, the unplanned fix from the PLAN-LB-148 session) was analysed and a small
   cleanup plan was staged on the operator's word.** One three-layer leaf read the merge (no spec, so the PR's six claims stood in as layer 1;
   no blocker, no major, every defect fails closed) and the orchestrator re-read the decisive points. The MEDIUM two-snapshot Open Defect is closed
@@ -3795,6 +3829,28 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
 
 ## Watches
 
+- **The minors of PRs #1986 and #1987 (`aaa06bf44`, `2f0630bc0`; two three-layer leaves read 2026-11-15; recorded, not staged).** None fails open on
+  an observed input beyond what is named. **#1986 (`apply-changes`).** (Re-read) the Claude skill states each gate sentence after the fence it
+  gates (`SKILL.md:82/85, 99/102, 112/115`), where the mirrors and `sync-harnesses` state it first, so a top-down reader can run the command before
+  the condition and `step_blocks` cannot detect position; `marketplace/targets/README.md:200` says the entry point prescribes "the same seven
+  commands", which is wrong for the case it describes (a new harness makes it eight); the parity module has no control for the bare
+  `status: success` gate, the command-list divergence, the registry-last rule or the missing description, and the restrictive-condition control
+  plants step 3 only. Leaf only, not re-read: no rule covers a failed executor regeneration (step 3) before step 4 uses the executor, and step 5
+  reads `registry_parity` only, so a refused write ending `unreadable` or `ahead` reads as "not errors"; `_harness_entry_point_scan.py` copies the
+  sibling module's private helpers (the spec said reuse, and left the sibling untouched); `marketplace-build.adoc:218` uses `xref:` to a `.md`
+  target where `:216` uses `link:`; frontmatter and settings readers raise unclassified errors (the test errors, nothing passes silently).
+  **Not shown by reading:** whether a harness invokes the skill on its own (a question for the operator, see the Decisions entry), whether
+  `test/apply-changes/` is collected without an `__init__.py`, whether step 4's "verified pin" reads a registry that only step 5 writes.
+  **#1987 (`handle-open`).** (Re-read) a JSON-null `orchestrator` block reads as unset in `get` (`_cmd_orchestrator.py:296`) while `set` refuses it,
+  so the verb would record "unset default" and decide against the seeded figure where it should fail closed to 100; the derived scalar whitelist
+  makes the raw-value branch of `set` reachable and its comment ("Unreachable") stale (`:355-363`), so a future key without a coercion branch
+  is settable unvalidated; Step 6 of `handle-open.md` says the item being decided is re-analysed where the neighbour is meant (`:72`; Step 7
+  `:82` is right); the Output example carries a date (`:142`, against the documentation standard); the module pins `sources[]` but not
+  `kinds[]` (`test_handle_open_contract.py:118`) and pins the prohibition population as non-empty and unique but not as eight (`:389-393`).
+  Leaf only: a non-dict `orchestrator` block now errors for `auto_emit` and `parallelization_scope` (fail closed, undocumented, callers not
+  checked); an anchor-sourced question has no defined write path for its decided marker (Steps 6 and 7 write only through Step 8); no test
+  sets `0` and sees it survive `sync-defaults`; `data-model.md` states the figure 90 four times. **Not shown by reading:** callers of the changed
+  `get`, the Step 8 argv against the parsers, a tree-wide sweep for another carrier of 90 or of the cap rule.
 - **The minors of the PLAN-LB-136 landing (2026-11-14; recorded, not staged).** No major. Re-read at the lines: a bridge that is a symlink to
   a path outside the project makes `_is_within` resolve the leaf, so every setup answers `bridge_write_failed` and the steward offers a
   re-emit that cannot fix it (`standing_rules_bridge.py:103, 204`), while the comment at `:221-224` still says a symlinked bridge is replaced;
