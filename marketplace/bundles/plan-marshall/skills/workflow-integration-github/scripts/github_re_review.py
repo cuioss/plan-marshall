@@ -118,7 +118,7 @@ never responded". Without the record the two were the same bare
 Accepted tradeoff: a genuine review or comment whose body happens to quote a
 ``refusal_patterns`` substring is skipped — deliberate, because a truthful
 non-match is recoverable, whereas a false ``head_sha_verified: true`` silently
-asserts review coverage that never happened. That skip is now VISIBLE in
+asserts review coverage that never happened. That skip is reported in
 ``refusals`` rather than swallowed.
 
 **An ACKNOWLEDGMENT is not an answer.** A bot may reply to its trigger with a

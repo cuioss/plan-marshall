@@ -1045,9 +1045,10 @@ def test_the_no_cli_pin_trips_for_a_read_routed_through_run_cli(monkeypatch) -> 
 def test_a_project_that_does_not_route_to_github_is_never_read(monkeypatch, provider) -> None:
     """⛔ The provider gate runs BEFORE the fetch, so no foreign surface is read.
 
-    Without it the read depended on ``gh`` failing: a project configured for another
-    provider, sitting in a GitHub-resolvable checkout, would have read an empty GitHub
-    comment set and answered ``all_handled`` over comments its own CI never publishes.
+    The read is gated on the route, not on ``gh`` failing: a project configured for
+    another provider, sitting in a GitHub-resolvable checkout, would otherwise read an
+    empty GitHub comment set and answer ``all_handled`` over comments its own CI never
+    publishes.
     """
     import ci_base
 
