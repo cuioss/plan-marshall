@@ -230,10 +230,24 @@ is this table, and it is the single source; add a row here when a new epic-local
 |:-:|--------|-------------|
 | 1 | `drain` | Drain this epic's inbox (analyze inbox-scan mode) with the RULING 2026-10-09 grading: file applicable items to `live-blockers` and archive the rest. |
 | 2 | `ingest` | Sweep this repo's own `.plan/local/lessons-learned` corpus: consolidate, ground-truth check, file or archive (RULING 2026-10-09). |
-| 3 | `gather` | Sweep every sibling checkout's lessons store for plan-marshall-relevant lessons, and move them here, filed or archived (RULING 2026-11-02). |
+| 3 | `gather` | Sweep every sibling checkout's lessons store on THIS machine for plan-marshall-relevant lessons, and move them here, filed or archived (RULING 2026-11-02; machine-local, see Multi-Machine Operation). |
 | 4 | `status` | Report the queue, the resume anchor and the undrained `live-blockers` filings. |
 | 5 | `cleanup` | Remove session temp files, then compact and verify the ledger and regenerate the view. |
 | 6 | `land` | Land the whole shared ledger worktree onto `main` through one PR and the merge queue, then resync. |
+
+## Multi-Machine Operation
+
+⛔⛔ **RULING 2026-11-15 (operator) — this epic runs on three machines, and every lessons store is local to the machine that wrote it.** `.plan/local/lessons-learned/` is git-ignored, so each machine holds a different population of lessons, and a sweep of one machine can never see the others. Divergence between machines is the normal state of this epic, not a defect. The ledger itself (this tree, the inboxes, the archive) is git-tracked and is the only thing the machines share, and it reaches them only through `land` and a fetch of `main`.
+
+What follows from that, so a later run inherits it rather than re-deriving it:
+
+1. **A lesson present on one machine and absent on another is not lost.** The earlier "Unreconciled" notes in `## Lesson Sweeps` (ids the 2026-11-02 runs left in place that a later run could not find; the 25 API-Sheriff lessons missing on macOS while Linux holds 25 tombstones) are explained by this and are CLOSED: they were different machines. Do not reopen them, and do not compare ids across machines to chase them.
+2. **Every sweep record names its machine.** `gather` and `ingest` records state the operating system and the parent path probed (`/Users/oliver/git` or `/home/oliver/git`, and the third machine's own path), because a count means nothing without the store it was read from. `gather` probes only the running machine's checkouts; the other machines' stores are swept by a session running there.
+3. **The ledger worktree is per machine, so two machines can work on a stale copy.** Before any verb that writes (`drain`, `ingest`, `gather`, and above all filing to `live-blockers`), fetch `origin/main` and check that the ledger worktree contains it; if a land landed in the meantime, the worktree must be replayed onto it first. A session that skips this repeats work another machine already did.
+4. **Inbox messages are shared through git, so two machines can drain the same message.** The 2026-11-15 macOS and Linux sessions both drained `api-sheriff-api-sheriff-0-2-0-079`..`-085` and `api-sheriff-security-hardening-tier-1-001`..`-005`, graded them differently, and met in a merge conflict. The merge repaired it (same archive paths, identical bytes), but the gradings had to be reconciled by hand. Land before draining, and read `inbox list` on a fresh `main` first.
+5. **`live-blockers` filing numbers are allocated against the local ledger, so two machines allocate the same number.** `lessons-routing-087` and `-088` were filed on two machines the same day. A genuine duplicate shows up as a git add/add conflict on the filename; the later filing is renumbered above the highest number on `main` and every reference to it is rewritten (the 2026-11-15 macOS filings became `-089`..`-091`). Fetch `main` and read the highest `lessons-routing-NNN` in `live-blockers/inbox/` and its `archive/lessons-routing/` before filing.
+6. **Two operator rulings on one item can differ across machines.** When they do, the record names both and the later one is filed; the operator is told, never left to find it in a diff (`sh-004` and `sh-005` on 2026-11-15).
+7. **Land often.** A short-lived ledger branch is the only protection against the conflicts above. Land at the end of every action, not at the end of a day.
 
 ## Lesson Sweeps
 
