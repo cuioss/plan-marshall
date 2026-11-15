@@ -209,16 +209,16 @@ a disposition line names no real evidence
 (`disposition_unparsable` — a commit sha or a stated reason; a placeholder such as `TBD`, `-` or
 `n/a` is not evidence); the read is undecidable, truncated, carries a review-body section the
 parser cannot read, carries a record kind the verb does not know, or carries a review body with no
-attributable author (`undecidable_read`); the provider
-publishes no coverage signal for the read (`coverage_unavailable`). An undecidable read is a stop,
+attributable author (`undecidable_read`). An undecidable read is a stop,
 never a pass. Otherwise it answers `merge_allowed: true` with `all_handled`, and reports
 `unresolved_review_threads`, `review_body_findings_total` and `review_body_findings_handled` for the
 landing.
 
-**The read's coverage signal is GitHub's.** `ci pr comments` publishes `complete` for the GitHub
-provider and no coverage field for GitLab, so on a GitLab project the verb answers
-`coverage_unavailable` and the merge gate cannot be satisfied until that provider publishes one. That
-is a stated limitation of this gate, not a pass: the lane records the verdict and stops.
+**The read is GitHub's, taken in-process.** `review-gate` fetches the pull request's comment data
+itself, through the provider's own data read, and derives the flattened display form from that one
+snapshot; it never shells out to `ci pr comments`. A project whose CI provider is not GitHub, or
+whose provider cannot be resolved, answers `undecidable_read`: the gate states no verdict about a
+surface the project does not publish, and no re-read changes that answer.
 
 ## 0. Input
 

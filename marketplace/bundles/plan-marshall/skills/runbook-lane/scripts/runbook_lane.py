@@ -2617,6 +2617,15 @@ def _parse_dispositions(values: list[str]) -> tuple[list[dict[str, str]], list[s
     return rows, refused
 
 
+_REVIEW_READ_EXCEPTIONS = (OSError, RuntimeError, ValueError, TypeError, AttributeError, ImportError)
+"""What the review read — its imports, its repo lookup and its fetch — may raise.
+
+The read classifies these as a failed read; the flatten of the same snapshot
+classifies the same set, so both halves of one verdict answer ``undecidable_read``
+rather than letting one of them escape as a traceback.
+"""
+
+
 def _read_review_surfaces(pr_number: int, project_dir: Path) -> dict[str, Any]:
     """Read a pull request's comment surfaces ONCE, raw, in-process.
 
@@ -2663,7 +2672,7 @@ def _read_review_surfaces(pr_number: int, project_dir: Path) -> dict[str, Any]:
             }
         set_default_cwd(str(project_dir))
         return fetch_pr_comments_data(pr_number)
-    except (OSError, RuntimeError, ValueError, TypeError, AttributeError, ImportError) as exc:
+    except _REVIEW_READ_EXCEPTIONS as exc:
         return {'status': 'error', 'error': f'the review read could not run: {exc}'}
 
 
@@ -2678,24 +2687,6 @@ def _display_read(read: dict[str, Any]) -> dict[str, Any]:
     import github_ops
 
     return github_ops.flatten_comment_bodies(read)
-
-
-def _required_review_read_failure(read: dict[str, Any] | None) -> str | None:
-    """Why ``read`` cannot decide the required-review question, or ``None`` when it can.
-
-    An incomplete or failed read is never "no review" and never "a review": a review
-    may sit in the part that was not read, so the gate stops on it. The chokepoint's
-    own ``None`` answer is a fail-open for a POST decision — posting a trigger is
-    harmless, skipping one is not — and the merge gate must not inherit it, because
-    here the same ``None`` would state a verdict on evidence nobody read.
-    """
-    if read is None:
-        return 'the review read was not taken'
-    if read.get('status') != 'success':
-        return str(read.get('error') or 'the review read failed')
-    if read.get('complete') is not True:
-        return 'the review read was truncated: a review may sit in the part that was not read'
-    return None
 
 
 def _required_reviewers_without_a_review(comments: list[dict[str, Any]], required_reviewers: list[str]) -> list[str]:
@@ -2742,15 +2733,17 @@ def _review_gate_verdict(
     dispositions, so the merge condition is a decision a script makes:
 
     - an unreadable or truncated read is ``undecidable_read`` — a stop, never a
-      pass, because "no findings" is unknowable from a surface nobody read whole;
+      pass, because "no findings" is unknowable from a surface nobody read whole, and
+      so is a comment entry the display flatten cannot read;
+    - a disposition line that names no commit and no stated reason is
+      ``disposition_unparsable``;
     - an unresolved thread is ``unresolved_review_threads``;
     - a body finding with no disposition naming a commit or a stated reason is
       ``body_findings_undisposed``;
     - a resolved thread whose last BOT-authored comment states that the concern
       remains is ``thread_concern_remains`` — resolution is not silence, and a lane
       reply below the bot's restatement never discharges it;
-    - a required reviewer whose raw read is incomplete or failed is
-      ``undecidable_read``, and one holding no qualifying review is
+    - a required reviewer holding no qualifying review is
       ``required_review_missing``;
     - otherwise ``all_handled``.
     """
@@ -2769,19 +2762,6 @@ def _review_gate_verdict(
             'reason': 'undecidable_read',
             'detail': str(read.get('error') or 'the review surface read failed'),
         }
-    if 'complete' not in read:
-        # A read that publishes no coverage signal cannot be shown whole. It is a
-        # separate reason from a truncation, because the remedy differs: nothing is
-        # wrong with the pull request, the PROVIDER does not report coverage (the
-        # GitLab read publishes none today), so the gate cannot decide the merge on
-        # it at all.
-        return {
-            **base,
-            'merge_allowed': False,
-            'reason': 'coverage_unavailable',
-            'provider': str(read.get('provider') or 'unknown'),
-            'detail': 'the provider reported no coverage signal for this read, so the surface cannot be shown whole',
-        }
     if read.get('complete') is not True:
         return {
             **base,
@@ -2792,8 +2772,20 @@ def _review_gate_verdict(
 
     # The findings parser reads the DISPLAY form, derived here from the one snapshot
     # this verdict decides on: the required-reviewer check below reads the same
-    # snapshot's raw bodies. One fetch, two views, no window between them.
-    comments = [comment for comment in (_display_read(read).get('comments') or []) if isinstance(comment, dict)]
+    # snapshot's raw bodies. One fetch, two views, no window between them. The flatten
+    # reads every entry before the dict filter below reaches one, so an entry that is
+    # not a mapping raises here; the guard classifies that as a stop, because a crash
+    # states no verdict at all.
+    try:
+        display = _display_read(read)
+    except _REVIEW_READ_EXCEPTIONS as exc:
+        return {
+            **base,
+            'merge_allowed': False,
+            'reason': 'undecidable_read',
+            'detail': f'the review read could not be flattened into its display form: {exc}',
+        }
+    comments = [comment for comment in (display.get('comments') or []) if isinstance(comment, dict)]
     unrecognised = sorted({str(comment.get('kind')) for comment in comments} - set(_RECORD_KINDS))
     if unrecognised:
         # A record shape this verb does not know is a surface it cannot read. The
@@ -2849,13 +2841,6 @@ def _review_gate_verdict(
     missing_reviews: list[str] = []
     if required_reviewers:
         verdict['required_reviewers'] = list(required_reviewers)
-        # Fail closed BEFORE asking the predicate: a read that did not complete cannot
-        # show that a review is absent, and the gate never states a verdict about a
-        # surface it did not read. This is the SAME envelope the findings above were
-        # counted from, so the two halves cannot disagree about a moment.
-        read_failure = _required_review_read_failure(read)
-        if read_failure is not None:
-            return {**verdict, 'merge_allowed': False, 'reason': 'undecidable_read', 'detail': read_failure}
         missing_reviews = _required_reviewers_without_a_review(
             [comment for comment in read.get('comments') or [] if isinstance(comment, dict)],
             list(required_reviewers),

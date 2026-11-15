@@ -218,8 +218,8 @@ def test_the_commit_a_marker_names_must_be_a_commit_id(covered: str, expected: b
 
     The marker field is dedicated to the commit a review covered, so an all-hex value
     in it IS a commit however abbreviated; a word that is not hex names no commit at
-    all. Before this test, a refusal body beside ``coveredCommitId: "pending"`` was
-    exempt from the refusal exclusion at all three finished-review sites.
+    all. A refusal body beside ``coveredCommitId: "pending"`` therefore carries no
+    exemption from the refusal exclusion at any of the three finished-review sites.
     """
     body = f'<!-- final_review_risk_coverage:{{"coveredCommitId":"{covered}","kind":"reviewed"}} -->'
 

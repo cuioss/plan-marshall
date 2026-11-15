@@ -24,6 +24,8 @@ verb answers "refused", or the fixture proves nothing about what changed.
 
 from __future__ import annotations
 
+import re
+import sys
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
@@ -38,6 +40,7 @@ lane = load_script_module('plan-marshall', 'runbook-lane', 'runbook_lane.py', 'r
 cmd_review_gate = lane.cmd_review_gate
 
 _SCRIPT = get_scripts_dir('plan-marshall', 'runbook-lane') / 'runbook_lane.py'
+_SKILL = get_scripts_dir('plan-marshall', 'runbook-lane').parent / 'SKILL.md'
 
 _NITPICK_BODY = (
     '**Actionable comments posted: 0**\n\n'
@@ -729,17 +732,52 @@ def test_an_unrecognised_record_kind_refuses_the_merge() -> None:
     assert 'thread_comment' in verdict['detail']
 
 
-def test_a_read_without_a_coverage_signal_is_its_own_reason() -> None:
-    """A provider that publishes no coverage cannot be shown whole — not a truncation."""
+def test_a_read_without_a_coverage_signal_is_undecidable() -> None:
+    """A read that publishes no coverage signal cannot be shown whole.
+
+    The GitHub read always publishes ``complete``, so an envelope without it is a
+    malformed or truncated one: the gate stops on it, exactly as it stops on an
+    incomplete read, rather than inventing a verdict of its own.
+    """
     read = _read(_review_body('**Actionable comments posted: 0**'))
     del read['complete']
-    read['provider'] = 'gitlab'
 
     verdict = _verdict(read)
 
     assert verdict['merge_allowed'] is False
-    assert verdict['reason'] == 'coverage_unavailable'
-    assert verdict['provider'] == 'gitlab'
+    assert verdict['reason'] == 'undecidable_read'
+    assert 'truncated' in verdict['detail']
+
+
+def _documented_review_gate_reasons() -> set[str]:
+    """The reason tokens the lane text's ``review-gate`` refusal list names."""
+    text = _SKILL.read_text(encoding='utf-8')
+    section = text.split('### review-gate', 1)[1].split('\n## ', 1)[0]
+    paragraph = section.split('It answers `merge_allowed: false`', 1)[1].split('\n\n', 1)[0]
+    return set(re.findall(r'\(`([a-z][a-z_]*)`', paragraph))
+
+
+def _reasons_the_verdict_can_return() -> set[str]:
+    """The ``reason`` literals inside ``_review_gate_verdict`` — no other verb's."""
+    source = _SCRIPT.read_text(encoding='utf-8')
+    start = source.index('def _review_gate_verdict(')
+    end = source.index('\ndef cmd_review_gate(', start)
+    return set(re.findall(r"'reason': '([a-z][a-z_]*)'", source[start:end]))
+
+
+def test_the_lane_text_names_no_reason_the_verdict_cannot_return() -> None:
+    """⛔ Every reason the contract names is one the verdict can actually answer.
+
+    A refusal reason the verb cannot return describes a decision the code cannot make,
+    so a reader who hits it looks for a remedy that does not exist. The documented list
+    is read from the ``review-gate`` section and compared with the reason literals
+    ``_review_gate_verdict`` returns.
+    """
+    documented = _documented_review_gate_reasons()
+    produced = _reasons_the_verdict_can_return()
+
+    assert 'undecidable_read' in documented, 'the review-gate reason list was not found in the lane text'
+    assert documented <= produced, f'named in the lane text but unreachable: {sorted(documented - produced)}'
 
 
 def test_a_human_review_body_is_a_finding_source_too() -> None:
@@ -951,14 +989,25 @@ def test_the_verb_is_reachable_through_its_cli_surface() -> None:
     assert result.toon()['error'] == 'invalid_pr_number'
 
 
-def test_the_gate_fetches_the_surface_once_and_spawns_no_cli(monkeypatch) -> None:
+def _forbid_cli(*_args, **_kwargs):
+    """The single-fetch pin: no CLI may be spawned for the gate's read.
+
+    ``pytest.fail`` raises a ``BaseException``, so ``ci_base.run_cli``'s blanket
+    ``except Exception`` cannot swallow it: a read routed through the CLI helper trips
+    this pin exactly as a direct ``subprocess.run`` does.
+    """
+    pytest.fail('the review gate must not spawn a CLI for its read')
+
+
+@pytest.mark.usefixtures('restore_default_cwd')
+def test_the_gate_fetches_the_surface_once_and_spawns_no_cli(monkeypatch, outside_repo_dir) -> None:
     """⛔ ONE fetch decides the whole verdict: threads, findings and reviews.
 
-    The gate used to take the display read and the raw read as two snapshots, so a
-    review or thread landing between them was credited by one half and unseen by the
-    other. It now fetches the provider's data once, in-process, and derives the
-    flattened display form itself — asserted here by counting fetches AND by pinning
-    that no subprocess is spawned at all.
+    The gate takes the provider's data once, in-process, and derives the flattened
+    display form itself — asserted here by counting fetches AND by pinning that no CLI
+    is spawned at all. The directory carries no ``.plan/marshal.json``, so a route read
+    from the filesystem would stop the gate before the fetch; the module fixture pins
+    the route, and the fetch count is what proves the read happened exactly once.
     """
     fetches: list[int] = []
 
@@ -966,11 +1015,9 @@ def test_the_gate_fetches_the_surface_once_and_spawns_no_cli(monkeypatch) -> Non
         fetches.append(pr_number)
         return _raw_read([])
 
-    def forbid_run(*_args, **_kwargs):
-        raise AssertionError('the review gate must not spawn a CLI for its read')
-
+    monkeypatch.chdir(outside_repo_dir)
     monkeypatch.setattr(github_re_review, 'fetch_pr_comments_data', fake_fetch)
-    monkeypatch.setattr('subprocess.run', forbid_run)
+    monkeypatch.setattr('subprocess.run', _forbid_cli)
 
     verdict = cmd_review_gate(_args_with_reviewers('coderabbit'))
 
@@ -978,13 +1025,30 @@ def test_the_gate_fetches_the_surface_once_and_spawns_no_cli(monkeypatch) -> Non
     assert verdict['reason'] == 'required_review_missing'
 
 
+def test_the_no_cli_pin_trips_for_a_read_routed_through_run_cli(monkeypatch) -> None:
+    """⛔ ``ci_base.run_cli`` swallows every ``Exception``, so the pin is not one.
+
+    A second read routed through the CLI helper is invisible to a pin that raises an
+    ``Exception``: ``run_cli`` catches it and returns a failure tuple. This asserts the
+    pin's own escape, which is what makes such a read fail the single-fetch test
+    instead of passing silently.
+    """
+    import ci_base
+
+    monkeypatch.setattr('subprocess.run', _forbid_cli)
+
+    with pytest.raises(pytest.fail.Exception, match='must not spawn'):
+        ci_base.run_cli('gh', ['pr', 'view'])
+
+
 @pytest.mark.parametrize('provider', ['gitlab', None])
 def test_a_project_that_does_not_route_to_github_is_never_read(monkeypatch, provider) -> None:
     """⛔ The provider gate runs BEFORE the fetch, so no foreign surface is read.
 
-    Without it the read depended on ``gh`` failing: a project configured for another
-    provider, sitting in a GitHub-resolvable checkout, would have read an empty GitHub
-    comment set and answered ``all_handled`` over comments its own CI never publishes.
+    The read is gated on the route, not on ``gh`` failing: a project configured for
+    another provider, sitting in a GitHub-resolvable checkout, would otherwise read an
+    empty GitHub comment set and answer ``all_handled`` over comments its own CI never
+    publishes.
     """
     import ci_base
 
@@ -1223,14 +1287,13 @@ def test_an_unnamed_reviewer_population_leaves_the_verdict_unchanged() -> None:
 # the ones a flattened read could not decide: a marker quoted inside a fenced
 # example, and a marker written as a blockquote, an inline code span or an indented
 # code block. Every one of them is a place where the marker reader's opener rule —
-# the opener must start a line — refuses the claim, and a display read destroyed the
-# line structure that rule reads.
+# the opener must start a line — refuses the claim, and a display read would destroy
+# the line structure that rule reads.
 #
-# These tests stub the TWO TRANSPORT seams only — ``subprocess.run`` (the display
-# read) and ``github_re_review.fetch_pr_comments_data`` (the raw read) — so the
-# lane's own read functions and its predicate site run for real. The display read is
-# stubbed with what the provider actually gives it: ``flatten_comment_body`` of the
-# raw text, the same call ``ci pr comments`` makes.
+# These tests stub ONE read seam — ``github_re_review.fetch_pr_comments_data``, the
+# single in-process fetch — so the lane's own read functions and its predicate site run
+# for real. The provider resolver is stubbed too, by the module's ``github_provider``
+# fixture: it pins the route, not the data the gate reads.
 
 _QUOTED_MARKER_CONSTRUCTIONS: dict[str, str] = {
     # A: the fence's second line is content, so the marker never leaves the block.
@@ -1260,6 +1323,20 @@ def restore_default_cwd():
     ci_base.set_default_cwd(original)
 
 
+@pytest.fixture(autouse=True)
+def github_provider(monkeypatch):
+    """Route the read to GitHub, independent of the ambient project configuration.
+
+    ``resolve_ci_provider`` walks up from the project directory the gate is handed, so
+    a read driven against ``'.'`` would otherwise depend on the ``.plan/marshal.json``
+    above whatever directory the suite happens to run from. Autouse, so no test that
+    drives the real read can forget it.
+    """
+    import ci_base
+
+    monkeypatch.setattr(ci_base, 'resolve_ci_provider', lambda _project_dir: 'github')
+
+
 def _verdict_through_the_read_seams(
     monkeypatch,
     raw_comments: list[dict],
@@ -1267,11 +1344,12 @@ def _verdict_through_the_read_seams(
     raw_read: dict | None = None,
     reviewers: tuple[str, ...] = ('coderabbit',),
 ) -> Any:
-    """Drive ``review-gate`` with only the ONE provider fetch stubbed.
+    """Drive ``review-gate`` with only the ONE fetch stubbed.
 
     No subprocess and no TOON: the gate fetches once, in-process, and derives the
     display form itself. A test that had to stub a second transport would be proof
-    the gate reads the surface twice.
+    the gate reads the surface twice. The provider resolver is pinned by the module
+    fixture, so the outcome never depends on the ambient project configuration.
     """
     monkeypatch.setattr(
         github_re_review,
@@ -1319,6 +1397,42 @@ def test_an_incomplete_raw_read_is_undecidable_never_missing(monkeypatch, label:
     assert verdict['reason'] == 'undecidable_read', verdict
 
 
+@pytest.mark.usefixtures('restore_default_cwd')
+def test_a_comment_entry_that_cannot_be_flattened_is_undecidable(monkeypatch) -> None:
+    """⛔ A malformed comment entry is classified, never a traceback.
+
+    The flatten reads every entry before the dict filter, so an entry that is not a
+    mapping raises there. A crash states no verdict at all, so the gate answers
+    ``undecidable_read`` and names the failure it hit.
+    """
+    verdict = _verdict_through_the_read_seams(
+        monkeypatch,
+        [],
+        raw_read={'status': 'success', 'complete': True, 'comments': ['not-a-comment']},
+    )
+
+    assert verdict['merge_allowed'] is False, verdict
+    assert verdict['reason'] == 'undecidable_read', verdict
+    assert 'display form' in verdict['detail'], verdict
+
+
+@pytest.mark.usefixtures('restore_default_cwd')
+def test_the_read_classifies_an_unimportable_provider_module(monkeypatch) -> None:
+    """⛔ The imports sit inside the guard, so a broken import is a classified stop.
+
+    A ``None`` entry in ``sys.modules`` makes the import statement itself raise
+    ``ImportError`` rather than the fetch, so a green classified read here is what
+    shows the imports were not hoisted above the ``try``.
+    """
+    monkeypatch.setitem(sys.modules, 'ci_base', None)
+
+    read = lane._read_review_surfaces(7, Path('.'))
+
+    assert read['status'] == 'error'
+    assert 'ci_base' in read['error']
+
+
+@pytest.mark.usefixtures('restore_default_cwd')
 @pytest.mark.parametrize('raised', [AttributeError('owner is None'), ImportError('no provider module')])
 def test_a_read_that_raises_is_classified_never_a_traceback(monkeypatch, raised: Exception) -> None:
     """⛔ The guard covers the imports and the repo lookup, not only the fetch.

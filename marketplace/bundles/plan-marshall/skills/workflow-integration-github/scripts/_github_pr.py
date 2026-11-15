@@ -592,9 +592,9 @@ def review_coverage_names_commit(body: str) -> bool:
     The value must be a COMMIT ID — an all-hex token (:data:`_HEX_TOKEN`). A dedicated
     field names a commit, so any hex value in it is one however abbreviated; a
     placeholder (``pending``, ``n/a``, ``unknown``) is not, and a marker carrying one
-    is a claim nobody can place. Without this test a refusal body beside
-    ``{"kind": "reviewed", "coveredCommitId": "pending"}`` was exempt from the refusal
-    exclusion at all three finished-review sites.
+    is a claim nobody can place. A refusal body beside
+    ``{"kind": "reviewed", "coveredCommitId": "pending"}`` therefore carries no
+    exemption from the refusal exclusion at any of the three finished-review sites.
     """
     present, fields = _coverage_payload(body)
     if not present or fields is None:
