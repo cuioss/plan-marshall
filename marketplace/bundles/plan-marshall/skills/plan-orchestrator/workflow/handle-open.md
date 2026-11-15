@@ -112,7 +112,7 @@ Emit the report described under [Output](#output). The contract's Reporting rule
 
 ## Idempotence
 
-**Each DECISION is keyed by the item and its in-place decided marker.** An item already marked decided, with its `## Decisions` entry on record, is not decided again and is not presented again: a second run over an unchanged ledger decides nothing new, presents nothing, and reports the same item as `already_decided`. An item whose marker is missing is treated as open — the marker, not the memory of a previous run, is the record. **An item the operator left open, skipped or stopped carries no decided marker**, so the next run re-presents it rather than reporting it as settled; presenting an item is not deciding it, and the marker is where the two are told apart.
+**Each DECISION is keyed by the item and its in-place decided marker.** An item already marked decided, with its `## Decisions` entry on record, is not decided again and is not presented again: a second run over an unchanged ledger decides nothing new, presents no already-decided item, and reports the same item as `already_decided`. An item whose marker is missing is treated as open — the marker, not the memory of a previous run, is the record. **An item the operator left open, skipped or stopped carries no decided marker**, so the next run re-presents it rather than reporting it as settled; presenting an item is not deciding it, and the marker is where the two are told apart.
 
 ## Output
 

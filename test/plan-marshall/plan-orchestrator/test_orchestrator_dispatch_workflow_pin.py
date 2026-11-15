@@ -947,6 +947,28 @@ class TestDraftingDispatchWritePathContainment:
             'and the verb docs have drifted apart'
         )
 
+    def test_an_additional_dispatching_workflow_raises_the_derived_total(self, tmp_path):
+        # The control the index check needs: the total must MOVE when a second
+        # dispatching workflow document exists. A hard-coded sum would not.
+        doc = '- **Dispatchable** — a read, on `effort resolve-target --role orchestrator.analyze --plan-id none --workflow x`.\n'
+
+        def derived_total(root: Path, doc_count: int) -> int:
+            workflow_dir = root / 'plan-orchestrator' / 'workflow'
+            workflow_dir.mkdir(parents=True)
+            for index in range(doc_count):
+                (workflow_dir / f'{index}.md').write_text(doc, encoding='utf-8')
+            return sum(
+                _dispatch_index_entry_count(path) for path in _dispatch_docs_under(root) if path.parent == workflow_dir
+            )
+
+        # Two separate fixture roots: the derivation under a root is cached, so a
+        # single root mutated between calls would read its own cached result.
+        one = derived_total(tmp_path / 'one-doc', 1)
+        two = derived_total(tmp_path / 'two-docs', 2)
+
+        assert one == 1, f'the single-document fixture did not derive: {one}'
+        assert two == 2, f'a second dispatching workflow did not raise the total: {one} -> {two}'
+
     def test_a_doc_missing_its_dispatchable_bullets_drops_the_derived_count(self, tmp_path):
         # Matched control: a doc carrying NEITHER a top-level dispatchable
         # bullet NOR a nested draft bullet NOR a spec_body return field must

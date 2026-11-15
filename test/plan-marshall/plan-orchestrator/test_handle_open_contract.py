@@ -76,15 +76,28 @@ SEEDED_FIGURE = _config_defaults_mod.DEFAULT_ORCHESTRATOR.get(KNOB)
 SEEDED_FIGURE_RE = re.compile(rf'\b{SEEDED_FIGURE}\b') if isinstance(SEEDED_FIGURE, int) else None
 
 #: The canonical prohibition population is read OUT of the contract's decision-acts
-#: bullet at test time, never mirrored here. A mirrored tuple would let the
-#: contract gain a prohibition while both document checks went on inspecting the
-#: old eight.
+#: bullet at test time, never mirrored here, and the read is SCOPED to that bullet:
+#: a `NEVER **…**` phrase in another section is not a handle-open prohibition and
+#: must not be able to satisfy (or inflate) this population.
 _CONTRACT_PROHIBITION_RE = re.compile(r'NEVER \*\*(?P<phrase>[^*]+)\*\*')
+_DECISION_ACTS_START = '- **Decision acts.**'
+_DECISION_ACTS_END = '\n- **Presentation.**'
+
+
+def _decision_acts_bullet(text: str) -> str:
+    """The contract's decision-acts bullet alone, or ``''`` when it is absent."""
+    start = text.find(_DECISION_ACTS_START)
+    if start < 0:
+        return ''
+    end = text.find(_DECISION_ACTS_END, start)
+    return text[start:end] if end >= 0 else text[start:]
 
 
 def _contract_prohibitions(text: str) -> list[str]:
-    """Every prohibition the contract's decision-acts bullet states, lowercased."""
-    return [f'never {phrase.strip().lower()}' for phrase in _CONTRACT_PROHIBITION_RE.findall(text)]
+    """Every prohibition the decision-acts bullet states, lowercased."""
+    return [
+        f'never {phrase.strip().lower()}' for phrase in _CONTRACT_PROHIBITION_RE.findall(_decision_acts_bullet(text))
+    ]
 
 
 #: The one-sentence form of the confidence-cap rule. Its DEFINITION belongs to
@@ -388,6 +401,21 @@ class TestProhibitions:
         assert missing == [], (
             f'{len(missing)} of {len(prohibitions)} prohibitions are not named by the workflow document: {missing}'
         )
+
+    def test_a_prohibition_outside_the_decision_acts_bullet_is_not_counted(self, tmp_path):
+        # The scope control: the extraction reads the decision-acts bullet ONLY, so
+        # a `NEVER **…**` phrase in another section neither satisfies the population
+        # check nor inflates it.
+        fixture = tmp_path / 'scoped-contract.md'
+        fixture.write_text(
+            '- **Decision acts.** It NEVER **stages a plan**.\n'
+            '- **Presentation.** It NEVER **uses the question tool**.\n',
+            encoding='utf-8',
+        )
+
+        prohibitions = _contract_prohibitions(_read(fixture))
+
+        assert prohibitions == ['never stages a plan'], f'an out-of-bullet phrase was counted: {prohibitions}'
 
     def test_a_dropped_prohibition_is_detected(self, tmp_path):
         prohibitions = _contract_prohibitions(_read(STANDARD))
