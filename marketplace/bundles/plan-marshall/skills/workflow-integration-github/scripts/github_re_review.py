@@ -118,8 +118,9 @@ from "the bot never responded", which a bare ``matched: false`` /
 Accepted tradeoff: a genuine review or comment whose body happens to quote a
 ``refusal_patterns`` substring is skipped — deliberate, because a truthful
 non-match is recoverable, whereas a false ``head_sha_verified: true`` silently
-asserts review coverage that never happened. That skip is reported in
-``refusals`` rather than swallowed.
+asserts review coverage that never happened. A skip the refusal test reaches is
+recorded in ``refusals`` rather than swallowed; one a gate ahead of that test drops —
+authorship, the head reference, or the trigger time — is skipped with no record.
 
 **An ACKNOWLEDGMENT is not an answer.** A bot may reply to its trigger with a
 comment that only confirms the command was received — CodeRabbit's "Review
@@ -1652,9 +1653,13 @@ class _ReReviewStrategy:
         is no authorship to gate on and no review matches, and a record whose login
         is absent, unknown or a human's resolves to no ``bot_kind`` and is skipped.
 
-        Every refusal this path skips is APPENDED to ``refusals`` so the caller can
+        A refusal this path reaches is APPENDED to ``refusals`` so the caller can
         surface it on the envelope. A skipped refusal is a branchable signal, not a
-        silent ``continue`` that degrades into an indistinguishable timeout.
+        silent ``continue`` that degrades into an indistinguishable timeout. The gate
+        order bounds which skips reach the record: the authorship, head-reference and
+        trigger-time tests run first, so a review any of them drops is skipped with no
+        record. The record covers a refusal from THIS bot that names this HEAD and
+        post-dates the trigger.
         """
         if not bot_kind or trigger_dt is None:
             return None
