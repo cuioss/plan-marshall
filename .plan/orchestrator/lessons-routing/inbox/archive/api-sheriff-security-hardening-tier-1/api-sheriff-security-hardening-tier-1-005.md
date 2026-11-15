@@ -4,8 +4,8 @@ sender_id=api-sheriff-security-hardening-tier-1
 epic=lessons-routing
 kind=finding
 created=2026-11-10T07:29:57Z
-revision=1
-amended=2026-11-10T12:54:54Z
+revision=3
+amended=2026-11-12T11:01:03Z
 
 # Landing facts report review-body and Sonar counts that the provider re-read does not reproduce
 
@@ -33,3 +33,10 @@ Same two differences on the next landing of the same epic (plugin/executor 0.1.2
 
 - `review_body_findings_total`: landing `4`; `runbook_lane review-gate --pr-number 589` reports `6`, all `coderabbit` section `inline` (`inline-1` .. `inline-6`), `review_body_findings_handled: 0`, `merge_allowed: false, reason: body_findings_undisposed`. The plan's `pr-comment.jsonl` files those 6 as kind `inline`, all `fixed`, and 4 as `review_body` (2 fixed, 2 taken_into_account) — the landing's `4`.
 - `sonar_open_new_issues`: landing `0`; `sonar_rest search --project cuioss_API-Sheriff --pr 589` returns 5 issues. New evidence for the staleness reading: the plan's own `artifacts/findings/sonar-scan-summary.jsonl` records four PR analyses, and the 5 issues belong to the FIRST (`analysis_revision` 533886a7, `new_code_issue_count: 5`); the three later analyses, the last at the final head 728062ea, all report `new_code_issue_count: 0`. All five are fixed in the merged code. So `search --pr` returned issues the latest analysis no longer reports — the "open at the merged head" read the suggested correction asks for is exactly what is missing.
+
+## Recurrence — PLAN-SEC-05 (PR cuioss/API-Sheriff#600, drained 2026-11-12)
+
+Third landing of the same epic (plugin/executor 0.1.2090):
+
+- `review_body_findings_total`: landing `4`; `runbook_lane review-gate --pr-number 600` reports `7`, all `coderabbit` section `inline` (`inline-1` .. `inline-7`), `review_body_findings_handled: 0`, `merge_allowed: false, reason: body_findings_undisposed`. The 7 match CodeRabbit's "Actionable comments posted" counts (6 on the first review, 1 on a later one); `unresolved_review_threads` is 0, so every one of them is a resolved thread. Same classification split as before.
+- `sonar_open_new_issues`: this time the landing wrote `unknown` instead of `0`, citing `count_status: undecidable` from the hotspot-inclusive post-merge read. The orchestrator's re-read with `workflow-integration-sonar:sonar read_open_issues --project cuioss_API-Sheriff --pr 600` returns the same: `count_status: undecidable`, `count_status_reason: head_revision_unavailable`, analysis revision 6b95ece8 (the PR's last head). So the landing is honest but `landing-check` reports it `complete: false` on `sonar_open_new_issues` for every merged PR: the read cannot resolve a head revision once the PR branch is gone. The "open at the merged head" read is still missing; it now fails closed instead of reporting a stale count.
