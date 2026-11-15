@@ -18,15 +18,12 @@ The second half pins the consequence: for one bot and one history, the chokepoin
 from __future__ import annotations
 
 import argparse
-import shutil
-import tempfile
-from pathlib import Path
 
 import github_pr
 import github_re_review
 import pytest
 
-from conftest import PROJECT_ROOT, load_script_module
+from conftest import load_script_module
 
 lane = load_script_module('plan-marshall', 'runbook-lane', 'runbook_lane.py', 'runbook_lane_shape_table_mod')
 rc = load_script_module('plan-marshall', 'automatic-review', 'review_completeness.py', register=False)
@@ -155,31 +152,15 @@ def github_provider(monkeypatch):
     monkeypatch.setattr(ci_base, 'resolve_ci_provider', lambda _project_dir: 'github')
 
 
-@pytest.fixture
-def outside_the_repository():
-    """A temporary directory with no ``.plan/`` above it.
-
-    pytest's ``tmp_path`` roots under the repo-local ``--basetemp``, so a walk up from
-    it reaches this repository's ``.plan/marshal.json``. The system temp root is what
-    makes the CI provider genuinely unresolvable from the directory a test hands the
-    read.
-    """
-    path = Path(tempfile.mkdtemp(prefix='lane-column-outside-'))
-    assert PROJECT_ROOT not in path.parents
-    try:
-        yield path
-    finally:
-        shutil.rmtree(path, ignore_errors=True)
-
-
 def _lane_admits(monkeypatch, comments: list[dict]) -> bool:
-    """The lane's own verdict, driven through its ONE fetch seam.
+    """The lane's own verdict, driven through its ONE read seam.
 
-    ``github_re_review.fetch_pr_comments_data`` is the only seam replaced: the gate
-    fetches the surfaces once, in-process, and derives the display form itself. The
-    ``github_provider`` fixture pins the route, so no call site depends on the ambient
-    project configuration. Neither the lane's read functions nor its predicate site is
-    stubbed, so a second predicate planted at the lane's site turns this column red.
+    ``github_re_review.fetch_pr_comments_data`` is the only read seam replaced: the
+    gate fetches the surfaces once, in-process, and derives the display form itself.
+    The ``github_provider`` fixture stubs the provider resolver as well, which pins the
+    route rather than the data. Neither the lane's read functions nor its predicate
+    site is stubbed, so a second predicate planted at the lane's site turns this column
+    red.
     """
     monkeypatch.setattr(
         github_re_review,
@@ -212,7 +193,7 @@ def test_every_site_reaches_one_verdict_per_artifact(plan_context, monkeypatch, 
 
 
 @pytest.mark.usefixtures('restore_default_cwd', 'github_provider')
-def test_the_lane_column_does_not_depend_on_a_project_configuration(monkeypatch, outside_the_repository) -> None:
+def test_the_lane_column_does_not_depend_on_a_project_configuration(monkeypatch, outside_repo_dir) -> None:
     """⛔ The lane's verdict does not read the ambient project configuration.
 
     The directory handed to the gate carries no ``.plan/marshal.json``, so a route read
@@ -220,7 +201,7 @@ def test_the_lane_column_does_not_depend_on_a_project_configuration(monkeypatch,
     ``undecidable_read``. The ``github_provider`` fixture is what keeps the column
     green from here: remove it and this test fails.
     """
-    monkeypatch.chdir(outside_the_repository)
+    monkeypatch.chdir(outside_repo_dir)
     comments = [_comment('review_body', 'No actionable comments were generated', commit_id=_HEAD)]
 
     assert _lane_admits(monkeypatch, comments) is True

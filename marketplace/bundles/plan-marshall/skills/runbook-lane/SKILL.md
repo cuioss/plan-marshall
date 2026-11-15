@@ -218,7 +218,7 @@ landing.
 itself, through the provider's own data read, and derives the flattened display form from that one
 snapshot; it never shells out to `ci pr comments`. A project whose CI provider is not GitHub, or
 whose provider cannot be resolved, answers `undecidable_read`: the gate states no verdict about a
-surface the project does not publish.
+surface the project does not publish, and no re-read changes that answer.
 
 ## 0. Input
 

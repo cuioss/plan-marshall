@@ -25,9 +25,7 @@ verb answers "refused", or the fixture proves nothing about what changed.
 from __future__ import annotations
 
 import re
-import shutil
 import sys
-import tempfile
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
@@ -35,7 +33,7 @@ from unittest.mock import patch
 import github_re_review
 import pytest
 
-from conftest import PROJECT_ROOT, get_scripts_dir, load_script_module, parse_ns, run_script
+from conftest import get_scripts_dir, load_script_module, parse_ns, run_script
 
 lane = load_script_module('plan-marshall', 'runbook-lane', 'runbook_lane.py', 'runbook_lane_review_gate_mod')
 
@@ -770,10 +768,10 @@ def _reasons_the_verdict_can_return() -> set[str]:
 def test_the_lane_text_names_no_reason_the_verdict_cannot_return() -> None:
     """⛔ Every reason the contract names is one the verdict can actually answer.
 
-    A retired refusal reason left in the lane text describes a decision the code
-    cannot make, so a reader who hits it looks for a remedy that does not exist.
-    The documented list is read from the ``review-gate`` section and compared with
-    the reason literals ``_review_gate_verdict`` returns.
+    A refusal reason the verb cannot return describes a decision the code cannot make,
+    so a reader who hits it looks for a remedy that does not exist. The documented list
+    is read from the ``review-gate`` section and compared with the reason literals
+    ``_review_gate_verdict`` returns.
     """
     documented = _documented_review_gate_reasons()
     produced = _reasons_the_verdict_can_return()
@@ -1002,7 +1000,7 @@ def _forbid_cli(*_args, **_kwargs):
 
 
 @pytest.mark.usefixtures('restore_default_cwd')
-def test_the_gate_fetches_the_surface_once_and_spawns_no_cli(monkeypatch, outside_the_repository) -> None:
+def test_the_gate_fetches_the_surface_once_and_spawns_no_cli(monkeypatch, outside_repo_dir) -> None:
     """⛔ ONE fetch decides the whole verdict: threads, findings and reviews.
 
     The gate takes the provider's data once, in-process, and derives the flattened
@@ -1017,7 +1015,7 @@ def test_the_gate_fetches_the_surface_once_and_spawns_no_cli(monkeypatch, outsid
         fetches.append(pr_number)
         return _raw_read([])
 
-    monkeypatch.chdir(outside_the_repository)
+    monkeypatch.chdir(outside_repo_dir)
     monkeypatch.setattr(github_re_review, 'fetch_pr_comments_data', fake_fetch)
     monkeypatch.setattr('subprocess.run', _forbid_cli)
 
@@ -1292,10 +1290,10 @@ def test_an_unnamed_reviewer_population_leaves_the_verdict_unchanged() -> None:
 # the opener must start a line — refuses the claim, and a display read would destroy
 # the line structure that rule reads.
 #
-# These tests stub ONE seam — ``github_re_review.fetch_pr_comments_data``, the single
-# in-process fetch — so the lane's own read functions and its predicate site run for
-# real. The provider resolver is stubbed by the module's ``github_provider`` fixture,
-# which pins the route rather than replacing anything the gate reads.
+# These tests stub ONE read seam — ``github_re_review.fetch_pr_comments_data``, the
+# single in-process fetch — so the lane's own read functions and its predicate site run
+# for real. The provider resolver is stubbed too, by the module's ``github_provider``
+# fixture: it pins the route, not the data the gate reads.
 
 _QUOTED_MARKER_CONSTRUCTIONS: dict[str, str] = {
     # A: the fence's second line is content, so the marker never leaves the block.
@@ -1337,23 +1335,6 @@ def github_provider(monkeypatch):
     import ci_base
 
     monkeypatch.setattr(ci_base, 'resolve_ci_provider', lambda _project_dir: 'github')
-
-
-@pytest.fixture
-def outside_the_repository():
-    """A temporary directory with no ``.plan/`` above it.
-
-    pytest's ``tmp_path`` roots under the repo-local ``--basetemp``, so a walk up from
-    it reaches this repository's ``.plan/marshal.json``. The system temp root is what
-    makes the CI provider genuinely unresolvable from the directory a test hands the
-    read.
-    """
-    path = Path(tempfile.mkdtemp(prefix='review-gate-outside-'))
-    assert PROJECT_ROOT not in path.parents
-    try:
-        yield path
-    finally:
-        shutil.rmtree(path, ignore_errors=True)
 
 
 def _verdict_through_the_read_seams(
@@ -1432,7 +1413,7 @@ def test_a_comment_entry_that_cannot_be_flattened_is_undecidable(monkeypatch) ->
 
     assert verdict['merge_allowed'] is False, verdict
     assert verdict['reason'] == 'undecidable_read', verdict
-    assert verdict['detail'], verdict
+    assert 'display form' in verdict['detail'], verdict
 
 
 @pytest.mark.usefixtures('restore_default_cwd')
