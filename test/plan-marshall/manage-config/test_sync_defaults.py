@@ -150,6 +150,7 @@ def test_sync_defaults_backfills_orchestrator_block(plan_context):
     config = _read_marshal(plan_context.fixture_dir)
     assert config['orchestrator'] == {
         'auto_emit': False,
+        'decision_confidence_threshold': 90,
         'effort': {},
         'parallelization_scope': 1,
         'use_worktree': False,
@@ -178,6 +179,7 @@ def test_sync_defaults_backfills_new_knobs_into_legacy_block(plan_context):
     config = _read_marshal(plan_context.fixture_dir)
     assert config['orchestrator'] == {
         'auto_emit': False,
+        'decision_confidence_threshold': 90,
         'effort': {},
         'parallelization_scope': 1,
         'use_worktree': False,
@@ -185,8 +187,36 @@ def test_sync_defaults_backfills_new_knobs_into_legacy_block(plan_context):
     assert 'orchestrator.effort' in result['added']
     assert 'orchestrator.parallelization_scope' in result['added']
     assert 'orchestrator.use_worktree' in result['added']
+    assert 'orchestrator.decision_confidence_threshold' in result['added']
     # the pre-existing root is not re-reported as newly added
     assert 'orchestrator' not in result['added']
+
+
+def test_sync_defaults_backfills_the_threshold_without_overwriting_a_set_value(plan_context):
+    """An operator-set ``decision_confidence_threshold`` survives a back-fill verbatim.
+
+    Two arms, and both are needed: a block that LACKS the key gains the seeded
+    figure, and a block that CARRIES an operator value keeps it — the deep-merge
+    only adds MISSING keys, so a reconcile is how an existing ``marshal.json``
+    gains the field without silently re-tuning it.
+    """
+    _write_marshal(
+        plan_context.fixture_dir,
+        {'orchestrator': {'decision_confidence_threshold': 100, 'parallelization_scope': 2}},
+    )
+
+    result = cmd_sync_defaults(_sync_ns())
+
+    assert result['status'] == 'success'
+    config = _read_marshal(plan_context.fixture_dir)
+    assert config['orchestrator']['decision_confidence_threshold'] == 100, (
+        'the back-fill overwrote an operator-set threshold'
+    )
+    assert 'orchestrator.decision_confidence_threshold' not in result['added']
+    # the sibling knobs the block lacked ARE back-filled, so the arm above is a
+    # preservation rather than a sync that did nothing at all
+    assert config['orchestrator']['auto_emit'] is False
+    assert config['orchestrator']['effort'] == {}
 
 
 def test_sync_defaults_preserves_populated_orchestrator_block(plan_context):
@@ -222,6 +252,7 @@ def test_sync_defaults_preserves_populated_orchestrator_block(plan_context):
         'parallelization_scope': 3,
         'use_worktree': True,
         'auto_emit': False,
+        'decision_confidence_threshold': 90,
     }
     assert 'orchestrator.use_worktree' not in result['added']
     # the present block is not re-reported as an added top-level path

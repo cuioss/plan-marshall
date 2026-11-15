@@ -1113,6 +1113,35 @@ def test_orchestrator_get_returns_auto_emit_default_false(plan_context):
     assert get_result['value'] is False
 
 
+def test_orchestrator_get_returns_seeded_decision_confidence_threshold(plan_context):
+    """`orchestrator get --field decision_confidence_threshold` returns the seeded figure, unset.
+
+    The seeded value is the `handle-open` verb's decide-vs-present boundary; a
+    fresh `init` materialises it, so a `get` reads it from the live block with
+    `set: true`. A genuinely-unset legacy block falls back to the same figure with
+    `set: false` — both report the one canonical number.
+    """
+    _cmd_init_mod.cmd_init(Namespace(force=False))
+
+    get_result = _cmd_orchestrator_mod.cmd_orchestrator_get(Namespace(field='decision_confidence_threshold'))
+
+    assert get_result['status'] == 'success'
+    assert get_result['value'] == 90
+    assert get_result['set'] is True
+
+
+def test_orchestrator_get_unset_decision_confidence_threshold_falls_back(plan_context):
+    """A legacy block without the key reads the canonical default with `set: false`."""
+    marshal_path = plan_context.fixture_dir / 'marshal.json'
+    marshal_path.write_text(json.dumps({'orchestrator': {'auto_emit': False}}), encoding='utf-8')
+
+    get_result = _cmd_orchestrator_mod.cmd_orchestrator_get(Namespace(field='decision_confidence_threshold'))
+
+    assert get_result['status'] == 'success'
+    assert get_result['value'] == 90
+    assert get_result['set'] is False
+
+
 def test_orchestrator_set_then_get_roundtrip_auto_emit(plan_context):
     """`orchestrator set --field auto_emit --value true` must round-trip via get (bool-coerced)."""
     _cmd_init_mod.cmd_init(Namespace(force=False))
@@ -1931,9 +1960,10 @@ def test_get_default_config_seeds_orchestrator_block_with_every_knob():
 
     The block is a sibling of ``plan``. It materialises every knob it supports at
     its effective default — ``auto_emit`` (``False``), the ``effort`` sub-block
-    (empty ``{}``), ``parallelization_scope`` (``1``) and ``use_worktree``
-    (``False``) — so each is discoverable in marshal.json while resolving exactly as
-    an unset key did.
+    (empty ``{}``), ``parallelization_scope`` (``1``), ``use_worktree``
+    (``False``) and ``decision_confidence_threshold`` (the orchestrator's
+    standing figure) — so each is discoverable in marshal.json while resolving
+    exactly as an unset key did.
     """
     config = _config_defaults_mod.get_default_config()
 
@@ -1947,7 +1977,13 @@ def test_get_default_config_seeds_orchestrator_block_with_every_knob():
         f'{sorted(_config_defaults_mod.ORCHESTRATOR_KNOWN_KEYS)}'
     )
     # Effective-default assertions, kept separate from the field-set check.
-    assert orch == {'auto_emit': False, 'effort': {}, 'parallelization_scope': 1, 'use_worktree': False}
+    assert orch == {
+        'auto_emit': False,
+        'decision_confidence_threshold': 90,
+        'effort': {},
+        'parallelization_scope': 1,
+        'use_worktree': False,
+    }
 
 
 def test_seeded_orchestrator_leaves_effort_and_scope_resolution_unchanged():

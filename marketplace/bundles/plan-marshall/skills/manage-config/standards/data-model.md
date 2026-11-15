@@ -36,7 +36,8 @@ JSON structure and field definitions for project configuration.
     },
     "parallelization_scope": 3,
     "auto_emit": false,
-    "use_worktree": false
+    "use_worktree": false,
+    "decision_confidence_threshold": 90
   },
   "plan": {
     "open_in_ide": true,
@@ -240,7 +241,7 @@ Project-level settings (committed, shared via git). Seeded on `init` and back-fi
 
 ## Section: orchestrator
 
-A top-level block **sibling of `plan`** (not a child of it) governing the epic-orchestration identity (`plan-orchestrator`). It carries four key families: the `effort` sub-block (per-surface effort of the orchestrator's read-only dispatch surfaces behind an uplift ceiling), the `parallelization_scope` scalar (the per-epic ask's project default), the `auto_emit` autonomy knob (the orchestrator-tier analog of the plan-tier `finalize_without_asking` / `loop_back_without_asking` family), and the `use_worktree` switch (whether the ledger store lives in the shared ledger worktree). `init` seeds the block with all four key families at their effective defaults — `auto_emit` at its safe default (`false`), the `effort` sub-block as an empty object (`{}`), `parallelization_scope` at its effective default (`1`), and `use_worktree` off (`false`); `sync-defaults` back-fills the block non-destructively into existing projects (the same deep-merge `project` relies on). Every knob is materialised so it is discoverable in `marshal.json`, and each resolves exactly as it did before it was seeded — surfacing changes discoverability, not behaviour. The empty `effort` object still falls through to `plan.effort` for the orchestrator's three read-only dispatch surfaces (the uplift ceiling stays an unset-no-op), `parallelization_scope` `1` is the ask's hard-coded default, so a materialised `1` pre-fills the per-epic ask exactly as the unset key did, and a materialised `use_worktree: false` keeps the store on the cwd-relative tier an absent key selects. `save_config` orders the block canonically immediately after `plan` (see `CANONICAL_TOP_LEVEL_KEY_ORDER` in `_config_core.py`). The scalar knobs are additively shaped: `orchestrator get`/`set --field` and its known-field whitelist are the extension seam a future scalar knob folds into without a schema rework.
+A top-level block **sibling of `plan`** (not a child of it) governing the epic-orchestration identity (`plan-orchestrator`). It carries five key families: the `effort` sub-block (per-surface effort of the orchestrator's read-only dispatch surfaces behind an uplift ceiling), the `parallelization_scope` scalar (the per-epic ask's project default), the `auto_emit` autonomy knob (the orchestrator-tier analog of the plan-tier `finalize_without_asking` / `loop_back_without_asking` family), the `decision_confidence_threshold` scalar (the `handle-open` verb's decide-vs-present boundary), and the `use_worktree` switch (whether the ledger store lives in the shared ledger worktree). `init` seeds the block with all five key families at their effective defaults — `auto_emit` at its safe default (`false`), the `effort` sub-block as an empty object (`{}`), `parallelization_scope` at its effective default (`1`), `decision_confidence_threshold` at the orchestrator's standing figure, and `use_worktree` off (`false`); `sync-defaults` back-fills the block non-destructively into existing projects (the same deep-merge `project` relies on). Every knob is materialised so it is discoverable in `marshal.json`, and each resolves exactly as it did before it was seeded — surfacing changes discoverability, not behaviour. The empty `effort` object still falls through to `plan.effort` for the orchestrator's three read-only dispatch surfaces (the uplift ceiling stays an unset-no-op), `parallelization_scope` `1` is the ask's hard-coded default, so a materialised `1` pre-fills the per-epic ask exactly as the unset key did, and a materialised `use_worktree: false` keeps the store on the cwd-relative tier an absent key selects. `save_config` orders the block canonically immediately after `plan` (see `CANONICAL_TOP_LEVEL_KEY_ORDER` in `_config_core.py`). The scalar knobs are additively shaped: `orchestrator get`/`set --field` and its known-field whitelist are the extension seam a future scalar knob folds into without a schema rework.
 
 ### Structure
 
@@ -256,12 +257,13 @@ A top-level block **sibling of `plan`** (not a child of it) governing the epic-o
     },
     "parallelization_scope": 3,
     "auto_emit": false,
-    "use_worktree": false
+    "use_worktree": false,
+    "decision_confidence_threshold": 90
   }
 }
 ```
 
-`effort` may also be a bare string (single-level shorthand applying to every orchestrator surface) instead of the object form above. A block carrying only `auto_emit`, or one missing any of the four key families (as a legacy pre-materialisation config does), is equally legal — every field below resolves to its documented fallback when absent.
+`effort` may also be a bare string (single-level shorthand applying to every orchestrator surface) instead of the object form above. A block carrying only `auto_emit`, or one missing any of the five key families (as a legacy pre-materialisation config does), is equally legal — every field below resolves to its documented fallback when absent.
 
 ### `orchestrator.effort`
 
@@ -315,9 +317,17 @@ The knob is read AND written only against the **main checkout's** `marshal.json`
 
 Read/write via `manage-config orchestrator get/set --field use_worktree`. See [`api-reference.md` § Noun: orchestrator](api-reference.md#noun-orchestrator).
 
+### `orchestrator.decision_confidence_threshold`
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `decision_confidence_threshold` | int (`0`–`100`) | `90` | The confidence an open item must STRICTLY exceed before the `plan-orchestrator` `handle-open` verb decides it; `100` means nothing is decided without the operator. It is the decide-vs-present boundary only — the verb's subject set, the confidence cap and the bounded decision acts are the [§ Handle-Open Contract](../../persona-plan-orchestrator/standards/orchestration-model.md#handle-open-contract). A per-run `threshold` argument overrides the knob for one run; a threshold that cannot be read, or an argument outside `0`–`100`, resolves to `100` for that run, so an unreadable setting never licenses a decision. `bool`, a non-integer string, a float, a negative number and a number over `100` are refused by both `set` and the block validator, and nothing is written. |
+
+Read/write via `manage-config orchestrator get/set --field decision_confidence_threshold`; `get` on an unset field returns the seeded figure with `set: false`. See [`api-reference.md` § Noun: orchestrator](api-reference.md#noun-orchestrator).
+
 ### Validation
 
-The whole block is validated by `validate_orchestrator_block` (`_config_defaults.py`): the seeded shape (`{"auto_emit": false, "effort": {}, "parallelization_scope": 1, "use_worktree": false}`) passes trivially, as does a legacy block carrying only `{"auto_emit": false}`; a populated block rejects any top-level key outside `{effort, parallelization_scope, auto_emit, use_worktree}`, any `orchestrator.effort` object key outside `{analyze, decompose, reader, default, max}`, any non-`ALLOWED_LEVELS` effort value, a `parallelization_scope` that is not an int `>= 1`, and an `auto_emit` or `use_worktree` that is not a bool.
+The whole block is validated by `validate_orchestrator_block` (`_config_defaults.py`): the seeded shape (`{"auto_emit": false, "decision_confidence_threshold": 90, "effort": {}, "parallelization_scope": 1, "use_worktree": false}`) passes trivially, as does a legacy block carrying only `{"auto_emit": false}`; a populated block rejects any top-level key outside `{effort, parallelization_scope, auto_emit, use_worktree, decision_confidence_threshold}`, any `orchestrator.effort` object key outside `{analyze, decompose, reader, default, max}`, any non-`ALLOWED_LEVELS` effort value, a `parallelization_scope` that is not an int `>= 1`, an `auto_emit` or `use_worktree` that is not a bool, and a `decision_confidence_threshold` that is not an int in `0..100`.
 
 ## Section: interaction_mode
 

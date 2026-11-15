@@ -669,3 +669,154 @@ def test_an_unpinned_surface_tracks_plan_effort(plan_context):
             'plan.effort values, so the resolver is not reading the fallback at all and the '
             'pinned arm above proves nothing'
         )
+
+
+# =============================================================================
+# orchestrator get/set --field decision_confidence_threshold
+# =============================================================================
+#
+# The `handle-open` verb's decide-vs-present boundary. Its contract is
+# "an integer 0..100, strictly-greater semantics" — so the bounds are inclusive
+# at BOTH ends, a bool is not an int here, and a float is refused rather than
+# truncated (a silently rounded 90.5 would read as a deliberate 90).
+
+_THRESHOLD_FIELD = 'decision_confidence_threshold'
+
+
+def test_threshold_set_accepts_both_endpoints_and_reads_back(plan_context):
+    """`--value 0` and `--value 100` both persist and read back unchanged."""
+    for value in ('0', '100'):
+        _write_marshal(plan_context.fixture_dir, {})
+
+        set_result = cmd_orchestrator_set(Namespace(field=_THRESHOLD_FIELD, value=value))
+
+        assert set_result['status'] == 'success', f'--value {value} was refused: {set_result}'
+        assert set_result['value'] == int(value)
+        assert _read_marshal(plan_context.fixture_dir)['orchestrator'][_THRESHOLD_FIELD] == int(value)
+
+        get_result = cmd_orchestrator_get(Namespace(field=_THRESHOLD_FIELD))
+
+        assert get_result['status'] == 'success'
+        assert get_result['value'] == int(value)
+        assert get_result['set'] is True
+
+
+def test_threshold_set_accepts_an_integer_inside_the_range(plan_context):
+    """A mid-range value round-trips as an int, not as the string it arrived as."""
+    _write_marshal(plan_context.fixture_dir, {})
+
+    result = cmd_orchestrator_set(Namespace(field=_THRESHOLD_FIELD, value=' 42 '))
+
+    assert result['status'] == 'success'
+    assert result['value'] == 42
+    assert isinstance(result['value'], int)
+
+
+def test_threshold_get_unset_returns_the_seeded_default_with_set_false(plan_context):
+    """On a block that does not carry the key, `get` reports the seeded figure and `set: false`.
+
+    The unset case is the one the Done-when's `set: false` clause describes; a
+    freshly seeded block materialises the key, so there the same figure reads back
+    with `set: true` (see `test_config_defaults.py`).
+    """
+    _write_marshal(plan_context.fixture_dir, {})
+
+    get_result = cmd_orchestrator_get(Namespace(field=_THRESHOLD_FIELD))
+
+    assert get_result['status'] == 'success'
+    assert get_result['value'] == _config_defaults_mod.DEFAULT_ORCHESTRATOR[_THRESHOLD_FIELD]
+    assert get_result['set'] is False
+
+
+def test_threshold_set_refuses_every_invalid_value_and_writes_nothing(plan_context):
+    """`101`, `-1`, `true`, `90.5` and `ninety` are refused with no write."""
+    for value in ('101', '-1', 'true', '90.5', 'ninety'):
+        _write_marshal(plan_context.fixture_dir, {})
+
+        result = cmd_orchestrator_set(Namespace(field=_THRESHOLD_FIELD, value=value))
+
+        assert result['status'] == 'error', f'--value {value!r} was accepted: {result}'
+        assert _THRESHOLD_FIELD not in _read_marshal(plan_context.fixture_dir).get('orchestrator', {}), (
+            f'--value {value!r} was refused but still written'
+        )
+
+
+def test_threshold_set_refuses_a_real_bool_and_a_real_float(plan_context):
+    """A bool and a float pass the CLI as objects too; both are refused, not coerced."""
+    for value in (True, 90.5):
+        _write_marshal(plan_context.fixture_dir, {})
+
+        result = cmd_orchestrator_set(Namespace(field=_THRESHOLD_FIELD, value=value))
+
+        assert result['status'] == 'error', f'{value!r} was accepted: {result}'
+        assert _THRESHOLD_FIELD not in _read_marshal(plan_context.fixture_dir).get('orchestrator', {})
+
+
+def test_threshold_typo_is_refused_as_an_unknown_field(plan_context):
+    """`decision_confidence_thresholds` is a typo, refused by the whitelist."""
+    _write_marshal(plan_context.fixture_dir, {})
+
+    set_result = cmd_orchestrator_set(Namespace(field='decision_confidence_thresholds', value='90'))
+    get_result = cmd_orchestrator_get(Namespace(field='decision_confidence_thresholds'))
+
+    assert set_result['status'] == 'error'
+    assert set_result.get('error_type') == 'unknown_field'
+    assert get_result['status'] == 'error'
+    assert get_result.get('error_type') == 'unknown_field'
+    assert 'decision_confidence_thresholds' not in _read_marshal(plan_context.fixture_dir).get('orchestrator', {})
+
+
+def test_threshold_get_refuses_a_stored_out_of_range_value(plan_context):
+    """A hand-edited out-of-range value fails the READ closed, not open.
+
+    `set` never writes one, but `marshal.json` is a file an operator can edit.
+    Returning `-1` as a successful read would let every item whose confidence is
+    at least zero exceed the threshold, and the verb cannot tell that from a
+    deliberate setting — so the read refuses and the caller's fail-closed
+    fallback (`100`) applies.
+    """
+    for stored in (-1, 101):
+        _write_marshal(plan_context.fixture_dir, {'orchestrator': {_THRESHOLD_FIELD: stored}})
+
+        get_result = cmd_orchestrator_get(Namespace(field=_THRESHOLD_FIELD))
+
+        assert get_result['status'] == 'error', f'a stored {stored} was read as valid: {get_result}'
+        assert _THRESHOLD_FIELD in get_result['error']
+
+
+def test_threshold_get_refuses_a_stored_string_value(plan_context):
+    """A stored `"42"` is refused: `set` normalises, so a string was never written by it."""
+    _write_marshal(plan_context.fixture_dir, {'orchestrator': {_THRESHOLD_FIELD: '42'}})
+
+    get_result = cmd_orchestrator_get(Namespace(field=_THRESHOLD_FIELD))
+
+    assert get_result['status'] == 'error', f'a stored string was read as valid: {get_result}'
+    assert 'integer 0 to 100' in get_result['error']
+
+
+def test_orchestrator_get_refuses_a_malformed_block_instead_of_defaulting(plan_context):
+    """A PRESENT non-dict `orchestrator` block fails closed rather than reading as unset.
+
+    Falling back to the seeded default here would answer `success` with a value
+    no reader wrote — and for the threshold that means 90 instead of the
+    contract's fail-closed 100.
+    """
+    _write_marshal(plan_context.fixture_dir, {'orchestrator': []})
+
+    get_result = cmd_orchestrator_get(Namespace(field=_THRESHOLD_FIELD))
+
+    assert get_result['status'] == 'error'
+    assert 'not a dictionary' in get_result['error']
+
+
+def test_the_scalar_whitelist_is_derived_from_the_known_keys(plan_context):
+    """The scalar whitelist IS the authoritative key set minus `effort`.
+
+    Pinned explicitly so a future key cannot be added to the block's known set and
+    seeded while the `orchestrator get/set` verb silently keeps rejecting it.
+    """
+    known = set(_config_defaults_mod.ORCHESTRATOR_KNOWN_KEYS)
+    scalar = set(_cmd_orchestrator_mod.ORCHESTRATOR_SCALAR_FIELDS)
+
+    assert known, 'ORCHESTRATOR_KNOWN_KEYS is empty — the derivation would be vacuous'
+    assert scalar == known - {'effort'}
