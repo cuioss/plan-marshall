@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import uuid
 from collections.abc import Sequence
 from pathlib import Path
@@ -24,6 +23,7 @@ from typing import Any, cast
 
 import deployed_layout
 import runtime_info
+import standing_rules_bridge
 from runtime_base import (
     PERMISSION_FIX_OPERATIONS,
     Runtime,
@@ -45,33 +45,34 @@ ANTIGRAVITY_DEFAULT_PERMISSIONS: tuple[str, ...] = (
 
 DEFAULT_ANTIGRAVITY_COMMANDS = ANTIGRAVITY_DEFAULT_PERMISSIONS
 
-#: Version of the standing-rules bridge format written by project setup.
-#: Bumped only when the bridge file layout changes; drift detection compares
-#: the marker embedded in the bridge file against this constant.
-STANDING_RULES_BRIDGE_VERSION = 1
+#: Version, marker, baseline and file names of the standing-rules bridge are
+#: owned by the module shared with the OpenCode runtime, so the two harnesses
+#: cannot disagree about the bridge format.
+STANDING_RULES_BRIDGE_VERSION = standing_rules_bridge.BRIDGE_VERSION
 
-#: Baseline source the bridge copies from. CLAUDE.md is the drift-detection
-#: baseline — the bridge is current only while it matches this source.
-STANDING_RULES_BASELINE = 'CLAUDE.md'
+#: Baseline source the bridge copies from. CLAUDE.md stays authoritative.
+STANDING_RULES_BASELINE = standing_rules_bridge.BASELINE
 
-#: Marker embedded in every bridge file so drift detection can tell a current
-#: bridge from a stale or foreign one without parsing rule prose.
-STANDING_RULES_BRIDGE_MARKER = f'bridge-version: {STANDING_RULES_BRIDGE_VERSION}'
+#: Marker embedded in every bridge file so drift detection reads the marker,
+#: never rule prose.
+STANDING_RULES_BRIDGE_MARKER = standing_rules_bridge.BRIDGE_MARKER
 
 #: Filename of the bridge-owned standing-rules file. It is deliberately
 #: distinct from the installed target rules shipped by
 #: ``install.sh --emit-rules``, so a setup write can never land in the
 #: installed file.
-BRIDGE_RULES_FILENAME = 'plan-marshall-standing-rules.md'
+BRIDGE_RULES_FILENAME = standing_rules_bridge.BRIDGE_RULES_FILENAME
 
 #: Filename of the installed target rules shipped by ``install.sh --emit-rules``.
-INSTALLED_RULES_FILENAME = 'plan-marshall-target-rules.md'
+INSTALLED_RULES_FILENAME = standing_rules_bridge.INSTALLED_RULES_FILENAME
 
 #: Pattern matching a bridge stub a previous setup left in the installed
-#: target rules. Only the bridge marker spells ``bridge-version`` followed by
-#: a colon and a digit; the rule prose carries the bare words, so prose can
-#: never false-positive a clobber report.
-_BRIDGE_MARKER_PATTERN = re.compile(r'bridge-version\s*:\s*\d')
+#: target rules.
+_BRIDGE_MARKER_PATTERN = standing_rules_bridge.MARKER_PATTERN
+
+#: Harness label the shared bridge writer puts in the bridge heading. It is one
+#: of the only two things that differ between the harnesses' bridges.
+_BRIDGE_LABEL = 'Antigravity'
 
 
 def _rules_dir(project_dir: Path) -> Path:
@@ -105,72 +106,26 @@ def installed_rules_clobbered(project_dir: Path) -> bool:
     return _BRIDGE_MARKER_PATTERN.search(text) is not None
 
 
-def _write_rules_bridge(project_dir: Path) -> bool:
-    """Copy the bridged standing-rules header into the bridge-owned file.
-
-    The bridge carries the version marker plus a pointer at the CLAUDE.md
-    baseline rather than a full rule copy — the marker is what drift detection
-    reads, so a full prose duplicate would only create a second source of
-    truth. The installed target rules shipped by ``install.sh --emit-rules``
-    are never written here, so a setup can no longer replace the full rules
-    with a stub. Returns True when the file was written.
-    """
-    bridge = _bridge_rules_path(project_dir)
-    body = (
-        f'# Plan Marshall standing rules (Antigravity bridge {STANDING_RULES_BRIDGE_MARKER})\n\n'
-        f'Standing rules bridged from {STANDING_RULES_BASELINE} at project setup. '
-        'This file is a bridge, not a fork: the baseline stays authoritative, '
-        'and re-setup flags drift when this marker no longer matches the source.\n'
-    )
-    try:
-        if bridge.is_file() and STANDING_RULES_BRIDGE_MARKER in bridge.read_text(encoding='utf-8'):
-            try:
-                baseline = project_dir / STANDING_RULES_BASELINE
-                baseline_newer = baseline.is_file() and baseline.stat().st_mtime > bridge.stat().st_mtime
-            except OSError:
-                return False
-            if not baseline_newer:
-                # Bridge is current (baseline older, same age, or absent):
-                # nothing to re-affirm.
-                return False
-            # Baseline newer than the bridge: fall through to the rewrite
-            # below, which re-affirms the bridge and clears the
-            # baseline_newer drift verdict on re-setup. The bridge carries
-            # only the version marker plus a baseline pointer (no copied
-            # prose), so re-affirmation is a rewrite, not a content merge.
-        bridge.parent.mkdir(parents=True, exist_ok=True)
-        bridge.write_text(body, encoding='utf-8')
-        return True
-    except OSError:
-        return False
+def _bridge_body(baseline_text: str | None) -> str:
+    """Render the Antigravity bridge file for *baseline_text*."""
+    return standing_rules_bridge.bridge_body(_BRIDGE_LABEL, baseline_text, STANDING_RULES_BASELINE)
 
 
 def standing_rules_drift_status(project_dir: str) -> dict[str, Any]:
     """Detect drift of the Antigravity standing-rules bridge against its baseline.
 
     Returns a small dict with ``drift`` (bool), ``needs_bridge`` (True when no
-    bridge file exists yet), and ``reason`` naming the verdict. A missing
-    baseline never reports drift — there is nothing to compare against.
+    bridge file exists yet), and ``reason`` naming the verdict. Drift is decided
+    by content, and the reasons are the shared vocabulary — see
+    :func:`standing_rules_bridge.drift_status`.
     """
     proj = Path(project_dir).resolve()
-    baseline = proj / STANDING_RULES_BASELINE
-    bridge = _bridge_rules_path(proj)
-    if not baseline.is_file():
-        return {'drift': False, 'needs_bridge': not bridge.is_file(), 'reason': 'baseline_missing'}
-    if not bridge.is_file():
-        return {'drift': False, 'needs_bridge': True, 'reason': 'bridge_missing'}
-    try:
-        text = bridge.read_text(encoding='utf-8')
-    except OSError:
-        return {'drift': True, 'needs_bridge': False, 'reason': 'bridge_unreadable'}
-    if STANDING_RULES_BRIDGE_MARKER not in text:
-        return {'drift': True, 'needs_bridge': False, 'reason': 'marker_mismatch'}
-    try:
-        if baseline.stat().st_mtime > bridge.stat().st_mtime:
-            return {'drift': True, 'needs_bridge': False, 'reason': 'baseline_newer'}
-    except OSError:
-        return {'drift': True, 'needs_bridge': False, 'reason': 'stat_failed'}
-    return {'drift': False, 'needs_bridge': False, 'reason': 'in_sync'}
+    return standing_rules_bridge.drift_status(
+        proj,
+        _bridge_rules_path(proj),
+        _BRIDGE_LABEL,
+        STANDING_RULES_BASELINE,
+    )
 
 
 def _gemini_config_dir() -> Path:
@@ -308,8 +263,12 @@ class AntigravityRuntime(Runtime):
         settings = self.permission_load_settings(settings_path)
         self.permission_ensure_defaults(settings, settings_path, dry_run=False)
 
-        bridge_written = _write_rules_bridge(proj)
-        drift = standing_rules_drift_status(str(proj))
+        bridge_report = standing_rules_bridge.setup(
+            proj,
+            _bridge_rules_path(proj),
+            _BRIDGE_LABEL,
+            STANDING_RULES_BASELINE,
+        )
 
         return toon_success(
             'project initial-setup',
@@ -317,9 +276,9 @@ class AntigravityRuntime(Runtime):
                 'target': target,
                 'project_dir': str(proj),
                 'marshal_written': False,
-                'bridge_written': bridge_written,
-                'bridge_drift': drift['drift'],
-                'bridge_reason': drift['reason'],
+                'bridge_written': bridge_report.written,
+                'bridge_drift': bridge_report.drift,
+                'bridge_reason': bridge_report.reason,
                 'settings_path': settings_path,
                 'hook_installed': False,
                 'hook_skip_reason': 'Antigravity runs without PreToolUse lifecycle hooks',

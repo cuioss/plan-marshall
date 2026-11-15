@@ -25,6 +25,7 @@ mode: knowledge
    - One command per `run_command` call — no `&&`, `;`, `|`, `$()`, subshells, loops, or heredocs.
    - Never propose `cd` commands. Set `Cwd` explicitly within the workspace directory.
    - No shell file inspection tools (`ls`, `find`, `cat`, `grep`). Use dedicated tools or structured queries (`architecture`).
+   - Never hard-code a build or format command: resolve it through `architecture resolve` and run the returned `executable`. A `No plugin found for prefix …` failure means the project does not use that plugin — report it and stop, never retry it fully qualified.
 
 3. **Reactive Task & Subagent Handling**:
    - Never poll `manage_task status` in a loop.
@@ -40,8 +41,8 @@ mode: knowledge
    - Keep artifacts isolated from repository source code and `.plan/` state.
 
 6. **Standing-Rules Bridge & Drift**:
-   - The standing rules are bridged at project setup from the `CLAUDE.md` baseline into the workspace rules file; the baseline stays authoritative and this bridge is never edited by hand.
-   - Re-setup detects drift: a missing version marker or a baseline newer than the bridge reports drift, and the steward upgrade path reconciles the bridge back to current.
+   - The bridge CARRIES the `CLAUDE.md` rules into the workspace rules file and records their `source-sha256`; the baseline stays authoritative and the bridge is never edited by hand.
+   - Re-setup detects drift by content: a changed baseline, a missing content hash or a foreign marker reports drift, and the steward upgrade path reconciles the bridge back to current.
 
 ## Available Standards
 

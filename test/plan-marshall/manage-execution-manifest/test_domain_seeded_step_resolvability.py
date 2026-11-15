@@ -76,7 +76,7 @@ def _make_resolve_stub(resolvable_canonicals: set[str]):
     real seam returns ``None`` on a ``Command not found`` resolve error.
     """
 
-    def stub(argv_extra: list[str], plan_id: str):
+    def stub(argv_extra: list[str], plan_id: str, **_kwargs):
         canonical = argv_extra[1] if len(argv_extra) >= 2 and argv_extra[0] == '--command' else None
         if canonical in resolvable_canonicals:
             return {
