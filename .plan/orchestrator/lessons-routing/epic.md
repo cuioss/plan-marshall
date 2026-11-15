@@ -590,6 +590,32 @@ Checked at `64907fa3b`: the `ci-verify` producer vocabulary is pinned by a contr
 
 ⚠ **Land conflict.** This run's first land (PR #1956) was based on a ledger worktree that sat at #1905 while `main` had advanced to #1955 through the Linux session's lands, so its `epic.md`, `INDEX.md`, anchor and view conflicted. The branch was repaired by merging `origin/main` (no force-push), keeping `main`'s versions and re-adding this run's records.
 
+### 2026-11-15 — fourteenth `ingest` run (`gather`, cross-repo: macOS sibling checkouts)
+
+Run as the epic-local `gather` command (RULING 2026-11-02) on the macOS machine, after the 2026-11-10 macOS run. Stores found: pm-mcp-core (49), plan-marshall-mcp (6), nifi-extensions (6), cui-open-rewrite (2), TokenSheriff (1), cui-jsf-test-basic (1) and pm-mcp-clients (1, new since the last run); API-Sheriff holds tombstones only. 66 lesson files in all. Nothing is in scope: the 65 already in the stores at the last run are all left-in-place project-only lessons, and the one new lesson is about the pm-mcp-clients web client and mock runtime. Nothing was filed, moved or removed. Per-lesson dispositions and the probe list: `lessons-archive/INDEX.md` § Sweep 2026-11-15.
+
+| Disposition | Lessons | Where |
+|---|---|---|
+| filed to `live-blockers` | 0 | — |
+| moved to the archive | 0 | — |
+| not applicable, left in source | 66 | pm-mcp-core 49, plan-marshall-mcp 6, nifi-extensions 6, cui-open-rewrite 2, TokenSheriff 1, cui-jsf-test-basic 1, pm-mcp-clients 1 |
+
+Ids were compared this run only for `plan-marshall-mcp` (6) and `cui-open-rewrite` (2): they equal the ids the 2026-11-10 macOS run left in place. The other 57 (`pm-mcp-core` 49, `nifi-extensions` 6, `TokenSheriff` 1, `cui-jsf-test-basic` 1) were first compared by count only and then, at the operator's request the same day, **re-read in full and re-graded** (two read-only leaves given explicit file lists, because no listing tool was available to them): 52 are project-only, 5 were borderline and were re-read here and graded project-only; none is in scope. Nothing was moved or filed. Per-lesson reasons: `lessons-archive/INDEX.md` § Sweep 2026-11-15, "Re-grade of the left-in-place lessons". The probe used `find` for store discovery (the Glob tool was unavailable) and the ruling's `git status --ignored` for counts. **Closes the coverage gap** of the 2026-11-10 macOS run: `other-llm-projects` and `other-test-projects` are covered by a depth-6 `find` over `/Users/oliver/git`, which returned no store beyond the seven repositories above; sibling worktrees were probed with a depth-9 `find` and hold none. This repository's own corpus (43 active lessons) is `ingest` scope, not `gather`, and was not touched.
+
+### 2026-11-15 — fifteenth `ingest` run (inbox, 13 messages)
+
+Corpus at start: 0 in the sweep stores (the 43 local lessons are untouched). Inbox at start: 13 live, valid messages, none a landing: `api-sheriff-api-sheriff-0-2-0-079`..`-085` and `api-sheriff-security-hardening-tier-1-001`..`-006`, all from API-Sheriff, all about the `plan-marshall` bundle. Per-message dispositions: `lessons-archive/INDEX.md` § Sweep 2026-11-15 (second run).
+
+| Disposition | Messages | Where |
+|---|---|---|
+| high, filed to `live-blockers` | 3 messages in 2 filings: `lessons-routing-087` (review-gate `undecidable_read` and landing-count disagreement), `-088` (branch-cleanup leaf stall, skipped `adr-propose`) | `live-blockers/inbox/` |
+| high, recurrence evidence | 5 messages carry items folded into `-089` (six already-owned subjects) | `live-blockers/inbox/` |
+| medium, archived | 5 whole messages, plus the medium items of the five above | `inbox/archive/{sender}/` |
+
+Operator rulings: `-005` graded **high** (borderline), `-004` graded **high** (borderline), as-082 item 3 (300s default timeout for an unlearned command key) graded **medium**. Checked this run: `live-blockers` was `orchestrating` before routing; the phrase "Files with no reviewable changes" is in no bundle file. Nothing else was re-verified in code: the grades rest on the senders' observations. `live-blockers` PLAN-LB-129 is running and may own part of `-087`; the filing asks for a residual check. Bodies stay verbatim in `inbox/archive/`.
+
+The `live-blockers` inbox now holds six undrained filings from this epic (`-084`..`-089`). Not landed by this run.
+
 ## START HERE
 
 ### Annotations
