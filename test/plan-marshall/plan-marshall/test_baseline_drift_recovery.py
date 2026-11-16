@@ -83,12 +83,12 @@ def recovery_section() -> str:
 
 @pytest.fixture(scope='module')
 def refine_section() -> str:
-    text = REFINE_DOC.read_text(encoding='utf-8')
+    text: str = REFINE_DOC.read_text(encoding='utf-8')
     start = text.find(REFINE_HEADING)
     assert start != -1, 'refine-workflow-detail.md has no § Conflict Handling'
     body_start = text.index('\n', start) + 1
     end = text.find('\n### ', body_start)
-    section = text[body_start : end if end != -1 else len(text)]
+    section: str = text[body_start : end if end != -1 else len(text)]
     assert len(section) > 200, 'the conflict-handling paragraph is missing its body'
     return section
 
@@ -189,7 +189,7 @@ def test_refine_conflict_handling_names_the_reconcile_step(refine_section: str) 
 
 def test_sync_with_main_names_the_reconcile_step() -> None:
     """D3: the drift-abort contract names the reconcile step after refine returns."""
-    text = SYNC_DOC.read_text(encoding='utf-8')
+    text: str = SYNC_DOC.read_text(encoding='utf-8')
 
     assert 'execution-recovery.md' in text, (
         'sync-with-main.md names no step that brings the branch onto the new base after refine'
