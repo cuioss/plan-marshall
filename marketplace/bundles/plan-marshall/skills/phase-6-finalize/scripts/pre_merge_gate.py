@@ -69,6 +69,19 @@ about and the remedy — unless the recorded holder is this plan. A lock held by
 another plan, an absent lock and an unreadable lock are three distinct refusals,
 and the last two fail closed.
 
+**The same dispatch also proves the FINALIZE STEP SEQUENCE below this step.**
+``branch-cleanup`` is the merge gate, and nothing before this sweep asked whether
+the steps the manifest orders BELOW it ever ran: the per-dispatch post-guard sees
+only what this session dispatched, and the end-of-phase ``phase_steps_complete``
+handshake fires at the phase transition — after the merge and the worktree
+removal. ``merge`` enumerates ``phase_6.steps`` once, takes the entries before
+``branch-cleanup``, and asks the existing ``assert-step-recorded
+--require-terminal`` assertion about each (:func:`_step_sequence_refusal`). Any
+step without a terminal record refuses with
+:data:`MERGE_EARLIER_STEP_UNRECORDED`, listing the steps; a ``failed`` record
+refuses too, because a red gate is not a completion. A step the manifest never
+selected is absent from that array and so cannot block.
+
 Two further subcommands keep the merge path's WORDING in this script rather than
 in an agent's hands:
 
@@ -153,6 +166,23 @@ MERGE_PARTICIPATION_UNPROVEN = 'merge_participation_unproven'
 #: it was (``{plan_id}`` / ``none`` / ``unreadable``).
 MERGE_LOCK_NOT_HELD = 'merge_lock_not_held'
 
+#: Refusal code for a merge whose FINALIZE STEP SEQUENCE is incomplete: a manifest
+#: step ordered before ``branch-cleanup`` carries no terminal step record, so the
+#: step the plan's own manifest lists never ran (or ran red). Distinct from
+#: :data:`MERGE_HEAD_NOT_GATED`, which asks whether the gates that DID run saw this
+#: tree — this one asks whether they ran at all. The payload's ``steps`` field names
+#: each offending step and why, and ``reason`` names the read fault when the
+#: sequence could not be enumerated at all.
+MERGE_EARLIER_STEP_UNRECORDED = 'merge_earlier_step_unrecorded'
+
+#: The ``6-finalize`` step records that ADMIT the merge. ``done`` (it ran),
+#: ``skipped`` (it declined with a recorded reason) and ``loop_back`` (it handed
+#: control back with a recorded target) are the outcomes the manifest-driven
+#: dispatch treats as terminal-and-not-blocked. ``failed`` is terminal too, and is
+#: deliberately ABSENT: a red gate is not a completion, so it refuses the merge the
+#: same way a missing record does.
+_ADMITTING_STEP_OUTCOMES: frozenset[str] = frozenset({'done', 'skipped', 'loop_back'})
+
 #: The gap class the pre-merge review barrier reports, and the only class that
 #: covers a participation gap. A recorded authorization over it admits the merge
 #: and is thereafter named in the step record.
@@ -229,6 +259,9 @@ AuthorizationCheck = Callable[[str, str], dict[str, Any]]
 MarkDoneRunner = Callable[[list[str]], dict[str, Any]]
 HeadDependenceReader = Callable[[str], tuple[bool, str | None]]
 ClassifierRunner = Callable[[str, str, str], dict[str, Any]]
+ManifestReader = Callable[[str], dict[str, Any]]
+StepRecordCheck = Callable[[str], dict[str, Any]]
+StepSequenceCheck = Callable[[str], 'dict[str, Any] | None']
 
 
 # ---------------------------------------------------------------------------
@@ -715,6 +748,207 @@ def _run_ci(ci_args: list[str]) -> dict[str, Any]:
         silent_error='merge_verb_no_output',
         unparseable_error='merge_verb_unparseable',
         timeout=None,
+    )
+
+
+# ---------------------------------------------------------------------------
+# The finalize-step sequence below branch-cleanup
+# ---------------------------------------------------------------------------
+
+
+def _read_manifest(plan_id: str) -> dict[str, Any]:
+    """Read the plan's execution manifest through the executor-mapped verb.
+
+    ``manage-execution-manifest read`` is the manifest's own reader — the same
+    document ``compose`` writes and the dispatcher iterates — so the sweep cannot
+    disagree with the pipeline about which steps the plan runs, or in what order.
+    """
+    return _run_verb(
+        _MANIFEST_NOTATION,
+        ['read', '--plan-id', plan_id],
+        silent_error='manifest_unreadable',
+        unparseable_error='manifest_unparseable',
+    )
+
+
+def _assert_terminal_step(plan_id: str, step: str) -> dict[str, Any]:
+    """Ask the existing step-record assertion about one step.
+
+    ``assert-step-recorded --require-terminal`` IS the dispatcher's own
+    post-dispatch guard, run read-only: the sweep reuses its vocabulary
+    (``step_record_missing`` / ``step_record_mismatched_key``) rather than
+    re-deriving what a terminal record is, so a record the dispatcher would accept
+    and one the merge gate would accept cannot drift apart.
+    """
+    return _run_verb(
+        _MANAGE_STATUS_NOTATION,
+        [
+            'assert-step-recorded',
+            '--plan-id',
+            plan_id,
+            '--phase',
+            FINDINGS_PHASE,
+            '--step',
+            step,
+            '--require-terminal',
+        ],
+        silent_error='step_record_unreadable',
+        unparseable_error='step_record_unreadable',
+    )
+
+
+def _earlier_manifest_steps(steps: list[str]) -> list[str] | None:
+    """Return the manifest steps ordered before ``branch-cleanup``, or ``None``.
+
+    The manifest's ``phase_6.steps`` array IS the runtime order — the composer
+    sorts it by each step doc's ``order:`` frontmatter and the dispatcher iterates it
+    as written — so "ordered before ``branch-cleanup``" is the prefix of that array,
+    never a comparison this module performs itself.
+
+    ``None`` means the array carries no ``branch-cleanup`` entry at all. That is a
+    malformed read rather than an empty sequence (this gate is only reachable FROM
+    the step), so the caller refuses instead of admitting everything.
+    """
+    for index, entry in enumerate(steps):
+        if str(entry).split(':')[-1].strip() == MERGE_STEP_ID:
+            return steps[:index]
+    return None
+
+
+def _step_admission(verdict: dict[str, Any]) -> tuple[bool, str, Any]:
+    """Decide one step's admission from its ``assert-step-recorded`` verdict.
+
+    Returns ``(admitted, reason, outcome)``. ``reason`` is the payload's own error
+    code when the assertion refused, and a named classification for the two cases
+    it cannot express:
+
+    * a terminal ``failed`` record — the assertion reports it as recorded, but a red
+      gate is not a completion, so it does not admit;
+    * any other answer (an unresolvable plan, a malformed call, a payload with no
+      outcome) — an unreadable step state is never an admission.
+    """
+    if verdict.get('status') != 'success':
+        error = str(verdict.get('error') or '')
+        return False, error or 'step_record_unreadable', None
+    outcome = verdict.get('outcome')
+    if verdict.get('recorded') is not True or outcome is None:
+        return False, 'step_record_unconfirmed', outcome
+    if outcome == 'failed':
+        return False, 'step_record_failed', outcome
+    if outcome in _ADMITTING_STEP_OUTCOMES:
+        return True, '', outcome
+    return False, 'step_record_unconfirmed', outcome
+
+
+def _sequence_refusal_payload(plan_id: str, reason: str, detail: str, steps: list[dict[str, Any]]) -> dict[str, Any]:
+    """Render the refusal for an unproven finalize-step sequence.
+
+    The remedy is the DISPATCHER, not this gate: the offending steps are still in
+    the manifest, so returning control to the finalize pipeline lets the resumable
+    re-entry check run exactly the steps with no terminal record — in the order the
+    manifest declares. A merge authorization does not cover this gap for the same
+    reason it does not cover :data:`MERGE_HEAD_NOT_GATED`: it authorizes a review or
+    CI gap somebody can name, never a step nobody ran.
+    """
+    named = ', '.join(str(row['step']) for row in steps)
+    if steps:
+        message = (
+            f'The finalize manifest orders {len(steps)} step(s) before {MERGE_STEP_ID} that carry no '
+            f'terminal record ({named}). Refusing to merge: return control to the finalize dispatcher, '
+            'which re-runs exactly the steps with no terminal record, in the order the manifest declares.'
+        )
+    else:
+        message = (
+            f'The finalize step sequence below {MERGE_STEP_ID} could not be verified ({detail}). '
+            'Refusing to merge: an unreadable sequence is never an empty one.'
+        )
+    return {
+        'status': 'error',
+        'error': MERGE_EARLIER_STEP_UNRECORDED,
+        'plan_id': plan_id,
+        'phase': FINDINGS_PHASE,
+        'reason': reason,
+        'detail': detail,
+        'steps': steps,
+        'dispatched': False,
+        'message': message,
+    }
+
+
+def _step_sequence_refusal(
+    plan_id: str,
+    *,
+    manifest_reader: ManifestReader | None = None,
+    step_record_check: StepRecordCheck | None = None,
+) -> dict[str, Any] | None:
+    """Refuse the merge while a step the manifest orders before this one never ran.
+
+    ``branch-cleanup`` is the merge gate, and until this sweep nothing asked whether
+    the steps the manifest puts BELOW it actually ran: the per-dispatch post-guard
+    sees only steps the dispatcher dispatched in this session, and the end-of-phase
+    ``phase_steps_complete`` handshake fires at the phase transition — after the
+    merge and the worktree removal. A step skipped late (``adr-propose`` at order 62
+    after a hand-driven final round) therefore surfaced only at the tail.
+
+    The sweep enumerates ``phase_6.steps`` ONCE, takes the entries ordered before
+    ``branch-cleanup``, and asks the existing step-record assertion about each. A
+    step the manifest never selected — ``adr-propose`` excluded by
+    ``default_on: false``, or any step dropped by lane resolution — is absent from
+    that array, so there is no record to demand; applicability is the manifest's own
+    answer rather than a second rule here.
+
+    A ``done`` / ``skipped`` / ``loop_back`` record does not block. For phase
+    ``6-finalize`` "with a reason" needs no separate read: ``mark-step-done``
+    refuses a record without a ``display_detail``, and a ``loop_back`` without a
+    ``loop_back_target``, so a record that exists at all carries its reason.
+
+    Returns ``None`` when the sequence is proven, and the refusal payload otherwise.
+    Three states are deliberately NOT read as "nothing to check": an unreadable
+    manifest (``manifest_unreadable``), a manifest whose array is not a list of step
+    ids (``manifest_steps_unreadable``), and a manifest carrying no
+    ``branch-cleanup`` entry (``branch_cleanup_absent_from_manifest``).
+    """
+    manifest = (manifest_reader or _read_manifest)(plan_id)
+    if not isinstance(manifest, dict) or manifest.get('status') != 'success':
+        detail = (
+            str(manifest.get('message') or manifest.get('error') or 'the manifest read failed')
+            if isinstance(manifest, dict)
+            else 'the manifest read answered no payload'
+        )
+        return _sequence_refusal_payload(plan_id, 'manifest_unreadable', detail, [])
+    phase_6 = manifest.get('phase_6')
+    raw_steps = phase_6.get('steps') if isinstance(phase_6, dict) else None
+    if not isinstance(raw_steps, list):
+        return _sequence_refusal_payload(
+            plan_id,
+            'manifest_steps_unreadable',
+            'the manifest carries no phase_6.steps array',
+            [],
+        )
+    steps = [str(entry) for entry in raw_steps if str(entry).strip()]
+    earlier = _earlier_manifest_steps(steps)
+    if earlier is None:
+        return _sequence_refusal_payload(
+            plan_id,
+            'branch_cleanup_absent_from_manifest',
+            f'phase_6.steps carries no {MERGE_STEP_ID} entry',
+            [],
+        )
+
+    check = step_record_check or (lambda step: _assert_terminal_step(plan_id, step))
+    blocked: list[dict[str, Any]] = []
+    for step in earlier:
+        admitted, reason, outcome = _step_admission(check(step))
+        if admitted:
+            continue
+        blocked.append({'step': step, 'reason': reason, 'outcome': outcome})
+    if not blocked:
+        return None
+    return _sequence_refusal_payload(
+        plan_id,
+        'earlier_steps_unrecorded',
+        f'{len(blocked)} step(s) below {MERGE_STEP_ID} hold no terminal record',
+        blocked,
     )
 
 
@@ -1853,15 +2087,17 @@ def merge(
     authorization_check: AuthorizationCheck | None = None,
     head_dependence_reader: HeadDependenceReader | None = None,
     classifier: ClassifierRunner | None = None,
+    step_sequence_check: StepSequenceCheck | None = None,
 ) -> dict[str, Any]:
     """Issue the routed merge verb only when every pre-merge invariant is proven.
 
-    Five invariants, in this order: the invocation fits its route, this plan
+    Six invariants, in this order: the invocation fits its route, this plan
     provably holds the cross-plan merge mutex, the blocking-findings store is clean
-    on both readings, the merge candidate is the HEAD the head-dependent gates
-    validated, and every required reviewer's participation is proven. The mutex
-    proof runs before every other read, so a caller that does not hold the mutex is
-    named without paying for a store query or a provider fetch.
+    on both readings, the finalize step sequence below this step is complete, the
+    merge candidate is the HEAD the head-dependent gates validated, and every
+    required reviewer's participation is proven. The mutex proof runs before every
+    other read, so a caller that does not hold the mutex is named without paying for
+    a store query or a provider fetch.
 
     Args:
         plan_id: Plan whose ``6-finalize`` findings store is evaluated. Not
@@ -1887,6 +2123,9 @@ def merge(
         classifier: Optional seam in place of
             :func:`_classify_verdict_currency`. Signature:
             ``(step, project_dir, recorded_sha) -> dict``.
+        step_sequence_check: Optional seam in place of
+            :func:`_step_sequence_refusal`. Signature:
+            ``(plan_id) -> dict | None`` (``None`` admits the sequence).
 
     Returns:
         The refusal payload plus ``dispatched: false``, or the routed verb's
@@ -1913,6 +2152,17 @@ def merge(
     refusal_from_lock = _merge_lock_refusal(plan_id)
     if refusal_from_lock is not None:
         return refusal_from_lock
+
+    # The finalize-step sequence: a manifest step ordered BEFORE this one that never
+    # ran is not a gap any later gate can see. The per-dispatch post-guard watched
+    # only the steps this session dispatched, and the end-of-phase
+    # ``phase_steps_complete`` handshake fires at the phase transition — after the
+    # merge and the worktree removal. Asked here, before the store query and the
+    # provider fetch, because it is a local read whose refusal names the remedy
+    # (return control to the dispatcher) without paying for either.
+    refusal_from_sequence = (step_sequence_check or _step_sequence_refusal)(plan_id)
+    if refusal_from_sequence is not None:
+        return refusal_from_sequence
 
     refusal_from_store = _findings_refusal(plan_id, findings_check)
     if refusal_from_store is not None:
@@ -2053,9 +2303,9 @@ def build_parser() -> argparse.ArgumentParser:
     """Build the argparse parser with the merge-dispatch subcommands."""
     parser = argparse.ArgumentParser(
         description=(
-            'Evaluate the blocking-findings, merge-mutex ownership, head-binding and '
-            'required-bot participation invariants and, only when all four are proven, '
-            'issue the routed merge verb (ci pr safe-merge or ci pr merge-queue). Also '
+            'Evaluate the blocking-findings, merge-mutex ownership, finalize-step-sequence, '
+            'head-binding and required-bot participation invariants and, only when all five are '
+            'proven, issue the routed merge verb (ci pr safe-merge or ci pr merge-queue). Also '
             'renders and writes the merge path wording the pre-merge questions and the '
             'step record carry.'
         ),
@@ -2165,6 +2415,7 @@ __all__ = [
     'MERGE_CONSEQUENCE_WITHOUT_ASKING',
     'MERGE_CONSEQUENCE_WITH_ASKING',
     'MERGE_DISPLAY_DETAIL_MAX_CHARS',
+    'MERGE_EARLIER_STEP_UNRECORDED',
     'MERGE_PARTICIPATION_UNPROVEN',
     'REFUSAL_CATEGORY_FIELD',
     'REVIEW_BARRIER_GAP_CLASS',

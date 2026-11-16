@@ -115,6 +115,7 @@ def _merge(runner: _Runner, *, findings=None, findings_recorder=None, **override
         'merge_runner': runner,
         'status_reader': lambda _plan_id: None,
         'head_reader': lambda _project_dir: _HEAD,
+        'step_sequence_check': lambda _plan_id: None,
         'participation_check': lambda _plan_id, _pr, _project_dir: dict(_PARTICIPATION_COMPLETE),
         'authorization_check': lambda _plan_id, _head: dict(_NO_AUTHORIZATION),
     }
