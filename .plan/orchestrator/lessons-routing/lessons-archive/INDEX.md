@@ -1230,3 +1230,76 @@ The filings are numbered above the Linux drain's `-087` and `-088`; they were re
 **Checked at this run.** The destination `live-blockers` was `phase: orchestrating` before routing. The phrase "Files with no reviewable changes" occurs in no `marketplace/bundles` file (the inventory search finds it only in `test/plan-marshall/runbook-lane/test_runbook_lane_review_gate.py`, not read for what it asserts), which is consistent with but does not establish the parser not recognising it. The roster and signal-scan items are refuted by the third run's check at `34b92e0ca`. Everything else rests on the senders' observations and the message text; nothing was re-run. `live-blockers` PLAN-LB-129 (review-gate thread-and-count-truth) is RUNNING and may own part of `-089`.
 
 **Operator rulings.** Three borderlines: `-005` graded high (filed with `-006`), `-004` graded high, a02-082 item 3 graded medium.
+| **total** | **29** |
+
+## Sweep 2026-11-16 (fourth run) — `gather`: sibling checkouts (API-Sheriff, TokenSheriff)
+
+This machine (`/home/oliver/git`, not the `/Users/oliver/git` the ruling names) has eleven sibling checkouts besides this one. Each was probed with `git -C {repo} status --porcelain --ignored --untracked-files=all -- .plan/local/lessons-learned`, after the same probe had returned a known non-empty store (API-Sheriff) in this session. Stores found: API-Sheriff (10 lessons) and TokenSheriff (49). Recorded zeros: cui-http (it held 47 at the first `gather`; those were moved then), organisation, plan-marshall-telemetry, gip-products, architektur-authentifizierung, docker-template, quarkus-template, kidicap-gateway, kidicap-apigateway-bff. This repository's own corpus holds 0 active lessons (tombstones only). The three `_orchestrator` ledger worktrees (this repository, API-Sheriff, TokenSheriff) hold no store, checked with `find` to depth 8, and no other sibling has a worktree.
+
+59 lessons in all. Grading was drafted by three read-only leaves against `ee019bf1d` (origin/main) and adjudicated here; the earlier-sweep index and the `live-blockers` queue, specs, landings and inbox (`lessons-routing-084`..`-086`) were the dedup base. The run started on a ledger worktree 42 commits behind main, so the filings `-087`..`-091` that main already held were not in that base; they were compared by title only at the rebase (no overlap with the four subjects below), and the four filings below were first numbered `-087`..`-090` and renumbered to `-092`..`-095` there. 31 are about `plan-marshall` or its bundles and were moved verbatim (`mv -n`): 12 to `filed-live-blockers/sweep-2026-11-16/{repo}/`, 19 to `{level}/TokenSheriff/`. 28 are project-only and stay in their checkouts (API-Sheriff 9, TokenSheriff 19). All 31 destinations were verified present (`git status` on `lessons-archive`) and both source stores were re-listed; no source-repo tombstone or commit was made (same deviation as the earlier cross-repo runs, the stores are git-ignored).
+
+**Operator rulings this run.** Four borderlines were put to the operator. TokenSheriff `2026-11-15-18-005` (dispatch seam), `2026-11-13-06-005` (Maven root aggregator) and `2026-10-31-12-008` (marker gate) were graded **high** and filed. For the domain-content gaps the operator directed **one umbrella filing** instead of one per gap.
+
+**Checked and re-read by the orchestrator at `ee019bf1d`:** `runtime_base.py:357-380`, `claude_runtime.py:2604-2612` and `:2959-2961`, `_claude_runtime_impl.py:1848-1889`, and a live reproduction (`subagent dispatch --agent execution-context-level-3` answers `prompt_not_found`, `--agent execution-context` succeeds; the level-3 agent file exists under 16 cached versions); `_maven_cmd_discover.py:454-482`, `:1215-1260`; `_npm_parse_jest.py:71-87` (the `●` line handling behind `2026-11-13-14-002`); `ext-point-domain-verb.md:110`, `skill-domains.md:130`, `build-maven/SKILL.md:78` and a search of `phase-5-execute`, `phase-6-finalize` and `execute-task` for any marker-detect caller; `ext-triage-java/SKILL.md:68`. Every other grade rests on the leaves' `file:line` citations, which were not re-read. The leaves could not check what plugin version either consumer ran, and several "fixed" verdicts predate the lesson dates, so a skewed install is a likely cause there.
+
+**Reconciliation with the 2026-11-01 and 2026-11-10 runs.** Every id those runs recorded as left in place is still at its path, for example API-Sheriff `2026-10-12-07-002` and TokenSheriff `2026-10-31-12-001`. This reconciles the earlier "no longer at those paths" note for these two stores: the ids were not lost. Of TokenSheriff's five 2026-11-01 ids, three are now filed (`-12-001`, `-12-002`, `-12-008`, re-graded by subject) and two stay.
+
+### Filed to `live-blockers` (4 filings, 12 sources)
+
+| Message | Level | Sources | Subject |
+|---|---|---|---|
+| `lessons-routing-092` | high (operator) | TokenSheriff `2026-11-15-18-005` | The platform-runtime `subagent dispatch` seam answers `prompt_not_found` for every installed `execution-context-level-N` agent: the lookup globs `*/agents/{name}.md` under the cache root, and the deployed layout has a version directory between. Reproduced here. The contract documents the failing name as a success example |
+| `lessons-routing-093` | high (operator) | TokenSheriff `2026-11-13-06-005` | A root `pom` aggregator's `module-tests` canonical is plain `mvn test` (`_maven_cmd_discover.py:454-482`); the per-module ladder switches to `package` for test-jar consumers (`:1254`) but excludes the root. No Maven run: whether the `<type>test-jar</type>` form also fails is open |
+| `lessons-routing-094` | high (operator) | TokenSheriff `2026-10-31-12-008` | The documented OpenRewrite marker gate (`marker-detect`) has no caller in phase-5, phase-6 or execute-task. The leaf graded it medium; the operator graded it high |
+| `lessons-routing-095` | umbrella (operator) | TokenSheriff `2026-11-13-14-005`, `2026-10-31-12-001`, `2026-10-31-12-002`, `2026-11-02-10-001`, `2026-11-15-18-001`, `2026-11-04-13-002`, `2026-11-15-11-003`, `2026-11-10-14-001`; API-Sheriff `2026-10-12-16-011` | Six domain-bundle content gaps in one filing: `ext-triage-java` new-code suppression, `java-concurrency.md` async lifecycle and stale publishers, Sonar S1192, sibling-path security parity (`persona-security-expert`), the `@EnumSource` `EXCLUDE` idiom, sanitise-every-field-and-sink. Individually low |
+
+### `medium/TokenSheriff/` (4, not filed)
+
+| Lesson | Subject |
+|---|---|
+| `2026-11-13-14-001` | `ci_verify` classification and CI-artifact persistence. Mostly fixed by PLAN-LB-44 (#1848). Residue: a SonarCloud app check with no job log still falls to the build subtype (`ci_verify.py:~250`; `standards/ci-verify.md:375-379` admits it), and a stub log is written when no real log exists (`manage-ci-artifacts.py:440-455`). Medium if the consumer's gate is an external check, stale if it is Maven-embedded |
+| `2026-11-13-14-002` | The Jest parser takes any line starting with `●` as a failing test name (`_npm_parse_jest.py:79`), so `● Console` from a passing run becomes an error issue (the leaf reproduced it with the extractor); the Maven path files every `[ERROR]` / `[WARNING]` line. Not verified: whether the frontend plugin relays Jest console output at those levels |
+| `2026-11-13-14-003` | The `use_merge_queue` conflict gate defaults to `no_overlap_only`, so an overlap with no content conflict ends as `needs_user`, and the re-verification cost is not documented beside the knob (`conflict_gate.py:171-188`, `data-model.md:960`) |
+| `2026-11-15-18-006` | The PR template's Test Plan is a ticked-by-hand checklist (`templates/pr-template.md:13`) and `create-pr.md` Step 3 has no rule to cite recorded execution evidence, so a false pass claim can reach the PR body. Related to `lessons-routing-016` and the PLAN-LB-31 landing follow-up; blocks nothing today |
+
+### `stale/TokenSheriff/` (1)
+
+| Lesson | Why |
+|---|---|
+| `2026-11-13-14-004` | Functional-review criteria are matched by `criterion_id` first, then by exact normalised text, and an authorised removal goes through `criteria-authorize` (`functional-review.md:354`, `:90`; PLAN-LB-70 / #1822, PLAN-LB-52). The fix predates the lesson, so the consumer probably ran an older install |
+
+### `low/TokenSheriff/` (14, stored together whether already covered or low)
+
+| Lessons | Covered by / subject |
+|---|---|
+| `2026-11-02-14-001` | Doc and Javadoc over-claims ("fails at startup", "replaces", "every"): `lessons-routing-062`; `javadoc/SKILL.md:150-154` holds the claim-versus-code rules |
+| `2026-11-11-12-001` | Outline affected-files derivation: the earlier outline-authoring medium group and the shipped `declared_scope_reconciliation` and `Tests to remove` declaration. Not found (limited grep): a declared-path existence check and a same-file check across `depends: none` deliverables |
+| `2026-11-11-12-002` | `weakened_test` re-raise: `-064` (reworked in #1913 and #1919); the accepted-removal set is carried across firings (`functional-review.md:303`). `str.splitlines()` is still used (`_review_support_integrity.py:150`, `:405`, `:517`) but the assertion count is a whole-text regex, so the lesson's line-counter mechanism does not match the code; cannot tell for the phantom count |
+| `2026-11-11-12-003` | Invented verbs and flags: `-044`; the router-flag case is detected. Live residue: three skill docs still read `qgate add/query/resolve` (`phase-3-outline/SKILL.md:785`, `phase-2-refine/SKILL.md:366`, `phase-4-plan/SKILL.md:1243`), `manage-findings list` has no `--limit`. Side observation, not run: `architecture --plan-id P search` after worktree removal returns success with `files_scanned: 0` |
+| `2026-11-11-12-005` | Raw invisible Unicode in test literals: `-080` / PLAN-LB-113 D3 shipped the cui-http-testing rule; `junit-core` / `java-core` have no equivalent |
+| `2026-11-12-18-003` | A review-bot fix commit in 6-finalize is refused with `no_sanction`; the guard is deliberate (`git-workflow.py:565-574`) and its message names the routes. Residue: `verification-feedback.md` and `triage.md` do not name `--step` |
+| `2026-11-13-06-006` | `scope_creep_check` re-asks for an accepted residual: the fix-task half is shipped (`scope_creep_check.py:365-379`), the delta-only carry-forward is not (settledness is exact-set) |
+| `2026-11-13-06-007` | The self-response trailing-run guard ignores a bot's in-place edit (`github_pr.py:2853-2857`, `:810-850`), so it files a `(self-response-loop)` finding that asks the operator. Known open follow-up of the PLAN-LB-38 landing; no plan owns it |
+| `2026-11-13-06-008` | Review steps re-fire after a rebase: both declare their verdict-input surface deliberately undeclared (`functional-review.md:84`, `code-review.md:74`) and delta rounds exist. A rebase-aware lever is not implemented. The `verdict_currency` non-zero exit was not examined |
+| `2026-11-13-06-009` | `pre_merge_gate record-merge` narrates "rebase deferred" even on the merge-queue route (`pre_merge_gate.py:183-187`, `:1648-1652`). Display text only; no earlier filing mentions it |
+| `2026-11-15-11-004` | An execute-phase commit outside Step 10a gets no change-ledger row (`git-workflow.py:1033-1062`; `manage-change-ledger/SKILL.md` boundary reports, never writes). By design; the earlier medium cluster, PLAN-LB-91 and PLAN-LB-126 |
+| `2026-11-15-18-002` | Review-round cost after a head advance: the closing round after a clean delta round is mandatory (`code-review.md:372`, `review-rubric.md:116`). A cost request that contradicts a deliberate rule; the earlier review-round cost cluster |
+| `2026-11-15-18-004` | The executor failure record now carries the stderr detail (`execute-script.py.template:1305-1363`, #626). The half about skill docs and the script coming from different installed versions was not investigated |
+| `2026-11-16-06-001` | Triage checks a bot suggestion against standing decisions only (`triage.md:137-162`), not against specification rows that bound a structure. The earlier bot-suggestion triage cluster |
+
+### Not applicable — left in the source checkout (28)
+
+API-Sheriff (9): `2026-10-02-12-008`, `2026-10-12-07-002`, `2026-10-12-07-005`, `2026-10-12-07-010`, `2026-10-12-16-012`, `2026-10-12-16-013`, `2026-10-13-14-001`, `2026-10-13-14-002`, `2026-10-14-13-002` (the consumer's Docker host, CI timeouts, k6 measurement, flaky edge test, library gap, diagnosis practice and handler rationale).
+
+TokenSheriff (19): `2026-10-31-12-004`, `2026-10-31-12-005` (formatter and import settings; the tooling side is `lessons-routing-085`), `2026-11-02-14-002`, `2026-11-04-13-001`, `2026-11-05-23-005`, `2026-11-05-23-006`, `2026-11-05-23-007`, `2026-11-11-12-004`, `2026-11-11-12-006`, `2026-11-12-18-001`, `2026-11-12-18-002`, `2026-11-13-06-001`, `2026-11-13-06-002`, `2026-11-13-06-003`, `2026-11-13-06-004`, `2026-11-15-11-001`, `2026-11-15-11-002`, `2026-11-15-18-003`, `2026-11-16-06-002` (the consumer's own code, ADRs, tests, build and e2e suite). `2026-11-15-18-003` states a feature request (known-flake collapsing in `ci_verify`) that no earlier sweep recorded as a defect.
+
+### Dispositions
+
+| Disposition | Count |
+|---|---|
+| filed (4 filings) | 12 |
+| medium | 4 |
+| stale | 1 |
+| already-covered or low (stored in `low/`) | 14 |
+| not applicable (left in source) | 28 |
+| **total** | **59** |

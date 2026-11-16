@@ -664,6 +664,23 @@ Where the two gradings differ: `sh-004` (branch-cleanup stall, skipped `adr-prop
 
 The filings of this grading are numbered `-089`..`-091` because the Linux drain filed `-087` and `-088` first; they were renumbered when the two ledger branches were merged.
 
+### 2026-11-16 — third `gather` run (cross-repo: API-Sheriff and TokenSheriff)
+
+At the operator's request. This machine (`/home/oliver/git`) has eleven sibling checkouts; two hold a lessons store: `API-Sheriff` (10) and `TokenSheriff` (49). The other nine, `cui-http` among them, are recorded zeros, as is this repository's own corpus (tombstones only). The three `_orchestrator` worktrees hold no store. The probe was the ruling's `git status --ignored`, run after it had returned a known non-empty store. Three read-only leaves graded the 59 lessons against `ee019bf1d`; the orchestrator re-read the evidence of every filed item. Per-lesson dispositions: `lessons-archive/INDEX.md` § Sweep 2026-11-16 (fourth run).
+
+| Disposition | Lessons | Where |
+|---|---|---|
+| high (operator), filed to `live-blockers` | 3 in `lessons-routing-092` (the dispatch seam cannot find an installed `execution-context-level-N` agent; reproduced), `-093` (a root aggregator's `module-tests` is plain `mvn test` and cannot resolve a sibling test-jar) and `-094` (the documented marker gate has no caller) | `live-blockers/inbox/`; copies in `lessons-archive/filed-live-blockers/sweep-2026-11-16/{repo}/` |
+| domain content, filed as one umbrella (operator) | 9 in `lessons-routing-095` (`ext-triage-java`, `java-concurrency.md`, Sonar S1192, sibling-path security parity, `@EnumSource`, sanitise-every-sink) | same |
+| medium | 4 | `lessons-archive/medium/TokenSheriff/` |
+| stale | 1 | `lessons-archive/stale/TokenSheriff/` |
+| already-covered or low | 14 | `lessons-archive/low/TokenSheriff/` |
+| not applicable, left in source | 28 (API-Sheriff 9, TokenSheriff 19) | — |
+
+Operator rulings: the three borderlines above were graded **high** (the marker gate from a leaf grade of medium; the Maven one without a Maven run, which the filing states), and every domain-content gap was to go into **one** filing. The `live-blockers` FOCUS RULE (high and blocking only) may still discard individual items of `-095`. The destination epic was open (`phase: orchestrating`) before routing. The run began on a ledger worktree 42 commits behind main, against the Multi-Machine Operation ruling (fetch main and replay first): the filings were first numbered `-087`..`-090`, colliding with the `-087`..`-091` already on main, and were renumbered to `-092`..`-095` at the rebase; main's `-087`..`-091` were compared with them by title only, and the "no undrained filing to amend" check was made against the stale inbox.
+
+Lessons were moved with `mv -n`; all 31 destinations and the 28 remaining sources were verified, and no source-repo commit was made. ⚠ Not run: Maven, for `-093`. The consumers' installed plugin versions are unknown, and several "fixed" verdicts predate the lessons. This run also reconciles the 2026-11-02 and 2026-11-10 "unreconciled" notes for these two stores: every id the 2026-11-01 run recorded as left in place is still at its path, so they were not lost.
+
 ## START HERE
 
 ### Annotations
