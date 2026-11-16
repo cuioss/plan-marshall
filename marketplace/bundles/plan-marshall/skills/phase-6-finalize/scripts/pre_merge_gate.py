@@ -77,9 +77,8 @@ handshake fires at the phase transition — after the merge and the worktree
 removal. ``merge`` enumerates ``phase_6.steps`` once, takes the entries before
 ``branch-cleanup``, and asks the existing ``assert-step-recorded
 --require-terminal`` assertion about each (:func:`_step_sequence_refusal`). It runs
-immediately after the mutex proof and before the store query, because it is a local
-read whose remedy is local. Any
-step without a terminal record refuses with
+immediately after the mutex proof and before the store query, because it is a
+local read whose remedy is local. Any step without a terminal record refuses with
 :data:`MERGE_EARLIER_STEP_UNRECORDED`, listing the steps; a ``failed`` record
 refuses too, because a red gate is not a completion. A step the manifest never
 selected is absent from that array and so cannot block.
@@ -770,8 +769,7 @@ def _run_ci(ci_args: list[str]) -> dict[str, Any]:
 #: and the sweep issues one per preceding step while the cross-plan merge mutex is
 #: held — so the generic 300 s bound would let a wedged executor pin the critical
 #: section for 300 s times the step count. At this bound a full 13-step roster's
-#: worst case is 780 s, an order of magnitude below the 3 900 s the generic bound
-#: would allow.
+#: worst case is 780 s, roughly a fifth of the 3 900 s the generic bound would allow.
 _STEP_SEQUENCE_VERB_TIMEOUT_SECONDS = 60
 
 
@@ -905,12 +903,21 @@ def _sequence_refusal_payload(plan_id: str, reason: str, detail: str, steps: lis
     """
     named = ', '.join(str(row['step']) for row in steps)
     remedy = 'dispatcher' if any(str(row.get('reason')) in _STEP_GAP_REASONS for row in steps) else 'stop'
-    if steps:
+    if remedy == 'dispatcher':
         message = (
             f'The finalize manifest orders {len(steps)} step(s) before {MERGE_STEP_ID} that did not '
             f'complete ({named}); the payload names the reason for each. Refusing to merge: return '
             'control to the finalize dispatcher, which re-runs exactly those steps, in the order the '
             'manifest declares.'
+        )
+    elif steps:
+        # The message is selected on the SAME discriminator as ``remedy``: a message
+        # that told the caller to re-enter would be the very instruction this branch
+        # forbids, and the stop path surfaces the payload verbatim.
+        message = (
+            f'{len(steps)} finalize step(s) below {MERGE_STEP_ID} could not be READ ({named}): {detail}. '
+            'Refusing to merge: a re-entry re-asks the identical unreadable state, so the read fault '
+            'must be fixed before this merge can proceed.'
         )
     else:
         message = (
