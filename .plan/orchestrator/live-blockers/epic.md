@@ -4595,3 +4595,12 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
   Re-read at the merged `_maven_cmd_discover.py:516-517`: the root row now takes `package`, so it joins the per-module ladder
   in the exposed set. Pre-existing limit, not widened in kind. No plan staged; whether one carries it is the operator's word.
   — trigger: a false green recorded on a Maven consumer whose `module-tests` canonical is `package`.
+- **Watch — three stale documentation statements after PLAN-LB-153 (PR #1999).** The hand-back commit now has one row owner
+  (`--record-change`, id `handback-commit`; re-read at the merged `git-workflow.py:1009-1123`), but the lane stopped with
+  `self-review:budget-exhausted` and left three statements behind: `manage-change-ledger/SKILL.md` still names `git diff-tree` as the
+  source of `changed_paths` although a merge commit now uses a first-parent `git diff` (re-read); its `manage-status` producer row omits
+  the per-SHA `append_invocations` the refusal carries (re-read); and `workflow-integration-git/SKILL.md` ~line 250 says every
+  non-`merge_lock` resolution is cwd-relative while the row writer targets the named tree (the lane's reading, the sentence quoted).
+  There is also no code backstop against a caller marking a Step 10a commit and appending its own row — a documented caller contract
+  only. Behaviour is correct; nothing staged. — trigger: the operator asks for a completion plan, or a consumer reports two rows for
+  one commit.
