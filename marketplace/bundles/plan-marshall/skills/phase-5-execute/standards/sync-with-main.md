@@ -25,7 +25,7 @@ Step 3 does, however, **self-absorb the zero-overlap case** — when upstream co
 
 ## Purpose
 
-Catch the recurring failure mode where a long-running execute phase is interrupted by upstream merges that landed AFTER the refine baseline-reconciliation pass completed. Without this gate, execute could run against a stale base and surface conflicts at finalize-time (after the entire execute loop has already burned tokens). With this gate, execute aborts immediately and redirects the user back to phase-2-refine, where the iterate-to-confidence loop is the documented absorption path.
+Catch the recurring failure mode where a long-running execute phase is interrupted by upstream merges that landed AFTER the refine baseline-reconciliation pass completed. Without this gate, execute could run against a stale base and surface conflicts at finalize-time (after the entire execute loop has already burned tokens). With this gate, execute aborts immediately and redirects the user back to phase-2-refine, where the iterate-to-confidence loop is the documented absorption path. That loop re-authors the plan but moves no ref, so the orchestrator's baseline drift recovery then brings the branch onto the new base before re-entering execute — see [`plan-marshall/standards/execution-recovery.md` § Baseline drift recovery (non-zero overlap)](../../plan-marshall/standards/execution-recovery.md#baseline-drift-recovery-non-zero-overlap) step 4. This gate performs neither step: it only detects the drift.
 
 ## Inputs
 
@@ -92,7 +92,7 @@ Catch the recurring failure mode where a long-running execute phase is interrupt
    display_detail: "baseline drift: probe {reconcile_status} ({reason})"
    ```
 
-   The orchestrator's drift-recovery branch (`plan-marshall/workflow/execution.md` § "Baseline drift recovery (non-zero overlap)") re-dispatches phase-2-refine via the standard envelope, where the iterate-to-confidence loop absorbs the overlap. ABORT the phase. Do NOT enter the task loop. Do NOT auto-merge. Do NOT auto-rebase.
+   The orchestrator's drift-recovery branch (`plan-marshall/standards/execution-recovery.md` § "Baseline drift recovery (non-zero overlap)") re-dispatches phase-2-refine via the standard envelope, where the iterate-to-confidence loop re-authors the plan against the new baseline, and then runs the recovery's reconcile step: the branch is brought onto `origin/{base_branch}` through `git-workflow worktree-rebase-to` (with the change ledger remapped for the rewritten commits) before execute is re-entered. Refine settles what the plan should do; the reconcile step is what actually moves the branch, because refine's own fetch/compare path is read-only. ABORT the phase. Do NOT enter the task loop. Do NOT auto-merge. Do NOT auto-rebase in this step.
 
 The structured drift TOON is load-bearing — it is the orchestrator's signal to invoke the drift-recovery branch. Returning a generic `status: error` without the `error: baseline_drift` discriminator causes the orchestrator to treat the failure as a generic agent error instead of a recoverable baseline drift.
 
@@ -170,5 +170,6 @@ The split moves substantive reconciliation back to where the loop already exists
 ## Cross-References
 
 - [`phase-2-refine/standards/refine-workflow-detail.md` § Step 3d](../../phase-2-refine/standards/refine-workflow-detail.md#step-3d-baseline-reconciliation) — authoritative substantive reconciliation procedure
+- [`plan-marshall/standards/execution-recovery.md` § Baseline drift recovery (non-zero overlap)](../../plan-marshall/standards/execution-recovery.md#baseline-drift-recovery-non-zero-overlap) — the orchestrator-side branch that answers the drift abort returned above: refine re-authors the plan, then its reconcile step (step 4) brings the branch onto `origin/{base_branch}` and remaps the change ledger
 - [`phase-6-finalize/standards/branch-cleanup.md` § Rebase Branch onto Base](../../phase-6-finalize/standards/branch-cleanup.md#rebase-branch-onto-base) — the pre-merge rebase onto `origin/{base_branch}`; the authoritative actor for the rebase that this fast-path gate refuses to perform. Whether it performs one is routed by `use_merge_queue` — unconditional on the default `false` path, skipped on the `true` path where the platform merge queue rebases and re-tests instead
 - Substantive reconciliation moved to phase-2-refine because refine's iterate-to-confidence loop can absorb baseline shifts cheaply; execute-time reconciliation is expensive and occurs after outline, plan, and tasks have already locked intent.
