@@ -66,10 +66,12 @@ Use `-rf` to restart a failed build:
 
 A root `pom` aggregator owns no test files, so discovery gives it no test ladder of its own — but it is the module the architecture's **default scope** resolves, and `mvn test` at the reactor root runs the tests of the modules the root builds. Discovery therefore emits, for a root `pom` aggregator only, when the reactor the root builds — its own `<modules>`, followed through nested aggregators, plus any `<modules>` an `activeByDefault` profile declares — holds a module with test files, or when the root itself has test files:
 
-| Canonical | Command |
-|-----------|---------|
-| `module-tests` | `test` |
-| `test-compile` | `test-compile` |
+| Reactor | `module-tests` | `test-compile` |
+|---------|----------------|----------------|
+| no member consumes a reactor test artifact | `test` | `test-compile` |
+| a member consumes a sibling's `test-jar` / classified artifact | `package` | `package -DskipTests` |
+
+The second row is § "Test ladder for reactor test artifacts" applied to the whole reactor: a sibling's classified or `test-jar` artifact is attached only from `package` on, so at the `test` phase a consumer does not compile and a `test`-phase run at the root would fail although the whole-tree `verify` is green. The verdict reuses that ladder's own POM-only detection — a member's `metadata.reactor_test_artifacts` — so the root and the member can never disagree about which artifact forms qualify. `<type>test-jar</type>` is part of it for the reason the ladder gives: it resolves at `test` on Maven 3.9, but a false positive costs one extra `package` phase while a false negative is a broken build.
 
 No `-pl` is added: the whole reactor is the scope. The grant follows the root's own reactor, not every `pom.xml` the filesystem walk found: a POM the root does not list is not built by `mvn test` there and does not count, so a standalone `examples/` module with tests leaves the root without either entry — a canonical that would run nothing is a false green, worse than an absent one. A profile's `<modules>` counts only when the profile declares `activeByDefault` — the one activation a cheap POM parse can read. A profile activated by a property, a JDK condition or an explicit `-P` does not count, which under-grants (the root keeps no canonical and the gate records DEGRADED rather than running those modules). An `activeByDefault` profile that Maven would switch off because another profile is active may be counted, which can over-grant; the run path's zero-test check reports the resulting empty run as `test_run_executed_nothing` rather than green. A reactor with no test module gets neither entry. A nested aggregator and a single-module `jar` root keep their own answers unchanged.
 
