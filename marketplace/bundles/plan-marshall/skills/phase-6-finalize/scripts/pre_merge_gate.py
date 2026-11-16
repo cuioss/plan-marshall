@@ -829,14 +829,16 @@ def _is_merge_step(entry: str) -> bool:
     ``branch-cleanup`` to one identity and preserves a ``project:``/``bundle:``
     prefix verbatim, which is exactly the distinction wanted here.
 
-    An unimportable canonicalizer is answered as "not the merge step", which makes
-    the caller find no entry and refuse with ``branch_cleanup_absent_from_manifest``
-    — the fail-closed direction, never an empty prefix.
+    An unimportable canonicalizer falls back to the two spellings that name THIS
+    step without the canonicalizer — bare ``branch-cleanup`` and
+    ``default:branch-cleanup`` — and to nothing else, so a ``project:`` entry is
+    still excluded and the caller finds no entry (refusing with
+    ``branch_cleanup_absent_from_manifest``) rather than ending on an empty prefix.
     """
     try:
         from _step_key_canonical import canonicalize_step_key
     except Exception:
-        return entry.strip() == MERGE_STEP_ID
+        return entry.strip() in (MERGE_STEP_ID, f'default:{MERGE_STEP_ID}')
     return canonicalize_step_key(entry) == MERGE_STEP_ID
 
 
@@ -1022,7 +1024,16 @@ def _step_sequence_refusal(
             'the manifest carries no phase_6.steps array',
             [],
         )
-    steps = [str(entry) for entry in raw_steps]
+    if not all(isinstance(entry, str) for entry in raw_steps):
+        # A NON-STRING entry is corrupt too, and `str()` would launder it into a
+        # plausible-looking id ("None", "123") that the prefix could then walk past.
+        return _sequence_refusal_payload(
+            plan_id,
+            'manifest_steps_unreadable',
+            f'phase_6.steps carries a non-string entry ({raw_steps!r})',
+            [],
+        )
+    steps = list(raw_steps)
     if not all(entry.strip() for entry in steps):
         # A blank entry is a CORRUPT array, not an entry to drop: dropping it would
         # silently narrow the prefix and admit the merge over a manifest nobody can

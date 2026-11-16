@@ -378,6 +378,20 @@ def test_a_blank_step_entry_refuses_the_merge() -> None:
     assert result['remedy'] == 'stop'
 
 
+def test_a_non_string_step_entry_refuses_the_merge() -> None:
+    """``str()`` would launder a non-string entry into an id the prefix could walk past."""
+    result, runner, spy = _merge(
+        manifest={'status': 'success', 'plan_id': _PLAN_ID, 'phase_6': {'steps': [None, _BRANCH_CLEANUP]}},
+        records={},
+    )
+
+    assert runner.calls == []
+    assert result['dispatched'] is False
+    assert result['reason'] == 'manifest_steps_unreadable'
+    assert spy.asked == []
+    assert result['remedy'] == 'stop'
+
+
 def test_an_unconfirmed_record_refuses_the_merge() -> None:
     """An answer that is neither a terminal outcome nor a named refusal is not an admission."""
     result, runner, _spy = _merge(
