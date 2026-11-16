@@ -70,6 +70,7 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workf
 - **message** (optional): Custom commit message
 - **push** (optional): Push after committing
 - **step** (optional): Finalize step id producing this commit — passed through to the gate, which sanctions a source commit only when the id is in the plan's composed phase-6 manifest.
+- **record-change** (optional): Mark this commit as one no settlement owns (a phase-5 quality-gate rewrite, a style fix, a Javadoc fix made after the envelope), so the verb records its `kind=change` row under the constant `handback-commit`. Never passed by Step 10a or the boundary settlement — their own append is the commit's one row.
 
 ### Steps
 
@@ -167,14 +168,14 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workf
   --plan-id {plan_id} \
   --project-dir {worktree_path} \
   --message-file {worktree_path}/.plan/temp/{plan_id}-commit-msg.txt \
-  [--step {step}]
+  [--step {step}] [--record-change]
 ```
 
 `--plan-id` is passed even though `--project-dir` already names the tree: for a `use_worktree: false` plan the tree IS the main checkout, so its path names no plan and the verb would resolve no phase — and therefore write no ledger row (see below). The id is the selector that keeps the phase readable in that case.
 
 A **raw** `git commit` is refused by the enforcement guard in phase `6-finalize` (both harnesses) precisely so this verb is the single commit path; do not bypass it. The `git commit -m "$(cat <<'EOF' … EOF)"` form is forbidden — it combines `$(…)` substitution with a heredoc, both of which trip the Bash safety harness. See `persona-plan-marshall-agent/standards/tool-usage-patterns.md` for the chain-shape and Bash-write rules.
 
-**This verb is the one writer of a `6-finalize` commit's `kind=change` ledger row.** When the plan's `current_phase` is `6-finalize`, the verb appends the row for the commit it just made — `commit_sha` from the new HEAD, `changed_paths` from `git diff-tree` on that commit, `deliverable_id` from `--step` when one is passed (`finalize-commit` otherwise) — and reports `ledger_recorded`. Every commit owes a row because the `5-execute` boundary refuses unless every branch commit has one, so phase 6 may not depend on phase 5's settlement; and the verb writes it only in `6-finalize`, so a phase-5 deliverable commit keeps its single Step 10a row and no commit ever gets two. `manage-change-ledger` § Integration carries the producer list; the ledger's own field contract is in the same skill § "Entry Shapes". A commit that fails to record still stands, and its missing row surfaces as the boundary's `bookkeeping_gap` refusal rather than as a silent gap.
+**This verb is the writer of a `kind=change` row for every commit no settlement owns.** Two commits qualify. A `6-finalize` commit — dispatched item 5f(b), the unified-triage inline fix at 7c(4a), the architecture refresh — is recorded unconditionally when the plan's `current_phase` is `6-finalize`. A commit the orchestrator makes during phase 5 outside Step 10a — a quality-gate rewrite, a style fix, a Javadoc fix made after the envelope — is recorded when the caller passes `--record-change`. Either way the row is `commit_sha` from the new HEAD, `changed_paths` from `git diff-tree` on that commit, and `deliverable_id` from `--step` when one is passed — otherwise the constant `finalize-commit` in `6-finalize` and the constant `handback-commit` outside it — and the result reports `ledger_recorded`. Every commit owes a row because the `5-execute` boundary refuses unless every branch commit has one, so phase 6 may not depend on phase 5's settlement. The phase test plus the caller's marker are what keep every row single: an UNMARKED phase-5 commit is a deliverable commit whose Step 10a append is its one row, so no commit ever gets two. `--record-change` is the marker precisely because the verb cannot tell a Step 10a commit from an orchestrator hand-back commit on its own. Both constants end in no digit, so neither is read as an outline deliverable — and one constant means a commit touching two deliverables' files needs no attribution decision. `manage-change-ledger` § Integration carries the producer list; the ledger's own field contract is in the same skill § "Entry Shapes". A commit that fails to record still stands, and its missing row surfaces as the boundary's `bookkeeping_gap` refusal rather than as a silent gap — the recovery `plan-marshall/workflow/execution.md` § "Execute Phase Completion" documents.
 
 **Step 6: Push (Optional)**
 
@@ -201,7 +202,7 @@ ledger_recorded: true
 ledger_deliverable_id: pre-push-quality-gate
 ```
 
-`ledger_recorded` is present only when the plan's `current_phase` is `6-finalize`; `ledger_error` rides beside it when the row could not be written. See Step 5.
+`ledger_recorded` is present when the plan's `current_phase` is `6-finalize`, and whenever `--record-change` was passed; `ledger_error` rides beside it when the row could not be written. See Step 5.
 
 ## Scripts
 

@@ -741,6 +741,19 @@ def test_discover_reactor_aggregator_records_no_reactor_test_artifacts():
     assert 'reactor_test_artifacts' not in parent['metadata']
 
 
+def test_discover_reactor_aggregator_takes_the_package_ladder_when_a_member_consumes():
+    """The fixture root builds consumers, so its whole-reactor run is ``package``.
+
+    The fixture carries both qualifying forms — ``consumer`` declares a custom
+    classifier, ``typed-consumer`` a ``<type>test-jar</type>`` — and the root
+    answers once for the reactor: the phase a member needs.
+    """
+    root = _discover_reactor_fixture()['reactor-test-artifact-parent']
+
+    assert root['commands']['module-tests'] == _executable('package')
+    assert root['commands']['test-compile'] == _executable('package -DskipTests')
+
+
 def test_discover_reactor_aggregator_carries_the_whole_reactor_test_canonicals():
     """A root ``pom`` aggregator drives the reactor's tests, so it carries them.
 
@@ -1143,6 +1156,111 @@ _DEFAULT_ACTIVE_PROFILE_MODULES_POM = """<?xml version="1.0" encoding="UTF-8"?>
 </project>
 """
 
+_PRODUCER_JAR_POM = """<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.example</groupId>
+  <artifactId>producer</artifactId>
+  <version>1.0.0</version>
+  <packaging>jar</packaging>
+</project>
+"""
+
+_AGGREGATOR_LISTING_PRODUCER_AND_CONSUMER_POM = """<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.example</groupId>
+  <artifactId>parent-agg</artifactId>
+  <version>1.0.0</version>
+  <packaging>pom</packaging>
+  <modules>
+    <module>producer</module>
+    <module>consumer</module>
+  </modules>
+</project>
+"""
+
+_PLAIN_CONSUMER_POM = """<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.example</groupId>
+  <artifactId>consumer</artifactId>
+  <version>1.0.0</version>
+  <packaging>jar</packaging>
+</project>
+"""
+
+_CLASSIFIER_CONSUMER_POM = """<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.example</groupId>
+  <artifactId>consumer</artifactId>
+  <version>1.0.0</version>
+  <packaging>jar</packaging>
+  <dependencies>
+    <dependency>
+      <groupId>com.example</groupId>
+      <artifactId>producer</artifactId>
+      <version>1.0.0</version>
+      <classifier>generators</classifier>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+</project>
+"""
+
+_TEST_JAR_CONSUMER_POM = """<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.example</groupId>
+  <artifactId>consumer</artifactId>
+  <version>1.0.0</version>
+  <packaging>jar</packaging>
+  <dependencies>
+    <dependency>
+      <groupId>com.example</groupId>
+      <artifactId>producer</artifactId>
+      <version>1.0.0</version>
+      <type>test-jar</type>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+</project>
+"""
+
+_NESTED_AGGREGATOR_LISTING_PRODUCER_AND_CONSUMER_POM = """<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.example</groupId>
+  <artifactId>nested-agg</artifactId>
+  <version>1.0.0</version>
+  <packaging>pom</packaging>
+  <modules>
+    <module>producer</module>
+    <module>consumer</module>
+  </modules>
+</project>
+"""
+
+_SINGLE_ROOT_CLASSIFIER_CONSUMER_POM = """<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.example</groupId>
+  <artifactId>leaf-app</artifactId>
+  <version>1.0.0</version>
+  <packaging>jar</packaging>
+  <dependencies>
+    <dependency>
+      <groupId>com.example.external</groupId>
+      <artifactId>generator</artifactId>
+      <version>1.0.0</version>
+      <classifier>generators</classifier>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+</project>
+"""
+
 
 def test_discover_no_maven_binary_produces_command_map():
     """Discovery against a pom.xml fixture yields a full command map — no Maven.
@@ -1222,6 +1340,145 @@ def test_discover_root_reactor_follows_modules_through_a_nested_aggregator():
 def test_discover_single_module_jar_root_keeps_its_own_test_canonicals():
     """A single-module ``jar`` root keeps the module-scoped ladder it always had."""
     root = _make_module_tree({'.': _JAR_POM})
+    _add_test_source(root, '.')
+
+    module = discover_maven_modules(str(root))[0]
+
+    assert module['metadata']['packaging'] == 'jar'
+    assert module['commands']['module-tests'] == _executable('test')
+    assert module['commands']['test-compile'] == _executable('test-compile')
+
+
+# =============================================================================
+# Reactor root: the phase a consuming member needs
+# =============================================================================
+#
+# A whole-reactor ``test`` cannot compile a member that consumes a sibling's
+# ``test-jar`` / classified artifact — that artifact is attached only from
+# ``package`` on — so the root's pair follows the per-module ladder. The verdict
+# is the ladder's own POM-only detection, applied once to the reactor.
+
+
+def test_discover_reactor_root_keeps_the_test_ladder_without_a_consuming_member():
+    """CONTROL: no member consumes a reactor test artifact, so the root stays at ``test``."""
+    root = _make_module_tree(
+        {
+            '.': _AGGREGATOR_LISTING_PRODUCER_AND_CONSUMER_POM,
+            'producer': _PRODUCER_JAR_POM,
+            'consumer': _PLAIN_CONSUMER_POM,
+        }
+    )
+    _add_test_source(root, 'producer')
+    _add_test_source(root, 'consumer')
+
+    modules = {module['name']: module for module in discover_maven_modules(str(root))}
+
+    assert modules['parent-agg']['commands']['module-tests'] == _executable('test')
+    assert modules['parent-agg']['commands']['test-compile'] == _executable('test-compile')
+    assert modules['consumer']['commands']['module-tests'] == _executable('test -pl consumer -am')
+
+
+def test_discover_reactor_root_switches_to_package_for_a_classifier_consumer():
+    """A member consuming a classified sibling artifact makes the whole reactor run ``package``.
+
+    The root and the member agree: the member's own ladder is ``package -pl ...
+    -am``, and the root's whole-reactor run is the same phase without ``-pl``.
+    """
+    root = _make_module_tree(
+        {
+            '.': _AGGREGATOR_LISTING_PRODUCER_AND_CONSUMER_POM,
+            'producer': _PRODUCER_JAR_POM,
+            'consumer': _CLASSIFIER_CONSUMER_POM,
+        }
+    )
+    _add_test_source(root, 'producer')
+    _add_test_source(root, 'consumer')
+
+    modules = {module['name']: module for module in discover_maven_modules(str(root))}
+
+    assert modules['parent-agg']['commands']['module-tests'] == _executable('package')
+    assert modules['parent-agg']['commands']['test-compile'] == _executable('package -DskipTests')
+    assert modules['consumer']['commands']['module-tests'] == _executable('package -pl consumer -am')
+    assert modules['consumer']['metadata']['reactor_test_artifacts'] == ['com.example:producer:generators']
+
+
+def test_discover_reactor_root_switches_to_package_for_a_test_jar_consumer():
+    """A ``<type>test-jar</type>`` consumer switches the root too — one rule, not two.
+
+    Maven 3.9 does resolve that form at ``test`` through the sibling's
+    ``target/test-classes`` (see ``standards/maven-impl.md`` § "Test ladder for
+    reactor test artifacts"), but the ladder classifies it as a reactor test
+    artifact on purpose, and the root reads the same verdict. A root that went by
+    form while a member went by dependency would let the two disagree.
+    """
+    root = _make_module_tree(
+        {
+            '.': _AGGREGATOR_LISTING_PRODUCER_AND_CONSUMER_POM,
+            'producer': _PRODUCER_JAR_POM,
+            'consumer': _TEST_JAR_CONSUMER_POM,
+        }
+    )
+    _add_test_source(root, 'producer')
+
+    modules = {module['name']: module for module in discover_maven_modules(str(root))}
+
+    assert modules['parent-agg']['commands']['module-tests'] == _executable('package')
+    assert modules['parent-agg']['commands']['test-compile'] == _executable('package -DskipTests')
+    assert modules['consumer']['metadata']['reactor_test_artifacts'] == ['com.example:producer:test-jar']
+
+
+def test_discover_reactor_root_with_a_consuming_member_and_no_tests_stays_canonical_free():
+    """The no-test-file rule outranks the phase choice: nothing to run, no canonical.
+
+    A canonical that would run nothing is a false green, so a reactor of
+    consumers and producers without a test source grants the root neither entry
+    even though a member would need the ``package`` phase if anything ran.
+    """
+    root = _make_module_tree(
+        {
+            '.': _AGGREGATOR_LISTING_PRODUCER_AND_CONSUMER_POM,
+            'producer': _PRODUCER_JAR_POM,
+            'consumer': _CLASSIFIER_CONSUMER_POM,
+        }
+    )
+
+    modules = {module['name']: module for module in discover_maven_modules(str(root))}
+
+    assert 'module-tests' not in modules['parent-agg']['commands']
+    assert 'test-compile' not in modules['parent-agg']['commands']
+
+
+def test_discover_nested_aggregator_keeps_no_canonical_beside_a_consuming_member():
+    """A nested aggregator stays unchanged while the root switches on its member.
+
+    ``nested`` is not the default scope, so it carries no whole-reactor ladder —
+    the switch belongs to the root, which builds the consumer transitively.
+    """
+    root = _make_module_tree(
+        {
+            '.': _AGGREGATOR_LISTING_NESTED_POM,
+            'nested': _NESTED_AGGREGATOR_LISTING_PRODUCER_AND_CONSUMER_POM,
+            'nested/producer': _PRODUCER_JAR_POM,
+            'nested/consumer': _CLASSIFIER_CONSUMER_POM,
+        }
+    )
+    _add_test_source(root, 'nested/producer')
+
+    modules = {module['name']: module for module in discover_maven_modules(str(root))}
+
+    assert modules['parent-agg']['commands']['module-tests'] == _executable('package')
+    assert modules['parent-agg']['commands']['test-compile'] == _executable('package -DskipTests')
+    assert 'module-tests' not in modules['nested-agg']['commands']
+    assert 'test-compile' not in modules['nested-agg']['commands']
+
+
+def test_discover_single_module_root_keeps_the_test_ladder_with_a_classifier_dependency():
+    """A single-module ``jar`` root has no reactor, so a classified dependency changes nothing.
+
+    The dependency names an artifact outside the reactor, and a ``jar`` root owns
+    its own ladder — the whole-reactor rule does not reach it either way.
+    """
+    root = _make_module_tree({'.': _SINGLE_ROOT_CLASSIFIER_CONSUMER_POM})
     _add_test_source(root, '.')
 
     module = discover_maven_modules(str(root))[0]

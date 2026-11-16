@@ -151,12 +151,16 @@ Every entry carries a `kind` discriminator, a `worktree_sha`, and a
   contract lives in
   [`../manage-tasks/SKILL.md`](../manage-tasks/SKILL.md) § "Pre-Commit Verify
   Freshness" and is deliberately not restated here.
-- **`kind=change`** — written by the two commit owners, one row per commit.
+- **`kind=change`** — written by the commit owners, one row per commit.
   The phase-5 execute loop's Step 10a chain-tail writes a deliverable commit's
-  row; the gate-bearing `workflow-integration-git` `commit` verb writes a
-  `6-finalize` commit's own (only in that phase, so no commit gets two). Fields:
-  `kind: "change"`, `deliverable_id` (or `task_id`; a finalize commit that names
-  no manifest step carries the constant `finalize-commit`), `commit_sha`,
+  row, the boundary settlement writes one per attributed group, and the
+  gate-bearing `workflow-integration-git` `commit` verb writes the row of a
+  commit no settlement owns: a `6-finalize` commit unconditionally (only in that
+  phase), and a phase-5 hand-back commit when the caller marks it with
+  `--record-change` — either way one row, so no commit gets two. Fields:
+  `kind: "change"`, `deliverable_id` (or `task_id`; a commit that names no
+  manifest step carries the constant `finalize-commit` in `6-finalize` and
+  `handback-commit` outside it), `commit_sha`,
   `changed_paths` (the **git-sourced** list, stored verbatim), `worktree_sha`
   (post-commit), `timestamp_iso`.
 - **`kind=job`** — written by the `build-server-client` skill's `submit` verb at
@@ -405,7 +409,7 @@ from _ledger_core import (
 |---------------------|-----------|----------|
 | `tools-script-executor` dispatch boundary | produces | imports `build_record` + `append_entry`; writes the `kind=build` row after every build-executing dispatch |
 | `phase-5-execute` Step 10a chain-tail | produces | `append --kind change` after each per-deliverable commit |
-| `workflow-integration-git` `commit` verb | produces | appends the `kind=change` row of a `6-finalize` commit (its `changed_paths` from `git diff-tree`, its `deliverable_id` from `--step` or the constant `finalize-commit`) |
+| `workflow-integration-git` `commit` verb | produces | appends the `kind=change` row of a commit no settlement owns — a `6-finalize` commit always, a phase-5 hand-back commit when marked with `--record-change` — with its `changed_paths` from `git diff-tree` and its `deliverable_id` from `--step`, the constant `finalize-commit`, or the constant `handback-commit` |
 | `phase-6-finalize` `sync-baseline` | produces | `remap` after a rebase rewrote the branch's SHAs (emit the map, then consume it) |
 | `manage-status` 5-execute boundary | reports (never writes) | carries the ready-to-run `remap` invocation in its `execute_commits_unrecorded` refusal; appends nothing itself |
 | `build-server-client` `submit` verb | produces | imports `job_record` + `append_entry`; writes `kind=job` at submit time for re-attach |

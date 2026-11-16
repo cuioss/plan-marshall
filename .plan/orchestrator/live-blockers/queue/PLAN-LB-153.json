@@ -1,0 +1,11 @@
+{
+  "id": "PLAN-LB-153",
+  "slug": "phase5-handback-commit-rows",
+  "workstream": "WS-01",
+  "status": "shipped",
+  "lane": "runbook",
+  "plan_marshall_plan_id": "rb-lb-153-phase5-handback-commit-rows",
+  "pr": "1999",
+  "landing": "landings/PLAN-LB-153.md",
+  "seq": 153
+}
