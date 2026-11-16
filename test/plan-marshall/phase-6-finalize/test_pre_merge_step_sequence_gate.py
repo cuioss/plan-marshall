@@ -25,6 +25,11 @@ from conftest import load_script_module
 
 gate = load_script_module('plan-marshall', 'phase-6-finalize', 'pre_merge_gate.py', register=False)
 
+# Both route-parametrized cases bind gate.ROUTES, so an empty route set would turn
+# each of them into a silent skip rather than a failure. Pin it non-empty at
+# collection time (the harness-shape R5 non-vacuity guard).
+assert len(gate.ROUTES) >= 1, 'pre_merge_gate.ROUTES is empty; the route-parametrized cases would vanish'
+
 _PLAN_ID = 'lb157-plan'
 _HEAD = 'c' * 40
 _BRANCH_CLEANUP = 'default:branch-cleanup'
