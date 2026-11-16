@@ -126,8 +126,14 @@ def test_every_reconcile_outcome_is_named_with_its_stop(recovery_section: str) -
     body = recovery_section
 
     assert 'status: conflict' in body, 'the conflict return of worktree-rebase-to is not handled'
-    assert 'git rebase --continue' in body, 'a conflict has no continuation path'
-    assert 'git rebase --abort' in body, 'a conflict has no abandonment path'
+    assert 'git -C {worktree_path} rebase --continue' in body, 'a conflict has no continuation path'
+    assert 'git -C {worktree_path} rebase --abort' in body, 'a conflict has no abandonment path'
+    assert 'git -C {worktree_path} add {path}' in body, (
+        'the resolution is never staged, and rebase --continue refuses an unstaged conflict'
+    )
+    assert 'worktree-executor-refresh' in body, (
+        'a continuation completed by the caller skips the executor refresh the verb only does on its own replay'
+    )
     assert 'drift_reconcile_conflict' in body, (
         'an unresolvable conflict must stop with a named reason, not re-enter execute'
     )
@@ -169,6 +175,10 @@ def test_unchanged_probe_stops_on_the_first_repeat(recovery_section: str) -> Non
     )
     assert 'baseline_drift_probe' in body, 'the persisted probe signature is not named'
     assert 'baseline_drift_count' in body, 'the persisted loop counter is not named'
+    assert 'baseline_drift_reconcile' in body and 'pending:' in body and 'done:' in body, (
+        'a rebase that moved HEAD leaves the remap and publish stranded behind an action: noop retry '
+        'unless the outstanding reconcile is recorded'
+    )
 
     assert body.index('drift_unchanged') < body.index('drift_loop_cap_exceeded'), (
         'the unchanged-probe stop must be stated before the cap, since it fires on the first repeat'
