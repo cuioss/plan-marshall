@@ -67,7 +67,7 @@ Both sides record the probe as one `manage-status metadata --set` call (`--field
         --plan-id {plan_id} --base {base_branch}
       ```
 
-      `--base` takes the BARE branch name: the verb resolves `origin/{base_branch}` and fetches it again itself before rebasing. That second fetch is idempotent, but it can fail without failing the verb and let the rebase take the stale ref — which is why 4.1 refreshes the ref first and stops on failure, and why this step does not rely on the verb's own fetch for freshness. Keep the head printed above as `{pre_sha}` — the verb reports `pre_sha` only on a rebase that ran to completion, and the conflict route below needs the pre-rebase head that its payload does not carry.
+      `--base` takes the BARE branch name: the verb resolves `origin/{base_branch}` and fetches it again itself before rebasing. That second fetch is idempotent, but it can fail without failing the verb and let the rebase take the stale ref — which is why 4.1 refreshes the ref first and stops on failure, and why this step does not rely on the verb's own fetch for freshness. Keep the head printed above as `{pre_sha}`: the verb reports `pre_sha`/`post_sha` only where it actually reconciled (an already-contained branch's `action: noop`, or a rebase that ran to completion), and the conflict route below needs the pre-rebase head that its payload does not carry.
 
       The verb also refreshes the worktree's `.plan/execute-script.py` when the replayed commits changed the mapped script set, so the re-entered execute resolves notations against the replayed tree.
 
@@ -85,14 +85,18 @@ Both sides record the probe as one `manage-status metadata --set` call (`--field
 
       Neither side is discarded wholesale: taking upstream alone silently drops planned work, and keeping the worktree side alone silently drops the upstream commit the drift was about. Record one `decision` log line per resolved path naming what was kept from each side.
 
-      Continue the rebase with `git rebase --continue`, which is the verb's documented conflict continuation (see [`workflow-integration-git/standards/worktree-handling.md` § The `worktree-rebase-to` Verb](../../workflow-integration-git/standards/worktree-handling.md#the-worktree-rebase-to-verb)). A further conflict stops the continuation the same way — repeat this item until the rebase completes, then read the completed head with `git -C {worktree_path} rev-parse HEAD` as `{post_sha}` and continue at 4.4. The remaining conflict set is never left for the execute re-entry to stumble into.
+      Stage each resolved path with `git add {path}`. `git rebase --continue` refuses to proceed while a conflicted path is still unstaged, so the staging is part of the resolution, not an optional tidy-up. Then continue the rebase with `git rebase --continue`, which is the verb's documented conflict continuation (see [`workflow-integration-git/standards/worktree-handling.md` § The `worktree-rebase-to` Verb](../../workflow-integration-git/standards/worktree-handling.md#the-worktree-rebase-to-verb)). A further conflict stops the continuation the same way — repeat this item, including the staging, until the rebase completes.
+
+      When the resolution leaves the replayed commit empty — upstream already carried the planned change, so nothing remains to replay — `--continue` refuses with an empty commit. That is a completed resolution, not a failure: `git rebase --skip` drops the now-empty commit and the loop continues. Only a path that cannot be settled under the refine decision takes the abort route below.
+
+      Read the completed head with `git -C {worktree_path} rev-parse HEAD` as `{post_sha}` and continue at 4.4. The remaining conflict set is never left for the execute re-entry to stumble into.
 
       When a path cannot be settled under the refine decision, abandon the attempt with `git rebase --abort`, log the paths, and STOP:
 
       ```toon
       status: error
       error: drift_reconcile_conflict
-      conflicts: {conflicts from the verb}
+      conflicts: {the paths `git -C {worktree_path} diff --name-only --diff-filter=U` reports at the stop — the verb's own enumeration method, re-read because a repeat conflict's set is not the one the verb's first payload named}
       display_detail: "baseline drift reconcile conflicted on {N} paths and the accepted refinement did not settle them"
       ```
 
