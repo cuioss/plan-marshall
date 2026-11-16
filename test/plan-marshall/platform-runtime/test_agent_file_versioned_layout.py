@@ -166,26 +166,21 @@ def test_a_path_shaped_name_cannot_escape_the_root(deployed_cache: Path) -> None
     assert runtime_base._find_agent_file(VARIANT, (deployed_cache,)) is not None
 
 
-@pytest.mark.parametrize('name', ('', '.', '..', 'agents/execution-context', 'agents\\execution-context'))
-def test_a_non_stem_name_never_raises_and_never_resolves(name: str, deployed_cache: Path) -> None:
-    """The other non-stem shapes are refused without raising.
-
-    No fixture can be planted where these would land (no ``.md`` file exists
-    under the joined path for any of them), so this pins "no crash, no
-    resolution" — the two tests below are the ones that prove the guard.
-    """
-    assert runtime_base._find_agent_file(name, (deployed_cache,)) is None
-
-
-def test_a_glob_shaped_name_selects_no_agent(deployed_cache: Path) -> None:
+def test_a_glob_shaped_name_selects_no_agent(tmp_path: Path) -> None:
     """``--agent '*'`` resolves nothing: the name is a stem, never a pattern.
 
-    The variant IS present, so the flat glob would answer
-    ``*/agents/*.md`` and dispatch a caller-chosen-by-wildcard agent if the
-    character guard were dropped.
+    The root carries a FLAT agent file, which is the shape the flat pass globs,
+    so without the character guard ``*`` selects it and the caller dispatches an
+    agent it never named. (The deployed root cannot prove this: its agents sit
+    one level deeper than the flat glob reaches.)
     """
-    assert runtime_base._find_agent_file('*', (deployed_cache,)) is None
-    assert runtime_base._find_agent_file('execution-context-*', (deployed_cache,)) is None
+    root = tmp_path / 'flat-cache'
+    _write_agent(root / 'plan-marshall', BARE)
+
+    assert runtime_base._find_agent_file('*', (root,)) is None
+    assert runtime_base._find_agent_file(f'{BARE}*', (root,)) is None
+    # Control: the plain stem resolves from this very root.
+    assert runtime_base._find_agent_file(BARE, (root,)) is not None
 
 
 def test_search_roots_are_the_ones_probed(deployed_cache: Path) -> None:

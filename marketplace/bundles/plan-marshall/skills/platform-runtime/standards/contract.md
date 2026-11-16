@@ -49,7 +49,7 @@ alternative: <what the caller can do instead>
 | `invalid_operation` | The operation's required argument is missing or unusable (`protect-path` path), or a direct runtime call names an unknown operation. The CLI routes `--operation` through argparse `choices`, so an unknown value stops there with an argparse rejection before this code can be returned |
 | `invalid_check` | `permission analyze --checks` contains an unknown check name |
 | `marshal_not_found` | `.plan/marshal.json` missing |
-| `prompt_not_found` | `subagent dispatch` could not read the prompt it was asked for, or could not resolve the agent it was asked for. Two misses share the code: the `--prompt-file` path that does not exist or cannot be read, and the `--agent` name no searched root carries — the agent-file message names every root it probed |
+| `prompt_not_found` | `subagent dispatch` could not read the prompt it was asked for, or could not resolve the agent it was asked for. Two misses share the code: the `--prompt-file` path that does not exist or cannot be read, and — on Claude, the only target that reads the agent file — the `--agent` name no searched root carries, whose message names every root it probed |
 | `unknown_target` | `runtime.target` value not in the target registry |
 | `unknown_overwrite_key` | `project install-hook --overwrite` names a conflict key the target does not define; rejected fail-closed before any write, so a typo never reads as "do not overwrite" |
 | `hook_not_configured` | SessionStart hook not installed; `$CLAUDE_CODE_SESSION_ID` unset |
