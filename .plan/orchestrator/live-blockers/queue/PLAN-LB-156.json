@@ -1,0 +1,11 @@
+{
+  "id": "PLAN-LB-156",
+  "slug": "maven-root-aggregator-test-artifact-ladder",
+  "workstream": "WS-02",
+  "status": "shipped",
+  "lane": "runbook",
+  "plan_marshall_plan_id": "rb-lb-156-maven-root-aggregator-test-artifact-ladder",
+  "pr": "1998",
+  "landing": "landings/PLAN-LB-156.md",
+  "seq": 156
+}
