@@ -3742,8 +3742,17 @@ def cmd_worktree_rebase_to(args):
     # error). Inspect for an in-progress rebase to surface the conflict
     # state cleanly. Conflict markers are intentionally left in place
     # so the caller can resolve manually.
-    rebase_state_dir = target / '.git' / 'rebase-merge'
-    rebase_apply_dir = target / '.git' / 'rebase-apply'
+    #
+    # The state directories live in the WORKTREE's git dir. In a linked
+    # worktree (``git worktree add`` — the layout every plan worktree uses)
+    # ``target/.git`` is a pointer FILE, so probing through it never matches and
+    # a real conflict would be reported as ``rebase_failed`` with the rebase
+    # still in progress. Resolve the git dir instead of assuming a directory.
+    rc_gd, git_dir_out, _gd_err = run_git(['-C', str(target), 'rev-parse', '--absolute-git-dir'])
+    resolved_git_dir = git_dir_out.strip()
+    git_dir = Path(resolved_git_dir) if rc_gd == 0 and resolved_git_dir else target / '.git'
+    rebase_state_dir = git_dir / 'rebase-merge'
+    rebase_apply_dir = git_dir / 'rebase-apply'
     in_progress = rebase_state_dir.exists() or rebase_apply_dir.exists()
 
     if in_progress:
