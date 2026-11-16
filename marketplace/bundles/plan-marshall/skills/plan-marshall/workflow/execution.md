@@ -446,6 +446,8 @@ Because the `await-long-running` seam is the ONLY component permitted to backgro
 
 This handler is the consuming half of the leaf's live `execution_tier` resolution: the leaf hands back every step whose live tier puts it outside the `per_task` slice, and the orchestrator picks it up here. The leaf never backgrounds a build; the orchestrator's `await-long-running` seam backgrounds only the non-daemon fallback, never a daemon-routed build.
 
+**A commit the orchestrator makes after the envelope is a commit no settlement owns — record it through the verb.** A whole-tree gate rewrites files in place (Maven's `verify -Ppre-commit` is the canonical instance), and a style or Javadoc fix made after the leaf's envelope is the same kind of work: neither is a deliverable's settlement, and neither is due at a Step 10a chain tail. Commit it through the gate-bearing `workflow-integration-git` `commit` verb with `--record-change` — never a raw `git commit` — and the verb appends its `kind=change` row under the constant `handback-commit` at the point the commit is made. That is what keeps the `5-execute → 6-finalize` boundary from refusing a branch whose work WAS recorded; the one constant is also why a commit touching two deliverables' files needs no attribution decision. A commit the per-deliverable settlement DOES own stays with Step 10a, whose append is its one row — the verb never writes a second.
+
 **Build hand-back field — `pending_verify_steps[]`, and its `verification_handback` discriminator.** A leaf that owes the orchestrator a build reports it in exactly one structured field, on every terminal payload — never in free text beside `budget_yield`: `pending_verify_steps[N]` lists the `phase_5.verification_steps` step ids (`verify:{canonical}`) the leaf did not execute inline and hands back on THIS return for the orchestrator to run via `await-long-running`. **Every return that hands a build back sets `verification_handback: true` beside that non-empty list** — the four such returns are Step 11b, Step 11c, the leaf `running` hand-back, and a per-task verification that resolved to the orchestrator tier and was closed with `--verification-owed`. The classification table reads that pair as `termination_cause: verification_handback` **only when every listed id is in the manifest's composed `phase_5.verification_steps` and no non-owed task stalled in the same dispatch** — see § "B7" above for the second condition and the scoped exemption. The field is present on every termination branch and is `[0]` (empty) when the return hands back no build — `budget_yield`, `triage_required`, and queue-empty returns all carry it empty, and carry `verification_handback: false` (or omit it). The orchestrator-tier handler above consumes a non-empty list as its work list; an empty list with no other signal is not a build obligation. The same field name is carried in the `phase-5-execute` return contract on every termination branch (see `phase-5-execute/SKILL.md` § Output).
 
 ### Execute Phase Completion
@@ -468,7 +470,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status transi
   --plan-id {plan_id} --completed 5-execute
 ```
 
-**On any non-`success` result, STOP.** Apply the [refused-transition halt rule](../../ref-workflow-architecture/standards/phase-lifecycle.md#refused-transition-halt-rule): ANY result whose `status` is not `success` — exit 1 or exit 0, `status: drift` included — means the phase did NOT advance. Emit the `[ERROR]` work-log line carrying the refusal payload verbatim, then stop. This is the one call site that owns a recovery: only the two tree-state codes in the table below have a recovery path; every other refusal halts for the operator. The metrics boundary, the config check and the **Finalize Phase** below are reachable only from a `status: success` transition — a boundary recorded for a refused transition would close `5-execute` and open `6-finalize` in the metrics while the plan stays in `5-execute`.
+**On any non-`success` result, STOP.** Apply the [refused-transition halt rule](../../ref-workflow-architecture/standards/phase-lifecycle.md#refused-transition-halt-rule): ANY result whose `status` is not `success` — exit 1 or exit 0, `status: drift` included — means the phase did NOT advance. Emit the `[ERROR]` work-log line carrying the refusal payload verbatim, then stop. This is one of the call sites that owns a recovery: the two tree-state codes in the table below, and the unrecorded-commit code documented under "Recovery branch — `execute_commits_unrecorded`", have a recovery path; every other refusal halts for the operator. The metrics boundary, the config check and the **Finalize Phase** below are reachable only from a `status: success` transition — a boundary recorded for a refused transition would close `5-execute` and open `6-finalize` in the metrics while the plan stays in `5-execute`.
 
 The transition's inline clean-tree post-condition refuses to advance on either of
 **two distinct tree-state codes**, and they take **different recovery paths** — read
@@ -551,6 +553,42 @@ residual deliverable" would be wrong or ambiguous:
 The settlement commits are the recovery path, not the norm: commit ownership
 lives with the phase-5-execute envelope's Step 10a chain-tail (see
 `phase-5-execute/SKILL.md` § Step 10a).
+
+**Recovery branch — `execute_commits_unrecorded`**: a commit was made on the
+branch outside both settlement owners, so it carries no `kind=change` row. The
+refusal is the repair instruction: `unrecorded_commits[]` enumerates each such
+SHA, and `message` names one ready-to-run `append` invocation per SHA. A
+whole-tree gate that rewrote files (`verify -Ppre-commit`), a style fix and a
+Javadoc fix made after the envelope are the recurring instances. Append the row
+for EVERY named SHA — this does not halt for the operator — then retry the
+transition:
+
+1. **Source the two facts the invocation leaves as placeholders.** Take the SHA
+   from `unrecorded_commits[]` and its paths from git — never from memory and
+   never from a declared file list:
+   `git -C {worktree_path} diff-tree --no-commit-id --name-only -r {sha}`.
+2. **Choose `--deliverable-id`.** Use the deliverable whose work the commit is
+   when the commit IS a deliverable settlement; otherwise use the constant
+   `handback-commit`, which is the id of a commit no deliverable owns — a gate
+   rewrite, a style fix, or a commit spanning two deliverables' files. The
+   constant ends in no digit, so no reader mistakes it for an outline
+   deliverable, and it is one value, so a two-deliverable commit needs no
+   attribution decision.
+3. **Run the append invocation** the refusal printed for that SHA, with its
+   `DELIVERABLE_ID` / `CHANGED_PATHS` placeholders replaced by those two values.
+   Repeat for every SHA the refusal named.
+4. **Retry `manage-status transition --completed 5-execute` exactly once.** A
+   second refusal halts loudly for the operator — do not loop.
+
+`signature: history_rewritten` in the same payload says the recorded rows
+describe a history HEAD no longer has: the append still covers the unrecorded
+commits, and the `remap` invocation it carries stays the repair for the stale
+rows (see `manage-change-ledger` § `remap`). The zero-row variant of
+`phase_end_markers_missing` — a readable store holding no `kind=change` row at
+all — prints the same per-SHA append invocations and takes this same recovery.
+The `phase_end_markers_missing` shape carrying NO `unrecorded_commits` key is
+the store that could not be read: nothing was enumerated, nothing may be
+appended, and that one halts for the operator.
 
 **Metrics** (reached only from a `status: success` transition): record the
 `5-execute → 6-finalize` boundary in a single fused call, forwarding the

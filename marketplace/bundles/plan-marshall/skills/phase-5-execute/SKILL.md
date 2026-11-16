@@ -823,6 +823,14 @@ The per-deliverable commit fires UNCONDITIONALLY at every chain tail — **regar
      --task-id {task_id}
    ```
 
+   The commit in step 1 passes no `--record-change`, on purpose: an unmarked
+   commit makes the verb record nothing, so THIS append is the commit's one row.
+   That marker is what the orchestrator uses for a commit no settlement owns (a
+   gate rewrite, a style fix made after the envelope) — see
+   [`../plan-marshall/workflow/execution.md`](../plan-marshall/workflow/execution.md)
+   § "Orchestrator-tier phase-5 verification". Never do both: a commit the verb
+   recorded must not be appended again here.
+
 #### Step 10b: Focused Per-Deliverable Build (module-scoped canonical-verify steps)
 
 The mid-execute per-deliverable build is **focused** by design: it runs the `per_deliverable_build` list of `default:verify:{canonical}` step IDs **module-scoped** over the changed module(s), never a whole-tree sweep. The whole-tree quality sweep stays **once** at end-of-phase (Step 11b/11c) and is never repeated mid-execute — whole-tree gates (e.g. `integration-tests`, `e2e`) are NOT permitted in `per_deliverable_build`; they live in `verification_steps`. This step fires at the chain tail, after the Step 10a commit decision.

@@ -26,6 +26,7 @@ import json
 import subprocess
 from pathlib import Path
 
+import pytest
 from toon_parser import parse_toon
 
 from conftest import get_script_path, load_script_module, run_script
@@ -379,6 +380,26 @@ def _ledger_rows(root: Path) -> list[dict]:
     return [json.loads(line) for line in path.read_text(encoding='utf-8').splitlines() if line.strip()]
 
 
+def _append_row(root: Path, sha: str, deliverable_id: str, changed_paths: list[str]) -> None:
+    """Append one `kind=change` row through the ledger's own verb."""
+    appended = run_script(
+        MANAGE_CHANGE_LEDGER,
+        'append',
+        '--kind',
+        'change',
+        '--deliverable-id',
+        deliverable_id,
+        '--commit-sha',
+        sha,
+        '--changed-paths',
+        ','.join(changed_paths),
+        '--worktree-root',
+        str(root),
+        env_overrides=_env(root),
+    )
+    assert appended.returncode == 0, f'{appended.stdout}{appended.stderr}'
+
+
 def test_a_step_commit_leaves_exactly_one_change_row(tmp_path: Path) -> None:
     """A 5f(b) commit is recorded, with git-sourced paths and the step as its id.
 
@@ -482,11 +503,12 @@ def test_a_main_checkout_commit_reads_its_phase_through_the_named_plan(tmp_path:
     )
 
 
-def test_a_phase_5_commit_leaves_no_row_so_the_settlement_owns_the_only_one(tmp_path: Path) -> None:
-    """Outside `6-finalize` the verb records nothing — Step 10a owns that row.
+def test_an_unmarked_phase_5_commit_leaves_no_row_so_step_10a_owns_the_only_one(tmp_path: Path) -> None:
+    """An UNMARKED phase-5 commit records nothing — Step 10a owns that row.
 
-    This is the no-double-row control: the phase-5 commit itself writes none, and
-    the settlement's append leaves exactly one.
+    This is the no-double-row control: a commit that carries no
+    ``--record-change`` marker is a deliverable commit, so the verb writes no row
+    and the settlement's append leaves exactly one.
     """
     _init_repo(tmp_path)
     _write_plan(tmp_path, 'plan-a', phase='5-execute', steps=['pre-push-quality-gate'])
@@ -519,6 +541,176 @@ def test_a_phase_5_commit_leaves_no_row_so_the_settlement_owns_the_only_one(tmp_
     rows = _ledger_rows(tmp_path)
     assert [row['deliverable_id'] for row in rows] == ['1'], rows
     assert [row['commit_sha'] for row in rows] == [head]
+
+
+# =============================================================================
+# The phase-5 hand-back commit: the orchestrator's own commit, recorded by the
+# verb under a non-deliverable id
+#
+# Step 10a owns every deliverable commit's row, and the verb cannot tell a
+# Step 10a commit from an orchestrator hand-back commit on its own — Step 10a
+# calls the same verb. `--record-change` IS that marker: it makes the verb append
+# the row for a commit no settlement owns (a quality-gate rewrite, a style fix, a
+# Javadoc fix made after the envelope), while an unmarked commit keeps recording
+# nothing, so no commit ever gets two rows.
+# =============================================================================
+
+
+def test_a_marked_phase_5_commit_records_its_own_row_under_the_handback_id(tmp_path: Path) -> None:
+    """A commit marked `--record-change` in `5-execute` leaves its own row.
+
+    The row's `deliverable_id` is the constant `handback-commit`, and
+    `changed_paths` comes from `git diff-tree` on the commit — the ledger's own
+    sourcing rule, never the caller's staged list.
+    """
+    _init_repo(tmp_path)
+    _write_plan(tmp_path, 'plan-a', phase='5-execute', steps=['pre-push-quality-gate'])
+    _stage(tmp_path, 'src/a.py')
+
+    result, code = _run_commit(tmp_path, _worktree(tmp_path, 'plan-a'), '--record-change')
+
+    assert code == 0, f'{result!r}'
+    assert result['ledger_recorded'] is True
+    assert result['ledger_deliverable_id'] == 'handback-commit'
+    rows = _ledger_rows(tmp_path)
+    assert len(rows) == 1, rows
+    assert rows[0]['kind'] == 'change'
+    assert rows[0]['commit_sha'] == result['commit_hash']
+    assert rows[0]['changed_paths'] == ['src/a.py']
+    assert rows[0]['deliverable_id'] == 'handback-commit'
+
+
+def test_a_marked_commit_spanning_two_deliverables_needs_no_attribution(tmp_path: Path) -> None:
+    """A commit touching two deliverables' files takes ONE row, under one id.
+
+    The spec's constraint: such a commit must not need an operator attribution
+    decision. The single constant is what makes that true — nothing maps a path
+    back to a deliverable.
+    """
+    _init_repo(tmp_path)
+    _write_plan(tmp_path, 'plan-a', phase='5-execute', steps=[])
+    _stage(tmp_path, 'src/module-a/a.py')
+    _stage(tmp_path, 'src/module-b/b.py')
+
+    result, code = _run_commit(tmp_path, _worktree(tmp_path, 'plan-a'), '--record-change')
+
+    assert code == 0, f'{result!r}'
+    rows = _ledger_rows(tmp_path)
+    assert [row['deliverable_id'] for row in rows] == ['handback-commit'], rows
+    assert rows[0]['changed_paths'] == ['src/module-a/a.py', 'src/module-b/b.py']
+
+
+def test_a_marked_finalize_commit_still_records_exactly_one_row(tmp_path: Path) -> None:
+    """`--record-change` on a `6-finalize` commit adds no second row."""
+    _init_repo(tmp_path)
+    _write_plan(tmp_path, 'plan-a', phase='6-finalize', steps=['pre-push-quality-gate'])
+    _stage(tmp_path, 'src/a.py')
+
+    result, code = _run_commit(
+        tmp_path, _worktree(tmp_path, 'plan-a'), '--step', 'pre-push-quality-gate', '--record-change'
+    )
+
+    assert code == 0, f'{result!r}'
+    assert result['ledger_deliverable_id'] == 'pre-push-quality-gate'
+    rows = _ledger_rows(tmp_path)
+    assert [row['deliverable_id'] for row in rows] == ['pre-push-quality-gate'], rows
+
+
+def test_the_handback_id_is_not_read_as_an_outline_deliverable() -> None:
+    """Neither non-deliverable constant resolves to a deliverable number."""
+    validate = load_script_module(
+        'plan-marshall',
+        'phase-6-finalize',
+        '_review_support_validate.py',
+        module_name='lb153_review_support_validate',
+        register=False,
+    )
+    for constant in (git_workflow._HAND_BACK_COMMIT_DELIVERABLE_ID, git_workflow._FINALIZE_COMMIT_DELIVERABLE_ID):
+        assert validate.deliverable_number(constant) is None, constant
+    assert validate.deliverable_number('D3') == 3, 'the reader must still resolve a real deliverable id'
+
+
+# =============================================================================
+# The documented recovery for `execute_commits_unrecorded`
+#
+# A commit made outside both settlement owners carries no row, so the boundary
+# refuses and names each such SHA with its own `append` invocation.
+# `plan-marshall/workflow/execution.md` § "Execute Phase Completion" documents
+# appending those rows — under `handback-commit` when no deliverable owns the
+# commit — instead of halting for the operator. These are the three shapes the
+# field reports name.
+# =============================================================================
+
+
+@pytest.mark.parametrize(
+    ('scenario', 'paths'),
+    [
+        ('gate-rewrite', ['src/generated/rewritten-test.py']),
+        ('style-fix', ['src/imports/order.py']),
+        ('two-deliverable', ['src/module-a/a.py', 'src/module-b/b.py']),
+    ],
+)
+def test_an_unrecorded_commit_is_repaired_by_appending_the_named_row(
+    tmp_path: Path, monkeypatch, scenario: str, paths: list[str]
+) -> None:
+    """The refusal names the SHA; the documented append is what clears it.
+
+    The branch is PARTIALLY recorded, which is the field shape: the settlement's
+    commit has its row, and the commit no settlement owns is the one missing.
+    """
+    monkeypatch.setenv('PLAN_BASE_DIR', str(_base_dir(tmp_path)))
+    _feature_branch_repo(tmp_path)
+    plan_dir = _write_plan(tmp_path, 'plan-a', phase='5-execute', steps=[])
+    (plan_dir / 'references.json').write_text(json.dumps({'base_branch': 'main'}), encoding='utf-8')
+    status = {'plan_id': 'plan-a', 'metadata': {'use_worktree': True, 'worktree_path': str(tmp_path)}}
+
+    _stage(tmp_path, 'src/settled.py')
+    _git(tmp_path, 'commit', '-m', 'feat: a recorded deliverable commit')
+    _append_row(tmp_path, _git(tmp_path, 'rev-parse', 'HEAD').stdout.strip(), '1', ['src/settled.py'])
+
+    for path in paths:
+        _stage(tmp_path, path)
+    _git(tmp_path, 'commit', '-m', f'chore({scenario}): a commit no settlement owns')
+    head = _git(tmp_path, 'rev-parse', 'HEAD').stdout.strip()
+
+    refusal = _lifecycle._phase_end_marker_refusal('plan-a', status)
+    assert refusal is not None, f'{scenario}: an unrecorded branch commit must be refused'
+    assert refusal['error'] == 'execute_commits_unrecorded', refusal
+    assert refusal['signature'] == 'bookkeeping_gap', refusal
+    assert refusal['unrecorded_commits'] == [head], refusal
+
+    git_paths = _git(tmp_path, 'diff-tree', '--no-commit-id', '--name-only', '-r', head).stdout.split()
+    _append_row(tmp_path, head, git_workflow._HAND_BACK_COMMIT_DELIVERABLE_ID, git_paths)
+
+    assert _lifecycle._phase_end_marker_refusal('plan-a', status) is None, (
+        f'{scenario}: the appended row is the repair the documented recovery names'
+    )
+    rows = _ledger_rows(tmp_path)
+    assert [row['deliverable_id'] for row in rows] == ['1', 'handback-commit'], rows
+    assert rows[-1]['changed_paths'] == git_paths, (rows, git_paths)
+
+
+def test_a_wholly_unrecorded_branch_takes_the_same_append_recovery(tmp_path: Path, monkeypatch) -> None:
+    """The zero-row shape names its SHAs too, and the same append clears it."""
+    monkeypatch.setenv('PLAN_BASE_DIR', str(_base_dir(tmp_path)))
+    _feature_branch_repo(tmp_path)
+    plan_dir = _write_plan(tmp_path, 'plan-a', phase='5-execute', steps=[])
+    (plan_dir / 'references.json').write_text(json.dumps({'base_branch': 'main'}), encoding='utf-8')
+    status = {'plan_id': 'plan-a', 'metadata': {'use_worktree': True, 'worktree_path': str(tmp_path)}}
+
+    _stage(tmp_path, 'src/generated/rewritten-test.py')
+    _git(tmp_path, 'commit', '-m', 'chore: the gate rewrote a test file')
+    head = _git(tmp_path, 'rev-parse', 'HEAD').stdout.strip()
+
+    refusal = _lifecycle._phase_end_marker_refusal('plan-a', status)
+    assert refusal is not None
+    assert refusal['error'] == 'phase_end_markers_missing', refusal
+    assert refusal['unrecorded_commits'] == [head], refusal
+
+    _append_row(tmp_path, head, git_workflow._HAND_BACK_COMMIT_DELIVERABLE_ID, ['src/generated/rewritten-test.py'])
+
+    assert _lifecycle._phase_end_marker_refusal('plan-a', status) is None
+    assert [row['deliverable_id'] for row in _ledger_rows(tmp_path)] == ['handback-commit']
 
 
 # =============================================================================
