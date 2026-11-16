@@ -4,10 +4,14 @@
 
 ## START HERE
 
-**Resume anchor**: RESTART POINT (2026-11-15): cleanup ran (restart verdict ready, 6 of 6 signals; corpus 152 rows and 152 specs reconcile, nothing staged or running; compact ok; relocation of settled narrative deferred, candidates are the PLAN-LB-150/151/152 queue annotations and the closed PR 1988 minors Watch) and the operator asked for this land before a session restart; this anchor is carried by that land, so the ledger is landed through the land that carries it (read land status for its PR and merge commit). HARNESS SYNC DONE by the operator's own /apply-changes run: all three targets regenerated, three harnesses synced, executor regenerated (0.1.2135), daemon already current, registry pinned in parity at 0.1.2135; only the session restart is owed. FIRST ACTIONS in the new session: run /plan-orchestrator resume slug=live-blockers, confirm inbox empty with inbox list, then put the owed operator items to the operator one per turn in plain text. State: PLAN-LB-152 (PR 1992, merge 637b5048d) is analysed and shipped, no blocker and no major, minors are one Watch, nothing staged; no plan is staged, launched or running, so nothing is emittable until a plan is staged. OPERATOR WORDS STILL OWED: decision (2) (recommend option a); a plan for the HIGH CAUTION-shape review-body parser defect (free to sequence; edits runbook_lane.py, and github_re_review.py if it carries the PLAN-LB-152 minors L3-1/L3-4 and the refusal-record ordering); whether the PLAN-LB-152 minors (analyze.md:155 one-line fix, github_re_review.py:98-99 docstring, the reason-list pin reach, the missing-complete detail wording) ride that plan or get no plan; (b) whether the handle-open leaf-document defect and the null-block case in orchestrator get are worth one small plan; and the confirmation of the deferred relocation. The apply-changes self-invocation question stays open by operator word (1a). Not done: five remote branches with no PR untouched; local branch chore/uv-lock-ruff-0-17-5 still exists.
+**Resume anchor**: RUNNING (2026-11-16): PLAN-LB-153, -154, -155 are running in the runbook lane; PLAN-LB-156 shipped as PR 1998 (landing analysed). PLAN-LB-157 is EMITTED as /plan-marshall-runbook-lane plan=.plan/orchestrator/live-blockers/plans/PLAN-LB-157-pre-merge-refuses-unrecorded-earlier-steps.md and stays staged until the operator reports it running. NEXT ACTION: await landings from rb-lb-153, -154, -155 (and -157 once running) through the inbox, then analyze each. STANDING RULE: every staged plan uses lane=runbook and the runbook-lane emit form. OPERATOR WORDS STILL OWED: ruling on lessons-routing-094 (marker-detect has no caller: an automatic verify/finalize gate means a plan, on-demand means rewording ext-point-domain-verb.md:110); decision (2) (recommend option a); a plan for the HIGH CAUTION-shape review-body parser defect; whether the PLAN-LB-152 minors ride that plan or get none; whether the handle-open leaf-document defect and the null-block case in orchestrator get merit one small plan; confirmation of the deferred relocation of settled narrative; whether a small plan adds plan/row/field to the worktree_root_unreadable refusal (a) or none (b); whether issue 2000 (package-phase module-tests zero-test guard) merits a plan. The apply-changes self-invocation question stays open (1a). Not done: five remote branches with no PR untouched; local branch chore/uv-lock-ruff-0-17-5 still exists.
 **Phase**: orchestrating
+**Running**:
+- PLAN-LB-153 (WS-01)
+- PLAN-LB-154 (WS-01)
+- PLAN-LB-155 (WS-04)
 **Queue** (staged, in order):
-- (empty)
+1. PLAN-LB-157 (WS-01)
 - PLAN-LB-14 (WS-03) — plan=lb-14-launch-gate-scope — PR 1715 — landing=landings/PLAN-LB-14.md — status: shipped
 - PLAN-LB-01 (WS-01) — status: superseded
 - PLAN-LB-04 (WS-01) — status: superseded
@@ -160,9 +164,13 @@
 - PLAN-LB-150 (WS-04) — plan=rb-lb-150-apply-changes-skill — PR 1986 — landing=landings/PLAN-LB-150.md — status: shipped
 - PLAN-LB-151 (WS-03) — plan=rb-lb-151-handle-open-verb — PR 1987 — landing=landings/PLAN-LB-151.md — status: shipped
 - PLAN-LB-152 (WS-05) — plan=rb-lb-152-review-gate-single-read-cleanup — PR 1992 — landing=landings/PLAN-LB-152.md — status: shipped
+- PLAN-LB-156 (WS-02) — plan=rb-lb-156-maven-root-aggregator-test-artifact-ladder — PR 1998 — landing=landings/PLAN-LB-156.md — status: shipped
 
 ## Ordered Queue
 
 | # | Plan | Workstream | Status | Surface (expected) | Lane |
 |---|------|------------|--------|--------------------|------|
-| — | (empty) | — | — | — | — |
+| 1 | PLAN-LB-153 | WS-01 | running | marketplace/bundles/plan-marshall/skills/phase-5-execute/SKILL.md; marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/execution.md; marketplace/bundles/plan-marshall/skills/workflow-integration-git/scripts/git-workflow.py; test/plan-marshall/workflow-integration-git/ | runbook |
+| 2 | PLAN-LB-154 | WS-01 | running | marketplace/bundles/plan-marshall/skills/phase-2-refine/standards/refine-workflow-detail.md; marketplace/bundles/plan-marshall/skills/plan-marshall/standards/execution-recovery.md; marketplace/bundles/plan-marshall/skills/plan-marshall/standards/sync-with-main.md; test/plan-marshall/plan-marshall/ | runbook |
+| 3 | PLAN-LB-155 | WS-04 | running | marketplace/bundles/plan-marshall/skills/platform-runtime/scripts/claude_runtime.py; marketplace/bundles/plan-marshall/skills/platform-runtime/scripts/runtime_base.py; marketplace/bundles/plan-marshall/skills/platform-runtime/standards/contract.md; test/plan-marshall/platform-runtime/ | runbook |
+| 4 | PLAN-LB-157 | WS-01 | staged | marketplace/bundles/plan-marshall/skills/manage-status/scripts/_cmd_assert_step_recorded.py; marketplace/bundles/plan-marshall/skills/phase-6-finalize/SKILL.md; marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/branch-cleanup.md; test/plan-marshall/phase-6-finalize/ | runbook |
