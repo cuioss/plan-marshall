@@ -43,7 +43,7 @@ name: {name}
 description: |
   Dispatches one envelope into a focused subagent. The deployed variant keeps
   this description, so anything that renders it must not render the marker.
-tools: [Read, Grep]
+tools: Read, Grep
 ---
 
 Run {name}.
@@ -115,11 +115,25 @@ def test_shared_lookup_falls_back_to_the_only_version_that_carries_the_agent(dep
 
 
 def test_shared_lookup_keeps_the_flat_layout_first(tmp_path: Path) -> None:
-    """A root carrying both shapes answers the flat one, as before the change."""
+    """A root carrying both shapes answers its flat one."""
     root = tmp_path / 'both-shapes'
     flat = _write_agent(root / 'plan-marshall', VARIANT)
     _write_agent(root / 'plan-marshall' / NEW_VERSION, VARIANT)
     assert runtime_base._find_agent_file(VARIANT, (root,)) == flat
+
+
+def test_a_flat_hit_in_a_later_root_beats_a_versioned_hit_in_an_earlier_one(tmp_path: Path) -> None:
+    """The flat shape is probed across all roots before the versioned shape starts.
+
+    That is what keeps a bare name resolving from the source tree in a checkout,
+    where the deployed cache carries the same name one level deeper.
+    """
+    deployed = tmp_path / 'deployed'
+    source = tmp_path / 'source'
+    versioned = _write_agent(deployed / 'plan-marshall' / NEW_VERSION, BARE)
+    flat = _write_agent(source / 'plan-marshall', BARE)
+    assert versioned != flat
+    assert runtime_base._find_agent_file(BARE, (deployed, source)) == flat
 
 
 def test_bare_name_still_resolves_from_the_source_tree() -> None:
@@ -136,14 +150,25 @@ def test_missing_agent_returns_no_file(deployed_cache: Path) -> None:
     assert runtime_base._find_agent_file('no-such-agent', (deployed_cache,)) is None
 
 
-@pytest.mark.parametrize('name', ('../outside-execution-context', 'agents/execution-context', '', '.', '..'))
-def test_a_path_shaped_name_is_never_resolved(name: str, deployed_cache: Path) -> None:
-    """``--agent`` is a file stem: a separator or ``..`` segment is a miss.
+def test_a_path_shaped_name_cannot_escape_the_root(deployed_cache: Path) -> None:
+    """``--agent`` is a file stem, and a name that escapes resolves to nothing.
 
-    The versioned pass JOINS the name into a path (the flat glob interpolates it
-    into a pattern instead), so without this guard a name carrying ``..`` could
-    resolve a file outside the root it was probed against.
+    The escape is planted, so the assertion is load-bearing: without the guard
+    the versioned pass joins ``../../outside-execution-context.md`` under
+    ``{bundle}/{version}/agents/`` and lands on exactly this file.
     """
+    planted = deployed_cache / 'plan-marshall' / 'outside-execution-context.md'
+    planted.write_text(_AGENT_BODY.format(name='outside-execution-context'), encoding='utf-8')
+
+    assert runtime_base._find_agent_file('../../outside-execution-context', (deployed_cache,)) is None
+    # Control: the same root DOES resolve a plain stem, so the guard is what
+    # refused the escaped name rather than an unreachable fixture.
+    assert runtime_base._find_agent_file(VARIANT, (deployed_cache,)) is not None
+
+
+@pytest.mark.parametrize('name', ('', '.', '..', 'agents/execution-context', 'agents\\execution-context'))
+def test_an_empty_or_path_shaped_name_is_a_miss(name: str, deployed_cache: Path) -> None:
+    """The remaining non-stem shapes are misses too."""
     assert runtime_base._find_agent_file(name, (deployed_cache,)) is None
 
 
@@ -278,3 +303,74 @@ def test_opencode_and_antigravity_supply_no_deployed_root(target: str, monkeypat
 
     assert calls, 'the tool-mapping check did not consult the shared lookup'
     assert calls[0][1] == (), f'{target} supplied a deployed root: {calls[0][1]!r}'
+
+
+# =============================================================================
+# 4. The agent frontmatter reader the resolution feeds
+# =============================================================================
+
+
+def _write_frontmatter(tmp_path: Path, frontmatter: str) -> Path:
+    """Write an agent file with the given frontmatter body and return its path."""
+    agent_file = tmp_path / 'agent.md'
+    agent_file.write_text(f'---\n{frontmatter}\n---\n\nBody.\n', encoding='utf-8')
+    return agent_file
+
+
+@pytest.mark.parametrize('marker', ('|', '|-', '|+', '>', '>-', '|2'))
+def test_a_block_scalar_description_never_renders_the_marker(marker: str, tmp_path: Path) -> None:
+    """Every block-scalar header form resolves to the block's text."""
+    agent_file = _write_frontmatter(
+        tmp_path,
+        f'name: agent\ndescription: {marker}\n  First line of the description.\n  Second line.\ntools: Read',
+    )
+
+    parsed = runtime_base._parse_agent_frontmatter(agent_file)
+
+    assert parsed['description'] == 'First line of the description. Second line.'
+    assert parsed['tools'] == ['Read']
+
+
+def test_a_block_scalar_ends_at_the_next_top_level_key(tmp_path: Path) -> None:
+    """A key after the block is not swallowed into the description."""
+    agent_file = _write_frontmatter(
+        tmp_path,
+        'name: agent\ndescription: |\n  Only the description.\ntools: Read, Grep',
+    )
+
+    parsed = runtime_base._parse_agent_frontmatter(agent_file)
+
+    assert parsed['description'] == 'Only the description.'
+    assert parsed['name'] == 'agent'
+    assert parsed['tools'] == ['Read', 'Grep']
+
+
+def test_an_empty_block_scalar_description_is_empty(tmp_path: Path) -> None:
+    """A block with no indented lines is the empty description, not the marker."""
+    agent_file = _write_frontmatter(tmp_path, 'name: agent\ndescription: |\ntools: Read')
+
+    assert runtime_base._parse_agent_frontmatter(agent_file)['description'] == ''
+
+
+def test_a_tools_list_after_a_block_scalar_is_still_collected(tmp_path: Path) -> None:
+    """The ``- item`` form below ``tools:`` keeps working beside a block scalar."""
+    agent_file = _write_frontmatter(
+        tmp_path,
+        'name: agent\ndescription: |\n  A description.\ntools:\n- Read\n- Grep',
+    )
+
+    assert runtime_base._parse_agent_frontmatter(agent_file)['tools'] == ['Read', 'Grep']
+
+
+def test_an_unreadable_agent_file_names_the_path_it_resolved(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A resolved-but-unreadable agent reports the path and the read failure."""
+    unreadable = tmp_path / 'a-directory-not-a-file'
+    unreadable.mkdir()
+    monkeypatch.setattr(claude_runtime, '_find_agent_file', lambda _name: unreadable)
+
+    result = _parsed(ClaudeRuntime().subagent_dispatch(BARE, None, None))
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'prompt_not_found'
+    assert str(unreadable) in result['message']
+    assert 'could not be read' in result['message']

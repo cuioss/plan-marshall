@@ -408,36 +408,62 @@ def _versioned_agent_file(root: Path, agent_name: str) -> Path | None:
     return None
 
 
+def _is_agent_file_stem(agent_name: str) -> bool:
+    """True when *agent_name* is a file stem, not a path.
+
+    The versioned shape JOINS the name into a path (the flat glob interpolates it
+    into a pattern instead), so a name carrying a separator or a ``..`` segment
+    could steer the joined path out of the root it is probed against. ``--agent``
+    names an installed agent file (``execution-context-level-3``), never a path
+    and never a ``{bundle}:{name}`` notation.
+    """
+    return bool(agent_name) and agent_name not in ('.', '..') and '/' not in agent_name and '\\' not in agent_name
+
+
 def _find_agent_file(agent_name: str, extra_roots: Sequence[Path] = ()) -> Path | None:
     """Locate an agent markdown under the marketplace tree or a deployed cache.
 
     Searches *extra_roots* first (a target prepends its deployed-bundle cache
     root so a deployed layout resolves before the source tree), then the
-    script-relative marketplace walk. Every root is probed in its FLAT shape
-    (``{root}/{bundle}/agents/{name}.md`` — the source tree, and any cache that
-    keeps one directory per bundle) before its VERSIONED shape
-    (``{root}/{bundle}/{version}/agents/{name}.md`` — the deployed plugin cache),
-    so a root's existing layout keeps its precedence and a deployed tree is
-    still reached.
+    script-relative marketplace walk. Two SHAPES are probed, each across every
+    root in that order before the next shape starts:
 
-    The versioned shape is what makes a generated ``execution-context-level-{N}``
-    variant resolvable: those variants exist only in the deployed cache, so the
-    flat glob alone answers ``None`` for every one of them.
+    1. the FLAT shape (``{root}/{bundle}/agents/{name}.md`` — the source tree,
+       and any cache that keeps one directory per bundle);
+    2. the VERSIONED shape (``{root}/{bundle}/{version}/agents/{name}.md`` — the
+       deployed plugin cache).
 
-    *agent_name* is a file stem, never a path: a name carrying a separator or a
-    ``..`` segment is a miss rather than a lookup, so no caller-supplied string
-    can steer the joined path out of the root it is probed against.
+    The flat shape goes first across ALL roots, not merely within one: that is
+    what keeps a bare name resolving from the source tree in a checkout, where
+    the deployed cache also carries it. The versioned shape is what makes a
+    generated ``execution-context-level-{N}`` variant resolvable — those variants
+    exist only in the deployed cache, so the flat pass answers ``None`` for every
+    one of them.
     """
-    if not agent_name or agent_name in ('.', '..') or '/' in agent_name or '\\' in agent_name:
+    if not _is_agent_file_stem(agent_name):
         return None
-    for root in _agent_search_roots(extra_roots):
+    roots = _agent_search_roots(extra_roots)
+    for root in roots:
         for match in root.glob(f'*/agents/{agent_name}.md'):
             if match.is_file():
                 return match
+    for root in roots:
         versioned = _versioned_agent_file(root, agent_name)
         if versioned is not None:
             return versioned
     return None
+
+
+def _is_block_scalar_marker(value: str) -> bool:
+    """True for a YAML block-scalar header: ``|``, ``>``, and their chomping forms.
+
+    The header is the style indicator followed by an optional chomping indicator
+    (``-`` strip, ``+`` keep) and an optional explicit indentation digit, so
+    ``|``, ``|-``, ``|+``, ``>``, ``>-`` and ``|2`` all introduce a block. A form
+    that is not recognised here would otherwise be stored as the description
+    text.
+    """
+    return bool(value) and value[0] in '|>' and all(char in '-+0123456789' for char in value[1:])
 
 
 def _block_scalar_value(lines: list[str], key_index: int) -> str:
@@ -503,7 +529,7 @@ def _parse_agent_frontmatter(agent_path: Path) -> dict[str, Any]:
             elif value:
                 result['tools'] = [t.strip() for t in value.split(',') if t.strip()]
         elif key in ('name', 'description'):
-            result[key] = _block_scalar_value(lines, index) if value in ('|', '>') else value
+            result[key] = _block_scalar_value(lines, index) if _is_block_scalar_marker(value) else value
 
     # Handle tools as a YAML list (- item per line) if not yet found inline.
     if not result['tools']:
