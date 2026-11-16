@@ -435,7 +435,7 @@ Because the `await-long-running` seam is the ONLY component permitted to backgro
 
    | Build `status` | Orchestrator action |
    |---|---|
-   | `success` | Close each verification-owed task (`verification_owed: true` on the record) via `finalize-step --step {last} --outcome done --verification-complete` — the owed close the leaf could not cut — then re-dispatch phase-5-execute (per the dispatch block above) WITHOUT the pre-dispatch queue peek — this post-build re-entry is the sole peek exception — so the leaf resumes; the freshness gate (`pre-commit-verify-freshness`, Step 12a) now sees the `kind=build` ledger stamp the orchestrator-tier build wrote and permits the transition. **When B7 classified this hand-back `error`, or recorded it `error` for an undecidable evaluation (`no_progress_not_decidable`), the successful build closes the owed task but does NOT clear the error: apply the `error` recovery/escalation decision of the Boundary-call fence after the close, and only a recoverable case proceeds to the re-dispatch. A green build answers the build obligation, never the genuine-stall decision.** |
+   | `success` | **If the build rewrote files** (a quality gate's style or whitespace fix), STAGE them (`git add {paths}`) and commit them through the `git-workflow commit` verb with `--record-change`: the verb commits the INDEX, so an empty index fails, and that marker is what gives the commit its own `kind=change` row (see the paragraph after this table). Then run the verification step once more against the committed HEAD, through the same seam, before the re-dispatch — the freshness hash includes HEAD, so the commit invalidates the `kind=build` stamp the first run wrote, and the second run is what leaves a stamp at the new hash. **Branch on the SECOND run's status exactly as this table says for the first**: only its `success` closes each verification-owed task (`verification_owed: true` on the record) via `finalize-step --step {last} --outcome done --verification-complete` — the owed close the leaf could not cut — and re-dispatches phase-5-execute (per the dispatch block above) WITHOUT the pre-dispatch queue peek (this post-build re-entry is the sole peek exception) so the leaf resumes, the freshness gate (`pre-commit-verify-freshness`, Step 12a) permitting the transition on the `kind=build` stamp that run wrote. An `error` takes this table's `error` row, and `timeout`, `killed`, `indeterminate` and `running` take their own rows, unchanged — a non-`success` second run never closes a task or re-dispatches. **When B7 classified this hand-back `error`, or recorded it `error` for an undecidable evaluation (`no_progress_not_decidable`), the successful build closes the owed task but does NOT clear the error: apply the `error` recovery/escalation decision of the Boundary-call fence after the close, and only a recoverable case proceeds to the re-dispatch. A green build answers the build obligation, never the genuine-stall decision.** |
    | `error` | Route the findings through the same `verification-feedback` triage the leaf's `triage_required` path uses (§ "Verification-feedback triage"). **When this hand-back itself was classified `error` by B7 (or was undecidable), consume the findings first but defer any phase-5-execute re-dispatch that triage would otherwise make until the B7 recovery/escalation decision has run.** |
    | `timeout` | **Not a failing build.** No verdict was reported and no findings exist, so there is nothing to triage. Re-run the step once; if it recurs, treat the budget as the subject and escalate rather than re-running a third time — see `manage-run-config/standards/run-config-standard.md` § "What `timeout_seconds` actually measures". |
    | `killed` | **Not a failing build and not a timeout** — externally killed, **not flaky, do not blind-retry.** Establish why the build was killed before dispatching anything; a re-run here is the exact response the condition forbids. |
@@ -445,6 +445,8 @@ Because the `await-long-running` seam is the ONLY component permitted to backgro
    ⛔ **Do not route a non-finish into `verification-feedback` triage.** That path exists to consume findings from a build that ran and reported them; a `timeout`, `killed`, or `indeterminate` build produces none by design, so the triage would run over an empty set and report a clean sweep — a false green assembled out of a build that never finished.
 
 This handler is the consuming half of the leaf's live `execution_tier` resolution: the leaf hands back every step whose live tier puts it outside the `per_task` slice, and the orchestrator picks it up here. The leaf never backgrounds a build; the orchestrator's `await-long-running` seam backgrounds only the non-daemon fallback, never a daemon-routed build.
+
+**A commit the orchestrator makes after the envelope is a commit no settlement owns — record it through the verb.** A whole-tree gate rewrites files in place (Maven's `verify -Ppre-commit` is the canonical instance), and a style or Javadoc fix made after the leaf's envelope is the same kind of work: neither is a deliverable's settlement, and neither is due at a Step 10a chain tail. Commit it through the gate-bearing `workflow-integration-git` `commit` verb with `--record-change` — never a raw `git commit` — and the verb appends its `kind=change` row under the constant `handback-commit` at the point the commit is made. That is what keeps the `5-execute → 6-finalize` boundary from refusing a branch whose work WAS recorded; the one constant is also why a commit touching two deliverables' files needs no attribution decision. The commit also moves HEAD, and the freshness hash includes HEAD, so re-run the verification step once before re-dispatching — the `success` row above states that order, and it is why a gate rewrite costs one re-verify. A commit the per-deliverable settlement DOES own stays with Step 10a, whose append is its one row — the verb never writes a second.
 
 **Build hand-back field — `pending_verify_steps[]`, and its `verification_handback` discriminator.** A leaf that owes the orchestrator a build reports it in exactly one structured field, on every terminal payload — never in free text beside `budget_yield`: `pending_verify_steps[N]` lists the `phase_5.verification_steps` step ids (`verify:{canonical}`) the leaf did not execute inline and hands back on THIS return for the orchestrator to run via `await-long-running`. **Every return that hands a build back sets `verification_handback: true` beside that non-empty list** — the four such returns are Step 11b, Step 11c, the leaf `running` hand-back, and a per-task verification that resolved to the orchestrator tier and was closed with `--verification-owed`. The classification table reads that pair as `termination_cause: verification_handback` **only when every listed id is in the manifest's composed `phase_5.verification_steps` and no non-owed task stalled in the same dispatch** — see § "B7" above for the second condition and the scoped exemption. The field is present on every termination branch and is `[0]` (empty) when the return hands back no build — `budget_yield`, `triage_required`, and queue-empty returns all carry it empty, and carry `verification_handback: false` (or omit it). The orchestrator-tier handler above consumes a non-empty list as its work list; an empty list with no other signal is not a build obligation. The same field name is carried in the `phase-5-execute` return contract on every termination branch (see `phase-5-execute/SKILL.md` § Output).
 
@@ -468,7 +470,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status transi
   --plan-id {plan_id} --completed 5-execute
 ```
 
-**On any non-`success` result, STOP.** Apply the [refused-transition halt rule](../../ref-workflow-architecture/standards/phase-lifecycle.md#refused-transition-halt-rule): ANY result whose `status` is not `success` — exit 1 or exit 0, `status: drift` included — means the phase did NOT advance. Emit the `[ERROR]` work-log line carrying the refusal payload verbatim, then stop. This is the one call site that owns a recovery: only the two tree-state codes in the table below have a recovery path; every other refusal halts for the operator. The metrics boundary, the config check and the **Finalize Phase** below are reachable only from a `status: success` transition — a boundary recorded for a refused transition would close `5-execute` and open `6-finalize` in the metrics while the plan stays in `5-execute`.
+**On any non-`success` result, STOP.** Apply the [refused-transition halt rule](../../ref-workflow-architecture/standards/phase-lifecycle.md#refused-transition-halt-rule): ANY result whose `status` is not `success` — exit 1 or exit 0, `status: drift` included — means the phase did NOT advance. Emit the `[ERROR]` work-log line carrying the refusal payload verbatim, then stop. This is one of the call sites that owns a recovery: the two tree-state codes in the table below, the unrecorded-commit code documented under "Recovery branch — `execute_commits_unrecorded`", and the zero-row `phase_end_markers_missing` variant that carries `unrecorded_commits`, have a recovery path; every other refusal halts for the operator. The metrics boundary, the config check and the **Finalize Phase** below are reachable only from a `status: success` transition — a boundary recorded for a refused transition would close `5-execute` and open `6-finalize` in the metrics while the plan stays in `5-execute`.
 
 The transition's inline clean-tree post-condition refuses to advance on either of
 **two distinct tree-state codes**, and they take **different recovery paths** — read
@@ -501,7 +503,8 @@ residual deliverable" would be wrong or ambiguous:
    (a path a deliverable already touched in a prior settled commit attributes
    to that same deliverable). A row whose `deliverable_id` names no outline
    deliverable — a finalize commit's, which carries a phase-6 manifest step id
-   or the constant `finalize-commit` — attributes its paths to no deliverable,
+   or the constant `finalize-commit`, or a hand-back commit's, which carries the
+   constant `handback-commit` — attributes its paths to no deliverable,
    so such a path must be claimed by a declaration or lands in the unmappable
    remainder.
    The result partitions `dirty_files[]` into per-deliverable groups plus a
@@ -551,6 +554,62 @@ residual deliverable" would be wrong or ambiguous:
 The settlement commits are the recovery path, not the norm: commit ownership
 lives with the phase-5-execute envelope's Step 10a chain-tail (see
 `phase-5-execute/SKILL.md` § Step 10a).
+
+**Recovery branch — `execute_commits_unrecorded`**: a commit was made on the
+branch outside both settlement owners, so it carries no `kind=change` row. The
+refusal is the repair instruction: `unrecorded_commits[]` enumerates each such
+SHA, and `message` names one ready-to-run `append` invocation per SHA. A
+whole-tree gate that rewrote files (`verify -Ppre-commit`), a style fix and a
+Javadoc fix made after the envelope are the recurring instances. Append the row
+for EVERY named SHA — this does not halt for the operator — then retry the
+transition:
+
+1. **Source the two facts the invocation leaves as placeholders.** Take the SHA
+   from `unrecorded_commits[]` and its paths from git — never from memory and
+   never from a declared file list:
+   `git -C {worktree_path} diff-tree --no-commit-id --name-only -r -z {sha}`.
+   Keep the `-z`: with git's default quoting a non-ASCII path comes back as a
+   quoted escape sequence, and the ledger stores what it is given verbatim, so
+   the row would name a path that does not exist. Split on NUL and pass the real
+   paths.
+   A MERGE commit — a baseline merge on the branch — has no single changed-path
+   set, and `diff-tree` over one enumerates nothing, so an append built from it
+   would record an empty path list. Enumerate its first-parent diff instead:
+   `git -C {worktree_path} diff --name-only -z {sha}^1 {sha}`.
+2. **Choose `--deliverable-id`.** Use the deliverable whose work the commit is
+   when the commit IS a deliverable settlement; otherwise use the constant
+   `handback-commit`, which is the id of a commit no deliverable owns — a gate
+   rewrite, a style fix, or a commit spanning two deliverables' files. The
+   constant ends in no digit, so no reader mistakes it for an outline
+   deliverable, and it is one value, so a two-deliverable commit needs no
+   attribution decision.
+3. **When the payload carries a `remap_invocation`, decide the rewrite before
+   remapping, and remap FIRST.** `history_rewritten` is reported for two
+   different states, and only one of them establishes a rewrite:
+   when the message says EVERY recorded row points outside HEAD's history, a
+   rewrite IS established — run the `remap` invocation first (see
+   `manage-change-ledger` § `remap`), because it maps a stale row onto the same
+   new SHA this recovery would append, and a row written before it is not one
+   its duplicate check matches, so appending first can leave two rows for one
+   SHA. When the message instead says the WHOLE branch is unrecorded and names
+   both possibilities, no rewrite is established: append the missing rows and
+   leave the recorded rows alone, because an unscoped remap can match an
+   unrelated stale row with the same patch and copy its `deliverable_id` onto
+   this branch's commit. The mixed shape — `bookkeeping_gap` carrying a
+   `remap_invocation` as well — takes the same rule: remap first.
+   Then append only for the named SHAs the ledger still carries no row for.
+4. **Run the append invocation** the refusal printed for that SHA, with its
+   `DELIVERABLE_ID` / `CHANGED_PATHS` placeholders replaced by those two values.
+   Repeat for every SHA still unrecorded.
+5. **Retry `manage-status transition --completed 5-execute` exactly once.** A
+   second refusal halts loudly for the operator — do not loop.
+
+The zero-row variant of `phase_end_markers_missing` — a readable store holding no
+`kind=change` row at all — prints the same per-SHA append invocations and takes
+this same recovery (it carries `unrecorded_commits`, and the halt rule above
+names it for that reason). The `phase_end_markers_missing` shape carrying NO
+`unrecorded_commits` key is the store that could not be read: nothing was
+enumerated, nothing may be appended, and that one halts for the operator.
 
 **Metrics** (reached only from a `status: success` transition): record the
 `5-execute → 6-finalize` boundary in a single fused call, forwarding the

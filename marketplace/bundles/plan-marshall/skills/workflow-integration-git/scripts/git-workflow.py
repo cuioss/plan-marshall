@@ -6,7 +6,7 @@ Git workflow operations - format commits, analyze diffs, manage worktrees.
 Usage:
     git-workflow.py format-commit --type <type> --subject <subject> [options]
     git-workflow.py source-commit-gate (--plan-id <plan-id> | --project-dir <path>) [--phase <phase>] [--changed-paths <csv>]
-    git-workflow.py commit (--plan-id <plan-id> | --project-dir <path>) (--message <msg> | --message-file <path>) [--step <step>] [--push]
+    git-workflow.py commit (--plan-id <plan-id> | --project-dir <path>) (--message <msg> | --message-file <path>) [--step <step>] [--record-change] [--push]
     git-workflow.py analyze-diff (--plan-id <plan-id> | --project-dir <path>) [--cached]
     git-workflow.py detect-artifacts [--root <dir>]
     git-workflow.py force-push-with-lease (--plan-id <plan-id> | --project-dir <path> --branch <branch>)
@@ -1013,52 +1013,96 @@ def cmd_push(args):
 #: prefix ends in none, so a finalize commit is never read as deliverable work.
 _FINALIZE_COMMIT_DELIVERABLE_ID = 'finalize-commit'
 
+#: The ``deliverable_id`` a phase-5 hand-back commit carries — the orchestrator's
+#: own commit made outside Step 10a (a quality-gate rewrite, a style fix, a
+#: Javadoc fix after the envelope), recorded through ``--record-change``. It
+#: shares the no-trailing-digit property for the same reason, and being ONE
+#: constant it gives a commit that spans two deliverables' files a single id with
+#: no attribution decision to make.
+_HAND_BACK_COMMIT_DELIVERABLE_ID = 'handback-commit'
+
 
 def _commit_changed_paths(worktree: Path, commit_sha: str) -> list[str] | None:
     """The git-sourced path list of one commit, or ``None`` when git cannot list it.
 
     ``changed_paths`` is the one field the ledger contract forbids a caller to
-    compute: it MUST come from ``git diff-tree`` against the just-produced
-    commit. ``--root`` makes a repository's first commit enumerate like any
-    other, and NUL separation keeps quoted and space-padded paths verbatim.
+    compute: it MUST come from git against the just-produced commit. ``--root``
+    makes a repository's first commit enumerate like any other, and NUL
+    separation keeps quoted and space-padded paths verbatim.
+
+    A MERGE commit has no single changed-path set: ``diff-tree`` against it lists
+    nothing, so a row built from it would record an empty ``changed_paths`` and
+    still satisfy the SHA-based boundary check. The merge case therefore
+    enumerates the FIRST-PARENT diff — the work this commit brought onto the
+    branch — which is the one comparison a merge does have.
     """
-    rc, out, _err = _run_git_nul_verbatim(
-        ['-C', str(worktree), 'diff-tree', '--no-commit-id', '--name-only', '-r', '--root', '-z', commit_sha]
+    parents_rc, parents_out, _err = _run_git_nul_verbatim(
+        ['-C', str(worktree), 'rev-list', '--parents', '-n', '1', commit_sha]
     )
+    if parents_rc != 0:
+        return None
+    if len(parents_out.split()) > 2:
+        rc, out, _err = _run_git_nul_verbatim(
+            ['-C', str(worktree), 'diff', '--name-only', '-r', '-z', f'{commit_sha}^1', commit_sha]
+        )
+    else:
+        rc, out, _err = _run_git_nul_verbatim(
+            ['-C', str(worktree), 'diff-tree', '--no-commit-id', '--name-only', '-r', '--root', '-z', commit_sha]
+        )
     if rc != 0:
         return None
     return [part for part in out.split('\0') if part]
 
 
-def _record_finalize_change(worktree: Path, commit_sha: str, step: str | None) -> dict[str, Any]:
-    """Append the ``kind=change`` ledger row a ``6-finalize`` commit owes.
+def _record_commit_change(worktree: Path, commit_sha: str, step: str | None, *, finalize_phase: bool) -> dict[str, Any]:
+    """Append the ``kind=change`` ledger row a commit owes.
 
-    Phase 5 is not the only commit owner: finalize makes its own commits —
-    dispatcher item 5f(b), the unified-triage inline fix at 7c(4a), and the
-    architecture refresh — and the ``5-execute`` boundary refuses unless EVERY
-    branch commit carries a row. This verb is the ONE path all of them go
-    through, and the only place holding the new SHA, the staged paths and the
-    plan's phase together, so it owns the row for a finalize commit.
+    The ``5-execute`` boundary refuses unless EVERY branch commit carries a row,
+    so each commit owner writes its own: phase 5's Step 10a chain-tail appends a
+    deliverable commit's row itself, the boundary settlement does the same per
+    attributed group, and this verb records the two commits no settlement owns —
+    a ``6-finalize`` commit (dispatcher item 5f(b), the unified-triage inline fix
+    at 7c(4a), the architecture refresh) and a phase-5 hand-back commit the
+    orchestrator marks with ``--record-change`` (a quality-gate rewrite, a style
+    fix, a Javadoc fix after the envelope). The verb is the ONE path those two
+    go through, and the only place holding the new SHA, the changed paths and the
+    plan's phase together.
 
-    It records ONLY in ``6-finalize``, which is what keeps phase-5 Step 10a's
-    row single: at the ``5-execute`` boundary — the settle-band recovery
-    included — ``current_phase`` is still ``5-execute``, so the settlement owns
-    its own row and no commit ever gets two.
+    The explicit phase test plus the caller's marker are what keep every row
+    single: a ``6-finalize`` commit is recorded unconditionally, while a phase-5
+    commit is recorded ONLY when the caller marks it as outside Step 10a — an
+    unmarked phase-5 commit is a deliverable commit, whose Step 10a append is its
+    one row. So no commit ever gets two.
 
     ``deliverable_id`` is the composed manifest step id when the caller names one
-    (item 5f(b) relays its ``{step_id}``) and
-    :data:`_FINALIZE_COMMIT_DELIVERABLE_ID` otherwise, so the id is never
-    mistakable for an outline deliverable.
+    (item 5f(b) relays its ``{step_id}``); otherwise
+    :data:`_FINALIZE_COMMIT_DELIVERABLE_ID` in ``6-finalize`` and
+    :data:`_HAND_BACK_COMMIT_DELIVERABLE_ID`` outside it — neither is mistakable
+    for an outline deliverable, and neither needs an attribution decision when
+    the commit spans several deliverables' files.
 
     A failure here does NOT fail the commit — the commit already exists and
     rolling it back is not this verb's business. The row is reported missing
     instead, so the boundary's ``bookkeeping_gap`` refusal (the fail-closed
     direction) is what surfaces it.
+
+    The row is written to the TARGET tree's own ledger — ``{worktree}/.plan/
+    work/change-ledger.jsonl``, the file the ``5-execute`` boundary reads for
+    this checkout — never to the caller's cwd-resolved one: when the verb runs
+    from another checkout (``--project-dir`` naming a worktree), the default
+    resolver would record the commit in the caller's ledger while the guard
+    reads the target's, and the guard would then report a recorded commit as
+    unrecorded.
     """
     changed_paths = _commit_changed_paths(worktree, commit_sha)
     if changed_paths is None:
         return {'recorded': False, 'error': 'changed_paths_unreadable'}
-    deliverable_id = step or _FINALIZE_COMMIT_DELIVERABLE_ID
+    if step:
+        deliverable_id = step
+    elif finalize_phase:
+        deliverable_id = _FINALIZE_COMMIT_DELIVERABLE_ID
+    else:
+        deliverable_id = _HAND_BACK_COMMIT_DELIVERABLE_ID
     try:
         from _ledger_core import append_entry, change_record
         from worktree_sha import compute_worktree_sha
@@ -1071,7 +1115,8 @@ def _record_finalize_change(worktree: Path, commit_sha: str, step: str | None) -
                 worktree_sha=compute_worktree_sha(worktree),
                 commit_sha=commit_sha,
                 changed_paths=changed_paths,
-            )
+            ),
+            worktree / '.plan' / 'work' / 'change-ledger.jsonl',
         )
     except OSError as exc:
         return {'recorded': False, 'deliverable_id': deliverable_id, 'error': f'ledger_write_failed: {exc}'}
@@ -1095,10 +1140,15 @@ def cmd_commit(args):
     commit (``-F`` message file or ``-m`` message) and, with ``--push``, pushes.
 
     A committed ``6-finalize`` commit also leaves its own ``kind=change`` ledger
-    row through :func:`_record_finalize_change`, so the ``5-execute`` boundary
-    admits the branch whichever phase made each commit. The result reports the
-    outcome as ``ledger_recorded`` (with ``ledger_deliverable_id`` and, when it
-    failed, ``ledger_error``); the commit itself stands either way.
+    row through :func:`_record_commit_change`, so the ``5-execute`` boundary
+    admits the branch whichever phase made each commit. A commit the
+    orchestrator makes during phase 5 outside Step 10a — a quality-gate rewrite,
+    a style fix, a Javadoc fix after the envelope — carries the same row when the
+    caller marks it with ``--record-change``; an unmarked phase-5 commit records
+    nothing, because it is a deliverable commit whose Step 10a append is its one
+    row. The result reports the outcome as ``ledger_recorded`` (with
+    ``ledger_deliverable_id`` and, when it failed, ``ledger_error``); the commit
+    itself stands either way.
     """
     worktree, err = _resolve_analyze_diff_path(args)
     if err is not None:
@@ -1152,14 +1202,17 @@ def cmd_commit(args):
     rc, head, _err = _run_git_nul_verbatim(['-C', str(worktree), 'rev-parse', 'HEAD'])
     commit_hash = head.strip() if rc == 0 else None
 
-    # A finalize commit owes its own ledger row, recorded BEFORE the push: the
-    # commit exists whether or not the push is admitted by the head gate, and a
-    # commit with no row is exactly what the 5-execute boundary refuses. The
-    # phase test keeps phase-5's Step 10a row single (see
-    # `_record_finalize_change`), so no commit is ever recorded twice.
+    # A commit outside Step 10a owes its own ledger row: a finalize commit always,
+    # a phase-5 hand-back commit when the caller marks it. Recorded BEFORE the
+    # push, because the commit exists whether or not the push is admitted by the
+    # head gate, and a commit with no row is exactly what the 5-execute boundary
+    # refuses. An unmarked phase-5 commit records nothing — it is a deliverable
+    # commit, and Step 10a's append is its one row (see `_record_commit_change`),
+    # so no commit is ever recorded twice.
+    record_change = bool(getattr(args, 'record_change', False))
     ledger: dict[str, Any] = {}
-    if commit_hash and phase == _SOURCE_COMMIT_GATE_PHASE:
-        ledger = _record_finalize_change(worktree, commit_hash, step)
+    if commit_hash and (phase == _SOURCE_COMMIT_GATE_PHASE or record_change):
+        ledger = _record_commit_change(worktree, commit_hash, step, finalize_phase=phase == _SOURCE_COMMIT_GATE_PHASE)
 
     pushed = False
     if getattr(args, 'push', False):
@@ -1209,7 +1262,7 @@ def cmd_commit(args):
         'files_changed': len(staged),
         'pushed': pushed,
     }
-    if phase == _SOURCE_COMMIT_GATE_PHASE:
+    if phase == _SOURCE_COMMIT_GATE_PHASE or record_change:
         result['ledger_recorded'] = bool(ledger.get('recorded'))
         if 'deliverable_id' in ledger:
             result['ledger_deliverable_id'] = ledger['deliverable_id']
@@ -3913,7 +3966,7 @@ def main():
 Examples:
   git-workflow.py format-commit --type feat --scope auth --subject "add login"
   git-workflow.py source-commit-gate --plan-id EXAMPLE-PLAN [--phase 6-finalize] [--changed-paths src/a.py,.plan/x]
-  git-workflow.py commit --plan-id EXAMPLE-PLAN --message-file /p/.plan/temp/msg.txt [--step finalize-step-simplify] [--push]
+  git-workflow.py commit --plan-id EXAMPLE-PLAN --message-file /p/.plan/temp/msg.txt [--step finalize-step-simplify] [--record-change] [--push]
   git-workflow.py analyze-diff --plan-id EXAMPLE-PLAN [--cached]
   git-workflow.py analyze-diff --project-dir /path/to/worktree [--cached]
   git-workflow.py detect-artifacts --root /path/to/repo
@@ -4022,6 +4075,19 @@ Examples:
                         'help': (
                             'Finalize step id producing this commit — sanctions a source commit only '
                             "when the id is in the plan's composed phase-6 manifest"
+                        ),
+                    },
+                    {
+                        'flags': ['--record-change'],
+                        'dest': 'record_change',
+                        'action': 'store_true',
+                        'help': (
+                            "Record this commit's own kind=change ledger row — for a commit "
+                            'that is not a deliverable settlement (a phase-5 quality-gate '
+                            'rewrite, style fix or Javadoc fix). It lands under the constant '
+                            'deliverable_id handback-commit, so a commit spanning two '
+                            "deliverables' files needs no attribution decision; in "
+                            '6-finalize the row is recorded without this flag.'
                         ),
                     },
                     {
