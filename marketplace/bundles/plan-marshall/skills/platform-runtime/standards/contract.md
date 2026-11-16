@@ -49,7 +49,7 @@ alternative: <what the caller can do instead>
 | `invalid_operation` | The operation's required argument is missing or unusable (`protect-path` path), or a direct runtime call names an unknown operation. The CLI routes `--operation` through argparse `choices`, so an unknown value stops there with an argparse rejection before this code can be returned |
 | `invalid_check` | `permission analyze --checks` contains an unknown check name |
 | `marshal_not_found` | `.plan/marshal.json` missing |
-| `prompt_not_found` | `subagent dispatch --prompt-file` path not found |
+| `prompt_not_found` | `subagent dispatch` could not read the prompt it was asked for, or could not resolve the agent it was asked for. Two misses share the code: the `--prompt-file` path that does not exist or cannot be read, and the `--agent` name no searched root carries — the agent-file message names every root it probed |
 | `unknown_target` | `runtime.target` value not in the target registry |
 | `unknown_overwrite_key` | `project install-hook --overwrite` names a conflict key the target does not define; rejected fail-closed before any write, so a typo never reads as "do not overwrite" |
 | `hook_not_configured` | SessionStart hook not installed; `$CLAUDE_CODE_SESSION_ID` unset |
@@ -1343,6 +1343,8 @@ The `--context` object carries the caller's dispatch attestations and its prompt
 
 Every target echoes the requested `--agent` back inside its invocation: as `invocation.subagent_type` on Claude and Antigravity, and as `invocation.agent` on OpenCode 2 (whose sub-agent tool takes `{agent, description, prompt}`). No target substitutes an agent of its own choosing, so a caller's selection always reaches the invocation.
 
+**Agent-file resolution.** Every path that needs the agent's own markdown — Claude always (it sources the description from it), OpenCode and Antigravity for their tool-mapping check — resolves `--agent` before composing anything. The roots are probed in order: the target's deployed bundle cache first, then the script-relative `marketplace/bundles` source tree. Each root is read in its FLAT shape (`{root}/{bundle}/agents/{name}.md` — the source tree, and a cache that keeps one directory per bundle) and then in its VERSIONED shape (`{root}/{bundle}/{version}/agents/{name}.md` — the deployed plugin cache, reduced to the newest eligible version directory per bundle by `script-shared`'s `select_live_version_dir`). A generated `execution-context-level-{N}` variant exists only in the deployed layout, so it resolves from the cache while the bare `execution-context` resolves from either — which is why the level-suffixed names in the examples below are resolvable on a machine that has the bundle installed.
+
 The admitted registry is `antigravity, claude, opencode` — derived live from `platform_runtime._REGISTRY` via `describe_targets`, never a hard-coded literal.
 
 Per-harness dispatch outcomes:
@@ -1388,7 +1390,7 @@ dispatch_mode: inline
 dispatch_boundary_rows: 1
 ```
 
-**Success (Claude)**:
+**Success (Claude — `execution-context-level-3` resolved from the deployed bundle cache)**:
 ```toon
 status: success
 operation: subagent dispatch
@@ -1433,6 +1435,16 @@ operation: subagent dispatch
 error: prompt_not_found
 message: "prompt file not found: prompts/my-prompt.md"
 ```
+
+**Error (agent file not found)**:
+```toon
+status: error
+operation: subagent dispatch
+error: prompt_not_found
+message: "Agent 'execution-context-level-9' not found; searched: /home/me/.claude/plugins/cache/plan-marshall, /home/me/git/project/marketplace/bundles"
+```
+
+The agent-file message lists exactly the roots the lookup probed, so a miss distinguishes a wrong name from a root that was never searched. Only Claude answers it: OpenCode and Antigravity run the resolution for their tool-mapping check and dispatch anyway when it comes back empty, as the per-harness outcomes above state.
 
 ---
 
