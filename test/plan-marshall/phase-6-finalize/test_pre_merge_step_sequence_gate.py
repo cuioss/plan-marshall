@@ -396,6 +396,76 @@ def test_an_unreadable_record_refuses_the_merge() -> None:
     assert runner.calls == []
     assert result['dispatched'] is False
     assert result['steps'][0]['reason'] == 'step_record_unreadable'
+    # A read fault, not a step gap: no re-entry can clear it.
+    assert result['remedy'] == 'stop'
+
+
+def test_an_unlisted_assertion_error_is_folded_into_the_read_fault_reason() -> None:
+    """An error code outside the closed vocabulary is a read fault, never a step gap.
+
+    ``assert-step-recorded`` answers ``file_not_found`` when the plan status cannot
+    be resolved. Forwarded verbatim it would sit in a ``steps[]`` row the disposition
+    treats as a nameable gap, and the loop-back it earns cannot repair a read.
+    """
+    result, runner, _spy = _merge(
+        manifest=_manifest('default:adr-propose', _BRANCH_CLEANUP),
+        records={
+            'default:adr-propose': {
+                'status': 'error',
+                'error': 'file_not_found',
+                'message': 'status.json not found for plan',
+            }
+        },
+    )
+
+    assert runner.calls == []
+    assert result['steps'][0]['reason'] == 'step_record_unreadable'
+    assert result['remedy'] == 'stop'
+
+
+@pytest.mark.parametrize(
+    ('record', 'expected_remedy'),
+    [
+        pytest.param(None, 'dispatcher', id='missing-record'),
+        pytest.param(_record('failed'), 'dispatcher', id='failed-record'),
+        pytest.param({'status': 'success', 'recorded': False, 'outcome': None}, 'dispatcher', id='unconfirmed'),
+        pytest.param(
+            {'status': 'error', 'error': 'step_record_unreadable', 'message': 'silent verb'},
+            'stop',
+            id='unreadable-record',
+        ),
+    ],
+)
+def test_the_remedy_discriminator_separates_step_gaps_from_read_faults(
+    record: dict | None, expected_remedy: str
+) -> None:
+    """``remedy`` is the disposition's branch: a runnable gap loops back, a read stops."""
+    records = {} if record is None else {'default:adr-propose': record}
+
+    result, runner, _spy = _merge(
+        manifest=_manifest('default:adr-propose', _BRANCH_CLEANUP),
+        records=records,
+    )
+
+    assert runner.calls == []
+    assert result['remedy'] == expected_remedy, result
+
+
+def test_a_mixed_sequence_loops_back_on_its_nameable_gap() -> None:
+    """One runnable gap is enough to earn the dispatcher remedy, even beside a read fault."""
+    result, runner, _spy = _merge(
+        manifest=_manifest('default:adr-propose', 'default:create-pr', _BRANCH_CLEANUP),
+        records={
+            'default:adr-propose': {'status': 'error', 'error': 'file_not_found', 'message': 'unresolvable'},
+        },
+    )
+
+    assert runner.calls == []
+    assert result['remedy'] == 'dispatcher'
+    assert [(row['step'], row['reason']) for row in result['steps']] == [
+        ('default:adr-propose', 'step_record_unreadable'),
+        ('default:create-pr', 'step_record_missing'),
+    ]
 
 
 def test_the_refusal_is_a_distinct_merge_gate_code() -> None:
@@ -476,6 +546,10 @@ def test_the_production_sweep_spawns_the_manifest_read_then_one_assertion_per_st
     verdict = gate._step_sequence_refusal(_PLAN_ID)
 
     assert verdict is None, verdict
+    # The POPULATION is pinned: an extra verb — a second assertion for a step after
+    # ``branch-cleanup``, a per-step manifest re-read, a duplicate — would otherwise
+    # leave both argv assertions matching.
+    assert len(calls) == 2, calls
     assert calls[0][0] == [
         sys.executable,
         str(executor),

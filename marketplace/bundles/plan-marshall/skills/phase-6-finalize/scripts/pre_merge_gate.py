@@ -765,12 +765,13 @@ def _run_ci(ci_args: list[str]) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 #: The bound on the two LOCAL verbs the step-sequence sweep runs (the manifest read
-#: and one ``assert-step-recorded`` per earlier step). Deliberately far below
+#: and one ``assert-step-recorded`` per preceding step). Deliberately far below
 #: :data:`_VERB_TIMEOUT_SECONDS`: these are local store reads, not provider calls,
-#: and the sweep issues one per earlier step while the cross-plan merge mutex is
+#: and the sweep issues one per preceding step while the cross-plan merge mutex is
 #: held — so the generic 300 s bound would let a wedged executor pin the critical
-#: section for 300 s times the step count. At this bound the aggregate stays inside
-#: one network-scale read.
+#: section for 300 s times the step count. At this bound a full 13-step roster's
+#: worst case is 780 s, an order of magnitude below the 3 900 s the generic bound
+#: would allow.
 _STEP_SEQUENCE_VERB_TIMEOUT_SECONDS = 60
 
 
@@ -837,21 +838,44 @@ def _earlier_manifest_steps(steps: list[str]) -> list[str] | None:
     return None
 
 
+#: The ``steps[]`` reasons that name a STEP GAP — a step a finalize re-entry can
+#: actually run. Every other refusal reason is a READ FAULT: the step state could
+#: not be established, so no re-entry can clear it and the disposition STOPS
+#: instead of looping back.
+_STEP_GAP_REASONS: frozenset[str] = frozenset(
+    {'step_record_missing', 'step_record_mismatched_key', 'step_record_failed', 'step_record_unconfirmed'}
+)
+
+#: The two step-gap codes the ASSERTION itself answers with (the other two are
+#: classified here). Every other error it returns is folded into
+#: ``step_record_unreadable``, because forwarding an unlisted code would put a read
+#: fault into a row the disposition treats as a step gap.
+_ASSERTION_STEP_GAP_CODES: tuple[str, ...] = ('step_record_missing', 'step_record_mismatched_key')
+
+
 def _step_admission(verdict: dict[str, Any]) -> tuple[bool, str, Any]:
     """Decide one step's admission from its ``assert-step-recorded`` verdict.
 
-    Returns ``(admitted, reason, outcome)``. ``reason`` is the payload's own error
-    code when the assertion refused, and a named classification for the two cases
-    it cannot express:
+    Returns ``(admitted, reason, outcome)``. ``reason`` is drawn from the CLOSED
+    vocabulary the doc publishes, never forwarded verbatim: the assertion's two
+    step-gap codes keep their names, and every other error — an unresolvable plan
+    (``file_not_found``), a malformed call, a silent or unparseable verb, a timeout
+    — is folded into ``step_record_unreadable``. That split is what lets the
+    disposition loop back on a nameable gap and STOP on a read it cannot repair.
+
+    Two terminal states do not admit either, and both are classified here rather
+    than by the assertion:
 
     * a terminal ``failed`` record — the assertion reports it as recorded, but a red
-      gate is not a completion, so it does not admit;
-    * any other answer (an unresolvable plan, a malformed call, a payload with no
-      outcome) — an unreadable step state is never an admission.
+      gate is not a completion;
+    * a payload that reports neither a terminal outcome nor a named refusal — an
+      unconfirmed step state is never an admission.
     """
     if verdict.get('status') != 'success':
         error = str(verdict.get('error') or '')
-        return False, error or 'step_record_unreadable', None
+        if error in _ASSERTION_STEP_GAP_CODES:
+            return False, error, None
+        return False, 'step_record_unreadable', None
     outcome = verdict.get('outcome')
     if verdict.get('recorded') is not True or outcome is None:
         return False, 'step_record_unconfirmed', outcome
@@ -865,16 +889,22 @@ def _step_admission(verdict: dict[str, Any]) -> tuple[bool, str, Any]:
 def _sequence_refusal_payload(plan_id: str, reason: str, detail: str, steps: list[dict[str, Any]]) -> dict[str, Any]:
     """Render the refusal for an unproven finalize-step sequence.
 
-    The remedy is the DISPATCHER, not this gate: the offending steps are still in
-    the manifest, so returning control to the finalize pipeline lets the resumable
-    re-entry check run exactly them — in the order the manifest declares. That holds
-    for a step with NO record and for one whose record says ``failed``; the
-    unreadable-sequence states carry an empty ``steps`` and take the STOP disposition
-    instead, because there is no step for a re-entry to run. A merge authorization does not cover this gap for the same
-    reason it does not cover :data:`MERGE_HEAD_NOT_GATED`: it authorizes a review or
-    CI gap somebody can name, never a step nobody ran.
+    ``remedy`` is the DISCRIMINATOR the disposition branches on, so the step body
+    never has to re-derive it from prose or from ``steps`` emptiness alone:
+
+    * ``dispatcher`` — at least one row names a STEP GAP (:data:`_STEP_GAP_REASONS`),
+      so a finalize re-entry can run that step. The offending steps are still in the
+      manifest, and the resumable re-entry check runs exactly them, in the order the
+      manifest declares.
+    * ``stop`` — no row names a step gap (the sequence could not be enumerated, or
+      every row is a read fault), so no re-entry can clear it.
+
+    A merge authorization covers neither half, for the same reason it does not cover
+    :data:`MERGE_HEAD_NOT_GATED`: it authorizes a review or CI gap somebody can name,
+    never a step nobody ran and never a state nobody could read.
     """
     named = ', '.join(str(row['step']) for row in steps)
+    remedy = 'dispatcher' if any(str(row.get('reason')) in _STEP_GAP_REASONS for row in steps) else 'stop'
     if steps:
         message = (
             f'The finalize manifest orders {len(steps)} step(s) before {MERGE_STEP_ID} that did not '
@@ -894,6 +924,7 @@ def _sequence_refusal_payload(plan_id: str, reason: str, detail: str, steps: lis
         'phase': FINDINGS_PHASE,
         'reason': reason,
         'detail': detail,
+        'remedy': remedy,
         'steps': steps,
         'dispatched': False,
         'message': message,
