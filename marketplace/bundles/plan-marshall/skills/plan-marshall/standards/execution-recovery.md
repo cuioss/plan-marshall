@@ -2,6 +2,10 @@
 
 Detailed conditional recovery sub-procedures relocated from `plan-marshall/workflow/execution.md` for progressive disclosure. The orchestrator's execute/finalize skeleton in `execution.md` reaches each of these ONLY when its trigger fires; load and execute the matching section here at that point. All `{placeholder}` tokens carry over from the calling `execution.md` context.
 
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../../tools-script-executor/standards/exit-code-convention.md); it is not restated here.
+
 ## Baseline drift recovery (non-zero overlap)
 
 **Trigger**: the just-returned execution-context dispatch is classified `termination-cause == baseline_drift`. The agent's structured error payload carries `error: baseline_drift` plus `divergent_commits`, `upstream_commit_count`, and `conflict_count > 0`.
