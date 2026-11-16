@@ -462,9 +462,10 @@ def _reactor_consumes_test_artifact(known: dict[str, dict], reactor_paths: set[s
     sibling's ``test-jar`` / classified artifact, so the whole-reactor answer and
     the per-module one can never disagree about which artifact forms qualify.
 
-    A consuming member with no test files of its own still counts: Maven resolves
-    its test classpath regardless, and the ``package`` phase is correct for it
-    whether or not that resolution would have failed.
+    A consuming member with no test files of its own still counts: it carries no
+    ladder of its own, so the root's phase is the only place the reactor's rule
+    can be stated, and the safe direction — one extra ``package`` phase — costs a
+    build rather than a broken one.
 
     Args:
         known: The discovered modules keyed by their project-relative directory.
@@ -492,11 +493,12 @@ def _add_reactor_test_canonicals(module: dict, reactor_has_tests: bool, reactor_
     single-module ``jar`` root keep ``_build_commands``' own answers unchanged.
 
     The phase follows the per-module ladder: when any member of the reactor
-    consumes a sibling's ``test-jar`` / classified artifact, that artifact is
-    attached only from ``package`` on, so a ``test``-phase run at the root would
-    fail to compile the consumer — the root therefore runs ``package`` and
-    ``package -DskipTests``. Without such a member it keeps the cheaper
-    ``test`` / ``test-compile`` pair.
+    consumes a sibling's ``test-jar`` / classified artifact, the root runs
+    ``package`` and ``package -DskipTests`` — a classified artifact is attached
+    only from ``package`` on, so a ``test``-phase run at the root would fail to
+    compile that consumer, and a ``test-jar`` dependency is included by the same
+    conservative rule the per-module ladder applies. Without such a member it
+    keeps the cheaper ``test`` / ``test-compile`` pair.
 
     Args:
         module: One discovered module dict, modified in place.
