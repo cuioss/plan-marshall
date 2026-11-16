@@ -358,13 +358,15 @@ def test_commit_verb_rejects_a_caller_supplied_phase(tmp_path: Path) -> None:
 
 
 # =============================================================================
-# The finalize commit's own change-ledger row
+# The commit's own change-ledger row
 #
 # The 5-execute boundary refuses unless every branch commit carries a
-# `kind=change` row, and phase 5's Step 10a settlement only ever wrote the
-# deliverable commits'. So the commit verb — the one path every finalize commit
-# goes through — writes the row for a `6-finalize` commit, and ONLY in that
-# phase, which is what keeps Step 10a's row single.
+# `kind=change` row, and phase 5's Step 10a settlement writes only the
+# deliverable commits'. The commit verb — the path every commit goes through —
+# therefore writes the row a settlement does not own: a `6-finalize` commit
+# always, and a phase-5 hand-back commit only when the caller marks it with
+# `--record-change`. That marker is what keeps Step 10a's row single for an
+# UNMARKED phase-5 commit, so no commit ever gets two rows.
 # =============================================================================
 
 
@@ -559,9 +561,9 @@ def test_an_unmarked_phase_5_commit_leaves_no_row_so_step_10a_owns_the_only_one(
 def test_a_marked_phase_5_commit_records_its_own_row_under_the_handback_id(tmp_path: Path) -> None:
     """A commit marked `--record-change` in `5-execute` leaves its own row.
 
-    The row's `deliverable_id` is the constant `handback-commit`, and
-    `changed_paths` comes from `git diff-tree` on the commit — the ledger's own
-    sourcing rule, never the caller's staged list.
+    The row's `deliverable_id` is the constant `handback-commit`, and its
+    `changed_paths` is the commit's own path list as `git diff-tree` reports it —
+    the ledger's sourcing rule, which the caller never supplies.
     """
     _init_repo(tmp_path)
     _write_plan(tmp_path, 'plan-a', phase='5-execute', steps=['pre-push-quality-gate'])
@@ -645,6 +647,11 @@ def test_the_handback_id_is_not_read_as_an_outline_deliverable() -> None:
 @pytest.mark.parametrize(
     ('scenario', 'paths'),
     [
+        # The refusal path is kind-agnostic — it sees SHAs and paths, never a
+        # commit's kind — so these ids are the field's three instances, not three
+        # branches. `gate-rewrite` and `style-fix` exercise the same branch with
+        # different footprints; `two-deliverable` is the shape that would need an
+        # attribution decision if the row carried per-deliverable ids.
         ('gate-rewrite', ['src/generated/rewritten-test.py']),
         ('style-fix', ['src/imports/order.py']),
         ('two-deliverable', ['src/module-a/a.py', 'src/module-b/b.py']),
@@ -678,6 +685,11 @@ def test_an_unrecorded_commit_is_repaired_by_appending_the_named_row(
     assert refusal['error'] == 'execute_commits_unrecorded', refusal
     assert refusal['signature'] == 'bookkeeping_gap', refusal
     assert refusal['unrecorded_commits'] == [head], refusal
+    # The documented recovery tells the reader to RUN the invocation the refusal
+    # printed, so the message must carry it, placeholders included.
+    assert 'append --kind change' in refusal['message'], refusal['message']
+    assert 'DELIVERABLE_ID' in refusal['message'], refusal['message']
+    assert 'CHANGED_PATHS' in refusal['message'], refusal['message']
 
     git_paths = _git(tmp_path, 'diff-tree', '--no-commit-id', '--name-only', '-r', head).stdout.split()
     _append_row(tmp_path, head, git_workflow._HAND_BACK_COMMIT_DELIVERABLE_ID, git_paths)

@@ -4057,11 +4057,12 @@ Examples:
                         'dest': 'record_change',
                         'action': 'store_true',
                         'help': (
-                            'Record this commit own kind=change ledger row outside 6-finalize — '
-                            'for a commit that is not a deliverable settlement (a phase-5 '
-                            'quality-gate rewrite, style fix or Javadoc fix): it lands under the '
-                            'constant deliverable_id handback-commit, so a commit spanning two '
-                            "deliverables' files needs no attribution decision"
+                            "Record this commit's own kind=change ledger row — for a commit "
+                            'that is not a deliverable settlement (a phase-5 quality-gate '
+                            'rewrite, style fix or Javadoc fix). It lands under the constant '
+                            'deliverable_id handback-commit, so a commit spanning two '
+                            "deliverables' files needs no attribution decision; in "
+                            '6-finalize the row is recorded without this flag.'
                         ),
                     },
                     {
