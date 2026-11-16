@@ -818,6 +818,28 @@ def _assert_terminal_step(plan_id: str, step: str) -> dict[str, Any]:
     )
 
 
+def _is_merge_step(entry: str) -> bool:
+    """True only when ``entry`` IS the ``branch-cleanup`` step, by canonical identity.
+
+    A basename comparison would match ``project:branch-cleanup`` — a DIFFERENT step
+    that merely shares the suffix — and a manifest carrying one before the real
+    entry would end the prefix there, silently narrowing what the sweep checks.
+    ``canonicalize_step_key`` is the same canonicalizer the write and read sides of
+    the step-record store use: it maps ``default:branch-cleanup`` and bare
+    ``branch-cleanup`` to one identity and preserves a ``project:``/``bundle:``
+    prefix verbatim, which is exactly the distinction wanted here.
+
+    An unimportable canonicalizer is answered as "not the merge step", which makes
+    the caller find no entry and refuse with ``branch_cleanup_absent_from_manifest``
+    — the fail-closed direction, never an empty prefix.
+    """
+    try:
+        from _step_key_canonical import canonicalize_step_key
+    except Exception:
+        return entry.strip() == MERGE_STEP_ID
+    return canonicalize_step_key(entry) == MERGE_STEP_ID
+
+
 def _earlier_manifest_steps(steps: list[str]) -> list[str] | None:
     """Return the manifest steps ordered before ``branch-cleanup``, or ``None``.
 
@@ -831,7 +853,7 @@ def _earlier_manifest_steps(steps: list[str]) -> list[str] | None:
     the step), so the caller refuses instead of admitting everything.
     """
     for index, entry in enumerate(steps):
-        if str(entry).split(':')[-1].strip() == MERGE_STEP_ID:
+        if _is_merge_step(str(entry)):
             return steps[:index]
     return None
 
@@ -851,15 +873,21 @@ _STEP_GAP_REASONS: frozenset[str] = frozenset(
 _ASSERTION_STEP_GAP_CODES: tuple[str, ...] = ('step_record_missing', 'step_record_mismatched_key')
 
 
-def _step_admission(verdict: dict[str, Any]) -> tuple[bool, str, Any]:
+def _step_admission(verdict: dict[str, Any]) -> tuple[bool, str, Any, str]:
     """Decide one step's admission from its ``assert-step-recorded`` verdict.
 
-    Returns ``(admitted, reason, outcome)``. ``reason`` is drawn from the CLOSED
-    vocabulary the doc publishes, never forwarded verbatim: the assertion's two
-    step-gap codes keep their names, and every other error — an unresolvable plan
+    Returns ``(admitted, reason, outcome, detail)``. ``reason`` is drawn from the
+    CLOSED vocabulary the doc publishes, never forwarded verbatim: the assertion's
+    two step-gap codes keep their names, and every other error — an unresolvable plan
     (``file_not_found``), a malformed call, a silent or unparseable verb, a timeout
     — is folded into ``step_record_unreadable``. That split is what lets the
     disposition loop back on a nameable gap and STOP on a read it cannot repair.
+
+    ``detail`` carries the read fault's OWN diagnostic (the verb's error code and
+    message) for the unreadable case, so the stop payload names what went wrong
+    instead of restating that no record was found — the assertion's message is the
+    only place a ``file_not_found`` or a timeout is distinguishable. It is empty for
+    every other reason.
 
     Two terminal states do not admit either, and both are classified here rather
     than by the assertion:
@@ -872,16 +900,20 @@ def _step_admission(verdict: dict[str, Any]) -> tuple[bool, str, Any]:
     if verdict.get('status') != 'success':
         error = str(verdict.get('error') or '')
         if error in _ASSERTION_STEP_GAP_CODES:
-            return False, error, None
-        return False, 'step_record_unreadable', None
+            return False, error, None, ''
+        message = str(verdict.get('message') or verdict.get('detail') or '').strip()
+        detail = (
+            f'{error}: {message}' if error and message else (error or message or 'the assertion answered no payload')
+        )
+        return False, 'step_record_unreadable', None, detail
     outcome = verdict.get('outcome')
     if verdict.get('recorded') is not True or outcome is None:
-        return False, 'step_record_unconfirmed', outcome
+        return False, 'step_record_unconfirmed', outcome, ''
     if outcome == 'failed':
-        return False, 'step_record_failed', outcome
+        return False, 'step_record_failed', outcome, ''
     if outcome in _ADMITTING_STEP_OUTCOMES:
-        return True, '', outcome
-    return False, 'step_record_unconfirmed', outcome
+        return True, '', outcome, ''
+    return False, 'step_record_unconfirmed', outcome, ''
 
 
 def _sequence_refusal_payload(plan_id: str, reason: str, detail: str, steps: list[dict[str, Any]]) -> dict[str, Any]:
@@ -913,12 +945,11 @@ def _sequence_refusal_payload(plan_id: str, reason: str, detail: str, steps: lis
     elif steps:
         # The message is selected on the SAME discriminator as ``remedy``: a message
         # that told the caller to re-enter would be the very instruction this branch
-        # forbids, and the stop path surfaces the payload verbatim. ``detail`` is
-        # deliberately NOT interpolated here — it describes a blocked-sequence count
-        # ("hold no terminal record"), which is a claim this shape could not
-        # establish; the payload's own ``detail`` field still carries it.
+        # forbids, and the stop path surfaces the payload verbatim. ``detail`` names
+        # the READ fault here (the assertion's own error and message), never a
+        # record state the failed read could not establish.
         message = (
-            f'{len(steps)} finalize step(s) below {MERGE_STEP_ID} could not be READ ({named}). '
+            f'{len(steps)} finalize step(s) below {MERGE_STEP_ID} could not be READ ({named}): {detail}. '
             'Refusing to merge: a re-entry re-asks the identical unreadable state, so the read fault '
             'must be fixed before this merge can proceed.'
         )
@@ -991,7 +1022,17 @@ def _step_sequence_refusal(
             'the manifest carries no phase_6.steps array',
             [],
         )
-    steps = [str(entry) for entry in raw_steps if str(entry).strip()]
+    steps = [str(entry) for entry in raw_steps]
+    if not all(entry.strip() for entry in steps):
+        # A blank entry is a CORRUPT array, not an entry to drop: dropping it would
+        # silently narrow the prefix and admit the merge over a manifest nobody can
+        # read. "Not a list of step ids" is the documented read fault.
+        return _sequence_refusal_payload(
+            plan_id,
+            'manifest_steps_unreadable',
+            f'phase_6.steps carries an entry that is not a step id ({raw_steps!r})',
+            [],
+        )
     earlier = _earlier_manifest_steps(steps)
     if earlier is None:
         return _sequence_refusal_payload(
@@ -1004,18 +1045,23 @@ def _step_sequence_refusal(
     check = step_record_check or (lambda step: _assert_terminal_step(plan_id, step))
     blocked: list[dict[str, Any]] = []
     for step in earlier:
-        admitted, reason, outcome = _step_admission(check(step))
+        admitted, reason, outcome, row_detail = _step_admission(check(step))
         if admitted:
             continue
-        blocked.append({'step': step, 'reason': reason, 'outcome': outcome})
+        row: dict[str, Any] = {'step': step, 'reason': reason, 'outcome': outcome}
+        if row_detail:
+            row['detail'] = row_detail
+        blocked.append(row)
     if not blocked:
         return None
-    return _sequence_refusal_payload(
-        plan_id,
-        'earlier_steps_unrecorded',
-        f'{len(blocked)} step(s) below {MERGE_STEP_ID} hold no terminal record',
-        blocked,
-    )
+    read_faults = [row for row in blocked if str(row['reason']) not in _STEP_GAP_REASONS]
+    if read_faults and len(read_faults) == len(blocked):
+        # Every offending row is a read fault: the detail must name the READ, because
+        # "no terminal record" is a claim a failed read never established.
+        detail = '; '.join(f'{row["step"]}: {row.get("detail") or "unreadable"}' for row in read_faults)
+    else:
+        detail = f'{len(blocked)} step(s) below {MERGE_STEP_ID} did not complete'
+    return _sequence_refusal_payload(plan_id, 'earlier_steps_unrecorded', detail, blocked)
 
 
 #: The ``marshal.json`` ``providers[]`` entry category this module resolves the

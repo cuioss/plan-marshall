@@ -364,6 +364,20 @@ def test_a_manifest_whose_steps_are_not_a_list_refuses_the_merge() -> None:
     assert spy.asked == []
 
 
+def test_a_blank_step_entry_refuses_the_merge() -> None:
+    """A blank entry is a corrupt array — dropped, it would silently narrow the prefix."""
+    result, runner, spy = _merge(
+        manifest=_manifest(' ', _BRANCH_CLEANUP),
+        records={},
+    )
+
+    assert runner.calls == []
+    assert result['dispatched'] is False
+    assert result['reason'] == 'manifest_steps_unreadable'
+    assert spy.asked == [], 'no record was demanded from an array that is not a step list'
+    assert result['remedy'] == 'stop'
+
+
 def test_an_unconfirmed_record_refuses_the_merge() -> None:
     """An answer that is neither a terminal outcome nor a named refusal is not an admission."""
     result, runner, _spy = _merge(
@@ -414,7 +428,9 @@ def test_an_unlisted_assertion_error_is_folded_into_the_read_fault_reason() -> N
 
     ``assert-step-recorded`` answers ``file_not_found`` when the plan status cannot
     be resolved. Forwarded verbatim it would sit in a ``steps[]`` row the disposition
-    treats as a nameable gap, and the loop-back it earns cannot repair a read.
+    treats as a nameable gap, and the loop-back it earns cannot repair a read. Its
+    OWN diagnostic must survive into the row and the payload detail, so the operator
+    can tell a missing status file from a wedged executor.
     """
     result, runner, _spy = _merge(
         manifest=_manifest('default:adr-propose', _BRANCH_CLEANUP),
@@ -430,6 +446,10 @@ def test_an_unlisted_assertion_error_is_folded_into_the_read_fault_reason() -> N
     assert runner.calls == []
     assert result['steps'][0]['reason'] == 'step_record_unreadable'
     assert result['remedy'] == 'stop'
+    assert result['steps'][0]['detail'] == 'file_not_found: status.json not found for plan'
+    assert 'file_not_found' in result['detail']
+    assert 'status.json not found for plan' in result['detail']
+    assert 'hold no terminal record' not in result['detail']
 
 
 @pytest.mark.parametrize(
@@ -475,6 +495,24 @@ def test_a_mixed_sequence_loops_back_on_its_nameable_gap() -> None:
         ('default:adr-propose', 'step_record_unreadable'),
         ('default:create-pr', 'step_record_missing'),
     ]
+
+
+def test_a_project_step_sharing_the_merge_step_basename_cannot_shorten_the_prefix() -> None:
+    """A ``project:branch-cleanup`` entry is a step to CHECK, not a place the prefix ends.
+
+    Matching the merge step by basename would truncate the prefix at that entry and
+    admit the merge without checking what follows it — a bypass dressed as ordering.
+    """
+    result, runner, spy = _merge(
+        manifest=_manifest('project:branch-cleanup', 'default:ci-verify', _BRANCH_CLEANUP),
+        records={'project:branch-cleanup': _record('done')},
+    )
+
+    assert runner.calls == []
+    assert result['dispatched'] is False
+    assert result['remedy'] == 'dispatcher'
+    assert [row['step'] for row in result['steps']] == ['default:ci-verify'], result['steps']
+    assert spy.asked == ['project:branch-cleanup', 'default:ci-verify'], spy.asked
 
 
 def test_the_refusal_is_a_distinct_merge_gate_code() -> None:
@@ -594,10 +632,21 @@ def test_the_production_sweep_spawns_the_manifest_read_then_one_assertion_per_st
             ['bundle:skill', 'default:adr-propose'],
             id='mixed-entries',
         ),
+        pytest.param(
+            ['project:branch-cleanup', 'default:push', 'default:branch-cleanup'],
+            ['project:branch-cleanup', 'default:push'],
+            id='project-step-sharing-the-basename',
+        ),
     ],
 )
 def test_the_sweep_stops_at_the_branch_cleanup_entry(steps: list[str], expected: list[str]) -> None:
-    """The prefix is taken around the ``branch-cleanup`` entry however the manifest spells it."""
+    """The prefix is taken around the ``branch-cleanup`` entry however the manifest spells it.
+
+    Canonical identity, not basename: ``project:branch-cleanup`` is a DIFFERENT step
+    that merely shares the suffix, so it is an entry the sweep must CHECK rather than
+    a place the prefix may end — otherwise such a manifest would truncate the prefix
+    and admit the merge over everything after it.
+    """
     assert gate._earlier_manifest_steps(steps) == expected
 
 
