@@ -65,6 +65,9 @@ from runtime_base import (  # noqa: E402,F401
     toon_success,
 )
 from runtime_base import (  # noqa: E402
+    _agent_search_roots as _agent_search_roots_in_tree,
+)
+from runtime_base import (  # noqa: E402
     _find_agent_file as _find_agent_file_in_tree,
 )
 from toon_parser import parse_toon  # noqa: E402
@@ -2959,6 +2962,15 @@ def _extract_project_steps(marshal_config: dict[str, Any]) -> list[dict[str, str
 def _find_agent_file(agent_name: str) -> Path | None:
     """Locate an agent markdown under the plugin cache and source tree in sequence."""
     return _find_agent_file_in_tree(agent_name, (_claude_bundle_cache_root(),))
+
+
+def _agent_search_roots() -> list[Path]:
+    """Return the roots the Claude agent-file lookup probes, in probe order.
+
+    The deployment half of ``_find_agent_file``'s answer, so a miss can report
+    what was searched instead of only the name that was not found.
+    """
+    return _agent_search_roots_in_tree((_claude_bundle_cache_root(),))
 
 
 def _short_description_from_agent(description: str) -> str:

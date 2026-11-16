@@ -18,6 +18,7 @@ from collections.abc import Collection, Iterable, Sequence
 from pathlib import Path
 from typing import Any
 
+from marketplace_bundles import select_live_version_dir
 from toon_parser import serialize_toon
 
 #: The absent-session-identity sentinel, published once so no site restates it.
@@ -354,12 +355,17 @@ def marshal_shape_error(operation: str, marshal_path: Any, marshal_data: Any) ->
 # =============================================================================
 
 
-def _find_agent_file(agent_name: str, extra_roots: Sequence[Path] = ()) -> Path | None:
-    """Locate an agent markdown under the marketplace tree.
+def _agent_search_roots(extra_roots: Sequence[Path] = ()) -> list[Path]:
+    """Return the roots an agent-file lookup probes, in probe order.
 
-    Searches *extra_roots* first (a target prepends its deployed-bundle cache
-    root so a deployed layout resolves before the source tree), then the
-    script-relative marketplace walk. Only existing roots are searched.
+    *extra_roots* come first — a target prepends its deployed-bundle cache root
+    so a deployed layout resolves before the source tree — then the
+    script-relative marketplace walk. Only existing roots are listed, and the
+    walk stops at the first ancestor carrying a bundle root, so the answer is
+    exactly the set :func:`_find_agent_file` consults. It is what a miss reports
+    back to its caller: a bare "not found" under a lookup that probes several
+    shapes leaves the reader unable to tell a wrong name from an unsearched
+    root.
     """
     search_roots: list[Path] = [root for root in extra_roots if root.exists()]
     # Script-relative walk to find marketplace.
@@ -372,11 +378,59 @@ def _find_agent_file(agent_name: str, extra_roots: Sequence[Path] = ()) -> Path 
         if candidate2.is_dir():
             search_roots.append(candidate2)
             break
+    return search_roots
 
-    for root in search_roots:
+
+def _versioned_agent_file(root: Path, agent_name: str) -> Path | None:
+    """Resolve ``{root}/{bundle}/{version}/agents/{agent_name}.md``, or ``None``.
+
+    The deployed plugin cache keeps one directory per installed version, so an
+    agent lives one level deeper there than in the source tree. The version dir
+    is chosen by ``marketplace_bundles.select_live_version_dir`` — the shared
+    selector whose ordering (numerically-newest eligible wins) is decided in one
+    place — with eligibility "this version dir carries the requested agent", so
+    a newer version dir that does not ship the agent cannot hide an older one
+    that does.
+
+    Only directories are probed, read-only; an unreadable *root* is a miss for
+    this shape rather than an error, the same way the flat glob treats it.
+    """
+    try:
+        bundle_dirs = sorted(entry for entry in root.iterdir() if entry.is_dir() and not entry.name.startswith('.'))
+    except OSError:
+        return None
+    for bundle_dir in bundle_dirs:
+        selected = select_live_version_dir(
+            bundle_dir, lambda version_dir: (version_dir / 'agents' / f'{agent_name}.md').is_file()
+        )
+        if selected is not None:
+            return selected / 'agents' / f'{agent_name}.md'
+    return None
+
+
+def _find_agent_file(agent_name: str, extra_roots: Sequence[Path] = ()) -> Path | None:
+    """Locate an agent markdown under the marketplace tree or a deployed cache.
+
+    Searches *extra_roots* first (a target prepends its deployed-bundle cache
+    root so a deployed layout resolves before the source tree), then the
+    script-relative marketplace walk. Every root is probed in its FLAT shape
+    (``{root}/{bundle}/agents/{name}.md`` — the source tree, and any cache that
+    keeps one directory per bundle) before its VERSIONED shape
+    (``{root}/{bundle}/{version}/agents/{name}.md`` — the deployed plugin cache),
+    so a root's existing layout keeps its precedence and a deployed tree is
+    still reached.
+
+    The versioned shape is what makes a generated ``execution-context-level-{N}``
+    variant resolvable: those variants exist only in the deployed cache, so the
+    flat glob alone answers ``None`` for every one of them.
+    """
+    for root in _agent_search_roots(extra_roots):
         for match in root.glob(f'*/agents/{agent_name}.md'):
             if match.is_file():
                 return match
+        versioned = _versioned_agent_file(root, agent_name)
+        if versioned is not None:
+            return versioned
     return None
 
 
