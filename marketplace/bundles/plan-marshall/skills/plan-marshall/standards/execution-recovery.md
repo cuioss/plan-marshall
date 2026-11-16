@@ -6,7 +6,7 @@ Detailed conditional recovery sub-procedures relocated from `plan-marshall/workf
 
 **Trigger**: the just-returned execution-context dispatch is classified `termination-cause == baseline_drift`. The agent's structured error payload carries `error: baseline_drift` plus `divergent_commits`, `upstream_commit_count`, and `conflict_count > 0`.
 
-**Why this branch handles only non-zero overlap**: phase-5-execute Step 3 invokes `baseline-reconcile` to obtain a deterministic `conflict_count`. When `conflict_count == 0`, phase-5-execute self-absorbs the drift internally — it writes `worktree_sha` + `main_sha` into `status.metadata`, emits a single decision-log entry, and continues its task loop without returning. The orchestrator therefore sees the structured drift TOON ONLY when the upstream commits touch files that overlap with the worktree's in-flight changes, which is exactly the case where the request narrative + outline + tasks may no longer be valid against the new baseline. Re-cycling through phase-2-refine is the canonical absorption path for this case.
+**Why this branch handles only non-zero overlap**: phase-5-execute Step 3 invokes `baseline-reconcile` to obtain a deterministic `conflict_count`. When `conflict_count == 0`, phase-5-execute self-absorbs the drift internally — it writes `worktree_sha` + `main_sha` into `status.metadata`, emits a single decision-log entry, and continues its task loop without returning. The orchestrator therefore sees the structured drift TOON ONLY when the upstream commits touch files that overlap with the worktree's in-flight changes, which is exactly the case where the request narrative + outline + tasks may no longer be valid against the new baseline. Re-cycling through phase-2-refine and then reconciling the branch onto that baseline (step 4) is the canonical absorption path for this case.
 
 **Recovery procedure**:
 
@@ -29,9 +29,81 @@ Detailed conditional recovery sub-procedures relocated from `plan-marshall/workf
 
    See `plan-marshall/workflow/planning.md` § "2-Refine Phase" for the canonical dispatch envelope. The orchestrator MUST use that envelope verbatim — no additional inputs propagate the drift signal to refine, because the upstream commits are already visible to `baseline-reconcile` on refine entry.
 
-4. **On refine return**, re-enter phase-5-execute via the standard execute-phase envelope in `execution.md`.
+4. **On refine return, bring the branch onto the new base** (the reconcile step). Refine re-authored the plan against the new baseline but moved no ref: its baseline reconciliation is a read-only fetch-and-compare, stated in [`phase-2-refine/standards/refine-workflow-detail.md` § Conflict Handling](../../phase-2-refine/standards/refine-workflow-detail.md#conflict-handling), so the branch still sits on the old base. Re-entering execute without this step runs phase-5-execute Step 3 against the same upstream commits and returns the same drift. Run this step EVERY time refine returns here, before the re-entry in step 5.
 
-**Bounded re-dispatch cap**: the orchestrator MUST track a counter for consecutive drift loops on a given plan and refuse to re-dispatch refine when the counter exceeds **3**. On cap, escalate to the user:
+   1. **Refresh the base ref in the worktree** — a read-only network round-trip, the same one `phase-5-execute/standards/sync-with-main.md` Step 2 performs:
+
+      ```text
+      git -C {worktree_path} fetch origin {base_branch}
+      ```
+
+      A fetch that fails stops the recovery: log it at ERROR, return an error TOON carrying `error: drift_reconcile_fetch_failed` and the fetch's own failure detail, and do NOT re-enter execute. Reconciling against a base ref that could not be refreshed would leave the branch on a baseline the next Step 3 gate rejects again, and the probe below would report the same drift.
+
+   2. **Rebase the branch onto the new base** through the `git-workflow` verb — never a bare rebase of `origin/{base_branch}`, and never a merge of it:
+
+      ```bash
+      python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree-rebase-to \
+        --plan-id {plan_id} --base origin/{base_branch}
+      ```
+
+      The verb also refreshes the worktree's `.plan/execute-script.py` when the replayed commits changed the mapped script set, so the re-entered execute resolves notations against the replayed tree.
+
+      Read `action`, never `state`: `action: rebased` means the rebase replayed commits and moved HEAD — continue at 4.3; `action: noop` means the branch already contained the new base and nothing was replayed — nothing was rewritten, so skip 4.3 and 4.5 and continue at step 5.
+
+   3. **Resolve a rebase conflict.** A `status: conflict` verdict leaves the rebase in progress with the conflicted paths enumerated in `conflicts[]`. Apply the resolution refine accepted — the iterate-to-confidence loop recorded one resolution per conflicting file as it closed the Q-Gate findings, and those resolutions are the authority. Do NOT author a second, different resolution here. Continue the rebase with `git rebase --continue`, which is the verb's documented conflict continuation (see [`workflow-integration-git/standards/worktree-handling.md` § The `worktree-rebase-to` Verb](../../workflow-integration-git/standards/worktree-handling.md#the-worktree-rebase-to-verb)). When a conflict has no accepted resolution, or the accepted resolutions do not apply cleanly, abandon the attempt with `git rebase --abort`, log the paths, and STOP:
+
+      ```toon
+      status: error
+      error: drift_reconcile_conflict
+      conflicts: {conflicts from the verb}
+      display_detail: "baseline drift reconcile conflicted on {N} paths and the accepted refinement did not settle them"
+      ```
+
+      A conflict is never left mid-rebase for the execute re-entry to stumble into, and an aborted attempt rewrote nothing — no ledger row is stale and no push is owed. Any other `status: error` verdict (`dirty_worktree`, `detached_head`, `missing_base`, `missing_target`) is the same stop, carrying that verb's error token in place of `drift_reconcile_conflict`.
+
+   4. **Remap the change ledger for the rewritten commits** — only after `action: rebased`. Every `kind=change` row recorded against a pre-rebase commit is stale, and the phase-5 end-marker guard would report the whole branch unrecorded at the next boundary. Emit the old-to-new map first — no rows are appended — and then consume it (`PLAN-LB-91`'s remap, the same pair `phase-6-finalize`'s `sync-baseline` step runs for its own rebase):
+
+      ```bash
+      python3 .plan/execute-script.py plan-marshall:manage-change-ledger:manage-change-ledger remap \
+        --worktree-root {worktree_path} --old-head {pre_sha} \
+        --emit-map .plan/temp/drift-reconcile-sha-map-{plan_id}.json --dry-run
+      python3 .plan/execute-script.py plan-marshall:manage-change-ledger:manage-change-ledger remap \
+        --worktree-root {worktree_path} \
+        --map-file .plan/temp/drift-reconcile-sha-map-{plan_id}.json
+      ```
+
+      `{pre_sha}` is the verb's `pre_sha` field — the head before the rebase — which narrows the candidate window to the commits HEAD gained since then. Patch-id decides every match, so a replayed commit that kept its patch maps without help. If either call returns `status: error`, STOP with `drift_reconcile_remap_failed` (logging the returned `error` and `message`): a remap that did not run leaves the ledger stale, and re-entering execute would record work against commits that no longer exist.
+
+      Read the first call's `unmapped` list before continuing. An entry whose stale SHA is an ancestor of `{pre_sha}` belongs to this rebase and its patch changed during conflict resolution: resolve its replacement from `git range-diff --no-color {pre_sha}...{post_sha}`, never from position or `HEAD`, and append that row explicitly with `manage-change-ledger append --kind change --deliverable-id {deliverable_id} --commit-sha {rebased_sha} --changed-paths {paths from the rebased commit} --worktree-root {worktree_path}`. An `unmapped` entry outside that ancestry belongs to another history — leave it alone. A commit `range-diff` pairs with nothing was dropped by the rebase: report it in the work log and append no row.
+
+   5. **Publish the rewritten branch** when it has a remote counterpart. The rebase rewrote SHAs the remote already has, so the push is a `--force-with-lease` through the `git-workflow` branch verb, never a plain force push:
+
+      ```bash
+      python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow force-push-with-lease \
+        --plan-id {plan_id}
+      ```
+
+      A `push_rejected_non_fast_forward` verdict is a lease violation — someone else pushed this branch since the last fetch — and STOPS the recovery with `drift_reconcile_push_lease_violation`: overwriting that history is not this step's decision. A plan whose branch carries no remote counterpart yet skips this push; the next ordinary push carries the rewritten history.
+
+5. **Re-enter phase-5-execute** via the standard execute-phase envelope in `execution.md`.
+
+**Unchanged-probe stop**: before re-dispatching refine (step 3), compare this drift return's probe against the probe the previous recovery of this plan recorded. The probe is the drift return's own `divergent_commits` list together with its `conflict_count` — the drift TOON carries no conflict file list (see [`phase-5-execute/standards/sync-with-main.md` § Procedure](../../phase-5-execute/standards/sync-with-main.md#procedure) step 6), so those two fields are the whole comparable set. On the non-`success` probe route the TOON carries no `conflict_count` at all, so there the probe is the `reconcile_status` token together with its `reason`.
+
+Both sides record the probe as one `manage-status metadata --set` call (`--field baseline_drift_probe --value {signature}`), where the signature is the divergent commit SHAs in order, `|`-joined, then `:`, then either the conflict count or `{reconcile_status}/{reason}`.
+
+- **Signature equal to the recorded one** — the branch and the base have not moved since the previous recovery, so another refine cycle would re-author the same plan and the re-entered execute would return the same drift. STOP on this FIRST repeat, before spending the rest of the cap:
+
+  ```toon
+  status: error
+  error: drift_unchanged
+  plan_id: {plan_id}
+  display_detail: "baseline drift unchanged since the previous recovery ({divergent_commits}); the branch was not moved onto the new base"
+  ```
+
+  This reason means a recovery ran and the drift did not change: the reconcile step did not run or replayed nothing, or upstream churn reproduced the identical probe. The remedy is an operator-confirmed manual reconcile of the worktree branch onto `origin/{base_branch}`; the orchestrator does not try again.
+- **Signature different from the recorded one** — overwrite the recorded probe and continue with step 1.
+
+**Bounded re-dispatch cap**: the orchestrator MUST track a counter for consecutive drift loops on a given plan and refuse to re-dispatch refine when the counter exceeds **3**. The counter is persisted as `manage-status metadata --set --field baseline_drift_count --value {n}` (one call per field) rather than held in session memory, so a resumed orchestrator continues the same bound instead of starting a fresh one. On cap, escalate to the user:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -48,7 +120,7 @@ display_detail: "drift loop cap exceeded after 3 consecutive recoveries"
 plan_id: {plan_id}
 ```
 
-The counter resets to zero on any phase-5-execute return that is NOT `baseline_drift` (success, voluntary_checkpoint, budget_yield, verification_handback, error, harness_cancellation, clean_exit_queue_empty all reset it).
+The counter resets to zero on any phase-5-execute return that is NOT `baseline_drift` (success, voluntary_checkpoint, budget_yield, verification_handback, error, harness_cancellation, clean_exit_queue_empty all reset it). The recorded `baseline_drift_probe` is cleared with it — a later drift return after a non-drift return is a fresh loop, and comparing it against a probe from a loop that already ended would stop a recovery the branch state no longer justifies.
 
 ## Loop-back continuation
 
