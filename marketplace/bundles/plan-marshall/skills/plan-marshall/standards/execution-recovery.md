@@ -78,7 +78,16 @@ Both sides record the probe as one `manage-status metadata --set` call (`--field
       - `status: success` AND `action: rebased` → the rebase replayed commits and moved HEAD; continue at 4.4 with `{post_sha}` from the payload.
       - `status: success` AND `action: noop` → the branch already contained the new base and the rebase replayed nothing; nothing was rewritten, so skip 4.3-4.5 and continue at step 5.
 
-   3. **Resolve a rebase conflict.** `status: conflict` leaves the rebase in progress with the conflicted paths enumerated in `conflicts[]`. Refine settled the PLAN, not the file content: `baseline-reconcile` emits one `triage` finding per conflicting file whose decision is "re-author the affected scope, or justify in clarifications why the upstream change is irrelevant" — it carries no merged hunk for anyone to apply. Author the resolved content HERE, under that decision, and inside this step:
+   3. **Resolve a rebase conflict.** `status: conflict` leaves the rebase in progress with the conflicted paths enumerated in `conflicts[]`. Refine settled the PLAN, not the file content: `baseline-reconcile` emits one `triage` finding per conflicting file whose decision is "re-author the affected scope, or justify in clarifications why the upstream change is irrelevant" — it carries no merged hunk for anyone to apply. Read that decision before authoring anything:
+
+      ```bash
+      python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qgate list \
+        --plan-id {plan_id} --phase 2-refine
+      ```
+
+      Match each conflicted path to its row by `file_path`; its `resolution` is a token (`fixed`, `taken_into_account`, `rejected`) and the case that applies is stated in that row's `resolution_detail`. A path the list does not carry was never a refine finding and takes the abort route below — do not author content the decision does not cover.
+
+      Author the resolved content HERE, under that decision, and inside this step:
 
       - where refine re-authored the file's scope, the merged content carries the re-authored intent together with the upstream change it has to coexist with;
       - where refine justified the upstream change as irrelevant to the plan's scope, take the upstream hunk and re-apply the plan's in-flight change on top of it.
@@ -91,12 +100,12 @@ Both sides record the probe as one `manage-status metadata --set` call (`--field
 
       Read the completed head with `git -C {worktree_path} rev-parse HEAD` as `{post_sha}` and continue at 4.4. The remaining conflict set is never left for the execute re-entry to stumble into.
 
-      When a path cannot be settled under the refine decision, abandon the attempt with `git rebase --abort`, log the paths, and STOP:
+      When a path cannot be settled under the refine decision, enumerate the paths still conflicted — `git -C {worktree_path} diff --name-only --diff-filter=U`, the verb's own method, and the read must happen BEFORE the abort, because `git rebase --abort` resets the index and clears the unmerged set it would otherwise return — log them, abandon the attempt with `git rebase --abort`, and STOP:
 
       ```toon
       status: error
       error: drift_reconcile_conflict
-      conflicts: {the paths `git -C {worktree_path} diff --name-only --diff-filter=U` reports at the stop — the verb's own enumeration method, re-read because a repeat conflict's set is not the one the verb's first payload named}
+      conflicts: {the paths enumerated above, before the abort}
       display_detail: "baseline drift reconcile conflicted on {N} paths and the accepted refinement did not settle them"
       ```
 
