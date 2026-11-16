@@ -76,7 +76,9 @@ only what this session dispatched, and the end-of-phase ``phase_steps_complete``
 handshake fires at the phase transition — after the merge and the worktree
 removal. ``merge`` enumerates ``phase_6.steps`` once, takes the entries before
 ``branch-cleanup``, and asks the existing ``assert-step-recorded
---require-terminal`` assertion about each (:func:`_step_sequence_refusal`). Any
+--require-terminal`` assertion about each (:func:`_step_sequence_refusal`). It runs
+immediately after the mutex proof and before the store query, because it is a local
+read whose remedy is local. Any
 step without a terminal record refuses with
 :data:`MERGE_EARLIER_STEP_UNRECORDED`, listing the steps; a ``failed`` record
 refuses too, because a red gate is not a completion. A step the manifest never
@@ -175,12 +177,19 @@ MERGE_LOCK_NOT_HELD = 'merge_lock_not_held'
 #: sequence could not be enumerated at all.
 MERGE_EARLIER_STEP_UNRECORDED = 'merge_earlier_step_unrecorded'
 
-#: The ``6-finalize`` step records that ADMIT the merge. ``done`` (it ran),
-#: ``skipped`` (it declined with a recorded reason) and ``loop_back`` (it handed
-#: control back with a recorded target) are the outcomes the manifest-driven
-#: dispatch treats as terminal-and-not-blocked. ``failed`` is terminal too, and is
-#: deliberately ABSENT: a red gate is not a completion, so it refuses the merge the
-#: same way a missing record does.
+#: The ``6-finalize`` step outcomes that ADMIT the merge — the spec's own
+#: non-blocking set (``done`` / ``skipped`` / ``loop_back``, each carrying a
+#: recorded reason). ``failed`` is deliberately ABSENT: a red gate is not a
+#: completion, so it refuses the merge the same way a missing record does.
+#:
+#: ⚠ This is NOT a claim that the dispatcher treats all three as settled. It does
+#: not: a ``loop_back`` record is RE-FIRED by the resumable re-entry check (it is
+#: the one outcome that explicitly means "unfinished"). Admitting it here is the
+#: spec's decision, and it leaves one residual hole in the defect class this gate
+#: closes: a plan may merge while an earlier step sits in ``loop_back`` awaiting its
+#: re-fire. The alternative — refusing every ``loop_back`` — would deadlock any
+#: plan whose earlier step handed control back and was then superseded, so the
+#: admission is the deliberate trade, not an oversight.
 _ADMITTING_STEP_OUTCOMES: frozenset[str] = frozenset({'done', 'skipped', 'loop_back'})
 
 #: The gap class the pre-merge review barrier reports, and the only class that
@@ -755,6 +764,15 @@ def _run_ci(ci_args: list[str]) -> dict[str, Any]:
 # The finalize-step sequence below branch-cleanup
 # ---------------------------------------------------------------------------
 
+#: The bound on the two LOCAL verbs the step-sequence sweep runs (the manifest read
+#: and one ``assert-step-recorded`` per earlier step). Deliberately far below
+#: :data:`_VERB_TIMEOUT_SECONDS`: these are local store reads, not provider calls,
+#: and the sweep issues one per earlier step while the cross-plan merge mutex is
+#: held — so the generic 300 s bound would let a wedged executor pin the critical
+#: section for 300 s times the step count. At this bound the aggregate stays inside
+#: one network-scale read.
+_STEP_SEQUENCE_VERB_TIMEOUT_SECONDS = 60
+
 
 def _read_manifest(plan_id: str) -> dict[str, Any]:
     """Read the plan's execution manifest through the executor-mapped verb.
@@ -768,6 +786,7 @@ def _read_manifest(plan_id: str) -> dict[str, Any]:
         ['read', '--plan-id', plan_id],
         silent_error='manifest_unreadable',
         unparseable_error='manifest_unparseable',
+        timeout=_STEP_SEQUENCE_VERB_TIMEOUT_SECONDS,
     )
 
 
@@ -778,7 +797,9 @@ def _assert_terminal_step(plan_id: str, step: str) -> dict[str, Any]:
     post-dispatch guard, run read-only: the sweep reuses its vocabulary
     (``step_record_missing`` / ``step_record_mismatched_key``) rather than
     re-deriving what a terminal record is, so a record the dispatcher would accept
-    and one the merge gate would accept cannot drift apart.
+    and one the merge gate would accept cannot drift apart. The verb canonicalizes
+    the queried key itself, so a ``default:``-prefixed manifest entry reconciles with
+    the bare key the record was written under.
     """
     return _run_verb(
         _MANAGE_STATUS_NOTATION,
@@ -794,6 +815,7 @@ def _assert_terminal_step(plan_id: str, step: str) -> dict[str, Any]:
         ],
         silent_error='step_record_unreadable',
         unparseable_error='step_record_unreadable',
+        timeout=_STEP_SEQUENCE_VERB_TIMEOUT_SECONDS,
     )
 
 
@@ -845,17 +867,20 @@ def _sequence_refusal_payload(plan_id: str, reason: str, detail: str, steps: lis
 
     The remedy is the DISPATCHER, not this gate: the offending steps are still in
     the manifest, so returning control to the finalize pipeline lets the resumable
-    re-entry check run exactly the steps with no terminal record — in the order the
-    manifest declares. A merge authorization does not cover this gap for the same
+    re-entry check run exactly them — in the order the manifest declares. That holds
+    for a step with NO record and for one whose record says ``failed``; the
+    unreadable-sequence states carry an empty ``steps`` and take the STOP disposition
+    instead, because there is no step for a re-entry to run. A merge authorization does not cover this gap for the same
     reason it does not cover :data:`MERGE_HEAD_NOT_GATED`: it authorizes a review or
     CI gap somebody can name, never a step nobody ran.
     """
     named = ', '.join(str(row['step']) for row in steps)
     if steps:
         message = (
-            f'The finalize manifest orders {len(steps)} step(s) before {MERGE_STEP_ID} that carry no '
-            f'terminal record ({named}). Refusing to merge: return control to the finalize dispatcher, '
-            'which re-runs exactly the steps with no terminal record, in the order the manifest declares.'
+            f'The finalize manifest orders {len(steps)} step(s) before {MERGE_STEP_ID} that did not '
+            f'complete ({named}); the payload names the reason for each. Refusing to merge: return '
+            'control to the finalize dispatcher, which re-runs exactly those steps, in the order the '
+            'manifest declares.'
         )
     else:
         message = (
@@ -2092,12 +2117,13 @@ def merge(
     """Issue the routed merge verb only when every pre-merge invariant is proven.
 
     Six invariants, in this order: the invocation fits its route, this plan
-    provably holds the cross-plan merge mutex, the blocking-findings store is clean
-    on both readings, the finalize step sequence below this step is complete, the
+    provably holds the cross-plan merge mutex, the finalize step sequence below this
+    step is complete, the blocking-findings store is clean (on both readings), the
     merge candidate is the HEAD the head-dependent gates validated, and every
     required reviewer's participation is proven. The mutex proof runs before every
     other read, so a caller that does not hold the mutex is named without paying for
-    a store query or a provider fetch.
+    a store query or a provider fetch; the step-sequence sweep follows it because it
+    is a local read with a local remedy.
 
     Args:
         plan_id: Plan whose ``6-finalize`` findings store is evaluated. Not
@@ -2314,7 +2340,10 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest='command_name', required=True)
     merge_parser = sub.add_parser(
         'merge',
-        help='Gate the merge dispatch on a held mutex, a clean store, a gated head and proven participation',
+        help=(
+            'Gate the merge dispatch on a held mutex, a complete step sequence, a clean store, '
+            'a gated head and proven participation'
+        ),
         allow_abbrev=False,
     )
     merge_parser.add_argument('--plan-id', required=True, dest='plan_id', help='Plan identifier')

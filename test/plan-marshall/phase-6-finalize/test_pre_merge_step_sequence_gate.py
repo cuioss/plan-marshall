@@ -19,7 +19,11 @@ a re-entry after the record lands admits the merge.
 
 from __future__ import annotations
 
+import subprocess
+import sys
+
 import pytest
+from toon_parser import serialize_toon
 
 from conftest import load_script_module
 
@@ -344,6 +348,56 @@ def test_a_manifest_without_branch_cleanup_refuses_the_merge() -> None:
     assert result['reason'] == 'branch_cleanup_absent_from_manifest'
 
 
+def test_a_manifest_whose_steps_are_not_a_list_refuses_the_merge() -> None:
+    """A ``phase_6`` block with no step list is a read fault, not an empty sequence."""
+    result, runner, spy = _merge(
+        manifest={'status': 'success', 'plan_id': _PLAN_ID, 'phase_6': {'steps': 'default:push'}},
+        records={},
+    )
+
+    assert runner.calls == []
+    assert result['dispatched'] is False
+    assert result['reason'] == 'manifest_steps_unreadable'
+    assert spy.asked == []
+
+
+def test_an_unconfirmed_record_refuses_the_merge() -> None:
+    """An answer that is neither a terminal outcome nor a named refusal is not an admission."""
+    result, runner, _spy = _merge(
+        manifest=_manifest('default:adr-propose', _BRANCH_CLEANUP),
+        records={
+            'default:adr-propose': {
+                'status': 'success',
+                'recorded': False,
+                'outcome': None,
+                'step': 'default:adr-propose',
+            }
+        },
+    )
+
+    assert runner.calls == []
+    assert result['dispatched'] is False
+    assert result['steps'][0]['reason'] == 'step_record_unconfirmed'
+
+
+def test_an_unreadable_record_refuses_the_merge() -> None:
+    """An assertion that could not answer is never read as a recorded step."""
+    result, runner, _spy = _merge(
+        manifest=_manifest('default:adr-propose', _BRANCH_CLEANUP),
+        records={
+            'default:adr-propose': {
+                'status': 'error',
+                'error': 'step_record_unreadable',
+                'message': 'the verb produced no output (exit_code=1)',
+            }
+        },
+    )
+
+    assert runner.calls == []
+    assert result['dispatched'] is False
+    assert result['steps'][0]['reason'] == 'step_record_unreadable'
+
+
 def test_the_refusal_is_a_distinct_merge_gate_code() -> None:
     """The new refusal joins the gate's vocabulary without reusing a sibling's code."""
     assert gate.MERGE_EARLIER_STEP_UNRECORDED == 'merge_earlier_step_unrecorded'
@@ -368,3 +422,102 @@ def test_the_refusal_carries_no_invocation_category(route: str) -> None:
 
     assert result['dispatched'] is False
     assert gate.REFUSAL_CATEGORY_FIELD not in result, result
+
+
+# --------------------------------------------------------------------------- #
+# The production seams — the two verbs the sweep cannot work without
+# --------------------------------------------------------------------------- #
+
+
+def _patch_subprocess(monkeypatch, tmp_path, payloads):
+    """Pin the executor path and answer ``subprocess.run`` from ``payloads`` in order.
+
+    ``payloads`` is a list of ``(stdout, returncode)`` pairs, consumed once per call,
+    so one case can answer the manifest read and then the per-step assertions.
+    Returns ``(executor, calls)`` where each call is ``(argv, kwargs)``.
+    """
+    executor = tmp_path / 'execute-script.py'
+    calls: list[tuple[list[str], dict]] = []
+    remaining = list(payloads)
+
+    def fake_run(argv, **kwargs):
+        calls.append((list(argv), kwargs))
+        stdout, returncode = remaining.pop(0) if remaining else ('', 0)
+        return subprocess.CompletedProcess(argv, returncode, stdout=stdout, stderr='')
+
+    monkeypatch.setattr(gate, 'get_executor_path', lambda: executor)
+    monkeypatch.setattr(gate.subprocess, 'run', fake_run)
+    return executor, calls
+
+
+def test_the_production_sweep_spawns_the_manifest_read_then_one_assertion_per_step(monkeypatch, tmp_path) -> None:
+    """The un-stubbed seams reach the two real verbs, with the argv their CLIs take.
+
+    Every other case in this module injects both readers, so this is the only place
+    the CONTRACT is asserted: a renamed flag or a missing ``--require-terminal``
+    would refuse every merge in the fleet while the rest of the suite stayed green.
+    The manifest and assertion payloads are rendered by the same serializer the
+    verbs emit, so the case also proves the sweep parses the real TOON shape.
+    """
+    manifest_stdout = serialize_toon(
+        {
+            'status': 'success',
+            'plan_id': _PLAN_ID,
+            'phase_6': {'steps': ['default:create-pr', _BRANCH_CLEANUP]},
+        }
+    )
+    recorded_stdout = serialize_toon({'status': 'success', 'recorded': True, 'outcome': 'done', 'firing_count': 1})
+    executor, calls = _patch_subprocess(
+        monkeypatch,
+        tmp_path,
+        [(manifest_stdout, 0), (recorded_stdout, 0)],
+    )
+
+    verdict = gate._step_sequence_refusal(_PLAN_ID)
+
+    assert verdict is None, verdict
+    assert calls[0][0] == [
+        sys.executable,
+        str(executor),
+        'plan-marshall:manage-execution-manifest:manage-execution-manifest',
+        'read',
+        '--plan-id',
+        _PLAN_ID,
+    ]
+    assert calls[1][0] == [
+        sys.executable,
+        str(executor),
+        'plan-marshall:manage-status:manage-status',
+        'assert-step-recorded',
+        '--plan-id',
+        _PLAN_ID,
+        '--phase',
+        '6-finalize',
+        '--step',
+        'default:create-pr',
+        '--require-terminal',
+    ]
+    # Both are BOUNDED: a wedged local verb must not pin the held merge mutex.
+    assert all(kwargs.get('timeout') for _argv, kwargs in calls), calls
+
+
+@pytest.mark.parametrize(
+    ('steps', 'expected'),
+    [
+        pytest.param(['default:push', 'default:branch-cleanup'], ['default:push'], id='prefixed-entries'),
+        pytest.param(['push', 'branch-cleanup', 'default:record-metrics'], ['push'], id='bare-entries'),
+        pytest.param(
+            ['bundle:skill', 'default:adr-propose', 'default:branch-cleanup'],
+            ['bundle:skill', 'default:adr-propose'],
+            id='mixed-entries',
+        ),
+    ],
+)
+def test_the_sweep_stops_at_the_branch_cleanup_entry(steps: list[str], expected: list[str]) -> None:
+    """The prefix is taken around the ``branch-cleanup`` entry however the manifest spells it."""
+    assert gate._earlier_manifest_steps(steps) == expected
+
+
+def test_the_sweep_answers_none_when_the_entry_is_absent() -> None:
+    """No ``branch-cleanup`` entry is a malformed read, never an empty prefix."""
+    assert gate._earlier_manifest_steps(['default:push', 'default:record-metrics']) is None
