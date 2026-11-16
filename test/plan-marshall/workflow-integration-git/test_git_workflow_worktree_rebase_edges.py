@@ -97,17 +97,13 @@ def _init_main_repo(repo: Path) -> None:
 def _create_branch_worktree(main_repo: Path, worktree: Path, branch: str) -> None:
     """Create ``branch`` and check it out in a sibling repo at ``worktree``.
 
-    Uses ``git clone`` rather than ``git worktree add`` so the resulting
-    directory has its own ``.git`` *directory* (not a worktree pointer file).
-    This matters for the conflict-detection code in ``cmd_worktree_rebase_to``
-    which probes ``target / '.git' / 'rebase-merge'`` directly: in a real
-    ``git worktree add`` checkout that path resolves through the pointer file
-    and never matches, so the conflict state would mis-classify as
-    ``rebase_failed``. The rebase dispatcher only requires that ``target`` is a
-    working tree pointing at the branch we want to rebase, so a clone is
-    semantically equivalent for the purposes of these tests while keeping the
-    conflict path observable. Both repos share the same base commit because the
-    clone is taken from ``main_repo``.
+    Uses ``git clone`` so the fixture has its own ``main`` and ``origin/main``
+    refs, which is what the stale-local-base and origin-advance scenarios here
+    need. The LINKED-WORKTREE layout (``target/.git`` a pointer file, the state
+    directories under the shared git dir) is covered separately by
+    ``TestRebaseToConflictInLinkedWorktree``, which stages a real
+    ``git worktree add`` checkout and would fail if the conflict probe assumed a
+    ``.git`` directory.
     """
     worktree.parent.mkdir(parents=True, exist_ok=True)
     _git(main_repo, 'clone', '-q', str(main_repo), str(worktree))
@@ -326,6 +322,42 @@ class TestRebaseToStaleLocalBaseRegression:
         # Both the upstream file and the branch's own commit are present.
         assert (rebase_env['worktree'] / 'upstream.txt').exists()
         assert (rebase_env['worktree'] / 'feature.txt').exists()
+
+
+class TestRebaseToConflictInLinkedWorktree:
+    """A real ``git worktree add`` checkout reports ``status: conflict``.
+
+    ``target/.git`` is a pointer FILE in a linked worktree, and the rebase state
+    directories live under the shared git dir. A probe through ``target/.git``
+    never matches there, so the conflict state would surface as
+    ``error: rebase_failed`` with the rebase still in progress — which is the
+    state a caller's conflict-resolution path keys on. The conflict set must be
+    reported, and the layout asserted so the fixture cannot silently regress to
+    a clone.
+    """
+
+    def test_linked_worktree_conflict_reports_the_conflict_state(
+        self, rebase_env: dict, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        main_repo = rebase_env['main_repo']
+        worktree = rebase_env['worktree']
+
+        _git(main_repo, 'branch', 'feature/linked-conflict')
+        worktree.parent.mkdir(parents=True, exist_ok=True)
+        _git(main_repo, 'worktree', 'add', '-q', str(worktree), 'feature/linked-conflict')
+
+        # The branch and the base edit the same file → the three-way merge fails.
+        _commit_file(worktree, 'file.txt', 'feature edit\n', 'feat: edit file')
+        _advance_origin_main(main_repo, 'file.txt', 'upstream edit\n', 'feat: upstream edit')
+
+        # Non-vacuity: the layout under test really is the linked-worktree one.
+        assert (worktree / '.git').is_file(), 'fixture is not a linked worktree'
+
+        result = _invoke_rebase(rebase_env, monkeypatch)
+
+        assert result['status'] == 'conflict', result
+        assert result['error'] == 'rebase_conflict'
+        assert result['conflicts'] == ['file.txt']
 
 
 class TestRebaseToMergeSyncedBranch:
