@@ -401,9 +401,12 @@ def test_an_unreadable_record_refuses_the_merge() -> None:
     assert result['steps'][0]['reason'] == 'step_record_unreadable'
     # A read fault, not a step gap: no re-entry can clear it.
     assert result['remedy'] == 'stop'
-    # …and the human-facing message must not instruct the re-entry the remedy forbids.
+    # …and the human-facing message must not instruct the re-entry the remedy forbids,
+    # nor repeat the blocked-sequence detail it could not establish.
     assert 'could not be READ' in result['message']
     assert 'return control to the finalize dispatcher' not in result['message']
+    assert 'hold no terminal record' not in result['message']
+    assert result['detail'], 'the payload still carries the read fault detail'
 
 
 def test_an_unlisted_assertion_error_is_folded_into_the_read_fault_reason() -> None:

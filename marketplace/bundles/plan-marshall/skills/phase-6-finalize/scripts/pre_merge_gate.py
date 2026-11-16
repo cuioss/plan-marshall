@@ -913,9 +913,12 @@ def _sequence_refusal_payload(plan_id: str, reason: str, detail: str, steps: lis
     elif steps:
         # The message is selected on the SAME discriminator as ``remedy``: a message
         # that told the caller to re-enter would be the very instruction this branch
-        # forbids, and the stop path surfaces the payload verbatim.
+        # forbids, and the stop path surfaces the payload verbatim. ``detail`` is
+        # deliberately NOT interpolated here — it describes a blocked-sequence count
+        # ("hold no terminal record"), which is a claim this shape could not
+        # establish; the payload's own ``detail`` field still carries it.
         message = (
-            f'{len(steps)} finalize step(s) below {MERGE_STEP_ID} could not be READ ({named}): {detail}. '
+            f'{len(steps)} finalize step(s) below {MERGE_STEP_ID} could not be READ ({named}). '
             'Refusing to merge: a re-entry re-asks the identical unreadable state, so the read fault '
             'must be fixed before this merge can proceed.'
         )
