@@ -65,12 +65,8 @@ def _section(text: str, heading: str) -> str:
     assert start != -1, f'heading {marker!r} is absent; the contract moved or was renamed'
     level = len(marker) - len(marker.lstrip('#'))
     body_start = text.index('\n', start) + 1
-    cursor = body_start
-    while True:
-        cursor = text.find('\n' + '#' * level + ' ', cursor)
-        if cursor == -1:
-            return text[body_start:]
-        return text[body_start:cursor]
+    next_heading = text.find('\n' + '#' * level + ' ', body_start)
+    return text[body_start:] if next_heading == -1 else text[body_start:next_heading]
 
 
 @pytest.fixture(scope='module')
@@ -113,6 +109,12 @@ def test_reconcile_step_runs_between_refine_return_and_execute_reentry(recovery_
 
     assert 'git -C {worktree_path} fetch origin {base_branch}' in body, (
         'the reconcile step must refresh the base ref it reconciles against'
+    )
+    assert '--base {base_branch}' in body, (
+        'worktree-rebase-to takes the bare branch name; it fetches origin/{base} itself'
+    )
+    assert '--base origin/' not in body, (
+        'passing origin/{base} to the verb makes its own fetch target a non-existent remote ref'
     )
     assert 'git rebase origin/' not in body, (
         'the base reconcile must go through worktree-rebase-to, never a raw rebase of the base'
@@ -170,6 +172,10 @@ def test_unchanged_probe_stops_on_the_first_repeat(recovery_section: str) -> Non
 
     assert body.index('drift_unchanged') < body.index('drift_loop_cap_exceeded'), (
         'the unchanged-probe stop must be stated before the cap, since it fires on the first repeat'
+    )
+    assert body.index('Unchanged-probe stop') < body.index('Recovery procedure'), (
+        'the probe is compared BEFORE the procedure runs; otherwise the stop leaves the phase '
+        'reset to 2-refine with no refine dispatched'
     )
     assert 'reset' in body, 'the procedure no longer states when the counter and probe are cleared'
 
