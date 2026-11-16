@@ -1343,7 +1343,7 @@ The `--context` object carries the caller's dispatch attestations and its prompt
 
 Every target echoes the requested `--agent` back inside its invocation: as `invocation.subagent_type` on Claude and Antigravity, and as `invocation.agent` on OpenCode 2 (whose sub-agent tool takes `{agent, description, prompt}`). No target substitutes an agent of its own choosing, so a caller's selection always reaches the invocation.
 
-**Agent-file resolution.** Every path that needs the agent's own markdown — Claude always (it sources the description from it), OpenCode and Antigravity for their tool-mapping check — resolves `--agent` before composing anything. The roots are probed in order: the target's deployed bundle cache first, then the script-relative `marketplace/bundles` source tree. Each root is read in its FLAT shape (`{root}/{bundle}/agents/{name}.md` — the source tree, and a cache that keeps one directory per bundle) and then in its VERSIONED shape (`{root}/{bundle}/{version}/agents/{name}.md` — the deployed plugin cache, reduced to the newest eligible version directory per bundle by `script-shared`'s `select_live_version_dir`). A generated `execution-context-level-{N}` variant exists only in the deployed layout, so it resolves from the cache while the bare `execution-context` resolves from either — which is why the level-suffixed names in the examples below are resolvable on a machine that has the bundle installed.
+**Agent-file resolution.** Claude resolves `--agent` before composing anything — it sources the invocation description from the agent's markdown and answers `prompt_not_found` when no file resolves. Its roots are probed in order: the deployed bundle cache first, then the script-relative `marketplace/bundles` source tree. Each root is read in its FLAT shape (`{root}/{bundle}/agents/{name}.md` — the source tree, and a cache that keeps one directory per bundle) and then in its VERSIONED shape (`{root}/{bundle}/{version}/agents/{name}.md` — the deployed plugin cache, reduced to the newest eligible version directory per bundle by `script-shared`'s `select_live_version_dir`). A generated `execution-context-level-{N}` variant exists only in the deployed layout, so that is where it resolves — which is why the level-suffixed names in the examples below are reachable on a machine that has the bundle installed. OpenCode and Antigravity run the same lookup for their tool-mapping check but supply no deployed root, so it sees the source tree only and is vacuous where that tree is absent; their dispatch is unaffected either way.
 
 The admitted registry is `antigravity, claude, opencode` — derived live from `platform_runtime._REGISTRY` via `describe_targets`, never a hard-coded literal.
 
@@ -1398,10 +1398,12 @@ platform: claude
 usage: unknown
 invocation:
   tool: Task
-  description: Run phase-3-outline outline
+  description: Generic dispatcher for every plan-marshall
   prompt: ...agent body with context merged...
   subagent_type: execution-context-level-3
 ```
+
+Claude derives `description` from the agent's own frontmatter, truncated to its first five words (`_short_description_from_agent`). A level variant keeps the canonical agent's description, so the string above is the canonical `execution-context` description — which is why this example shows a string different from its `subagent_type`, while the OpenCode example below composes `Run {agent}`.
 
 **Success (OpenCode)**:
 ```toon
@@ -1416,7 +1418,7 @@ invocation:
   description: Run execution-context-level-3
 ```
 
-OpenCode composes its `description` as `Run {agent}`, so that field and `agent` always name the same agent. Claude sources `description` from the agent's own frontmatter instead, which is why its example above shows a different string alongside the same `subagent_type`.
+OpenCode composes its `description` as `Run {agent}`, so that field and `agent` always name the same agent — the difference from the Claude example above is the description SOURCE, not the selection: both echo the requested agent.
 
 **No-op (unmapped tools)**:
 ```toon
@@ -1444,7 +1446,7 @@ error: prompt_not_found
 message: "Agent 'execution-context-level-9' not found; searched: /home/me/.claude/plugins/cache/plan-marshall, /home/me/git/project/marketplace/bundles"
 ```
 
-The agent-file message lists exactly the roots the lookup probed, so a miss distinguishes a wrong name from a root that was never searched. Only Claude answers it: OpenCode and Antigravity run the resolution for their tool-mapping check and dispatch anyway when it comes back empty, as the per-harness outcomes above state.
+The agent-file message lists exactly the roots the lookup probed, so a miss distinguishes a wrong name from a root that was never searched; an agent file that resolved but could not be read answers the same code with the path it resolved to. Only Claude answers either: OpenCode and Antigravity run the resolution for their tool-mapping check and dispatch anyway when it comes back empty.
 
 ---
 

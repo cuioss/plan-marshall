@@ -1887,11 +1887,11 @@ class ClaudeRuntime(Runtime):
         else:
             try:
                 prompt_body = agent_path.read_text(encoding='utf-8')
-            except OSError:
+            except OSError as exc:
                 return toon_error(
                     'subagent dispatch',
                     'prompt_not_found',
-                    f'Agent {agent!r} not found in marketplace tree',
+                    f'Agent {agent!r} resolved to {agent_path} but could not be read: {exc}',
                 )
 
         # Parse frontmatter.

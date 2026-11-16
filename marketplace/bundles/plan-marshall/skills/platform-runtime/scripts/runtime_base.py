@@ -423,7 +423,13 @@ def _find_agent_file(agent_name: str, extra_roots: Sequence[Path] = ()) -> Path 
     The versioned shape is what makes a generated ``execution-context-level-{N}``
     variant resolvable: those variants exist only in the deployed cache, so the
     flat glob alone answers ``None`` for every one of them.
+
+    *agent_name* is a file stem, never a path: a name carrying a separator or a
+    ``..`` segment is a miss rather than a lookup, so no caller-supplied string
+    can steer the joined path out of the root it is probed against.
     """
+    if not agent_name or agent_name in ('.', '..') or '/' in agent_name or '\\' in agent_name:
+        return None
     for root in _agent_search_roots(extra_roots):
         for match in root.glob(f'*/agents/{agent_name}.md'):
             if match.is_file():
@@ -434,11 +440,32 @@ def _find_agent_file(agent_name: str, extra_roots: Sequence[Path] = ()) -> Path 
     return None
 
 
+def _block_scalar_value(lines: list[str], key_index: int) -> str:
+    """Return the indented block that follows a ``key: |`` / ``key: >`` line.
+
+    A description long enough to wrap is written as a block scalar, which puts
+    the text on the lines BELOW the key. Read as a plain ``key: value`` pair the
+    value is the literal ``|``, so a caller that renders the description would
+    render a pipe — the shape every real agent file hits, because their
+    descriptions are all block scalars. The block ends at the first non-indented
+    line; the parts are joined with a space, which is what a one-line rendering
+    of a block scalar is.
+    """
+    block: list[str] = []
+    for line in lines[key_index + 1 :]:
+        if line.strip() and not line[:1].isspace():
+            break
+        block.append(line.strip())
+    return ' '.join(part for part in block if part)
+
+
 def _parse_agent_frontmatter(agent_path: Path) -> dict[str, Any]:
     """Extract YAML-like frontmatter from an agent markdown file.
 
     Returns a dict with at minimum 'name', 'description', and 'tools' keys.
-    Tools are returned as a list of strings.
+    Tools are returned as a list of strings. A ``name``/``description`` written
+    as a block scalar (``description: |``) resolves to the block's text, never
+    to the ``|`` marker.
     """
     result: dict[str, Any] = {'name': '', 'description': '', 'tools': []}
     try:
@@ -454,7 +481,8 @@ def _parse_agent_frontmatter(agent_path: Path) -> dict[str, Any]:
         return result
 
     frontmatter = content[3:end].strip()
-    for line in frontmatter.splitlines():
+    lines = frontmatter.splitlines()
+    for index, line in enumerate(lines):
         stripped = line.strip()
         if not stripped or ':' not in stripped:
             continue
@@ -475,7 +503,7 @@ def _parse_agent_frontmatter(agent_path: Path) -> dict[str, Any]:
             elif value:
                 result['tools'] = [t.strip() for t in value.split(',') if t.strip()]
         elif key in ('name', 'description'):
-            result[key] = value
+            result[key] = _block_scalar_value(lines, index) if value in ('|', '>') else value
 
     # Handle tools as a YAML list (- item per line) if not yet found inline.
     if not result['tools']:
@@ -534,10 +562,15 @@ def _unmapped_agent_tools(agent_name: str, target: str) -> list[str] | None:
 
     Resolves the agent markdown and checks each declared tool against the
     target's ``tool_permissions`` map. Returns ``None`` when the check could
-    not be performed — the agent file is unresolvable (a generated level
-    variant lives outside the source tree) or the mapping is unreadable —
-    so callers treat it as vacuous rather than as a measured empty or as a
-    refusal. An empty list is the measured "every declared tool maps".
+    not be performed — the agent file is unresolvable or the mapping is
+    unreadable — so callers treat it as vacuous rather than as a measured empty
+    or as a refusal. An empty list is the measured "every declared tool maps".
+
+    The lookup runs with NO extra root: the callers of this helper (OpenCode,
+    Antigravity) supply no deployed bundle cache, so only the script-relative
+    source tree is probed — and a generated level variant lives only in a
+    deployed tree, which is one reason this answer is vacuous rather than a
+    refusal.
     """
     agent_path = _find_agent_file(agent_name)
     if agent_path is None:

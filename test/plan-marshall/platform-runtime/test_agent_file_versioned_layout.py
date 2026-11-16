@@ -3,16 +3,19 @@
 """The agent-file lookup resolves the versioned deployed bundle-cache layout.
 
 The Claude plugin cache deploys ``{root}/{bundle}/{version}/agents/{name}.md``,
-one version directory per sync. The seam used to glob only ``{root}/agents/``
-and ``{root}/{bundle}/agents/``, so an installed ``execution-context-level-{N}``
-variant — which exists ONLY in that deployed layout, never in the source tree —
-was unresolvable and every dispatch of it answered ``prompt_not_found``.
+one version directory per sync. The seam used to glob only the source-tree
+shape — ``{root}/{bundle}/agents/{name}.md``, one level — so an installed
+``execution-context-level-{N}`` variant, which exists ONLY in that deployed
+layout and never in the source tree, was unresolvable and every dispatch of it
+answered ``prompt_not_found``.
 
-The fixture below is that deployed layout. It drives the shared lookup
-``runtime_base._find_agent_file`` directly and through the three runtimes that
-consume it: Claude through ``claude_runtime._find_agent_file`` on its dispatch
-path, OpenCode and Antigravity through the shared ``_unmapped_agent_tools``
-tool-mapping check their dispatches run.
+The fixture below is that deployed layout, carrying the frontmatter shape a real
+agent does (a block-scalar description and a ``tools:`` list). It drives the
+shared lookup ``runtime_base._find_agent_file`` directly and through the three
+runtimes that consume it: Claude through ``claude_runtime._find_agent_file`` on
+its dispatch path — the one runtime that supplies a deployed root — and
+OpenCode and Antigravity through the shared ``_unmapped_agent_tools``
+tool-mapping check their dispatches run, which supplies none.
 """
 
 from pathlib import Path
@@ -35,7 +38,16 @@ BARE = 'execution-context'
 OLD_VERSION = '0.1.2135'
 NEW_VERSION = '0.1.2139'
 
-_AGENT_BODY = '---\nname: {name}\ndescription: Dispatches one envelope\n---\n\nRun {name}.\n'
+_AGENT_BODY = """---
+name: {name}
+description: |
+  Dispatches one envelope into a focused subagent. The deployed variant keeps
+  this description, so anything that renders it must not render the marker.
+tools: [Read, Grep]
+---
+
+Run {name}.
+"""
 
 
 def _parsed(raw: str) -> dict:
@@ -124,6 +136,17 @@ def test_missing_agent_returns_no_file(deployed_cache: Path) -> None:
     assert runtime_base._find_agent_file('no-such-agent', (deployed_cache,)) is None
 
 
+@pytest.mark.parametrize('name', ('../outside-execution-context', 'agents/execution-context', '', '.', '..'))
+def test_a_path_shaped_name_is_never_resolved(name: str, deployed_cache: Path) -> None:
+    """``--agent`` is a file stem: a separator or ``..`` segment is a miss.
+
+    The versioned pass JOINS the name into a path (the flat glob interpolates it
+    into a pattern instead), so without this guard a name carrying ``..`` could
+    resolve a file outside the root it was probed against.
+    """
+    assert runtime_base._find_agent_file(name, (deployed_cache,)) is None
+
+
 def test_search_roots_are_the_ones_probed(deployed_cache: Path) -> None:
     """The reported roots are the deployed root first, then the source tree."""
     roots = runtime_base._agent_search_roots((deployed_cache,))
@@ -139,13 +162,20 @@ def test_search_roots_are_the_ones_probed(deployed_cache: Path) -> None:
 def test_claude_dispatch_resolves_the_variant_from_the_cache(
     deployed_cache: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """``--agent execution-context-level-3`` succeeds when the cache holds the file."""
+    """``--agent execution-context-level-3`` succeeds when the cache holds the file.
+
+    Also pins the description the contract's Claude example shows: it is the
+    agent frontmatter's own text, truncated to five words. A block-scalar
+    description read as a plain ``key: value`` pair renders the ``|`` marker
+    instead, which is what the example used to claim was a sentence.
+    """
     monkeypatch.setattr(claude_runtime, '_claude_bundle_cache_root', lambda: deployed_cache)
 
     result = _parsed(ClaudeRuntime().subagent_dispatch(VARIANT, None, None))
 
     assert result['status'] == 'success'
     assert result['invocation']['subagent_type'] == VARIANT
+    assert result['invocation']['description'] == 'Dispatches one envelope into a'
 
 
 def test_claude_dispatch_miss_names_the_roots_it_searched(empty_cache: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -187,11 +217,15 @@ def test_every_runtime_resolves_the_variant_from_the_deployed_layout(
 ) -> None:
     """The versioned layout resolves for each runtime that shares the lookup.
 
-    Each runtime is driven through the surface it actually uses: Claude through
-    its deployment-root wrapper, which is its dispatch path; OpenCode and
-    Antigravity through the shared ``_unmapped_agent_tools`` tool-mapping check
-    their dispatches run, where ``[]`` is the MEASURED "the agent file was read
-    and every declared tool maps" and ``None`` the vacuous "unresolvable".
+    Claude is driven through the surface it uses in production: its
+    deployment-root wrapper, which is its dispatch path.
+
+    OpenCode and Antigravity supply no deployed root (see
+    ``test_opencode_and_antigravity_supply_no_deployed_root``), so their leg
+    injects one through the shared root computation to prove the lookup they
+    call resolves the versioned shape. ``[]`` from ``_unmapped_agent_tools`` is
+    the MEASURED "the agent file was read and every declared tool maps";
+    ``None`` would be the vacuous "unresolvable".
     """
     if target == 'claude':
         monkeypatch.setattr(claude_runtime, '_claude_bundle_cache_root', lambda: deployed_cache)
@@ -219,3 +253,28 @@ def test_every_runtime_treats_an_absent_agent_as_unmeasured(
     else:
         monkeypatch.setattr(runtime_base, '_agent_search_roots', lambda _extra=(): [empty_cache])
         assert runtime_base._unmapped_agent_tools(VARIANT, target) is None
+
+
+@pytest.mark.parametrize('target', ('opencode', 'antigravity'))
+def test_opencode_and_antigravity_supply_no_deployed_root(target: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The tool-mapping check reaches the shared lookup with no extra root.
+
+    Pins the production wiring the test above compensates for: those two
+    runtimes never pass a deployed bundle cache, so their check sees the
+    script-relative source tree alone. If either starts supplying a root, this
+    assertion goes red and the paragraph in ``contract.md`` that states this
+    must be updated with it.
+    """
+    calls: list[tuple] = []
+    real_find = runtime_base._find_agent_file
+
+    def _spy(agent_name: str, extra_roots=()):
+        calls.append((agent_name, tuple(extra_roots)))
+        return real_find(agent_name, extra_roots)
+
+    monkeypatch.setattr(runtime_base, '_find_agent_file', _spy)
+
+    runtime_base._unmapped_agent_tools(BARE, target)
+
+    assert calls, 'the tool-mapping check did not consult the shared lookup'
+    assert calls[0][1] == (), f'{target} supplied a deployed root: {calls[0][1]!r}'
