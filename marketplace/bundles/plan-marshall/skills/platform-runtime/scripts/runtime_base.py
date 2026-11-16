@@ -359,13 +359,16 @@ def _agent_search_roots(extra_roots: Sequence[Path] = ()) -> list[Path]:
     """Return the roots an agent-file lookup probes, in probe order.
 
     *extra_roots* come first — a target prepends its deployed-bundle cache root
-    so a deployed layout resolves before the source tree — then the
-    script-relative marketplace walk. Only existing roots are listed, and the
-    walk stops at the first ancestor carrying a bundle root, so the answer is
-    exactly the set :func:`_find_agent_file` consults. It is what a miss reports
-    back to its caller: a bare "not found" under a lookup that probes several
-    shapes leaves the reader unable to tell a wrong name from an unsearched
-    root.
+    — then the script-relative marketplace walk. Only existing roots are listed,
+    and the walk stops at the first ancestor carrying a bundle root, so the
+    answer is exactly the set :func:`_find_agent_file` consults. It is what a
+    miss reports back to its caller: a bare "not found" under a lookup that
+    probes several shapes leaves the reader unable to tell a wrong name from an
+    unsearched root.
+
+    This is the ROOT order only. Which root wins for a given name also depends on
+    the shape order :func:`_find_agent_file` applies, where a flat hit in a later
+    root beats a versioned hit in an earlier one.
     """
     search_roots: list[Path] = [root for root in extra_roots if root.exists()]
     # Script-relative walk to find marketplace.
@@ -424,9 +427,8 @@ def _find_agent_file(agent_name: str, extra_roots: Sequence[Path] = ()) -> Path 
     """Locate an agent markdown under the marketplace tree or a deployed cache.
 
     Searches *extra_roots* first (a target prepends its deployed-bundle cache
-    root so a deployed layout resolves before the source tree), then the
-    script-relative marketplace walk. Two SHAPES are probed, each across every
-    root in that order before the next shape starts:
+    root), then the script-relative marketplace walk. Two SHAPES are probed,
+    each across every root in that order before the next shape starts:
 
     1. the FLAT shape (``{root}/{bundle}/agents/{name}.md`` — the source tree,
        and any cache that keeps one directory per bundle);

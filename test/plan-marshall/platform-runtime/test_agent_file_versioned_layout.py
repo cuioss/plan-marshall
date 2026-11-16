@@ -93,17 +93,13 @@ def empty_cache(tmp_path: Path) -> Path:
 
 
 def test_shared_lookup_resolves_the_versioned_layout(deployed_cache: Path) -> None:
-    """The deployed ``{bundle}/{version}/agents/`` shape resolves the variant."""
+    """The deployed ``{bundle}/{version}/agents/`` shape resolves the variant.
+
+    Two version dirs carry the agent, so this also pins newest-eligible-wins:
+    an older or lexically-last choice would answer a different path.
+    """
     resolved = runtime_base._find_agent_file(VARIANT, (deployed_cache,))
     assert resolved == deployed_cache / 'plan-marshall' / NEW_VERSION / 'agents' / f'{VARIANT}.md'
-
-
-def test_shared_lookup_picks_the_newest_eligible_version_dir(deployed_cache: Path) -> None:
-    """Two version dirs carrying the agent reduce to the numerically-newest one."""
-    (deployed_cache / 'plan-marshall' / '0.1.2100').mkdir(parents=True)
-    resolved = runtime_base._find_agent_file(VARIANT, (deployed_cache,))
-    assert resolved is not None
-    assert resolved.parent.parent.name == NEW_VERSION, 'an older or empty version dir won the selection'
 
 
 def test_shared_lookup_falls_back_to_the_only_version_that_carries_the_agent(deployed_cache: Path) -> None:
@@ -167,8 +163,13 @@ def test_a_path_shaped_name_cannot_escape_the_root(deployed_cache: Path) -> None
 
 
 @pytest.mark.parametrize('name', ('', '.', '..', 'agents/execution-context', 'agents\\execution-context'))
-def test_an_empty_or_path_shaped_name_is_a_miss(name: str, deployed_cache: Path) -> None:
-    """The remaining non-stem shapes are misses too."""
+def test_a_non_stem_name_never_raises_and_never_resolves(name: str, deployed_cache: Path) -> None:
+    """The other non-stem shapes are refused without raising.
+
+    No fixture can be planted where these would land (no ``.md`` file exists
+    under the joined path for any of them), so this pins "no crash, no
+    resolution" — the escape case above is the one that proves the guard.
+    """
     assert runtime_base._find_agent_file(name, (deployed_cache,)) is None
 
 
@@ -177,6 +178,21 @@ def test_search_roots_are_the_ones_probed(deployed_cache: Path) -> None:
     roots = runtime_base._agent_search_roots((deployed_cache,))
     assert roots[0] == deployed_cache
     assert any(root.name == 'bundles' for root in roots[1:]), 'the source-tree root is not reported'
+
+
+def test_the_versioned_pass_walks_every_bundle_under_a_root(tmp_path: Path) -> None:
+    """A cache holding several bundles resolves an agent from any of them."""
+    root = tmp_path / 'multi-bundle'
+    _write_agent(root / 'other-bundle' / NEW_VERSION, 'other-agent')
+    expected = _write_agent(root / 'plan-marshall' / NEW_VERSION, VARIANT)
+    assert runtime_base._find_agent_file(VARIANT, (root,)) == expected
+
+
+def test_an_unreadable_root_is_a_miss(tmp_path: Path) -> None:
+    """A root that is not a directory cannot be listed, and is a miss, not a raise."""
+    not_a_directory = tmp_path / 'not-a-directory'
+    not_a_directory.write_text('x', encoding='utf-8')
+    assert runtime_base._find_agent_file(VARIANT, (not_a_directory,)) is None
 
 
 # =============================================================================
@@ -345,6 +361,23 @@ def test_a_block_scalar_ends_at_the_next_top_level_key(tmp_path: Path) -> None:
     assert parsed['tools'] == ['Read', 'Grep']
 
 
+def test_a_blank_line_inside_a_block_scalar_does_not_end_it(tmp_path: Path) -> None:
+    """A paragraph break inside the block is skipped, not treated as the end.
+
+    The canonical agent's description is two paragraphs separated by a blank
+    line; ending the block there would truncate it to its first paragraph.
+    """
+    agent_file = _write_frontmatter(
+        tmp_path,
+        'name: agent\ndescription: |\n  First paragraph.\n\n  Second paragraph.\ntools: Read',
+    )
+
+    parsed = runtime_base._parse_agent_frontmatter(agent_file)
+
+    assert parsed['description'] == 'First paragraph. Second paragraph.'
+    assert parsed['tools'] == ['Read']
+
+
 def test_an_empty_block_scalar_description_is_empty(tmp_path: Path) -> None:
     """A block with no indented lines is the empty description, not the marker."""
     agent_file = _write_frontmatter(tmp_path, 'name: agent\ndescription: |\ntools: Read')
@@ -360,6 +393,18 @@ def test_a_tools_list_after_a_block_scalar_is_still_collected(tmp_path: Path) ->
     )
 
     assert runtime_base._parse_agent_frontmatter(agent_file)['tools'] == ['Read', 'Grep']
+
+
+def test_a_miss_with_no_searchable_root_says_so(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A machine with no root at all reports that, rather than an empty list."""
+    monkeypatch.setattr(claude_runtime, '_find_agent_file', lambda _name: None)
+    monkeypatch.setattr(claude_runtime, '_agent_search_roots', lambda: [])
+
+    result = _parsed(ClaudeRuntime().subagent_dispatch(VARIANT, None, None))
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'prompt_not_found'
+    assert '(no searchable root)' in result['message']
 
 
 def test_an_unreadable_agent_file_names_the_path_it_resolved(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

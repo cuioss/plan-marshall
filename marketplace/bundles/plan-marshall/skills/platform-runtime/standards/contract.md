@@ -1339,7 +1339,7 @@ Return the platform-specific invocation parameters for spawning a focused subage
 
 **Arguments**: `--agent <name>` (required), `--prompt-file <path>` (optional), `--context <json>` (optional)
 
-`--agent` is the agent file stem — `execution-context-level-3`, not a path and not the `{bundle}:{name}` notation a `Task:` call uses. A name carrying a path separator or a `..` segment resolves to nothing and answers as a miss.
+`--agent` is the agent file stem — `execution-context-level-3`, not a path and not the `{bundle}:{name}` notation a `Task:` call uses. A name carrying a path separator or a `..` segment resolves to nothing: on Claude that is a `prompt_not_found` miss, on OpenCode and Antigravity a vacuous tool-mapping check followed by the dispatch.
 
 The `--context` object carries the caller's dispatch attestations and its prompt substitutions. The two runtimes that carry an inline branch (OpenCode, Antigravity) consume two keys at the seam and never merge them into the prompt: `spawning_tool_available` (the spawning-tool signal — an explicit `false` declares the tool absent in this envelope) and `dispatch_mode` (an explicit `"inline"` pins the inline branch whether or not the tool exists; any other value is rejected as `invalid_argument`). Claude's `Task` tool is always present in the orchestrator's envelope, so its runtime has no inline branch and reads neither key; it merges the remaining `--context` into the prompt as a `## Context` block, where a caller that passes an attestation key sees it.
 
@@ -1453,7 +1453,7 @@ error: prompt_not_found
 message: "Agent 'execution-context-level-9' not found; searched: /home/me/.claude/plugins/cache/plan-marshall, /home/me/git/project/marketplace/bundles"
 ```
 
-The agent-file message lists exactly the roots the lookup probed, so a miss distinguishes a wrong name from a root that was never searched; an agent file that resolved but could not be read answers the same code with the path it resolved to. Only Claude answers either: OpenCode and Antigravity run the resolution for their tool-mapping check and dispatch anyway when it comes back empty.
+The agent-file message lists exactly the roots the lookup probed, so a miss distinguishes a wrong name from a root that was never searched. When no root exists at all the message says so instead of listing nothing. An agent file that resolved but could not be read answers the same code with the path it resolved to — on the no-`--prompt-file` path, which is the only one that reads the agent's body. Only Claude answers either: OpenCode and Antigravity run the resolution for their tool-mapping check and dispatch anyway when it comes back empty.
 
 ---
 

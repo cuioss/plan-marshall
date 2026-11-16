@@ -2954,8 +2954,9 @@ def _extract_project_steps(marshal_config: dict[str, Any]) -> list[dict[str, str
 #
 # Agent-file location and frontmatter parsing live in ``runtime_base`` — the
 # single home every target's verify-first clause (2) shares. The wrapper below
-# prepends the Claude deployed-bundle cache root so a deployed layout resolves
-# before the source tree; ``_claude_runtime_impl`` and the
+# prepends the Claude deployed-bundle cache root, which the shared lookup probes
+# for a flat shape before the source tree and for the versioned deployed shape
+# only after the flat shape missed everywhere; ``_claude_runtime_impl`` and the
 # ``claude_runtime._find_agent_file`` test patches keep resolving here.
 
 
