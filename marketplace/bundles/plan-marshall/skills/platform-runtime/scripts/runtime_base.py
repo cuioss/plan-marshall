@@ -397,6 +397,10 @@ def _versioned_agent_file(root: Path, agent_name: str) -> Path | None:
 
     Only directories are probed, read-only; an unreadable *root* is a miss for
     this shape rather than an error, the same way the flat glob treats it.
+
+    Bundle directories are walked in sorted order, so an agent name carried by
+    two bundles under one root resolves to the alphabetically-first bundle — a
+    deterministic tie-break, unlike the flat pass's glob order.
     """
     try:
         bundle_dirs = sorted(entry for entry in root.iterdir() if entry.is_dir() and not entry.name.startswith('.'))
@@ -411,16 +415,23 @@ def _versioned_agent_file(root: Path, agent_name: str) -> Path | None:
     return None
 
 
-def _is_agent_file_stem(agent_name: str) -> bool:
-    """True when *agent_name* is a file stem, not a path.
+#: The characters an agent file stem may contain. A name outside this set is a
+#: miss rather than a lookup: the versioned shape joins the name into a path (so
+#: ``..`` or a separator would escape the root) and the flat shape interpolates
+#: it into a glob (so ``*`` would select an arbitrary agent).
+_AGENT_STEM_CHARS: frozenset[str] = frozenset('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.-')
 
-    The versioned shape JOINS the name into a path (the flat glob interpolates it
-    into a pattern instead), so a name carrying a separator or a ``..`` segment
-    could steer the joined path out of the root it is probed against. ``--agent``
-    names an installed agent file (``execution-context-level-3``), never a path
-    and never a ``{bundle}:{name}`` notation.
+
+def _is_agent_file_stem(agent_name: str) -> bool:
+    """True when *agent_name* is a file stem, not a path and not a glob.
+
+    ``--agent`` names an installed agent file (``execution-context-level-3``),
+    never a path and never a ``{bundle}:{name}`` notation. Both lookup shapes
+    consume the name as an opaque stem — the versioned pass joins it into a path,
+    the flat pass interpolates it into a glob pattern — so anything outside the
+    stem character set is refused before either runs.
     """
-    return bool(agent_name) and agent_name not in ('.', '..') and '/' not in agent_name and '\\' not in agent_name
+    return bool(agent_name) and agent_name[0] != '.' and set(agent_name) <= _AGENT_STEM_CHARS
 
 
 def _find_agent_file(agent_name: str, extra_roots: Sequence[Path] = ()) -> Path | None:
@@ -437,10 +448,12 @@ def _find_agent_file(agent_name: str, extra_roots: Sequence[Path] = ()) -> Path 
 
     The flat shape goes first across ALL roots, not merely within one: that is
     what keeps a bare name resolving from the source tree in a checkout, where
-    the deployed cache also carries it. The versioned shape is what makes a
-    generated ``execution-context-level-{N}`` variant resolvable — those variants
-    exist only in the deployed cache, so the flat pass answers ``None`` for every
-    one of them.
+    the deployed cache also carries it. The versioned shape is what makes an
+    installed ``execution-context-level-{N}`` variant resolvable: those variants
+    are emitted per target and never live in ``marketplace/bundles``, so in a
+    source checkout the flat pass answers ``None`` for every one of them. (An
+    emitted FLAT tree — ``target/{target}/{bundle}/agents/`` — does carry them, and
+    reaches them through the flat pass like any other flat root.)
     """
     if not _is_agent_file_stem(agent_name):
         return None
@@ -590,15 +603,17 @@ def _unmapped_agent_tools(agent_name: str, target: str) -> list[str] | None:
 
     Resolves the agent markdown and checks each declared tool against the
     target's ``tool_permissions`` map. Returns ``None`` when the check could
-    not be performed — the agent file is unresolvable or the mapping is
+    not be performed — the agent file is unresolvable, or the mapping is
     unreadable — so callers treat it as vacuous rather than as a measured empty
     or as a refusal. An empty list is the measured "every declared tool maps".
+    An agent file that RESOLVES but cannot be read parses as an agent with no
+    declared tools: ``[]``, measured over nothing, which is a distinct (and here
+    indistinguishable-in-effect) state from the ``None`` above.
 
     The lookup runs with NO extra root: the callers of this helper (OpenCode,
     Antigravity) supply no deployed bundle cache, so only the script-relative
-    source tree is probed — and a generated level variant lives only in a
-    deployed tree, which is one reason this answer is vacuous rather than a
-    refusal.
+    source tree is probed — and an emitted level variant lives only in an emitted
+    tree, which is one reason this answer is vacuous rather than a refusal.
     """
     agent_path = _find_agent_file(agent_name)
     if agent_path is None:

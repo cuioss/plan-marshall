@@ -29,8 +29,12 @@ def select_live_version_dir(bundle_dir: Path, is_candidate: Callable[[Path], boo
     resolve to?" decision. Callers contribute ONLY their own eligibility
     predicate (``is_candidate``: manifest present / requested subpath present /
     ``skills/`` present); ordering (the ``_version_sort_key`` numeric tuple) is
-    decided here and nowhere else, so two call sites in the same process can
-    never resolve to different version dirs.
+    decided here and nowhere else, so two call sites contributing the SAME
+    predicate can never resolve to different version dirs. Two call sites with
+    DIFFERENT predicates can: "this version dir carries the requested agent" is a
+    narrower eligibility than "this version dir carries the requested script", so
+    an agent may be read from an older version dir than the one serving the
+    running scripts (``platform-runtime/standards/contract.md`` states that case).
 
     **Numerically-newest-eligible wins.** Among the version dirs that satisfy
     ``is_candidate``, the one whose ``_version_sort_key`` is highest is returned.

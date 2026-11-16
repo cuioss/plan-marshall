@@ -2961,7 +2961,7 @@ def _extract_project_steps(marshal_config: dict[str, Any]) -> list[dict[str, str
 
 
 def _find_agent_file(agent_name: str) -> Path | None:
-    """Locate an agent markdown under the plugin cache and source tree in sequence."""
+    """Locate an agent markdown: the flat shape across the roots, then the versioned one."""
     return _find_agent_file_in_tree(agent_name, (_claude_bundle_cache_root(),))
 
 

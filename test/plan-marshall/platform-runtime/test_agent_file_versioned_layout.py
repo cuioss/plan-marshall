@@ -43,6 +43,10 @@ name: {name}
 description: |
   Dispatches one envelope into a focused subagent. The deployed variant keeps
   this description, so anything that renders it must not render the marker.
+
+  Examples:
+  - Input: name=push, plan_id=EXAMPLE
+  - Output: TOON with status and the workflow's return fields
 tools: Read, Grep
 ---
 
@@ -168,9 +172,20 @@ def test_a_non_stem_name_never_raises_and_never_resolves(name: str, deployed_cac
 
     No fixture can be planted where these would land (no ``.md`` file exists
     under the joined path for any of them), so this pins "no crash, no
-    resolution" — the escape case above is the one that proves the guard.
+    resolution" — the two tests below are the ones that prove the guard.
     """
     assert runtime_base._find_agent_file(name, (deployed_cache,)) is None
+
+
+def test_a_glob_shaped_name_selects_no_agent(deployed_cache: Path) -> None:
+    """``--agent '*'`` resolves nothing: the name is a stem, never a pattern.
+
+    The variant IS present, so the flat glob would answer
+    ``*/agents/*.md`` and dispatch a caller-chosen-by-wildcard agent if the
+    character guard were dropped.
+    """
+    assert runtime_base._find_agent_file('*', (deployed_cache,)) is None
+    assert runtime_base._find_agent_file('execution-context-*', (deployed_cache,)) is None
 
 
 def test_search_roots_are_the_ones_probed(deployed_cache: Path) -> None:
@@ -208,7 +223,9 @@ def test_claude_dispatch_resolves_the_variant_from_the_cache(
     Also pins the description the contract's Claude example shows: it is the
     agent frontmatter's own text, truncated to five words. A block-scalar
     description read as a plain ``key: value`` pair renders the ``|`` marker
-    instead, which is what the example used to claim was a sentence.
+    instead, which is what the example used to claim was a sentence. The fixture
+    carries the paragraph break and the example list a real agent does, so the
+    truncation is exercised over a block that spans them.
     """
     monkeypatch.setattr(claude_runtime, '_claude_bundle_cache_root', lambda: deployed_cache)
 

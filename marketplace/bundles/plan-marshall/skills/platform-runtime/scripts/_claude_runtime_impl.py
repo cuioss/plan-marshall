@@ -1878,11 +1878,11 @@ class ClaudeRuntime(Runtime):
                 )
             try:
                 prompt_body = pf.read_text(encoding='utf-8')
-            except OSError:
+            except OSError as exc:
                 return toon_error(
                     'subagent dispatch',
                     'prompt_not_found',
-                    f'prompt file not found: {prompt_file}',
+                    f'prompt file {prompt_file} exists but could not be read: {exc}',
                 )
         else:
             try:
