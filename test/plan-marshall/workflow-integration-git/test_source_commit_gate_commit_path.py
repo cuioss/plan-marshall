@@ -382,6 +382,19 @@ def _ledger_rows(root: Path) -> list[dict]:
     return [json.loads(line) for line in path.read_text(encoding='utf-8').splitlines() if line.strip()]
 
 
+def _tree_ledger_rows(tree: Path) -> list[dict]:
+    """The ledger a tree OWNS — the file the commit verb writes and the boundary reads.
+
+    ``{tree}/.plan/work/change-ledger.jsonl`` is the checkout's own ledger, not
+    the caller-cwd-resolved one, so it is where a commit made THROUGH the verb
+    lands whatever directory the caller runs from.
+    """
+    path = tree / '.plan' / 'work' / 'change-ledger.jsonl'
+    if not path.is_file():
+        return []
+    return [json.loads(line) for line in path.read_text(encoding='utf-8').splitlines() if line.strip()]
+
+
 def _append_row(root: Path, sha: str, deliverable_id: str, changed_paths: list[str]) -> None:
     """Append one `kind=change` row through the ledger's own verb."""
     appended = run_script(
@@ -406,19 +419,21 @@ def test_a_step_commit_leaves_exactly_one_change_row(tmp_path: Path) -> None:
     """A 5f(b) commit is recorded, with git-sourced paths and the step as its id.
 
     Item 5f(b) relays `{step_id}` as `--step`; the row's `deliverable_id` is that
-    id, and `changed_paths` comes from `git diff-tree` on the commit — the
-    ledger's own sourcing rule, never the caller's staged list.
+    id, and `changed_paths` comes from git on the commit — the ledger's own
+    sourcing rule, never the caller's staged list. The row lands in the TARGET
+    tree's ledger, the file the boundary guard reads.
     """
     _init_repo(tmp_path)
     _write_plan(tmp_path, 'plan-a', phase='6-finalize', steps=['pre-push-quality-gate'])
+    worktree = _worktree(tmp_path, 'plan-a')
     _stage(tmp_path, 'src/a.py')
 
-    result, code = _run_commit(tmp_path, _worktree(tmp_path, 'plan-a'), '--step', 'pre-push-quality-gate')
+    result, code = _run_commit(tmp_path, worktree, '--step', 'pre-push-quality-gate')
 
     assert code == 0, f'{result!r}'
     assert result['ledger_recorded'] is True
     assert result['ledger_deliverable_id'] == 'pre-push-quality-gate'
-    rows = _ledger_rows(tmp_path)
+    rows = _tree_ledger_rows(worktree)
     assert len(rows) == 1, rows
     row = rows[0]
     assert row['kind'] == 'change'
@@ -450,12 +465,13 @@ def test_the_inline_triage_commit_leaves_a_row_under_the_fixed_prefix(tmp_path: 
         encoding='utf-8',
     )
     _stage(tmp_path, 'src/a.py')
+    worktree = _worktree(tmp_path, 'plan-a')
 
-    result, code = _run_commit(tmp_path, _worktree(tmp_path, 'plan-a'))
+    result, code = _run_commit(tmp_path, worktree)
 
     assert code == 0, f'{result!r}'
     assert result['reason'] == 'section6_record'
-    rows = _ledger_rows(tmp_path)
+    rows = _tree_ledger_rows(worktree)
     assert [row['deliverable_id'] for row in rows] == ['finalize-commit']
     assert rows[0]['commit_sha'] == result['commit_hash']
 
@@ -470,14 +486,15 @@ def test_the_architecture_refresh_commit_leaves_a_row(tmp_path: Path) -> None:
     """
     _init_repo(tmp_path)
     _write_plan(tmp_path, 'plan-a', phase='6-finalize', steps=[])
+    worktree = _worktree(tmp_path, 'plan-a')
     _stage(tmp_path, '.plan/project-architecture/derived.json', '{"modules": []}\n')
 
-    result, code = _run_commit(tmp_path, _worktree(tmp_path, 'plan-a'))
+    result, code = _run_commit(tmp_path, worktree)
 
     assert code == 0, f'{result!r}'
     assert result['reason'] == 'plan_only'
     assert result['ledger_recorded'] is True
-    rows = _ledger_rows(tmp_path)
+    rows = _tree_ledger_rows(worktree)
     assert [row['changed_paths'] for row in rows] == [['.plan/project-architecture/derived.json']]
 
 
@@ -514,12 +531,14 @@ def test_an_unmarked_phase_5_commit_leaves_no_row_so_step_10a_owns_the_only_one(
     """
     _init_repo(tmp_path)
     _write_plan(tmp_path, 'plan-a', phase='5-execute', steps=['pre-push-quality-gate'])
+    worktree = _worktree(tmp_path, 'plan-a')
     _stage(tmp_path, 'src/a.py')
 
-    result, code = _run_commit(tmp_path, _worktree(tmp_path, 'plan-a'))
+    result, code = _run_commit(tmp_path, worktree)
 
     assert code == 0, f'{result!r}'
     assert 'ledger_recorded' not in result
+    assert _tree_ledger_rows(worktree) == []
     assert _ledger_rows(tmp_path) == []
 
     head = _git(tmp_path, 'rev-parse', 'HEAD').stdout.strip()
@@ -562,24 +581,28 @@ def test_a_marked_phase_5_commit_records_its_own_row_under_the_handback_id(tmp_p
     """A commit marked `--record-change` in `5-execute` leaves its own row.
 
     The row's `deliverable_id` is the constant `handback-commit`, and its
-    `changed_paths` is the commit's own path list as `git diff-tree` reports it —
-    the ledger's sourcing rule, which the caller never supplies.
+    `changed_paths` is the commit's own path list as git reports it — the
+    ledger's sourcing rule, which the caller never supplies. The row lands in
+    the TARGET tree's ledger, the file the boundary guard reads for this
+    checkout.
     """
     _init_repo(tmp_path)
     _write_plan(tmp_path, 'plan-a', phase='5-execute', steps=['pre-push-quality-gate'])
+    worktree = _worktree(tmp_path, 'plan-a')
     _stage(tmp_path, 'src/a.py')
 
-    result, code = _run_commit(tmp_path, _worktree(tmp_path, 'plan-a'), '--record-change')
+    result, code = _run_commit(tmp_path, worktree, '--record-change')
 
     assert code == 0, f'{result!r}'
     assert result['ledger_recorded'] is True
     assert result['ledger_deliverable_id'] == 'handback-commit'
-    rows = _ledger_rows(tmp_path)
+    rows = _tree_ledger_rows(worktree)
     assert len(rows) == 1, rows
     assert rows[0]['kind'] == 'change'
     assert rows[0]['commit_sha'] == result['commit_hash']
     assert rows[0]['changed_paths'] == ['src/a.py']
     assert rows[0]['deliverable_id'] == 'handback-commit'
+    assert _ledger_rows(tmp_path) == [], 'the caller-resolved ledger must not receive the row'
 
 
 def test_a_marked_commit_spanning_two_deliverables_needs_no_attribution(tmp_path: Path) -> None:
@@ -591,13 +614,14 @@ def test_a_marked_commit_spanning_two_deliverables_needs_no_attribution(tmp_path
     """
     _init_repo(tmp_path)
     _write_plan(tmp_path, 'plan-a', phase='5-execute', steps=[])
+    worktree = _worktree(tmp_path, 'plan-a')
     _stage(tmp_path, 'src/module-a/a.py')
     _stage(tmp_path, 'src/module-b/b.py')
 
-    result, code = _run_commit(tmp_path, _worktree(tmp_path, 'plan-a'), '--record-change')
+    result, code = _run_commit(tmp_path, worktree, '--record-change')
 
     assert code == 0, f'{result!r}'
-    rows = _ledger_rows(tmp_path)
+    rows = _tree_ledger_rows(worktree)
     assert [row['deliverable_id'] for row in rows] == ['handback-commit'], rows
     assert rows[0]['changed_paths'] == ['src/module-a/a.py', 'src/module-b/b.py']
 
@@ -606,15 +630,14 @@ def test_a_marked_finalize_commit_still_records_exactly_one_row(tmp_path: Path) 
     """`--record-change` on a `6-finalize` commit adds no second row."""
     _init_repo(tmp_path)
     _write_plan(tmp_path, 'plan-a', phase='6-finalize', steps=['pre-push-quality-gate'])
+    worktree = _worktree(tmp_path, 'plan-a')
     _stage(tmp_path, 'src/a.py')
 
-    result, code = _run_commit(
-        tmp_path, _worktree(tmp_path, 'plan-a'), '--step', 'pre-push-quality-gate', '--record-change'
-    )
+    result, code = _run_commit(tmp_path, worktree, '--step', 'pre-push-quality-gate', '--record-change')
 
     assert code == 0, f'{result!r}'
     assert result['ledger_deliverable_id'] == 'pre-push-quality-gate'
-    rows = _ledger_rows(tmp_path)
+    rows = _tree_ledger_rows(worktree)
     assert [row['deliverable_id'] for row in rows] == ['pre-push-quality-gate'], rows
 
 
@@ -630,6 +653,58 @@ def test_the_handback_id_is_not_read_as_an_outline_deliverable() -> None:
     for constant in (git_workflow._HAND_BACK_COMMIT_DELIVERABLE_ID, git_workflow._FINALIZE_COMMIT_DELIVERABLE_ID):
         assert validate.deliverable_number(constant) is None, constant
     assert validate.deliverable_number('D3') == 3, 'the reader must still resolve a real deliverable id'
+
+
+def test_a_marked_commit_that_completes_a_merge_records_first_parent_paths(tmp_path: Path) -> None:
+    """A merge commit records the work it brought onto the branch, not an empty list."""
+    _init_repo(tmp_path)
+    _write_plan(tmp_path, 'plan-a', phase='5-execute', steps=[])
+    worktree = _worktree(tmp_path, 'plan-a')
+    start = _git(tmp_path, 'rev-parse', '--abbrev-ref', 'HEAD').stdout.strip()
+
+    _stage(tmp_path, 'src/base.py')
+    _git(tmp_path, 'commit', '-m', 'feat: base work')
+    _git(tmp_path, 'checkout', '-b', 'side')
+    _stage(tmp_path, 'src/side.py')
+    _git(tmp_path, 'commit', '-m', 'feat: side work')
+    _git(tmp_path, 'checkout', start)
+    _git(tmp_path, 'merge', '--no-commit', '--no-ff', 'side')
+
+    result, code = _run_commit(tmp_path, worktree, '--record-change')
+
+    assert code == 0, f'{result!r}'
+    parents = _git(tmp_path, 'rev-list', '--parents', '-n', '1', result['commit_hash']).stdout.split()
+    assert len(parents) == 3, f'the premise: the commit is a merge, got {parents}'
+    assert (
+        _git(tmp_path, 'diff-tree', '--no-commit-id', '--name-only', '-r', result['commit_hash']).stdout.split() == []
+    ), 'the premise: diff-tree over a merge enumerates nothing'
+    rows = _tree_ledger_rows(worktree)
+    assert [row['changed_paths'] for row in rows] == [['src/side.py']], rows
+
+
+def test_the_row_lands_in_the_target_tree_ledger_the_boundary_reads(tmp_path: Path, monkeypatch) -> None:
+    """A verb run from another checkout records into the TARGET tree's ledger.
+
+    The boundary guard reads `{worktree}/.plan/work/change-ledger.jsonl` for the
+    plan's own checkout, so a row written to the caller-cwd-resolved ledger would
+    leave a recorded commit reported as unrecorded.
+    """
+    monkeypatch.setenv('PLAN_BASE_DIR', str(_base_dir(tmp_path)))
+    _feature_branch_repo(tmp_path)
+    worktree = _worktree(tmp_path, 'plan-a')
+    plan_dir = _write_plan(tmp_path, 'plan-a', phase='5-execute', steps=[])
+    (plan_dir / 'references.json').write_text(json.dumps({'base_branch': 'main'}), encoding='utf-8')
+    status = {'plan_id': 'plan-a', 'metadata': {'use_worktree': True, 'worktree_path': str(worktree)}}
+
+    _stage(tmp_path, 'src/a.py')
+    result, code = _run_commit(tmp_path, worktree, '--record-change')
+
+    assert code == 0, f'{result!r}'
+    assert [row['commit_sha'] for row in _tree_ledger_rows(worktree)] == [result['commit_hash']]
+    assert not _ledger_rows(tmp_path), 'the caller-resolved ledger must not receive the row'
+    assert _lifecycle._phase_end_marker_refusal('plan-a', status) is None, (
+        'the guard reads the same ledger the verb wrote'
+    )
 
 
 # =============================================================================
@@ -794,7 +869,7 @@ def test_a_finalize_commit_then_a_loop_back_and_a_step_10a_commit_admit_the_boun
     worktree = _worktree(tmp_path, 'plan-a')
     plan_dir = _write_plan(tmp_path, 'plan-a', phase='6-finalize', steps=['pre-push-quality-gate'])
     (plan_dir / 'references.json').write_text(json.dumps({'base_branch': 'main'}), encoding='utf-8')
-    status = {'plan_id': 'plan-a', 'metadata': {'use_worktree': True, 'worktree_path': str(tmp_path)}}
+    status = {'plan_id': 'plan-a', 'metadata': {'use_worktree': True, 'worktree_path': str(worktree)}}
 
     # 5f(b): the dispatcher's finalize commit, through the verb.
     _stage(tmp_path, 'src/finalize.py')
@@ -839,7 +914,7 @@ def test_a_finalize_commit_then_a_loop_back_and_a_step_10a_commit_admit_the_boun
     assert _lifecycle._phase_end_marker_refusal('plan-a', status) is None, (
         'the loop-back branch must be admitted: each commit has exactly one row'
     )
-    rows = _ledger_rows(tmp_path)
+    rows = _tree_ledger_rows(worktree) + _ledger_rows(tmp_path)
     assert len(rows) == len({row['commit_sha'] for row in rows}) == 2, rows
 
 

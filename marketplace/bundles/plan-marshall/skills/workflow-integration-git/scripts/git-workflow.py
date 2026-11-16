@@ -1026,13 +1026,29 @@ def _commit_changed_paths(worktree: Path, commit_sha: str) -> list[str] | None:
     """The git-sourced path list of one commit, or ``None`` when git cannot list it.
 
     ``changed_paths`` is the one field the ledger contract forbids a caller to
-    compute: it MUST come from ``git diff-tree`` against the just-produced
-    commit. ``--root`` makes a repository's first commit enumerate like any
-    other, and NUL separation keeps quoted and space-padded paths verbatim.
+    compute: it MUST come from git against the just-produced commit. ``--root``
+    makes a repository's first commit enumerate like any other, and NUL
+    separation keeps quoted and space-padded paths verbatim.
+
+    A MERGE commit has no single changed-path set: ``diff-tree`` against it lists
+    nothing, so a row built from it would record an empty ``changed_paths`` and
+    still satisfy the SHA-based boundary check. The merge case therefore
+    enumerates the FIRST-PARENT diff — the work this commit brought onto the
+    branch — which is the one comparison a merge does have.
     """
-    rc, out, _err = _run_git_nul_verbatim(
-        ['-C', str(worktree), 'diff-tree', '--no-commit-id', '--name-only', '-r', '--root', '-z', commit_sha]
+    parents_rc, parents_out, _err = _run_git_nul_verbatim(
+        ['-C', str(worktree), 'rev-list', '--parents', '-n', '1', commit_sha]
     )
+    if parents_rc != 0:
+        return None
+    if len(parents_out.split()) > 2:
+        rc, out, _err = _run_git_nul_verbatim(
+            ['-C', str(worktree), 'diff', '--name-only', '-r', '-z', f'{commit_sha}^1', commit_sha]
+        )
+    else:
+        rc, out, _err = _run_git_nul_verbatim(
+            ['-C', str(worktree), 'diff-tree', '--no-commit-id', '--name-only', '-r', '--root', '-z', commit_sha]
+        )
     if rc != 0:
         return None
     return [part for part in out.split('\0') if part]
@@ -1069,6 +1085,14 @@ def _record_commit_change(worktree: Path, commit_sha: str, step: str | None, *, 
     rolling it back is not this verb's business. The row is reported missing
     instead, so the boundary's ``bookkeeping_gap`` refusal (the fail-closed
     direction) is what surfaces it.
+
+    The row is written to the TARGET tree's own ledger — ``{worktree}/.plan/
+    work/change-ledger.jsonl``, the file the ``5-execute`` boundary reads for
+    this checkout — never to the caller's cwd-resolved one: when the verb runs
+    from another checkout (``--project-dir`` naming a worktree), the default
+    resolver would record the commit in the caller's ledger while the guard
+    reads the target's, and the guard would then report a recorded commit as
+    unrecorded.
     """
     changed_paths = _commit_changed_paths(worktree, commit_sha)
     if changed_paths is None:
@@ -1091,7 +1115,8 @@ def _record_commit_change(worktree: Path, commit_sha: str, step: str | None, *, 
                 worktree_sha=compute_worktree_sha(worktree),
                 commit_sha=commit_sha,
                 changed_paths=changed_paths,
-            )
+            ),
+            worktree / '.plan' / 'work' / 'change-ledger.jsonl',
         )
     except OSError as exc:
         return {'recorded': False, 'deliverable_id': deliverable_id, 'error': f'ledger_write_failed: {exc}'}

@@ -435,7 +435,7 @@ Because the `await-long-running` seam is the ONLY component permitted to backgro
 
    | Build `status` | Orchestrator action |
    |---|---|
-   | `success` | **If the build rewrote files** (a quality gate's style or whitespace fix), commit them through the `git-workflow commit` verb with `--record-change` — that marker is what gives the commit its own `kind=change` row (see the paragraph after this table) — and then run the verification step once more against the committed HEAD, through the same seam, before the re-dispatch: the freshness hash includes HEAD, so the commit invalidates the `kind=build` stamp the first run wrote, and the second run is what leaves a stamp at the new hash. Then close each verification-owed task (`verification_owed: true` on the record) via `finalize-step --step {last} --outcome done --verification-complete` — the owed close the leaf could not cut — then re-dispatch phase-5-execute (per the dispatch block above) WITHOUT the pre-dispatch queue peek — this post-build re-entry is the sole peek exception — so the leaf resumes; the freshness gate (`pre-commit-verify-freshness`, Step 12a) permits the transition on the `kind=build` stamp the second run wrote. **When B7 classified this hand-back `error`, or recorded it `error` for an undecidable evaluation (`no_progress_not_decidable`), the successful build closes the owed task but does NOT clear the error: apply the `error` recovery/escalation decision of the Boundary-call fence after the close, and only a recoverable case proceeds to the re-dispatch. A green build answers the build obligation, never the genuine-stall decision.** |
+   | `success` | **If the build rewrote files** (a quality gate's style or whitespace fix), STAGE them (`git add {paths}`) and commit them through the `git-workflow commit` verb with `--record-change`: the verb commits the INDEX, so an empty index fails, and that marker is what gives the commit its own `kind=change` row (see the paragraph after this table). Then run the verification step once more against the committed HEAD, through the same seam, before the re-dispatch — the freshness hash includes HEAD, so the commit invalidates the `kind=build` stamp the first run wrote, and the second run is what leaves a stamp at the new hash. **Branch on the SECOND run's status exactly as this table says for the first**: only its `success` closes each verification-owed task (`verification_owed: true` on the record) via `finalize-step --step {last} --outcome done --verification-complete` — the owed close the leaf could not cut — and re-dispatches phase-5-execute (per the dispatch block above) WITHOUT the pre-dispatch queue peek (this post-build re-entry is the sole peek exception) so the leaf resumes, the freshness gate (`pre-commit-verify-freshness`, Step 12a) permitting the transition on the `kind=build` stamp that run wrote. An `error` takes this table's `error` row, and `timeout`, `killed`, `indeterminate` and `running` take their own rows, unchanged — a non-`success` second run never closes a task or re-dispatches. **When B7 classified this hand-back `error`, or recorded it `error` for an undecidable evaluation (`no_progress_not_decidable`), the successful build closes the owed task but does NOT clear the error: apply the `error` recovery/escalation decision of the Boundary-call fence after the close, and only a recoverable case proceeds to the re-dispatch. A green build answers the build obligation, never the genuine-stall decision.** |
    | `error` | Route the findings through the same `verification-feedback` triage the leaf's `triage_required` path uses (§ "Verification-feedback triage"). **When this hand-back itself was classified `error` by B7 (or was undecidable), consume the findings first but defer any phase-5-execute re-dispatch that triage would otherwise make until the B7 recovery/escalation decision has run.** |
    | `timeout` | **Not a failing build.** No verdict was reported and no findings exist, so there is nothing to triage. Re-run the step once; if it recurs, treat the budget as the subject and escalate rather than re-running a third time — see `manage-run-config/standards/run-config-standard.md` § "What `timeout_seconds` actually measures". |
    | `killed` | **Not a failing build and not a timeout** — externally killed, **not flaky, do not blind-retry.** Establish why the build was killed before dispatching anything; a re-run here is the exact response the condition forbids. |
@@ -567,11 +567,15 @@ transition:
 1. **Source the two facts the invocation leaves as placeholders.** Take the SHA
    from `unrecorded_commits[]` and its paths from git — never from memory and
    never from a declared file list:
-   `git -C {worktree_path} diff-tree --no-commit-id --name-only -r {sha}`.
+   `git -C {worktree_path} diff-tree --no-commit-id --name-only -r -z {sha}`.
+   Keep the `-z`: with git's default quoting a non-ASCII path comes back as a
+   quoted escape sequence, and the ledger stores what it is given verbatim, so
+   the row would name a path that does not exist. Split on NUL and pass the real
+   paths.
    A MERGE commit — a baseline merge on the branch — has no single changed-path
    set, and `diff-tree` over one enumerates nothing, so an append built from it
    would record an empty path list. Enumerate its first-parent diff instead:
-   `git -C {worktree_path} diff --name-only {sha}^1 {sha}`.
+   `git -C {worktree_path} diff --name-only -z {sha}^1 {sha}`.
 2. **Choose `--deliverable-id`.** Use the deliverable whose work the commit is
    when the commit IS a deliverable settlement; otherwise use the constant
    `handback-commit`, which is the id of a commit no deliverable owns — a gate
@@ -579,12 +583,21 @@ transition:
    constant ends in no digit, so no reader mistakes it for an outline
    deliverable, and it is one value, so a two-deliverable commit needs no
    attribution decision.
-3. **When the payload carries `signature: history_rewritten`, run its `remap`
-   invocation FIRST** (see `manage-change-ledger` § `remap`): it maps the stale
-   rows onto the same new SHAs this recovery would append, and a row written
-   before it is not one its duplicate check matches — so appending first can
-   leave two rows for one SHA. Then append only for the named SHAs the ledger
-   still carries no row for.
+3. **When the payload carries a `remap_invocation`, decide the rewrite before
+   remapping, and remap FIRST.** `history_rewritten` is reported for two
+   different states, and only one of them establishes a rewrite:
+   when the message says EVERY recorded row points outside HEAD's history, a
+   rewrite IS established — run the `remap` invocation first (see
+   `manage-change-ledger` § `remap`), because it maps a stale row onto the same
+   new SHA this recovery would append, and a row written before it is not one
+   its duplicate check matches, so appending first can leave two rows for one
+   SHA. When the message instead says the WHOLE branch is unrecorded and names
+   both possibilities, no rewrite is established: append the missing rows and
+   leave the recorded rows alone, because an unscoped remap can match an
+   unrelated stale row with the same patch and copy its `deliverable_id` onto
+   this branch's commit. The mixed shape — `bookkeeping_gap` carrying a
+   `remap_invocation` as well — takes the same rule: remap first.
+   Then append only for the named SHAs the ledger still carries no row for.
 4. **Run the append invocation** the refusal printed for that SHA, with its
    `DELIVERABLE_ID` / `CHANGED_PATHS` placeholders replaced by those two values.
    Repeat for every SHA still unrecorded.
