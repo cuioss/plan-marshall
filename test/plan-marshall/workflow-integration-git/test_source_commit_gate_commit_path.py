@@ -725,6 +725,49 @@ def test_a_wholly_unrecorded_branch_takes_the_same_append_recovery(tmp_path: Pat
     assert [row['deliverable_id'] for row in _ledger_rows(tmp_path)] == ['handback-commit']
 
 
+def test_a_merge_commit_takes_its_first_parent_diff(tmp_path: Path, monkeypatch) -> None:
+    """A merge commit has no single changed-path set; the recovery names its first parent.
+
+    The premise the recovery doc relies on: `diff-tree` over a merge enumerates
+    nothing, so an append built from it would record an empty path list and still
+    satisfy the SHA-based boundary check.
+    """
+    monkeypatch.setenv('PLAN_BASE_DIR', str(_base_dir(tmp_path)))
+    _feature_branch_repo(tmp_path)
+    plan_dir = _write_plan(tmp_path, 'plan-a', phase='5-execute', steps=[])
+    (plan_dir / 'references.json').write_text(json.dumps({'base_branch': 'main'}), encoding='utf-8')
+    status = {'plan_id': 'plan-a', 'metadata': {'use_worktree': True, 'worktree_path': str(tmp_path)}}
+
+    _stage(tmp_path, 'src/settled.py')
+    _git(tmp_path, 'commit', '-m', 'feat: a recorded deliverable commit')
+    _append_row(tmp_path, _git(tmp_path, 'rev-parse', 'HEAD').stdout.strip(), '1', ['src/settled.py'])
+
+    _git(tmp_path, 'checkout', '-b', 'side')
+    _stage(tmp_path, 'src/side.py')
+    _git(tmp_path, 'commit', '-m', 'feat: side work')
+    side = _git(tmp_path, 'rev-parse', 'HEAD').stdout.strip()
+    _git(tmp_path, 'checkout', 'feature/lb-126')
+    _git(tmp_path, 'merge', '--no-ff', 'side', '-m', 'merge: side into feature')
+    merged = _git(tmp_path, 'rev-parse', 'HEAD').stdout.strip()
+
+    assert _git(tmp_path, 'diff-tree', '--no-commit-id', '--name-only', '-r', merged).stdout.split() == [], (
+        'the premise: diff-tree over a merge commit enumerates nothing'
+    )
+    first_parent = _git(tmp_path, 'diff', '--name-only', f'{merged}^1', merged).stdout.split()
+    assert first_parent == ['src/side.py'], first_parent
+
+    refusal = _lifecycle._phase_end_marker_refusal('plan-a', status)
+    assert refusal is not None
+    assert set(refusal['unrecorded_commits']) == {side, merged}, refusal
+
+    _append_row(tmp_path, side, git_workflow._HAND_BACK_COMMIT_DELIVERABLE_ID, ['src/side.py'])
+    _append_row(tmp_path, merged, git_workflow._HAND_BACK_COMMIT_DELIVERABLE_ID, first_parent)
+
+    assert _lifecycle._phase_end_marker_refusal('plan-a', status) is None
+    merge_row = [row for row in _ledger_rows(tmp_path) if row['commit_sha'] == merged]
+    assert [row['changed_paths'] for row in merge_row] == [['src/side.py']], merge_row
+
+
 # =============================================================================
 # The ordinary finalize loop-back: both writers' rows admit the boundary
 # =============================================================================
