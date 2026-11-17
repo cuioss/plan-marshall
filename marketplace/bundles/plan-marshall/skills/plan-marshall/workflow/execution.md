@@ -608,9 +608,12 @@ transition:
    this branch's commit. The mixed shape — `bookkeeping_gap` carrying a
    `remap_invocation` as well — takes the same rule: remap first.
    Then append only for the named SHAs the ledger still carries no row for.
-4. **Run the append invocation** the refusal printed for that SHA, with its
-   `DELIVERABLE_ID` / `CHANGED_PATHS` placeholders replaced by those two values.
-   Repeat for every SHA still unrecorded.
+4. **Run the append** the refusal printed for that SHA: take its `--deliverable-id`
+   (`DELIVERABLE_ID`) and `--worktree-root` from that invocation, and supply the
+   paths with `--changed-paths-file` from step 1 instead of the printed
+   `--changed-paths CHANGED_PATHS` — the printed form is the comma-separated one,
+   which is lossy for the paths step 1 exists to preserve, and supplying both
+   forms is refused. Repeat for every SHA still unrecorded.
 5. **Retry `manage-status transition --completed 5-execute` exactly once.** A
    second refusal halts loudly for the operator — do not loop.
 

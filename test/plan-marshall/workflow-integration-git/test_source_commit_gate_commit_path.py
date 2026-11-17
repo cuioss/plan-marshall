@@ -763,6 +763,9 @@ def test_the_commit_changes_flow_tells_the_caller_to_read_ledger_recorded() -> N
         'the Commit Changes flow must state the caller obligation a failed row write leaves behind'
     )
     assert 'append --kind change' in skill, 'the obligation must name the ready-to-run repair'
+    assert 'rather than as a silent gap' not in skill, (
+        'the claim that the boundary surfaces a finalize commit s missing row must be gone, not merely contradicted'
+    )
 
 
 def test_the_row_lands_in_the_target_tree_ledger_the_boundary_reads(tmp_path: Path, monkeypatch) -> None:

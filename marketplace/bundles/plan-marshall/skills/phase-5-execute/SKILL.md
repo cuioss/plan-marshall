@@ -814,7 +814,7 @@ The per-deliverable commit fires UNCONDITIONALLY at every chain tail — **regar
      --output={worktree_path}/.plan/temp/{plan_id}-changed-paths.nul {commit_sha}
    ```
 
-   Nothing reads that file back: `-z` makes it NUL-separated (with git's default `core.quotePath` a non-ASCII path comes back quoted on a line-oriented read, and the ledger stores what it is given verbatim), `--root` enumerates a repository's first commit like any other, and `--output` is what keeps the procedure followable — the Bash tool renders a NUL byte as a space, so a list read back out of the shell cannot be re-joined without losing it.
+   Nothing reads that file back out of the shell: `-z` makes it NUL-separated (with git's default `core.quotePath` a non-ASCII path comes back quoted on a line-oriented read, and the ledger stores what it is given verbatim), `--root` enumerates a repository's first commit like any other, and `--output` is what keeps the procedure followable — the Bash tool renders a NUL byte as a space, so a list read back out of the shell cannot be re-joined without losing it.
 
 5. **Append the `kind=change` ledger entry** — record the per-deliverable commit transition to the unified change-ledger. The verb stores the supplied `changed_paths` list verbatim; do NOT inline-copy the ledger API details — see [`../manage-change-ledger/SKILL.md`](../manage-change-ledger/SKILL.md) § "Canonical invocations" → `append (kind=change)` for the authoritative argument surface:
 

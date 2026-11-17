@@ -18,13 +18,15 @@ checkout for the bounded exception set — ``merge.lock``,
 ``run-configuration.json``, ``lessons-learned``, ``merge-queue.json``,
 ``harness/``, ``plans/NO_PLAN/build-results`` — every other resolution is
 cwd-relative. One further class is neither: a verb HANDED the tree it must act
-on resolves against THAT tree, never against the caller's cwd. ``--project-dir``
-names it explicitly, and ``--plan-id`` names it by record (a real plan's
-``worktree_path`` comes from the plan record, not from a walk-up). That class is
+on resolves against THAT tree. ``--project-dir`` names it explicitly, and
+``--plan-id`` names it by record — a ``materialized`` plan carries its
+``worktree_path`` in the plan record, while a plan with no worktree falls back to
+the caller's own checkout, where record and walk-up agree. That class is
 target-anchored, not main-anchored — the ``git-workflow`` ``commit`` verb writes
 its ``kind=change`` row to ``{target_tree}/.plan/work/change-ledger.jsonl``
-through it — so it neither widens the set above nor adds a second main-anchored
-resolver. With ``orchestrator.use_worktree`` on, the orchestrator store is
+through it, which is what lets a verb run from another checkout record into the
+target's file — so it neither widens the set above nor adds a second
+main-anchored resolver. With ``orchestrator.use_worktree`` on, the orchestrator store is
 reached through the shared ledger worktree ``worktrees/_orchestrator``, whose
 location is NAMED through that same resolver without joining the resident set —
 the same standing as ``plans/{plan_id}``.
@@ -590,12 +592,16 @@ def _find_plan_root_from_cwd() -> Path | None:
 # Main-anchored resolution — THE single sanctioned exception (ADR-002)
 # =============================================================================
 # Every OTHER resolver in the codebase is uniform cwd-relative
-# (``_find_plan_root_from_cwd`` above, ``file_ops.get_base_dir``). The function
-# below is the ONE deliberate exception: it resolves to the MAIN checkout's
-# ``.plan/local`` regardless of caller cwd. The resolution logic was lifted
-# verbatim from ``merge_lock.py``'s private ``_resolve_main_lock_path`` /
-# ``_main_checkout_root`` so all cross-session shared state shares one
-# mechanism instead of proliferating ad-hoc git-common-dir copies.
+# (``_find_plan_root_from_cwd`` above, ``file_ops.get_base_dir``), with one
+# further class that is neither: a verb HANDED the tree it must act on resolves
+# against that tree (``--project-dir`` explicitly, or a ``materialized`` plan's
+# recorded ``worktree_path``) — target-anchored, not main-anchored, and not a
+# walk-up. The function below is the ONE deliberate MAIN-ANCHORED exception: it
+# resolves to the MAIN checkout's ``.plan/local`` regardless of caller cwd. The
+# resolution logic was lifted verbatim from ``merge_lock.py``'s private
+# ``_resolve_main_lock_path`` / ``_main_checkout_root`` so all cross-session
+# shared state shares one mechanism instead of proliferating ad-hoc
+# git-common-dir copies.
 
 
 def _override_is_set() -> bool:
@@ -720,7 +726,10 @@ def resolve_main_anchored_path(subpath: str | Path) -> Path:
 
     This is THE single sanctioned main-anchored exception resolver (ADR-002).
     It is the ONLY mechanism that resolves to the main checkout regardless of
-    cwd; every other resolution in the codebase is uniform cwd-relative. New
+    cwd; every other resolution is uniform cwd-relative, save the target-anchored
+    class (a verb HANDED the tree it must act on — ``--project-dir``, or a
+    ``materialized`` plan's recorded ``worktree_path``) which resolves against
+    that tree rather than against either anchor. New
     cross-session shared state MUST route through this function rather than
     re-implementing git-common-dir resolution. The bounded set of main-RESIDENT
     corpora is exactly: ``merge.lock``, ``run-configuration.json``,

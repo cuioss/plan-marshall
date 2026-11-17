@@ -340,7 +340,7 @@ def test_append_change_reads_a_nul_separated_path_file_losslessly(env) -> None:
     NUL byte as a space, so a caller cannot read the list back out and re-join
     it).
     """
-    paths = ['src/a,b.py', ' leading.py', 'café.py', 'trailing.py ']
+    paths = ['src/a,b.py', 'src/with space.py', ' leading.py', 'café.py', 'trailing.py ']
     path_file = env.base / 'changed-paths.nul'
     path_file.write_bytes(b''.join(p.encode('utf-8') + b'\0' for p in paths))
 
