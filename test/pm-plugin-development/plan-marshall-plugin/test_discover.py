@@ -15,6 +15,8 @@ import json
 import tempfile
 from pathlib import Path
 
+import pytest
+
 import plugin_discover
 from plugin_discover import (
     BUILD_SYSTEM,
@@ -153,6 +155,27 @@ def test_build_commands():
     # Commands should use pyproject_build via execute-script
     assert 'plan-marshall:build-pyproject:pyproject_build' in commands['module-tests']
     assert 'pm-plugin-development' in commands['module-tests']
+
+
+@pytest.mark.parametrize(
+    'canonical',
+    ['compile', 'test-compile', 'module-tests', 'quality-gate', 'verify', 'coverage', 'clean'],
+)
+def test_every_bundle_command_carries_its_canonical_identity(canonical):
+    """Each emitted string names its canonical, exactly as ``build_canonical_commands`` does.
+
+    The argument string names the bundle but not the canonical, so the identity
+    travels on ``--canonical`` — the same contract the shared emitter follows.
+    The assertion is a LITERAL, not a call back into ``build_commands``: seeding
+    the expectation from the function under test would keep passing with the flag
+    deleted.
+    """
+    commands = build_commands('pm-plugin-development')
+
+    assert commands[canonical] == (
+        'python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run '
+        f'--command-args "{canonical} pm-plugin-development" --canonical {canonical}'
+    )
 
 
 # =============================================================================
