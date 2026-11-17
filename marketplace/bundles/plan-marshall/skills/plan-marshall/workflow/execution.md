@@ -537,7 +537,8 @@ residual deliverable" would be wrong or ambiguous:
    After EACH group's commit, complete the Step 10a bookkeeping for that
    commit (resolve `{commit_sha}` via `git rev-parse HEAD` in the worktree,
    enumerate the commit's paths via
-   `git diff-tree --no-commit-id --name-only -r {commit_sha}`, and append
+   `git diff-tree --no-commit-id --name-only -r --root -z {commit_sha}`,
+   reading the NUL-terminated entries, and append
    the `kind=change` ledger entry — with that group's `deliverable-id` — per
    [`manage-change-ledger/SKILL.md`](../../manage-change-ledger/SKILL.md) §
    "Canonical invocations" → `append (kind=change)`).
