@@ -4,14 +4,14 @@
 
 ## START HERE
 
-**Resume anchor**: RUNNING (2026-11-16): PLAN-LB-153, -154, -155 are running in the runbook lane; PLAN-LB-156 shipped as PR 1998 (landing analysed). PLAN-LB-157 is EMITTED as /plan-marshall-runbook-lane plan=.plan/orchestrator/live-blockers/plans/PLAN-LB-157-pre-merge-refuses-unrecorded-earlier-steps.md and stays staged until the operator reports it running. NEXT ACTION: await landings from rb-lb-153, -154, -155 (and -157 once running) through the inbox, then analyze each. STANDING RULE: every staged plan uses lane=runbook and the runbook-lane emit form. OPERATOR WORDS STILL OWED: ruling on lessons-routing-094 (marker-detect has no caller: an automatic verify/finalize gate means a plan, on-demand means rewording ext-point-domain-verb.md:110); decision (2) (recommend option a); a plan for the HIGH CAUTION-shape review-body parser defect; whether the PLAN-LB-152 minors ride that plan or get none; whether the handle-open leaf-document defect and the null-block case in orchestrator get merit one small plan; confirmation of the deferred relocation of settled narrative; whether a small plan adds plan/row/field to the worktree_root_unreadable refusal (a) or none (b); whether issue 2000 (package-phase module-tests zero-test guard) merits a plan. The apply-changes self-invocation question stays open (1a). Not done: five remote branches with no PR untouched; local branch chore/uv-lock-ruff-0-17-5 still exists.
+**Resume anchor**: RUNNING (2026-11-16): PLAN-LB-154, -155, -157 are running in the runbook lane (one free slot, N=4); PLAN-LB-153 shipped as PR 1999, PLAN-LB-156 as PR 1998. Nothing is staged to emit. NEXT ACTION: await landings from rb-lb-154, -155, -157 through the inbox, then analyze each. STANDING RULE: every staged plan uses lane=runbook and the runbook-lane emit form. OPERATOR WORDS STILL OWED: ruling on lessons-routing-094 (marker-detect has no caller: an automatic verify/finalize gate means a plan, on-demand means rewording ext-point-domain-verb.md:110); decision (2) (recommend option a); a plan for the HIGH CAUTION-shape review-body parser defect; whether the PLAN-LB-152 minors ride that plan or get none; whether the handle-open leaf-document defect and the null-block case in orchestrator get merit one small plan; confirmation of the deferred relocation of settled narrative; whether a small plan adds plan/row/field to the worktree_root_unreadable refusal (a) or none (b); whether issue 2000 (package-phase module-tests zero-test guard) merits a plan; whether the three stale documentation statements left by PLAN-LB-153 merit a small completion plan. The apply-changes self-invocation question stays open (1a). Not done: five remote branches with no PR untouched; local branch chore/uv-lock-ruff-0-17-5 still exists.
 **Phase**: orchestrating
 **Running**:
-- PLAN-LB-153 (WS-01)
 - PLAN-LB-154 (WS-01)
 - PLAN-LB-155 (WS-04)
+- PLAN-LB-157 (WS-01)
 **Queue** (staged, in order):
-1. PLAN-LB-157 (WS-01)
+- (empty)
 - PLAN-LB-14 (WS-03) — plan=lb-14-launch-gate-scope — PR 1715 — landing=landings/PLAN-LB-14.md — status: shipped
 - PLAN-LB-01 (WS-01) — status: superseded
 - PLAN-LB-04 (WS-01) — status: superseded
@@ -164,13 +164,13 @@
 - PLAN-LB-150 (WS-04) — plan=rb-lb-150-apply-changes-skill — PR 1986 — landing=landings/PLAN-LB-150.md — status: shipped
 - PLAN-LB-151 (WS-03) — plan=rb-lb-151-handle-open-verb — PR 1987 — landing=landings/PLAN-LB-151.md — status: shipped
 - PLAN-LB-152 (WS-05) — plan=rb-lb-152-review-gate-single-read-cleanup — PR 1992 — landing=landings/PLAN-LB-152.md — status: shipped
+- PLAN-LB-153 (WS-01) — plan=rb-lb-153-phase5-handback-commit-rows — PR 1999 — landing=landings/PLAN-LB-153.md — status: shipped
 - PLAN-LB-156 (WS-02) — plan=rb-lb-156-maven-root-aggregator-test-artifact-ladder — PR 1998 — landing=landings/PLAN-LB-156.md — status: shipped
 
 ## Ordered Queue
 
 | # | Plan | Workstream | Status | Surface (expected) | Lane |
 |---|------|------------|--------|--------------------|------|
-| 1 | PLAN-LB-153 | WS-01 | running | marketplace/bundles/plan-marshall/skills/phase-5-execute/SKILL.md; marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/execution.md; marketplace/bundles/plan-marshall/skills/workflow-integration-git/scripts/git-workflow.py; test/plan-marshall/workflow-integration-git/ | runbook |
-| 2 | PLAN-LB-154 | WS-01 | running | marketplace/bundles/plan-marshall/skills/phase-2-refine/standards/refine-workflow-detail.md; marketplace/bundles/plan-marshall/skills/plan-marshall/standards/execution-recovery.md; marketplace/bundles/plan-marshall/skills/plan-marshall/standards/sync-with-main.md; test/plan-marshall/plan-marshall/ | runbook |
-| 3 | PLAN-LB-155 | WS-04 | running | marketplace/bundles/plan-marshall/skills/platform-runtime/scripts/claude_runtime.py; marketplace/bundles/plan-marshall/skills/platform-runtime/scripts/runtime_base.py; marketplace/bundles/plan-marshall/skills/platform-runtime/standards/contract.md; test/plan-marshall/platform-runtime/ | runbook |
-| 4 | PLAN-LB-157 | WS-01 | staged | marketplace/bundles/plan-marshall/skills/manage-status/scripts/_cmd_assert_step_recorded.py; marketplace/bundles/plan-marshall/skills/phase-6-finalize/SKILL.md; marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/branch-cleanup.md; test/plan-marshall/phase-6-finalize/ | runbook |
+| 1 | PLAN-LB-154 | WS-01 | running | marketplace/bundles/plan-marshall/skills/phase-2-refine/standards/refine-workflow-detail.md; marketplace/bundles/plan-marshall/skills/plan-marshall/standards/execution-recovery.md; marketplace/bundles/plan-marshall/skills/plan-marshall/standards/sync-with-main.md; test/plan-marshall/plan-marshall/ | runbook |
+| 2 | PLAN-LB-155 | WS-04 | running | marketplace/bundles/plan-marshall/skills/platform-runtime/scripts/claude_runtime.py; marketplace/bundles/plan-marshall/skills/platform-runtime/scripts/runtime_base.py; marketplace/bundles/plan-marshall/skills/platform-runtime/standards/contract.md; test/plan-marshall/platform-runtime/ | runbook |
+| 3 | PLAN-LB-157 | WS-01 | running | marketplace/bundles/plan-marshall/skills/manage-status/scripts/_cmd_assert_step_recorded.py; marketplace/bundles/plan-marshall/skills/phase-6-finalize/SKILL.md; marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/branch-cleanup.md; test/plan-marshall/phase-6-finalize/ | runbook |
