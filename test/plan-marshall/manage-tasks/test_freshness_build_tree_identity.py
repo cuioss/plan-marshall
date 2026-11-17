@@ -218,6 +218,30 @@ def test_an_explicit_null_root_never_matches(plan_context, monkeypatch, tmp_path
     assert result['reason'] == 'worktree_root_unreadable', result
 
 
+def test_the_unreadable_root_refusal_names_the_plan_the_row_and_the_field(plan_context, monkeypatch, tmp_path) -> None:
+    """An unnamed refusal is unactionable — name what the operator must go and fix.
+
+    The row is identified by its ledger POSITION and its notation, the field by
+    name, and the plan the gate is answering for. A null root is what a writer
+    that could not establish the fact records, and the writers that never tried
+    omit the key instead — so the message also has to say that a row from an
+    executor generated BEFORE the writer fix carries it, which makes regenerating
+    that executor part of the remedy; without it, "re-dispatch the build"
+    reproduces the same row.
+    """
+    result = _run_gate(plan_context, monkeypatch, tmp_path, _row(worktree_root=None))
+
+    assert result['status'] == 'stale', result
+    message = result['message']
+    assert _PLAN_ID in message, f'the refusal must name the plan it is about: {message}'
+    assert '#0' in message, f'the refusal must name the row POSITION in the ledger: {message}'
+    assert 'plan-marshall:build-pyproject:pyproject_build' in message, (
+        f'the refusal must name the row notation: {message}'
+    )
+    assert 'worktree_root' in message, f'the refusal must name the field: {message}'
+    assert 'regenerat' in message.lower(), f'the remedy must name the executor regeneration: {message}'
+
+
 def test_a_routing_seam_row_is_not_read_as_a_failed_capture(plan_context, monkeypatch, tmp_path) -> None:
     """CONTROL: the seam's deliberately hash-less row keeps the mutation answer.
 

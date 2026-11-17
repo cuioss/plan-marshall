@@ -291,9 +291,11 @@ _STALE_REWRITTEN_BY_BUILD = (
 
 _STALE_ROOT_UNREADABLE = (
     'worktree_root_unreadable',
-    'A successful build row for this working-tree state records a tree root that '
-    'cannot be read, so it cannot be shown to describe this tree. Establish what '
-    'wrote that row, or re-dispatch the build.',
+    'A writer that could not establish the fact records it as null — the writers that never '
+    'tried omit the key instead — and a row written by an executor generated before the writer '
+    'fix carries that null, so regenerating the executor is part of the remedy: the next build '
+    'then records the root it hashed. Establish what wrote the row, or re-dispatch the build '
+    "against this plan's tree.",
 )
 
 _STALE_DISPATCH_HASH_UNREADABLE = (
@@ -423,7 +425,25 @@ def _partition_candidates(
     return admitted, refused
 
 
-def _refusal_reason(refused: list[tuple[int, dict, str]], gate_root: Path) -> tuple[str, str]:
+def _refused_rows_named(refused: list[tuple[int, dict, str]], route: str) -> str:
+    """Name every row refused on ``route`` by its LEDGER POSITION and notation.
+
+    The position is the row's index in the ledger file, which is also what
+    ``refused_rows[].ledger_index`` publishes, so the operator can open the file
+    and land on the row. A row with no usable notation is named as such rather
+    than by an empty pair of quotes.
+    """
+    names = []
+    for index, entry, row_route in refused:
+        if row_route != route:
+            continue
+        notation = entry.get('notation')
+        label = notation.strip() if isinstance(notation, str) and notation.strip() else 'no notation recorded'
+        names.append(f'#{index} ({label})')
+    return ', '.join(names)
+
+
+def _refusal_reason(refused: list[tuple[int, dict, str]], gate_root: Path, plan_id: str) -> tuple[str, str]:
     """Return ``(reason, message)`` for a set of tree-identity refusals."""
     routes = {route for _index, _entry, route in refused}
     reason = next(route for route in _REFUSAL_PRECEDENCE if route in routes)
@@ -431,6 +451,15 @@ def _refusal_reason(refused: list[tuple[int, dict, str]], gate_root: Path) -> tu
     if reason == _STALE_ROOT_MISMATCH[0]:
         roots = sorted({str(entry.get(_ROOT_FIELD)) for _index, entry, route in refused if route == reason})
         message = f'Recorded root(s): {"; ".join(roots)}. This gate hashes: {gate_root}. {message}'
+    elif reason == _STALE_ROOT_UNREADABLE[0]:
+        # The route is the one where "what wrote it" is answerable from the row
+        # itself and the fix is mechanical, so the refusal names the plan, the
+        # row and the field instead of leaving the operator to search the ledger.
+        message = (
+            f'Plan {plan_id}: build row(s) {_refused_rows_named(refused, reason)} record the field '
+            f'{_ROOT_FIELD} as present but null or blank, so the row cannot be shown to describe '
+            f'this tree. {message}'
+        )
     return reason, message
 
 
@@ -1040,7 +1069,7 @@ def cmd_pre_commit_verify_freshness(args) -> dict:
         )
 
     if refused:
-        reason, refusal_message = _refusal_reason(refused, worktree_root)
+        reason, refusal_message = _refusal_reason(refused, worktree_root, plan_id)
         return {
             'status': 'stale',
             'plan_id': plan_id,
