@@ -1035,6 +1035,14 @@ def _commit_changed_paths(worktree: Path, commit_sha: str) -> list[str] | None:
     still satisfy the SHA-based boundary check. The merge case therefore
     enumerates the FIRST-PARENT diff — the work this commit brought onto the
     branch — which is the one comparison a merge does have.
+
+    That first-parent diff runs with ``--no-renames``: ``git diff`` follows the
+    user's rename detection by default, so a file the merge RENAMED would be
+    reported at its destination only, and the row would lose the path the merge
+    removed. Every path the comparison changed is what the row records, so
+    rename detection is turned off here and the paired delete/add both appear.
+    ``diff.renames`` is a caller's configuration, and a ledger row must not
+    depend on it.
     """
     parents_rc, parents_out, _err = _run_git_nul_verbatim(
         ['-C', str(worktree), 'rev-list', '--parents', '-n', '1', commit_sha]
@@ -1043,7 +1051,7 @@ def _commit_changed_paths(worktree: Path, commit_sha: str) -> list[str] | None:
         return None
     if len(parents_out.split()) > 2:
         rc, out, _err = _run_git_nul_verbatim(
-            ['-C', str(worktree), 'diff', '--name-only', '-r', '-z', f'{commit_sha}^1', commit_sha]
+            ['-C', str(worktree), 'diff', '--no-renames', '--name-only', '-r', '-z', f'{commit_sha}^1', commit_sha]
         )
     else:
         rc, out, _err = _run_git_nul_verbatim(
@@ -1083,8 +1091,19 @@ def _record_commit_change(worktree: Path, commit_sha: str, step: str | None, *, 
 
     A failure here does NOT fail the commit — the commit already exists and
     rolling it back is not this verb's business. The row is reported missing
-    instead, so the boundary's ``bookkeeping_gap`` refusal (the fail-closed
-    direction) is what surfaces it.
+    instead, as ``ledger_recorded: false`` beside the ``ledger_error`` that says
+    why, and the CALLER is the party that reads it.
+
+    The ``5-execute`` boundary's ``bookkeeping_gap`` refusal is NOT that reader
+    for a ``6-finalize`` commit: the boundary runs at the ``5-execute``
+    completion, and such a commit is made AFTER it, so nothing there can see the
+    missing row. The boundary does still surface a row the branch owes — a
+    phase-5 hand-back commit made before that completion, or any commit (a
+    finalize one included) once a loop-back re-enters ``5-execute`` and the
+    boundary runs again over the whole branch. So a ``6-finalize`` commit's
+    failed row is the caller's to notice and repair, and the
+    ``workflow-integration-git`` skill's Commit Changes flow states that
+    obligation.
 
     The row is written to the TARGET tree's own ledger — ``{worktree}/.plan/
     work/change-ledger.jsonl``, the file the ``5-execute`` boundary reads for
