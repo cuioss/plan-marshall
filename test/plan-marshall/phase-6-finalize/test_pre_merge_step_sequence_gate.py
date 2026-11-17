@@ -103,6 +103,36 @@ class _Spy:
         return dict(verdict)
 
 
+class _SpendingClock:
+    """A monotonic stand-in the sweep reads, which a stubbed verb advances.
+
+    The sweep's budget is real time it cannot wait out in a test, so the case
+    substitutes this clock and has each stubbed verb spend the bound it was handed.
+    ``spend`` is what makes a roster longer than the budget observable at once.
+    """
+
+    def __init__(self) -> None:
+        self.now = 0.0
+
+    def __call__(self) -> float:
+        return self.now
+
+    def spend(self, seconds: float) -> None:
+        self.now += seconds
+
+
+class _BudgetSpy(_Spy):
+    """Step-record seam that spends one per-verb bound of budget on every query."""
+
+    def __init__(self, records: dict[str, dict], clock: _SpendingClock) -> None:
+        super().__init__(records)
+        self.clock = clock
+
+    def __call__(self, step: str) -> dict:
+        self.clock.spend(gate._STEP_SEQUENCE_VERB_TIMEOUT_SECONDS)
+        return super().__call__(step)
+
+
 def _missing_record(step: str) -> dict:
     """The assertion's own refusal payload for a step with no terminal record."""
     return {
@@ -128,7 +158,13 @@ def _manifest(*steps: str, status: str = 'success') -> dict:
     return {'status': 'success', 'plan_id': _PLAN_ID, 'phase_6': {'steps': list(steps)}}
 
 
-def _merge(*, manifest: dict, records: dict[str, dict], route: str = 'safe-merge'):
+def _merge(
+    *,
+    manifest: dict,
+    records: dict[str, dict],
+    route: str = 'safe-merge',
+    clock: _SpendingClock | None = None,
+):
     """Drive ``merge`` with the step-sequence sweep delegated to the production code.
 
     The sweep itself is stubbed through ``step_sequence_check`` — the merge-path
@@ -136,9 +172,13 @@ def _merge(*, manifest: dict, records: dict[str, dict], route: str = 'safe-merge
     over stubbed manifest and step-record readers. That is what makes these cases
     exercise the production sweep rather than an assembled verdict, without a
     manifest file or a status document on disk.
+
+    ``clock`` substitutes the sweep's budget clock; the step-record spy then spends
+    one per-verb bound per query, which is how a roster outlasts the budget.
     """
     runner = _Runner()
-    spy = _Spy(records)
+    spy: _Spy = _BudgetSpy(records, clock) if clock is not None else _Spy(records)
+    budget_kwargs = {'clock': clock} if clock is not None else {}
     result = gate.merge(
         _PLAN_ID,
         route=route,
@@ -155,6 +195,7 @@ def _merge(*, manifest: dict, records: dict[str, dict], route: str = 'safe-merge
             plan_id,
             manifest_reader=lambda _plan_id: manifest,
             step_record_check=spy,
+            **budget_kwargs,
         ),
     )
     return result, runner, spy
@@ -714,3 +755,110 @@ def test_an_unimportable_canonicalizer_is_a_read_fault_not_a_literal_fallback(mo
     assert prefix is None, 'a literal fallback would have matched default:branch-cleanup here'
     assert fault is not None
     assert 'canonicalizer' in fault
+
+
+# --------------------------------------------------------------------------- #
+# The budget: the walk is bounded by ONE ceiling, not by the roster length
+# --------------------------------------------------------------------------- #
+
+
+def test_the_sweep_budget_is_named_and_within_its_ceiling() -> None:
+    """One constant bounds the whole walk, and it is no greater than 180 s.
+
+    A budget that grew with the roster — or that was spelled as a per-verb bound
+    times a count — would leave a wedged executor pinning the held merge mutex for
+    the length of the manifest.
+    """
+    assert gate._STEP_SEQUENCE_TOTAL_BUDGET_SECONDS <= 180
+    assert gate._STEP_SEQUENCE_VERB_TIMEOUT_SECONDS < gate._STEP_SEQUENCE_TOTAL_BUDGET_SECONDS
+
+
+def test_a_roster_longer_than_the_budget_allows_stops_at_the_budget() -> None:
+    """A roster the sweep cannot read inside its budget is refused with ``remedy: stop``.
+
+    Each stubbed verb consumes its whole per-verb bound, so five earlier steps need
+    300 s against the 180 s budget. The sweep must stop READING rather than extend
+    the hold, refuse the merge, and name the steps it never reached as read faults —
+    never admit them, and never report them as unrecorded steps.
+    """
+    clock = _SpendingClock()
+    earlier = [f'default:step-{n}' for n in range(1, 6)]
+
+    result, runner, spy = _merge(
+        manifest=_manifest(*earlier, _BRANCH_CLEANUP),
+        records={step: _record('done') for step in earlier},
+        clock=clock,
+    )
+
+    assert runner.calls == [], f'the merge runner was invoked over an unread roster: {runner.calls}'
+    assert result['status'] == 'error'
+    assert result['dispatched'] is False
+    assert result['error'] == gate.MERGE_EARLIER_STEP_UNRECORDED
+    assert result['remedy'] == 'stop', 'a spent budget is not a re-entry: it must stop'
+    assert [row['step'] for row in result['steps']] == ['default:step-4', 'default:step-5'], result['steps']
+    assert {row['reason'] for row in result['steps']} == {'step_record_unreadable'}, result['steps']
+    # Non-vacuity: the sweep really did read the three steps the budget allowed and
+    # left the last two untouched, so this is a stop in mid-walk, not a short roster.
+    assert spy.asked == ['default:step-1', 'default:step-2', 'default:step-3'], spy.asked
+    # Whatever the roster length, the whole sweep finished inside the budget plus
+    # the one bound the last admitted verb was handed.
+    assert clock.now <= gate._STEP_SEQUENCE_TOTAL_BUDGET_SECONDS + gate._STEP_SEQUENCE_VERB_TIMEOUT_SECONDS
+
+
+def test_a_roster_that_fits_keeps_every_existing_verdict() -> None:
+    """Inside the budget the sweep's verdicts are unchanged, and the merge admits.
+
+    The budget bounds the WAIT; it does not re-classify an outcome, so a fully
+    recorded roster still reaches the routed merge verb exactly once.
+    """
+    clock = _SpendingClock()
+    result, runner, spy = _merge(
+        manifest=_manifest('default:create-pr', 'default:adr-propose', _BRANCH_CLEANUP),
+        records={'default:create-pr': _record('done'), 'default:adr-propose': _record('skipped')},
+        clock=clock,
+    )
+
+    assert result['dispatched'] is True, result
+    assert len(runner.calls) == 1
+    assert spy.asked == ['default:create-pr', 'default:adr-propose'], spy.asked
+
+
+def test_each_verb_receives_the_lesser_of_its_bound_and_the_budget_left(monkeypatch, tmp_path) -> None:
+    """The per-verb timeout shrinks to the budget still remaining.
+
+    Both verbs are bounded, but the SECOND must not be handed the full per-verb
+    bound when the first already spent most of the budget: the bound that reaches
+    ``subprocess.run`` is the lesser of the two, which is what keeps the walk inside
+    one ceiling however many steps the manifest lists.
+    """
+    clock = _SpendingClock()
+    executor = tmp_path / 'execute-script.py'
+    payloads = [
+        serialize_toon(
+            {
+                'status': 'success',
+                'plan_id': _PLAN_ID,
+                'phase_6': {'steps': ['default:create-pr', 'default:adr-propose', _BRANCH_CLEANUP]},
+            }
+        ),
+        serialize_toon({'status': 'success', 'recorded': True, 'outcome': 'done', 'firing_count': 1}),
+    ]
+    timeouts: list[float | None] = []
+
+    def fake_run(argv, **kwargs):
+        timeouts.append(kwargs.get('timeout'))
+        clock.spend(gate._STEP_SEQUENCE_TOTAL_BUDGET_SECONDS - 30)
+        stdout = payloads.pop(0)
+        return subprocess.CompletedProcess(argv, 0, stdout=stdout, stderr='')
+
+    monkeypatch.setattr(gate, 'get_executor_path', lambda: executor)
+    monkeypatch.setattr(gate.subprocess, 'run', fake_run)
+
+    verdict = gate._step_sequence_refusal(_PLAN_ID, clock=clock)
+
+    # The manifest read takes the full per-verb bound; the next verb takes only the
+    # 30 s the budget still has left, and the one after it is not run at all.
+    assert timeouts == [gate._STEP_SEQUENCE_VERB_TIMEOUT_SECONDS, 30], timeouts
+    assert verdict is not None
+    assert verdict['remedy'] == 'stop'
+    assert [row['step'] for row in verdict['steps']] == ['default:adr-propose'], verdict['steps']
