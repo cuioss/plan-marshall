@@ -812,9 +812,9 @@ def test_a_roster_longer_than_the_budget_allows_stops_at_the_budget() -> None:
 def test_a_gap_found_before_the_budget_runs_out_still_stops_at_the_budget() -> None:
     """A spent budget answers ``stop`` even when an earlier row names a step gap.
 
-    The row set alone cannot decide the remedy here: step 1 is a nameable gap a
+    The row set alone cannot decide the remedy here: step 2 is a nameable gap a
     re-entry could run, but the walk never finished, so no re-entry can be trusted
-    to clear the sequence. The message must name only the unread steps.
+    to clear the sequence. The message must name only the unread step.
     """
     clock = _SpendingClock()
     earlier = [f'default:step-{n}' for n in range(1, 5)]
