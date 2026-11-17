@@ -4654,3 +4654,24 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
   project regenerates on upgrade; on this repository `/apply-changes` is owed again. Recorded without a plan: the `-z` output reaching an agent as
   space-separated paths, whether a persisted command map without the flag keeps the guard inert, and the lane's residue (finalize ledger re-check,
   `--no-renames`, the lossy comma-joined `--changed-paths`, npm's chained verify, the cwd-policy documents).
+- **Decision — a third follow-up plan, PLAN-LB-160, on the operator's word ("stage the possible small documentation plan and the residues as a small
+  plan").** Every claim was re-read at HEAD before staging, after the PLAN-LB-158 staging error. Confirmed: the merge enumeration follows rename
+  detection and loses a rename's old path; `--changed-paths` is split on commas and trimmed; `ledger_recorded` is read by nothing, so a failed finalize
+  row is invisible although the docstring claims the `5-execute` boundary surfaces it; the Bash tool renders the `-z` NULs as spaces; npm's chained
+  `verify` is the one canonical string without `--canonical`; the stale test comment is at `test_source_commit_gate_commit_path.py:713`. Not established:
+  which five siblings of `cwd-policy.md` carry the stale statement, and whether the commit verb's target-anchored write contradicts it at all, so deliverable 1
+  may close with no document change. Six deliverables in one plan, with the presumptive-split rationale recorded in the spec; deliverable 4 is handed
+  back as its own plan if the outline finds it needs a new dispatcher step. The surface touches files PLAN-LB-158 just merged; nothing is running, so there is
+  no overlap, and `corpus spec-skills` answers `emit_allowed: true`. Reported running by the operator the same day.
+- **Watch — the `/tmp` guard-node leak after #1951, reported by the pm-mcp-core orchestrator** (a pasted lesson, verified on this host, which is the one it
+  measured: 4 941 `guard-node-*`, 3 334 `executor-mappings-*` and 2 795 `build-map-seed-tree-*` directories, the figures it quoted). Verified: #1951 routes all
+  three creators through `test/_shared/_system_temp.py` (an `atexit` removal at the create site plus the `pytest_unconfigure` drain), and a sweep forbids a
+  bare `mkdtemp` in the test tree, so no creator is missed. Not covered by design: a process killed by SIGKILL or SIGTERM skips both, which the hook's own
+  docstring says and PLAN-LB-141 scoped out as an operator-run `systemd-tmpfiles` janitor that is still owed. The post-fix directories are not a stream of
+  fragments: 1 710 of them since 11 November are exactly nine whole sets of 190 (11-11: 1, 11-12: 2, 11-14: 2, 11-16: 4 sets), each with birth time equal to
+  modification time and the full file set, so a teardown never touched them; one set is the last minute of a whole-tree run in the PLAN-LB-153 lane worktree
+  that finished normally (33 992 passed). No set dates from 11-13, 11-15 or today, although the PLAN-LB-154, -155, -157, -158 and -159 lanes each ran whole-tree
+  `verify` inside their worktrees today. Reading: the teardown works on a normal exit in a current lane, and the nine leaked sets came from runs whose process
+  never reached it (a lane on a pre-fix base, or a run killed after the guard tests); which, was NOT established, and no repro was run (the orchestrator runs no
+  builds). The PLAN-LB-160 lane is live on a post-fix base and is the free experiment: a count of `/tmp/guard-node-*` created after it has run its whole-tree
+  verify is the discriminator. Not staged; the answer to the sender and the one-off cleanup wait on the operator.
