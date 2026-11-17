@@ -65,6 +65,9 @@ from runtime_base import (  # noqa: E402,F401
     toon_success,
 )
 from runtime_base import (  # noqa: E402
+    _agent_search_roots as _agent_search_roots_in_tree,
+)
+from runtime_base import (  # noqa: E402
     _find_agent_file as _find_agent_file_in_tree,
 )
 from toon_parser import parse_toon  # noqa: E402
@@ -2951,14 +2954,24 @@ def _extract_project_steps(marshal_config: dict[str, Any]) -> list[dict[str, str
 #
 # Agent-file location and frontmatter parsing live in ``runtime_base`` — the
 # single home every target's verify-first clause (2) shares. The wrapper below
-# prepends the Claude deployed-bundle cache root so a deployed layout resolves
-# before the source tree; ``_claude_runtime_impl`` and the
+# prepends the Claude deployed-bundle cache root, which the shared lookup probes
+# for a flat shape before the source tree and for the versioned deployed shape
+# only after the flat shape missed everywhere; ``_claude_runtime_impl`` and the
 # ``claude_runtime._find_agent_file`` test patches keep resolving here.
 
 
 def _find_agent_file(agent_name: str) -> Path | None:
-    """Locate an agent markdown under the plugin cache and source tree in sequence."""
+    """Locate an agent markdown: the flat shape across the roots, then the versioned one."""
     return _find_agent_file_in_tree(agent_name, (_claude_bundle_cache_root(),))
+
+
+def _agent_search_roots() -> list[Path]:
+    """Return the roots the Claude agent-file lookup probes, in probe order.
+
+    The deployment half of ``_find_agent_file``'s answer, so a miss can report
+    what was searched instead of only the name that was not found.
+    """
+    return _agent_search_roots_in_tree((_claude_bundle_cache_root(),))
 
 
 def _short_description_from_agent(description: str) -> str:

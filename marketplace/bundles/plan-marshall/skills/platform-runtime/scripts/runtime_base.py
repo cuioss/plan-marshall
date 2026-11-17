@@ -18,6 +18,7 @@ from collections.abc import Collection, Iterable, Sequence
 from pathlib import Path
 from typing import Any
 
+from marketplace_bundles import select_live_version_dir
 from toon_parser import serialize_toon
 
 #: The absent-session-identity sentinel, published once so no site restates it.
@@ -354,12 +355,20 @@ def marshal_shape_error(operation: str, marshal_path: Any, marshal_data: Any) ->
 # =============================================================================
 
 
-def _find_agent_file(agent_name: str, extra_roots: Sequence[Path] = ()) -> Path | None:
-    """Locate an agent markdown under the marketplace tree.
+def _agent_search_roots(extra_roots: Sequence[Path] = ()) -> list[Path]:
+    """Return the roots an agent-file lookup probes, in probe order.
 
-    Searches *extra_roots* first (a target prepends its deployed-bundle cache
-    root so a deployed layout resolves before the source tree), then the
-    script-relative marketplace walk. Only existing roots are searched.
+    *extra_roots* come first — a target prepends its deployed-bundle cache root
+    — then the script-relative marketplace walk. Only existing roots are listed,
+    and the walk stops at the first ancestor carrying a bundle root, so the
+    answer is exactly the set :func:`_find_agent_file` consults. It is what a
+    miss reports back to its caller: a bare "not found" under a lookup that
+    probes several shapes leaves the reader unable to tell a wrong name from an
+    unsearched root.
+
+    This is the ROOT order only. Which root wins for a given name also depends on
+    the shape order :func:`_find_agent_file` applies, where a flat hit in a later
+    root beats a versioned hit in an earlier one.
     """
     search_roots: list[Path] = [root for root in extra_roots if root.exists()]
     # Script-relative walk to find marketplace.
@@ -372,19 +381,132 @@ def _find_agent_file(agent_name: str, extra_roots: Sequence[Path] = ()) -> Path 
         if candidate2.is_dir():
             search_roots.append(candidate2)
             break
+    return search_roots
 
-    for root in search_roots:
+
+def _versioned_agent_file(root: Path, agent_name: str) -> Path | None:
+    """Resolve ``{root}/{bundle}/{version}/agents/{agent_name}.md``, or ``None``.
+
+    The deployed plugin cache keeps one directory per installed version, so an
+    agent lives one level deeper there than in the source tree. The version dir
+    is chosen by ``marketplace_bundles.select_live_version_dir`` — the shared
+    selector whose ordering (numerically-newest eligible wins) is decided in one
+    place — with eligibility "this version dir carries the requested agent", so
+    a newer version dir that does not ship the agent cannot hide an older one
+    that does.
+
+    Only directories are probed, read-only; an unreadable *root* is a miss for
+    this shape rather than an error, the same way the flat glob treats it.
+
+    Bundle directories are walked in sorted order, so an agent name carried by
+    two bundles under one root resolves to the alphabetically-first bundle — a
+    deterministic tie-break, unlike the flat pass's glob order.
+    """
+    try:
+        bundle_dirs = sorted(entry for entry in root.iterdir() if entry.is_dir() and not entry.name.startswith('.'))
+    except OSError:
+        return None
+    for bundle_dir in bundle_dirs:
+        selected = select_live_version_dir(
+            bundle_dir, lambda version_dir: (version_dir / 'agents' / f'{agent_name}.md').is_file()
+        )
+        if selected is not None:
+            return selected / 'agents' / f'{agent_name}.md'
+    return None
+
+
+#: The characters an agent file stem may contain. A name outside this set is a
+#: miss rather than a lookup: the versioned shape joins the name into a path (so
+#: ``..`` or a separator would escape the root) and the flat shape interpolates
+#: it into a glob (so ``*`` would select an arbitrary agent).
+_AGENT_STEM_CHARS: frozenset[str] = frozenset('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.-')
+
+
+def _is_agent_file_stem(agent_name: str) -> bool:
+    """True when *agent_name* is a file stem, not a path and not a glob.
+
+    ``--agent`` names an installed agent file (``execution-context-level-3``),
+    never a path and never a ``{bundle}:{name}`` notation. Both lookup shapes
+    consume the name as an opaque stem — the versioned pass joins it into a path,
+    the flat pass interpolates it into a glob pattern — so anything outside the
+    stem character set is refused before either runs.
+    """
+    return bool(agent_name) and agent_name[0] != '.' and set(agent_name) <= _AGENT_STEM_CHARS
+
+
+def _find_agent_file(agent_name: str, extra_roots: Sequence[Path] = ()) -> Path | None:
+    """Locate an agent markdown under the marketplace tree or a deployed cache.
+
+    Searches *extra_roots* first (a target prepends its deployed-bundle cache
+    root), then the script-relative marketplace walk. Two SHAPES are probed,
+    each across every root in that order before the next shape starts:
+
+    1. the FLAT shape (``{root}/{bundle}/agents/{name}.md`` — the source tree,
+       and any cache that keeps one directory per bundle);
+    2. the VERSIONED shape (``{root}/{bundle}/{version}/agents/{name}.md`` — the
+       deployed plugin cache).
+
+    The flat shape goes first across ALL roots, not merely within one: that is
+    what keeps a bare name resolving from the source tree in a checkout, where
+    the deployed cache also carries it. The versioned shape is what makes an
+    installed ``execution-context-level-{N}`` variant resolvable: those variants
+    are emitted per target and never live in ``marketplace/bundles``, so in a
+    source checkout the flat pass answers ``None`` for every one of them. (An
+    emitted FLAT tree — ``target/{target}/{bundle}/agents/`` — does carry them, and
+    reaches them through the flat pass like any other flat root.)
+    """
+    if not _is_agent_file_stem(agent_name):
+        return None
+    roots = _agent_search_roots(extra_roots)
+    for root in roots:
         for match in root.glob(f'*/agents/{agent_name}.md'):
             if match.is_file():
                 return match
+    for root in roots:
+        versioned = _versioned_agent_file(root, agent_name)
+        if versioned is not None:
+            return versioned
     return None
+
+
+def _is_block_scalar_marker(value: str) -> bool:
+    """True for a YAML block-scalar header: ``|``, ``>``, and their chomping forms.
+
+    The header is the style indicator followed by an optional chomping indicator
+    (``-`` strip, ``+`` keep) and an optional explicit indentation digit, so
+    ``|``, ``|-``, ``|+``, ``>``, ``>-`` and ``|2`` all introduce a block. A form
+    that is not recognised here would otherwise be stored as the description
+    text.
+    """
+    return bool(value) and value[0] in '|>' and all(char in '-+0123456789' for char in value[1:])
+
+
+def _block_scalar_value(lines: list[str], key_index: int) -> str:
+    """Return the indented block that follows a ``key: |`` / ``key: >`` line.
+
+    A description long enough to wrap is written as a block scalar, which puts
+    the text on the lines BELOW the key. Read as a plain ``key: value`` pair the
+    value is the literal ``|``, so a caller that renders the description would
+    render a pipe — the shape every real agent file hits, because their
+    descriptions are all block scalars. The block ends at the first non-indented
+    line; the parts are joined with a space, which is what a one-line rendering
+    of a block scalar is.
+    """
+    block: list[str] = []
+    for line in lines[key_index + 1 :]:
+        if line.strip() and not line[:1].isspace():
+            break
+        block.append(line.strip())
+    return ' '.join(part for part in block if part)
 
 
 def _parse_agent_frontmatter(agent_path: Path) -> dict[str, Any]:
     """Extract YAML-like frontmatter from an agent markdown file.
 
     Returns a dict with at minimum 'name', 'description', and 'tools' keys.
-    Tools are returned as a list of strings.
+    Tools are returned as a list of strings. A ``name``/``description`` written
+    as a block scalar (``description: |``) resolves to the block's text, never
+    to the ``|`` marker.
     """
     result: dict[str, Any] = {'name': '', 'description': '', 'tools': []}
     try:
@@ -400,7 +522,14 @@ def _parse_agent_frontmatter(agent_path: Path) -> dict[str, Any]:
         return result
 
     frontmatter = content[3:end].strip()
-    for line in frontmatter.splitlines():
+    lines = frontmatter.splitlines()
+    for index, line in enumerate(lines):
+        if line[:1].isspace():
+            # An indented line belongs to the value above it. A block scalar's
+            # text can itself contain "key: value" text (a description quoting
+            # YAML, an example naming another key), which is body text and not a
+            # key — reading it as one overwrote the real value with a fragment.
+            continue
         stripped = line.strip()
         if not stripped or ':' not in stripped:
             continue
@@ -421,17 +550,18 @@ def _parse_agent_frontmatter(agent_path: Path) -> dict[str, Any]:
             elif value:
                 result['tools'] = [t.strip() for t in value.split(',') if t.strip()]
         elif key in ('name', 'description'):
-            result[key] = value
+            result[key] = _block_scalar_value(lines, index) if _is_block_scalar_marker(value) else value
 
-    # Handle tools as a YAML list (- item per line) if not yet found inline.
+    # Handle tools as a YAML list (- item per line) if not yet found inline. The
+    # ``tools:`` header itself must be top-level, for the same reason the key scan
+    # above skips indented lines; its ``- item`` rows are indented.
     if not result['tools']:
         in_tools = False
-        for line in frontmatter.splitlines():
+        for line in lines:
             stripped = line.strip()
-            if stripped.startswith('tools:'):
+            if line.startswith('tools:'):
                 in_tools = True
-                inline = stripped[6:].strip()
-                if inline:
+                if stripped[6:].strip():
                     in_tools = False
             elif in_tools:
                 if stripped.startswith('- '):
@@ -480,10 +610,17 @@ def _unmapped_agent_tools(agent_name: str, target: str) -> list[str] | None:
 
     Resolves the agent markdown and checks each declared tool against the
     target's ``tool_permissions`` map. Returns ``None`` when the check could
-    not be performed — the agent file is unresolvable (a generated level
-    variant lives outside the source tree) or the mapping is unreadable —
-    so callers treat it as vacuous rather than as a measured empty or as a
-    refusal. An empty list is the measured "every declared tool maps".
+    not be performed — the agent file is unresolvable, or the mapping is
+    unreadable — so callers treat it as vacuous rather than as a measured empty
+    or as a refusal. An empty list is the measured "every declared tool maps".
+    An agent file that RESOLVES but cannot be read parses as an agent with no
+    declared tools: ``[]``, measured over nothing, which is a distinct (and here
+    indistinguishable-in-effect) state from the ``None`` above.
+
+    The lookup runs with NO extra root: the callers of this helper (OpenCode,
+    Antigravity) supply no deployed bundle cache, so only the script-relative
+    source tree is probed — and an emitted level variant lives only in an emitted
+    tree, which is one reason this answer is vacuous rather than a refusal.
     """
     agent_path = _find_agent_file(agent_name)
     if agent_path is None:

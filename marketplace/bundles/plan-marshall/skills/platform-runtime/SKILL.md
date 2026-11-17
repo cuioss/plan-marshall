@@ -176,7 +176,7 @@ No-op policy and caller obligations: `standards/no-op-policy.md`
 | `invalid_scope` | Scope argument not `project` or `global` |
 | `invalid_check` | `permission analyze --checks` contains unknown check name |
 | `marshal_not_found` | `.plan/marshal.json` missing |
-| `prompt_not_found` | `subagent dispatch` prompt file not found |
+| `prompt_not_found` | `subagent dispatch` could not read the prompt it was asked for (`--prompt-file`) or — on Claude — resolve the agent it was asked for (`--agent`); the agent-file message names the roots it probed |
 | `unknown_target` | `runtime.target` not in registry |
 | `hook_not_configured` | SessionStart hook missing; `$CLAUDE_CODE_SESSION_ID` unset |
 | `invalid_settings` | Settings file cannot be used as settings: a root that is not an object, a `permissions` value that is not a list, or a `permission` value that is not an object. Valid JSON, wrong shape — fail-closed before write — `permission configure/fix/ensure-wildcards/web-apply` |

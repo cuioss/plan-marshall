@@ -49,7 +49,7 @@ alternative: <what the caller can do instead>
 | `invalid_operation` | The operation's required argument is missing or unusable (`protect-path` path), or a direct runtime call names an unknown operation. The CLI routes `--operation` through argparse `choices`, so an unknown value stops there with an argparse rejection before this code can be returned |
 | `invalid_check` | `permission analyze --checks` contains an unknown check name |
 | `marshal_not_found` | `.plan/marshal.json` missing |
-| `prompt_not_found` | `subagent dispatch --prompt-file` path not found |
+| `prompt_not_found` | `subagent dispatch` could not read the prompt it was asked for, or could not resolve the agent it was asked for. Two misses share the code: the `--prompt-file` path that does not exist or cannot be read, and — on Claude, the only target that reads the agent file — the `--agent` name no searched root carries, whose message names every root it probed |
 | `unknown_target` | `runtime.target` value not in the target registry |
 | `unknown_overwrite_key` | `project install-hook --overwrite` names a conflict key the target does not define; rejected fail-closed before any write, so a typo never reads as "do not overwrite" |
 | `hook_not_configured` | SessionStart hook not installed; `$CLAUDE_CODE_SESSION_ID` unset |
@@ -1339,9 +1339,18 @@ Return the platform-specific invocation parameters for spawning a focused subage
 
 **Arguments**: `--agent <name>` (required), `--prompt-file <path>` (optional), `--context <json>` (optional)
 
+`--agent` is the agent file stem — `execution-context-level-3`, not a path, not a glob and not the `{bundle}:{name}` notation a `Task:` call uses. A name outside the stem character set (letters, digits, `_`, `.`, `-`, not starting with `.`) resolves to nothing: on Claude that is a `prompt_not_found` miss, on OpenCode and Antigravity a vacuous tool-mapping check followed by the dispatch.
+
 The `--context` object carries the caller's dispatch attestations and its prompt substitutions. The two runtimes that carry an inline branch (OpenCode, Antigravity) consume two keys at the seam and never merge them into the prompt: `spawning_tool_available` (the spawning-tool signal — an explicit `false` declares the tool absent in this envelope) and `dispatch_mode` (an explicit `"inline"` pins the inline branch whether or not the tool exists; any other value is rejected as `invalid_argument`). Claude's `Task` tool is always present in the orchestrator's envelope, so its runtime has no inline branch and reads neither key; it merges the remaining `--context` into the prompt as a `## Context` block, where a caller that passes an attestation key sees it.
 
 Every target echoes the requested `--agent` back inside its invocation: as `invocation.subagent_type` on Claude and Antigravity, and as `invocation.agent` on OpenCode 2 (whose sub-agent tool takes `{agent, description, prompt}`). No target substitutes an agent of its own choosing, so a caller's selection always reaches the invocation.
+
+**Agent-file resolution.** Claude resolves `--agent` before composing anything — it sources the invocation description from the agent's markdown and answers `prompt_not_found` when no file resolves. Two SHAPES are probed, each across every root in that order before the next shape starts; the roots are the deployed bundle cache first, then the script-relative `marketplace/bundles` source tree:
+
+1. the FLAT shape, `{root}/{bundle}/agents/{name}.md` — the source tree, and a cache that keeps one directory per bundle;
+2. the VERSIONED shape, `{root}/{bundle}/{version}/agents/{name}.md` — the deployed plugin cache, where the version directory is chosen by `script-shared`'s `select_live_version_dir` with eligibility "this version directory carries the requested agent" (so an older directory stays reachable when the newest does not ship it, and the agent can come from an older directory than the one serving the running scripts).
+
+The flat shape going first across all roots is what keeps a bare name resolving from the source tree in a checkout, where the deployed cache carries it too. An emitted `execution-context-level-{N}` variant never lives in `marketplace/bundles`, so in a source checkout it is the versioned pass that resolves it — which is why the level-suffixed names in the examples below are reachable on a machine that has the bundle installed. (An emitted flat tree, `target/{target}/{bundle}/agents/`, carries those variants too, and reaches them through the flat pass like any other flat root.) OpenCode and Antigravity run the same lookup for their tool-mapping check but supply no deployed root, so it sees the source tree only and is vacuous where that tree is absent; their dispatch is unaffected either way.
 
 The admitted registry is `antigravity, claude, opencode` — derived live from `platform_runtime._REGISTRY` via `describe_targets`, never a hard-coded literal.
 
@@ -1349,7 +1358,7 @@ Per-harness dispatch outcomes:
 
 - **Claude** — `Task` tool with the agent frontmatter description; unmapped frontmatter tools decline as `no-op`.
 - **OpenCode** — `subagent` tool, conditional on verify-first clause 1 (tool available in the envelope) and clause 2 (the requested agent's frontmatter tools map onto the OpenCode tool set via `targets/opencode/mapping.json`). A caller passing `task_tool_available: false` (legacy) or the target-neutral `spawning_tool_available: false` in `--context` takes the explicit logged inline branch (`no-op` carrying the inline fallback) instead of a faux success; a caller passing `dispatch_mode: "inline"` takes it by explicit request; an agent requiring an unmapped tool takes the same inline branch.
-- **Antigravity** — `invoke_subagent` tool, keeping that mapping on every path, conditional on the same two verify-first clauses: `spawning_tool_available: false` in `--context` takes the explicit logged inline branch, `dispatch_mode: "inline"` pins it by explicit request, and an agent requiring a tool outside `targets/antigravity/mapping.json` takes the same inline branch. When the agent file or the mapping is unreadable the clause-2 check is vacuous and the dispatch proceeds.
+- **Antigravity** — `invoke_subagent` tool, keeping that mapping on every path, conditional on the same two verify-first clauses: `spawning_tool_available: false` in `--context` takes the explicit logged inline branch, `dispatch_mode: "inline"` pins it by explicit request, and an agent requiring a tool outside `targets/antigravity/mapping.json` takes the same inline branch. When the agent file is unresolvable or the mapping is unreadable the clause-2 check is vacuous and the dispatch proceeds; an agent file that resolves but cannot be read parses as an agent declaring no tools, which answers a measured empty rather than a refusal.
 
 Every inline-branch `no-op` of the two inline-capable runtimes (OpenCode, Antigravity) carries `dispatch_mode: inline` and `dispatch_boundary_rows: 1`: the caller records exactly one dispatch-boundary row for the inline envelope when it returns, so an inlined envelope is as visible in the metrics ledger as a dispatched one. Claude has no inline branch, so no Claude `no-op` carries them.
 
@@ -1388,7 +1397,7 @@ dispatch_mode: inline
 dispatch_boundary_rows: 1
 ```
 
-**Success (Claude)**:
+**Success (Claude — `execution-context-level-3` resolved from the deployed bundle cache)**:
 ```toon
 status: success
 operation: subagent dispatch
@@ -1396,10 +1405,12 @@ platform: claude
 usage: unknown
 invocation:
   tool: Task
-  description: Run phase-3-outline outline
+  description: Generic dispatcher for every plan-marshall
   prompt: ...agent body with context merged...
   subagent_type: execution-context-level-3
 ```
+
+Claude derives `description` from the agent's own frontmatter, truncated to its first five words (`_short_description_from_agent`). A level variant keeps the canonical agent's description, so the string above is the canonical `execution-context` description — which is why this example shows a string different from its `subagent_type`, while the OpenCode example below composes `Run {agent}`.
 
 **Success (OpenCode)**:
 ```toon
@@ -1414,7 +1425,7 @@ invocation:
   description: Run execution-context-level-3
 ```
 
-OpenCode composes its `description` as `Run {agent}`, so that field and `agent` always name the same agent. Claude sources `description` from the agent's own frontmatter instead, which is why its example above shows a different string alongside the same `subagent_type`.
+OpenCode composes its `description` as `Run {agent}`, so that field and `agent` always name the same agent — the difference from the Claude example above is the description SOURCE, not the selection: both echo the requested agent.
 
 **No-op (unmapped tools)**:
 ```toon
@@ -1433,6 +1444,16 @@ operation: subagent dispatch
 error: prompt_not_found
 message: "prompt file not found: prompts/my-prompt.md"
 ```
+
+**Error (agent file not found)**:
+```toon
+status: error
+operation: subagent dispatch
+error: prompt_not_found
+message: "Agent 'execution-context-level-9' not found; searched: /home/me/.claude/plugins/cache/plan-marshall, /home/me/git/project/marketplace/bundles"
+```
+
+The agent-file message lists exactly the roots the lookup probed, so a miss distinguishes a wrong name from a root that was never searched. When no root exists at all the message says so instead of listing nothing. An agent file that resolved but could not be read answers the same code with the path it resolved to — on the no-`--prompt-file` path, which is the only one that reads the agent's body. Only Claude answers either: OpenCode and Antigravity run the resolution for their tool-mapping check and dispatch anyway when it comes back empty.
 
 ---
 

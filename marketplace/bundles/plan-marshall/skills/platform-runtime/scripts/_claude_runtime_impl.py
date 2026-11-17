@@ -1860,10 +1860,11 @@ class ClaudeRuntime(Runtime):
         # Locate the agent markdown file.
         agent_path = claude_runtime._find_agent_file(agent)
         if agent_path is None:
+            searched = ', '.join(str(root) for root in claude_runtime._agent_search_roots())
             return toon_error(
                 'subagent dispatch',
                 'prompt_not_found',
-                f'Agent {agent!r} not found in marketplace tree',
+                f'Agent {agent!r} not found; searched: {searched or "(no searchable root)"}',
             )
 
         # If a prompt_file override is provided, validate it exists.
@@ -1877,20 +1878,20 @@ class ClaudeRuntime(Runtime):
                 )
             try:
                 prompt_body = pf.read_text(encoding='utf-8')
-            except OSError:
+            except OSError as exc:
                 return toon_error(
                     'subagent dispatch',
                     'prompt_not_found',
-                    f'prompt file not found: {prompt_file}',
+                    f'prompt file {prompt_file} exists but could not be read: {exc}',
                 )
         else:
             try:
                 prompt_body = agent_path.read_text(encoding='utf-8')
-            except OSError:
+            except OSError as exc:
                 return toon_error(
                     'subagent dispatch',
                     'prompt_not_found',
-                    f'Agent {agent!r} not found in marketplace tree',
+                    f'Agent {agent!r} resolved to {agent_path} but could not be read: {exc}',
                 )
 
         # Parse frontmatter.
