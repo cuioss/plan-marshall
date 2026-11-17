@@ -897,9 +897,9 @@ def test_a_module_tests_package_run_that_executed_nothing_is_indeterminate(tmp_p
     A reactor root whose ladder leads with `package` exits 0 having run no test at
     all when the profile the canonical counted is not the one Maven selects
     (issue #2000). What separates that run from a compile-and-package run is the
-    CANONICAL's identity, and that arrives on the `command_key` channel the
-    wrapper already receives — never on the argument string, which cannot tell
-    the two apart.
+    CANONICAL the caller named, and that arrives on the `--canonical` channel the
+    wrapper receives — never on the argument string, which cannot tell the two
+    apart.
     """
     monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
     (tmp_path / 'mvnw').write_text('#!/bin/sh\n')
@@ -918,13 +918,46 @@ def test_a_module_tests_package_run_that_executed_nothing_is_indeterminate(tmp_p
 
     result = execute_direct(
         args='package -pl consumer -am',
-        command_key='module_tests',
+        command_key='maven:package_-pl_consumer_-am',
         project_dir=str(tmp_path),
         plan_id=_PLAN_ID,
+        canonical='module-tests',
     )
 
     assert result['status'] == 'indeterminate'
     assert TEST_RUN_EXECUTED_NOTHING in result['message']
+
+
+def test_the_same_package_args_without_the_canonical_stay_green(tmp_path, monkeypatch):
+    """CONTROL: the SAME argv, dispatched as no canonical, keeps its green.
+
+    This is the case the identity exists for: `package -pl consumer -am` is what
+    the module-tests ladder emits AND what a plain package invocation carries, so
+    only the declared canonical can separate them.
+    """
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    (tmp_path / 'mvnw').write_text('#!/bin/sh\n')
+
+    def _recorder(**kwargs):
+        return {
+            'status': 'success',
+            'exit_code': 0,
+            'duration_seconds': 1,
+            'log_file': str(_LOG_TEST_DATA / 'maven-test-no-summary.log'),
+            'command': './mvnw -l /tmp/maven.log package -pl consumer -am',
+            'wrapper': './mvnw',
+        }
+
+    monkeypatch.setattr(_factory, 'execute_direct_base', _recorder)
+
+    result = execute_direct(
+        args='package -pl consumer -am',
+        command_key='maven:package_-pl_consumer_-am',
+        project_dir=str(tmp_path),
+        plan_id=_PLAN_ID,
+    )
+
+    assert result['status'] == 'success'
 
 
 def test_a_module_tests_package_run_with_a_summary_stays_green(tmp_path):
@@ -941,7 +974,7 @@ def test_a_module_tests_package_run_with_a_summary_stays_green(tmp_path):
         result,
         'package -pl consumer -am',
         project_dir=str(tmp_path),
-        command_key='module_tests',
+        canonical='module-tests',
     )
 
     assert guarded['status'] == 'success'
@@ -956,20 +989,20 @@ def test_a_module_tests_package_run_with_a_fresh_report_stays_green(tmp_path):
         result,
         'package -pl consumer -am',
         project_dir=str(tmp_path),
-        command_key='module_tests',
+        canonical='module-tests',
     )
 
     assert guarded['status'] == 'success'
 
 
-@pytest.mark.parametrize('command_key', ['package', 'quality_gate', 'verify', 'legacy_module_tests'])
-def test_a_package_run_outside_the_module_tests_canonical_keeps_its_green(tmp_path, command_key):
-    """CONTROL: only the module-tests canonical is held, and a lookalike key is not.
+@pytest.mark.parametrize('canonical', ['package', 'quality-gate', 'verify', 'module-tests-reactive'])
+def test_a_package_run_outside_the_module_tests_canonical_keeps_its_green(tmp_path, canonical):
+    """CONTROL: only the exact module-tests canonical is held; a lookalike name is not.
 
     The arguments are identical in every case — the same `package` invocation the
     module-tests ladder emits — so the CANONICAL is the only fact that could
-    separate them. `legacy_module_tests` pins the start anchor: a key that merely
-    CONTAINS the words names something else.
+    separate them. `module-tests-reactive` pins the exact-name comparison: a
+    canonical that merely shares a prefix is a different canonical.
     """
     result = _quiet_guard_result(tmp_path, 'maven-test-no-summary.log')
 
@@ -977,25 +1010,10 @@ def test_a_package_run_outside_the_module_tests_canonical_keeps_its_green(tmp_pa
         result,
         'package -pl consumer -am',
         project_dir=str(tmp_path),
-        command_key=command_key,
+        canonical=canonical,
     )
 
     assert guarded['status'] == 'success'
-
-
-def test_a_module_scoped_module_tests_key_is_held_too(tmp_path):
-    """The module-scoped canonical is the same canonical, not a lookalike."""
-    result = _quiet_guard_result(tmp_path, 'maven-test-no-summary.log')
-
-    guarded = apply_zero_test_guard(
-        result,
-        'package -pl consumer -am',
-        project_dir=str(tmp_path),
-        command_key='module_tests_plan_marshall',
-    )
-
-    assert guarded['status'] == 'indeterminate'
-    assert TEST_RUN_EXECUTED_NOTHING in guarded['message']
 
 
 # =============================================================================

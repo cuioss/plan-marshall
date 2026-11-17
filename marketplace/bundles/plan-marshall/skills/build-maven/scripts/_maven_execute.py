@@ -74,16 +74,13 @@ _ADVISORY_ISSUE_CATEGORIES = frozenset(
 #: artifact is ``package`` (see ``_maven_cmd_discover._build_commands``).
 _TEST_PHASE_GOALS = ('test', 'package')
 
-#: The ``command_key`` prefix the module-tests canonical normalises to.
-#: ``default_command_key_fn`` joins the invocation's tokens with underscores and
-#: rewrites hyphens, so ``--command-args "module-tests"`` arrives as
-#: ``module_tests`` and a module-scoped ``module-tests plan-marshall`` as
-#: ``module_tests_plan_marshall`` — the SAME canonical at a narrower scope, so a
-#: ``_``-suffixed key is matched too. The start anchor is what keeps a key that
-#: merely CONTAINS the words (``legacy_module_tests``) from being taken for the
-#: canonical: the guard reads this to tell a test canonical's ``package`` from a
-#: plain compile-and-package run, and a wrong positive would refuse a green build.
-_MODULE_TESTS_COMMAND_KEY = re.compile(r'^module_tests(?:_|$)')
+#: The canonical name the module-tests test form is dispatched under. ``run
+#: --canonical`` carries it from the caller that resolved the canonical map;
+#: it is the ONE fact that separates a reactor-root ``module-tests`` command
+#: (``package``) from the plain ``package`` canonical, which is the same
+#: argument string. No argument-derived key can substitute: the two are
+#: identical there, which is precisely why the identity travels separately.
+_MODULE_TESTS_CANONICAL = 'module-tests'
 
 #: Maven's lifecycle phases. A token in this set is a GOAL.
 _LIFECYCLE_PHASES = frozenset(
@@ -395,17 +392,16 @@ def _leading_goal(args: str) -> str | None:
     return None
 
 
-def _is_module_tests_canonical(command_key: str | None) -> bool:
-    """Whether ``command_key`` names the module-tests canonical.
+def _is_module_tests_canonical(canonical: str | None) -> bool:
+    """Whether ``canonical`` names the module-tests test form.
 
-    The key arrives normalised by ``default_command_key_fn`` — underscores for
-    hyphens and spaces — so ``module-tests`` is ``module_tests`` and a scoped
-    ``module-tests plan-marshall`` is ``module_tests_plan_marshall``. A ``None``
-    key names no canonical, so nothing is refused on an identity nobody supplied.
+    Read from the identity the CALLER declared on ``--canonical``, never from the
+    argument string: the reactor-root ``module-tests`` command is ``package``,
+    argument-for-argument the plain ``package`` canonical, so the arguments
+    cannot answer this. ``None`` (an ad-hoc run that claimed no canonical)
+    answers False, so nothing is refused on an identity nobody supplied.
     """
-    if not command_key:
-        return False
-    return _MODULE_TESTS_COMMAND_KEY.match(command_key) is not None
+    return canonical == _MODULE_TESTS_CANONICAL
 
 
 def _test_phase_goal(args: str) -> str | None:
@@ -582,7 +578,7 @@ def apply_zero_test_guard(
     args: str,
     *,
     project_dir: str | None = None,
-    command_key: str | None = None,
+    canonical: str | None = None,
 ) -> dict:
     """Refuse to credit a green test-phase run that executed no test.
 
@@ -600,19 +596,20 @@ def apply_zero_test_guard(
       or Surefire's own ``No tests to run.`` line, keeps the green; with neither,
       nothing was collected;
     - no summary on a leading ``package`` goal is a compile and package run that
-      reported no tests — UNLESS the run is the ``module-tests`` canonical
-      (``command_key`` names it), whose ``package`` form exists to run tests and
-      is held to the same "something executed" rule as the ``test`` form. That
-      identity is read from ``command_key``, never from the argument string: a
-      plain ``package`` invocation is argument-for-argument the same run, and
-      only the canonical it was dispatched as tells them apart;
+      reported no tests — UNLESS the caller dispatched it as the ``module-tests``
+      canonical (``canonical`` names it), whose ``package`` form exists to run
+      tests and is held to the same "something executed" rule as the ``test``
+      form. That identity is read from ``canonical``, never from the argument
+      string: a plain ``package`` invocation is argument-for-argument the same
+      run, and only the canonical the caller named tells them apart;
     - an unreadable log of a test-phase run is no evidence either, and no
       evidence never becomes a green for a run whose truth lives in its log;
     - an empty population whose log carries NO test summary at all and states
       the build skipped its tests (``Tests are skipped.``) is a requested skip,
-      not a surprise, and keeps its green — this is what recognises a
-      ``-DskipTests`` set through ``.mvn/maven.config`` or ``MAVEN_OPTS``, which
-      the arguments this guard is handed do not show. The marker is not consulted
+      not a surprise, and keeps its green on EITHER form — this is what
+      recognises a ``-DskipTests`` set through ``.mvn/maven.config`` or
+      ``MAVEN_OPTS``, which the arguments this guard is handed do not show. The
+      marker is not consulted
       when a summary exists: a summary naming zero is evidence of an empty
       population whatever another module's skip line says.
 
@@ -623,10 +620,11 @@ def apply_zero_test_guard(
             that tells a hidden summary from an empty population needs it; an
             absent value means no report can be attributed to this run, and the
             no-summary case then stays indeterminate.
-        command_key: The key the executor wrapper received for the invocation —
-            the CANONICAL's identity, not its arguments. It is what makes a
-            ``package``-led ``module-tests`` run answerable to the same
-            "something executed" rule as the ``test`` form; a ``None`` value
+        command_key: Retired — the canonical identity arrives as ``canonical``;
+            the tool-prefixed run-config key never carried it.
+        canonical: The canonical the CALLER dispatched (``run --canonical``).
+            It is what makes a ``package``-led ``module-tests`` run answerable to
+            the same "something executed" rule as the ``test`` form; ``None``
             names no canonical, so every ``package`` run keeps the compile-and-
             package reading.
 
@@ -677,12 +675,15 @@ def apply_zero_test_guard(
             # took the measured-zero branch above and stays indeterminate.
             return result
         evidence = 'the log carries no Surefire or Failsafe test summary, so the run collected and executed nothing'
-    elif _is_module_tests_canonical(command_key):
+    elif _is_module_tests_canonical(canonical):
         # The ``package`` form of the module-tests canonical exists to run tests,
         # so a run that wrote no summary and no report of its own executed
         # nothing — the same answer the ``test`` form gets. A plain ``package``
-        # run is argument-for-argument identical, which is why the canonical's
-        # identity (``command_key``), not the args, selects this branch.
+        # run is argument-for-argument identical, which is why the canonical the
+        # caller named, not the args, selects this branch. A requested skip is a
+        # requested skip on BOTH forms: the marker is checked before the refusal.
+        if _SKIP_MARKER_PATTERN.search(log_text):
+            return result
         evidence = (
             'the module-tests run leads with package and its log carries no Surefire or Failsafe '
             'test summary, nor did it write a report of its own, so the run collected and executed nothing'
@@ -716,6 +717,7 @@ def _selector_miss_guard(inner):
         explicit_timeout: int | None = None,
         *,
         plan_id: str,
+        canonical: str | None = None,
     ):
         result = inner(
             args=args,
@@ -726,13 +728,14 @@ def _selector_miss_guard(inner):
             working_dir=working_dir,
             explicit_timeout=explicit_timeout,
             plan_id=plan_id,
+            canonical=canonical,
         )
         guarded = apply_selector_miss_guard(result)
         return apply_zero_test_guard(
             guarded,
             args,
             project_dir=working_dir or project_dir,
-            command_key=command_key,
+            canonical=canonical,
         )
 
     return execute_direct

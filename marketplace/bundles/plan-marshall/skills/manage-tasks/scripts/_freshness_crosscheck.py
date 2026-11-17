@@ -468,9 +468,10 @@ _GOAL_POSITIONAL_NOTATIONS: frozenset[str] = frozenset(
 #: consumes ONE recorded token, except the flags whose value is itself a
 #: space-separated list (:data:`_MULTI_TOKEN_VALUE_FLAGS`). Copied from the shared
 #: subparser declaration (``_build_cli.add_run_subparser``: ``--timeout``,
-#: ``--mode``, ``--format``, ``--execution-mode``, the ``--project-dir`` /
-#: ``--plan-id`` pair and the routed ``--resolved-project-dir`` carry) and the
-#: tool-local extras npm and pyproject declare (``--working-dir``, ``--env``).
+#: ``--mode``, ``--format``, ``--execution-mode``, ``--canonical``, the
+#: ``--project-dir`` / ``--plan-id`` pair and the routed ``--resolved-project-dir``
+#: carry) and the tool-local extras npm and pyproject declare (``--working-dir``,
+#: ``--env``).
 #: ``--command-args`` itself is absent on purpose: it is the marker the payload is
 #: read FROM.
 #:
@@ -483,6 +484,7 @@ _EXECUTOR_RUN_FLAGS: dict[str, int] = {
     '--mode': 1,
     '--format': 1,
     '--execution-mode': 1,
+    '--canonical': 1,
     '--project-dir': 1,
     '--plan-id': 1,
     '--resolved-project-dir': 1,

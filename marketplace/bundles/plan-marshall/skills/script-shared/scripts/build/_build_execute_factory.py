@@ -1681,11 +1681,14 @@ def create_execute_handlers(
             forking a local one. The wrapper only applies to the in-process leg:
             a routed build runs inside the daemon child, which re-enters this
             factory and applies the wrapper there. A wrapper MUST accept and
-            forward the full inner signature — naming ``explicit_timeout`` and
-            ``plan_id`` explicitly, and forwarding BOTH on EVERY inner call it
-            makes (a retry leg included). Dropping ``explicit_timeout`` loses a
-            caller's ``--timeout`` override; dropping ``plan_id`` sends the
-            build's log to the wrong plan's ``build-results/``. A wrapper that
+            forward the full inner signature — naming ``explicit_timeout``,
+            ``plan_id`` AND ``canonical`` explicitly, and forwarding ALL THREE on
+            EVERY inner call it makes (a retry leg included). Dropping
+            ``explicit_timeout`` loses a caller's ``--timeout`` override; dropping
+            ``plan_id`` sends the build's log to the wrong plan's
+            ``build-results/``; dropping ``canonical`` silently disables the
+            run-path guard that holds a test canonical to "something executed".
+            A wrapper that
             forwards on its first call but not on a retry is wrong exactly when
             the build had already gone wrong, which is the hardest case to
             observe.
@@ -1719,7 +1722,16 @@ def create_execute_handlers(
         explicit_timeout: int | None = None,
         *,
         plan_id: str,
+        canonical: str | None = None,
     ) -> DirectCommandResult:
+        """Execute one build invocation.
+
+        ``canonical`` is the canonical the CALLER dispatched (``--canonical``),
+        or ``None`` when none was claimed. It is metadata for the run-path
+        guards — the build command never needs it — so it is deliberately NOT
+        forwarded to ``execute_direct_base``; it exists on this signature so the
+        ``wrap_execute_fn`` layer receives it on the in-process leg.
+        """
         wrapper = _resolve_wrapper(project_dir)
 
         # Compute dynamic extra fields
@@ -1753,6 +1765,10 @@ def create_execute_handlers(
         project_dir = getattr(args, 'project_dir', '.')
         command_args = args.command_args
         command_key = compute_command_key(config, command_args)
+        # The canonical the caller says it dispatched, if any. Read here and
+        # forwarded to the in-process leg only: a ROUTED build's child re-runs
+        # this same argv (``sys.argv[1:]``), so it parses the flag itself.
+        canonical = getattr(args, 'canonical', None)
         # ``--timeout`` carries a ``None`` sentinel default (see
         # ``_build_cli.add_run_subparser``), so an explicitly-supplied bound stays
         # distinguishable from an unsupplied flag here. It is forwarded as a
@@ -1936,6 +1952,7 @@ def create_execute_handlers(
                         # build is attributed to NO_PLAN, never to the empty
                         # string, so its log always has an owning directory.
                         plan_id=plan_id or NO_PLAN_SENTINEL,
+                        canonical=canonical,
                     )
         except DirectoryBusy as exc:
             return _emit_directory_busy(config.tool_name, command_args, getattr(args, 'format', 'toon'), exc)

@@ -191,7 +191,7 @@ def test_maven_reactor_root_resolves_module_tests_at_default_scope(tmp_path: Pat
 
     assert result['status'] == 'success', result
     # The whole reactor, with no module argument: the root module emits no -pl.
-    assert result['executable'].endswith('--command-args "test"')
+    assert result['executable'].endswith('--command-args "test" --canonical module-tests')
     assert _MAVEN_NOTATION in result['executable']
 
 
@@ -210,7 +210,7 @@ def test_maven_reactor_root_resolves_test_compile_at_default_scope(tmp_path: Pat
     result = _resolve_default_scope(tmp_path, 'test-compile')
 
     assert result['status'] == 'success', result
-    assert result['executable'].endswith('--command-args "test-compile"')
+    assert result['executable'].endswith('--command-args "test-compile" --canonical test-compile')
     assert '-pl' not in result['executable']
 
 
@@ -230,7 +230,7 @@ def test_derive_verification_for_a_root_owned_pom_still_derives_verify(tmp_path:
     assert result['status'] == 'success', result
     verbs = [command for command in result['commands'] if command.get('command') == 'verify']
     assert verbs, result
-    assert verbs[0]['executable'].endswith('--command-args "verify"')
+    assert verbs[0]['executable'].endswith('--command-args "verify" --canonical verify')
     assert verbs[0]['path'] == 'pom.xml'
 
 
@@ -286,7 +286,7 @@ def test_a_persisted_maven_architecture_resolves_module_tests_at_default_scope(t
     result = _resolve_default_scope(persisted, 'module-tests')
 
     assert result['status'] == 'success', result
-    assert result['executable'].endswith('--command-args "test"')
+    assert result['executable'].endswith('--command-args "test" --canonical module-tests')
     assert _MAVEN_NOTATION in result['executable']
 
 
@@ -310,7 +310,7 @@ def test_a_module_without_tests_cascades_to_the_reactor_roots_run(tmp_path: Path
 
     assert result['status'] == 'success', result
     assert result['module'] == 'probe-parent'
-    assert result['executable'].endswith('--command-args "test"')
+    assert result['executable'].endswith('--command-args "test" --canonical module-tests')
 
 
 def test_an_out_of_reactor_module_does_not_borrow_the_root_run(tmp_path) -> None:

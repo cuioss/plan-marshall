@@ -957,8 +957,8 @@ def test_enrich_overlay_keeps_package_ladder_for_reactor_test_artifact_consumer(
 
     merged = _enrich_overlay(monkeypatch, derived)
 
-    assert merged['module-tests'] == f'{_MAVEN_RUN} "package -pl consumer -am"'
-    assert merged['test-compile'] == f'{_MAVEN_RUN} "package -pl consumer -am -DskipTests"'
+    assert merged['module-tests'] == f'{_MAVEN_RUN} "package -pl consumer -am" --canonical module-tests'
+    assert merged['test-compile'] == f'{_MAVEN_RUN} "package -pl consumer -am -DskipTests" --canonical test-compile'
     # The overlay still contributes the Maven-resolved profile canonical.
     assert '-Pjacoco' in merged['coverage']
 
@@ -969,6 +969,6 @@ def test_enrich_overlay_keeps_test_ladder_without_reactor_test_artifact(monkeypa
 
     merged = _enrich_overlay(monkeypatch, derived)
 
-    assert merged['module-tests'] == f'{_MAVEN_RUN} "test -pl producer -am"'
-    assert merged['test-compile'] == f'{_MAVEN_RUN} "test-compile -pl producer -am"'
+    assert merged['module-tests'] == f'{_MAVEN_RUN} "test -pl producer -am" --canonical module-tests'
+    assert merged['test-compile'] == f'{_MAVEN_RUN} "test-compile -pl producer -am" --canonical test-compile'
     assert '-Pjacoco' in merged['coverage']

@@ -616,9 +616,15 @@ REACTOR_TEST_ARTIFACT_PROJECT = FIXTURES_DIR / 'reactor-test-artifact-project'
 _MAVEN_RUN = 'python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args'
 
 
-def _executable(maven_args: str) -> str:
-    """Return the resolved build-maven executable for ``maven_args``."""
-    return f'{_MAVEN_RUN} "{maven_args}"'
+def _executable(maven_args: str, canonical: str) -> str:
+    """Return the resolved build-maven executable for ``maven_args`` under ``canonical``.
+
+    Every emitted canonical string carries its own NAME as well as its
+    arguments, because the arguments alone cannot identify it: a reactor-root
+    ``module-tests`` command is the same argv as the plain ``package``
+    canonical, and the run-path guards read the declared identity.
+    """
+    return f'{_MAVEN_RUN} "{maven_args}" --canonical {canonical}'
 
 
 def _discover_reactor_fixture() -> dict[str, dict]:
@@ -638,8 +644,8 @@ def test_build_commands_package_ladder_when_consuming_reactor_test_artifact():
         consumes_reactor_test_artifact=True,
     )
 
-    assert commands['module-tests'] == _executable('package -pl consumer -am')
-    assert commands['test-compile'] == _executable('package -pl consumer -am -DskipTests')
+    assert commands['module-tests'] == _executable('package -pl consumer -am', 'module-tests')
+    assert commands['test-compile'] == _executable('package -pl consumer -am -DskipTests', 'test-compile')
 
 
 def test_build_commands_package_ladder_leaves_other_entries_unchanged():
@@ -672,8 +678,8 @@ def test_build_commands_package_ladder_not_applied_to_root_module():
         consumes_reactor_test_artifact=True,
     )
 
-    assert commands['module-tests'] == _executable('test')
-    assert commands['test-compile'] == _executable('test-compile')
+    assert commands['module-tests'] == _executable('test', 'module-tests')
+    assert commands['test-compile'] == _executable('test-compile', 'test-compile')
 
 
 def test_build_commands_package_ladder_needs_tests():
@@ -696,8 +702,8 @@ def test_discover_classifier_consumer_gets_package_ladder():
     """consumer depends on the reactor sibling producer with classifier generators."""
     consumer = _discover_reactor_fixture()['consumer']
 
-    assert consumer['commands']['module-tests'] == _executable('package -pl consumer -am')
-    assert consumer['commands']['test-compile'] == _executable('package -pl consumer -am -DskipTests')
+    assert consumer['commands']['module-tests'] == _executable('package -pl consumer -am', 'module-tests')
+    assert consumer['commands']['test-compile'] == _executable('package -pl consumer -am -DskipTests', 'test-compile')
     assert consumer['metadata']['reactor_test_artifacts'] == ['probe:producer:generators']
 
 
@@ -705,8 +711,10 @@ def test_discover_test_jar_consumer_gets_package_ladder():
     """typed-consumer depends on the reactor sibling producer with type test-jar."""
     typed_consumer = _discover_reactor_fixture()['typed-consumer']
 
-    assert typed_consumer['commands']['module-tests'] == _executable('package -pl typed-consumer -am')
-    assert typed_consumer['commands']['test-compile'] == _executable('package -pl typed-consumer -am -DskipTests')
+    assert typed_consumer['commands']['module-tests'] == _executable('package -pl typed-consumer -am', 'module-tests')
+    assert typed_consumer['commands']['test-compile'] == _executable(
+        'package -pl typed-consumer -am -DskipTests', 'test-compile'
+    )
     assert typed_consumer['metadata']['reactor_test_artifacts'] == ['probe:producer:test-jar']
 
 
@@ -714,8 +722,8 @@ def test_discover_producer_keeps_test_ladder():
     """producer consumes no reactor test artifact and keeps the test-phase ladder."""
     producer = _discover_reactor_fixture()['producer']
 
-    assert producer['commands']['module-tests'] == _executable('test -pl producer -am')
-    assert producer['commands']['test-compile'] == _executable('test-compile -pl producer -am')
+    assert producer['commands']['module-tests'] == _executable('test -pl producer -am', 'module-tests')
+    assert producer['commands']['test-compile'] == _executable('test-compile -pl producer -am', 'test-compile')
     assert 'reactor_test_artifacts' not in producer['metadata']
 
 
@@ -723,8 +731,8 @@ def test_discover_external_classifier_consumer_keeps_test_ladder():
     """A classifier dependency outside the reactor does not switch the ladder."""
     external = _discover_reactor_fixture()['external-consumer']
 
-    assert external['commands']['module-tests'] == _executable('test -pl external-consumer -am')
-    assert external['commands']['test-compile'] == _executable('test-compile -pl external-consumer -am')
+    assert external['commands']['module-tests'] == _executable('test -pl external-consumer -am', 'module-tests')
+    assert external['commands']['test-compile'] == _executable('test-compile -pl external-consumer -am', 'test-compile')
     assert 'reactor_test_artifacts' not in external['metadata']
 
 
@@ -750,8 +758,8 @@ def test_discover_reactor_aggregator_takes_the_package_ladder_when_a_member_cons
     """
     root = _discover_reactor_fixture()['reactor-test-artifact-parent']
 
-    assert root['commands']['module-tests'] == _executable('package')
-    assert root['commands']['test-compile'] == _executable('package -DskipTests')
+    assert root['commands']['module-tests'] == _executable('package', 'module-tests')
+    assert root['commands']['test-compile'] == _executable('package -DskipTests', 'test-compile')
 
 
 def test_discover_reactor_aggregator_carries_the_whole_reactor_test_canonicals():
@@ -769,8 +777,8 @@ def test_discover_reactor_aggregator_carries_the_whole_reactor_test_canonicals()
 
     modules = {module['name']: module for module in discover_maven_modules(str(root))}
 
-    assert modules['parent-agg']['commands']['module-tests'] == _executable('test')
-    assert modules['parent-agg']['commands']['test-compile'] == _executable('test-compile')
+    assert modules['parent-agg']['commands']['module-tests'] == _executable('test', 'module-tests')
+    assert modules['parent-agg']['commands']['test-compile'] == _executable('test-compile', 'test-compile')
 
 
 def test_discover_reactor_root_ignores_a_tested_pom_it_does_not_build():
@@ -808,7 +816,7 @@ def test_discover_reactor_member_keeps_its_root_runnable_canonicals():
 
     modules = {module['paths']['module']: module for module in discover_maven_modules(str(root))}
 
-    assert modules['core']['commands']['module-tests'] == _executable('test -pl core -am')
+    assert modules['core']['commands']['module-tests'] == _executable('test -pl core -am', 'module-tests')
     assert modules['examples']['commands'] == {}
 
 
@@ -826,7 +834,7 @@ def test_discover_a_root_that_builds_no_reactor_grants_no_child_a_pl_command():
 
     # The root is a plain jar, so it keeps its own whole-tree canonicals and owes
     # the child nothing: ``-pl sub`` is not a command this root can run.
-    assert modules['.']['commands']['verify'] == _executable('verify')
+    assert modules['.']['commands']['verify'] == _executable('verify', 'verify')
     assert modules['sub']['commands'] == {}
 
 
@@ -845,7 +853,7 @@ def test_discover_reads_a_module_entry_that_names_another_pom_file(tmp_path=None
 
     modules = {module['paths']['module']: module for module in discover_maven_modules(str(root))}
 
-    assert modules['child']['commands']['module-tests'] == _executable('test -pl child -am')
+    assert modules['child']['commands']['module-tests'] == _executable('test -pl child -am', 'module-tests')
 
 
 def test_discover_malformed_pom_names_the_stop_and_grants_no_canonical():
@@ -911,8 +919,8 @@ def test_discover_reads_maven4_subprojects_as_the_reactor():
 
     modules = {module['paths']['module']: module for module in discover_maven_modules(str(root))}
 
-    assert modules['.']['commands']['module-tests'] == _executable('test')
-    assert modules['core']['commands']['module-tests'] == _executable('test -pl core -am')
+    assert modules['.']['commands']['module-tests'] == _executable('test', 'module-tests')
+    assert modules['core']['commands']['module-tests'] == _executable('test -pl core -am', 'module-tests')
 
 
 def test_discover_dependency_on_self_coordinate_is_not_a_reactor_test_artifact():
@@ -939,7 +947,7 @@ def test_discover_dependency_on_self_coordinate_is_not_a_reactor_test_artifact()
 
     module = {m['name']: m for m in discover_maven_modules(str(root))}['self-app']
 
-    assert module['commands']['module-tests'] == _executable('test -pl self -am')
+    assert module['commands']['module-tests'] == _executable('test -pl self -am', 'module-tests')
     assert 'reactor_test_artifacts' not in module['metadata']
 
 
@@ -1331,8 +1339,8 @@ def test_discover_root_reactor_follows_modules_through_a_nested_aggregator():
 
     modules = {module['name']: module for module in discover_maven_modules(str(root))}
 
-    assert modules['parent-agg']['commands']['module-tests'] == _executable('test')
-    assert modules['parent-agg']['commands']['test-compile'] == _executable('test-compile')
+    assert modules['parent-agg']['commands']['module-tests'] == _executable('test', 'module-tests')
+    assert modules['parent-agg']['commands']['test-compile'] == _executable('test-compile', 'test-compile')
     assert 'module-tests' not in modules['nested-agg']['commands']
     assert 'test-compile' not in modules['nested-agg']['commands']
 
@@ -1345,8 +1353,8 @@ def test_discover_single_module_jar_root_keeps_its_own_test_canonicals():
     module = discover_maven_modules(str(root))[0]
 
     assert module['metadata']['packaging'] == 'jar'
-    assert module['commands']['module-tests'] == _executable('test')
-    assert module['commands']['test-compile'] == _executable('test-compile')
+    assert module['commands']['module-tests'] == _executable('test', 'module-tests')
+    assert module['commands']['test-compile'] == _executable('test-compile', 'test-compile')
 
 
 # =============================================================================
@@ -1373,9 +1381,9 @@ def test_discover_reactor_root_keeps_the_test_ladder_without_a_consuming_member(
 
     modules = {module['name']: module for module in discover_maven_modules(str(root))}
 
-    assert modules['parent-agg']['commands']['module-tests'] == _executable('test')
-    assert modules['parent-agg']['commands']['test-compile'] == _executable('test-compile')
-    assert modules['consumer']['commands']['module-tests'] == _executable('test -pl consumer -am')
+    assert modules['parent-agg']['commands']['module-tests'] == _executable('test', 'module-tests')
+    assert modules['parent-agg']['commands']['test-compile'] == _executable('test-compile', 'test-compile')
+    assert modules['consumer']['commands']['module-tests'] == _executable('test -pl consumer -am', 'module-tests')
 
 
 def test_discover_reactor_root_switches_to_package_for_a_classifier_consumer():
@@ -1396,9 +1404,9 @@ def test_discover_reactor_root_switches_to_package_for_a_classifier_consumer():
 
     modules = {module['name']: module for module in discover_maven_modules(str(root))}
 
-    assert modules['parent-agg']['commands']['module-tests'] == _executable('package')
-    assert modules['parent-agg']['commands']['test-compile'] == _executable('package -DskipTests')
-    assert modules['consumer']['commands']['module-tests'] == _executable('package -pl consumer -am')
+    assert modules['parent-agg']['commands']['module-tests'] == _executable('package', 'module-tests')
+    assert modules['parent-agg']['commands']['test-compile'] == _executable('package -DskipTests', 'test-compile')
+    assert modules['consumer']['commands']['module-tests'] == _executable('package -pl consumer -am', 'module-tests')
     assert modules['consumer']['metadata']['reactor_test_artifacts'] == ['com.example:producer:generators']
 
 
@@ -1422,8 +1430,8 @@ def test_discover_reactor_root_switches_to_package_for_a_test_jar_consumer():
 
     modules = {module['name']: module for module in discover_maven_modules(str(root))}
 
-    assert modules['parent-agg']['commands']['module-tests'] == _executable('package')
-    assert modules['parent-agg']['commands']['test-compile'] == _executable('package -DskipTests')
+    assert modules['parent-agg']['commands']['module-tests'] == _executable('package', 'module-tests')
+    assert modules['parent-agg']['commands']['test-compile'] == _executable('package -DskipTests', 'test-compile')
     assert modules['consumer']['metadata']['reactor_test_artifacts'] == ['com.example:producer:test-jar']
 
 
@@ -1466,8 +1474,8 @@ def test_discover_nested_aggregator_keeps_no_canonical_beside_a_consuming_member
 
     modules = {module['name']: module for module in discover_maven_modules(str(root))}
 
-    assert modules['parent-agg']['commands']['module-tests'] == _executable('package')
-    assert modules['parent-agg']['commands']['test-compile'] == _executable('package -DskipTests')
+    assert modules['parent-agg']['commands']['module-tests'] == _executable('package', 'module-tests')
+    assert modules['parent-agg']['commands']['test-compile'] == _executable('package -DskipTests', 'test-compile')
     assert 'module-tests' not in modules['nested-agg']['commands']
     assert 'test-compile' not in modules['nested-agg']['commands']
 
@@ -1484,8 +1492,8 @@ def test_discover_single_module_root_keeps_the_test_ladder_with_a_classifier_dep
     module = discover_maven_modules(str(root))[0]
 
     assert module['metadata']['packaging'] == 'jar'
-    assert module['commands']['module-tests'] == _executable('test')
-    assert module['commands']['test-compile'] == _executable('test-compile')
+    assert module['commands']['module-tests'] == _executable('test', 'module-tests')
+    assert module['commands']['test-compile'] == _executable('test-compile', 'test-compile')
 
 
 def test_discover_root_reactor_follows_a_modules_block_only_when_the_profile_is_default_active():
@@ -1503,7 +1511,7 @@ def test_discover_root_reactor_follows_a_modules_block_only_when_the_profile_is_
     default_active_modules = {module['name']: module for module in discover_maven_modules(str(default_active))}
 
     assert 'module-tests' not in not_active_modules['parent-agg']['commands']
-    assert default_active_modules['parent-agg']['commands']['module-tests'] == _executable('test')
+    assert default_active_modules['parent-agg']['commands']['module-tests'] == _executable('test', 'module-tests')
 
 
 def test_discover_dependencies_empty_on_cheap_path():
