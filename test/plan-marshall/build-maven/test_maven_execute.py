@@ -8,6 +8,8 @@ Tests the Maven execution config and factory-generated functions.
 import os
 from pathlib import Path
 
+import pytest
+
 from conftest import load_script_module
 
 _maven_execute_mod = load_script_module('plan-marshall', 'build-maven', '_maven_execute.py', '_maven_execute')
@@ -923,6 +925,77 @@ def test_a_module_tests_package_run_that_executed_nothing_is_indeterminate(tmp_p
 
     assert result['status'] == 'indeterminate'
     assert TEST_RUN_EXECUTED_NOTHING in result['message']
+
+
+def test_a_module_tests_package_run_with_a_summary_stays_green(tmp_path):
+    """CONTROL: the guard is not a blanket refusal of the `package` form.
+
+    A module-tests `package` run whose measured summary reports executed tests
+    credits the gate exactly as before.
+    """
+    result = _run_result(
+        'maven-success-real.log', status='success', exit_code=0, command='mvnw package -pl consumer -am'
+    )
+
+    guarded = apply_zero_test_guard(
+        result,
+        'package -pl consumer -am',
+        project_dir=str(tmp_path),
+        command_key='module_tests',
+    )
+
+    assert guarded['status'] == 'success'
+
+
+def test_a_module_tests_package_run_with_a_fresh_report_stays_green(tmp_path):
+    """CONTROL: a hidden summary is not an empty population, on the package form too."""
+    result = _quiet_guard_result(tmp_path, 'maven-test-no-summary.log')
+    _write_surefire_report(tmp_path, 5)
+
+    guarded = apply_zero_test_guard(
+        result,
+        'package -pl consumer -am',
+        project_dir=str(tmp_path),
+        command_key='module_tests',
+    )
+
+    assert guarded['status'] == 'success'
+
+
+@pytest.mark.parametrize('command_key', ['package', 'quality_gate', 'verify', 'legacy_module_tests'])
+def test_a_package_run_outside_the_module_tests_canonical_keeps_its_green(tmp_path, command_key):
+    """CONTROL: only the module-tests canonical is held, and a lookalike key is not.
+
+    The arguments are identical in every case — the same `package` invocation the
+    module-tests ladder emits — so the CANONICAL is the only fact that could
+    separate them. `legacy_module_tests` pins the start anchor: a key that merely
+    CONTAINS the words names something else.
+    """
+    result = _quiet_guard_result(tmp_path, 'maven-test-no-summary.log')
+
+    guarded = apply_zero_test_guard(
+        result,
+        'package -pl consumer -am',
+        project_dir=str(tmp_path),
+        command_key=command_key,
+    )
+
+    assert guarded['status'] == 'success'
+
+
+def test_a_module_scoped_module_tests_key_is_held_too(tmp_path):
+    """The module-scoped canonical is the same canonical, not a lookalike."""
+    result = _quiet_guard_result(tmp_path, 'maven-test-no-summary.log')
+
+    guarded = apply_zero_test_guard(
+        result,
+        'package -pl consumer -am',
+        project_dir=str(tmp_path),
+        command_key='module_tests_plan_marshall',
+    )
+
+    assert guarded['status'] == 'indeterminate'
+    assert TEST_RUN_EXECUTED_NOTHING in guarded['message']
 
 
 # =============================================================================

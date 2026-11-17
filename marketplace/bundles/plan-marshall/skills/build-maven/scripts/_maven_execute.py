@@ -78,9 +78,10 @@ _TEST_PHASE_GOALS = ('test', 'package')
 #: ``default_command_key_fn`` joins the invocation's tokens with underscores and
 #: rewrites hyphens, so ``--command-args "module-tests"`` arrives as
 #: ``module_tests`` and a module-scoped ``module-tests plan-marshall`` as
-#: ``module_tests_plan_marshall``. Anchored at BOTH ends so a longer key that
-#: merely starts with the words (``module_tests_report``) is not taken for the
-#: canonical — the guard reads this to tell a test canonical's ``package`` from a
+#: ``module_tests_plan_marshall`` — the SAME canonical at a narrower scope, so a
+#: ``_``-suffixed key is matched too. The start anchor is what keeps a key that
+#: merely CONTAINS the words (``legacy_module_tests``) from being taken for the
+#: canonical: the guard reads this to tell a test canonical's ``package`` from a
 #: plain compile-and-package run, and a wrong positive would refuse a green build.
 _MODULE_TESTS_COMMAND_KEY = re.compile(r'^module_tests(?:_|$)')
 
