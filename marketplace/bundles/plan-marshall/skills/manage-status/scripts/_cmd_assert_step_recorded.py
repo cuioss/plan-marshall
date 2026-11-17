@@ -51,6 +51,20 @@ from _cmd_mark_step import VALID_OUTCOMES
 from _status_core import require_status
 from _step_key_canonical import canonicalize_step_key
 
+#: The ``--require-terminal`` refusal for a step with no terminal record under any key.
+STEP_RECORD_MISSING = 'step_record_missing'
+
+#: The ``--require-terminal`` refusal for a step whose terminal record sits under a
+#: bare/typographic near-miss key rather than the queried one.
+STEP_RECORD_MISMATCHED_KEY = 'step_record_mismatched_key'
+
+#: The two refusal codes this verb answers with when a terminal record is absent.
+#: EXPORTED because a reader that classifies these refusals — the pre-merge
+#: step-sequence gate — must derive the set from here rather than restating the
+#: literals: a code added or renamed below would otherwise be misfiled by that
+#: reader as an unreadable state instead of a nameable step gap.
+ASSERTION_STEP_GAP_CODES: tuple[str, ...] = (STEP_RECORD_MISSING, STEP_RECORD_MISMATCHED_KEY)
+
 
 def _terminal_outcome(entry: Any) -> str | None:
     """Return the terminal ``outcome`` of a phase-step entry, or ``None``."""
@@ -185,7 +199,7 @@ def cmd_assert_step_recorded(args: argparse.Namespace) -> dict | None:
             return {
                 'status': 'error',
                 'plan_id': args.plan_id,
-                'error': 'step_record_missing',
+                'error': STEP_RECORD_MISSING,
                 'phase': phase,
                 'step': step,
                 'recorded': False,
@@ -231,7 +245,7 @@ def cmd_assert_step_recorded(args: argparse.Namespace) -> dict | None:
                 return {
                     'status': 'error',
                     'plan_id': args.plan_id,
-                    'error': 'step_record_mismatched_key',
+                    'error': STEP_RECORD_MISMATCHED_KEY,
                     'phase': phase,
                     'step': step,
                     'recorded': False,
@@ -250,7 +264,7 @@ def cmd_assert_step_recorded(args: argparse.Namespace) -> dict | None:
         return {
             'status': 'error',
             'plan_id': args.plan_id,
-            'error': 'step_record_missing',
+            'error': STEP_RECORD_MISSING,
             'phase': phase,
             'step': step,
             'recorded': False,
