@@ -800,9 +800,39 @@ def test_a_roster_longer_than_the_budget_allows_stops_at_the_budget() -> None:
     # Non-vacuity: the sweep really did read the three steps the budget allowed and
     # left the last two untouched, so this is a stop in mid-walk, not a short roster.
     assert spy.asked == ['default:step-1', 'default:step-2', 'default:step-3'], spy.asked
+    # The message names the steps it never reached — and only those, so the three it
+    # did read are never reported as unread.
+    assert 'not read: default:step-4, default:step-5' in result['message'], result['message']
+    assert 'not read: default:step-1' not in result['message'], result['message']
     # Whatever the roster length, the whole sweep finished inside the budget plus
     # the one bound the last admitted verb was handed.
     assert clock.now <= gate._STEP_SEQUENCE_TOTAL_BUDGET_SECONDS + gate._STEP_SEQUENCE_VERB_TIMEOUT_SECONDS
+
+
+def test_a_gap_found_before_the_budget_runs_out_still_stops_at_the_budget() -> None:
+    """A spent budget answers ``stop`` even when an earlier row names a step gap.
+
+    The row set alone cannot decide the remedy here: step 1 is a nameable gap a
+    re-entry could run, but the walk never finished, so no re-entry can be trusted
+    to clear the sequence. The message must name only the unread steps.
+    """
+    clock = _SpendingClock()
+    earlier = [f'default:step-{n}' for n in range(1, 5)]
+
+    result, runner, _spy = _merge(
+        manifest=_manifest(*earlier, _BRANCH_CLEANUP),
+        records={'default:step-1': _record('done'), 'default:step-3': _record('done')},
+        clock=clock,
+    )
+
+    assert runner.calls == []
+    assert result['remedy'] == 'stop', result
+    assert [(row['step'], row['reason']) for row in result['steps']] == [
+        ('default:step-2', 'step_record_missing'),
+        ('default:step-4', 'step_record_unreadable'),
+    ], result['steps']
+    assert 'not read: default:step-4' in result['message'], result['message']
+    assert 'not read: default:step-2' not in result['message'], result['message']
 
 
 def test_a_roster_that_fits_keeps_every_existing_verdict() -> None:

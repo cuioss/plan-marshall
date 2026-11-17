@@ -439,9 +439,9 @@ def _qualified_agent_stem(agent_name: str) -> str | None:
 
     ``--agent`` takes a file stem, never the ``{bundle}:{name}`` notation a
     ``Task:`` call uses. A value that is exactly one bundle half, one colon and one
-    name half — ALL THREE being file stems — is that notation and nothing else, so a
-    miss can name the stem the caller meant instead of listing search roots as if a
-    lookup had failed.
+    name half — with BOTH halves being file stems — is that notation and nothing
+    else, so a miss can name the stem the caller meant instead of listing search
+    roots as if a lookup had failed.
 
     ``None`` means "not that notation", and every such value keeps the behaviour it
     had: a path or a glob in either half fails :func:`_is_agent_file_stem` and stays

@@ -947,7 +947,7 @@ def _sequence_refusal_payload(
     detail: str,
     steps: list[dict[str, Any]],
     *,
-    force_stop: bool = False,
+    unread_steps: list[str] | None = None,
 ) -> dict[str, Any]:
     """Render the refusal for an unproven finalize-step sequence.
 
@@ -961,28 +961,31 @@ def _sequence_refusal_payload(
     * ``stop`` — no row names a step gap (the sequence could not be enumerated, or
       every row is a read fault), so no re-entry can clear it.
 
-    ``force_stop`` is the sweep's own budget refusal: the walk stopped before it
-    read every step, so no row set can be read as "a re-entry clears this" — the
-    remaining steps are unread, not unrecorded. It therefore selects ``stop``
-    whatever the rows say and names the budget in the message.
+    ``unread_steps`` is the sweep's own budget refusal: the walk stopped before it
+    read every step. Those steps are unread, not unrecorded, so the field selects
+    ``stop`` whatever the rows say, and the message names them — never the rows that
+    WERE read, which may include a real gap.
 
     A merge authorization covers neither half, for the same reason it does not cover
     :data:`MERGE_HEAD_NOT_GATED`: it authorizes a review or CI gap somebody can name,
     never a step nobody ran and never a state nobody could read.
     """
     named = ', '.join(str(row['step']) for row in steps)
+    stop_on_budget = bool(unread_steps)
     remedy = (
         'stop'
-        if force_stop
+        if stop_on_budget
         else ('dispatcher' if any(str(row.get('reason')) in _step_gap_reasons() for row in steps) else 'stop')
     )
-    if force_stop:
+    if stop_on_budget:
+        unread_named = ', '.join(str(step) for step in unread_steps or ())
         message = (
             f'The step-sequence sweep below {MERGE_STEP_ID} spent its '
-            f'{_STEP_SEQUENCE_TOTAL_BUDGET_SECONDS} s read budget before it read every step ({named}): '
-            f'{detail}. Refusing to merge: the budget is what keeps a wedged read from pinning the '
-            'cross-plan merge mutex for the length of the roster, so the sweep stops here rather than '
-            'extending the hold; the read must be made to fit the budget before this merge can proceed.'
+            f'{_STEP_SEQUENCE_TOTAL_BUDGET_SECONDS} s read budget before it read every step (not read: '
+            f'{unread_named}): {detail}. Refusing to merge: the budget is what keeps a wedged read from '
+            'pinning the cross-plan merge mutex for the length of the roster, so the sweep stops here '
+            'rather than extending the hold; the read must be made to fit the budget before this merge '
+            'can proceed.'
         )
     elif remedy == 'dispatcher':
         message = (
@@ -1167,7 +1170,7 @@ def _step_sequence_refusal(
                 f'{len(earlier) - len(unread)} of {len(earlier)} step(s)'
             ),
             blocked,
-            force_stop=True,
+            unread_steps=unread,
         )
     if not blocked:
         return None
