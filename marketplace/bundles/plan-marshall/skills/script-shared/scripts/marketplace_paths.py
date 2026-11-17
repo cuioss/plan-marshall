@@ -16,8 +16,15 @@ the working directory is pinned there. The single deliberate exception mechanism
 is ``resolve_main_anchored_path`` (below), which always resolves to the main
 checkout for the bounded exception set — ``merge.lock``,
 ``run-configuration.json``, ``lessons-learned``, ``merge-queue.json``,
-``harness/``, ``plans/NO_PLAN/build-results`` — every other resolution in the codebase is
-cwd-relative. With ``orchestrator.use_worktree`` on, the orchestrator store is
+``harness/``, ``plans/NO_PLAN/build-results`` — every other resolution is
+cwd-relative. One further class is neither: a verb HANDED the tree it must act
+on resolves against THAT tree, never against the caller's cwd. ``--project-dir``
+names it explicitly, and ``--plan-id`` names it by record (a real plan's
+``worktree_path`` comes from the plan record, not from a walk-up). That class is
+target-anchored, not main-anchored — the ``git-workflow`` ``commit`` verb writes
+its ``kind=change`` row to ``{target_tree}/.plan/work/change-ledger.jsonl``
+through it — so it neither widens the set above nor adds a second main-anchored
+resolver. With ``orchestrator.use_worktree`` on, the orchestrator store is
 reached through the shared ledger worktree ``worktrees/_orchestrator``, whose
 location is NAMED through that same resolver without joining the resident set —
 the same standing as ``plans/{plan_id}``.
