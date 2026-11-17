@@ -620,8 +620,6 @@ def apply_zero_test_guard(
             that tells a hidden summary from an empty population needs it; an
             absent value means no report can be attributed to this run, and the
             no-summary case then stays indeterminate.
-        command_key: Retired — the canonical identity arrives as ``canonical``;
-            the tool-prefixed run-config key never carried it.
         canonical: The canonical the CALLER dispatched (``run --canonical``).
             It is what makes a ``package``-led ``module-tests`` run answerable to
             the same "something executed" rule as the ``test`` form; ``None``
@@ -703,8 +701,10 @@ def _selector_miss_guard(inner):
     A routed build re-enters this factory inside the daemon child, so both guards
     apply there too — which is also why they must not read a routed job log: this
     wrapper only ever sees the in-process result. The wrapper names
-    ``explicit_timeout`` and ``plan_id`` explicitly and forwards BOTH on its
-    single inner call, as the factory's wrapper contract requires.
+    ``explicit_timeout``, ``plan_id`` AND ``canonical`` explicitly and forwards
+    ALL THREE on its single inner call, as the factory's wrapper contract
+    requires — a dropped ``canonical`` silently disables the zero-test guard's
+    canonical arm.
     """
 
     def execute_direct(

@@ -453,12 +453,13 @@ All `execute_direct()` implementations use this **minimal, unified signature**:
 | `working_dir` | string \| None | No | `None` | Working directory override for the child process |
 | `explicit_timeout` | int \| None | No | `None` | Caller-supplied bound that overrides the learned timeout |
 | `plan_id` | string | **Yes** (keyword-only) | *none* | The plan the build belongs to; `NO_PLAN_SENTINEL` when genuinely plan-less |
+| `canonical` | string \| None | No (keyword-only) | `None` | The canonical the CALLER dispatched, from the resolved canonical map; `None` when none was claimed. Metadata for the run-path truth guards — the build command itself never uses it |
 
-**Key principle**: The `args` parameter contains **all** build-specific options. No separate parameters for modules, profiles, workspaces, or wrappers. Wrappers are auto-detected internally.
+**Key principle**: The `args` parameter contains **all** build-specific options. No separate parameters for modules, profiles, workspaces, or wrappers. Wrappers are auto-detected internally. `canonical` does not contradict this: it is not a build option but the IDENTITY of the canonical the arguments belong to, which the arguments cannot express (a reactor-root `module-tests` command and the plain `package` canonical are the same argv).
 
 **`plan_id` has NO default, by design.** It is keyword-only and required, so every call site must state its choice in source rather than inheriting a silent fallback. A genuinely plan-less caller passes `NO_PLAN_SENTINEL` as a visible literal — the decision then appears in the diff at the call site instead of being inferred from a parameter default. The value determines where the build's log lands (see [R1: Log File Output](#r1-log-file-output)), so a dropped `plan_id` misattributes a real plan's build output rather than merely losing a label.
 
-**Wrapper obligation**: a `wrap_execute_fn` wrapper that re-declares the full inner signature MUST forward `plan_id` at EVERY inner call, including any post-recovery retry. Forwarding it on the first call only makes the parameter correct on the happy path and wrong exactly when a build has already gone wrong.
+**Wrapper obligation**: a `wrap_execute_fn` wrapper that re-declares the full inner signature MUST forward `plan_id` AND `canonical` at EVERY inner call, including any post-recovery retry. Forwarding them on the first call only makes the parameters correct on the happy path and wrong exactly when a build has already gone wrong — and a dropped `canonical` silently disables the run-path guard that holds a test canonical to "something executed".
 
 ### Return Value: DirectCommandResult
 

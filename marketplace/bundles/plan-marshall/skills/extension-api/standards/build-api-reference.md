@@ -54,6 +54,7 @@ Execute a build command and auto-parse the log on failure to extract structured 
 ```bash
 python3 .plan/execute-script.py {notation} run \
     --command-args "<args>" \
+    [--canonical <name>] \
     [--timeout <seconds>] \
     [--mode <mode>] \
     [--format <toon|json>] \
@@ -67,6 +68,8 @@ python3 .plan/execute-script.py {notation} run \
   - Gradle: `":module:build"` or `"build"`
   - npm: `"run test"` or `"run test --workspace=pkg"`
   - Python: `"verify"` or `"module-tests core"`
+- `--canonical` — The canonical this invocation dispatches, when the caller took the string from a resolved canonical map (`build_canonical_commands` emits it). It names the build's PURPOSE, which `--command-args` cannot: a reactor-root `module-tests` command and the plain `package` canonical are the same arguments, and the run-path truth guards (Maven's zero-test guard) read this identity. Omit it for an ad-hoc invocation that dispatches no named canonical, which is what every caller outside a canonical map does.
+  ⚠ **Adding a flag to the run surface obliges an executor regeneration.** The generated `.plan/execute-script.py` validates a dispatch against the argparse surface embedded when it was generated, so an executor generated BEFORE `--canonical` existed refuses a canonical string with `invalid_invocation` / `unknown_flag` (exit 2). Regenerate the executor (the project's steward step) as part of upgrading to a bundle whose canonical strings carry it; the refusal's `accepted` list shows the surface the stale file still has.
 - `--timeout` — Timeout in seconds for this run, overriding the adaptive value (when omitted: adaptive via run-config, default 300)
 - `--mode` — Output mode: `actionable` (default), `structured`, `errors`
 - `--format` — Output format: `toon` (default), `json`

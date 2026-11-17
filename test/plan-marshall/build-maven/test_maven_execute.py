@@ -6,6 +6,7 @@ Tests the Maven execution config and factory-generated functions.
 """
 
 import os
+from argparse import Namespace
 from pathlib import Path
 
 import pytest
@@ -649,6 +650,72 @@ def test_control_a_skip_stated_by_the_log_is_not_an_empty_population(tmp_path):
     }
 
     assert apply_zero_test_guard(result, 'test') is result
+
+
+def test_a_module_tests_package_run_that_says_it_skipped_keeps_its_green(tmp_path):
+    """A requested skip is a requested skip on the module-tests `package` form too.
+
+    `-DskipTests` set through `.mvn/maven.config` is invisible in the arguments, so
+    the log's own `Tests are skipped.` line is the only evidence that the empty run
+    was asked for. The canonical arm consults it before refusing.
+    """
+    log_file = tmp_path / 'package-skip.log'
+    log_file.write_text(
+        '[INFO] --- surefire:3.5.2:test (default-test) @ probe ---\n[INFO] Tests are skipped.\n[INFO] BUILD SUCCESS\n',
+        encoding='utf-8',
+    )
+    result = {
+        'status': 'success',
+        'exit_code': 0,
+        'duration_seconds': 1,
+        'log_file': str(log_file),
+        'command': 'mvnw package',
+    }
+
+    guarded = apply_zero_test_guard(result, 'package', project_dir=str(tmp_path), canonical='module-tests')
+
+    assert guarded['status'] == 'success'
+
+
+def test_cmd_run_forwards_the_canonical_to_the_guard(tmp_path, monkeypatch, capsys):
+    """The `cmd_run` hop is pinned: a dropped forward silently disables the guard.
+
+    Every other hop has its own test, and deleting ONE argument at the
+    `cmd_run` → in-process call site would leave the whole suite green while the
+    guard went inert again — the exact failure the retarget exists to remove.
+    """
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    (tmp_path / 'mvnw').write_text('#!/bin/sh\n')
+
+    def _recorder(**kwargs):
+        return {
+            'status': 'success',
+            'exit_code': 0,
+            'duration_seconds': 1,
+            'log_file': str(_LOG_TEST_DATA / 'maven-test-no-summary.log'),
+            'command': './mvnw -l /tmp/maven.log package',
+            'wrapper': './mvnw',
+        }
+
+    monkeypatch.setattr(_factory, 'execute_direct_base', _recorder)
+    args = Namespace(
+        command_args='package',
+        canonical='module-tests',
+        project_dir=str(tmp_path),
+        plan_id=_PLAN_ID,
+        execution_mode='in_process',
+        timeout=None,
+        mode='actionable',
+        format='toon',
+    )
+
+    exit_code = _maven_execute_mod.cmd_run(args)
+
+    # The guard's verdict is the proof the value crossed this hop: without
+    # ``canonical=canonical`` at the in-process call site the wrapper sees None
+    # and the same run reports success.
+    assert exit_code == 0
+    assert TEST_RUN_EXECUTED_NOTHING in capsys.readouterr().out
 
 
 def test_a_skipping_module_does_not_excuse_another_modules_zero_summary(tmp_path):

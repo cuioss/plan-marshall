@@ -223,11 +223,12 @@ def test_the_unreadable_root_refusal_names_the_plan_the_row_and_the_field(plan_c
 
     The row is identified by its ledger POSITION and its notation, the field by
     name, and the plan the gate is answering for. A null root is what a writer
-    that could not establish the fact records, and the writers that never tried
-    omit the key instead — so the message also has to say that a row from an
-    executor generated BEFORE the writer fix carries it, which makes regenerating
-    that executor part of the remedy; without it, "re-dispatch the build"
-    reproduces the same row.
+    that tried and could not capture the fact records, while the writers that
+    never recorded anything omit the key — and that absence is the legacy shape
+    the gate ADMITS, so the refusal must not blame the writer's generation. What
+    it names instead is the real cause (a failed capture) and the real remedy:
+    re-dispatch against this plan's tree, and if a fresh row still cannot capture
+    the root, fix the tree the build is dispatched against.
     """
     result = _run_gate(plan_context, monkeypatch, tmp_path, _row(worktree_root=None))
 

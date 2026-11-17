@@ -428,10 +428,11 @@ def _partition_candidates(
 def _refused_rows_named(refused: list[tuple[int, dict, str]], route: str) -> str:
     """Name every row refused on ``route`` by its LEDGER POSITION and notation.
 
-    The position is the row's index in the ledger file, which is also what
-    ``refused_rows[].ledger_index`` publishes, so the operator can open the file
-    and land on the row. A row with no usable notation is named as such rather
-    than by an empty pair of quotes.
+    The position is the row's index among the entries ``read_entries`` parsed —
+    the same value ``refused_rows[].ledger_index`` publishes — so the operator
+    reaches the row by counting the entries, not the file's physical lines (a
+    blank or malformed line is skipped by the reader). A row with no usable
+    notation is named as such rather than by an empty pair of quotes.
     """
     names = []
     for index, entry, row_route in refused:

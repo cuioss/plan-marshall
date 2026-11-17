@@ -388,15 +388,20 @@ def build_commands(bundle_name: str) -> dict:
         Dict of canonical commands using pyproject_build execution.
     """
     base = PYPROJECT_BUILD_BASE
-    return {
-        'compile': f'{base} --command-args "compile {bundle_name}"',
-        'test-compile': f'{base} --command-args "test-compile {bundle_name}"',
-        'module-tests': f'{base} --command-args "module-tests {bundle_name}"',
-        'quality-gate': f'{base} --command-args "quality-gate {bundle_name}"',
-        'verify': f'{base} --command-args "verify {bundle_name}"',
-        'coverage': f'{base} --command-args "coverage {bundle_name}"',
-        'clean': f'{base} --command-args "clean {bundle_name}"',
+    canonicals = {
+        'compile': f'compile {bundle_name}',
+        'test-compile': f'test-compile {bundle_name}',
+        'module-tests': f'module-tests {bundle_name}',
+        'quality-gate': f'quality-gate {bundle_name}',
+        'verify': f'verify {bundle_name}',
+        'coverage': f'coverage {bundle_name}',
+        'clean': f'clean {bundle_name}',
     }
+    # ``--canonical`` carries each command's identity, exactly as
+    # ``_build_shared.build_canonical_commands`` emits it: the argument string
+    # names the bundle but not the canonical, and the run-path guards read the
+    # declared identity.
+    return {name: f'{base} --command-args "{args}" --canonical {name}' for name, args in canonicals.items()}
 
 
 # =============================================================================
