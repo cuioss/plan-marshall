@@ -545,6 +545,20 @@ def test_a_project_step_sharing_the_merge_step_basename_cannot_shorten_the_prefi
     assert spy.asked == ['project:branch-cleanup', 'default:ci-verify'], spy.asked
 
 
+def test_the_assertion_gap_codes_come_from_their_owner() -> None:
+    """The classifier derives the assertion's codes rather than restating them.
+
+    A code the verb adds or renames must reach this gate's step-gap set, or a
+    nameable gap would be filed as an unreadable state and take the stop remedy.
+    """
+    from _cmd_assert_step_recorded import ASSERTION_STEP_GAP_CODES
+
+    assert gate._assertion_step_gap_codes() == tuple(ASSERTION_STEP_GAP_CODES)
+    assert set(ASSERTION_STEP_GAP_CODES) <= gate._step_gap_reasons()
+    assert {'step_record_failed', 'step_record_unconfirmed'} <= gate._step_gap_reasons()
+    assert 'step_record_unreadable' not in gate._step_gap_reasons()
+
+
 def test_the_refusal_is_a_distinct_merge_gate_code() -> None:
     """The new refusal joins the gate's vocabulary without reusing a sibling's code."""
     assert gate.MERGE_EARLIER_STEP_UNRECORDED == 'merge_earlier_step_unrecorded'

@@ -848,19 +848,34 @@ def _earlier_manifest_steps(steps: list[str]) -> tuple[list[str] | None, str | N
     return None, None
 
 
-#: The ``steps[]`` reasons that name a STEP GAP — a step a finalize re-entry can
-#: actually run. Every other refusal reason is a READ FAULT: the step state could
-#: not be established, so no re-entry can clear it and the disposition STOPS
-#: instead of looping back.
-_STEP_GAP_REASONS: frozenset[str] = frozenset(
-    {'step_record_missing', 'step_record_mismatched_key', 'step_record_failed', 'step_record_unconfirmed'}
-)
-
 #: The two step-gap codes the ASSERTION itself answers with (the other two are
-#: classified here). Every other error it returns is folded into
-#: ``step_record_unreadable``, because forwarding an unlisted code would put a read
-#: fault into a row the disposition treats as a step gap.
-_ASSERTION_STEP_GAP_CODES: tuple[str, ...] = ('step_record_missing', 'step_record_mismatched_key')
+#: classified here), DERIVED from that verb's own module rather than restated: a
+#: code it adds or renames must reach this classifier, or the gate would file a
+#: nameable gap as an unreadable state and select the stop remedy for it.
+#: ``None`` means the owner could not be imported — then every assertion error is
+#: treated as a read fault, the fail-closed direction.
+def _assertion_step_gap_codes() -> tuple[str, ...] | None:
+    try:
+        from _cmd_assert_step_recorded import ASSERTION_STEP_GAP_CODES
+
+        return tuple(ASSERTION_STEP_GAP_CODES)
+    except Exception:
+        return None
+
+
+#: The ``steps[]`` reasons THIS gate classifies itself, as step gaps rather than read
+#: faults. Combined with :func:`_assertion_step_gap_codes` to form the full set.
+_LOCAL_STEP_GAP_REASONS: tuple[str, ...] = ('step_record_failed', 'step_record_unconfirmed')
+
+
+def _step_gap_reasons() -> frozenset[str]:
+    """The closed set of ``steps[]`` reasons a re-entry can actually clear.
+
+    Every other reason is a READ FAULT. Today that set is the assertion's own gap
+    codes plus the two this gate adds; both halves are derived, so a rename in either
+    place moves this set with it.
+    """
+    return frozenset(set(_assertion_step_gap_codes() or ()) | set(_LOCAL_STEP_GAP_REASONS))
 
 
 def _step_admission(verdict: dict[str, Any]) -> tuple[bool, str, Any, str]:
@@ -889,7 +904,7 @@ def _step_admission(verdict: dict[str, Any]) -> tuple[bool, str, Any, str]:
     """
     if verdict.get('status') != 'success':
         error = str(verdict.get('error') or '')
-        if error in _ASSERTION_STEP_GAP_CODES:
+        if error in (_assertion_step_gap_codes() or ()):
             return False, error, None, ''
         message = str(verdict.get('message') or verdict.get('detail') or '').strip()
         detail = (
@@ -912,7 +927,7 @@ def _sequence_refusal_payload(plan_id: str, reason: str, detail: str, steps: lis
     ``remedy`` is the DISCRIMINATOR the disposition branches on, so the step body
     never has to re-derive it from prose or from ``steps`` emptiness alone:
 
-    * ``dispatcher`` — at least one row names a STEP GAP (:data:`_STEP_GAP_REASONS`),
+    * ``dispatcher`` — at least one row names a STEP GAP (:func:`_step_gap_reasons`),
       so a finalize re-entry can run that step. The offending steps are still in the
       manifest, and the resumable re-entry check runs exactly them, in the order the
       manifest declares.
@@ -924,7 +939,7 @@ def _sequence_refusal_payload(plan_id: str, reason: str, detail: str, steps: lis
     never a step nobody ran and never a state nobody could read.
     """
     named = ', '.join(str(row['step']) for row in steps)
-    remedy = 'dispatcher' if any(str(row.get('reason')) in _STEP_GAP_REASONS for row in steps) else 'stop'
+    remedy = 'dispatcher' if any(str(row.get('reason')) in _step_gap_reasons() for row in steps) else 'stop'
     if remedy == 'dispatcher':
         message = (
             f'The finalize manifest orders {len(steps)} step(s) before {MERGE_STEP_ID} that did not '
@@ -1056,7 +1071,7 @@ def _step_sequence_refusal(
         blocked.append(row)
     if not blocked:
         return None
-    read_faults = [row for row in blocked if str(row['reason']) not in _STEP_GAP_REASONS]
+    read_faults = [row for row in blocked if str(row['reason']) not in _step_gap_reasons()]
     if read_faults and len(read_faults) == len(blocked):
         # Every offending row is a read fault: the detail must name the READ, because
         # "no terminal record" is a claim a failed read never established.
