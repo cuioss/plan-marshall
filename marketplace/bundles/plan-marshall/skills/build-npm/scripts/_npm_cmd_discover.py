@@ -376,7 +376,7 @@ def _build_commands(module_name: str, scripts: dict, relative_path: str, *, stan
 
     # verify: chained build + test if both exist, otherwise just test
     if 'build' in scripts and 'test' in scripts:
-        commands['verify'] = build_chained_commands(skill, [f'run build{ws_arg}', f'run test{ws_arg}'])
+        commands['verify'] = build_chained_commands(skill, [f'run build{ws_arg}', f'run test{ws_arg}'], 'verify')
     elif 'test' in scripts:
         commands['verify'] = build_canonical_commands(skill, {'verify': f'run test{ws_arg}'})['verify']
 
