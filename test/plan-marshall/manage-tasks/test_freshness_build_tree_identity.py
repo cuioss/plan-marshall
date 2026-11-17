@@ -239,7 +239,13 @@ def test_the_unreadable_root_refusal_names_the_plan_the_row_and_the_field(plan_c
         f'the refusal must name the row notation: {message}'
     )
     assert 'worktree_root' in message, f'the refusal must name the field: {message}'
-    assert 'regenerat' in message.lower(), f'the remedy must name the executor regeneration: {message}'
+    assert 'the capture itself is failing' in message, (
+        f'the remedy must name the real cause of a still-unreadable root: {message}'
+    )
+    assert 'generated before' not in message, (
+        'a row from an executor generated before the tree-identity pair existed carries NO key, '
+        f'so blaming the writer generation is false: {message}'
+    )
 
 
 def test_every_refusal_route_names_its_own_cause(plan_context, monkeypatch, tmp_path) -> None:

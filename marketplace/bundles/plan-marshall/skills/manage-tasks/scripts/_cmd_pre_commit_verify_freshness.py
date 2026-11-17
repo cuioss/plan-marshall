@@ -291,11 +291,11 @@ _STALE_REWRITTEN_BY_BUILD = (
 
 _STALE_ROOT_UNREADABLE = (
     'worktree_root_unreadable',
-    'A writer that could not establish the fact records it as null — the writers that never '
-    'tried omit the key instead — and a row written by an executor generated before the writer '
-    'fix carries that null, so regenerating the executor is part of the remedy: the next build '
-    'then records the root it hashed. Establish what wrote the row, or re-dispatch the build '
-    "against this plan's tree.",
+    'A writer that could not capture the tree root records the field as null, while a writer '
+    'that recorded NOTHING about the tree omits the key instead — that absence is the legacy '
+    "shape this gate admits. Re-dispatch the build against this plan's tree; if a fresh row "
+    'still records an unreadable root, the capture itself is failing, so fix the tree the build '
+    "is dispatched against (the plan's worktree metadata, or the --project-dir it names).",
 )
 
 _STALE_DISPATCH_HASH_UNREADABLE = (
@@ -457,8 +457,8 @@ def _refusal_reason(refused: list[tuple[int, dict, str]], gate_root: Path, plan_
         # row and the field instead of leaving the operator to search the ledger.
         message = (
             f'Plan {plan_id}: build row(s) {_refused_rows_named(refused, reason)} record the field '
-            f'{_ROOT_FIELD} as present but null or blank, so the row cannot be shown to describe '
-            f'this tree. {message}'
+            f'{_ROOT_FIELD} as present but null, blank or otherwise not a non-empty path string, '
+            f'so the row cannot be shown to describe this tree. {message}'
         )
     return reason, message
 

@@ -61,8 +61,8 @@ class _Pin:
     ``retired_provenance`` says what the control CLAIMS about history:
 
     * ``parent`` — the retired wording is quoted from the document as it stood
-      BEFORE the PLAN-LB-146 change, recorded ON THE PIN in ``parent_wording`` and
-      checked against it;
+      BEFORE the change the pin was written for, recorded ON THE PIN in
+      ``parent_wording`` and checked against it;
     * ``planted`` — the control makes NO history claim. The substituted text is a
       mutation planted to prove the pin is section-scoped, whether or not some
       earlier revision of the document happened to contain it.
@@ -168,7 +168,7 @@ _PINS = (
         label='manage-tasks/SKILL.md — the unreadable root refusal names its row',
         path=_doc('manage-tasks', 'SKILL.md'),
         marker='| `worktree_root_unreadable` | Rows carry this sha',
-        snippet='regenerating the executor is part of the remedy',
+        snippet='the capture itself is failing',
         retired='The row cannot be shown to describe this tree. Establish what wrote it, or re-dispatch.',
         retired_provenance='parent',
         parent_wording=('The row cannot be shown to describe this tree. Establish what wrote it, or re-dispatch.'),
