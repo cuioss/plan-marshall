@@ -59,6 +59,7 @@ from marketplace_paths import resolve_home  # noqa: E402
 from runtime_base import (  # noqa: E402,F401
     Runtime,
     _parse_agent_frontmatter,
+    _qualified_agent_stem,
     extract_project_steps,
     toon_error,
     toon_noop,

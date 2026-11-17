@@ -16,6 +16,7 @@ The exit-code contract for every `python3 .plan/execute-script.py` call in this 
 
 Both sides record the probe as one `manage-status metadata --set` call (`--field baseline_drift_probe --value {signature}`), where the signature is the entries of `divergent_commits`, in order, `|`-joined, then `:`, then either the conflict count or `{reconcile_status}/{reason}`. (`divergent_commits` is the drift return's `git log --oneline` capture, so an entry is a commit's abbreviated sha together with its subject; joining the entries as they arrive is what makes the signature stable across two probes of the same upstream state.)
 
+- **No probe recorded** — the first drift return of this plan has nothing to compare against. Record this return's signature with the same `manage-status metadata --set` call above, then continue with step 1 of the procedure. The `drift_unchanged` stop below cannot fire on this return: it fires only on a repeat of a probe this plan already recorded, so a first drift is never mistaken for one that did not move.
 - **Signature equal to the recorded one** — the branch and the base have not moved since the previous recovery, so another refine cycle would re-author the same plan and the re-entered execute would return the same drift. STOP on this FIRST repeat, before spending the rest of the cap, and before any of steps 1-3 have run: nothing is logged as a re-dispatch and the persisted phase is left at `5-execute`, exactly where the drift return left it:
 
   ```toon

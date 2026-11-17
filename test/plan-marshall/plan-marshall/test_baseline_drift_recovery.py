@@ -190,6 +190,33 @@ def test_unchanged_probe_stops_on_the_first_repeat(recovery_section: str) -> Non
     assert 'reset' in body, 'the procedure no longer states when the counter and probe are cleared'
 
 
+def test_the_unchanged_probe_states_the_first_drift_case(recovery_section: str) -> None:
+    """D1: the unchanged-probe block states the case where no probe is recorded yet.
+
+    The first drift return of a plan has nothing to compare against. Without that
+    case stated, the block reads as if every drift return had a recorded probe to
+    compare with, and the ``drift_unchanged`` stop looks reachable on a first return
+    — which would stop a plan that had never recovered before.
+    """
+    body = recovery_section
+
+    assert 'No probe recorded' in body, 'the unchanged-probe block is silent on the first drift return of a plan'
+    assert 'Signature equal to the recorded one' in body, 'the equal-signature bullet lost its text'
+    assert 'Signature different from the recorded one' in body, 'the different-signature bullet lost its text'
+
+    absent = body.index('No probe recorded')
+    equal = body.index('Signature equal to the recorded one')
+    different = body.index('Signature different from the recorded one')
+    assert absent < equal < different, 'the no-recorded-probe case must sit beside the two existing bullets'
+
+    absent_bullet = body[absent:equal]
+    assert 'manage-status metadata --set' in absent_bullet, (
+        'the absent case must record its signature through the same call'
+    )
+    assert 'step 1' in absent_bullet, 'the absent case must continue with step 1 rather than stop'
+    assert 'drift_unchanged' in absent_bullet, 'the absent case must say the stop cannot fire on it'
+
+
 def test_refine_conflict_handling_names_the_reconcile_step(refine_section: str) -> None:
     """D3: the conflicting drift is reconciled by the new step, not deferred to phase-6."""
     section = refine_section

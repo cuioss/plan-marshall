@@ -27,6 +27,8 @@ import runtime_base
 from claude_runtime import ClaudeRuntime
 from toon_parser import parse_toon
 
+from conftest import MARKETPLACE_ROOT
+
 #: The variant-suffixed name the seam could not resolve. Generated per target by
 #: the variant emitter, so it exists only in a deployed tree.
 VARIANT = 'execution-context-level-3'
@@ -461,3 +463,96 @@ def test_an_unreadable_agent_file_names_the_path_it_resolved(tmp_path: Path, mon
     assert result['error'] == 'prompt_not_found'
     assert str(unreadable) in result['message']
     assert 'could not be read' in result['message']
+
+
+# =============================================================================
+# 5. The ``{bundle}:{name}`` notation — a diagnosis, never a second lookup
+# =============================================================================
+
+#: The phrase every carrier of the new message has to state, so a reader of the
+#: contract, the skill and the runtime miss all read the same sentence.
+_STEM_PHRASE = 'takes an agent file stem'
+
+PLATFORM_RUNTIME_SKILL = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'platform-runtime'
+
+
+def test_a_bundle_qualified_agent_answers_the_stem_naming_miss(
+    empty_cache: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A ``{bundle}:{name}`` value answers a miss that says why and names the stem.
+
+    ``--agent`` takes a file stem, never the notation a ``Task:`` call uses, and
+    the colon is not in the stem character set. The miss therefore reports the form
+    error and the stem the caller meant instead of listing search roots as if a
+    lookup had run — the reading that sent a real caller after a wrong name.
+    """
+    monkeypatch.setattr(claude_runtime, '_claude_bundle_cache_root', lambda: empty_cache)
+
+    result = _parsed(ClaudeRuntime().subagent_dispatch(f'plan-marshall:{VARIANT}', None, None))
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'prompt_not_found'
+    message = result['message']
+    assert _STEM_PHRASE in message, message
+    assert VARIANT in message, f'the stem the value would have meant is not named: {message}'
+    assert f'plan-marshall:{VARIANT}' in message, message
+    assert 'part after the colon' in message, message
+    # The form error replaces the root listing: there was never a lookup to report.
+    assert 'not found; searched' not in message, message
+
+
+@pytest.mark.parametrize(
+    'agent_name',
+    [
+        pytest.param(f'../outside:{VARIANT}', id='path-in-bundle-half'),
+        pytest.param(f'plan-marshall:../{VARIANT}', id='path-in-name-half'),
+        pytest.param(f'*:{VARIANT}', id='glob-in-bundle-half'),
+        pytest.param(f'plan-marshall:{VARIANT}*', id='glob-in-name-half'),
+        pytest.param('plan-marshall:a:b', id='two-colons'),
+    ],
+)
+def test_a_path_or_glob_half_is_not_the_notation(
+    agent_name: str, empty_cache: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A path or a glob in either half is a plain miss, never the stem diagnosis.
+
+    The guard refuses such a value because it is not a file stem; calling it "the
+    notation" would send its reader to a lookup form that does not exist.
+    """
+    monkeypatch.setattr(claude_runtime, '_claude_bundle_cache_root', lambda: empty_cache)
+
+    assert runtime_base._qualified_agent_stem(agent_name) is None, agent_name
+    assert runtime_base._find_agent_file(agent_name) is None, agent_name
+
+    result = _parsed(ClaudeRuntime().subagent_dispatch(agent_name, None, None))
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'prompt_not_found'
+    assert _STEM_PHRASE not in result['message'], result['message']
+
+
+def test_the_diagnosis_changes_no_name_that_resolves(deployed_cache: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every name that resolved before still resolves to the same file.
+
+    The bare stem keeps resolving from the deployed versioned cache and from the
+    source tree, and the diagnosis answers ``None`` for both — it reads no
+    filesystem and adds no lookup form.
+    """
+    monkeypatch.setattr(claude_runtime, '_claude_bundle_cache_root', lambda: deployed_cache)
+
+    assert claude_runtime._find_agent_file(VARIANT) == _versioned_agent_path(deployed_cache)
+    assert runtime_base._qualified_agent_stem(VARIANT) is None
+
+    from_source = runtime_base._find_agent_file(BARE)
+    assert from_source is not None, 'the source-tree shape stopped resolving the bare name'
+    assert from_source.name == f'{BARE}.md'
+    assert runtime_base._qualified_agent_stem(BARE) is None
+
+
+@pytest.mark.parametrize('document', ['standards/contract.md', 'SKILL.md'])
+def test_the_governing_documents_carry_the_message(document: str) -> None:
+    """The contract and the skill state the message the runtime answers."""
+    text = (PLATFORM_RUNTIME_SKILL / document).read_text(encoding='utf-8')
+
+    assert _STEM_PHRASE in text, f'{document} does not state what --agent takes'
+    assert 'part after the colon' in text, f'{document} does not name the stem the value would have meant'
