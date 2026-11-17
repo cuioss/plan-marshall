@@ -146,13 +146,15 @@ Both sides record the probe as one `manage-status metadata --set` call (`--field
 
       `{pre_sha}` and `{post_sha}` are the pair the pending marker carries (recorded in 4.2a) — recorded by the attempt that moved the head. `{pre_sha}`, the head before that rebase, narrows the candidate window to the commits HEAD gained since then. Patch-id decides every match, so a replayed commit that kept its patch maps without help. If either call returns `status: error`, STOP with `drift_reconcile_remap_failed` (logging the returned `error` and `message`): a remap that did not run leaves the ledger stale, and re-entering execute would record work against commits that no longer exist. The pending marker survives that stop, so the next attempt finishes the remap rather than reading the moved head as nothing to do.
 
-      Read the first call's `unmapped` list before continuing. An entry whose stale SHA is an ancestor of `{pre_sha}` belongs to this rebase and its patch changed during conflict resolution: resolve its replacement from `git range-diff --no-color {pre_sha}...{post_sha}`, never from position or `HEAD`, and append that row explicitly — `{deliverable_id}` from the stale ledger row, `{rebased_sha}` from the `range-diff` pair, and `{changed_paths}` from `git diff-tree --no-commit-id --name-only -r {rebased_sha}` (comma-joined), because a conflict resolution can change which paths the replayed commit touches:
+      Read the first call's `unmapped` list before continuing. An entry whose stale SHA is an ancestor of `{pre_sha}` belongs to this rebase and its patch changed during conflict resolution: resolve its replacement from `git range-diff --no-color {pre_sha}...{post_sha}`, never from position or `HEAD`, and append that row explicitly — `{deliverable_id}` from the stale ledger row, `{rebased_sha}` from the `range-diff` pair, and the paths from git writing them into a file — `git -C {worktree_path} diff-tree --no-commit-id --name-only -r -z --output={worktree_path}/.plan/temp/{plan_id}-rebased-paths.nul {rebased_sha}` — because a conflict resolution can change which paths the replayed commit touches:
 
       ```bash
       python3 .plan/execute-script.py plan-marshall:manage-change-ledger:manage-change-ledger append \
         --kind change --deliverable-id {deliverable_id} --commit-sha {rebased_sha} \
-        --changed-paths {changed_paths} --worktree-root {worktree_path}
+        --changed-paths-file {worktree_path}/.plan/temp/{plan_id}-rebased-paths.nul --worktree-root {worktree_path}
       ```
+
+      The file form is what keeps this followable: the Bash tool renders a NUL byte as a space, so a list read back out of the shell cannot be re-joined losslessly.
 
       An `unmapped` entry outside that ancestry belongs to another history — leave it alone. A commit `range-diff` pairs with nothing was dropped by the rebase: report it in the work log and append no row.
 
