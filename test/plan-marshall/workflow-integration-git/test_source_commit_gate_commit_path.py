@@ -748,6 +748,31 @@ def test_a_finalize_commit_whose_row_cannot_be_written_reports_it(tmp_path: Path
     assert _tree_ledger_rows(worktree) == [], 'the premise: no row could be written'
 
 
+def test_a_post_commit_push_refusal_still_reports_the_ledger_outcome(tmp_path: Path) -> None:
+    """A refused push must not hide a failed row.
+
+    The commit exists once the push is attempted, so a return that answered only
+    with the push refusal would leave the caller — the reader the flag exists
+    for — unable to see that the row is missing.
+    """
+    _init_repo(tmp_path)
+    worktree = _worktree(tmp_path, 'plan-a')
+    _write_plan(tmp_path, 'plan-a', phase='5-execute', steps=[])
+    # The target tree's ledger slot is unwritable: `.plan/work` is a FILE.
+    ledger_slot = worktree / '.plan' / 'work'
+    ledger_slot.parent.mkdir(parents=True, exist_ok=True)
+    ledger_slot.write_text('not a directory\n', encoding='utf-8')
+    _git(tmp_path, 'checkout', '--detach')
+
+    _stage(tmp_path, 'src/handback.py')
+    result, code = _run_commit(tmp_path, worktree, '--record-change', '--push')
+
+    assert result['status'] == 'error', result
+    assert 'detached HEAD' in result['error'], f'the premise: the push is refused, not made: {result!r}'
+    assert result['ledger_recorded'] is False, result
+    assert result['ledger_error'], result
+
+
 def test_the_docstring_no_longer_claims_the_boundary_surfaces_a_finalize_row() -> None:
     """The replaced claim must be gone, and what replaces it names the real reader."""
     doc = git_workflow._record_commit_change.__doc__ or ''

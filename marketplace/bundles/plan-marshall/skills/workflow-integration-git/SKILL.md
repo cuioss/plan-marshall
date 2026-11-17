@@ -202,7 +202,7 @@ ledger_recorded: true
 ledger_deliverable_id: pre-push-quality-gate
 ```
 
-`ledger_recorded` is present when the plan's `current_phase` is `6-finalize`, and whenever `--record-change` was passed; `ledger_error` rides beside it when the row could not be written. See Step 5.
+`ledger_recorded` is present when the plan's `current_phase` is `6-finalize`, and whenever `--record-change` was passed; `ledger_error` rides beside it when the row could not be written. See Step 5. **It also rides on every return made AFTER the commit exists** — a refused push, a pre-push gate refusal, a detached HEAD — because the caller is the missing row's only reader, and a return that carried only the push error would hide the outcome it has to act on.
 
 ## Scripts
 

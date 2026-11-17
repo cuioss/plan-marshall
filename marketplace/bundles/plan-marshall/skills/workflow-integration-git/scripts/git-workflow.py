@@ -1142,6 +1142,27 @@ def _record_commit_change(worktree: Path, commit_sha: str, step: str | None, *, 
     return {'recorded': True, 'deliverable_id': deliverable_id}
 
 
+def _with_ledger_outcome(result: dict[str, Any], ledger: dict[str, Any]) -> dict[str, Any]:
+    """Attach the ledger outcome to a result returned AFTER recording was attempted.
+
+    The commit exists from this point on, so every return — including the
+    post-commit push refusals — must carry what happened to its row: the caller
+    is the reader D4 makes responsible for a missing one, and a return that
+    answered only with the push refusal would hide the very outcome that caller
+    has to act on. An empty ``ledger`` (no row was attempted, so no outcome
+    exists) leaves the result untouched, which is the pre-existing shape for an
+    unmarked phase-5 commit.
+    """
+    if not ledger:
+        return result
+    result['ledger_recorded'] = bool(ledger.get('recorded'))
+    if 'deliverable_id' in ledger:
+        result['ledger_deliverable_id'] = ledger['deliverable_id']
+    if 'error' in ledger:
+        result['ledger_error'] = ledger['error']
+    return result
+
+
 def cmd_commit(args):
     """Handle the commit subcommand — the single gate-bearing commit path.
 
@@ -1236,9 +1257,12 @@ def cmd_commit(args):
     pushed = False
     if getattr(args, 'push', False):
         if not commit_hash:
-            return make_error(
-                'cannot push: the new commit SHA could not be read',
-                code=ErrorCode.FETCH_FAILURE,
+            return _with_ledger_outcome(
+                make_error(
+                    'cannot push: the new commit SHA could not be read',
+                    code=ErrorCode.FETCH_FAILURE,
+                ),
+                ledger,
             )
         # The push ships exactly the HEAD this commit created. When the plan's
         # pre-push gate recorded a DIFFERENT head, that gate never saw this tree —
@@ -1249,26 +1273,32 @@ def cmd_commit(args):
             gate_refusal = head_gate_refusal(plan_id or _plan_id_from_worktree_path(worktree) or '', commit_hash)
             if gate_refusal is not None:
                 gate_refusal['commit_hash'] = commit_hash
-                return gate_refusal
+                return _with_ledger_outcome(gate_refusal, ledger)
         branch_rc, branch_out, _branch_err = _run_git_nul_verbatim(
             ['-C', str(worktree), 'symbolic-ref', '--short', '--quiet', 'HEAD']
         )
         branch = branch_out.strip() if branch_rc == 0 else ''
         if not branch:
-            return make_error(
-                'cannot push a detached HEAD: the committed change has no branch to ship to',
-                code=ErrorCode.INVALID_INPUT,
+            return _with_ledger_outcome(
+                make_error(
+                    'cannot push a detached HEAD: the committed change has no branch to ship to',
+                    code=ErrorCode.INVALID_INPUT,
+                ),
+                ledger,
             )
         arm_refusal = armed_merge_refusal(branch, str(worktree))
         if arm_refusal is not None:
             arm_refusal['commit_hash'] = commit_hash
-            return arm_refusal
+            return _with_ledger_outcome(arm_refusal, ledger)
         rc, _out, push_err = _run_git_nul_verbatim(
             ['-C', str(worktree), 'push', 'origin', f'{commit_hash}:refs/heads/{branch}'],
             timeout=_PUSH_TIMEOUT_SECONDS,
         )
         if rc != 0:
-            return make_error(f'git push failed: {push_err or f"exit {rc}"}', code=ErrorCode.FETCH_FAILURE)
+            return _with_ledger_outcome(
+                make_error(f'git push failed: {push_err or f"exit {rc}"}', code=ErrorCode.FETCH_FAILURE),
+                ledger,
+            )
         pushed = True
 
     result: dict[str, Any] = {

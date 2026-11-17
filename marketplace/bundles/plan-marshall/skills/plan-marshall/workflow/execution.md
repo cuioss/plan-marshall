@@ -536,7 +536,8 @@ residual deliverable" would be wrong or ambiguous:
 
    After EACH group's commit, complete the Step 10a bookkeeping for that
    commit (resolve `{commit_sha}` via `git rev-parse HEAD` in the worktree,
-   enumerate the commit's paths with git writing them into a file —
+   create the output directory (`mkdir -p {worktree_path}/.plan/temp` — git
+   creates none), enumerate the commit's paths with git writing them into a file —
    `git diff-tree --no-commit-id --name-only -r --root -z --output={file} {commit_sha}`,
    the form the Bash tool can follow because nobody has to read a NUL back out
    of the shell — and append the `kind=change` ledger entry with
@@ -571,7 +572,9 @@ transition:
 
 1. **Source the two facts the invocation leaves as placeholders.** Take the SHA
    from `unrecorded_commits[]` and its paths from git — never from memory and
-   never from a declared file list — with git writing them into a file:
+   never from a declared file list — with git writing them into a file (create
+   the directory first: `mkdir -p {worktree_path}/.plan/temp`, because git
+   creates none):
    `git -C {worktree_path} diff-tree --no-commit-id --name-only -r -z --output={file} {sha}`,
    then pass `--changed-paths-file {file}`.
    Keep the `-z`: with git's default quoting a non-ASCII path comes back as a

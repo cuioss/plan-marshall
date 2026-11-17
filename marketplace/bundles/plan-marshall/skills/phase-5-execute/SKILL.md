@@ -807,12 +807,18 @@ The per-deliverable commit fires UNCONDITIONALLY at every chain tail — **regar
 
    Record the output as `{commit_sha}`.
 
-4. **Source the changed paths from git** — the `kind=change` entry's `changed_paths` MUST be git-sourced (NOT self-computed from the deliverable's declared `affected_files`). Enumerate the paths the commit touched, with git writing them STRAIGHT into a file:
+4. **Source the changed paths from git** — the `kind=change` entry's `changed_paths` MUST be git-sourced (NOT self-computed from the deliverable's declared `affected_files`). Create the temp directory first, then enumerate the paths with git writing them STRAIGHT into a file:
+
+   ```bash
+   mkdir -p {worktree_path}/.plan/temp
+   ```
 
    ```bash
    git -C {worktree_path} diff-tree --no-commit-id --name-only -r --root -z \
      --output={worktree_path}/.plan/temp/{plan_id}-changed-paths.nul {commit_sha}
    ```
+
+   `git` does not create the directory `--output` names, and a fresh worktree carries `.plan/local` only, so the `mkdir -p` is required — it is idempotent, so running it when another step already created the directory costs nothing.
 
    Nothing reads that file back out of the shell: `-z` makes it NUL-separated (with git's default `core.quotePath` a non-ASCII path comes back quoted on a line-oriented read, and the ledger stores what it is given verbatim), `--root` enumerates a repository's first commit like any other, and `--output` is what keeps the procedure followable — the Bash tool renders a NUL byte as a space, so a list read back out of the shell cannot be re-joined without losing it.
 
