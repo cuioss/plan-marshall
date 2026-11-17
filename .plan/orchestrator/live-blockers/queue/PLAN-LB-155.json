@@ -2,10 +2,10 @@
   "id": "PLAN-LB-155",
   "slug": "subagent-dispatch-versioned-agent-lookup",
   "workstream": "WS-04",
-  "status": "running",
+  "status": "shipped",
   "lane": "runbook",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "plan_marshall_plan_id": "rb-lb-155-subagent-dispatch-versioned-agent-lookup",
+  "pr": "2006",
+  "landing": "landings/PLAN-LB-155.md",
   "seq": 155
 }
