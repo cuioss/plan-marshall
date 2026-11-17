@@ -242,6 +242,39 @@ def test_the_unreadable_root_refusal_names_the_plan_the_row_and_the_field(plan_c
     assert 'regenerat' in message.lower(), f'the remedy must name the executor regeneration: {message}'
 
 
+def test_every_refusal_route_names_its_own_cause(plan_context, monkeypatch, tmp_path) -> None:
+    """CONTROL: the row identification is scoped to ONE route; the rest are unchanged.
+
+    Each other tree-identity route keeps its own remedy VERBATIM, and none of them
+    gains the plan/row/field identification — a shared message builder that leaked
+    onto them would hand the reader a row-level instruction the route's cause does
+    not support.
+    """
+    cases = {
+        'worktree_root_mismatch': (
+            _row(worktree_root=_OTHER_ROOT),
+            "Re-dispatch the build against this plan's tree",
+        ),
+        'worktree_rewritten_by_build': (
+            _row(worktree_root=_GATE_ROOT, worktree_sha_at_dispatch='0' * 64),
+            'Commit the rewrite and re-run',
+        ),
+        'worktree_dispatch_hash_unreadable': (
+            _row(worktree_root=_GATE_ROOT, worktree_sha_at_dispatch=None),
+            'Re-dispatch the build.',
+        ),
+    }
+
+    for expected_reason, (row, remedy) in cases.items():
+        result = _run_gate(plan_context, monkeypatch, tmp_path, row)
+
+        assert result['reason'] == expected_reason, result
+        assert remedy in result['message'], (expected_reason, result['message'])
+        assert 'build row(s) #' not in result['message'], (
+            f'{expected_reason}: the unreadable-root identification leaked onto another route: {result["message"]}'
+        )
+
+
 def test_a_routing_seam_row_is_not_read_as_a_failed_capture(plan_context, monkeypatch, tmp_path) -> None:
     """CONTROL: the seam's deliberately hash-less row keeps the mutation answer.
 

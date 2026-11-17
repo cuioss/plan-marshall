@@ -165,6 +165,15 @@ _PINS = (
         retired='Re-run the build.',
     ),
     _Pin(
+        label='manage-tasks/SKILL.md — the unreadable root refusal names its row',
+        path=_doc('manage-tasks', 'SKILL.md'),
+        marker='| `worktree_root_unreadable` | Rows carry this sha',
+        snippet='regenerating the executor is part of the remedy',
+        retired='The row cannot be shown to describe this tree. Establish what wrote it, or re-dispatch.',
+        retired_provenance='parent',
+        parent_wording=('The row cannot be shown to describe this tree. Establish what wrote it, or re-dispatch.'),
+    ),
+    _Pin(
         label='manage-change-ledger/SKILL.md — the pair is read by presence',
         path=_doc('manage-change-ledger', 'SKILL.md'),
         marker='read by **presence**',
