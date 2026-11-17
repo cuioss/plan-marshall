@@ -252,6 +252,18 @@ def test_claude_dispatch_miss_names_the_roots_it_searched(empty_cache: Path, mon
 #: added there must not be silently excluded from these tests.
 _RUNTIMES = tuple(platform_runtime._REGISTRY.items())
 
+assert _RUNTIMES, 'the runtime population derived from the router registry is empty'
+
+#: The targets the seam serves today. Pinned beside the derivation so a registry
+#: change is a deliberate decision rather than a silently narrower test run: a
+#: new target has to be checked for this seam and this set re-pinned.
+_RUNTIME_TARGETS = frozenset(name for name, _ in _RUNTIMES)
+
+assert _RUNTIME_TARGETS == {'antigravity', 'claude', 'opencode'}, (
+    f'the router registry now admits {sorted(_RUNTIME_TARGETS)}; check whether the new target '
+    'resolves the agent file through this seam, then re-pin this set'
+)
+
 
 def _versioned_agent_path(cache_root: Path) -> Path:
     """The path the deployed layout gives the variant under *cache_root*."""
