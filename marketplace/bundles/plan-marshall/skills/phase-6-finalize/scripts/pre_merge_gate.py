@@ -818,46 +818,34 @@ def _assert_terminal_step(plan_id: str, step: str) -> dict[str, Any]:
     )
 
 
-def _is_merge_step(entry: str) -> bool:
-    """True only when ``entry`` IS the ``branch-cleanup`` step, by canonical identity.
-
-    A basename comparison would match ``project:branch-cleanup`` — a DIFFERENT step
-    that merely shares the suffix — and a manifest carrying one before the real
-    entry would end the prefix there, silently narrowing what the sweep checks.
-    ``canonicalize_step_key`` is the same canonicalizer the write and read sides of
-    the step-record store use: it maps ``default:branch-cleanup`` and bare
-    ``branch-cleanup`` to one identity and preserves a ``project:``/``bundle:``
-    prefix verbatim, which is exactly the distinction wanted here.
-
-    An unimportable canonicalizer falls back to the two spellings that name THIS
-    step without the canonicalizer — bare ``branch-cleanup`` and
-    ``default:branch-cleanup`` — and to nothing else, so a ``project:`` entry is
-    still excluded and the caller finds no entry (refusing with
-    ``branch_cleanup_absent_from_manifest``) rather than ending on an empty prefix.
-    """
-    try:
-        from _step_key_canonical import canonicalize_step_key
-    except Exception:
-        return entry.strip() in (MERGE_STEP_ID, f'default:{MERGE_STEP_ID}')
-    return canonicalize_step_key(entry) == MERGE_STEP_ID
-
-
-def _earlier_manifest_steps(steps: list[str]) -> list[str] | None:
-    """Return the manifest steps ordered before ``branch-cleanup``, or ``None``.
+def _earlier_manifest_steps(steps: list[str]) -> tuple[list[str] | None, str | None]:
+    """Return ``(prefix, fault)`` for the manifest steps ordered before ``branch-cleanup``.
 
     The manifest's ``phase_6.steps`` array IS the runtime order — the composer
     sorts it by each step doc's ``order:`` frontmatter and the dispatcher iterates it
     as written — so "ordered before ``branch-cleanup``" is the prefix of that array,
     never a comparison this module performs itself.
 
-    ``None`` means the array carries no ``branch-cleanup`` entry at all. That is a
-    malformed read rather than an empty sequence (this gate is only reachable FROM
-    the step), so the caller refuses instead of admitting everything.
+    **Identity comes from ONE place.** ``canonicalize_step_key`` is what maps
+    ``default:branch-cleanup`` and bare ``branch-cleanup`` to one identity while
+    preserving a ``project:``/``bundle:`` prefix verbatim — the same canonicalizer the
+    step-record store's write and read sides use. Restating those spellings as
+    literals here would let the gate and the store disagree the moment an alias maps
+    some new spelling to this step, so an unimportable canonicalizer is a FAULT
+    returned to the caller (a read fault, refused), never a literal-match fallback.
+
+    ``prefix`` is ``None`` when the array carries no ``branch-cleanup`` entry at all;
+    that too is a malformed read, not an empty sequence (this gate is only reachable
+    FROM the step).
     """
+    try:
+        from _step_key_canonical import canonicalize_step_key
+    except Exception as exc:  # an unreadable resolver is the declared fault, never a fallback
+        return None, f'the step-key canonicalizer is not importable ({exc})'
     for index, entry in enumerate(steps):
-        if _is_merge_step(str(entry)):
-            return steps[:index]
-    return None
+        if canonicalize_step_key(entry) == MERGE_STEP_ID:
+            return steps[:index], None
+    return None, None
 
 
 #: The ``steps[]`` reasons that name a STEP GAP — a step a finalize re-entry can
@@ -1002,10 +990,11 @@ def _step_sequence_refusal(
     ``loop_back_target``, so a record that exists at all carries its reason.
 
     Returns ``None`` when the sequence is proven, and the refusal payload otherwise.
-    Three states are deliberately NOT read as "nothing to check": an unreadable
+    Four states are deliberately NOT read as "nothing to check": an unreadable
     manifest (``manifest_unreadable``), a manifest whose array is not a list of step
-    ids (``manifest_steps_unreadable``), and a manifest carrying no
-    ``branch-cleanup`` entry (``branch_cleanup_absent_from_manifest``).
+    ids (``manifest_steps_unreadable``), a manifest carrying no ``branch-cleanup``
+    entry (``branch_cleanup_absent_from_manifest``), and an unimportable step-key
+    canonicalizer (``step_identity_unreadable``).
     """
     manifest = (manifest_reader or _read_manifest)(plan_id)
     if not isinstance(manifest, dict) or manifest.get('status') != 'success':
@@ -1044,7 +1033,9 @@ def _step_sequence_refusal(
             f'phase_6.steps carries an entry that is not a step id ({raw_steps!r})',
             [],
         )
-    earlier = _earlier_manifest_steps(steps)
+    earlier, fault = _earlier_manifest_steps(steps)
+    if fault is not None:
+        return _sequence_refusal_payload(plan_id, 'step_identity_unreadable', fault, [])
     if earlier is None:
         return _sequence_refusal_payload(
             plan_id,

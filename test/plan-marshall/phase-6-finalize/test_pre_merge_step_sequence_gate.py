@@ -392,6 +392,22 @@ def test_a_non_string_step_entry_refuses_the_merge() -> None:
     assert result['remedy'] == 'stop'
 
 
+def test_an_unimportable_canonicalizer_refuses_the_merge(monkeypatch) -> None:
+    """A resolver fault reaches the merge as a named refusal, never an admitted sequence."""
+    monkeypatch.setitem(sys.modules, '_step_key_canonical', None)
+
+    result, runner, spy = _merge(
+        manifest=_manifest('default:push', _BRANCH_CLEANUP),
+        records={'default:push': _record('done')},
+    )
+
+    assert runner.calls == []
+    assert result['dispatched'] is False
+    assert result['reason'] == 'step_identity_unreadable'
+    assert result['remedy'] == 'stop'
+    assert spy.asked == []
+
+
 def test_an_unconfirmed_record_refuses_the_merge() -> None:
     """An answer that is neither a terminal outcome nor a named refusal is not an admission."""
     result, runner, _spy = _merge(
@@ -661,9 +677,26 @@ def test_the_sweep_stops_at_the_branch_cleanup_entry(steps: list[str], expected:
     a place the prefix may end — otherwise such a manifest would truncate the prefix
     and admit the merge over everything after it.
     """
-    assert gate._earlier_manifest_steps(steps) == expected
+    prefix, fault = gate._earlier_manifest_steps(steps)
+
+    assert fault is None
+    assert prefix == expected
 
 
 def test_the_sweep_answers_none_when_the_entry_is_absent() -> None:
     """No ``branch-cleanup`` entry is a malformed read, never an empty prefix."""
-    assert gate._earlier_manifest_steps(['default:push', 'default:record-metrics']) is None
+    prefix, fault = gate._earlier_manifest_steps(['default:push', 'default:record-metrics'])
+
+    assert fault is None
+    assert prefix is None
+
+
+def test_an_unimportable_canonicalizer_is_a_read_fault_not_a_literal_fallback(monkeypatch) -> None:
+    """Identity has ONE owner: no canonicalizer means a fault, never restated spellings."""
+    monkeypatch.setitem(sys.modules, '_step_key_canonical', None)
+
+    prefix, fault = gate._earlier_manifest_steps(['default:push', 'default:branch-cleanup'])
+
+    assert prefix is None, 'a literal fallback would have matched default:branch-cleanup here'
+    assert fault is not None
+    assert 'canonicalizer' in fault
