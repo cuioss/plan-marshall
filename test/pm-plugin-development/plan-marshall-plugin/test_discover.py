@@ -15,9 +15,8 @@ import json
 import tempfile
 from pathlib import Path
 
-import pytest
-
 import plugin_discover
+import pytest
 from plugin_discover import (
     BUILD_SYSTEM,
     _is_plan_marshall_marketplace,
@@ -157,18 +156,21 @@ def test_build_commands():
     assert 'pm-plugin-development' in commands['module-tests']
 
 
-@pytest.mark.parametrize(
-    'canonical',
-    ['compile', 'test-compile', 'module-tests', 'quality-gate', 'verify', 'coverage', 'clean'],
-)
+_BUNDLE_CANONICALS = sorted(build_commands('pm-plugin-development'))
+# Non-vacuity guard: the parametrize below must bind at least one canonical, or
+# every case would silently disappear and the emitter would be unchecked.
+assert _BUNDLE_CANONICALS, 'the derived bundle canonical population is empty'
+
+
+@pytest.mark.parametrize('canonical', _BUNDLE_CANONICALS)
 def test_every_bundle_command_carries_its_canonical_identity(canonical):
     """Each emitted string names its canonical, exactly as ``build_canonical_commands`` does.
 
     The argument string names the bundle but not the canonical, so the identity
     travels on ``--canonical`` — the same contract the shared emitter follows.
-    The assertion is a LITERAL, not a call back into ``build_commands``: seeding
-    the expectation from the function under test would keep passing with the flag
-    deleted.
+    The parameter set is DERIVED from ``build_commands``'s own keys, so a command
+    added there is checked too; the EXPECTATION stays a literal, because seeding
+    it from the function under test would keep passing with the flag deleted.
     """
     commands = build_commands('pm-plugin-development')
 
