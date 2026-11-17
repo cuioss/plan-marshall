@@ -434,6 +434,28 @@ def _is_agent_file_stem(agent_name: str) -> bool:
     return bool(agent_name) and agent_name[0] != '.' and set(agent_name) <= _AGENT_STEM_CHARS
 
 
+def _qualified_agent_stem(agent_name: str) -> str | None:
+    """The file stem a ``{bundle}:{name}`` value would have meant, or ``None``.
+
+    ``--agent`` takes a file stem, never the ``{bundle}:{name}`` notation a
+    ``Task:`` call uses. A value that is exactly one bundle half, one colon and one
+    name half — ALL THREE being file stems — is that notation and nothing else, so a
+    miss can name the stem the caller meant instead of listing search roots as if a
+    lookup had failed.
+
+    ``None`` means "not that notation", and every such value keeps the behaviour it
+    had: a path or a glob in either half fails :func:`_is_agent_file_stem` and stays
+    a plain miss, so this diagnosis never becomes a second lookup form and never
+    resolves a name the guard would refuse.
+    """
+    bundle, separator, name = agent_name.partition(':')
+    if not separator or ':' in name:
+        return None
+    if not (_is_agent_file_stem(bundle) and _is_agent_file_stem(name)):
+        return None
+    return name
+
+
 def _find_agent_file(agent_name: str, extra_roots: Sequence[Path] = ()) -> Path | None:
     """Locate an agent markdown under the marketplace tree or a deployed cache.
 
