@@ -49,7 +49,7 @@ alternative: <what the caller can do instead>
 | `invalid_operation` | The operation's required argument is missing or unusable (`protect-path` path), or a direct runtime call names an unknown operation. The CLI routes `--operation` through argparse `choices`, so an unknown value stops there with an argparse rejection before this code can be returned |
 | `invalid_check` | `permission analyze --checks` contains an unknown check name |
 | `marshal_not_found` | `.plan/marshal.json` missing |
-| `prompt_not_found` | `subagent dispatch` could not read the prompt it was asked for, or could not resolve the agent it was asked for. Two misses share the code: the `--prompt-file` path that does not exist or cannot be read, and — on Claude, the only target that reads the agent file — the `--agent` name no searched root carries, whose message names every root it probed |
+| `prompt_not_found` | `subagent dispatch` could not read the prompt it was asked for, or could not resolve the agent it was asked for. Three misses share the code. (1) The `--prompt-file` path that does not exist or cannot be read. (2) On Claude — the only target that reads the agent file — an `--agent` name no searched root carries; its message names every root it probed. (3) Also on Claude, an `--agent` value in the `{bundle}:{name}` notation; its message says `--agent` takes an agent file stem and names the stem the value would have meant |
 | `unknown_target` | `runtime.target` value not in the target registry |
 | `unknown_overwrite_key` | `project install-hook --overwrite` names a conflict key the target does not define; rejected fail-closed before any write, so a typo never reads as "do not overwrite" |
 | `hook_not_configured` | SessionStart hook not installed; `$CLAUDE_CODE_SESSION_ID` unset |
@@ -1339,7 +1339,7 @@ Return the platform-specific invocation parameters for spawning a focused subage
 
 **Arguments**: `--agent <name>` (required), `--prompt-file <path>` (optional), `--context <json>` (optional)
 
-`--agent` is the agent file stem — `execution-context-level-3`, not a path, not a glob and not the `{bundle}:{name}` notation a `Task:` call uses. A name outside the stem character set (letters, digits, `_`, `.`, `-`, not starting with `.`) resolves to nothing: on Claude that is a `prompt_not_found` miss, on OpenCode and Antigravity a vacuous tool-mapping check followed by the dispatch.
+`--agent` is the agent file stem — `execution-context-level-3`, not a path, not a glob and not the `{bundle}:{name}` notation a `Task:` call uses. A name outside the stem character set (letters, digits, `_`, `.`, `-`, not starting with `.`) resolves to nothing: on Claude that is a `prompt_not_found` miss, on OpenCode and Antigravity a vacuous tool-mapping check followed by the dispatch. A `{bundle}:{name}` value is refused on Claude with a message that says `--agent` takes an agent file stem and names the stem the value would have meant — the part after the colon — so the miss cannot be read as a wrong name or an unsearched root. No bundle-qualified name is ever resolved; the message adds a diagnosis, never a second lookup form.
 
 The `--context` object carries the caller's dispatch attestations and its prompt substitutions. The two runtimes that carry an inline branch (OpenCode, Antigravity) consume two keys at the seam and never merge them into the prompt: `spawning_tool_available` (the spawning-tool signal — an explicit `false` declares the tool absent in this envelope) and `dispatch_mode` (an explicit `"inline"` pins the inline branch whether or not the tool exists; any other value is rejected as `invalid_argument`). Claude's `Task` tool is always present in the orchestrator's envelope, so its runtime has no inline branch and reads neither key; it merges the remaining `--context` into the prompt as a `## Context` block, where a caller that passes an attestation key sees it.
 
@@ -1453,7 +1453,15 @@ error: prompt_not_found
 message: "Agent 'execution-context-level-9' not found; searched: /home/me/.claude/plugins/cache/plan-marshall, /home/me/git/project/marketplace/bundles"
 ```
 
-The agent-file message lists exactly the roots the lookup probed, so a miss distinguishes a wrong name from a root that was never searched. When no root exists at all the message says so instead of listing nothing. An agent file that resolved but could not be read answers the same code with the path it resolved to — on the no-`--prompt-file` path, which is the only one that reads the agent's body. Only Claude answers either: OpenCode and Antigravity run the resolution for their tool-mapping check and dispatch anyway when it comes back empty.
+**Error (bundle-qualified agent name)**:
+```toon
+status: error
+operation: subagent dispatch
+error: prompt_not_found
+message: "--agent takes an agent file stem, not a bundle-qualified name: pass 'execution-context-level-3' (the part after the colon), not 'plan-marshall:execution-context-level-3'"
+```
+
+The agent-file message lists exactly the roots the lookup probed, so a miss distinguishes a wrong name from a root that was never searched. When no root exists at all the message says so instead of listing nothing. A value in the `{bundle}:{name}` notation answers the second message instead: it is not a name that failed to resolve but a name in the wrong form, so the message says what `--agent` takes and names the stem the value would have meant, rather than listing roots as if a lookup had run. A path-shaped or glob-shaped value in either half of that notation is not the notation and keeps the plain miss. An agent file that resolved but could not be read answers the same code with the path it resolved to — on the no-`--prompt-file` path, which is the only one that reads the agent's body. Only Claude answers either: OpenCode and Antigravity run the resolution for their tool-mapping check and dispatch anyway when it comes back empty.
 
 ---
 

@@ -1860,6 +1860,19 @@ class ClaudeRuntime(Runtime):
         # Locate the agent markdown file.
         agent_path = claude_runtime._find_agent_file(agent)
         if agent_path is None:
+            # A ``{bundle}:{name}`` value is the notation a ``Task:`` call uses, not
+            # the file stem ``--agent`` takes. Saying so is the whole diagnosis: the
+            # roots were searched, and the name could never have matched.
+            qualified_stem = claude_runtime._qualified_agent_stem(agent)
+            if qualified_stem is not None:
+                return toon_error(
+                    'subagent dispatch',
+                    'prompt_not_found',
+                    (
+                        f'--agent takes an agent file stem, not a bundle-qualified name: pass '
+                        f'{qualified_stem!r} (the part after the colon), not {agent!r}'
+                    ),
+                )
             searched = ', '.join(str(root) for root in claude_runtime._agent_search_roots())
             return toon_error(
                 'subagent dispatch',
