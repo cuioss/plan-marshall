@@ -836,11 +836,12 @@ def _parse_module_entries(root: ET.Element) -> list[str]:
     - Maven switches an ``activeByDefault`` profile OFF when another profile in the
       same POM is activated, which this parse cannot see, so such a profile may be
       counted for a build that does not include it. That may OVER-grant a canonical.
-      Whether the run path catches the resulting empty run depends on the goal the
-      canonical leads with: a ``test``-phase run with no test summary is reported as
-      ``test_run_executed_nothing``, while a ``package``-phase one — the
-      reactor-test-artifact ladder — keeps its green, because the guard cannot tell it
-      from a compile-and-package run. See ``standards/maven-impl.md``
+      The run path catches the resulting empty run on BOTH goals a canonical can
+      lead with: a ``test``-phase run with no test summary is reported as
+      ``test_run_executed_nothing``, and so is a ``package``-phase ``module-tests``
+      run that wrote no summary and no report of its own — the executor reads the
+      canonical's identity to tell it from a plain compile-and-package run, which
+      keeps its green. See ``standards/maven-impl.md``
       § "Test canonicals of a reactor root".
 
     Args:

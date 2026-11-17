@@ -889,6 +889,42 @@ def test_execute_direct_is_wired_to_the_zero_test_guard(tmp_path, monkeypatch):
     assert result['wrapper'] == './mvnw'
 
 
+def test_a_module_tests_package_run_that_executed_nothing_is_indeterminate(tmp_path, monkeypatch):
+    """The `package` form of the module-tests canonical is held to "something executed".
+
+    A reactor root whose ladder leads with `package` exits 0 having run no test at
+    all when the profile the canonical counted is not the one Maven selects
+    (issue #2000). What separates that run from a compile-and-package run is the
+    CANONICAL's identity, and that arrives on the `command_key` channel the
+    wrapper already receives — never on the argument string, which cannot tell
+    the two apart.
+    """
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    (tmp_path / 'mvnw').write_text('#!/bin/sh\n')
+
+    def _recorder(**kwargs):
+        return {
+            'status': 'success',
+            'exit_code': 0,
+            'duration_seconds': 1,
+            'log_file': str(_LOG_TEST_DATA / 'maven-test-no-summary.log'),
+            'command': './mvnw -l /tmp/maven.log package -pl consumer -am',
+            'wrapper': './mvnw',
+        }
+
+    monkeypatch.setattr(_factory, 'execute_direct_base', _recorder)
+
+    result = execute_direct(
+        args='package -pl consumer -am',
+        command_key='module_tests',
+        project_dir=str(tmp_path),
+        plan_id=_PLAN_ID,
+    )
+
+    assert result['status'] == 'indeterminate'
+    assert TEST_RUN_EXECUTED_NOTHING in result['message']
+
+
 # =============================================================================
 # "Collected nothing" vs "the summary was not visible"
 # =============================================================================
