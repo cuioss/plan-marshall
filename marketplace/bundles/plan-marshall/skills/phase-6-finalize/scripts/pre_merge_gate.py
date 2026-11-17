@@ -113,6 +113,7 @@ import argparse
 import json
 import subprocess
 import sys
+import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, NamedTuple
@@ -763,33 +764,49 @@ def _run_ci(ci_args: list[str]) -> dict[str, Any]:
 # The finalize-step sequence below branch-cleanup
 # ---------------------------------------------------------------------------
 
-#: The bound on the two LOCAL verbs the step-sequence sweep runs (the manifest read
-#: and one ``assert-step-recorded`` per preceding step). Deliberately far below
-#: :data:`_VERB_TIMEOUT_SECONDS`: these are local store reads, not provider calls,
-#: and the sweep issues one per preceding step while the cross-plan merge mutex is
-#: held — so the generic 300 s bound would let a wedged executor pin the critical
-#: section for 300 s times the step count. At this bound a full 13-step roster's
-#: worst case is 780 s, roughly a fifth of the 3 900 s the generic bound would allow.
+#: The bound on ONE local verb the step-sequence sweep runs (the manifest read and
+#: one ``assert-step-recorded`` per preceding step). Deliberately far below
+#: :data:`_VERB_TIMEOUT_SECONDS`: these are local store reads, not provider calls.
 _STEP_SEQUENCE_VERB_TIMEOUT_SECONDS = 60
 
+#: The ONE total budget the whole sweep may spend reading, whatever the roster
+#: length. The per-verb bound alone is a multiplier: the sweep issues one verb per
+#: preceding step while the cross-plan merge mutex is held, so a wedged executor
+#: pinned the critical section for 60 s times the step count (780 s for a full
+#: 13-step roster). This budget is the ceiling on that whole walk — each verb
+#: receives the LESSER of :data:`_STEP_SEQUENCE_VERB_TIMEOUT_SECONDS` and the
+#: budget still remaining, and a spent budget ends the sweep instead of extending
+#: the hold. It is independent of the roster, so the roster length can no longer
+#: multiply the critical section.
+_STEP_SEQUENCE_TOTAL_BUDGET_SECONDS = 180
 
-def _read_manifest(plan_id: str) -> dict[str, Any]:
+
+def _read_manifest(plan_id: str, *, timeout: float | None = _STEP_SEQUENCE_VERB_TIMEOUT_SECONDS) -> dict[str, Any]:
     """Read the plan's execution manifest through the executor-mapped verb.
 
     ``manage-execution-manifest read`` is the manifest's own reader — the same
     document ``compose`` writes and the dispatcher iterates — so the sweep cannot
     disagree with the pipeline about which steps the plan runs, or in what order.
+
+    ``timeout`` is the budget the sweep has left, already capped at the per-verb
+    bound: the caller passes the lesser of the two so this read cannot outlive the
+    sweep's total budget.
     """
     return _run_verb(
         _MANIFEST_NOTATION,
         ['read', '--plan-id', plan_id],
         silent_error='manifest_unreadable',
         unparseable_error='manifest_unparseable',
-        timeout=_STEP_SEQUENCE_VERB_TIMEOUT_SECONDS,
+        timeout=timeout,
     )
 
 
-def _assert_terminal_step(plan_id: str, step: str) -> dict[str, Any]:
+def _assert_terminal_step(
+    plan_id: str,
+    step: str,
+    *,
+    timeout: float | None = _STEP_SEQUENCE_VERB_TIMEOUT_SECONDS,
+) -> dict[str, Any]:
     """Ask the existing step-record assertion about one step.
 
     ``assert-step-recorded --require-terminal`` IS the dispatcher's own
@@ -799,6 +816,9 @@ def _assert_terminal_step(plan_id: str, step: str) -> dict[str, Any]:
     and one the merge gate would accept cannot drift apart. The verb canonicalizes
     the queried key itself, so a ``default:``-prefixed manifest entry reconciles with
     the bare key the record was written under.
+
+    ``timeout`` is the lesser of the per-verb bound and the budget still remaining,
+    so one wedged assertion cannot spend the whole sweep's budget.
     """
     return _run_verb(
         _MANAGE_STATUS_NOTATION,
@@ -814,7 +834,7 @@ def _assert_terminal_step(plan_id: str, step: str) -> dict[str, Any]:
         ],
         silent_error='step_record_unreadable',
         unparseable_error='step_record_unreadable',
-        timeout=_STEP_SEQUENCE_VERB_TIMEOUT_SECONDS,
+        timeout=timeout,
     )
 
 
@@ -921,7 +941,14 @@ def _step_admission(verdict: dict[str, Any]) -> tuple[bool, str, Any, str]:
     return False, 'step_record_unconfirmed', outcome, ''
 
 
-def _sequence_refusal_payload(plan_id: str, reason: str, detail: str, steps: list[dict[str, Any]]) -> dict[str, Any]:
+def _sequence_refusal_payload(
+    plan_id: str,
+    reason: str,
+    detail: str,
+    steps: list[dict[str, Any]],
+    *,
+    force_stop: bool = False,
+) -> dict[str, Any]:
     """Render the refusal for an unproven finalize-step sequence.
 
     ``remedy`` is the DISCRIMINATOR the disposition branches on, so the step body
@@ -934,13 +961,30 @@ def _sequence_refusal_payload(plan_id: str, reason: str, detail: str, steps: lis
     * ``stop`` — no row names a step gap (the sequence could not be enumerated, or
       every row is a read fault), so no re-entry can clear it.
 
+    ``force_stop`` is the sweep's own budget refusal: the walk stopped before it
+    read every step, so no row set can be read as "a re-entry clears this" — the
+    remaining steps are unread, not unrecorded. It therefore selects ``stop``
+    whatever the rows say and names the budget in the message.
+
     A merge authorization covers neither half, for the same reason it does not cover
     :data:`MERGE_HEAD_NOT_GATED`: it authorizes a review or CI gap somebody can name,
     never a step nobody ran and never a state nobody could read.
     """
     named = ', '.join(str(row['step']) for row in steps)
-    remedy = 'dispatcher' if any(str(row.get('reason')) in _step_gap_reasons() for row in steps) else 'stop'
-    if remedy == 'dispatcher':
+    remedy = (
+        'stop'
+        if force_stop
+        else ('dispatcher' if any(str(row.get('reason')) in _step_gap_reasons() for row in steps) else 'stop')
+    )
+    if force_stop:
+        message = (
+            f'The step-sequence sweep below {MERGE_STEP_ID} spent its '
+            f'{_STEP_SEQUENCE_TOTAL_BUDGET_SECONDS} s read budget before it read every step ({named}): '
+            f'{detail}. Refusing to merge: the budget is what keeps a wedged read from pinning the '
+            'cross-plan merge mutex for the length of the roster, so the sweep stops here rather than '
+            'extending the hold; the read must be made to fit the budget before this merge can proceed.'
+        )
+    elif remedy == 'dispatcher':
         message = (
             f'The finalize manifest orders {len(steps)} step(s) before {MERGE_STEP_ID} that did not '
             f'complete ({named}); the payload names the reason for each. Refusing to merge: return '
@@ -982,6 +1026,7 @@ def _step_sequence_refusal(
     *,
     manifest_reader: ManifestReader | None = None,
     step_record_check: StepRecordCheck | None = None,
+    clock: Callable[[], float] = time.monotonic,
 ) -> dict[str, Any] | None:
     """Refuse the merge while a step the manifest orders before this one never ran.
 
@@ -1004,6 +1049,15 @@ def _step_sequence_refusal(
     refuses a record without a ``display_detail``, and a ``loop_back`` without a
     ``loop_back_target``, so a record that exists at all carries its reason.
 
+    **The walk is bounded by ONE budget, not by the roster.** Each verb receives the
+    lesser of :data:`_STEP_SEQUENCE_VERB_TIMEOUT_SECONDS` and the
+    :data:`_STEP_SEQUENCE_TOTAL_BUDGET_SECONDS` still remaining, and a spent budget
+    ends the sweep: the steps it did not reach are listed as
+    ``step_record_unreadable`` rows and the refusal is forced to ``remedy: stop``,
+    because an unread step is never an unrecorded one and a re-entry would re-ask
+    the same wedged read. ``clock`` is the seam that makes the budget measurable
+    without spending it.
+
     Returns ``None`` when the sequence is proven, and the refusal payload otherwise.
     Four states are deliberately NOT read as "nothing to check": an unreadable
     manifest (``manifest_unreadable``), a manifest whose array is not a list of step
@@ -1011,7 +1065,20 @@ def _step_sequence_refusal(
     entry (``branch_cleanup_absent_from_manifest``), and an unimportable step-key
     canonicalizer (``step_identity_unreadable``).
     """
-    manifest = (manifest_reader or _read_manifest)(plan_id)
+    deadline = clock() + _STEP_SEQUENCE_TOTAL_BUDGET_SECONDS
+
+    def _remaining() -> float:
+        return deadline - clock()
+
+    def _bounded(per_verb: float) -> float:
+        """The lesser of the per-verb bound and the budget still remaining."""
+        return max(0.0, min(per_verb, _remaining()))
+
+    manifest = (
+        manifest_reader(plan_id)
+        if manifest_reader is not None
+        else _read_manifest(plan_id, timeout=_bounded(_STEP_SEQUENCE_VERB_TIMEOUT_SECONDS))
+    )
     if not isinstance(manifest, dict) or manifest.get('status') != 'success':
         detail = (
             str(manifest.get('message') or manifest.get('error') or 'the manifest read failed')
@@ -1059,16 +1126,49 @@ def _step_sequence_refusal(
             [],
         )
 
-    check = step_record_check or (lambda step: _assert_terminal_step(plan_id, step))
     blocked: list[dict[str, Any]] = []
-    for step in earlier:
-        admitted, reason, outcome, row_detail = _step_admission(check(step))
+    unread: list[str] = []
+    for index, step in enumerate(earlier):
+        remaining = _remaining()
+        if remaining <= 0:
+            # The budget is spent: stop READING rather than extend the hold. Every
+            # step from here on is unread, and an unread step is never admitted.
+            unread = earlier[index:]
+            break
+        verdict = (
+            _assert_terminal_step(plan_id, step, timeout=min(_STEP_SEQUENCE_VERB_TIMEOUT_SECONDS, remaining))
+            if step_record_check is None
+            else step_record_check(step)
+        )
+        admitted, reason, outcome, row_detail = _step_admission(verdict)
         if admitted:
             continue
         row: dict[str, Any] = {'step': step, 'reason': reason, 'outcome': outcome}
         if row_detail:
             row['detail'] = row_detail
         blocked.append(row)
+    if unread:
+        blocked.extend(
+            {
+                'step': step,
+                'reason': 'step_record_unreadable',
+                'outcome': None,
+                'detail': (
+                    f'the {_STEP_SEQUENCE_TOTAL_BUDGET_SECONDS} s sweep budget was spent before this step was read'
+                ),
+            }
+            for step in unread
+        )
+        return _sequence_refusal_payload(
+            plan_id,
+            'earlier_steps_unrecorded',
+            (
+                f'the {_STEP_SEQUENCE_TOTAL_BUDGET_SECONDS} s sweep budget was spent after '
+                f'{len(earlier) - len(unread)} of {len(earlier)} step(s)'
+            ),
+            blocked,
+            force_stop=True,
+        )
     if not blocked:
         return None
     read_faults = [row for row in blocked if str(row['reason']) not in _step_gap_reasons()]
