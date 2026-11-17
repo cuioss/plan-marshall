@@ -330,6 +330,83 @@ def test_append_change_stores_paths_verbatim(env) -> None:
     assert entry['timestamp_iso']
 
 
+def test_append_change_reads_a_nul_separated_path_file_losslessly(env) -> None:
+    """A NUL-separated path file reaches the row byte for byte.
+
+    The comma-separated form cannot carry a comma, and it trims each segment, so
+    a leading or trailing space is lost with it. The `-z` form is what git
+    itself emits, and a file lets git WRITE it and the verb READ it — no
+    intermediate rendering exists for a shell to mangle (the Bash tool shows a
+    NUL byte as a space, so a caller cannot read the list back out and re-join
+    it).
+    """
+    paths = ['src/a,b.py', ' leading.py', 'café.py', 'trailing.py ']
+    path_file = env.base / 'changed-paths.nul'
+    path_file.write_bytes(b''.join(p.encode('utf-8') + b'\0' for p in paths))
+
+    result = env.run(
+        'append',
+        '--kind',
+        'change',
+        '--deliverable-id',
+        '2',
+        '--commit-sha',
+        'abc123',
+        '--changed-paths-file',
+        str(path_file),
+    )
+
+    assert result.success, result.stderr
+    entry = _read_ledger(env.ledger_path)[0]
+    assert entry['changed_paths'] == paths, entry['changed_paths']
+
+
+def test_append_change_comma_form_still_stores_what_it_stored(env) -> None:
+    """The comma form keeps its documented behaviour for a caller that needs nothing more.
+
+    It is LOSSY for a path that contains a comma, and that is the fact the
+    lossless form exists for — not a defect the comma form may silently fix.
+    """
+    result = env.run(
+        'append',
+        '--kind',
+        'change',
+        '--deliverable-id',
+        '2',
+        '--commit-sha',
+        'abc123',
+        '--changed-paths',
+        'src/a,b.py',
+    )
+
+    assert result.success, result.stderr
+    entry = _read_ledger(env.ledger_path)[0]
+    assert entry['changed_paths'] == ['src/a', 'b.py'], entry['changed_paths']
+
+
+def test_append_change_refuses_both_path_inputs(env) -> None:
+    """One list, one source: supplying both is ambiguous, so it is refused."""
+    path_file = env.base / 'changed-paths.nul'
+    path_file.write_bytes(b'src/a.py\0')
+
+    result = env.run(
+        'append',
+        '--kind',
+        'change',
+        '--deliverable-id',
+        '2',
+        '--commit-sha',
+        'abc123',
+        '--changed-paths',
+        'src/b.py',
+        '--changed-paths-file',
+        str(path_file),
+    )
+
+    assert result.toon()['status'] == 'error'
+    assert not env.ledger_path.exists(), 'an ambiguous path source writes no row'
+
+
 def test_append_change_accepts_task_id_alias(env) -> None:
     # --task-id is the accepted alternative to --deliverable-id.
     result = env.run(

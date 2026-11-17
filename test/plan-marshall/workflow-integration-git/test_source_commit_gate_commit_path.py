@@ -29,7 +29,7 @@ from pathlib import Path
 import pytest
 from toon_parser import parse_toon
 
-from conftest import get_script_path, load_script_module, run_script
+from conftest import get_script_path, get_skill_dir, load_script_module, run_script
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'workflow-integration-git', 'git-workflow.py')
 MANAGE_STATUS = get_script_path('plan-marshall', 'manage-status', 'manage-status.py')
@@ -682,6 +682,89 @@ def test_a_marked_commit_that_completes_a_merge_records_first_parent_paths(tmp_p
     assert [row['changed_paths'] for row in rows] == [['src/side.py']], rows
 
 
+def test_a_merge_commit_records_both_paths_of_a_renamed_file(tmp_path: Path) -> None:
+    """A rename the merged branch made is recorded on BOTH sides.
+
+    `git diff` follows the user's rename detection by default, so a first-parent
+    diff built without `--no-renames` reports the rename's DESTINATION only and
+    the row silently loses the path the merge removed. The enumeration turns
+    rename detection off, so both the old and the new path reach the row.
+    """
+    _init_repo(tmp_path)
+    _write_plan(tmp_path, 'plan-a', phase='5-execute', steps=[])
+    worktree = _worktree(tmp_path, 'plan-a')
+    start = _git(tmp_path, 'rev-parse', '--abbrev-ref', 'HEAD').stdout.strip()
+
+    _stage(tmp_path, 'src/old_name.py')
+    _git(tmp_path, 'commit', '-m', 'feat: base work')
+    _git(tmp_path, 'checkout', '-b', 'side')
+    _git(tmp_path, 'mv', 'src/old_name.py', 'src/new_name.py')
+    _git(tmp_path, 'commit', '-m', 'refactor: rename the module')
+    _git(tmp_path, 'checkout', start)
+    _git(tmp_path, 'merge', '--no-commit', '--no-ff', 'side')
+
+    result, code = _run_commit(tmp_path, worktree, '--record-change')
+
+    assert code == 0, f'{result!r}'
+    parents = _git(tmp_path, 'rev-list', '--parents', '-n', '1', result['commit_hash']).stdout.split()
+    assert len(parents) == 3, f'the premise: the commit is a merge, got {parents}'
+    # The premise of the defect: plain `git diff` follows the rename.
+    assert _git(
+        tmp_path, 'diff', '--name-only', f'{result["commit_hash"]}^1', result['commit_hash']
+    ).stdout.split() == ['src/new_name.py'], 'the premise: rename detection collapses the rename to its destination'
+    rows = _tree_ledger_rows(worktree)
+    assert len(rows) == 1, rows
+    assert set(rows[0]['changed_paths']) == {'src/new_name.py', 'src/old_name.py'}, (
+        f'the row must carry the removed path as well as the added one: {rows[0]["changed_paths"]!r}'
+    )
+
+
+def test_a_finalize_commit_whose_row_cannot_be_written_reports_it(tmp_path: Path) -> None:
+    """A failed row write is reported to the caller, and the commit still stands.
+
+    No boundary can surface this one: the `bookkeeping_gap` refusal runs at the
+    `5-execute` completion, which a `6-finalize` commit is made AFTER. The
+    caller that made the commit is therefore the reader, and the result it
+    already gets is what it must read: `ledger_recorded: false` beside the
+    `ledger_error` that says why.
+    """
+    _init_repo(tmp_path)
+    worktree = _worktree(tmp_path, 'plan-a')
+    _write_plan(tmp_path, 'plan-a', phase='6-finalize', steps=['pre-push-quality-gate'])
+    # The target tree's ledger slot is unwritable: `.plan/work` is a FILE.
+    ledger_slot = worktree / '.plan' / 'work'
+    ledger_slot.parent.mkdir(parents=True, exist_ok=True)
+    ledger_slot.write_text('not a directory\n', encoding='utf-8')
+
+    _stage(tmp_path, 'src/finalize.py')
+    result, code = _run_commit(tmp_path, worktree, '--step', 'pre-push-quality-gate')
+
+    assert code == 0, f'the commit itself is not refused: {result!r}'
+    assert result['commit_hash'], result
+    assert result['ledger_recorded'] is False, result
+    assert result['ledger_error'], result
+    assert _tree_ledger_rows(worktree) == [], 'the premise: no row could be written'
+
+
+def test_the_docstring_no_longer_claims_the_boundary_surfaces_a_finalize_row() -> None:
+    """The replaced claim must be gone, and what replaces it names the real reader."""
+    doc = git_workflow._record_commit_change.__doc__ or ''
+    assert 'is what surfaces it' not in doc, (
+        'the docstring still claims the boundary surfaces a failed row; it cannot see a 6-finalize commit'
+    )
+    assert 'ledger_recorded' in doc, 'the replacement must name what the caller reads'
+    assert '6-finalize' in doc, 'the replacement must name the commit kind the boundary cannot see'
+
+
+def test_the_commit_changes_flow_tells_the_caller_to_read_ledger_recorded() -> None:
+    """The one statement of the writer carries the caller obligation."""
+    skill = (get_skill_dir('plan-marshall', 'workflow-integration-git') / 'SKILL.md').read_text(encoding='utf-8')
+    assert 'do not report the commit as cleanly settled' in skill, (
+        'the Commit Changes flow must state the caller obligation a failed row write leaves behind'
+    )
+    assert 'append --kind change' in skill, 'the obligation must name the ready-to-run repair'
+
+
 def test_the_row_lands_in_the_target_tree_ledger_the_boundary_reads(tmp_path: Path, monkeypatch) -> None:
     """A verb run from another checkout records into the TARGET tree's ledger.
 
@@ -710,8 +793,10 @@ def test_the_row_lands_in_the_target_tree_ledger_the_boundary_reads(tmp_path: Pa
 # =============================================================================
 # The documented recovery for `execute_commits_unrecorded`
 #
-# A commit made outside both settlement owners carries no row, so the boundary
-# refuses and names each such SHA with its own `append` invocation.
+# A commit made outside all THREE row owners — Step 10a's chain tail, the
+# boundary settlement, and the `workflow-integration-git` `commit` verb —
+# carries no row, so the boundary refuses and names each such SHA with its own
+# `append` invocation.
 # `plan-marshall/workflow/execution.md` § "Execute Phase Completion" documents
 # appending those rows — under `handback-commit` when no deliverable owns the
 # commit — instead of halting for the operator. These are the three shapes the
@@ -828,7 +913,7 @@ def test_a_merge_commit_takes_its_first_parent_diff(tmp_path: Path, monkeypatch)
     assert _git(tmp_path, 'diff-tree', '--no-commit-id', '--name-only', '-r', merged).stdout.split() == [], (
         'the premise: diff-tree over a merge commit enumerates nothing'
     )
-    first_parent = _git(tmp_path, 'diff', '--name-only', f'{merged}^1', merged).stdout.split()
+    first_parent = _git(tmp_path, 'diff', '--no-renames', '--name-only', f'{merged}^1', merged).stdout.split()
     assert first_parent == ['src/side.py'], first_parent
 
     refusal = _lifecycle._phase_end_marker_refusal('plan-a', status)

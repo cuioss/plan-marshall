@@ -127,6 +127,29 @@ def test_commands_from_scripts():
         assert_command_uses_executor(modules[0], 'compile', skill_notation='plan-marshall:build-npm:npm')
 
 
+def test_chained_verify_carries_the_canonical_identity_on_every_hop():
+    """npm's chained `verify` is the one canonical string that claimed no identity.
+
+    Every command ``build_canonical_commands`` builds carries ``--canonical
+    {name}``; the chained builder did not, so ``verify`` — the only command npm
+    chains — was the one canonical string whose identity a run-path guard could
+    not read off the string.
+    """
+    with BuildContext() as ctx:
+        pkg = {'name': 'test-app', 'scripts': {'build': 'tsc', 'test': 'jest'}}
+        (ctx.temp_dir / 'package.json').write_text(json.dumps(pkg))
+
+        modules = discover_npm_modules(str(ctx.temp_dir))
+        verify = modules[0]['commands']['verify']
+
+    hops = verify.split(' && ')
+    assert len(hops) == 2, verify
+    for hop in hops:
+        assert '--canonical verify' in hop, (hop, verify)
+    assert '--command-args "run build"' in hops[0], hops[0]
+    assert '--command-args "run test"' in hops[1], hops[1]
+
+
 def test_commands_minimal():
     """Test commands with only test script."""
     with BuildContext() as ctx:
