@@ -254,15 +254,18 @@ _RUNTIMES = tuple(platform_runtime._REGISTRY.items())
 
 assert _RUNTIMES, 'the runtime population derived from the router registry is empty'
 
-#: The targets the seam serves today. Pinned beside the derivation so a registry
-#: change is a deliberate decision rather than a silently narrower test run: a
-#: new target has to be checked for this seam and this set re-pinned.
 _RUNTIME_TARGETS = frozenset(name for name, _ in _RUNTIMES)
 
-assert _RUNTIME_TARGETS == {'antigravity', 'claude', 'opencode'}, (
-    f'the router registry now admits {sorted(_RUNTIME_TARGETS)}; check whether the new target '
-    'resolves the agent file through this seam, then re-pin this set'
-)
+
+def test_the_registry_admits_every_target_this_seam_serves() -> None:
+    """The derived population is the three targets the seam serves today.
+
+    A TEST rather than an import-time assertion: a registry change then reddens
+    one test with a message instead of breaking collection for the whole module,
+    which is what a hard-coded equality pin at module scope would do. A new
+    target still has to be checked against this seam and named here deliberately.
+    """
+    assert _RUNTIME_TARGETS == {'antigravity', 'claude', 'opencode'}
 
 
 def _versioned_agent_path(cache_root: Path) -> Path:
