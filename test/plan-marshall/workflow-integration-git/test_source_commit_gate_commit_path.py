@@ -708,9 +708,11 @@ def test_a_merge_commit_records_both_paths_of_a_renamed_file(tmp_path: Path) -> 
     assert code == 0, f'{result!r}'
     parents = _git(tmp_path, 'rev-list', '--parents', '-n', '1', result['commit_hash']).stdout.split()
     assert len(parents) == 3, f'the premise: the commit is a merge, got {parents}'
-    # The premise of the defect: plain `git diff` follows the rename.
+    # The premise of the defect: plain `git diff` follows the rename. Pinned
+    # explicitly, because the host's `diff.renames` would otherwise decide
+    # whether this test proves anything.
     assert _git(
-        tmp_path, 'diff', '--name-only', f'{result["commit_hash"]}^1', result['commit_hash']
+        tmp_path, '-c', 'diff.renames=true', 'diff', '--name-only', f'{result["commit_hash"]}^1', result['commit_hash']
     ).stdout.split() == ['src/new_name.py'], 'the premise: rename detection collapses the rename to its destination'
     rows = _tree_ledger_rows(worktree)
     assert len(rows) == 1, rows
@@ -764,7 +766,8 @@ def test_the_commit_changes_flow_tells_the_caller_to_read_ledger_recorded() -> N
     )
     assert 'append --kind change' in skill, 'the obligation must name the ready-to-run repair'
     assert 'rather than as a silent gap' not in skill, (
-        'the claim that the boundary surfaces a finalize commit s missing row must be gone, not merely contradicted'
+        "the claim that a finalize commit's missing row is surfaced by the boundary must be gone, "
+        'not merely contradicted'
     )
 
 

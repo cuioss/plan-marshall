@@ -188,6 +188,20 @@ state MUST route through the utility rather than re-implement git-common-dir res
 worktree's `.plan/local` carries NO symlinks: it is a fully real directory, and cross-session
 visibility comes from the utility, not from any filesystem symlink back to main.
 
+====
+*A tree the caller is HANDED is target-anchored, not an exception to the rule.* A verb given the
+tree it must act on resolves `.plan/` under that tree: `--project-dir` names it explicitly, and a
+plan whose `worktree_state` is `materialized` names it by record through its persisted
+`worktree_path` — a plan with no worktree falls back to the caller's own checkout, where the record
+and the walk-up agree. `git-workflow`'s `commit` verb is the instance: its `kind=change` row is
+written to `{target_tree}/.plan/work/change-ledger.jsonl`, the ledger the `5-execute` boundary reads
+for that checkout, which is what lets a verb run from another checkout record into the target's
+file. That class is neither main-anchored nor a second exception to cwd-relativity for per-repo
+state: the six corpora above remain the main-resident set, and `resolve_main_anchored_path` remains
+the ONE main-anchored resolver. See `tools-script-executor/standards/cwd-policy.md` § "The Single
+Uniform cwd-Relative Rule".
+====
+
 == Consequences
 
 === What the move model subsumes
