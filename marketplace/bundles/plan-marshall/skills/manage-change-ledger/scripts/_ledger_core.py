@@ -305,10 +305,13 @@ def change_record(
     """Construct a ``kind=change`` ledger record.
 
     Written by whichever commit owner made the commit: the phase-5 execute loop
-    after each deliverable completes and commits, or the
-    ``workflow-integration-git`` ``commit`` verb for a ``6-finalize`` commit.
+    after each deliverable completes and commits, the boundary settlement per
+    attributed group, or the ``workflow-integration-git`` ``commit`` verb for the
+    two commits no settlement owns — a ``6-finalize`` commit and a phase-5
+    hand-back commit marked ``--record-change``.
     ``commit_sha`` and ``changed_paths`` are git-sourced by the caller
-    (from ``git diff-tree`` against the just-produced commit) — this constructor
+    (from ``git diff-tree`` against the just-produced commit, or its
+    first-parent diff for a merge commit) — this constructor
     stores the caller-supplied list VERBATIM; it does NOT compute or re-derive
     changed paths. Self-computed / ``affected_files``-snapshotted paths are
     PROHIBITED at the call site.
