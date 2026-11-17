@@ -4636,3 +4636,21 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
   `loop_back` admission, the `status: conflict` answer of `worktree-rebase-to` (both callers re-read, both halt on it), the vacuous
   OpenCode and Antigravity tool-mapping check, and the minors already recorded in the three landing records. The declared surface is
   disjoint from PLAN-LB-158's; `corpus spec-skills` answers `emit_allowed: true`.
+- **Landing analyzed: PLAN-LB-159 (#2008), shipped-as-specified** (`landings/PLAN-LB-159.md`; orchestrator re-read, no leaf). No blocker
+  or major. The pre-merge sweep now spends one 180 s budget whatever the roster length: each verb gets the lesser of 60 s and the
+  budget left, and a spent budget refuses `merge_earlier_step_unrecorded` with `remedy: stop`, naming only the steps it never read.
+  The first-drift case is a third bullet in the unchanged-probe block, and a `{bundle}:{name}` `--agent` value answers a message that
+  names the stem it would have meant, with no second lookup form. One disclosed scope addition: the `claude_runtime.py` re-export, in
+  the same skill as the named `runtime_base.py`. Recorded without a plan: CodeRabbit's point that the first-drift probe is recorded
+  before the phase reset (fails safe, pre-existing, the order is the spec's own wording), the edge of a hard budget cutting a slow
+  but healthy last read, and the 180 s figure repeated across the prose. The fix reaches this machine only after `/apply-changes`.
+- **Landing analyzed: PLAN-LB-158 (#2009), shipped with two deviations from its spec** (`landings/PLAN-LB-158.md`; orchestrator re-read, no leaf). No
+  blocker. Four of five deliverables met as specified; the fifth is met in a corrected form. Two spec claims were refuted inside the plan. The guard's
+  identity channel: the spec's hypothesis that `command_key` carries the canonical name was wrong, so a `--canonical` flag now rides every canonical string
+  (operator's decision in the lane). The refusal text: the spec's mandated sentence, that a pre-fix executor writes the null root, was false, because
+  that executor omits the key and the gate admits the omission; this sentence was the orchestrator's own staging error, written as fact and not re-read at
+  HEAD, and the lane shipped the true text. The merge touches 27 files against eleven named surfaces, the growth being the plumbing of the new flag.
+  Consequence for operators: every executor generated before this change refuses a canonical string with `unknown_flag` until regenerated, so each consumer
+  project regenerates on upgrade; on this repository `/apply-changes` is owed again. Recorded without a plan: the `-z` output reaching an agent as
+  space-separated paths, whether a persisted command map without the flag keeps the guard inert, and the lane's residue (finalize ledger re-check,
+  `--no-renames`, the lossy comma-joined `--changed-paths`, npm's chained verify, the cwd-policy documents).

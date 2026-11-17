@@ -2,10 +2,10 @@
   "id": "PLAN-LB-159",
   "slug": "follow-ups-sweep-hold-bound-probe-wording-agent-diagnostic",
   "workstream": "WS-01",
-  "status": "staged",
+  "status": "shipped",
   "lane": "runbook",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "plan_marshall_plan_id": "rb-lb-159-follow-ups-sweep-hold-bound-probe-wording-agent-diagnostic",
+  "pr": "2008",
+  "landing": "landings/PLAN-LB-159.md",
   "seq": 159
 }

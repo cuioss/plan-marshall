@@ -2,10 +2,10 @@
   "id": "PLAN-LB-158",
   "slug": "follow-ups-ledger-docs-package-guard-root-diagnostic",
   "workstream": "WS-01",
-  "status": "staged",
+  "status": "shipped",
   "lane": "runbook",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "plan_marshall_plan_id": "rb-lb-158-follow-ups-ledger-docs-package-guard-root-diagnostic",
+  "pr": "2009",
+  "landing": "landings/PLAN-LB-158.md",
   "seq": 158
 }
