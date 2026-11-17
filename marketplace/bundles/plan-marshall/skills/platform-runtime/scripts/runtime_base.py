@@ -524,6 +524,12 @@ def _parse_agent_frontmatter(agent_path: Path) -> dict[str, Any]:
     frontmatter = content[3:end].strip()
     lines = frontmatter.splitlines()
     for index, line in enumerate(lines):
+        if line[:1].isspace():
+            # An indented line belongs to the value above it. A block scalar's
+            # text can itself contain "key: value" text (a description quoting
+            # YAML, an example naming another key), which is body text and not a
+            # key — reading it as one overwrote the real value with a fragment.
+            continue
         stripped = line.strip()
         if not stripped or ':' not in stripped:
             continue
@@ -546,15 +552,16 @@ def _parse_agent_frontmatter(agent_path: Path) -> dict[str, Any]:
         elif key in ('name', 'description'):
             result[key] = _block_scalar_value(lines, index) if _is_block_scalar_marker(value) else value
 
-    # Handle tools as a YAML list (- item per line) if not yet found inline.
+    # Handle tools as a YAML list (- item per line) if not yet found inline. The
+    # ``tools:`` header itself must be top-level, for the same reason the key scan
+    # above skips indented lines; its ``- item`` rows are indented.
     if not result['tools']:
         in_tools = False
-        for line in frontmatter.splitlines():
+        for line in lines:
             stripped = line.strip()
-            if stripped.startswith('tools:'):
+            if line.startswith('tools:'):
                 in_tools = True
-                inline = stripped[6:].strip()
-                if inline:
+                if stripped[6:].strip():
                     in_tools = False
             elif in_tools:
                 if stripped.startswith('- '):

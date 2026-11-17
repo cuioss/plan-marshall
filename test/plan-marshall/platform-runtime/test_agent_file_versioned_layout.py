@@ -21,11 +21,10 @@ tool-mapping check their dispatches run, which supplies none.
 from pathlib import Path
 
 import claude_runtime
+import platform_runtime
 import pytest
 import runtime_base
-from antigravity_runtime import AntigravityRuntime
 from claude_runtime import ClaudeRuntime
-from opencode_runtime import OpenCodeRuntime
 from toon_parser import parse_toon
 
 #: The variant-suffixed name the seam could not resolve. Generated per target by
@@ -249,11 +248,9 @@ def test_claude_dispatch_miss_names_the_roots_it_searched(empty_cache: Path, mon
 # 3. Every runtime that consumes the shared lookup
 # =============================================================================
 
-_RUNTIMES = (
-    ('claude', ClaudeRuntime),
-    ('opencode', OpenCodeRuntime),
-    ('antigravity', AntigravityRuntime),
-)
+#: The admitted runtimes, derived live from the router's registry — a target
+#: added there must not be silently excluded from these tests.
+_RUNTIMES = tuple(platform_runtime._REGISTRY.items())
 
 
 def _versioned_agent_path(cache_root: Path) -> Path:
@@ -395,6 +392,24 @@ def test_an_empty_block_scalar_description_is_empty(tmp_path: Path) -> None:
     agent_file = _write_frontmatter(tmp_path, 'name: agent\ndescription: |\ntools: Read')
 
     assert runtime_base._parse_agent_frontmatter(agent_file)['description'] == ''
+
+
+def test_key_shaped_text_inside_a_block_scalar_is_not_a_key(tmp_path: Path) -> None:
+    """Body text that looks like a key never overwrites a real frontmatter key.
+
+    A block scalar is free text: a description that quotes YAML, or names
+    ``tools:`` in prose, must not be re-read as a key line.
+    """
+    agent_file = _write_frontmatter(
+        tmp_path,
+        'name: agent\ndescription: |\n  description: Example\n  tools: Write\n  More detail.\ntools: Read',
+    )
+
+    parsed = runtime_base._parse_agent_frontmatter(agent_file)
+
+    assert parsed['description'] == 'description: Example tools: Write More detail.'
+    assert parsed['name'] == 'agent'
+    assert parsed['tools'] == ['Read']
 
 
 def test_a_tools_list_after_a_block_scalar_is_still_collected(tmp_path: Path) -> None:
