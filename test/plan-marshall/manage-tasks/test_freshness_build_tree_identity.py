@@ -35,6 +35,7 @@ from _pre_commit_verify_freshness_fixtures import (
     _build_entry,
     _build_is_necessary,
     _expected_notations_resolve,
+    _freshness_mod,
     _stub_ledger_path,
     _stub_worktree_sha,
     _write_ledger,
@@ -216,6 +217,88 @@ def test_an_explicit_null_root_never_matches(plan_context, monkeypatch, tmp_path
 
     assert result['status'] == 'stale', result
     assert result['reason'] == 'worktree_root_unreadable', result
+
+
+def test_the_unreadable_root_refusal_names_the_plan_the_row_and_the_field(plan_context, monkeypatch, tmp_path) -> None:
+    """An unnamed refusal is unactionable — name what the operator must go and fix.
+
+    The row is identified by its ledger POSITION and its notation, the field by
+    name, and the plan the gate is answering for. A null root is what a writer
+    that tried and could not capture the fact records, while the writers that
+    never recorded anything omit the key — and that absence is the legacy shape
+    the gate ADMITS, so the refusal must not blame the writer's generation. What
+    it names instead is the real cause (a failed capture) and the real remedy:
+    re-dispatch against this plan's tree, and if a fresh row still cannot capture
+    the root, fix the tree the build is dispatched against.
+    """
+    result = _run_gate(plan_context, monkeypatch, tmp_path, _row(worktree_root=None))
+
+    assert result['status'] == 'stale', result
+    message = result['message']
+    assert _PLAN_ID in message, f'the refusal must name the plan it is about: {message}'
+    assert '#0' in message, f'the refusal must name the row POSITION in the ledger: {message}'
+    assert 'plan-marshall:build-pyproject:pyproject_build' in message, (
+        f'the refusal must name the row notation: {message}'
+    )
+    assert 'worktree_root' in message, f'the refusal must name the field: {message}'
+    assert 'the capture itself is failing' in message, (
+        f'the remedy must name the real cause of a still-unreadable root: {message}'
+    )
+    assert 'generated before' not in message, (
+        'a row from an executor generated before the tree-identity pair existed carries NO key, '
+        f'so blaming the writer generation is false: {message}'
+    )
+
+
+_UNREADABLE_ROOT_ROUTE = 'worktree_root_unreadable'
+
+#: One fixture per tree-identity route OTHER than the unreadable-root one: the row
+#: that reaches the route, and the remedy the route's message must still carry.
+#: The ROUTE SET is derived from ``_REFUSAL_ROUTES`` at the parametrize below, so a
+#: route added there fails here until it gets a fixture — a hand-written route list
+#: would silently stop checking.
+_OTHER_ROUTE_FIXTURES = {
+    'worktree_root_mismatch': (
+        lambda: _row(worktree_root=_OTHER_ROOT),
+        "Re-dispatch the build against this plan's tree",
+    ),
+    'worktree_rewritten_by_build': (
+        lambda: _row(worktree_root=_GATE_ROOT, worktree_sha_at_dispatch='0' * 64),
+        'Commit the rewrite and re-run',
+    ),
+    'worktree_dispatch_hash_unreadable': (
+        lambda: _row(worktree_root=_GATE_ROOT, worktree_sha_at_dispatch=None),
+        'Re-dispatch the build.',
+    ),
+}
+
+_DERIVED_OTHER_ROUTES = [
+    route for route, _message, _rule in _freshness_mod._REFUSAL_ROUTES if route != _UNREADABLE_ROOT_ROUTE
+]
+# Non-vacuity guard: the parametrize below must bind at least one route, or every
+# case would silently disappear and the control would assert nothing.
+assert _DERIVED_OTHER_ROUTES, 'the derived tree-identity route population is empty'
+
+
+@pytest.mark.parametrize('route', _DERIVED_OTHER_ROUTES)
+def test_every_refusal_route_names_its_own_cause(plan_context, monkeypatch, tmp_path, route) -> None:
+    """CONTROL: the row identification is scoped to ONE route; the rest are unchanged.
+
+    Each other tree-identity route keeps its own remedy VERBATIM, and none of them
+    gains the plan/row/field identification — a shared message builder that leaked
+    onto them would hand the reader a row-level instruction the route's cause does
+    not support. The route set is derived from ``_REFUSAL_ROUTES``, so a new route
+    without a fixture fails here instead of passing unexamined.
+    """
+    row_factory, remedy = _OTHER_ROUTE_FIXTURES[route]
+
+    result = _run_gate(plan_context, monkeypatch, tmp_path, row_factory())
+
+    assert result['reason'] == route, result
+    assert remedy in result['message'], (route, result['message'])
+    assert 'build row(s) #' not in result['message'], (
+        f'{route}: the unreadable-root identification leaked onto another route: {result["message"]}'
+    )
 
 
 def test_a_routing_seam_row_is_not_read_as_a_failed_capture(plan_context, monkeypatch, tmp_path) -> None:

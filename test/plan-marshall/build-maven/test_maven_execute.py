@@ -6,7 +6,10 @@ Tests the Maven execution config and factory-generated functions.
 """
 
 import os
+from argparse import Namespace
 from pathlib import Path
+
+import pytest
 
 from conftest import load_script_module
 
@@ -649,6 +652,72 @@ def test_control_a_skip_stated_by_the_log_is_not_an_empty_population(tmp_path):
     assert apply_zero_test_guard(result, 'test') is result
 
 
+def test_a_module_tests_package_run_that_says_it_skipped_keeps_its_green(tmp_path):
+    """A requested skip is a requested skip on the module-tests `package` form too.
+
+    `-DskipTests` set through `.mvn/maven.config` is invisible in the arguments, so
+    the log's own `Tests are skipped.` line is the only evidence that the empty run
+    was asked for. The canonical arm consults it before refusing.
+    """
+    log_file = tmp_path / 'package-skip.log'
+    log_file.write_text(
+        '[INFO] --- surefire:3.5.2:test (default-test) @ probe ---\n[INFO] Tests are skipped.\n[INFO] BUILD SUCCESS\n',
+        encoding='utf-8',
+    )
+    result = {
+        'status': 'success',
+        'exit_code': 0,
+        'duration_seconds': 1,
+        'log_file': str(log_file),
+        'command': 'mvnw package',
+    }
+
+    guarded = apply_zero_test_guard(result, 'package', project_dir=str(tmp_path), canonical='module-tests')
+
+    assert guarded['status'] == 'success'
+
+
+def test_cmd_run_forwards_the_canonical_to_the_guard(tmp_path, monkeypatch, capsys):
+    """The `cmd_run` hop is pinned: a dropped forward silently disables the guard.
+
+    Every other hop has its own test, and deleting ONE argument at the
+    `cmd_run` → in-process call site would leave the whole suite green while the
+    guard went inert again — the exact failure the retarget exists to remove.
+    """
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    (tmp_path / 'mvnw').write_text('#!/bin/sh\n')
+
+    def _recorder(**kwargs):
+        return {
+            'status': 'success',
+            'exit_code': 0,
+            'duration_seconds': 1,
+            'log_file': str(_LOG_TEST_DATA / 'maven-test-no-summary.log'),
+            'command': './mvnw -l /tmp/maven.log package',
+            'wrapper': './mvnw',
+        }
+
+    monkeypatch.setattr(_factory, 'execute_direct_base', _recorder)
+    args = Namespace(
+        command_args='package',
+        canonical='module-tests',
+        project_dir=str(tmp_path),
+        plan_id=_PLAN_ID,
+        execution_mode='in_process',
+        timeout=None,
+        mode='actionable',
+        format='toon',
+    )
+
+    exit_code = _maven_execute_mod.cmd_run(args)
+
+    # The guard's verdict is the proof the value crossed this hop: without
+    # ``canonical=canonical`` at the in-process call site the wrapper sees None
+    # and the same run reports success.
+    assert exit_code == 0
+    assert TEST_RUN_EXECUTED_NOTHING in capsys.readouterr().out
+
+
 def test_a_skipping_module_does_not_excuse_another_modules_zero_summary(tmp_path):
     """A summary naming zero is evidence, whatever another module's skip line says.
 
@@ -887,6 +956,131 @@ def test_execute_direct_is_wired_to_the_zero_test_guard(tmp_path, monkeypatch):
     assert result['status'] == 'indeterminate'
     assert TEST_RUN_EXECUTED_NOTHING in result['message']
     assert result['wrapper'] == './mvnw'
+
+
+def test_a_module_tests_package_run_that_executed_nothing_is_indeterminate(tmp_path, monkeypatch):
+    """The `package` form of the module-tests canonical is held to "something executed".
+
+    A reactor root whose ladder leads with `package` exits 0 having run no test at
+    all when the profile the canonical counted is not the one Maven selects
+    (issue #2000). What separates that run from a compile-and-package run is the
+    CANONICAL the caller named, and that arrives on the `--canonical` channel the
+    wrapper receives — never on the argument string, which cannot tell the two
+    apart.
+    """
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    (tmp_path / 'mvnw').write_text('#!/bin/sh\n')
+
+    def _recorder(**kwargs):
+        return {
+            'status': 'success',
+            'exit_code': 0,
+            'duration_seconds': 1,
+            'log_file': str(_LOG_TEST_DATA / 'maven-test-no-summary.log'),
+            'command': './mvnw -l /tmp/maven.log package -pl consumer -am',
+            'wrapper': './mvnw',
+        }
+
+    monkeypatch.setattr(_factory, 'execute_direct_base', _recorder)
+
+    result = execute_direct(
+        args='package -pl consumer -am',
+        command_key='maven:package_-pl_consumer_-am',
+        project_dir=str(tmp_path),
+        plan_id=_PLAN_ID,
+        canonical='module-tests',
+    )
+
+    assert result['status'] == 'indeterminate'
+    assert TEST_RUN_EXECUTED_NOTHING in result['message']
+
+
+def test_the_same_package_args_without_the_canonical_stay_green(tmp_path, monkeypatch):
+    """CONTROL: the SAME argv, dispatched as no canonical, keeps its green.
+
+    This is the case the identity exists for: `package -pl consumer -am` is what
+    the module-tests ladder emits AND what a plain package invocation carries, so
+    only the declared canonical can separate them.
+    """
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    (tmp_path / 'mvnw').write_text('#!/bin/sh\n')
+
+    def _recorder(**kwargs):
+        return {
+            'status': 'success',
+            'exit_code': 0,
+            'duration_seconds': 1,
+            'log_file': str(_LOG_TEST_DATA / 'maven-test-no-summary.log'),
+            'command': './mvnw -l /tmp/maven.log package -pl consumer -am',
+            'wrapper': './mvnw',
+        }
+
+    monkeypatch.setattr(_factory, 'execute_direct_base', _recorder)
+
+    result = execute_direct(
+        args='package -pl consumer -am',
+        command_key='maven:package_-pl_consumer_-am',
+        project_dir=str(tmp_path),
+        plan_id=_PLAN_ID,
+    )
+
+    assert result['status'] == 'success'
+
+
+def test_a_module_tests_package_run_with_a_summary_stays_green(tmp_path):
+    """CONTROL: the guard is not a blanket refusal of the `package` form.
+
+    A module-tests `package` run whose measured summary reports executed tests
+    credits the gate exactly as before.
+    """
+    result = _run_result(
+        'maven-success-real.log', status='success', exit_code=0, command='mvnw package -pl consumer -am'
+    )
+
+    guarded = apply_zero_test_guard(
+        result,
+        'package -pl consumer -am',
+        project_dir=str(tmp_path),
+        canonical='module-tests',
+    )
+
+    assert guarded['status'] == 'success'
+
+
+def test_a_module_tests_package_run_with_a_fresh_report_stays_green(tmp_path):
+    """CONTROL: a hidden summary is not an empty population, on the package form too."""
+    result = _quiet_guard_result(tmp_path, 'maven-test-no-summary.log')
+    _write_surefire_report(tmp_path, 5)
+
+    guarded = apply_zero_test_guard(
+        result,
+        'package -pl consumer -am',
+        project_dir=str(tmp_path),
+        canonical='module-tests',
+    )
+
+    assert guarded['status'] == 'success'
+
+
+@pytest.mark.parametrize('canonical', ['package', 'quality-gate', 'verify', 'module-tests-reactive'])
+def test_a_package_run_outside_the_module_tests_canonical_keeps_its_green(tmp_path, canonical):
+    """CONTROL: only the exact module-tests canonical is held; a lookalike name is not.
+
+    The arguments are identical in every case — the same `package` invocation the
+    module-tests ladder emits — so the CANONICAL is the only fact that could
+    separate them. `module-tests-reactive` pins the exact-name comparison: a
+    canonical that merely shares a prefix is a different canonical.
+    """
+    result = _quiet_guard_result(tmp_path, 'maven-test-no-summary.log')
+
+    guarded = apply_zero_test_guard(
+        result,
+        'package -pl consumer -am',
+        project_dir=str(tmp_path),
+        canonical=canonical,
+    )
+
+    assert guarded['status'] == 'success'
 
 
 # =============================================================================

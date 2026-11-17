@@ -79,9 +79,14 @@ def build_canonical_commands(
 
     Returns:
         Dict mapping canonical name -> full executor command string.
+
+    Each string carries ``--canonical {name}``: the canonical's IDENTITY is the
+    one fact its ``--command-args`` cannot express (a reactor-root
+    ``module-tests`` command and the plain ``package`` canonical are the same
+    arguments), and the run-path truth guards read it.
     """
     base = f'{EXECUTOR_PREFIX} {skill_notation} run'
-    return {name: f'{base} --command-args "{args}"' for name, args in command_map.items()}
+    return {name: f'{base} --command-args "{args}" --canonical {name}' for name, args in command_map.items()}
 
 
 def build_chained_commands(

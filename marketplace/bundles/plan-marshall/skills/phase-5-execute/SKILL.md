@@ -810,10 +810,10 @@ The per-deliverable commit fires UNCONDITIONALLY at every chain tail — **regar
 4. **Source the changed paths from git** — the `kind=change` entry's `changed_paths` MUST be git-sourced (NOT self-computed from the deliverable's declared `affected_files`). Enumerate the paths the commit touched:
 
    ```bash
-   git -C {worktree_path} diff-tree --no-commit-id --name-only -r {commit_sha}
+   git -C {worktree_path} diff-tree --no-commit-id --name-only -r --root -z {commit_sha}
    ```
 
-   Record the newline-separated output as `{changed_paths}` (join into a comma-separated list for the verb's `--changed-paths` argument).
+   Record the NUL-terminated output, one path per NUL entry (join into a comma-separated list for the verb's `--changed-paths` argument). Read NUL-terminated entries rather than lines: with git's default `core.quotePath` a non-ASCII path comes back quoted on a line-oriented read, and the ledger stores what it is given verbatim. `--root` enumerates a repository's first commit like any other.
 
 5. **Append the `kind=change` ledger entry** — record the per-deliverable commit transition to the unified change-ledger. The verb stores the supplied `changed_paths` list verbatim; do NOT inline-copy the ledger API details — see [`../manage-change-ledger/SKILL.md`](../manage-change-ledger/SKILL.md) § "Canonical invocations" → `append (kind=change)` for the authoritative argument surface:
 

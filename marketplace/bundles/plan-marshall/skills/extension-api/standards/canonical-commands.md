@@ -138,25 +138,28 @@ discover_modules():
 
 ### Extension Implementation
 
-Extensions return resolved `commands` in `discover_modules()`. Each command is **complete and self-contained** with all routing embedded in `--command-args`:
+Extensions return resolved `commands` in `discover_modules()`. Each command is **complete and self-contained**: all routing (module, profile, workspace) is embedded in `--command-args`, and the command's own NAME is carried in `--canonical` (`build_canonical_commands` emits both), because the arguments alone cannot identify a canonical — a reactor-root `module-tests` command and the plain `package` canonical are the same argv:
 
 ```python
 def discover_modules(self, project_root: str) -> list:
     # Extensions generate complete commands per module
     # All routing (module, profile, workspace) is embedded in --command-args
+    # --canonical carries the command's identity, which the args cannot
     # Note: Commands do NOT include clean goal (run clean separately)
     return [{
         "metadata": {"packaging": "jar", "profiles": [...]},
         "commands": {
-            "clean": "python3 ... --command-args \"clean -pl my-module\"",
-            "module-tests": "python3 ... --command-args \"test -pl my-module\"",
-            "verify": "python3 ... --command-args \"verify -pl my-module\"",
-            "clean-install": "python3 ... --command-args \"clean install -pl my-module\"",
-            "quality-gate": "python3 ... --command-args \"verify -Ppre-commit -pl my-module\""
+            "clean": "python3 ... --command-args \"clean -pl my-module\" --canonical clean",
+            "module-tests": "python3 ... --command-args \"test -pl my-module\" --canonical module-tests",
+            "verify": "python3 ... --command-args \"verify -pl my-module\" --canonical verify",
+            "clean-install": "python3 ... --command-args \"clean install -pl my-module\" --canonical clean-install",
+            "quality-gate": "python3 ... --command-args \"verify -Ppre-commit -pl my-module\" --canonical quality-gate"
         },
         ...
     }]
 ```
+
+A command emitted without `--canonical` still runs; it simply claims no canonical identity, so the run-path guards that read the identity (Maven's zero-test guard for the `module-tests` `package` form) treat it as an ad-hoc run. Prefer emitting it — `build_canonical_commands` does.
 
 ## Implementation in Extensions
 

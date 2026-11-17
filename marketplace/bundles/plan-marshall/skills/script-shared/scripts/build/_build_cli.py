@@ -255,6 +255,22 @@ def add_run_subparser(
         default='auto',
         help='Build-execute routing mode (default: auto)',
     )
+    # The CANONICAL this invocation dispatches, when the caller took it from a
+    # resolved canonical map. Declared on the shared run subparser so all four
+    # build tools accept it, and threaded to the run-path guards as metadata:
+    # the argument string cannot carry this fact, because a reactor-root
+    # `module-tests` command and the plain `package` canonical are the SAME
+    # arguments (`package`), so a guard that holds a test canonical to
+    # "something executed" needs the identity the caller named. Unsupplied
+    # means "no canonical claimed", which leaves every ad-hoc run unchanged.
+    run_parser.add_argument(
+        '--canonical',
+        dest='canonical',
+        default=None,
+        help="Canonical this invocation dispatches (e.g. module-tests). It names the build's "
+        'purpose — the arguments alone cannot — and the run-path truth guards read it. Omit for '
+        'an ad-hoc invocation that dispatches no named canonical.',
+    )
     # ``add_project_dir_arg`` adds BOTH ``--project-dir`` and ``--plan-id``
     # so the run subparser inherits the canonical two-state routing
     # contract automatically. The same ``--plan-id`` value also drives

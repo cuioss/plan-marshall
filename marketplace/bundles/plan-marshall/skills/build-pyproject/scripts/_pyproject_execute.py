@@ -152,6 +152,7 @@ def _wrap_with_self_heal(
         explicit_timeout: int | None = None,
         *,
         plan_id: str,
+        canonical: str | None = None,
     ) -> DirectCommandResult:
         result = inner_execute(
             args=args,
@@ -162,6 +163,7 @@ def _wrap_with_self_heal(
             working_dir=working_dir,
             explicit_timeout=explicit_timeout,
             plan_id=plan_id,
+            canonical=canonical,
         )
         if not _should_self_heal(result, project_dir):
             return result
@@ -183,6 +185,7 @@ def _wrap_with_self_heal(
             working_dir=working_dir,
             explicit_timeout=explicit_timeout,
             plan_id=plan_id,
+            canonical=canonical,
         )
 
     return execute_direct
