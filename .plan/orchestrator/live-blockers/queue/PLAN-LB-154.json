@@ -2,10 +2,10 @@
   "id": "PLAN-LB-154",
   "slug": "conflicting-baseline-drift-recovery",
   "workstream": "WS-01",
-  "status": "running",
+  "status": "shipped",
   "lane": "runbook",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "plan_marshall_plan_id": "rb-lb-154-conflicting-baseline-drift-recovery",
+  "pr": "2001",
+  "landing": "landings/PLAN-LB-154.md",
   "seq": 154
 }

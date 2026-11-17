@@ -4604,3 +4604,35 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
   There is also no code backstop against a caller marking a Step 10a commit and appending its own row — a documented caller contract
   only. Behaviour is correct; nothing staged. — trigger: the operator asks for a completion plan, or a consumer reports two rows for
   one commit.
+- **Decision — one follow-up plan, PLAN-LB-158, on the operator's word.** It carries three Watches above as deliverables: the three
+  stale documentation statements after PLAN-LB-153 (and two advisory documentation items), issue #2000 (the package-phase
+  `module-tests` guard, with its limit paragraphs narrowed), and the `worktree_root_unreadable` refusal naming plan, row and field
+  (the pasted API-Sheriff finding's second ask). Those three Watches are retired as Watches by this staging; their triggers apply
+  to the plan's landing instead. Not carried: the HIGH CAUTION-shape review-body parser defect and the PLAN-LB-152 minors (still the
+  operator's word), and the residue of PLAN-LB-154, -155 and -157, which have not landed. Five deliverables in three independent
+  clusters stay in one plan because the operator asked for a single one; the spec records the rationale.
+- **Landings analyzed: PLAN-LB-154 (#2001) and PLAN-LB-157 (#2004), both shipped-as-specified** (`landings/PLAN-LB-154.md`,
+  `landings/PLAN-LB-157.md`; orchestrator re-read, no leaf). No blocker or major. Two things worth keeping beside the records:
+  PLAN-LB-154 shipped an unplanned fix in `git-workflow.py` (`worktree-rebase-to` looked for the rebase state through `target/.git`,
+  a pointer file in a linked worktree, so a real conflict answered `error: rebase_failed`; now `status: conflict`) — re-read in the
+  merged diff; and PLAN-LB-157's sweep runs inside the merge-mutex hold window (bounded 60 s per read, 780 s worst case on a
+  13-step roster) and admits `loop_back`, both stated in `branch-cleanup.md` § "Pre-merge step-sequence gate". The mutex-hold point is
+  staged as PLAN-LB-159 D2 (next bullet); the `loop_back` admission is the spec's own set and stays a documented decision.
+  PLAN-LB-158's declared surface is untouched by either merge (re-checked against both diff
+  stats); `execution.md`, which PLAN-LB-154 also edited, changed at its trigger stub only, not at the sentence PLAN-LB-158 D1 corrects.
+- **Landing analyzed: PLAN-LB-155 (#2006), shipped-as-specified** (`landings/PLAN-LB-155.md`; orchestrator re-read, no leaf). No blocker
+  or major. The agent-file lookup now probes the flat shape across all roots and then the versioned deployed shape, choosing the
+  version directory through the shared live-version selector. Beyond the spec's wording, and disclosed by the lane: a block-scalar
+  `description` is now read as its text (every real agent file carries one), and `--agent` outside the file-stem character set resolves
+  to nothing. Two things stay beside the record: the fix reaches this machine only after `/apply-changes` refreshes the installed
+  dispatch verb, and the lane could not run the CLI repro itself (it asserted it at the Claude runtime surface), so the operator's
+  repro is the end-to-end check; and the OpenCode and Antigravity tool-mapping check stays vacuous on an install with no source tree
+  (pre-existing, documented in `contract.md`, not staged, trigger in the landing record).
+- **Decision — a second follow-up plan, PLAN-LB-159, on the operator's word ("all open issues from the latest plans").** It is a new
+  plan, not an extension of PLAN-LB-158: that plan was staged and emitted earlier, so editing its spec could collide with a launch.
+  Three deliverable clusters, five deliverables: the first-drift-return wording of the PLAN-LB-154 recovery (D1), one total budget for
+  the PLAN-LB-157 sweep so a wedged executor cannot pin the merge mutex for the roster length times 60 s (D2), and a diagnosis for a
+  `{bundle}:{name}` `--agent` value instead of a misleading miss (D3), with D4 and D5 the tests. Recorded and not staged: the
+  `loop_back` admission, the `status: conflict` answer of `worktree-rebase-to` (both callers re-read, both halt on it), the vacuous
+  OpenCode and Antigravity tool-mapping check, and the minors already recorded in the three landing records. The declared surface is
+  disjoint from PLAN-LB-158's; `corpus spec-skills` answers `emit_allowed: true`.
