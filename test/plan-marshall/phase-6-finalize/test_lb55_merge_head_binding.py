@@ -86,6 +86,7 @@ def _merge(status, head, **kwargs):
         },
         'status_reader': lambda _pid: status,
         'head_reader': lambda _dir: head,
+        'step_sequence_check': lambda _pid: None,
     }
     flags.update(kwargs)
     return gate.merge(
@@ -114,6 +115,7 @@ def _merge_pre_seam(status, head, **kwargs):
         'status_reader': lambda _pid: status,
         'head_reader': lambda _dir: head,
         'participation_check': lambda _pid, _pr, _project_dir: _participating(),
+        'step_sequence_check': lambda _pid: None,
     }
     flags.update(kwargs)
     return gate.merge(
@@ -546,6 +548,7 @@ def test_the_production_classifier_is_reached_through_the_executor_seam(monkeypa
             'bot_states': [{'bot_kind': 'coderabbit', 'state': 'participated'}],
         },
         head_dependence_reader=lambda _step: (True, None),
+        step_sequence_check=lambda _pid: None,
     )
 
     assert result['dispatched'] is True

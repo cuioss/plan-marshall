@@ -69,6 +69,20 @@ about and the remedy — unless the recorded holder is this plan. A lock held by
 another plan, an absent lock and an unreadable lock are three distinct refusals,
 and the last two fail closed.
 
+**The same dispatch also proves the FINALIZE STEP SEQUENCE below this step.**
+``branch-cleanup`` is the merge gate, and nothing before this sweep asked whether
+the steps the manifest orders BELOW it ever ran: the per-dispatch post-guard sees
+only what this session dispatched, and the end-of-phase ``phase_steps_complete``
+handshake fires at the phase transition — after the merge and the worktree
+removal. ``merge`` enumerates ``phase_6.steps`` once, takes the entries before
+``branch-cleanup``, and asks the existing ``assert-step-recorded
+--require-terminal`` assertion about each (:func:`_step_sequence_refusal`). It runs
+immediately after the mutex proof and before the store query, because it is a
+local read whose remedy is local. Any step without a terminal record refuses with
+:data:`MERGE_EARLIER_STEP_UNRECORDED`, listing the steps; a ``failed`` record
+refuses too, because a red gate is not a completion. A step the manifest never
+selected is absent from that array and so cannot block.
+
 Two further subcommands keep the merge path's WORDING in this script rather than
 in an agent's hands:
 
@@ -153,6 +167,30 @@ MERGE_PARTICIPATION_UNPROVEN = 'merge_participation_unproven'
 #: it was (``{plan_id}`` / ``none`` / ``unreadable``).
 MERGE_LOCK_NOT_HELD = 'merge_lock_not_held'
 
+#: Refusal code for a merge whose FINALIZE STEP SEQUENCE is incomplete: a manifest
+#: step ordered before ``branch-cleanup`` carries no terminal step record, so the
+#: step the plan's own manifest lists never ran (or ran red). Distinct from
+#: :data:`MERGE_HEAD_NOT_GATED`, which asks whether the gates that DID run saw this
+#: tree — this one asks whether they ran at all. The payload's ``steps`` field names
+#: each offending step and why, and ``reason`` names the read fault when the
+#: sequence could not be enumerated at all.
+MERGE_EARLIER_STEP_UNRECORDED = 'merge_earlier_step_unrecorded'
+
+#: The ``6-finalize`` step outcomes that ADMIT the merge — the spec's own
+#: non-blocking set (``done`` / ``skipped`` / ``loop_back``, each carrying a
+#: recorded reason). ``failed`` is deliberately ABSENT: a red gate is not a
+#: completion, so it refuses the merge the same way a missing record does.
+#:
+#: ⚠ This is NOT a claim that the dispatcher treats all three as settled. It does
+#: not: a ``loop_back`` record is RE-FIRED by the resumable re-entry check (it is
+#: the one outcome that explicitly means "unfinished"). Admitting it here is the
+#: spec's decision, and it leaves one residual hole in the defect class this gate
+#: closes: a plan may merge while an earlier step sits in ``loop_back`` awaiting its
+#: re-fire. The alternative — refusing every ``loop_back`` — would deadlock any
+#: plan whose earlier step handed control back and was then superseded, so the
+#: admission is the deliberate trade, not an oversight.
+_ADMITTING_STEP_OUTCOMES: frozenset[str] = frozenset({'done', 'skipped', 'loop_back'})
+
 #: The gap class the pre-merge review barrier reports, and the only class that
 #: covers a participation gap. A recorded authorization over it admits the merge
 #: and is thereafter named in the step record.
@@ -229,6 +267,9 @@ AuthorizationCheck = Callable[[str, str], dict[str, Any]]
 MarkDoneRunner = Callable[[list[str]], dict[str, Any]]
 HeadDependenceReader = Callable[[str], tuple[bool, str | None]]
 ClassifierRunner = Callable[[str, str, str], dict[str, Any]]
+ManifestReader = Callable[[str], dict[str, Any]]
+StepRecordCheck = Callable[[str], dict[str, Any]]
+StepSequenceCheck = Callable[[str], 'dict[str, Any] | None']
 
 
 # ---------------------------------------------------------------------------
@@ -716,6 +757,328 @@ def _run_ci(ci_args: list[str]) -> dict[str, Any]:
         unparseable_error='merge_verb_unparseable',
         timeout=None,
     )
+
+
+# ---------------------------------------------------------------------------
+# The finalize-step sequence below branch-cleanup
+# ---------------------------------------------------------------------------
+
+#: The bound on the two LOCAL verbs the step-sequence sweep runs (the manifest read
+#: and one ``assert-step-recorded`` per preceding step). Deliberately far below
+#: :data:`_VERB_TIMEOUT_SECONDS`: these are local store reads, not provider calls,
+#: and the sweep issues one per preceding step while the cross-plan merge mutex is
+#: held — so the generic 300 s bound would let a wedged executor pin the critical
+#: section for 300 s times the step count. At this bound a full 13-step roster's
+#: worst case is 780 s, roughly a fifth of the 3 900 s the generic bound would allow.
+_STEP_SEQUENCE_VERB_TIMEOUT_SECONDS = 60
+
+
+def _read_manifest(plan_id: str) -> dict[str, Any]:
+    """Read the plan's execution manifest through the executor-mapped verb.
+
+    ``manage-execution-manifest read`` is the manifest's own reader — the same
+    document ``compose`` writes and the dispatcher iterates — so the sweep cannot
+    disagree with the pipeline about which steps the plan runs, or in what order.
+    """
+    return _run_verb(
+        _MANIFEST_NOTATION,
+        ['read', '--plan-id', plan_id],
+        silent_error='manifest_unreadable',
+        unparseable_error='manifest_unparseable',
+        timeout=_STEP_SEQUENCE_VERB_TIMEOUT_SECONDS,
+    )
+
+
+def _assert_terminal_step(plan_id: str, step: str) -> dict[str, Any]:
+    """Ask the existing step-record assertion about one step.
+
+    ``assert-step-recorded --require-terminal`` IS the dispatcher's own
+    post-dispatch guard, run read-only: the sweep reuses its vocabulary
+    (``step_record_missing`` / ``step_record_mismatched_key``) rather than
+    re-deriving what a terminal record is, so a record the dispatcher would accept
+    and one the merge gate would accept cannot drift apart. The verb canonicalizes
+    the queried key itself, so a ``default:``-prefixed manifest entry reconciles with
+    the bare key the record was written under.
+    """
+    return _run_verb(
+        _MANAGE_STATUS_NOTATION,
+        [
+            'assert-step-recorded',
+            '--plan-id',
+            plan_id,
+            '--phase',
+            FINDINGS_PHASE,
+            '--step',
+            step,
+            '--require-terminal',
+        ],
+        silent_error='step_record_unreadable',
+        unparseable_error='step_record_unreadable',
+        timeout=_STEP_SEQUENCE_VERB_TIMEOUT_SECONDS,
+    )
+
+
+def _earlier_manifest_steps(steps: list[str]) -> tuple[list[str] | None, str | None]:
+    """Return ``(prefix, fault)`` for the manifest steps ordered before ``branch-cleanup``.
+
+    The manifest's ``phase_6.steps`` array IS the runtime order — the composer
+    sorts it by each step doc's ``order:`` frontmatter and the dispatcher iterates it
+    as written — so "ordered before ``branch-cleanup``" is the prefix of that array,
+    never a comparison this module performs itself.
+
+    **Identity comes from ONE place.** ``canonicalize_step_key`` is what maps
+    ``default:branch-cleanup`` and bare ``branch-cleanup`` to one identity while
+    preserving a ``project:``/``bundle:`` prefix verbatim — the same canonicalizer the
+    step-record store's write and read sides use. Restating those spellings as
+    literals here would let the gate and the store disagree the moment an alias maps
+    some new spelling to this step, so an unimportable canonicalizer is a FAULT
+    returned to the caller (a read fault, refused), never a literal-match fallback.
+
+    ``prefix`` is ``None`` when the array carries no ``branch-cleanup`` entry at all;
+    that too is a malformed read, not an empty sequence (this gate is only reachable
+    FROM the step).
+    """
+    try:
+        from _step_key_canonical import canonicalize_step_key
+    except Exception as exc:  # an unreadable resolver is the declared fault, never a fallback
+        return None, f'the step-key canonicalizer is not importable ({exc})'
+    for index, entry in enumerate(steps):
+        if canonicalize_step_key(entry) == MERGE_STEP_ID:
+            return steps[:index], None
+    return None, None
+
+
+#: The two step-gap codes the ASSERTION itself answers with (the other two are
+#: classified here), DERIVED from that verb's own module rather than restated: a
+#: code it adds or renames must reach this classifier, or the gate would file a
+#: nameable gap as an unreadable state and select the stop remedy for it.
+#: ``None`` means the owner could not be imported — then every assertion error is
+#: treated as a read fault, the fail-closed direction.
+def _assertion_step_gap_codes() -> tuple[str, ...] | None:
+    try:
+        from _cmd_assert_step_recorded import ASSERTION_STEP_GAP_CODES
+
+        return tuple(ASSERTION_STEP_GAP_CODES)
+    except Exception:
+        return None
+
+
+#: The ``steps[]`` reasons THIS gate classifies itself, as step gaps rather than read
+#: faults. Combined with :func:`_assertion_step_gap_codes` to form the full set.
+_LOCAL_STEP_GAP_REASONS: tuple[str, ...] = ('step_record_failed', 'step_record_unconfirmed')
+
+
+def _step_gap_reasons() -> frozenset[str]:
+    """The closed set of ``steps[]`` reasons a re-entry can actually clear.
+
+    Every other reason is a READ FAULT. Today that set is the assertion's own gap
+    codes plus the two this gate adds; both halves are derived, so a rename in either
+    place moves this set with it.
+    """
+    return frozenset(set(_assertion_step_gap_codes() or ()) | set(_LOCAL_STEP_GAP_REASONS))
+
+
+def _step_admission(verdict: dict[str, Any]) -> tuple[bool, str, Any, str]:
+    """Decide one step's admission from its ``assert-step-recorded`` verdict.
+
+    Returns ``(admitted, reason, outcome, detail)``. ``reason`` is drawn from the
+    CLOSED vocabulary the doc publishes, never forwarded verbatim: the assertion's
+    two step-gap codes keep their names, and every other error — an unresolvable plan
+    (``file_not_found``), a malformed call, a silent or unparseable verb, a timeout
+    — is folded into ``step_record_unreadable``. That split is what lets the
+    disposition loop back on a nameable gap and STOP on a read it cannot repair.
+
+    ``detail`` carries the read fault's OWN diagnostic (the verb's error code and
+    message) for the unreadable case, so the stop payload names what went wrong
+    instead of restating that no record was found — the assertion's message is the
+    only place a ``file_not_found`` or a timeout is distinguishable. It is empty for
+    every other reason.
+
+    Two terminal states do not admit either, and both are classified here rather
+    than by the assertion:
+
+    * a terminal ``failed`` record — the assertion reports it as recorded, but a red
+      gate is not a completion;
+    * a payload that reports neither a terminal outcome nor a named refusal — an
+      unconfirmed step state is never an admission.
+    """
+    if verdict.get('status') != 'success':
+        error = str(verdict.get('error') or '')
+        if error in (_assertion_step_gap_codes() or ()):
+            return False, error, None, ''
+        message = str(verdict.get('message') or verdict.get('detail') or '').strip()
+        detail = (
+            f'{error}: {message}' if error and message else (error or message or 'the assertion answered no payload')
+        )
+        return False, 'step_record_unreadable', None, detail
+    outcome = verdict.get('outcome')
+    if verdict.get('recorded') is not True or outcome is None:
+        return False, 'step_record_unconfirmed', outcome, ''
+    if outcome == 'failed':
+        return False, 'step_record_failed', outcome, ''
+    if outcome in _ADMITTING_STEP_OUTCOMES:
+        return True, '', outcome, ''
+    return False, 'step_record_unconfirmed', outcome, ''
+
+
+def _sequence_refusal_payload(plan_id: str, reason: str, detail: str, steps: list[dict[str, Any]]) -> dict[str, Any]:
+    """Render the refusal for an unproven finalize-step sequence.
+
+    ``remedy`` is the DISCRIMINATOR the disposition branches on, so the step body
+    never has to re-derive it from prose or from ``steps`` emptiness alone:
+
+    * ``dispatcher`` — at least one row names a STEP GAP (:func:`_step_gap_reasons`),
+      so a finalize re-entry can run that step. The offending steps are still in the
+      manifest, and the resumable re-entry check runs exactly them, in the order the
+      manifest declares.
+    * ``stop`` — no row names a step gap (the sequence could not be enumerated, or
+      every row is a read fault), so no re-entry can clear it.
+
+    A merge authorization covers neither half, for the same reason it does not cover
+    :data:`MERGE_HEAD_NOT_GATED`: it authorizes a review or CI gap somebody can name,
+    never a step nobody ran and never a state nobody could read.
+    """
+    named = ', '.join(str(row['step']) for row in steps)
+    remedy = 'dispatcher' if any(str(row.get('reason')) in _step_gap_reasons() for row in steps) else 'stop'
+    if remedy == 'dispatcher':
+        message = (
+            f'The finalize manifest orders {len(steps)} step(s) before {MERGE_STEP_ID} that did not '
+            f'complete ({named}); the payload names the reason for each. Refusing to merge: return '
+            'control to the finalize dispatcher, which re-runs exactly those steps, in the order the '
+            'manifest declares.'
+        )
+    elif steps:
+        # The message is selected on the SAME discriminator as ``remedy``: a message
+        # that told the caller to re-enter would be the very instruction this branch
+        # forbids, and the stop path surfaces the payload verbatim. ``detail`` names
+        # the READ fault here (the assertion's own error and message), never a
+        # record state the failed read could not establish.
+        message = (
+            f'{len(steps)} finalize step(s) below {MERGE_STEP_ID} could not be READ ({named}): {detail}. '
+            'Refusing to merge: a re-entry re-asks the identical unreadable state, so the read fault '
+            'must be fixed before this merge can proceed.'
+        )
+    else:
+        message = (
+            f'The finalize step sequence below {MERGE_STEP_ID} could not be verified ({detail}). '
+            'Refusing to merge: an unreadable sequence is never an empty one.'
+        )
+    return {
+        'status': 'error',
+        'error': MERGE_EARLIER_STEP_UNRECORDED,
+        'plan_id': plan_id,
+        'phase': FINDINGS_PHASE,
+        'reason': reason,
+        'detail': detail,
+        'remedy': remedy,
+        'steps': steps,
+        'dispatched': False,
+        'message': message,
+    }
+
+
+def _step_sequence_refusal(
+    plan_id: str,
+    *,
+    manifest_reader: ManifestReader | None = None,
+    step_record_check: StepRecordCheck | None = None,
+) -> dict[str, Any] | None:
+    """Refuse the merge while a step the manifest orders before this one never ran.
+
+    ``branch-cleanup`` is the merge gate, and until this sweep nothing asked whether
+    the steps the manifest puts BELOW it actually ran: the per-dispatch post-guard
+    sees only steps the dispatcher dispatched in this session, and the end-of-phase
+    ``phase_steps_complete`` handshake fires at the phase transition — after the
+    merge and the worktree removal. A step skipped late (``adr-propose`` at order 62
+    after a hand-driven final round) therefore surfaced only at the tail.
+
+    The sweep enumerates ``phase_6.steps`` ONCE, takes the entries ordered before
+    ``branch-cleanup``, and asks the existing step-record assertion about each. A
+    step the manifest never selected — ``adr-propose`` excluded by
+    ``default_on: false``, or any step dropped by lane resolution — is absent from
+    that array, so there is no record to demand; applicability is the manifest's own
+    answer rather than a second rule here.
+
+    A ``done`` / ``skipped`` / ``loop_back`` record does not block. For phase
+    ``6-finalize`` "with a reason" needs no separate read: ``mark-step-done``
+    refuses a record without a ``display_detail``, and a ``loop_back`` without a
+    ``loop_back_target``, so a record that exists at all carries its reason.
+
+    Returns ``None`` when the sequence is proven, and the refusal payload otherwise.
+    Four states are deliberately NOT read as "nothing to check": an unreadable
+    manifest (``manifest_unreadable``), a manifest whose array is not a list of step
+    ids (``manifest_steps_unreadable``), a manifest carrying no ``branch-cleanup``
+    entry (``branch_cleanup_absent_from_manifest``), and an unimportable step-key
+    canonicalizer (``step_identity_unreadable``).
+    """
+    manifest = (manifest_reader or _read_manifest)(plan_id)
+    if not isinstance(manifest, dict) or manifest.get('status') != 'success':
+        detail = (
+            str(manifest.get('message') or manifest.get('error') or 'the manifest read failed')
+            if isinstance(manifest, dict)
+            else 'the manifest read answered no payload'
+        )
+        return _sequence_refusal_payload(plan_id, 'manifest_unreadable', detail, [])
+    phase_6 = manifest.get('phase_6')
+    raw_steps = phase_6.get('steps') if isinstance(phase_6, dict) else None
+    if not isinstance(raw_steps, list):
+        return _sequence_refusal_payload(
+            plan_id,
+            'manifest_steps_unreadable',
+            'the manifest carries no phase_6.steps array',
+            [],
+        )
+    if not all(isinstance(entry, str) for entry in raw_steps):
+        # A NON-STRING entry is corrupt too, and `str()` would launder it into a
+        # plausible-looking id ("None", "123") that the prefix could then walk past.
+        return _sequence_refusal_payload(
+            plan_id,
+            'manifest_steps_unreadable',
+            f'phase_6.steps carries a non-string entry ({raw_steps!r})',
+            [],
+        )
+    steps = list(raw_steps)
+    if not all(entry.strip() for entry in steps):
+        # A blank entry is a CORRUPT array, not an entry to drop: dropping it would
+        # silently narrow the prefix and admit the merge over a manifest nobody can
+        # read. "Not a list of step ids" is the documented read fault.
+        return _sequence_refusal_payload(
+            plan_id,
+            'manifest_steps_unreadable',
+            f'phase_6.steps carries an entry that is not a step id ({raw_steps!r})',
+            [],
+        )
+    earlier, fault = _earlier_manifest_steps(steps)
+    if fault is not None:
+        return _sequence_refusal_payload(plan_id, 'step_identity_unreadable', fault, [])
+    if earlier is None:
+        return _sequence_refusal_payload(
+            plan_id,
+            'branch_cleanup_absent_from_manifest',
+            f'phase_6.steps carries no {MERGE_STEP_ID} entry',
+            [],
+        )
+
+    check = step_record_check or (lambda step: _assert_terminal_step(plan_id, step))
+    blocked: list[dict[str, Any]] = []
+    for step in earlier:
+        admitted, reason, outcome, row_detail = _step_admission(check(step))
+        if admitted:
+            continue
+        row: dict[str, Any] = {'step': step, 'reason': reason, 'outcome': outcome}
+        if row_detail:
+            row['detail'] = row_detail
+        blocked.append(row)
+    if not blocked:
+        return None
+    read_faults = [row for row in blocked if str(row['reason']) not in _step_gap_reasons()]
+    if read_faults and len(read_faults) == len(blocked):
+        # Every offending row is a read fault: the detail must name the READ, because
+        # "no terminal record" is a claim a failed read never established.
+        detail = '; '.join(f'{row["step"]}: {row.get("detail") or "unreadable"}' for row in read_faults)
+    else:
+        detail = f'{len(blocked)} step(s) below {MERGE_STEP_ID} did not complete'
+    return _sequence_refusal_payload(plan_id, 'earlier_steps_unrecorded', detail, blocked)
 
 
 #: The ``marshal.json`` ``providers[]`` entry category this module resolves the
@@ -1853,15 +2216,18 @@ def merge(
     authorization_check: AuthorizationCheck | None = None,
     head_dependence_reader: HeadDependenceReader | None = None,
     classifier: ClassifierRunner | None = None,
+    step_sequence_check: StepSequenceCheck | None = None,
 ) -> dict[str, Any]:
     """Issue the routed merge verb only when every pre-merge invariant is proven.
 
-    Five invariants, in this order: the invocation fits its route, this plan
-    provably holds the cross-plan merge mutex, the blocking-findings store is clean
-    on both readings, the merge candidate is the HEAD the head-dependent gates
-    validated, and every required reviewer's participation is proven. The mutex
-    proof runs before every other read, so a caller that does not hold the mutex is
-    named without paying for a store query or a provider fetch.
+    Six invariants, in this order: the invocation fits its route, this plan
+    provably holds the cross-plan merge mutex, the finalize step sequence below this
+    step is complete, the blocking-findings store is clean (on both readings), the
+    merge candidate is the HEAD the head-dependent gates validated, and every
+    required reviewer's participation is proven. The mutex proof runs before every
+    other read, so a caller that does not hold the mutex is named without paying for
+    a store query or a provider fetch; the step-sequence sweep follows it because it
+    is a local read with a local remedy.
 
     Args:
         plan_id: Plan whose ``6-finalize`` findings store is evaluated. Not
@@ -1887,6 +2253,9 @@ def merge(
         classifier: Optional seam in place of
             :func:`_classify_verdict_currency`. Signature:
             ``(step, project_dir, recorded_sha) -> dict``.
+        step_sequence_check: Optional seam in place of
+            :func:`_step_sequence_refusal`. Signature:
+            ``(plan_id) -> dict | None`` (``None`` admits the sequence).
 
     Returns:
         The refusal payload plus ``dispatched: false``, or the routed verb's
@@ -1913,6 +2282,17 @@ def merge(
     refusal_from_lock = _merge_lock_refusal(plan_id)
     if refusal_from_lock is not None:
         return refusal_from_lock
+
+    # The finalize-step sequence: a manifest step ordered BEFORE this one that never
+    # ran is not a gap any later gate can see. The per-dispatch post-guard watched
+    # only the steps this session dispatched, and the end-of-phase
+    # ``phase_steps_complete`` handshake fires at the phase transition — after the
+    # merge and the worktree removal. Asked here, before the store query and the
+    # provider fetch, because it is a local read whose refusal names the remedy
+    # (return control to the dispatcher) without paying for either.
+    refusal_from_sequence = (step_sequence_check or _step_sequence_refusal)(plan_id)
+    if refusal_from_sequence is not None:
+        return refusal_from_sequence
 
     refusal_from_store = _findings_refusal(plan_id, findings_check)
     if refusal_from_store is not None:
@@ -2053,9 +2433,9 @@ def build_parser() -> argparse.ArgumentParser:
     """Build the argparse parser with the merge-dispatch subcommands."""
     parser = argparse.ArgumentParser(
         description=(
-            'Evaluate the blocking-findings, merge-mutex ownership, head-binding and '
-            'required-bot participation invariants and, only when all four are proven, '
-            'issue the routed merge verb (ci pr safe-merge or ci pr merge-queue). Also '
+            'Evaluate the blocking-findings, merge-mutex ownership, finalize-step-sequence, '
+            'head-binding and required-bot participation invariants and, only when all five are '
+            'proven, issue the routed merge verb (ci pr safe-merge or ci pr merge-queue). Also '
             'renders and writes the merge path wording the pre-merge questions and the '
             'step record carry.'
         ),
@@ -2064,7 +2444,10 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest='command_name', required=True)
     merge_parser = sub.add_parser(
         'merge',
-        help='Gate the merge dispatch on a held mutex, a clean store, a gated head and proven participation',
+        help=(
+            'Gate the merge dispatch on a held mutex, a complete step sequence, a clean store, '
+            'a gated head and proven participation'
+        ),
         allow_abbrev=False,
     )
     merge_parser.add_argument('--plan-id', required=True, dest='plan_id', help='Plan identifier')
@@ -2165,6 +2548,7 @@ __all__ = [
     'MERGE_CONSEQUENCE_WITHOUT_ASKING',
     'MERGE_CONSEQUENCE_WITH_ASKING',
     'MERGE_DISPLAY_DETAIL_MAX_CHARS',
+    'MERGE_EARLIER_STEP_UNRECORDED',
     'MERGE_PARTICIPATION_UNPROVEN',
     'REFUSAL_CATEGORY_FIELD',
     'REVIEW_BARRIER_GAP_CLASS',

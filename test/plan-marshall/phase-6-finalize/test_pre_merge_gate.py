@@ -191,6 +191,7 @@ def _merge(verdict, runner, *, route='safe-merge', participation=None, authoriza
         flags.setdefault('strategy', 'squash')
     flags.setdefault('head_reader', lambda _project_dir: _HEAD)
     flags.setdefault('status_reader', lambda _plan_id: None)
+    flags.setdefault('step_sequence_check', lambda _plan_id: None)
     flags.setdefault(
         'participation_check',
         lambda _plan_id, _pr, _project_dir: dict(participation or _PARTICIPATION_COMPLETE),
@@ -360,6 +361,7 @@ def test_production_runner_invokes_the_ci_router_through_the_executor(monkeypatc
         # subprocess (the head-binding and participation behaviour have their own cases).
         status_reader=lambda _plan_id: None,
         head_reader=lambda _dir: None,
+        step_sequence_check=lambda _plan_id: None,
         participation_check=lambda _plan_id, _pr, _project_dir: dict(_PARTICIPATION_COMPLETE),
         **flags,
     )
@@ -398,6 +400,7 @@ def test_production_runner_reports_a_silent_verb_as_merge_verb_no_output(monkeyp
         findings_check=lambda _plan_id: dict(_CLEAN_VERDICT),
         status_reader=lambda _plan_id: None,
         head_reader=lambda _dir: None,
+        step_sequence_check=lambda _plan_id: None,
         participation_check=lambda _plan_id, _pr, _project_dir: dict(_PARTICIPATION_COMPLETE),
     )
 
@@ -441,6 +444,7 @@ def test_default_findings_check_is_the_findings_check_handler_at_6_finalize(monk
         pr_number=7,
         project_dir=_PROJECT_DIR,
         merge_runner=runner,
+        step_sequence_check=lambda _plan_id: None,
     )
 
     assert [(a.plan_id, a.phase) for a in seen] == [(_PLAN_ID, '6-finalize')]
@@ -1156,6 +1160,7 @@ def test_a_comment_filed_by_the_participation_read_blocks_the_merge(monkeypatch)
         merge_runner=runner,
         status_reader=lambda _plan_id: None,
         head_reader=lambda _project_dir: _HEAD,
+        step_sequence_check=lambda _plan_id: None,
         participation_check=lambda _plan_id, _pr, _project_dir: dict(_PARTICIPATION_COMPLETE),
     )
 
@@ -1183,6 +1188,7 @@ def test_the_produce_then_re_read_order_does_not_block_a_genuinely_clean_store()
         merge_runner=runner,
         status_reader=lambda _plan_id: None,
         head_reader=lambda _project_dir: _HEAD,
+        step_sequence_check=lambda _plan_id: None,
         participation_check=lambda _plan_id, _pr, _project_dir: dict(_PARTICIPATION_COMPLETE),
     )
 

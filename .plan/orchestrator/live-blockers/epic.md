@@ -4537,3 +4537,70 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
   that cite compile and quality-gate runs as proof of behaviour criteria (graded `holds: false`, advisory), 8 loop-backs
   and 10 fix tasks of 16. Recorded so a later landing's grade can be read against it; no deliverable. Retire when a
   landing closes its code review with a confirming round.
+- **Drain of the nine `lessons-routing` messages 087-095 (this session's drain, HEAD `e09cce06c`).** Corroborated by one
+  read-only leaf; the orchestrator re-read the points marked "re-read" below. Dispositions:
+  - `-087` (phase-5 hand-back commits have no change-ledger row): **staged** as PLAN-LB-153 (WS-01). Re-read:
+    `git-workflow.py:1033-1046` records a row only in `6-finalize`. The two row writers and the refusal's remedy are the leaf's reading.
+  - `-088` (conflicting baseline drift never rebases): **staged** as PLAN-LB-154 (WS-01). Re-read: `execution-recovery.md:5-51`,
+    no reconcile step and a 3-return cap with no identical-probe stop.
+  - `-089` (review-gate section parser and landing counts): **discarded**. Item 1 does not reproduce at HEAD: the three CodeRabbit
+    labels are in `_NON_FINDING_SECTION_LABELS` (`runbook_lane.py:2149-2167`, fixed by `877a05ac7`, #1971; leaf reading) and
+    `-089` named PLAN-LB-129, which is shipped (PR 1947). Item 2: the landing's `review_body_findings_*` come from the same
+    parser as `review-gate` for a runbook landing (`runbook_lane.py:2834-2838`, leaf reading); `emit-landing.md:276` already states
+    a lifecycle landing is incomplete at those keys until a finalize step records them. That documented gap is not a defect of
+    this message. — trigger: if a runbook landing still shows a landing-versus-`review-gate` count difference at a current
+    executor, reopen.
+  - `-090` (branch-cleanup stall and unguarded skipped step): half one **contradicted** — `branch-cleanup` is an inline
+    orchestrator step with a bounded re-issued queue wait (`dispatch-inline-split.md`, `branch-cleanup.md` § `merge_queue_wait_budget_seconds`;
+    the first is the leaf's reading, the second re-read), so a dispatched-leaf stall does not describe this tree. Half two
+    **staged** as PLAN-LB-157 (WS-01); the absence of an aggregate pre-merge sweep is a HYPOTHESIS in the spec, not re-read.
+  - `-091` (recurrence evidence for six owned subjects): **observed**, no new work. New data points only; not re-run here.
+    Row 4 (no CI verb reads a `main` run by merge commit; `ci checks status` takes `--pr-number` / `--head` only) and row 5
+    (`manage-solution-outline --number`; `review_completeness --participated-bots` pair syntax) are claims of the sender,
+    not re-read. Rows 1-3 and 6 name earlier filings by the sender. — trigger: retire when each owner subject ships or the
+    operator rules it out.
+  - `-092` (subagent-dispatch seam answers `prompt_not_found`): **staged** as PLAN-LB-155 (WS-04). Re-read and reproduced:
+    `runtime_base.py:357-380` globs `*/agents/` against `{bundle}/{version}/agents/`; `subagent dispatch --agent
+    execution-context-level-3` returns `prompt_not_found` at executor 0.1.2139.
+  - `-093` (Maven root aggregator `module-tests` is plain `test`): **staged** as PLAN-LB-156 (WS-02). Re-read:
+    `_maven_cmd_discover.py:454-482` and `:1254`. The `test-jar` versus classifier trigger is open (HYPOTHESIS in the spec).
+  - `-094` (`marker-detect` has no caller): **observed, awaiting an operator design ruling**. The leaf found no caller in
+    `phase-5-execute`, `phase-6-finalize`, `execute-task` or the verify steps, and the declaration at
+    `pm-dev-java-cui/.../extension.py:111-114` (leaf reading, not re-read). The deciding fact is whether the intended design
+    is automatic invocation by verify/finalize (a gap: a plan) or on-demand use only (reword
+    `ext-point-domain-verb.md:110`). — trigger: the operator's ruling; then stage or discard.
+  - `-095` (domain-bundle content-gap umbrella, six items): **discarded** under the focus rule (high and blocking only); the
+    sender grades each item low. Not re-read here beyond the leaf's reading: `ext-triage-java/SKILL.md:68` has no new-code
+    qualifier, and `java-concurrency.md`, `EnumSource` and sibling-path parity are absent. PLAN-LB-113 shipped the earlier
+    domain-content batch; these are the residue. — trigger: reopen if the operator wants a second domain-content batch.
+- **Pasted finding (API-Sheriff plan `sec2-01-doc-honesty-and-config-guards`): every `kind=build` row records
+  `worktree_root: null` and the pre-push freshness gate refuses `worktree_root_unreadable`, forcing three
+  `force-override` pushes — absorbed as the pre-fix shape of PLAN-LB-146 / PLAN-LB-149, not a new defect.** Re-read at
+  HEAD `e09cce06c`: the gate reads a PRESENT null root as `unreadable` and refuses it, and an ABSENT key as the legacy
+  shape (`_cmd_pre_commit_verify_freshness.py:348-390`, `:292-297`); the payload-less CLI writer and the routing seam's
+  auxiliary row now pass no tree keys, so they omit them (`_build_execute_factory.py:563-574`, PLAN-LB-149 D1, PR 1977);
+  the executor template records `null` only when it cannot resolve the plan's worktree (`execute-script.py.template`
+  `_ledger_tree_root`, `:1105-1115`). The sender's suspected cause (build-server or executor path writing the null) matches
+  the pre-fix writers, and "every row null, including rows well before the refused pass" is the pre-fix shape. NOT
+  established: the consumer's plugin and executor version, which the paste does not name, so whether it ran before
+  PLAN-LB-149 is a lead. Not reproduced here. The sender's second ask — name the plan, the build row and the field in the
+  refusal — is NOT done: the message at `:292-297` names none of them and its remedy "re-dispatch the build" only helps once
+  the executor is regenerated. No plan staged; owed to the operator as a one-line choice. — trigger: reopen as a defect
+  if a consumer on an executor generated after PLAN-LB-149 still shows a `null` root on every build row (ask for the
+  executor version and one `kind=build` row).
+- **Watch — package-phase `module-tests` is not held to the zero-test guard (issue #2000, from the PLAN-LB-156 landing).** The
+  Maven `package` canonical (the root row PLAN-LB-156 added and the per-module ladder shipped earlier) can report green with
+  nothing run when an `activeByDefault` profile Maven switches off at run time. CodeRabbit raised it on PR #1998; the lane
+  answered and tracked it rather than changing the guard's contract for every `package` canonical, and filed issue #2000.
+  Re-read at the merged `_maven_cmd_discover.py:516-517`: the root row now takes `package`, so it joins the per-module ladder
+  in the exposed set. Pre-existing limit, not widened in kind. No plan staged; whether one carries it is the operator's word.
+  — trigger: a false green recorded on a Maven consumer whose `module-tests` canonical is `package`.
+- **Watch — three stale documentation statements after PLAN-LB-153 (PR #1999).** The hand-back commit now has one row owner
+  (`--record-change`, id `handback-commit`; re-read at the merged `git-workflow.py:1009-1123`), but the lane stopped with
+  `self-review:budget-exhausted` and left three statements behind: `manage-change-ledger/SKILL.md` still names `git diff-tree` as the
+  source of `changed_paths` although a merge commit now uses a first-parent `git diff` (re-read); its `manage-status` producer row omits
+  the per-SHA `append_invocations` the refusal carries (re-read); and `workflow-integration-git/SKILL.md` ~line 250 says every
+  non-`merge_lock` resolution is cwd-relative while the row writer targets the named tree (the lane's reading, the sentence quoted).
+  There is also no code backstop against a caller marking a Step 10a commit and appending its own row — a documented caller contract
+  only. Behaviour is correct; nothing staged. — trigger: the operator asks for a completion plan, or a consumer reports two rows for
+  one commit.
