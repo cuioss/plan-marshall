@@ -2236,6 +2236,56 @@ _PROSE_TAG_RE = re.compile(r'<(?P<close>/?)(?P<name>dd|code)\b[^>]*>', re.IGNORE
 _HEADING_TRAILING_COUNT_RE = re.compile(r'\s*(?:\(\d+\)|\d+)\s*$')
 
 
+def _owned_block(body: str, heading_end: int) -> tuple[int, int] | None:
+    """Return ``(open_offset, close_offset)`` for the block a BOLD heading owns, or ``None``.
+
+    Ownership is an IDENTITY, scoped to the heading's own depth: the block a heading
+    introduces is the ``<details>`` opened at the heading's level, and nothing else. Two
+    mistakes are excluded by that scoping, and both are under-counts — the direction this
+    gate must never take:
+
+    - a bold label line that closes the block it sits in (the last line of a
+      ``Review details`` block, or plain prose) would otherwise claim the NEXT section's
+      block, so that section's findings would be read as the label's rows;
+    - a heading with no block of its own owns nothing, so it cannot swallow whatever block
+      follows it.
+
+    The closing offset is the matching close, or the end of the body when the block is
+    never closed — fail-safe, because an unclosed block is still the heading's content.
+    """
+    tokens = list(_DETAILS_TOKEN_RE.finditer(body))
+    depth_at_heading = 0
+    for token in tokens:
+        if token.start() >= heading_end:
+            break
+        depth_at_heading += -1 if token.group(0).startswith('</') else 1
+
+    depth = depth_at_heading
+    for token in tokens:
+        if token.start() < heading_end:
+            continue
+        if token.group(0).startswith('</'):
+            depth -= 1
+            if depth < depth_at_heading:
+                return None
+            continue
+        if depth == depth_at_heading:
+            opener = token.start()
+            return opener, _block_close(body, opener)
+        depth += 1
+    return None
+
+
+def _block_close(body: str, opener: int) -> int:
+    """Return the offset of the ``</details>`` that closes the block opened at ``opener``."""
+    depth = 0
+    for token in _DETAILS_TOKEN_RE.finditer(body, opener):
+        depth += -1 if token.group(0).startswith('</') else 1
+        if depth == 0:
+            return token.start()
+    return len(body)
+
+
 def _prose_regions(body: str) -> list[tuple[int, int]]:
     """Return the body's row-body and code-sample regions as ``(start, end)`` offsets.
 
@@ -2582,14 +2632,11 @@ def _body_findings(
         for section, declared in (_bold_heading_section(match.group('title')),)
         if section is not None
     ]
-    # The block each bold heading OWNS: the first `<details>` opened after it. Ownership is
-    # that identity, never mere precedence — a section summary inside any LATER block is a
+    # The block each bold heading OWNS, and the span it therefore covers. Ownership is that
+    # identity, never mere precedence — a section summary inside any other block is a
     # section of its own, and treating it as the bold heading's row would drop its findings.
-    details_opens = [token.start() for token in _DETAILS_TOKEN_RE.finditer(body) if not token.group(0).startswith('</')]
-    bold_block_opens = {
-        next((opened for opened in details_opens if opened > heading_end), None)
-        for _start, heading_end, _section, _declared in bold_headings
-    }
+    owned_blocks = {start: _owned_block(body, heading_end) for start, heading_end, _section, _declared in bold_headings}
+    bold_block_opens = {block[0] for block in owned_blocks.values() if block is not None}
     boundary_starts = sorted(
         [match.start() for index, match in starts if _is_span_boundary(index)]
         + [start for start, _end, _section, _declared in bold_headings]
@@ -2597,6 +2644,12 @@ def _body_findings(
 
     def _span_end(start: int) -> int:
         """The offset at which the heading at ``start`` stops owning the body."""
+        block = owned_blocks.get(start)
+        if block is not None:
+            # A bold heading's span is its own block. The summary that OPENS that block is a
+            # boundary for every other heading, but cutting the block's own span at it would
+            # leave an undeclared bold heading counting an empty span.
+            return block[1]
         return next((boundary for boundary in boundary_starts if boundary > start), len(body))
 
     headings: list[tuple[int, int, str, int | None]] = []

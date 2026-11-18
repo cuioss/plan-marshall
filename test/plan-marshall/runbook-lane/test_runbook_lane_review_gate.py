@@ -936,6 +936,63 @@ def test_a_label_shaped_quote_in_a_row_body_is_not_a_heading() -> None:
 
     assert verdict['review_body_findings_total'] == 1, verdict
     assert [(row['section'], row['id']) for row in verdict['undisposed']] == [('nitpick', 'nitpick-1')]
+
+
+def test_a_bold_heading_with_no_block_of_its_own_owns_nothing() -> None:
+    """⛔ A bold label with no `<details>` after it must not swallow a later summary.
+
+    The summary below is at the TOP level, so its enclosing-block offset is ``None``. If a
+    heading with no block contributed ``None`` to the owned set, every such summary would be
+    skipped as that heading's row — a whole section dropped, and the gate could answer
+    `all_handled` over it.
+    """
+    body = (
+        '> [!CAUTION] > **⚠️ Outside diff range comments (1)** > nothing to expand '
+        '<summary>🧹 Nitpick comments (2)</summary> rename the helper'
+    )
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['review_body_findings_total'] == 3, verdict
+    assert [row['id'] for row in verdict['undisposed']] == ['outside-diff-1', 'nitpick-1', 'nitpick-2']
+
+
+def test_a_bold_label_closing_its_block_owns_no_following_section() -> None:
+    """⛔ The label sits at a depth whose block closes before the next section opens.
+
+    A bold label that ends the block it lives in must not claim the block that follows it:
+    that is another section's block, and its findings are not the label's rows.
+    """
+    body = (
+        '<details><summary>ℹ️ Review info</summary> **Outside diff range comments (1)** </details>'
+        '<details><summary>🧹 Nitpick comments (2)</summary><blockquote> first second </blockquote></details>'
+    )
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['review_body_findings_total'] == 3, verdict
+    assert [row['id'] for row in verdict['undisposed']] == ['outside-diff-1', 'nitpick-1', 'nitpick-2']
+
+
+def test_an_undeclared_bold_heading_counts_its_owned_block() -> None:
+    """⛔ The owned block's opening summary must not truncate the heading's own span.
+
+    The bold heading declares no count, so its findings come from the block. Ending the span
+    at the block's own `<summary>` would leave an untagged, empty span — zero findings for a
+    block that holds two.
+    """
+    body = (
+        '> [!CAUTION] > **Outside diff range comments** >  > <details> > '
+        '<summary>🧹 Nitpick comments (2)</summary> > first > second > </details>'
+    )
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['review_body_findings_total'] == 2, verdict
+    assert [row['id'] for row in verdict['undisposed']] == ['outside-diff-1', 'outside-diff-2']
+
+
+def test_a_bold_heading_in_the_colon_count_spelling_declares_its_count() -> None:
     """Both count spellings are counts, on a BOLD heading as on a `<summary>` one."""
     body = (
         '> [!CAUTION] > **Outside diff range comments: 2** >  > <details> > '
