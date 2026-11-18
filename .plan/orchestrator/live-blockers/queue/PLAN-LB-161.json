@@ -2,10 +2,10 @@
   "id": "PLAN-LB-161",
   "slug": "zod-fixture-dependabot-alert",
   "workstream": "WS-04",
-  "status": "running",
+  "status": "shipped",
   "lane": "runbook",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "plan_marshall_plan_id": "rb-lb-161-zod-fixture-dependabot-alert",
+  "pr": "2014",
+  "landing": "landings/PLAN-LB-161.md",
   "seq": 161
 }
