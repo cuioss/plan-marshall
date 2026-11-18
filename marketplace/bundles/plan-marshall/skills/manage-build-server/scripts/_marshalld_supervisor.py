@@ -10,8 +10,11 @@ responsibilities:
   carrying provider secrets. A submit cannot smuggle credentials or override
   ``PATH`` into the build.
 * **Stream capture** — the child's combined stdout/stderr is streamed to a log
-  file as it is produced, so a long build's output is durable even if the wait
-  is reaped.
+  file INSIDE the submitting project's tree as it is produced, so a long build's
+  output is durable even if the wait is reaped — and the log's life follows that
+  tree (:func:`job_log_dir`). A tree that cannot hold the log fails the job as a
+  LAUNCH fault (:func:`log_file_failure_payload`) instead of falling back to the
+  machine-global directory.
 * **Liveness tracking** — every output chunk marks progress, so the daemon can
   answer a bound-expiry ``wait`` with a live running-status TOON
   (``elapsed`` / ``idle_seconds``) rather than a timeout-shaped body.
@@ -96,10 +99,12 @@ import os
 import signal
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import IO, Any
 
 from _build_result import (
     ERROR_BUILD_FAILED,
+    ERROR_LOG_FILE_FAILED,
     error_result,
     success_result,
     timeout_result,
@@ -377,6 +382,82 @@ async def _stop_job_tree(proc: asyncio.subprocess.Process) -> None:
     await reaped
 
 
+_JOB_LOG_SUBDIR = Path('.plan') / 'local' / 'marshalld' / 'job-logs'
+"""Where a job log lives, relative to the submitting project's tree root.
+
+The log belongs to the tree that produced it, not to the machine that ran it: a
+daemon-routed build's child already runs ``{tree}/.plan/execute-script.py`` with
+``cwd`` inside that tree, and its log must be reachable by the same rule — a
+consumer that may read the project (and nothing outside it) has to be able to open
+the ``log_file`` a build result names. The tier is the project's own machine-local
+``.plan/local``, which every plan-marshall project's ``.gitignore`` already covers,
+so a log never surfaces as an untracked change, and the subtree is removed with
+the worktree it was written in.
+
+The naming deliberately mirrors the machine-global ``marshalld/job-logs`` it
+replaces, so the move is legible to anyone who knew the old path.
+"""
+
+
+class JobLogUnavailable(RuntimeError):
+    """The job log could not be prepared inside the submitting project's tree.
+
+    This is a failure the daemon REPORTS, never one it works around: a
+    machine-global copy of a job log is precisely the defect the in-tree location
+    removes, so an unwritable tree fails the job instead of re-offending. The two
+    fields make the failure legible — the path that could not be used, and why.
+
+    Attributes:
+        log_file: The in-tree path the job's log was to be written at.
+        reason: What prevented it, in words (the ``OSError``'s own text).
+    """
+
+    def __init__(self, log_file: str, reason: str) -> None:
+        super().__init__(f'{log_file}: {reason}')
+        self.log_file = log_file
+        self.reason = reason
+
+
+def job_log_dir(project_root: str | Path) -> Path:
+    """Return the job-log directory inside ``project_root``'s tree.
+
+    Args:
+        project_root: The submitting project's tree root (a plan worktree, when
+            the job was submitted for one).
+
+    Returns:
+        ``{project_root}/.plan/local/marshalld/job-logs`` — not created here.
+    """
+    return Path(project_root) / _JOB_LOG_SUBDIR
+
+
+def log_file_failure_payload(log_file: str, command_str: str, reason: str) -> dict[str, Any]:
+    """Render the RECORDED failure of a job whose log could not be written.
+
+    It is a LAUNCH fault (``log_file_failed``), not a red build: no child was
+    started, so there is no test row, no bound and no verdict to report — the same
+    class the in-process wrapper emits when its own log cannot be created, so a
+    consumer reads one name for one condition on both routes.
+
+    Args:
+        log_file: The log path that could not be written.
+        command_str: The command that was not run.
+        reason: What prevented the write, in words.
+
+    Returns:
+        A terminal ``failure`` payload carrying the named error and the reason.
+    """
+    return status_payload(
+        STATUS_FAILURE,
+        duration_seconds=0,
+        log_file=log_file,
+        exit_code=-1,
+        error=ERROR_LOG_FILE_FAILED,
+        reason=reason,
+        command=command_str,
+    )
+
+
 async def run_job(
     command: list[str],
     cwd: str,
@@ -402,7 +483,11 @@ async def run_job(
         timeout: Wall-clock timeout in seconds; on expiry the child's whole
             process group is stopped (the child alone on Windows) and the
             status is ``timeout``.
-        log_file: Path to stream combined stdout/stderr into.
+        log_file: Path to stream combined stdout/stderr into — the in-tree target
+            prepared by the daemon (:func:`job_log_dir`). It is opened BEFORE the
+            child is spawned, so a path that cannot be opened returns a
+            ``log_file_failed`` payload instead of starting a build whose output
+            has nowhere to go.
         timeout_source: Where ``timeout`` came from (``daemon_default`` or
             ``explicit``, see ``marshalld.Daemon._resolve_job_timeout``).
             ``None`` means the caller did not say, and the supervisor's own
@@ -424,19 +509,38 @@ async def run_job(
     if progress is None:
         progress = JobProgress()
 
+    # The sink is opened BEFORE the child is spawned, so a tree that cannot hold
+    # the job's log fails the job (as a LAUNCH fault) instead of starting a build
+    # whose output has nowhere to go. There is no fall-back directory: writing the
+    # log anywhere but the submitting tree is the defect this location removes.
+    try:
+        sink = open(log_file, 'wb')
+    except OSError as exc:
+        return log_file_failure_payload(
+            log_file,
+            command_str,
+            f'the job log could not be written at {log_file}: {exc}',
+        )
+
     # On POSIX the child leads its own session, so a timeout can stop the
     # child's process group (see _stop_job_tree).
-    proc = await asyncio.create_subprocess_exec(
-        *command,
-        cwd=cwd,
-        env=child_env,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-        start_new_session=not _IS_WINDOWS,
-    )
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *command,
+            cwd=cwd,
+            env=child_env,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            start_new_session=not _IS_WINDOWS,
+        )
+    except OSError:
+        # The sink exists but no build will write into it; release the handle
+        # rather than leaking it, and let the caller's own failure leg report.
+        sink.close()
+        raise
 
     timed_out = False
-    with open(log_file, 'wb') as sink:
+    with sink:
         pumps = [
             asyncio.create_task(_pump(proc.stdout, sink, progress)),
             asyncio.create_task(_pump(proc.stderr, sink, progress)),

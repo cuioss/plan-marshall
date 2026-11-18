@@ -11,7 +11,8 @@ project on the host. It ties together the four cores:
 * the SCHEDULER (:mod:`_marshalld_scheduler`) — bounded ``max_slots`` admission
   with per-project round-robin fairness and idempotent-submit attach;
 * the SUPERVISOR (:mod:`_marshalld_supervisor`) — one clean-env subprocess per
-  job with liveness tracking and ``success|failure|timeout|killed`` classification;
+  job with liveness tracking, a per-job log written INSIDE the submitting project's
+  tree, and ``success|failure|timeout|killed`` classification;
 * the JOURNAL (:mod:`_marshalld_journal`) — durable specs/results/ETA with
   bounded retention and restart replay.
 
@@ -68,7 +69,13 @@ from _machine_config import SOURCE_MACHINE_CONFIG, CapResolution, report_safe, r
 from _marshalld_audit import InteractionAudit
 from _marshalld_journal import Journal
 from _marshalld_scheduler import Scheduler
-from _marshalld_supervisor import JobProgress, run_job
+from _marshalld_supervisor import (
+    JobLogUnavailable,
+    JobProgress,
+    job_log_dir,
+    log_file_failure_payload,
+    run_job,
+)
 from _marshalld_verifier import git_common_dir_resolver, verify_submit
 from marketplace_paths import ensure_home_root, home_root
 
@@ -127,20 +134,20 @@ def log_path() -> Path:
     return daemon_dir() / 'daemon.log'
 
 
-def job_log_dir() -> Path:
-    """Return the per-job build-log directory."""
-    return daemon_dir() / 'job-logs'
-
-
 def ensure_daemon_dir() -> Path:
-    """Create the marshalld state dir (and job-log subdir) ``0o700``."""
+    """Create the marshalld state dir ``0o700`` and return it.
+
+    Only machine-global state lives here — socket, pidfile, daemon log, registry,
+    journal, interaction audit. Per-job build logs deliberately do NOT: they are
+    written inside the submitting project's tree (see
+    :func:`_marshalld_supervisor.job_log_dir`), so no ``job-logs`` directory is
+    created on this tier any more.
+    """
     ensure_home_root()
     directory = daemon_dir()
     directory.mkdir(mode=_DIR_MODE, parents=True, exist_ok=True)
     if (directory.stat().st_mode & 0o777) != _DIR_MODE:
         os.chmod(directory, _DIR_MODE)
-    logs = job_log_dir()
-    logs.mkdir(mode=_DIR_MODE, parents=True, exist_ok=True)
     return directory
 
 
@@ -291,7 +298,15 @@ class Daemon:
             job_timeout: Default per-job wall-clock timeout in seconds, applied
                 when a submit states no bound of its own and used as the floor
                 when it does (see :meth:`_resolve_job_timeout`).
-            log_dir: Per-job build-log directory.
+            log_dir: Explicit per-job build-log directory. Left unset — the
+                production case — every job's log is written INSIDE that job's own
+                project tree, at :func:`job_log_dir` of its ``project_path``, so a
+                consumer that may read the project can open the ``log_file`` the
+                result names and the log dies with the tree. The parameter exists
+                for a caller that needs a fixed directory (the build-server tests);
+                it is an OVERRIDE, never a fall-back — a tree that cannot hold the
+                log fails the job (:func:`log_file_failure_payload`) rather than
+                writing one somewhere else.
             poll_interval: Wait long-poll interval in seconds.
             cap_resolution: The slot-cap resolution this daemon is applying —
                 the value AND the source it came from, which ``ping`` reports so
@@ -313,7 +328,7 @@ class Daemon:
         self._baseline_interpreter = baseline_interpreter
         self._common_dir_resolver = common_dir_resolver or git_common_dir_resolver
         self._job_timeout = job_timeout
-        self._log_dir = log_dir or job_log_dir()
+        self._log_dir = Path(log_dir) if log_dir is not None else None
         self._poll_interval = poll_interval
         self._tasks: dict[str, asyncio.Task[None]] = {}
         self._progress: dict[str, JobProgress] = {}
@@ -717,11 +732,41 @@ class Daemon:
             return raised, TIMEOUT_SOURCE_EXPLICIT
         return self._job_timeout, TIMEOUT_SOURCE_DAEMON_DEFAULT
 
+    def _prepare_job_log(self, job_id: str, spec: JobSpec) -> str:
+        """Return the job's log path, creating its directory inside the tree.
+
+        The directory is the SUBMITTING PROJECT's own ``.plan/local/marshalld/
+        job-logs`` (see :func:`job_log_dir`): the child already runs inside that
+        tree, so its log belongs there too, a consumer that may read the project can
+        open the ``log_file`` the result names, and the log is removed with the
+        worktree. An injected ``log_dir`` replaces it for a caller that needs a
+        fixed directory; it is never used as a fall-back for a tree that fails.
+        Either way ``job_id`` — unique per submit — is the FILE name, which is what
+        keeps two jobs of one project apart.
+
+        Args:
+            job_id: The job identifier (unique per submit).
+            spec: The verified job spec, whose ``project_path`` is the tree.
+
+        Returns:
+            The absolute path the job's log is to be written at.
+
+        Raises:
+            JobLogUnavailable: when the directory cannot be created — a read-only
+                or otherwise unwritable tree is reported, not worked around.
+        """
+        directory = self._log_dir if self._log_dir is not None else job_log_dir(spec.project_path)
+        log_file = str(directory / f'{job_id}.log')
+        try:
+            directory.mkdir(mode=_DIR_MODE, parents=True, exist_ok=True)
+        except OSError as exc:
+            raise JobLogUnavailable(log_file, str(exc)) from exc
+        return log_file
+
     async def _execute(self, job_id: str, spec_dict: dict[str, Any]) -> None:
         try:
             spec = JobSpec.from_dict(spec_dict)
-            self._log_dir.mkdir(mode=_DIR_MODE, parents=True, exist_ok=True)
-            log_file = str(self._log_dir / f'{job_id}.log')
+            log_file = self._prepare_job_log(job_id, spec)
             timeout, timeout_source = self._resolve_job_timeout(spec.timeout)
             payload = await run_job(
                 spec.command,
@@ -730,6 +775,15 @@ class Daemon:
                 timeout_source=timeout_source,
                 log_file=log_file,
                 progress=self._progress.get(job_id),
+            )
+        except JobLogUnavailable as exc:
+            # A tree that cannot hold the job's log fails the JOB, with the
+            # condition named — never silently rerouted to the machine-global
+            # directory, which is the defect the in-tree location exists to remove.
+            payload = log_file_failure_payload(
+                exc.log_file,
+                ' '.join(str(token) for token in spec_dict.get('command') or []),
+                exc.reason,
             )
         except Exception as exc:  # any failure becomes a terminal result
             payload = status_payload('failure', error=str(exc))
