@@ -54,7 +54,6 @@ Verdict file schemas (JSON — the rows nest criteria and evidence lists)::
                          "residuals": [{"description": str, "consequential": bool,
                                         "fix_kind": ...}],
                          "superseded_by": "D<n> | Deliverable <n> — the existing CLOSING successor: not this deliverable, not a cycle, graded met/met_with_residuals",
-                         "retired": "no successor and nothing delivered: the operator retired the deliverable, and every frozen criterion of it is already authorized through criteria-authorize",
                          "fix_kind": ...}],
        "unrequested_changes": [{"path": str, "consequential": bool,
                                 "reason": str, "fix_kind": ...}],
@@ -83,6 +82,12 @@ or ``may_close: false`` on a round without a blocking finding.
 ``fix_kind`` is required on every item that grades ``blocking`` except a
 ``not_met`` deliverable and an ``unevidenced`` criterion, which default to
 ``implementation`` — the gap is missing work unless the author says otherwise.
+
+A ``retired`` row carries no grades of its own (it is a verdict, not a row field):
+it is accepted only when every frozen criterion of its deliverable is already
+authorized through ``criteria-authorize``, and it files no ``deliverable_not_met``
+finding. A deliverable that froze no criterion has nothing to authorize and is
+refused.
 
 Usage::
 

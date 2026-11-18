@@ -450,7 +450,8 @@ def _superseded_rejection_message(reason: str, cited: str, number: int) -> str:
     if reason == REFERENCE_SELF:
         return (
             f'superseded_by {cited!r} names the deliverable itself; a deliverable cannot '
-            'supersede itself — retire it through the criteria-authorize route instead'
+            'supersede itself — grade it `retired` instead, once every criterion of it is '
+            'authorized through criteria-authorize'
         )
     if reason == REFERENCE_CYCLE:
         return f'superseded_by {cited!r} closes a supersede cycle back to deliverable {number}'

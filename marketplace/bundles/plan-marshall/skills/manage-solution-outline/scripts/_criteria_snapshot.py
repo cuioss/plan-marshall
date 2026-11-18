@@ -1961,7 +1961,8 @@ def deliverable_reference_rejection(
       :data:`REFERENCE_UNKNOWN`;
     * it must not be the deliverable's own number — :data:`REFERENCE_SELF`; a
       deliverable retired by operator decision with no successor has its own route
-      (``criteria-authorize``), so it does not supersede itself;
+      (the ``retired`` verdict, valid only once every criterion of it is authorized),
+      so it does not supersede itself;
     * following ``superseded_by`` from the successor must not come back to this
       deliverable — :data:`REFERENCE_CYCLE`;
     * the successor's own verdict must be a CLOSING one: :data:`SUCCESSOR_NOT_MET`

@@ -337,7 +337,6 @@ The verdict file is the schema `review_support validate --kind functional` check
         {"description": "what is missing", "consequential": true, "fix_kind": "implementation | correction"}
       ],
       "superseded_by": "D2 | Deliverable 2 — the existing CLOSING successor: not this deliverable, not a cycle, graded met/met_with_residuals",
-      "retired": "no successor and nothing delivered: the operator retired the deliverable, and every frozen criterion of it is already authorized through criteria-authorize",
       "fix_kind": "implementation | correction"
     }
   ],
