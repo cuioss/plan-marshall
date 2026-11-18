@@ -63,10 +63,11 @@ def home(tmp_path, monkeypatch):
     return tmp_path / 'marshalld-home'
 
 
-def _register_project(root: Path, *notations: str) -> str:
-    """Create the minimal registered project tree and enrol it. Returns its root."""
-    (root / '.plan').mkdir(parents=True)
-    (root / '.plan' / 'execute-script.py').write_text(_EXECUTOR_STUB)
+def _register_project(root: Path, *notations: str, create: bool = True) -> str:
+    """Enrol ``root``; when ``create`` is set, build the minimal executor tree too."""
+    if create:
+        (root / '.plan').mkdir(parents=True)
+        (root / '.plan' / 'execute-script.py').write_text(_EXECUTOR_STUB)
     canonical = canonicalize_root(root)
     register_project(canonical, notation_allowlist=list(notations) or [_NOTATION])
     return canonical
@@ -182,6 +183,21 @@ def test_unwritable_project_tree_records_a_logging_failure_without_fallback(home
     assert result['status'] == STATUS_FAILURE, result
     assert result.get('error') == 'log_file_failed', result
     assert result.get('reason'), 'the logging failure states no reason'
+    _no_machine_global_job_logs(home)
+
+
+def test_missing_project_tree_records_a_logging_failure_without_being_created(home, tmp_path):
+    # The other unwritable-tree shape: the tree the job was submitted for is not
+    # there at all. The daemon must report the logging failure, not fabricate a
+    # project root by creating `.plan/local/...` inside it.
+    project = tmp_path / 'proj'
+    canonical = _register_project(project, create=False)
+
+    result = _run_jobs([_spec(canonical)])[0]
+
+    assert result['status'] == STATUS_FAILURE, result
+    assert result.get('error') == 'log_file_failed', result
+    assert not project.exists(), 'the daemon created a project tree that was not there'
     _no_machine_global_job_logs(home)
 
 
