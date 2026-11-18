@@ -2235,25 +2235,29 @@ _PROSE_TAG_RE = re.compile(r'<(?P<close>/?)(?P<name>dd|code)\b[^>]*>', re.IGNORE
 #: the label comparison so a heading matches its label whichever spelling declared it.
 _HEADING_TRAILING_COUNT_RE = re.compile(r'\s*(?:\(\d+\)|\d+)\s*$')
 
+#: The sentinel that says "no bold heading owns this summary", distinct from an owning
+#: heading that declares no count (``None``). Those two states answer differently.
+_NO_OWNER = object()
 
-def _owned_block(body: str, heading_end: int) -> tuple[int, int] | None:
-    """Return ``(open_offset, close_offset)`` for the block a BOLD heading owns, or ``None``.
 
-    Ownership is an IDENTITY, scoped to the heading's own depth: the block a heading
-    introduces is the ``<details>`` opened at the heading's level, and nothing else. Two
-    mistakes are excluded by that scoping, and both are under-counts — the direction this
-    gate must never take:
+def _owned_blocks(body: str, heading_end: int) -> list[tuple[int, int]]:
+    """Return the blocks a BOLD heading owns, as ``(open_offset, close_offset)`` spans.
 
-    - a bold label line that closes the block it sits in (the last line of a
-      ``Review details`` block, or plain prose) would otherwise claim the NEXT section's
-      block, so that section's findings would be read as the label's rows;
-    - a heading with no block of its own owns nothing, so it cannot swallow whatever block
-      follows it.
+    Ownership is an IDENTITY scoped to the heading's own depth AND to what sits between
+    the heading and the block. Three mistakes are excluded, and each one is an under-count
+    — the direction this gate must never take:
 
-    The closing offset is the matching close. A block that is never closed owns NOTHING:
-    the alternative — running its span to the end of the body — would make one unbalanced
-    ``<details>`` swallow every section after it, which is the under-count direction this
-    gate must never take.
+    - a bold span that merely MENTIONS a heading in prose (``**Outside diff range comments
+      (1)** is empty this time.``) is not a heading over the block that follows, so the gap
+      between the heading and the opener must carry no prose word;
+    - a block whose own opening ``<summary>`` names a findings section belongs to that
+      section, not to the bold line above it;
+    - a bold label line that closes the block it sits in owns nothing that follows, and a
+      block with no matching close owns nothing at all — running either to the end of the
+      body would swallow every section after it.
+
+    Sibling blocks at the heading's level are claimed as a RUN, so an undeclared heading
+    whose findings ride two consecutive blocks counts both.
     """
     tokens = list(_DETAILS_TOKEN_RE.finditer(body))
     depth_at_heading = 0
@@ -2262,20 +2266,53 @@ def _owned_block(body: str, heading_end: int) -> tuple[int, int] | None:
             break
         depth_at_heading += -1 if token.group(0).startswith('</') else 1
 
+    spans: list[tuple[int, int]] = []
+    boundary = heading_end
     depth = depth_at_heading
-    for token in tokens:
-        if token.start() < heading_end:
-            continue
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
         if token.group(0).startswith('</'):
             depth -= 1
             if depth < depth_at_heading:
-                return None
+                return spans
+            index += 1
             continue
-        if depth == depth_at_heading:
-            close = _block_close(body, token.start())
-            return None if close is None else (token.start(), close)
+        close = _block_close(body, token.start())
+        if close is None or depth != depth_at_heading:
+            return spans
+        if not _adjacent_to_heading(body, boundary, token.start()) or _block_opens_a_section(body, token.start()):
+            return spans
+        spans.append((token.start(), close))
+        closing_token = _DETAILS_TOKEN_RE.match(body, close)
+        boundary = closing_token.end() if closing_token is not None else close
         depth += 1
-    return None
+        index = next((later for later, token_ in enumerate(tokens) if token_.start() >= close), len(tokens))
+    return spans
+
+
+def _adjacent_to_heading(body: str, boundary: int, opener: int) -> bool:
+    """Whether only markup and whitespace separate a heading from the block it may own.
+
+    The gap carries blockquote markers, list bullets and ``<br>`` tags in the real bodies; a
+    single LETTER or DIGIT means prose, and a heading mentioned in prose owns no block.
+    """
+    return re.search(r'[A-Za-z0-9]', body[boundary:opener]) is None
+
+
+def _block_opens_a_section(body: str, opener: int) -> bool:
+    """Whether the block at ``opener`` opens with a ``<summary>`` naming a FINDINGS section.
+
+    Only a recognised section name counts: a row summary that merely declares a count (a
+    severity line with a ``file:line``) is the block's own row, and stopping on it would hand
+    the block to a section nobody wrote.
+    """
+    closing = _block_close(body, opener)
+    inner = body[opener : closing if closing is not None else len(body)]
+    summary = _SUMMARY_RE.search(inner)
+    if summary is None:
+        return False
+    return _section_for_title(summary.group('title'))[0] is not None
 
 
 def _block_close(body: str, opener: int) -> int | None:
@@ -2299,9 +2336,9 @@ def _prose_regions(body: str) -> list[tuple[int, int]]:
     heading: a reviewer quotes section titles inside a finding's row (``<dd>``) and inside
     a code sample (``<code>``), and reading one as a heading would end the enclosing
     section's span there and lose every finding after it. Each element is paired with its
-    OWN close tag (an unclosed ``<dd>`` cannot be closed by a ``</code>``), and a region
-    left open runs to the end of the body — fail-safe, because a span in the tail of a
-    malformed body is not trusted as a heading.
+    OWN close tag (an unclosed ``<dd>`` cannot be closed by a ``</code>``). A region left
+    open ends with the block that contains it, not with the body: one unterminated
+    ``<code>`` must not hide every heading after it.
     """
     regions: list[tuple[int, int]] = []
     open_at: dict[str, int] = {}
@@ -2311,7 +2348,10 @@ def _prose_regions(body: str) -> list[tuple[int, int]]:
             open_at.setdefault(name, token.end())
         elif name in open_at:
             regions.append((open_at.pop(name), token.start()))
-    regions.extend((start, len(body)) for start in open_at.values())
+    for start in open_at.values():
+        containing = body.rfind('<details', 0, start)
+        closing = _block_close(body, containing) if containing >= 0 else None
+        regions.append((start, closing if closing is not None else len(body)))
     return regions
 
 
@@ -2625,8 +2665,14 @@ def _body_findings(
     # The block each bold heading OWNS, and the span it therefore covers. Ownership is that
     # identity, never mere precedence — a section summary inside any other block is a
     # section of its own, and treating it as the bold heading's row would drop its findings.
-    owned_blocks = {start: _owned_block(body, heading_end) for start, heading_end, _section, _declared in bold_headings}
-    owned_spans = [block for block in owned_blocks.values() if block is not None]
+    owned_blocks = {
+        start: _owned_blocks(body, heading_end) for start, heading_end, _section, _declared in bold_headings
+    }
+    owned_spans = [
+        (open_offset, close_offset, declared)
+        for start, _end, _section, declared in bold_headings
+        for open_offset, close_offset in owned_blocks.get(start, [])
+    ]
     boundary_starts = sorted(
         [match.start() for index, match in starts if _is_span_boundary(index)]
         + [start for start, _end, _section, _declared in bold_headings]
@@ -2634,24 +2680,34 @@ def _body_findings(
 
     def _span_end(start: int) -> int:
         """The offset at which the heading at ``start`` stops owning the body."""
-        block = owned_blocks.get(start)
-        if block is not None:
-            # A bold heading's span is its own block. The summary that OPENS that block is a
-            # boundary for every other heading, but cutting the block's own span at it would
-            # leave an undeclared bold heading counting an empty span.
-            return block[1]
+        blocks = owned_blocks.get(start) or []
+        if blocks:
+            # A bold heading's span is the blocks it owns. The summary that OPENS such a
+            # block is a boundary for every other heading, but cutting the block's own span
+            # at it would leave an undeclared bold heading counting an empty span.
+            return blocks[-1][1]
         return next((boundary for boundary in boundary_starts if boundary > start), len(body))
 
     headings: list[tuple[int, int, str, int | None]] = []
     for index, _match in starts:
         if not _is_section(index):
             continue
-        if any(open_offset < offset_of[index] < close_offset for open_offset, close_offset in owned_spans):
-            # A summary lying anywhere inside a block a bold heading OWNS — at any depth — is
-            # that block's row: the heading's count already covers it, so minting it as a
-            # section too would count the same statement twice.
+        title = starts_by_index[index]
+        owner = next(
+            (
+                declared
+                for open_offset, close_offset, declared in owned_spans
+                if open_offset < offset_of[index] < close_offset
+            ),
+            _NO_OWNER,
+        )
+        if owner is not _NO_OWNER and (owner is None or _section_for_title(title)[0] is None):
+            # A summary inside a block a bold heading owns is that block's row. The one
+            # exception is a DECLARED heading whose block nests a real findings section:
+            # there the heading's own count and that section's findings are two statements,
+            # and swallowing the section would lose it.
             continue
-        section, declared = _heading_section(starts_by_index[index])
+        section, declared = _heading_section(title)
         if section is None:
             continue
         headings.append((offset_of[index], end_of[index], section, declared))

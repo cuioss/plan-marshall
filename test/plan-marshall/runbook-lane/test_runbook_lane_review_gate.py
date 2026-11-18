@@ -941,13 +941,31 @@ def test_a_label_shaped_quote_in_a_row_body_is_not_a_heading() -> None:
 def test_an_unclosed_bold_block_owns_nothing() -> None:
     """⛔ An unbalanced `<details>` must not swallow every section after it.
 
-    A block with no matching close cannot be shown to end anywhere, so it owns nothing: the
-    heading falls back to its next boundary and the well-formed section below keeps its own
-    count. Treating the rest of the body as the block would drop that section entirely.
+    The later summary is a DIRECT child of the unclosed block, which is what makes the case
+    discriminating: keyed on an enclosing opener it would be skipped and the body would read
+    one finding. A block with no matching close cannot be shown to end anywhere, so it owns
+    nothing and the summary keeps its own count.
     """
     body = (
-        '> [!CAUTION] > **⚠️ Outside diff range comments (1)** >  > <details> > '
-        '<summary>Major · a.py</summary> > fix '
+        '**⚠️ Outside diff range comments (1)** <details> <summary>Major · a.py</summary> fix '
+        '<summary>🧹 Nitpick comments (2)</summary> a b'
+    )
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['review_body_findings_total'] == 3, verdict
+    assert [row['id'] for row in verdict['undisposed']] == ['outside-diff-1', 'nitpick-1', 'nitpick-2']
+
+
+def test_a_bold_mention_in_prose_owns_no_block() -> None:
+    """⛔ A heading quoted in a sentence must not claim the block that follows it.
+
+    The bold span states exactly the label and its count, but a prose word sits between it
+    and the next block, so it is a mention: owning that block would read the nitpick section
+    as the mention's rows and lose its findings.
+    """
+    body = (
+        '**Outside diff range comments (1)** is empty this time. '
         '<details><summary>🧹 Nitpick comments (2)</summary><blockquote> a b </blockquote></details>'
     )
 
@@ -955,6 +973,56 @@ def test_an_unclosed_bold_block_owns_nothing() -> None:
 
     assert verdict['review_body_findings_total'] == 3, verdict
     assert [row['id'] for row in verdict['undisposed']] == ['outside-diff-1', 'nitpick-1', 'nitpick-2']
+
+
+def test_a_bold_heading_owns_consecutive_sibling_blocks() -> None:
+    """An undeclared bold heading counts the row markers of BOTH blocks it introduces."""
+    body = (
+        '**Outside diff range comments** '
+        '<details><summary>Major · a.py</summary> first <!-- cr-comment:v1:aaaaaaaaaaaaaaaaaaaaaaaa --> </details>'
+        '<details><summary>Major · b.py</summary> second <!-- cr-comment:v1:bbbbbbbbbbbbbbbbbbbbbbbb --> </details>'
+    )
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['review_body_findings_total'] == 2, verdict
+    assert [row['id'] for row in verdict['undisposed']] == ['outside-diff-1', 'outside-diff-2']
+
+
+def test_a_bold_heading_does_not_swallow_a_nested_findings_section() -> None:
+    """A declared bold heading beside a nested findings section counts BOTH.
+
+    The heading's own count and the nested section's findings are two statements; treating
+    the section as the heading's row would lose the section.
+    """
+    body = (
+        '**Outside diff range comments (1)** '
+        '<details><summary>Major · a.py</summary> fix '
+        '<details><summary>🧹 Nitpick comments (2)</summary> a b </details>'
+        '</details>'
+    )
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['review_body_findings_total'] == 3, verdict
+    assert [row['id'] for row in verdict['undisposed']] == ['outside-diff-1', 'nitpick-1', 'nitpick-2']
+
+
+def test_an_unclosed_code_sample_does_not_hide_a_later_bold_heading() -> None:
+    """⛔ One unterminated `<code>` must not silence every heading after it.
+
+    The open region stops at the end of the block it sits in, so the CAUTION heading below
+    is still read.
+    """
+    body = (
+        '<details><summary>🧹 Nitpick comments (1)</summary><blockquote>'
+        '<dl><dd>see <code>a.py:3 and the guard </dd></dl></blockquote></details> '
+        '**Outside diff range comments (1)** <details><summary>Major · b.py</summary> fix </details>'
+    )
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert [row['section'] for row in verdict['undisposed']] == ['nitpick', 'outside-diff'], verdict
 
 
 def test_a_counted_group_nested_deep_inside_a_bold_block_is_not_counted_twice() -> None:
@@ -1013,22 +1081,21 @@ def test_a_bold_label_closing_its_block_owns_no_following_section() -> None:
     assert [row['id'] for row in verdict['undisposed']] == ['outside-diff-1', 'nitpick-1', 'nitpick-2']
 
 
-def test_an_undeclared_bold_heading_counts_its_owned_block() -> None:
-    """⛔ The owned block's opening summary must not truncate the heading's own span.
+def test_a_block_whose_summary_names_a_section_belongs_to_that_section() -> None:
+    """A block opening with a findings-section summary is that section's, not the bold line's.
 
-    The bold heading declares no count, so its findings come from the block. Ending the span
-    at the block's own `<summary>` would leave an untagged, empty span — zero findings for a
-    block that holds two.
+    Handing it to the bold heading would read a nitpick section as outside-diff rows; leaving
+    it to the section keeps its findings (and the bold heading, owning nothing, adds none).
     """
-    body = (
-        '> [!CAUTION] > **Outside diff range comments** >  > <details> > '
-        '<summary>🧹 Nitpick comments (2)</summary> > first > second > </details>'
-    )
+    body = '**Outside diff range comments** <details><summary>🧹 Nitpick comments (2)</summary> first second </details>'
 
     verdict = _verdict(_read(_review_body(body)))
 
     assert verdict['review_body_findings_total'] == 2, verdict
-    assert [row['id'] for row in verdict['undisposed']] == ['outside-diff-1', 'outside-diff-2']
+    assert [(row['section'], row['id']) for row in verdict['undisposed']] == [
+        ('nitpick', 'nitpick-1'),
+        ('nitpick', 'nitpick-2'),
+    ]
 
 
 def test_a_bold_heading_in_the_colon_count_spelling_declares_its_count() -> None:
