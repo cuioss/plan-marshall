@@ -2,7 +2,7 @@
   "id": "PLAN-LB-162",
   "slug": "review-gate-unknown-sections-caution-block-later-heads",
   "workstream": "WS-05",
-  "status": "staged",
+  "status": "running",
   "lane": "runbook",
   "plan_marshall_plan_id": "",
   "pr": "",
