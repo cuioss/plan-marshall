@@ -2,10 +2,10 @@
   "id": "PLAN-LB-160",
   "slug": "follow-ups-change-ledger-paths-finalize-record-npm-canonical-docs",
   "workstream": "WS-01",
-  "status": "running",
+  "status": "shipped",
   "lane": "runbook",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "plan_marshall_plan_id": "rb-lb-160-follow-ups-change-ledger-paths-finalize-record-npm-canonical-docs",
+  "pr": "2012",
+  "landing": "landings/PLAN-LB-160.md",
   "seq": 160
 }
