@@ -807,19 +807,27 @@ The per-deliverable commit fires UNCONDITIONALLY at every chain tail — **regar
 
    Record the output as `{commit_sha}`.
 
-4. **Source the changed paths from git** — the `kind=change` entry's `changed_paths` MUST be git-sourced (NOT self-computed from the deliverable's declared `affected_files`). Enumerate the paths the commit touched:
+4. **Source the changed paths from git** — the `kind=change` entry's `changed_paths` MUST be git-sourced (NOT self-computed from the deliverable's declared `affected_files`). Create the temp directory first, then enumerate the paths with git writing them STRAIGHT into a file:
 
    ```bash
-   git -C {worktree_path} diff-tree --no-commit-id --name-only -r --root -z {commit_sha}
+   mkdir -p {worktree_path}/.plan/temp
    ```
 
-   Record the NUL-terminated output, one path per NUL entry (join into a comma-separated list for the verb's `--changed-paths` argument). Read NUL-terminated entries rather than lines: with git's default `core.quotePath` a non-ASCII path comes back quoted on a line-oriented read, and the ledger stores what it is given verbatim. `--root` enumerates a repository's first commit like any other.
+   ```bash
+   git -C {worktree_path} diff-tree --no-commit-id --name-only -r --root -z \
+     --output={worktree_path}/.plan/temp/{plan_id}-changed-paths.nul {commit_sha}
+   ```
+
+   `git` does not create the directory `--output` names, and a fresh worktree carries `.plan/local` only, so the `mkdir -p` is required — it is idempotent, so running it when another step already created the directory costs nothing.
+
+   Nothing reads that file back out of the shell: `-z` makes it NUL-separated (with git's default `core.quotePath` a non-ASCII path comes back quoted on a line-oriented read, and the ledger stores what it is given verbatim), `--root` enumerates a repository's first commit like any other, and `--output` is what keeps the procedure followable — the Bash tool renders a NUL byte as a space, so a list read back out of the shell cannot be re-joined without losing it.
 
 5. **Append the `kind=change` ledger entry** — record the per-deliverable commit transition to the unified change-ledger. The verb stores the supplied `changed_paths` list verbatim; do NOT inline-copy the ledger API details — see [`../manage-change-ledger/SKILL.md`](../manage-change-ledger/SKILL.md) § "Canonical invocations" → `append (kind=change)` for the authoritative argument surface:
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-change-ledger:manage-change-ledger append \
-     --kind change --deliverable-id {deliverable} --commit-sha {commit_sha} --changed-paths {changed_paths} \
+     --kind change --deliverable-id {deliverable} --commit-sha {commit_sha} \
+     --changed-paths-file {worktree_path}/.plan/temp/{plan_id}-changed-paths.nul \
      --task-id {task_id}
    ```
 

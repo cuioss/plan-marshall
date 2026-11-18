@@ -18,9 +18,13 @@ primitive. It exposes the verbs below on the shared deterministic core
   * ``append`` — the SOLE write path. ``--kind {build|change|job}`` selects the
     entry shape; the verb stamps ``kind``, ``worktree_sha``, ``timestamp_iso``
     and the kind-specific fields via the core constructors, then appends exactly
-    one JSONL line (pure-append). For ``change`` entries, ``--commit-sha`` and
-    ``--changed-paths`` are stored VERBATIM — the verb does NOT compute changed
-    paths (git-sourcing is the caller's contract). For ``build`` and ``job``
+    one JSONL line (pure-append). For ``change`` entries, ``--commit-sha`` and the
+    path list are stored VERBATIM — the verb does NOT compute changed paths
+    (git-sourcing is the caller's contract). The list arrives either
+    comma-separated (``--changed-paths``, convenience form) or as a file of
+    NUL-separated paths (``--changed-paths-file``, the LOSSLESS form that
+    carries a comma, a space, a leading/trailing space and a non-ASCII byte
+    unchanged); exactly one source may be supplied. For ``build`` and ``job``
     entries an omitted ``--plan-id`` is recorded as the ``NO_PLAN`` sentinel:
     this verb is the second production construction site for those two records
     (the executor dispatch boundary is the first), so neither can emit a
@@ -89,10 +93,40 @@ def _split_changed_paths(raw: str | None) -> list[str]:
     Empty / whitespace-only segments are dropped; surrounding whitespace is
     trimmed. The verb stores the result verbatim (the caller already git-sourced
     the paths).
+
+    This form is LOSSY for a path that contains a comma, and the trim removes a
+    leading or trailing space, so it is the convenience form for a caller whose
+    paths hold neither. :func:`_read_changed_paths_file` is the lossless one.
     """
     if not raw:
         return []
     return [seg.strip() for seg in raw.split(',') if seg.strip()]
+
+
+def _read_changed_paths_file(raw_path: str | None) -> tuple[list[str] | None, str | None]:
+    """Read a NUL-separated path list — git's own ``-z`` rendering — byte for byte.
+
+    Returns ``(paths, None)`` on success and ``(None, error)`` when the file
+    cannot be read.
+
+    NUL separation is what makes this form LOSSLESS: a path may hold a comma, a
+    space, a leading or trailing space, or a non-ASCII byte, and the ``-z`` form
+    is the one rendering that changes none of them. It is also the form a caller
+    can actually follow under a Bash tool that renders a NUL byte as a space:
+    git WRITES the list into the file (``git diff-tree … -z --output={file}``)
+    and this verb reads it, so no human or agent ever has to re-read a NUL from
+    the shell and re-join a mangled list.
+    """
+    if not raw_path:
+        return [], None
+    try:
+        payload = Path(raw_path).read_bytes()
+    except OSError as exc:
+        return None, f'changed_paths_file_unreadable: {exc}'
+    # ``surrogateescape`` keeps a path that is not valid UTF-8 representable
+    # rather than refusing the whole list; the ledger writes JSON with the
+    # default ``ensure_ascii`` escaping, so the value round-trips unchanged.
+    return [part.decode('utf-8', 'surrogateescape') for part in payload.split(b'\0') if part], None
 
 
 def run_worktree_sha(args: Namespace) -> dict[str, Any]:
@@ -180,11 +214,28 @@ def run_append(args: Namespace) -> dict[str, Any]:
                 '--commit-sha is required for --kind change',
                 code=ErrorCode.INVALID_INPUT,
             )
+        raw_paths_file = getattr(args, 'changed_paths_file', None)
+        if args.changed_paths and raw_paths_file:
+            return make_error(
+                'supply ONE path source: --changed-paths (comma-separated) or '
+                '--changed-paths-file (NUL-separated, lossless), never both',
+                code=ErrorCode.INVALID_INPUT,
+            )
+        if raw_paths_file:
+            changed_paths, read_error = _read_changed_paths_file(raw_paths_file)
+            if changed_paths is None:
+                return make_error(
+                    f'{read_error}. The file must hold the NUL-separated output of '
+                    f'`git diff-tree --no-commit-id --name-only -r --root -z --output={{file}} {{commit_sha}}`',
+                    code=ErrorCode.INVALID_INPUT,
+                )
+        else:
+            changed_paths = _split_changed_paths(args.changed_paths)
         record = change_record(
             deliverable_id=deliverable_id,
             worktree_sha=worktree_sha,
             commit_sha=args.commit_sha,
-            changed_paths=_split_changed_paths(args.changed_paths),
+            changed_paths=changed_paths,
         )
 
     append_entry(record)
@@ -501,7 +552,16 @@ Examples:
                     {
                         'flags': ['--changed-paths'],
                         'dest': 'changed_paths',
-                        'help': 'change: comma-separated git-sourced changed paths (stored verbatim)',
+                        'help': 'change: comma-separated git-sourced changed paths (stored verbatim; '
+                        'lossy for a path containing a comma or a leading/trailing space — '
+                        'use --changed-paths-file for those)',
+                    },
+                    {
+                        'flags': ['--changed-paths-file'],
+                        'dest': 'changed_paths_file',
+                        'help': 'change: file of NUL-separated git-sourced changed paths '
+                        '(git diff-tree … -z --output={file}); LOSSLESS, and the form that '
+                        'survives a shell rendering NUL as a space',
                     },
                     {
                         'flags': ['--job-id'],

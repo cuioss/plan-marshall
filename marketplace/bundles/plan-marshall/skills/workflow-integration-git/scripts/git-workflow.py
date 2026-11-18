@@ -1035,6 +1035,14 @@ def _commit_changed_paths(worktree: Path, commit_sha: str) -> list[str] | None:
     still satisfy the SHA-based boundary check. The merge case therefore
     enumerates the FIRST-PARENT diff — the work this commit brought onto the
     branch — which is the one comparison a merge does have.
+
+    That first-parent diff runs with ``--no-renames``: ``git diff`` follows the
+    user's rename detection by default, so a file the merge RENAMED would be
+    reported at its destination only, and the row would lose the path the merge
+    removed. Every path the comparison changed is what the row records, so
+    rename detection is turned off here and the paired delete/add both appear.
+    ``diff.renames`` is a caller's configuration, and a ledger row must not
+    depend on it.
     """
     parents_rc, parents_out, _err = _run_git_nul_verbatim(
         ['-C', str(worktree), 'rev-list', '--parents', '-n', '1', commit_sha]
@@ -1043,7 +1051,7 @@ def _commit_changed_paths(worktree: Path, commit_sha: str) -> list[str] | None:
         return None
     if len(parents_out.split()) > 2:
         rc, out, _err = _run_git_nul_verbatim(
-            ['-C', str(worktree), 'diff', '--name-only', '-r', '-z', f'{commit_sha}^1', commit_sha]
+            ['-C', str(worktree), 'diff', '--no-renames', '--name-only', '-r', '-z', f'{commit_sha}^1', commit_sha]
         )
     else:
         rc, out, _err = _run_git_nul_verbatim(
@@ -1083,8 +1091,19 @@ def _record_commit_change(worktree: Path, commit_sha: str, step: str | None, *, 
 
     A failure here does NOT fail the commit — the commit already exists and
     rolling it back is not this verb's business. The row is reported missing
-    instead, so the boundary's ``bookkeeping_gap`` refusal (the fail-closed
-    direction) is what surfaces it.
+    instead, as ``ledger_recorded: false`` beside the ``ledger_error`` that says
+    why, and the CALLER is the party that reads it.
+
+    The ``5-execute`` boundary's ``bookkeeping_gap`` refusal is NOT that reader
+    for a ``6-finalize`` commit: the boundary runs at the ``5-execute``
+    completion, and such a commit is made AFTER it, so nothing there can see the
+    missing row. The boundary does still surface a row the branch owes — a
+    phase-5 hand-back commit made before that completion, or any commit (a
+    finalize one included) once a loop-back re-enters ``5-execute`` and the
+    boundary runs again over the whole branch. So a ``6-finalize`` commit's
+    failed row is the caller's to notice and repair, and the
+    ``workflow-integration-git`` skill's Commit Changes flow states that
+    obligation.
 
     The row is written to the TARGET tree's own ledger — ``{worktree}/.plan/
     work/change-ledger.jsonl``, the file the ``5-execute`` boundary reads for
@@ -1121,6 +1140,27 @@ def _record_commit_change(worktree: Path, commit_sha: str, step: str | None, *, 
     except OSError as exc:
         return {'recorded': False, 'deliverable_id': deliverable_id, 'error': f'ledger_write_failed: {exc}'}
     return {'recorded': True, 'deliverable_id': deliverable_id}
+
+
+def _with_ledger_outcome(result: dict[str, Any], ledger: dict[str, Any]) -> dict[str, Any]:
+    """Attach the ledger outcome to a result returned AFTER recording was attempted.
+
+    The commit exists from this point on, so every return — including the
+    post-commit push refusals — must carry what happened to its row: the caller
+    is the reader D4 makes responsible for a missing one, and a return that
+    answered only with the push refusal would hide the very outcome that caller
+    has to act on. An empty ``ledger`` (no row was attempted, so no outcome
+    exists) leaves the result untouched, which is the pre-existing shape for an
+    unmarked phase-5 commit.
+    """
+    if not ledger:
+        return result
+    result['ledger_recorded'] = bool(ledger.get('recorded'))
+    if 'deliverable_id' in ledger:
+        result['ledger_deliverable_id'] = ledger['deliverable_id']
+    if 'error' in ledger:
+        result['ledger_error'] = ledger['error']
+    return result
 
 
 def cmd_commit(args):
@@ -1217,9 +1257,12 @@ def cmd_commit(args):
     pushed = False
     if getattr(args, 'push', False):
         if not commit_hash:
-            return make_error(
-                'cannot push: the new commit SHA could not be read',
-                code=ErrorCode.FETCH_FAILURE,
+            return _with_ledger_outcome(
+                make_error(
+                    'cannot push: the new commit SHA could not be read',
+                    code=ErrorCode.FETCH_FAILURE,
+                ),
+                ledger,
             )
         # The push ships exactly the HEAD this commit created. When the plan's
         # pre-push gate recorded a DIFFERENT head, that gate never saw this tree —
@@ -1230,26 +1273,32 @@ def cmd_commit(args):
             gate_refusal = head_gate_refusal(plan_id or _plan_id_from_worktree_path(worktree) or '', commit_hash)
             if gate_refusal is not None:
                 gate_refusal['commit_hash'] = commit_hash
-                return gate_refusal
+                return _with_ledger_outcome(gate_refusal, ledger)
         branch_rc, branch_out, _branch_err = _run_git_nul_verbatim(
             ['-C', str(worktree), 'symbolic-ref', '--short', '--quiet', 'HEAD']
         )
         branch = branch_out.strip() if branch_rc == 0 else ''
         if not branch:
-            return make_error(
-                'cannot push a detached HEAD: the committed change has no branch to ship to',
-                code=ErrorCode.INVALID_INPUT,
+            return _with_ledger_outcome(
+                make_error(
+                    'cannot push a detached HEAD: the committed change has no branch to ship to',
+                    code=ErrorCode.INVALID_INPUT,
+                ),
+                ledger,
             )
         arm_refusal = armed_merge_refusal(branch, str(worktree))
         if arm_refusal is not None:
             arm_refusal['commit_hash'] = commit_hash
-            return arm_refusal
+            return _with_ledger_outcome(arm_refusal, ledger)
         rc, _out, push_err = _run_git_nul_verbatim(
             ['-C', str(worktree), 'push', 'origin', f'{commit_hash}:refs/heads/{branch}'],
             timeout=_PUSH_TIMEOUT_SECONDS,
         )
         if rc != 0:
-            return make_error(f'git push failed: {push_err or f"exit {rc}"}', code=ErrorCode.FETCH_FAILURE)
+            return _with_ledger_outcome(
+                make_error(f'git push failed: {push_err or f"exit {rc}"}', code=ErrorCode.FETCH_FAILURE),
+                ledger,
+            )
         pushed = True
 
     result: dict[str, Any] = {

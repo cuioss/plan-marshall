@@ -92,6 +92,7 @@ def build_canonical_commands(
 def build_chained_commands(
     skill_notation: str,
     command_list: list[str],
+    canonical: str,
 ) -> str:
     """Generate a chained command string (cmd1 && cmd2).
 
@@ -100,12 +101,18 @@ def build_chained_commands(
     Args:
         skill_notation: Three-part skill notation.
         command_list: List of tool-specific command args to chain.
+        canonical: The canonical name every hop dispatches. Required, not
+            optional: a chained string is still ONE canonical, and a hop that
+            omitted the identity would be the only canonical string in the
+            emitted map that claims none.
 
     Returns:
-        Chained command string with ' && ' between each invocation.
+        Chained command string with ' && ' between each invocation, each hop
+        carrying ``--canonical {canonical}`` exactly as
+        :func:`build_canonical_commands` emits it.
     """
     base = f'{EXECUTOR_PREFIX} {skill_notation} run'
-    parts = [f'{base} --command-args "{args}"' for args in command_list]
+    parts = [f'{base} --command-args "{args}" --canonical {canonical}' for args in command_list]
     return ' && '.join(parts)
 
 
