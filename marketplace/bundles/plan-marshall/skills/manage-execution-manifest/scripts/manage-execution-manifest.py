@@ -2870,7 +2870,10 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     # `phase_6.steps`, deferring to the existing machinery on `auto` (the
     # default). `always` is the only path that can re-add a step the
     # scope_gated_finalize pre-filter dropped — which is the point: the
-    # operator-set `always` overrides the implicit scope gate. The transform never
+    # operator-set `always` overrides the implicit scope gate — but it never
+    # re-adds a push-only step on a local-only plan: `commit_and_push` is
+    # forwarded so "no push" wins over any gate value (the commit_push_disabled
+    # pre-filter ran first and its drop stands). The transform never
     # touches `automatic-review`, leaving the bot-review invariant intact. Each
     # gate's decision is derived from its owning step's per-element `lane` override
     # (`steps[<owner>].lane` — `off`→`never`, `minimal`→`always`, `standard`/absent→
@@ -2881,7 +2884,7 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     # other. See standards/decision-rules.md § plan.phase-6-finalize Selection.
     ceremony_finalize_gates = _read_finalize_gates(plan_id)
     ceremony_forced_in, ceremony_forced_out = _apply_ceremony_finalize_selection(
-        body['phase_6']['steps'], ceremony_finalize_gates
+        body['phase_6']['steps'], ceremony_finalize_gates, commit_and_push=commit_and_push
     )
 
     # Execution-profile lane resolution runs AFTER the change-type / scope
