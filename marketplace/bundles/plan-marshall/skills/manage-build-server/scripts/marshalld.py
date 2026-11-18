@@ -752,11 +752,19 @@ class Daemon:
             The absolute path the job's log is to be written at.
 
         Raises:
-            JobLogUnavailable: when the directory cannot be created — a read-only
-                or otherwise unwritable tree is reported, not worked around.
+            JobLogUnavailable: when the log cannot be written in the tree — the
+                tree does not exist, or its log directory cannot be created (a
+                read-only tree). Both are REPORTED, never worked around: the log
+                belongs in the submitting tree, so there is nowhere else to put it.
         """
         directory = self._log_dir if self._log_dir is not None else job_log_dir(spec.project_path)
         log_file = str(directory / f'{job_id}.log')
+        project_root = Path(spec.project_path)
+        if not project_root.is_dir():
+            # A missing tree is not the daemon's to fabricate: creating
+            # `.plan/local/...` under a non-existent root would both invent a
+            # project tree and hide the real condition behind a later spawn failure.
+            raise JobLogUnavailable(log_file, f'the submitting project tree {project_root} is not a directory')
         try:
             directory.mkdir(mode=_DIR_MODE, parents=True, exist_ok=True)
         except OSError as exc:
