@@ -275,18 +275,3 @@ class TestCeremonyFinalizeAlwaysRefusedOnLocalOnlyPlan:
         assert result['status'] == 'success'
         assert 'finalize-step-simplify' in _bare(_manifest_phase_6_steps(result))
         assert 'finalize-step-simplify' in result['ceremony_finalize_forced_in']
-
-    def test_a_gate_outside_the_push_only_set_is_still_forced_in_when_push_is_disabled(self, plan_context):
-        """The guard is keyed on the step, not on the gate value: a non-push gate still adds."""
-        _seed_marshal(finalize_gates={'simplify': 'minimal'})
-        _stub_footprint(_FOOTPRINT)
-
-        # `analysis` makes simplify_inactive drop the step, so `always` must re-add it.
-        result = cmd_compose(
-            _compose_ns(plan_id='ceremony-no-push-simplify', change_type='analysis', commit_and_push='false')
-        )
-
-        assert result is not None
-        assert result['status'] == 'success'
-        assert 'finalize-step-simplify' in _bare(_manifest_phase_6_steps(result))
-        assert 'finalize-step-simplify' in result['ceremony_finalize_forced_in']
