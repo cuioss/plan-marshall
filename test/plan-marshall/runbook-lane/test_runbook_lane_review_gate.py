@@ -938,6 +938,45 @@ def test_a_label_shaped_quote_in_a_row_body_is_not_a_heading() -> None:
     assert [(row['section'], row['id']) for row in verdict['undisposed']] == [('nitpick', 'nitpick-1')]
 
 
+def test_an_unclosed_bold_block_owns_nothing() -> None:
+    """⛔ An unbalanced `<details>` must not swallow every section after it.
+
+    A block with no matching close cannot be shown to end anywhere, so it owns nothing: the
+    heading falls back to its next boundary and the well-formed section below keeps its own
+    count. Treating the rest of the body as the block would drop that section entirely.
+    """
+    body = (
+        '> [!CAUTION] > **⚠️ Outside diff range comments (1)** >  > <details> > '
+        '<summary>Major · a.py</summary> > fix '
+        '<details><summary>🧹 Nitpick comments (2)</summary><blockquote> a b </blockquote></details>'
+    )
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['review_body_findings_total'] == 3, verdict
+    assert [row['id'] for row in verdict['undisposed']] == ['outside-diff-1', 'nitpick-1', 'nitpick-2']
+
+
+def test_a_counted_group_nested_deep_inside_a_bold_block_is_not_counted_twice() -> None:
+    """⛔ A row nested one block deeper is still the bold heading's row, not a section.
+
+    The nested group's own `<details>` is not the owned opener, so a filter keyed on the
+    innermost opener would miss it: it would be minted as its own section AND summed into
+    the heading's count.
+    """
+    body = (
+        '> [!CAUTION] > **Outside diff range comments** >  > <details> > '
+        '<summary>Major · a.py</summary> > '
+        '<details><summary>src/a.py (2)</summary> > first > second > </details> '
+        '> </details>'
+    )
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['review_body_findings_total'] == 2, verdict
+    assert [row['section'] for row in verdict['undisposed']] == ['outside-diff', 'outside-diff']
+
+
 def test_a_bold_heading_with_no_block_of_its_own_owns_nothing() -> None:
     """⛔ A bold label with no `<details>` after it must not swallow a later summary.
 

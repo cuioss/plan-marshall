@@ -2250,8 +2250,10 @@ def _owned_block(body: str, heading_end: int) -> tuple[int, int] | None:
     - a heading with no block of its own owns nothing, so it cannot swallow whatever block
       follows it.
 
-    The closing offset is the matching close, or the end of the body when the block is
-    never closed — fail-safe, because an unclosed block is still the heading's content.
+    The closing offset is the matching close. A block that is never closed owns NOTHING:
+    the alternative — running its span to the end of the body — would make one unbalanced
+    ``<details>`` swallow every section after it, which is the under-count direction this
+    gate must never take.
     """
     tokens = list(_DETAILS_TOKEN_RE.finditer(body))
     depth_at_heading = 0
@@ -2270,20 +2272,24 @@ def _owned_block(body: str, heading_end: int) -> tuple[int, int] | None:
                 return None
             continue
         if depth == depth_at_heading:
-            opener = token.start()
-            return opener, _block_close(body, opener)
+            close = _block_close(body, token.start())
+            return None if close is None else (token.start(), close)
         depth += 1
     return None
 
 
-def _block_close(body: str, opener: int) -> int:
-    """Return the offset of the ``</details>`` that closes the block opened at ``opener``."""
+def _block_close(body: str, opener: int) -> int | None:
+    """Return the offset of the ``</details>`` closing the block opened at ``opener``.
+
+    ``None`` when the block is never closed, so its caller can treat an unbalanced block
+    as owning nothing rather than as owning the rest of the body.
+    """
     depth = 0
     for token in _DETAILS_TOKEN_RE.finditer(body, opener):
         depth += -1 if token.group(0).startswith('</') else 1
         if depth == 0:
             return token.start()
-    return len(body)
+    return None
 
 
 def _prose_regions(body: str) -> list[tuple[int, int]]:
@@ -2313,8 +2319,8 @@ def _enclosing_sections(
     body: str,
     matches: list[re.Match[str]],
     heading_at: dict[int, str | None],
-) -> tuple[dict[int, int | None], dict[int, int | None]]:
-    """Map each ``<summary>`` to the heading that encloses it, and to its innermost block.
+) -> dict[int, int | None]:
+    """Map each ``<summary>`` to the heading that encloses it.
 
     THE nesting rule this parser depends on: a reviewer nests a per-FILE grouping
     inside a section block, so ``<details><summary>Nitpick comments (2)</summary>
@@ -2330,33 +2336,22 @@ def _enclosing_sections(
     this gate exists to close. Nesting inside a block that is NOT a heading
     (a walkthrough, the AI-prompt block) is therefore not containment: such a
     summary stays a section candidate at any depth.
-
-    The second map is the offset of each summary's innermost open ``<details>`` (``None``
-    at the top level). A BOLD-line heading owns no ``<summary>``, so it is recognised as a
-    container by that offset instead: the block a bold heading introduces is the
-    ``<details>`` opened after it, and the summaries inside that block are its rows.
     """
     containers: dict[int, int | None] = {}
-    innermost_open: dict[int, int | None] = {}
-    stack: list[tuple[int | None, int]] = []
-    events: list[tuple[int, str, int | None, int]] = [
-        (match.start(), 'summary', index, 0) for index, match in enumerate(matches)
+    stack: list[int | None] = []
+    events: list[tuple[int, str, int | None]] = [
+        (match.start(), 'summary', index) for index, match in enumerate(matches)
     ]
     events.extend(
-        (
-            token.start(),
-            'close' if token.group(0).startswith('</') else 'open',
-            None,
-            token.start(),
-        )
+        (token.start(), 'close' if token.group(0).startswith('</') else 'open', None)
         for token in _DETAILS_TOKEN_RE.finditer(body)
     )
     # A close sorts before an open at the same offset, so an empty block cannot
     # leave its opener on the stack.
     events.sort(key=lambda event: (event[0], 0 if event[1] == 'close' else 1))
-    for _position, kind, index, offset in events:
+    for _position, kind, index in events:
         if kind == 'open':
-            stack.append((None, offset))
+            stack.append(None)
         elif kind == 'close':
             if stack:
                 stack.pop()
@@ -2364,18 +2359,13 @@ def _enclosing_sections(
             # The nearest HEADING, not merely the nearest open block: a non-heading
             # group can sit between a section and a deeper summary, and that deeper
             # summary is still the section's content.
-            innermost_open[index] = stack[-1][1] if stack else None
             containers[index] = next(
-                (
-                    holder
-                    for holder, _opened in reversed(stack)
-                    if holder is not None and heading_at.get(holder) is not None
-                ),
+                (holder for holder in reversed(stack) if holder is not None and heading_at.get(holder) is not None),
                 None,
             )
-            if stack and stack[-1][0] is None:
-                stack[-1] = (index, offset)
-    return containers, innermost_open
+            if stack and stack[-1] is None:
+                stack[-1] = index
+    return containers
 
 
 #: The depth at or above which a ``<summary>`` is a reviewer's SECTION heading. A
@@ -2583,7 +2573,7 @@ def _body_findings(
     heading_at = {index: _heading_section(match.group('title'))[0] for index, match in starts}
     offset_of = {index: match.start() for index, match in starts}
     end_of = {index: match.end() for index, match in starts}
-    containers, innermost_open = _enclosing_sections(body, matches, heading_at)
+    containers = _enclosing_sections(body, matches, heading_at)
 
     def _is_content(index: int) -> bool:
         """Whether this summary sits inside a HEADING — a per-file grouping, not a heading."""
@@ -2636,7 +2626,7 @@ def _body_findings(
     # identity, never mere precedence — a section summary inside any other block is a
     # section of its own, and treating it as the bold heading's row would drop its findings.
     owned_blocks = {start: _owned_block(body, heading_end) for start, heading_end, _section, _declared in bold_headings}
-    bold_block_opens = {block[0] for block in owned_blocks.values() if block is not None}
+    owned_spans = [block for block in owned_blocks.values() if block is not None]
     boundary_starts = sorted(
         [match.start() for index, match in starts if _is_span_boundary(index)]
         + [start for start, _end, _section, _declared in bold_headings]
@@ -2656,8 +2646,10 @@ def _body_findings(
     for index, _match in starts:
         if not _is_section(index):
             continue
-        if innermost_open.get(index) in bold_block_opens:
-            # A counted row inside the block a bold heading OWNS belongs to that block.
+        if any(open_offset < offset_of[index] < close_offset for open_offset, close_offset in owned_spans):
+            # A summary lying anywhere inside a block a bold heading OWNS — at any depth — is
+            # that block's row: the heading's count already covers it, so minting it as a
+            # section too would count the same statement twice.
             continue
         section, declared = _heading_section(starts_by_index[index])
         if section is None:
