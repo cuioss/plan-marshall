@@ -936,9 +936,9 @@ qualifying review, so the quota policy does not apply to it either: nothing is a
 
 **An unresolved review thread or an unhandled review-body finding on the merge head blocks the
 standing authorization.** A reviewer's thread that is still open, or a finding from any review-body
-section — inline, duplicate, outside-diff, nitpick, follow-up or additional — that the run neither fixed nor
-answered, means a finding is not handled, so the second condition fails however
-strong the review credit is.
+section — inline, duplicate, outside-diff, nitpick, follow-up, additional, minor or unclassified — that
+the run neither fixed nor answered, means a finding is not handled, so the second condition fails
+however strong the review credit is.
 
 **Any question that bears on the merge** first re-reads the review surfaces — `ci pr comments`,
 `ci pr reviews`, and the reviewer's summary comment — in the same step as the question, and again
@@ -987,6 +987,14 @@ Two earlier rulings are inputs to this section, restated here because the lane d
 ledger — the standing authorization stays as written, with the lane trying the re-review of the later
 head and asking the operator when the reviewer quota prevents it; and a last head that CHANGED logic
 after the qualifying review is covered by that authorization, so nothing is asked about it.
+
+**The allowance has a residual, and the gate is its backstop.** A documentation file is not always
+inert: in a project that ships its skills, standards or workflow text as product — this repository
+does — a `.md`-only head can change what the gate or the lane DOES. So the reach rule is not a claim
+that such a head is harmless; it is the boundary the lane can defend from the diff alone, and the
+merge head's own conditions are what actually clear it: every comment handled, the build green, CI
+green, and the `review-gate` read clean (no unresolved thread, every body finding disposed) on the
+head being merged. A head whose `review-gate` read is not clean inherits nothing — ask.
 
 **Enqueue and settle:**
 

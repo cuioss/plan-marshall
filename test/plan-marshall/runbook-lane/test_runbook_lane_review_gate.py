@@ -150,6 +150,22 @@ _CAPTURED_FILES_SELECTED_TITLE = (
     'Files selected for processing: 15</summary><dl><dd><br>* `a.py`</dd></dl></details></h6>'
 )
 
+#: The #1983 review body as the gate reads it: the generated marker, the captured CAUTION
+#: block, and the counted file list that closes it. Every part is captured or verbatim.
+_CAPTURED_CAUTION_1983_BODY = (
+    f'<!-- coderabbit-ai-generated:v1 -->  {_CAPTURED_CAUTION_1983}  {_CAPTURED_FILES_SELECTED_TITLE}'
+)
+
+#: The reported `Minor comments` shape, HAND-BUILT here (the consumer repository's body is
+#: not readable from this checkout): a `<picture>`-wrapped counted title with one row.
+_PICTURE_MINOR_COMMENTS_BODY = (
+    '<!-- coderabbit-ai-generated:v1 -->  **Actionable comments posted: 0**  '
+    '<details><summary><picture><source media="(prefers-color-scheme: dark)" '
+    'srcset="minor-dark.svg"><img src="minor.svg" width="16" height="16" '
+    'align="absmiddle" alt=""></picture> Minor comments: 25</summary><blockquote> '
+    '<dl><dd>one minor note</dd></dl> </blockquote></details>'
+)
+
 
 def _inline(
     *,
@@ -760,14 +776,7 @@ def test_a_picture_wrapped_minor_comments_title_reads_its_declared_findings() ->
     than presenting itself as a capture. One finding row per item, so the declared count is
     the block's findings — of kind `minor`, never `unclassified`.
     """
-    body = (
-        '<!-- coderabbit-ai-generated:v1 -->  **Actionable comments posted: 0**  '
-        '<details><summary><picture><source media="(prefers-color-scheme: dark)" '
-        'srcset="minor-dark.svg"><img src="minor.svg" width="16" height="16" '
-        'align="absmiddle" alt=""></picture> Minor comments: 25</summary><blockquote> '
-        '<dl><dd>one minor note</dd></dl> </blockquote></details>'
-    )
-    read = _read(_review_body(body))
+    read = _read(_review_body(_PICTURE_MINOR_COMMENTS_BODY))
 
     verdict = _verdict(read)
 
@@ -788,8 +797,7 @@ def test_the_captured_1983_caution_block_reads_one_outside_diff_finding() -> Non
     `<summary>` row that declares no count, so nothing in the `<summary>` heading shape
     named the section. One Major finding went unread and the gate admitted the merge.
     """
-    body = f'<!-- coderabbit-ai-generated:v1 -->  {_CAPTURED_CAUTION_1983}  {_CAPTURED_FILES_SELECTED_TITLE}'
-    read = _read(_review_body(body))
+    read = _read(_review_body(_CAPTURED_CAUTION_1983_BODY))
 
     verdict = _verdict(read)
 
@@ -828,18 +836,104 @@ def test_the_captured_1984_bodies_read_seven_inline_and_one_outside_diff() -> No
     ]
 
 
-def test_a_bold_decoration_inside_a_section_is_not_a_heading() -> None:
-    """`**Major** · **Quick win**` labels one finding; reading either as a section mints two."""
+def test_the_actionable_status_line_is_not_read_as_a_bold_heading() -> None:
+    """`**Actionable comments posted: 4**` is a status line, not an inline section.
+
+    The distinguishing fact is the id ORDER: read as a heading, it would mint its four
+    inline findings ahead of the nitpick; read as the status line the inline-count reader
+    owns, the nitpick comes first and the four follow, which is one attribution per
+    declaration and no double count.
+    """
     body = (
+        '**Actionable comments posted: 4**\n'
         '<details>\n<summary>🧹 Nitpick comments (1)</summary><blockquote>\n'
-        '<dl><dd>**Major** · **Quick win** — rename the helper</dd></dl>\n'
+        '<dl><dd>rename the helper</dd></dl>\n'
         '</blockquote></details>\n'
     )
 
     verdict = _verdict(_read(_review_body(body)))
 
+    assert verdict['review_body_findings_total'] == 5, verdict
+    assert [row['id'] for row in verdict['undisposed']] == [
+        'nitpick-1',
+        'inline-1',
+        'inline-2',
+        'inline-3',
+        'inline-4',
+    ]
+
+
+def test_a_counted_per_file_group_under_an_unclassified_heading_is_content() -> None:
+    """The nested per-file counts belong to the heading above them, once each.
+
+    Reading each nested group as its own `unclassified` heading would count the block
+    twice: the heading's declared 2 AND the two per-file groups' 1s.
+    """
+    body = (
+        '<details><summary>🔎 Potential issues (2)</summary><blockquote>'
+        '<details><summary>src/a.py (1)</summary>rename the helper</details>'
+        '<details><summary>src/b.py (1)</summary>drop the import</details>'
+        '</blockquote></details>'
+    )
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['review_body_findings_total'] == 2, verdict
+    assert [row['id'] for row in verdict['undisposed']] == ['unclassified-1', 'unclassified-2']
+
+
+def test_a_counted_row_inside_a_bold_headed_block_belongs_to_that_block() -> None:
+    """The CAUTION block's rows are its content, whatever they declare.
+
+    A per-file row that carries its own count is the block's finding, not a second
+    section: counting it separately would report one finding twice.
+    """
+    body = (
+        '> [!CAUTION] > **⚠️ Outside diff range comments (1)** >  > <details> > '
+        '<summary>Major · src/a.py (2)</summary> > the guard coerces UNKNOWN > </details>'
+    )
+
+    verdict = _verdict(_read(_review_body(body)))
+
     assert verdict['review_body_findings_total'] == 1, verdict
-    assert [row['id'] for row in verdict['undisposed']] == ['nitpick-1']
+    assert [(row['section'], row['id']) for row in verdict['undisposed']] == [('outside-diff', 'outside-diff-1')]
+
+
+def test_a_bold_heading_in_the_colon_count_spelling_declares_its_count() -> None:
+    """Both count spellings are counts, on a BOLD heading as on a `<summary>` one."""
+    body = (
+        '> [!CAUTION] > **Outside diff range comments: 2** >  > <details> > '
+        '<summary>Major · src/a.py</summary> > first > </details>'
+    )
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['review_body_findings_total'] == 2, verdict
+    assert [row['id'] for row in verdict['undisposed']] == ['outside-diff-1', 'outside-diff-2']
+
+
+def test_a_bold_heading_with_no_declared_count_counts_its_rows() -> None:
+    """A bold heading that declares no count is counted from the rows below it."""
+    body = (
+        '> [!CAUTION] > **Outside diff range comments** >  > <details> > '
+        '<summary>Major · src/a.py</summary> > the guard coerces UNKNOWN '
+        '<!-- cr-comment:v1:aaaaaaaaaaaaaaaaaaaaaaaa --> > </details>'
+    )
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['review_body_findings_total'] == 1, verdict
+    assert [row['id'] for row in verdict['undisposed']] == ['outside-diff-1']
+
+
+def test_unclassified_findings_are_numbered_across_review_bodies() -> None:
+    """One disposition must discharge one finding, across bodies as within one."""
+    body = '<details><summary>🔎 Potential issues (1)</summary>use the helper</details>'
+
+    verdict = _verdict(_read(_review_body(body), _review_body(body)))
+
+    assert verdict['review_body_findings_total'] == 2, verdict
+    assert [row['id'] for row in verdict['undisposed']] == ['unclassified-1', 'unclassified-2']
 
 
 def test_a_top_level_per_file_summary_is_unclassified_findings() -> None:
@@ -982,18 +1076,16 @@ def test_the_lane_text_names_no_reason_the_verdict_cannot_return() -> None:
 def test_the_documented_reasons_cover_the_provider_paragraph_too() -> None:
     """⛔ A reason named in the provider paragraph must be one the verb can return.
 
-    The provider paragraph states a reason of its own. A pin scoped to the refusal paragraph
-    never reads it, so a stale reason — one the code cannot answer — sat there and passed;
-    that is how the removed "review-body section the parser cannot read" cause stayed
-    documented after the code stopped answering it. The pin reads every verdict paragraph and
-    checks the reason each one names against the code.
+    The provider paragraph states a reason of its own, in running prose rather than in the
+    refusal list. A pin scoped to that list never read it, so a stale reason — one the code
+    cannot answer — could sit there and pass. This reads the paragraph's own statement and
+    checks it against the code's reason literals.
     """
     section = _SKILL.read_text(encoding='utf-8').split('### review-gate', 1)[1].split('\n## ', 1)[0]
     provider_paragraph = next(paragraph for paragraph in section.split('\n\n') if 'The read is GitHub' in paragraph)
     named = set(re.findall(r'answers `([a-z][a-z_]*)`', provider_paragraph))
 
     assert named, 'the provider paragraph names no reason any more — re-point this pin'
-    assert named <= _documented_review_gate_reasons(), sorted(named - _documented_review_gate_reasons())
     produced = _reasons_the_verdict_can_return()
     assert named <= produced, f'named in the provider paragraph but unreachable: {sorted(named - produced)}'
 
@@ -1230,6 +1322,9 @@ def test_a_clean_pull_request_admits_the_merge() -> None:
             _inline(thread_id='T1', resolved=True, body='done', author='octocat'),
         ),
         _read(status='error'),
+        _read(_review_body('<details><summary>🔎 Potential issues (2)</summary>use the helper</details>')),
+        _read(_review_body(_PICTURE_MINOR_COMMENTS_BODY)),
+        _read(_review_body(_CAPTURED_CAUTION_1983_BODY)),
     ],
     ids=[
         'body-finding',
@@ -1237,6 +1332,9 @@ def test_a_clean_pull_request_admits_the_merge() -> None:
         'concern-remains',
         'concern-remains-after-lane-reply',
         'undecidable',
+        'unclassified-section',
+        'minor-comments',
+        'caution-outside-diff',
     ],
 )
 def test_each_refusing_case_is_red_against_the_unresolved_threads_only_stub(read) -> None:

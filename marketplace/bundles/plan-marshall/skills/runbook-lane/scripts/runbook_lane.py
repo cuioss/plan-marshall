@@ -2162,8 +2162,8 @@ _NON_FINDING_SECTION_LABELS = (
     # OBSERVED on ``cuioss/plan-marshall#1971`` in an INCREMENTAL review: the files that
     # carried no reviewable change in that pass, again a counted ``<details>`` block with
     # a ``<picture>`` icon wrapper and one file row per entry. A file list that names
-    # nothing to review is not a findings section, and refusing it would make every
-    # incremental review body undecidable.
+    # nothing to review is not a findings section, so allowing it mints no ``unclassified``
+    # findings — and, because it is a boundary, it cannot be absorbed into the section above.
     'files with no reviewable changes',
     'review details',
     'review info',
@@ -2224,6 +2224,12 @@ _UNCLASSIFIED_SECTION = 'unclassified'
 #: declares no count of its own.
 _BOLD_SPAN_RE = re.compile(r'\*\*(?P<title>[^*]+?)\*\*')
 
+#: The BOLD span shapes that are PROSE, never a heading: a finding's own row body
+#: (``<dd>``) and an inline code sample (``<code>``). A reviewer quotes section headings
+#: inside its rows, and reading such a quote as a heading would cut the enclosing
+#: section's span short — an UNDER-count, the one direction this gate must never take.
+_BOLD_PROSE_BLOCK_RE = re.compile(r'<(?:dd|code)\b[^>]*>.*?</(?:dd|code)>', re.IGNORECASE | re.DOTALL)
+
 #: The count a normalised bold heading still carries after normalisation — removed before
 #: the label comparison so a heading matches its label whichever spelling declared it.
 _HEADING_TRAILING_COUNT_RE = re.compile(r'\s*(?:\(\d+\)|\d+)\s*$')
@@ -2232,52 +2238,70 @@ _HEADING_TRAILING_COUNT_RE = re.compile(r'\s*(?:\(\d+\)|\d+)\s*$')
 def _enclosing_sections(
     body: str,
     matches: list[re.Match[str]],
-    section_at: dict[int, str | None],
-) -> dict[int, int | None]:
-    """Map each ``<summary>`` to the recognised SECTION summary that encloses it.
+    heading_at: dict[int, str | None],
+) -> tuple[dict[int, int | None], dict[int, int | None]]:
+    """Map each ``<summary>`` to the heading that encloses it, and to its innermost block.
 
     THE nesting rule this parser depends on: a reviewer nests a per-FILE grouping
     inside a section block, so ``<details><summary>Nitpick comments (2)</summary>
     … <details><summary>src/comments.py (2)</summary>`` has one section summary and
-    one file summary inside it. A summary nested inside a RECOGNISED section is
-    content — a file path that happens to contain ``comment`` or ``nitpick`` must
-    not read as an unreadable heading.
+    one file summary inside it. A summary nested inside a HEADING is content — a file
+    path that happens to contain ``comment`` or ``nitpick`` must not be minted as a
+    separate ``unclassified`` heading, and neither must a per-file count that would then
+    be counted twice: once as the enclosing heading's declared count and once as its own.
 
     Depth alone is not the rule, because a reviewer may wrap a whole body in one
     outer block: every real section then sits one level deeper, and a bare depth
     test would drop its findings silently — the "cannot read means pass" failure
-    this gate exists to close. Nesting inside an UNRECOGNISED block is therefore
-    not containment: such a summary stays a section candidate at any depth.
+    this gate exists to close. Nesting inside a block that is NOT a heading
+    (a walkthrough, the AI-prompt block) is therefore not containment: such a
+    summary stays a section candidate at any depth.
+
+    The second map is the offset of each summary's innermost open ``<details>`` (``None``
+    at the top level). A BOLD-line heading owns no ``<summary>``, so it is recognised as a
+    container by that offset instead: the block a bold heading introduces is the
+    ``<details>`` opened after it, and the summaries inside that block are its rows.
     """
     containers: dict[int, int | None] = {}
-    stack: list[int | None] = []
-    events: list[tuple[int, str, int | None]] = [
-        (match.start(), 'summary', index) for index, match in enumerate(matches)
+    innermost_open: dict[int, int | None] = {}
+    stack: list[tuple[int | None, int]] = []
+    events: list[tuple[int, str, int | None, int]] = [
+        (match.start(), 'summary', index, 0) for index, match in enumerate(matches)
     ]
     events.extend(
-        (token.start(), 'close' if token.group(0).startswith('</') else 'open', None)
+        (
+            token.start(),
+            'close' if token.group(0).startswith('</') else 'open',
+            None,
+            token.start(),
+        )
         for token in _DETAILS_TOKEN_RE.finditer(body)
     )
     # A close sorts before an open at the same offset, so an empty block cannot
     # leave its opener on the stack.
     events.sort(key=lambda event: (event[0], 0 if event[1] == 'close' else 1))
-    for _position, kind, index in events:
+    for _position, kind, index, offset in events:
         if kind == 'open':
-            stack.append(None)
+            stack.append((None, offset))
         elif kind == 'close':
             if stack:
                 stack.pop()
         elif index is not None:
-            # The nearest RECOGNISED section, not merely the nearest open block: an
-            # unrecognised per-file group can sit between a section and a deeper
-            # summary, and that deeper summary is still the section's content.
+            # The nearest HEADING, not merely the nearest open block: a non-heading
+            # group can sit between a section and a deeper summary, and that deeper
+            # summary is still the section's content.
+            innermost_open[index] = stack[-1][1] if stack else None
             containers[index] = next(
-                (holder for holder in reversed(stack) if holder is not None and section_at.get(holder) is not None),
+                (
+                    holder
+                    for holder, _opened in reversed(stack)
+                    if holder is not None and heading_at.get(holder) is not None
+                ),
                 None,
             )
-            if stack and stack[-1] is None:
-                stack[-1] = index
-    return containers
+            if stack and stack[-1][0] is None:
+                stack[-1] = (index, offset)
+    return containers, innermost_open
 
 
 #: The depth at or above which a ``<summary>`` is a reviewer's SECTION heading. A
@@ -2474,19 +2498,20 @@ def _body_findings(
     nothing but such a label, and a ``<summary>`` title that declares a count while
     naming nothing this parser knows — whose declared count is minted as
     ``unclassified`` findings, because a titled, counted block holds statements that
-    must be disposed of. A title that declares no count is content, never a heading.
+    must be disposed of. A title that declares no count AND names no findings section is
+    content, never a heading — that is the per-file grouping inside a section.
     """
     counters = counters if counters is not None else {}
     matches = list(_SUMMARY_RE.finditer(body))
     starts = list(enumerate(matches))
-    section_at = {index: _section_for_title(match.group('title'))[0] for index, match in starts}
     heading_at = {index: _heading_section(match.group('title'))[0] for index, match in starts}
-    containers = _enclosing_sections(body, matches, section_at)
+    offset_of = {index: match.start() for index, match in starts}
+    end_of = {index: match.end() for index, match in starts}
+    containers, innermost_open = _enclosing_sections(body, matches, heading_at)
 
     def _is_content(index: int) -> bool:
-        """Whether this summary is a per-file grouping inside a RECOGNISED section."""
-        parent = containers.get(index)
-        return parent is not None and section_at.get(parent) is not None
+        """Whether this summary sits inside a HEADING — a per-file grouping, not a heading."""
+        return containers.get(index) is not None
 
     def _is_section(index: int) -> bool:
         """Whether this summary is a section heading."""
@@ -2514,14 +2539,20 @@ def _body_findings(
 
     # The BOLD-line headings, in body order. They are boundaries and sections at once: a
     # bold heading ends the span of the summary section above it, and owns the span below.
-    # A bold span INSIDE a `<summary>` is that summary's own decoration (`<summary>**Nitpick
-    # comments (3)**</summary>`), never a second heading over the same block — reading it as
-    # one would count the block twice.
+    # A bold span inside a `<summary>` is that summary's own decoration (`<summary>**Nitpick
+    # comments (3)**</summary>`), never a second heading over the same block, and one inside
+    # a finding's row body or a code sample is a QUOTE of a heading, not a heading — reading
+    # either as one would count the block twice or cut the row's section short.
     summary_spans = [(match.start(), match.end()) for _index, match in starts]
+    prose_spans = [(span.start(), span.end()) for span in _BOLD_PROSE_BLOCK_RE.finditer(body)]
+
+    def _lies_within(offset: int, spans: list[tuple[int, int]]) -> bool:
+        return any(start <= offset < end for start, end in spans)
+
     bold_headings = [
         (match.start(), match.end(), section, declared)
         for match in _BOLD_SPAN_RE.finditer(body)
-        if not any(start <= match.start() < end for start, end in summary_spans)
+        if not _lies_within(match.start(), summary_spans) and not _lies_within(match.start(), prose_spans)
         for section, declared in (_bold_heading_section(match.group('title')),)
         if section is not None
     ]
@@ -2535,13 +2566,20 @@ def _body_findings(
         return next((boundary for boundary in boundary_starts if boundary > start), len(body))
 
     headings: list[tuple[int, int, str, int | None]] = []
-    for index, match in starts:
+    for index, _match in starts:
         if not _is_section(index):
             continue
-        section, declared = _heading_section(match.group('title'))
+        opened = innermost_open.get(index)
+        if opened is not None and any(
+            heading_end < opened < offset_of[index]
+            for _start, heading_end, _heading_section_name, _declared in bold_headings
+        ):
+            # A counted row INSIDE a bold-headed block belongs to that block's count.
+            continue
+        section, declared = _heading_section(starts_by_index[index])
         if section is None:
             continue
-        headings.append((match.start(), match.end(), section, declared))
+        headings.append((offset_of[index], end_of[index], section, declared))
     headings.extend(bold_headings)
     headings.sort(key=lambda heading: heading[0])
 
