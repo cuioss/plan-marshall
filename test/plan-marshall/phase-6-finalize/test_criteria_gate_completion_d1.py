@@ -592,6 +592,39 @@ def test_a_retired_deliverable_with_one_unauthorized_criterion_stays_open(plan_c
     assert payload['open'][0]['status'] == 'ungraded', payload
 
 
+def test_a_valid_retirement_does_not_re_open_the_criteria_its_row_graded(plan_context, tmp_path) -> None:
+    """A valid retirement closes the criteria, and grades a stale row carries do not re-open them.
+
+    A delta round copies the previous row's criterion grades into the row it re-grades,
+    so a retirement can arrive beside a ``not_met`` grade from the round before it. Once
+    every criterion is authorized the retirement closes the deliverable: reading those
+    stale grades would re-open work the operator closed.
+    """
+    plan_dir = _plan(plan_context, ['a', 'b'], freeze_from=['a', 'b'])
+    _authorize('a')
+    _authorize('b')
+    _sealed_live(
+        plan_dir,
+        tmp_path,
+        {
+            'deliverables': [
+                {
+                    'number': 1,
+                    'verdict': 'retired',
+                    'criteria': [{'criterion': 'b', 'status': 'not_met', 'evidence': []}],
+                }
+            ],
+            'unrequested_changes': [],
+            'self_reports': [],
+            'files_read': [],
+        },
+    )
+
+    payload = _snap.open_criteria(PLAN_ID)
+
+    assert payload['open_count'] == 0, payload
+
+
 def test_an_invalid_retirement_closes_nothing_not_even_a_graded_criterion(plan_context, tmp_path) -> None:
     """A retirement missing an authorization releases NO criterion, graded or not.
 
