@@ -21,6 +21,7 @@ records_facts:
   - deliverables_met_with_residuals
   - deliverables_not_met
   - deliverables_superseded
+  - deliverables_retired
   - criteria_unevidenced
   - unrequested_changes
   - false_self_reports
@@ -273,7 +274,7 @@ Read the change as whole files and whole functions, not as hunks: open every cha
 
 For each deliverable in the `deliverables` rows of `{attribution_toon}`, write one verdict row:
 
-- Grade the deliverable `met`, `met_with_residuals`, `not_met` or `superseded` by [`review-rubric.md`](../standards/review-rubric.md) § 2.
+- Grade the deliverable `met`, `met_with_residuals`, `not_met`, `superseded` or `retired` by [`review-rubric.md`](../standards/review-rubric.md) § 2.
 - Write one criterion entry per success criterion, in the outline's order. A criterion is `met` only with evidence in a form [`review-rubric.md`](../standards/review-rubric.md) § 4 lists. The plan's own report that it met a criterion is the thing being checked, so it is never the evidence.
 - On `met_with_residuals`, name every residual and say whether it is part of what the deliverable was asked to deliver (`consequential`).
 - On `superseded`, `superseded_by` must open with the CLOSING deliverable that takes the work over — `D3`, `D 3`, `Deliverable 3`, `Deliverable #3`, `Deliverable D3`, or one of those wrapped in a backtick, bold/italic markers or a parenthesis — because the value is what closes the criteria. The cited deliverable must exist in the outline, must not be this deliverable itself, must not form a supersede cycle, and must be graded `met` or `met_with_residuals`; a value that fails any of these is a validation error that names which one, and a reference buried inside prose is not a citation. A deliverable retired by operator decision with no successor is not superseded — close it through `criteria-authorize`. State the operator decision or the refutation after the reference when a reader needs it.
@@ -322,7 +323,7 @@ The verdict file is the schema `review_support validate --kind functional` check
   "deliverables": [
     {
       "number": 1,
-      "verdict": "met | met_with_residuals | not_met | superseded",
+      "verdict": "met | met_with_residuals | not_met | superseded | retired",
       "criteria": [
         {
           "criterion": "the success-criterion text",
@@ -336,6 +337,7 @@ The verdict file is the schema `review_support validate --kind functional` check
         {"description": "what is missing", "consequential": true, "fix_kind": "implementation | correction"}
       ],
       "superseded_by": "D2 | Deliverable 2 — the existing CLOSING successor: not this deliverable, not a cycle, graded met/met_with_residuals",
+      "retired": "no successor and nothing delivered: the operator retired the deliverable, and every frozen criterion of it is already authorized through criteria-authorize",
       "fix_kind": "implementation | correction"
     }
   ],
@@ -349,7 +351,7 @@ The verdict file is the schema `review_support validate --kind functional` check
 }
 ```
 
-`deliverables` carries exactly one row per outline deliverable. `residuals` belongs on a `met_with_residuals` row and `superseded_by` on a `superseded` row, where it names an existing closing successor (not the row's own deliverable, not a cycle, graded `met` or `met_with_residuals`). `fix_kind` is required on every item that grades `blocking`; a `not_met` deliverable and an `unevidenced` criterion default to `implementation` when it is omitted.
+`deliverables` carries exactly one row per outline deliverable. `residuals` belongs on a `met_with_residuals` row and `superseded_by` on a `superseded` row, where it names an existing closing successor (not the row's own deliverable, not a cycle, graded `met` or `met_with_residuals`). A `retired` row carries no criterion grades: it is accepted only when every frozen criterion of its deliverable is already authorized, and it files no `deliverable_not_met` finding. `fix_kind` is required on every item that grades `blocking`; a `not_met` deliverable and an `unevidenced` criterion default to `implementation` when it is omitted.
 
 A criterion row answers its frozen criterion by `criterion_id` first, then by exact normalised text. Position is never a match. When the row's `criterion` text is a paraphrase rather than the frozen wording, carry the criterion's id (`C1`; the deliverable-qualified `D1.C1` is also accepted and is checked against the row's own deliverable). A paraphrased row without the id leaves the criterion ungraded and the validator reports the row as `unmatched_criterion` — unless the row's text is a criterion the current outline carries, which is the author grading the outline as it now reads (an operator-authorized rewrite lands there). A verdict sealed before `criterion_id` existed whose row paraphrases a frozen criterion is therefore reported unmatched and cannot close: re-run the round and include the id.
 
@@ -532,6 +534,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
   --fact files_read={files_read} --fact deliverables_met={deliverables_met} \
   --fact deliverables_met_with_residuals={deliverables_met_with_residuals} \
   --fact deliverables_not_met={deliverables_not_met} --fact deliverables_superseded={deliverables_superseded} \
+  --fact deliverables_retired={deliverables_retired} \
   --fact criteria_unevidenced={criteria_unevidenced} --fact unrequested_changes={unrequested_changes} \
   --fact false_self_reports={false_self_reports} \
   --fact blocking_count={blocking_count} --fact advisory_count={advisory_count} \
@@ -626,6 +629,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
   --fact files_read={files_read} --fact deliverables_met={deliverables_met} \
   --fact deliverables_met_with_residuals={deliverables_met_with_residuals} \
   --fact deliverables_not_met={deliverables_not_met} --fact deliverables_superseded={deliverables_superseded} \
+  --fact deliverables_retired={deliverables_retired} \
   --fact criteria_unevidenced={criteria_unevidenced} --fact unrequested_changes={unrequested_changes} \
   --fact false_self_reports={false_self_reports} \
   --fact blocking_count={blocking_count} --fact advisory_count={advisory_count} \

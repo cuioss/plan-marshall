@@ -45,7 +45,7 @@ Verdict file schemas (JSON — the rows nest criteria and evidence lists)::
 
     functional:
       {"deliverables": [{"number": 1,
-                         "verdict": "met|met_with_residuals|not_met|superseded",
+                         "verdict": "met|met_with_residuals|not_met|superseded|retired",
                          "criteria": [{"criterion": str,
                                        "criterion_id": "C1 (optional; D1.C1 also accepted)",
                                        "status": "met|unevidenced|not_met",
@@ -54,6 +54,7 @@ Verdict file schemas (JSON — the rows nest criteria and evidence lists)::
                          "residuals": [{"description": str, "consequential": bool,
                                         "fix_kind": ...}],
                          "superseded_by": "D<n> | Deliverable <n> — the existing CLOSING successor: not this deliverable, not a cycle, graded met/met_with_residuals",
+                         "retired": "no successor and nothing delivered: the operator retired the deliverable, and every frozen criterion of it is already authorized through criteria-authorize",
                          "fix_kind": ...}],
        "unrequested_changes": [{"path": str, "consequential": bool,
                                 "reason": str, "fix_kind": ...}],
