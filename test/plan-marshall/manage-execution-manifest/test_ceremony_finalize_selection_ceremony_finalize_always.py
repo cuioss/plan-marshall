@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 
+import sys
+
 import pytest
 from _manage_execution_manifest_ceremony_finalize_selection_fixtures import (
     _FOOTPRINT,
@@ -161,14 +163,24 @@ class TestCeremonyFinalizeAlways:
 # =============================================================================
 
 
-# (ceremony gate, the push-only step it force-includes) for the three members of
-# `_COMMIT_PUSH_DROP_STEPS` the ceremony gate map covers. `push` itself owns no
-# ceremony gate, so it is covered by the all-gates case below instead.
+# (ceremony gate, the push-only step it force-includes), DERIVED from the two
+# production registries whose intersection it is — a hard-coded copy would let a
+# newly added push-only ceremony step go uncovered. `_COMMIT_PUSH_DROP_STEPS` is
+# the `commit_push_disabled` pre-filter's drop set; the step map supplies each
+# gate's canonical form. `push` owns no ceremony gate, so it is covered by the
+# all-gates case below instead.
+_RULES = sys.modules[_mem._apply_ceremony_finalize_selection.__module__]
 _PUSH_ONLY_GATE_CASES = [
-    ('functional_review', 'functional-review'),
-    ('code_review', 'code-review'),
-    ('qgate', 'pre-push-quality-gate'),
+    (gate, canonical)
+    for gate, (_match_set, canonical) in _RULES._CEREMONY_FINALIZE_STEP_MAP.items()
+    if canonical in _RULES._COMMIT_PUSH_DROP_STEPS
 ]
+
+
+def test_the_derived_cases_are_non_empty_and_every_one_is_push_only():
+    """Guard the derivation itself: an empty or mis-derived set would make the refusal tests vacuous."""
+    assert _PUSH_ONLY_GATE_CASES, 'control: the ceremony map must cover at least one push-only step'
+    assert all(canonical in _RULES._COMMIT_PUSH_DROP_STEPS for _, canonical in _PUSH_ONLY_GATE_CASES)
 
 
 def _force_gates(gate: str):
@@ -177,7 +189,7 @@ def _force_gates(gate: str):
     Used where the owning step is absent from the seeded candidate list, so
     ``_seed_marshal`` cannot fold the knob onto it.
     """
-    forced = dict.fromkeys(('functional_review', 'code_review', 'qgate', 'simplify', 'security_audit'), 'auto')
+    forced = dict.fromkeys(_RULES._CEREMONY_FINALIZE_GATES, 'auto')
     forced[gate] = 'always'
     return lambda _plan_id: dict(forced)
 
@@ -238,15 +250,7 @@ class TestCeremonyFinalizeAlwaysRefusedOnLocalOnlyPlan:
 
     def test_push_stays_dropped_whatever_the_gates_say(self, plan_context):
         """`push` owns no ceremony gate, so the drop the pre-filter made must survive every gate."""
-        _seed_marshal(
-            finalize_gates={
-                'functional_review': 'minimal',
-                'code_review': 'minimal',
-                'qgate': 'minimal',
-                'simplify': 'minimal',
-                'security_audit': 'minimal',
-            }
-        )
+        _seed_marshal(finalize_gates=dict.fromkeys(_RULES._CEREMONY_FINALIZE_GATES, 'minimal'))
         _stub_footprint(_FOOTPRINT)
 
         result = cmd_compose(_compose_ns(plan_id='ceremony-no-push-all-gates', commit_and_push='false'))
@@ -254,8 +258,23 @@ class TestCeremonyFinalizeAlwaysRefusedOnLocalOnlyPlan:
         assert result is not None
         assert result['status'] == 'success'
         bare = _bare(_manifest_phase_6_steps(result))
-        for step in ('push', 'pre-push-quality-gate', 'functional-review', 'code-review'):
+        for step in _RULES._COMMIT_PUSH_DROP_STEPS:
             assert step not in bare
+
+    def test_a_gate_outside_the_push_only_set_is_still_forced_in_when_push_is_disabled(self, plan_context):
+        """The guard is keyed on the step, not on the gate value: a non-push gate still adds."""
+        _seed_marshal(finalize_gates={'simplify': 'minimal'})
+        _stub_footprint(_FOOTPRINT)
+
+        # `analysis` makes simplify_inactive drop the step, so `always` must re-add it.
+        result = cmd_compose(
+            _compose_ns(plan_id='ceremony-no-push-simplify', change_type='analysis', commit_and_push='false')
+        )
+
+        assert result is not None
+        assert result['status'] == 'success'
+        assert 'finalize-step-simplify' in _bare(_manifest_phase_6_steps(result))
+        assert 'finalize-step-simplify' in result['ceremony_finalize_forced_in']
 
     def test_a_gate_outside_the_push_only_set_is_still_forced_in_when_push_is_disabled(self, plan_context):
         """The guard is keyed on the step, not on the gate value: a non-push gate still adds."""
