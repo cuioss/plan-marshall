@@ -528,3 +528,65 @@ def test_one_genuinely_unmet_criterion_is_still_refused(plan_context, tmp_path) 
 
     assert payload['open_count'] == 1, payload
     assert payload['open'][0]['criterion'] == 'b'
+
+
+# --- D1 (d): a deliverable the operator retired closes the gate ----------------------------
+
+
+def _retired(plan_dir: Path, tmp_path: Path) -> None:
+    _sealed_live(
+        plan_dir,
+        tmp_path,
+        {
+            'deliverables': [{'number': 1, 'verdict': 'retired'}],
+            'unrequested_changes': [],
+            'self_reports': [],
+            'files_read': [],
+        },
+    )
+
+
+def _authorize(criterion: str) -> None:
+    payload = _snap.authorize_change(PLAN_ID, 1, criterion, 'operator: the deliverable is retired')
+    assert payload['status'] == 'success', payload
+
+
+def test_a_retired_deliverable_is_closed_by_the_completion_gate(plan_context, tmp_path) -> None:
+    plan_dir = _plan(plan_context, ['a', 'b'], freeze_from=['a', 'b'])
+    _authorize('a')
+    _authorize('b')
+    _retired(plan_dir, tmp_path)
+
+    payload = _snap.open_criteria(PLAN_ID)
+
+    assert payload['source'] == 'snapshot', payload
+    assert payload['open_count'] == 0, payload
+
+
+def test_a_criterion_authorized_after_the_retired_verdict_still_closes_it(plan_context, tmp_path) -> None:
+    """The verdict and the authorizations are two writes, and the gate reads both live.
+
+    The order the two writes land in therefore decides nothing: a criterion authorized
+    after the verdict was filed closes exactly like one authorized before it.
+    """
+    plan_dir = _plan(plan_context, ['a', 'b'], freeze_from=['a', 'b'])
+    _authorize('a')
+    _retired(plan_dir, tmp_path)
+    _authorize('b')
+
+    payload = _snap.open_criteria(PLAN_ID)
+
+    assert payload['open_count'] == 0, payload
+
+
+def test_a_retired_deliverable_with_one_unauthorized_criterion_stays_open(plan_context, tmp_path) -> None:
+    """Fail-closed control: the gate never runs the validator, so it re-derives the precondition."""
+    plan_dir = _plan(plan_context, ['a', 'b'], freeze_from=['a', 'b'])
+    _authorize('a')
+    _retired(plan_dir, tmp_path)
+
+    payload = _snap.open_criteria(PLAN_ID)
+
+    assert payload['open_count'] == 1, payload
+    assert payload['open'][0]['criterion'] == 'b', payload
+    assert payload['open'][0]['status'] == 'ungraded', payload
