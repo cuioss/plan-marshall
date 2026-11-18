@@ -96,8 +96,8 @@ latter names sections of a *successful* review, so reading it here would report 
 bot that reviewed fine as having declined.
 
 **A rejected refusal is RECORDED, never silently dropped.** Both discriminators
-append every refusal they skip to a per-poll accumulator, and the envelope
-surfaces it: ``refusal_detected`` (bool), ``refusal_class`` (the awaited bot's
+append every refusal the REFUSAL TEST REACHES to a per-poll accumulator, and the
+envelope surfaces it: ``refusal_detected`` (bool), ``refusal_class`` (the awaited bot's
 registry ``rate_limit_class`` — ``awaitable_window`` / ``hard_quota`` /
 ``unknown`` — displaced to ``unknown`` when ANY detected refusal had to be caught by
 the enumerative arm, because an unread notice supports no claim about its own

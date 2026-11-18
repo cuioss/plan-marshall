@@ -184,20 +184,21 @@ finding parser. One fetch is the contract — two reads could show the halves di
 review landing between them would be credited by one half and unseen by the other. From the
 snapshot it reads the unresolved review threads with their `path:line`, and the body of every
 reviewer's review, whose `inline`, `duplicate`, `outside-diff`, `nitpick`,
-`followup` and `additional` sections are parsed into individually identified findings. A section
-contributes the count its title declares (`(N)` or `: N`); with none declared, it contributes the
-larger of its per-row `cr-comment` markers and its nested per-file block counts, and a non-empty
+`followup`, `additional` and `minor` sections are parsed into individually identified findings. A
+section contributes the count its title declares (`(N)` or `: N`); with none declared, it contributes
+the larger of its per-row `cr-comment` markers and its nested per-file block counts, and a non-empty
 block with neither reads as one finding (an empty block reads as none). A counted title that matches
-neither a section nor a declared non-finding label (a file list, a review-info block) is an
-undecidable read, never zero. Each `--disposition` is one progress-file line, repeated once per
-finding.
+neither a section nor a declared non-finding label (a file list, a review-info block) contributes its
+count as `unclassified` findings: never a stop, never zero, and each of them blocks the merge until it
+is disposed of like any other finding. Each `--disposition` is one progress-file line, repeated once
+per finding.
 
 **The `--disposition` value is `{reviewer} {section} {id} — {sha|reason}`**, exactly the tail of the
 progress line, with no `finding: ` prefix: `reviewer` is the bot kind the registry reports for that
 reviewer's login (not the login a human reader sees), or a human reviewer's lower-cased login;
 `section` and `id` are the parser's own vocabulary (`nitpick`, `followup`, `outside-diff`, `duplicate`,
-`inline`, `additional`; ids `{section}-{n}`), which the verb reports in its `undisposed` rows so the lane never
-guesses them.
+`inline`, `additional`, `minor`, `unclassified`; ids `{section}-{n}`), which the verb reports in its
+`undisposed` rows so the lane never guesses them.
 
 It answers `merge_allowed: false` with a named `reason` while any of these holds: an unresolved
 thread exists (`unresolved_review_threads`); a body finding carries no disposition naming a commit or
@@ -207,10 +208,9 @@ the finding's, so a lane or human reply below it never discharges the concern, a
 a lane reply can itself contain the vocabulary);
 a disposition line names no real evidence
 (`disposition_unparsable` — a commit sha or a stated reason; a placeholder such as `TBD`, `-` or
-`n/a` is not evidence); the read is undecidable, truncated, carries a review-body section the
-parser cannot read, carries a record kind the verb does not know, or carries a review body with no
-attributable author (`undecidable_read`). An undecidable read is a stop,
-never a pass. Otherwise it answers `merge_allowed: true` with `all_handled`, and reports
+`n/a` is not evidence); the read is undecidable or truncated, carries a record kind the verb does not
+know, or carries a review body with no attributable author (`undecidable_read`). An undecidable read
+is a stop, never a pass. Otherwise it answers `merge_allowed: true` with `all_handled`, and reports
 `unresolved_review_threads`, `review_body_findings_total` and `review_body_findings_handled` for the
 landing.
 
@@ -967,6 +967,26 @@ when the operator **selected** an option in a question-tool call that names the 
 reviewer, which head). Free text — "continue with merge", "at least one review is ok", "do merge" —
 is never that selection. If you have only free text, ask the question with the tool and wait for the
 selection.
+
+**The reach of a selection the operator made.** A selection made at one head — "merge without
+reviewer X", "merge on the recorded evidence" — covers the heads pushed AFTER it only while those
+heads add no new logic, and "no new logic" is read off the one fact the lane has: the diff between the
+selected head and the merge head,
+`git -C {worktree} diff --name-only {selected_head}...{merge_head}`. A head adds no new logic when
+EVERY path that lists is documentation (`.md`, `.adoc`) or a test file under the project's test tree.
+Any other path — production code, a script, a configuration or workflow file, and any path the lane
+cannot place — IS new logic, and the default fails closed: the selection does not cover that head, so
+the lane puts the head to the operator again, in a fresh question naming the paths that moved, rather
+than merging on the older record. The reason is what the selection was about: the operator chose over
+the findings, the checks and the Sonar read of the head they were shown, and a change to anything but
+prose or tests can move every one of those.
+
+That reach rule governs a SELECTION. The standing review authorization is a different path and is
+untouched by it: it is unchanged, it never asks, and it applies on the terms its own condition states.
+Two earlier rulings are inputs to this section, restated here because the lane does not read the
+ledger — the standing authorization stays as written, with the lane trying the re-review of the later
+head and asking the operator when the reviewer quota prevents it; and a last head that CHANGED logic
+after the qualifying review is covered by that authorization, so nothing is asked about it.
 
 **Enqueue and settle:**
 

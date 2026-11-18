@@ -2128,6 +2128,11 @@ _REVIEW_BODY_SECTIONS = (
     ('follow-ups', 'followup'),
     ('followups', 'followup'),
     ('additional comments', 'additional'),
+    # REPORTED (not captured here) from a consumer repository's review body as a
+    # `<picture>`-prefixed counted title (`Minor comments: 25`): one finding row per item,
+    # so the block holds findings and its declared count is theirs. It is NOT boilerplate,
+    # and reading it as such is what left that pull request unmergeable.
+    ('minor comments', 'minor'),
 )
 
 #: The ``<summary>`` titles a reviewer posts that COUNT their block while the block
@@ -2141,11 +2146,11 @@ _REVIEW_BODY_SECTIONS = (
 #: list is the one that carries a declared count there (``: 19``), and the other
 #: three carry none; ``review details`` is the block the automatic-review fixtures
 #: render; ``files ignored due to path filters`` is the spec-named sibling of
-#: the observed file list. A counted title that is none of these is refused rather
-#: than declared away — and ``Additional comments (N)`` is deliberately NOT here: the
-#: capture does not carry it, the spec names the shape, and a counted title that
-#: cannot be shown to be boilerplate is COUNTED as findings so a block is never a
-#: false pass.
+#: the observed file list. A counted title that is none of these is COUNTED as
+#: ``unclassified`` findings rather than declared away — and ``Additional comments (N)``
+#: is deliberately NOT here: the capture does not carry it, the spec names the shape, and
+#: a counted title that cannot be shown to be boilerplate is COUNTED as findings so a block
+#: is never a false pass.
 _NON_FINDING_SECTION_LABELS = (
     'files selected for processing',
     'files ignored due to path filters',
@@ -2206,6 +2211,22 @@ _ROW_MARKER_RE = re.compile(r'<!--\s*cr-comment:v1:')
 #: A ``<details>`` open or close tag, used to find the container a ``<summary>``
 #: sits in.
 _DETAILS_TOKEN_RE = re.compile(r'</?details\b[^>]*>', re.IGNORECASE)
+
+#: The section an unrecognised COUNTED title's findings are minted under. A title this
+#: parser cannot place is not a stop: a block the reviewer filled and counted holds
+#: statements about this change, so its count is findings that must be disposed of
+#: exactly like every other section's.
+_UNCLASSIFIED_SECTION = 'unclassified'
+
+#: A BOLD span — the second shape a reviewer writes a section heading in. OBSERVED on
+#: ``cuioss/plan-marshall#1983`` and ``#1984``, where ``**⚠️ Outside diff range comments
+#: (1)**`` heads a ``[!CAUTION]`` block whose finding rides a ``<summary>`` row that
+#: declares no count of its own.
+_BOLD_SPAN_RE = re.compile(r'\*\*(?P<title>[^*]+?)\*\*')
+
+#: The count a normalised bold heading still carries after normalisation — removed before
+#: the label comparison so a heading matches its label whichever spelling declared it.
+_HEADING_TRAILING_COUNT_RE = re.compile(r'\s*(?:\(\d+\)|\d+)\s*$')
 
 
 def _enclosing_sections(
@@ -2362,6 +2383,48 @@ def _section_for_title(title: str) -> tuple[str | None, int | None]:
     return None, None
 
 
+def _heading_section(title: str) -> tuple[str | None, int | None]:
+    """Return the section a ``<summary>`` title states, or ``(None, None)``.
+
+    A title naming a findings section returns that section. A title that declares a count
+    while matching neither a findings section nor a declared non-finding label is
+    ``unclassified``: its count is findings whose disposition the gate demands — refusing
+    the whole body instead stopped every re-run on a body that never changes, and reading
+    it as zero admitted the merge over findings nobody read.
+    """
+    section, declared = _section_for_title(title)
+    if section is not None:
+        return section, declared
+    counted = _declared_count(title)
+    if counted is not None and not _is_non_finding_title(title):
+        return _UNCLASSIFIED_SECTION, counted
+    return None, None
+
+
+def _bold_heading_section(title: str) -> tuple[str | None, int | None]:
+    """Return ``(canonical section, declared count)`` when a BOLD line heads a section.
+
+    A reviewer writes a section heading in one of two shapes: a ``<summary>`` title, or a
+    BOLD line of its own — OBSERVED on ``cuioss/plan-marshall#1983`` and ``#1984``, where
+    ``**⚠️ Outside diff range comments (1)**`` heads the ``<details>`` carrying the finding
+    while no ``<summary>`` states that heading. Without this read those findings are
+    invisible, so a review whose findings all ride such a block answered ``all_handled``.
+
+    Only a bold span saying NOTHING but a findings-section label (and, optionally, the count
+    it declares) is a heading. That is what separates a heading from the bold decoration a
+    body carries elsewhere: ``**Major**`` and ``**Quick win**`` label one finding's severity,
+    and ``**Actionable comments posted: 4**`` is the status line the inline-count reader
+    owns — turning any of those into a section would mint findings nobody wrote.
+    """
+    normalised = _normalise_section_title(title)
+    declared = _declared_count(title)
+    label_text = normalised if declared is None else _HEADING_TRAILING_COUNT_RE.sub('', normalised)
+    for label, section in sorted(_REVIEW_BODY_SECTIONS, key=lambda row: -len(row[0])):
+        if label_text == label:
+            return section, declared
+    return None, None
+
+
 def _count_section_findings(span: str, declared: int | None) -> int:
     """Return the number of findings the reviewer declares inside one section.
 
@@ -2392,8 +2455,8 @@ def _body_findings(
     body: str,
     bot_kind: str,
     counters: dict[str, int] | None = None,
-) -> tuple[list[dict[str, str]], str | None]:
-    """Parse one review body into its findings, or name the section it cannot read.
+) -> list[dict[str, str]]:
+    """Parse one review body into its findings.
 
     Every recognised section contributes ``{section}-{n}`` findings under
     ``reviewer``. ``counters`` carries the per-(reviewer, section) numbering
@@ -2406,15 +2469,18 @@ def _body_findings(
     ``review_body_summary_patterns`` literal) is read as the ``inline`` section
     when no inline section block is present — one declaration, one reading.
 
-    A ``<summary>`` title that COUNTS its block while matching neither a declared
-    finding section nor a declared non-finding label is the undecidable answer: the
-    parser cannot tell what it contains, and reporting it as no findings would be
-    the "cannot read means pass" failure this gate exists to close.
+    A section heading is read in THREE shapes, so no block a reviewer filled goes
+    unread: a ``<summary>`` title naming a findings section, a BOLD line that states
+    nothing but such a label, and a ``<summary>`` title that declares a count while
+    naming nothing this parser knows — whose declared count is minted as
+    ``unclassified`` findings, because a titled, counted block holds statements that
+    must be disposed of. A title that declares no count is content, never a heading.
     """
     counters = counters if counters is not None else {}
     matches = list(_SUMMARY_RE.finditer(body))
     starts = list(enumerate(matches))
     section_at = {index: _section_for_title(match.group('title'))[0] for index, match in starts}
+    heading_at = {index: _heading_section(match.group('title'))[0] for index, match in starts}
     containers = _enclosing_sections(body, matches, section_at)
 
     def _is_content(index: int) -> bool:
@@ -2424,11 +2490,8 @@ def _body_findings(
 
     def _is_section(index: int) -> bool:
         """Whether this summary is a section heading."""
-        return not _is_content(index) and section_at[index] is not None
+        return not _is_content(index) and heading_at[index] is not None
 
-    findings: list[dict[str, str]] = []
-    seen_inline = False
-    span_end_of: dict[int, int] = {}
     starts_by_index = {index: match.group('title') for index, match in starts}
 
     def _is_span_boundary(index: int) -> bool:
@@ -2439,42 +2502,60 @@ def _body_findings(
         findings: a counted ``Files selected for processing: 1`` list copied inside a
         section's span would be counted as one more finding of that section, so a single
         nitpick would arrive as two and the gate would block after the real one was
-        disposed.
+        disposed. An ``unclassified`` heading is a heading like any other, so it is a
+        boundary too.
         """
         if _is_content(index):
             return False
-        if section_at[index] is not None:
+        if heading_at[index] is not None:
             return True
         title = starts_by_index[index]
         return _declared_count(title) is not None and _is_non_finding_title(title)
 
-    for position, (index, _match) in enumerate(starts):
+    # The BOLD-line headings, in body order. They are boundaries and sections at once: a
+    # bold heading ends the span of the summary section above it, and owns the span below.
+    # A bold span INSIDE a `<summary>` is that summary's own decoration (`<summary>**Nitpick
+    # comments (3)**</summary>`), never a second heading over the same block — reading it as
+    # one would count the block twice.
+    summary_spans = [(match.start(), match.end()) for _index, match in starts]
+    bold_headings = [
+        (match.start(), match.end(), section, declared)
+        for match in _BOLD_SPAN_RE.finditer(body)
+        if not any(start <= match.start() < end for start, end in summary_spans)
+        for section, declared in (_bold_heading_section(match.group('title')),)
+        if section is not None
+    ]
+    boundary_starts = sorted(
+        [match.start() for index, match in starts if _is_span_boundary(index)]
+        + [start for start, _end, _section, _declared in bold_headings]
+    )
+
+    def _span_end(start: int) -> int:
+        """The offset at which the heading at ``start`` stops owning the body."""
+        return next((boundary for boundary in boundary_starts if boundary > start), len(body))
+
+    headings: list[tuple[int, int, str, int | None]] = []
+    for index, match in starts:
         if not _is_section(index):
             continue
-        span_end_of[index] = next(
-            (later.start() for later_index, later in starts[position + 1 :] if _is_span_boundary(later_index)),
-            len(body),
-        )
-    for index, match in starts:
-        if _is_content(index):
-            # A per-file grouping inside a section, not a heading: its content is
-            # counted by the section that encloses it.
-            continue
-        section = section_at[index]
+        section, declared = _heading_section(match.group('title'))
         if section is None:
-            counted = _declared_count(match.group('title'))
-            if counted is not None and not _is_non_finding_title(match.group('title')):
-                return [], f'unreadable review-body section: {match.group("title").strip()!r}'
             continue
-        declared = _section_for_title(match.group('title'))[1]
+        headings.append((match.start(), match.end(), section, declared))
+    headings.extend(bold_headings)
+    headings.sort(key=lambda heading: heading[0])
+
+    findings: list[dict[str, str]] = []
+    seen_inline = False
+    for start, end, section, declared in headings:
         if section == 'inline':
             seen_inline = True
-        count = _count_section_findings(body[match.end() : span_end_of[index]], declared)
+        count = _count_section_findings(body[end : _span_end(start)], declared)
         findings.extend(_numbered_findings(reviewer, section, count, counters))
 
     if not seen_inline:
         findings.extend(_inline_status_findings(reviewer, body, bot_kind, counters))
-    return findings, None
+    return findings
 
 
 def _numbered_findings(
@@ -2762,6 +2843,20 @@ def _review_gate_verdict(
             'reason': 'undecidable_read',
             'detail': str(read.get('error') or 'the review surface read failed'),
         }
+    if 'complete' not in read:
+        # A read that publishes no coverage signal at all is not the same failure as one
+        # that reported itself incomplete: naming truncation would state a cause that did
+        # not happen and send the reader looking for a drained connection that was never
+        # opened. Both stop the gate; the detail says which one it was.
+        return {
+            **base,
+            'merge_allowed': False,
+            'reason': 'undecidable_read',
+            'detail': (
+                'the review surface read published no completeness signal: '
+                'whether every connection was drained is unknown'
+            ),
+        }
     if read.get('complete') is not True:
         return {
             **base,
@@ -2816,14 +2911,12 @@ def _review_gate_verdict(
                 'reason': 'undecidable_read',
                 'detail': 'a review body carries no attributable author',
             }
-        body_findings, undecidable = _body_findings(
+        body_findings = _body_findings(
             reviewer,
             str(comment.get('body') or ''),
             _bot_of(comment),
             counters.setdefault(reviewer, {}),
         )
-        if undecidable is not None:
-            return {**base, 'merge_allowed': False, 'reason': 'undecidable_read', 'detail': undecidable}
         findings.extend(body_findings)
 
     disposed = {(row['reviewer'], row['section'], row['id']) for row in dispositions}
