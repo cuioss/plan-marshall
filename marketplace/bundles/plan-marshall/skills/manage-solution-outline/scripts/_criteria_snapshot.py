@@ -142,6 +142,20 @@ PARSER_KEY = 'parser'
 CURRENT_PARSER = 3
 #: The functional verdict that retires a deliverable: its criteria are not open.
 SUPERSEDED = 'superseded'
+#: The functional verdict that retires a deliverable by OPERATOR DECISION with no
+#: successor. It closes the deliverable only on its precondition — every frozen
+#: criterion of the deliverable is already authorized (:func:`retirement_state`) —
+#: because the authorization step stays the operator's act and a verdict alone is a
+#: model's claim about the tree.
+RETIRED = 'retired'
+#: The states :func:`retirement_state` reports. ``closed`` is the one state that closes
+#: either the deliverable (the validator) or its criteria (the completion gate); every
+#: other state closes nothing, which is the fail-closed direction.
+RETIREMENT_CLOSED = 'closed'
+RETIREMENT_UNAUTHORIZED = 'unauthorized'
+RETIREMENT_NO_CRITERIA = 'no_criteria'
+RETIREMENT_NO_DELIVERABLE = 'no_deliverable'
+RETIREMENT_NO_SNAPSHOT = 'no_snapshot'
 #: The deliverable reference a ``superseded_by`` value must OPEN with: the outline's
 #: own ``D<n>`` form, the spelled ``deliverable <n>`` form, or one of those wrapped in
 #: the punctuation the documents invite (a backtick, bold/italic markers, a parenthesis).
@@ -1412,6 +1426,47 @@ def _authorization(snapshot: dict[str, Any], number: Any, criterion: str) -> boo
     return False
 
 
+def retirement_state(snapshot: dict[str, Any] | None, number: Any) -> dict[str, Any]:
+    """Whether a ``retired`` verdict closes deliverable ``number``, and what is missing.
+
+    The ONE rule the two readers of the verdict share. A deliverable the operator
+    retired with no successor closes only through ``criteria-authorize``: the verdict
+    is accepted when EVERY frozen criterion of the deliverable is authorized, one
+    operator decision each. ``state`` is:
+
+    * ``closed`` — the deliverable carries at least one frozen criterion and all of
+      them are authorized, so the verdict closes the deliverable and its criteria;
+    * ``unauthorized`` — ``unauthorized`` names the criteria still missing a decision;
+      the verdict is refused and closes nothing;
+    * ``no_criteria`` — the deliverable froze no criterion, so there is nothing to
+      authorize and no way to retire it this way;
+    * ``no_deliverable`` / ``no_snapshot`` — the freeze carries no such deliverable,
+      or the plan froze nothing at all.
+
+    The validator refuses every state but ``closed``. The completion gate closes only
+    on ``closed`` and leaves every criterion of any other state open — a retired
+    verdict that fails its precondition closes nothing, not even a criterion it
+    happened to grade ``met``, because the gate never runs the validator.
+    """
+    if snapshot is None:
+        return {'state': RETIREMENT_NO_SNAPSHOT, 'criteria': [], 'unauthorized': []}
+    row = next(
+        (row for row in snapshot.get('deliverables') or [] if isinstance(row, dict) and row.get('number') == number),
+        None,
+    )
+    if row is None:
+        return {'state': RETIREMENT_NO_DELIVERABLE, 'criteria': [], 'unauthorized': []}
+    frozen = [text for text in (normalize_criterion(raw) for raw in row.get('criteria') or []) if text]
+    unauthorized = [text for text in frozen if not _authorization(snapshot, number, text)]
+    if not frozen:
+        state = RETIREMENT_NO_CRITERIA
+    elif unauthorized:
+        state = RETIREMENT_UNAUTHORIZED
+    else:
+        state = RETIREMENT_CLOSED
+    return {'state': state, 'criteria': frozen, 'unauthorized': unauthorized}
+
+
 def criteria_drift(plan_id: str, current: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
     """Return the frozen criteria the current outline no longer carries verbatim.
 
@@ -1995,15 +2050,18 @@ def open_criteria(plan_id: str, verdict_file: Path | None = None) -> dict[str, A
       text. Position alone is never a match: a paraphrased row without its id
       leaves the criterion ungraded and open.
 
-    Anything else is open, which is the fail-closed direction. Four deliberate
+    Anything else is open, which is the fail-closed direction. Five deliberate
     states additionally close criteria rather than reading them as open work:
 
     * an operator decision authorizes the exact change (``authorized_changes``);
     * the deliverable's verdict is ``superseded`` AND its ``superseded_by`` names a
       CLOSING successor the snapshot carries — not the deliverable itself, not a
       cycle, and with a ``met`` / ``met_with_residuals`` verdict
-      (:func:`superseded_by_names_deliverable`); an operator-retired deliverable
-      with no successor is closed through ``criteria-authorize`` instead;
+      (:func:`superseded_by_names_deliverable`);
+    * the deliverable's verdict is ``retired`` AND every frozen criterion of that
+      deliverable is authorized (:func:`retirement_state`) — the operator's retirement
+      route for a deliverable with no successor. A retirement still missing an
+      authorization closes nothing, not even a criterion it graded ``met``;
     * the operator closed the review past its round cap (:func:`_review_closed_reason`);
     * the manifest dropped the functional review (:func:`functional_review_drop_reason`)
       — the completion gate exempts exactly this case, and ``source: review_dropped``
@@ -2057,7 +2115,9 @@ def open_criteria(plan_id: str, verdict_file: Path | None = None) -> dict[str, A
             continue
         number = row.get('number')
         graded_row = verdict.get(number) or {}
-        superseded = str(graded_row.get('verdict') or '') == SUPERSEDED
+        verdict_value = str(graded_row.get('verdict') or '')
+        superseded = verdict_value == SUPERSEDED
+        retired = verdict_value == RETIRED
         rejection = (
             deliverable_reference_rejection(
                 graded_row.get('superseded_by'),
@@ -2070,17 +2130,23 @@ def open_criteria(plan_id: str, verdict_file: Path | None = None) -> dict[str, A
         )
         if superseded and rejection is None:
             continue
+        # A RETIRED verdict closes the deliverable only on its own precondition — every
+        # frozen criterion authorized. The check is re-derived here rather than trusted
+        # from the validator, which the gate never runs.
+        if retired and retirement_state(snapshot, number)['state'] == RETIREMENT_CLOSED:
+            continue
         graded = graded_row.get('criteria') or []
         for index, criterion in enumerate(row.get('criteria') or [], start=1):
             raw = criterion.get('text') if isinstance(criterion, dict) else criterion
             text = normalize_criterion(raw)
             if _authorization(snapshot, number, text):
                 continue
-            # A REJECTED supersede closes nothing: the verdict itself is invalid, so
-            # its criteria stay open even where the reviewer graded one ``met``. The
-            # completion gate reads this answer without running the validator, so
-            # trusting those grades would let a self-citation release ungraded work.
-            status = 'ungraded' if superseded else _graded_status(graded, text, index, number)
+            # A REJECTED supersede and an INVALID retirement close nothing: the verdict
+            # itself is invalid, so its criteria stay open even where the reviewer graded
+            # one ``met``. The completion gate reads this answer without running the
+            # validator, so trusting those grades would let a self-citation — or a
+            # retirement missing its authorizations — release ungraded work.
+            status = 'ungraded' if (superseded or retired) else _graded_status(graded, text, index, number)
             if status == 'met':
                 continue
             rows.append(
@@ -2224,6 +2290,12 @@ __all__ = [
     'OVERRIDE_HEADS_KEY',
     'PROTECTED_STATUS_METADATA_KEYS',
     'REQUEST_FILE',
+    'RETIRED',
+    'RETIREMENT_CLOSED',
+    'RETIREMENT_NO_CRITERIA',
+    'RETIREMENT_NO_DELIVERABLE',
+    'RETIREMENT_NO_SNAPSHOT',
+    'RETIREMENT_UNAUTHORIZED',
     'REWRITTEN',
     'SCHEMA',
     'SNAPSHOT_FILE',
@@ -2247,6 +2319,7 @@ __all__ = [
     'record_snapshot_digest',
     'record_verdict_digest',
     'request_done_when',
+    'retirement_state',
     'snapshot_path',
     'snapshot_state',
     'verdict_row_matches',
