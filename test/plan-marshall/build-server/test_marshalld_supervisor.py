@@ -399,6 +399,36 @@ def test_run_job_clean_env_excludes_secret(tmp_path):
     assert 'SECRET=' in captured  # the var resolved to empty, proving it was dropped
 
 
+@pytest.mark.skipif(
+    os.name == 'nt' or getattr(os, 'geteuid', lambda: -1)() == 0,
+    reason='the fixture is a read-only directory, which a root runner ignores',
+)
+def test_run_job_that_cannot_write_its_log_fails_without_running_the_child(tmp_path):
+    """No sink, no child: the log is opened before the spawn, so a build whose
+    output has nowhere to go is reported instead of started."""
+    log_dir = tmp_path / 'read-only'
+    log_dir.mkdir()
+    marker = tmp_path / 'child-ran'
+    log_dir.chmod(0o500)
+    try:
+        payload = asyncio.run(
+            supervisor.run_job(
+                [sys.executable, '-c', f'open({str(marker)!r}, "w").close()'],
+                str(tmp_path),
+                timeout=30,
+                log_file=str(log_dir / 'job.log'),
+            )
+        )
+    finally:
+        log_dir.chmod(0o700)
+
+    assert payload['status'] == 'failure'
+    assert payload['error'] == 'log_file_failed'
+    assert payload['reason'], 'the logging failure states no reason'
+    assert payload['log_file'] == str(log_dir / 'job.log')
+    assert not marker.exists(), 'the child ran even though its output had nowhere to go'
+
+
 # =============================================================================
 # run_job — exit 0 is necessary but not sufficient
 # =============================================================================

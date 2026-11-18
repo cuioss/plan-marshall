@@ -435,9 +435,11 @@ def log_file_failure_payload(log_file: str, command_str: str, reason: str) -> di
     """Render the RECORDED failure of a job whose log could not be written.
 
     It is a LAUNCH fault (``log_file_failed``), not a red build: no child was
-    started, so there is no test row, no bound and no verdict to report — the same
-    class the in-process wrapper emits when its own log cannot be created, so a
-    consumer reads one name for one condition on both routes.
+    started, so there is no test row, no bound and no verdict to report. The
+    identifier is the one the in-process wrapper emits for the same condition, so
+    the failure carries a single name in this tree; how the routed client renders a
+    daemon ``failure`` is its own surface (:mod:`_build_execute_factory`), not this
+    module's.
 
     Args:
         log_file: The log path that could not be written.

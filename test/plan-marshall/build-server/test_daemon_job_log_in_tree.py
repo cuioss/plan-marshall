@@ -29,7 +29,6 @@ from __future__ import annotations
 import asyncio
 import os
 import shutil
-import sys
 import time
 from pathlib import Path
 
@@ -167,7 +166,10 @@ def test_two_jobs_of_one_project_keep_separate_logs(home, tmp_path):
 # =============================================================================
 
 
-@pytest.mark.skipif(os.name == 'nt', reason='POSIX directory permissions gate this case')
+@pytest.mark.skipif(
+    os.name == 'nt' or getattr(os, 'geteuid', lambda: -1)() == 0,
+    reason='the fixture is a read-only directory, which a root runner ignores',
+)
 def test_unwritable_project_tree_records_a_logging_failure_without_fallback(home, tmp_path):
     project = tmp_path / 'proj'
     canonical = _register_project(project)
