@@ -2224,15 +2224,39 @@ _UNCLASSIFIED_SECTION = 'unclassified'
 #: declares no count of its own.
 _BOLD_SPAN_RE = re.compile(r'\*\*(?P<title>[^*]+?)\*\*')
 
-#: The BOLD span shapes that are PROSE, never a heading: a finding's own row body
-#: (``<dd>``) and an inline code sample (``<code>``). A reviewer quotes section headings
-#: inside its rows, and reading such a quote as a heading would cut the enclosing
-#: section's span short — an UNDER-count, the one direction this gate must never take.
-_BOLD_PROSE_BLOCK_RE = re.compile(r'<(?:dd|code)\b[^>]*>.*?</(?:dd|code)>', re.IGNORECASE | re.DOTALL)
+#: The elements whose text is PROSE, never a heading: a finding's own row body (``<dd>``)
+#: and an inline code sample (``<code>``). A reviewer quotes section headings inside them,
+#: and reading such a quote as a heading would cut the enclosing section's span short — an
+#: UNDER-count, the one direction this gate must never take. A region that is never closed
+#: runs to the end of the body, which is the fail-safe direction.
+_PROSE_TAG_RE = re.compile(r'<(?P<close>/?)(?P<name>dd|code)\b[^>]*>', re.IGNORECASE)
 
 #: The count a normalised bold heading still carries after normalisation — removed before
 #: the label comparison so a heading matches its label whichever spelling declared it.
 _HEADING_TRAILING_COUNT_RE = re.compile(r'\s*(?:\(\d+\)|\d+)\s*$')
+
+
+def _prose_regions(body: str) -> list[tuple[int, int]]:
+    """Return the body's row-body and code-sample regions as ``(start, end)`` offsets.
+
+    A heading-shaped BOLD span inside one of these is a QUOTE of a heading, never a
+    heading: a reviewer quotes section titles inside a finding's row (``<dd>``) and inside
+    a code sample (``<code>``), and reading one as a heading would end the enclosing
+    section's span there and lose every finding after it. Each element is paired with its
+    OWN close tag (an unclosed ``<dd>`` cannot be closed by a ``</code>``), and a region
+    left open runs to the end of the body — fail-safe, because a span in the tail of a
+    malformed body is not trusted as a heading.
+    """
+    regions: list[tuple[int, int]] = []
+    open_at: dict[str, int] = {}
+    for token in _PROSE_TAG_RE.finditer(body):
+        name = token.group('name').lower()
+        if not token.group('close'):
+            open_at.setdefault(name, token.end())
+        elif name in open_at:
+            regions.append((open_at.pop(name), token.start()))
+    regions.extend((start, len(body)) for start in open_at.values())
+    return regions
 
 
 def _enclosing_sections(
@@ -2498,8 +2522,10 @@ def _body_findings(
     nothing but such a label, and a ``<summary>`` title that declares a count while
     naming nothing this parser knows — whose declared count is minted as
     ``unclassified`` findings, because a titled, counted block holds statements that
-    must be disposed of. A title that declares no count AND names no findings section is
-    content, never a heading — that is the per-file grouping inside a section.
+    must be disposed of. A title that declares no count and names no findings section is
+    never a heading: inside a heading it is that heading's content (the per-file grouping),
+    and with no enclosing heading it is ignored, exactly as it was before this parser read
+    more than one heading shape.
     """
     counters = counters if counters is not None else {}
     matches = list(_SUMMARY_RE.finditer(body))
@@ -2544,7 +2570,7 @@ def _body_findings(
     # a finding's row body or a code sample is a QUOTE of a heading, not a heading — reading
     # either as one would count the block twice or cut the row's section short.
     summary_spans = [(match.start(), match.end()) for _index, match in starts]
-    prose_spans = [(span.start(), span.end()) for span in _BOLD_PROSE_BLOCK_RE.finditer(body)]
+    prose_spans = _prose_regions(body)
 
     def _lies_within(offset: int, spans: list[tuple[int, int]]) -> bool:
         return any(start <= offset < end for start, end in spans)
@@ -2556,6 +2582,14 @@ def _body_findings(
         for section, declared in (_bold_heading_section(match.group('title')),)
         if section is not None
     ]
+    # The block each bold heading OWNS: the first `<details>` opened after it. Ownership is
+    # that identity, never mere precedence — a section summary inside any LATER block is a
+    # section of its own, and treating it as the bold heading's row would drop its findings.
+    details_opens = [token.start() for token in _DETAILS_TOKEN_RE.finditer(body) if not token.group(0).startswith('</')]
+    bold_block_opens = {
+        next((opened for opened in details_opens if opened > heading_end), None)
+        for _start, heading_end, _section, _declared in bold_headings
+    }
     boundary_starts = sorted(
         [match.start() for index, match in starts if _is_span_boundary(index)]
         + [start for start, _end, _section, _declared in bold_headings]
@@ -2569,12 +2603,8 @@ def _body_findings(
     for index, _match in starts:
         if not _is_section(index):
             continue
-        opened = innermost_open.get(index)
-        if opened is not None and any(
-            heading_end < opened < offset_of[index]
-            for _start, heading_end, _heading_section_name, _declared in bold_headings
-        ):
-            # A counted row INSIDE a bold-headed block belongs to that block's count.
+        if innermost_open.get(index) in bold_block_opens:
+            # A counted row inside the block a bold heading OWNS belongs to that block.
             continue
         section, declared = _heading_section(starts_by_index[index])
         if section is None:

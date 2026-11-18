@@ -899,7 +899,43 @@ def test_a_counted_row_inside_a_bold_headed_block_belongs_to_that_block() -> Non
     assert [(row['section'], row['id']) for row in verdict['undisposed']] == [('outside-diff', 'outside-diff-1')]
 
 
-def test_a_bold_heading_in_the_colon_count_spelling_declares_its_count() -> None:
+def test_a_section_following_a_bold_headed_block_is_still_counted() -> None:
+    """⛔ A bold heading owns ONE block; a section in the next one is a section.
+
+    Reading every block opened after a bold heading as that heading's row would drop the
+    findings of a section that merely follows it — the under-count this gate exists to
+    prevent, and the shape a CAUTION block sits beside in real bodies.
+    """
+    body = (
+        '> [!CAUTION] > **⚠️ Outside diff range comments (1)** >  > <details> > '
+        '<summary>Major · x · <code>a.py:3</code></summary> > the guard coerces UNKNOWN > </details> '
+        '<details><summary>🧹 Nitpick comments (2)</summary><blockquote> first second </blockquote></details>'
+    )
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['review_body_findings_total'] == 3, verdict
+    assert [row['id'] for row in verdict['undisposed']] == ['outside-diff-1', 'nitpick-1', 'nitpick-2']
+
+
+def test_a_label_shaped_quote_in_a_row_body_is_not_a_heading() -> None:
+    """⛔ A quoted section title must not end the enclosing section's span.
+
+    The quote sits after a `<code>` sample inside the row's `<dd>`. Reading it as a
+    heading would end the nitpick span at the quote and lose the row marker after it —
+    a silent under-count of exactly the finding the row states.
+    """
+    body = (
+        '<details><summary>🧹 Nitpick comments</summary><blockquote><dl><dd>'
+        'see <code>a.py:3</code> **Outside diff range comments (1)** rename the helper '
+        '<!-- cr-comment:v1:aaaaaaaaaaaaaaaaaaaaaaaa -->'
+        '</dd></dl></blockquote></details>'
+    )
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['review_body_findings_total'] == 1, verdict
+    assert [(row['section'], row['id']) for row in verdict['undisposed']] == [('nitpick', 'nitpick-1')]
     """Both count spellings are counts, on a BOLD heading as on a `<summary>` one."""
     body = (
         '> [!CAUTION] > **Outside diff range comments: 2** >  > <details> > '
