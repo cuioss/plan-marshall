@@ -425,7 +425,9 @@ def _authorize(number: int, criterion: str) -> None:
     assert payload['status'] == 'success', payload
 
 
-def test_a_retired_row_with_every_criterion_authorized_is_accepted(plan_context, tmp_path) -> None:
+def test_a_retired_row_with_every_criterion_authorized_is_accepted(plan_context, tmp_path, monkeypatch) -> None:
+    # The evidence-existence leg is not this clause's subject; the closed criteria are.
+    monkeypatch.setattr(review_support, '_main_checkout_root', lambda: None)
     plan_dir = _plan(plan_context, freeze=True, outline=_retirement_outline())
     _authorize(1, 'parser accepts input')
     _authorize(1, 'parser rejects garbage')
@@ -463,8 +465,9 @@ def test_a_retired_row_with_no_criteria_to_authorize_is_refused(plan_context, tm
     assert any('retired' in error and 'nothing to authorize' in error for error in payload['errors']), payload
 
 
-def test_a_not_met_row_still_files_its_blocking_deliverable_row(plan_context, tmp_path) -> None:
+def test_a_not_met_row_still_files_its_blocking_deliverable_row(plan_context, tmp_path, monkeypatch) -> None:
     """Control: the retirement route takes nothing away from ``not_met``."""
+    monkeypatch.setattr(review_support, '_main_checkout_root', lambda: None)
     plan_dir = _plan(plan_context, freeze=True, outline=_retirement_outline())
     path = _write_verdict(
         plan_dir,

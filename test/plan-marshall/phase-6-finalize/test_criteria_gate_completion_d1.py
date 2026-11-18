@@ -590,3 +590,35 @@ def test_a_retired_deliverable_with_one_unauthorized_criterion_stays_open(plan_c
     assert payload['open_count'] == 1, payload
     assert payload['open'][0]['criterion'] == 'b', payload
     assert payload['open'][0]['status'] == 'ungraded', payload
+
+
+def test_an_invalid_retirement_closes_nothing_not_even_a_graded_criterion(plan_context, tmp_path) -> None:
+    """A retirement missing an authorization releases NO criterion, graded or not.
+
+    The gate reads the verdict without running the validator, so trusting a ``met``
+    grade carried by a row whose own precondition fails would let an unverified
+    retirement close work no operator authorized.
+    """
+    plan_dir = _plan(plan_context, ['a', 'b'], freeze_from=['a', 'b'])
+    _sealed_live(
+        plan_dir,
+        tmp_path,
+        {
+            'deliverables': [
+                {
+                    'number': 1,
+                    'verdict': 'retired',
+                    'criteria': [{'criterion': 'a', 'status': 'met', 'evidence': ['src/parser.py:1']}],
+                }
+            ],
+            'unrequested_changes': [],
+            'self_reports': [],
+            'files_read': ['src/parser.py'],
+        },
+    )
+
+    payload = _snap.open_criteria(PLAN_ID)
+
+    assert payload['open_count'] == 2, payload
+    assert {row['criterion'] for row in payload['open']} == {'a', 'b'}, payload
+    assert {row['status'] for row in payload['open']} == {'ungraded'}, payload
