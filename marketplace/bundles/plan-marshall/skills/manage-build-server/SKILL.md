@@ -114,7 +114,14 @@ All daemon state lives under the machine-global home root
 | `lifecycle-audit.log` | Append-only start/stop/drain/install/upgrade audit |
 | `interaction-audit.log` | Append-only per-request interaction audit (`0600`) |
 | `journal/` | Durable job specs, results, and ETA history |
-| `job-logs/` | Per-job captured build logs |
+
+Per-job build logs are **not** machine-global: each routed job's log is written
+inside the submitting project's own tree, at
+`.plan/local/marshalld/job-logs/{job_id}.log` — a machine-local tier the project
+already ignores, so the log is removed with the worktree it belongs to and a
+consumer that may read only the project can open the `log_file` a build result
+names. A tree that cannot hold the log fails the job as `log_file_failed`; there
+is no fall-back to this directory.
 
 The **interaction audit** is a central append-only log — the natural third
 sibling of `registry-audit.log` and `lifecycle-audit.log` — which answers "who
