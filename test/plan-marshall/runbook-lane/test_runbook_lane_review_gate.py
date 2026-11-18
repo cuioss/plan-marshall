@@ -943,8 +943,8 @@ def test_an_unclosed_bold_block_owns_nothing() -> None:
 
     The later summary is a DIRECT child of the unclosed block, which is what makes the case
     discriminating: keyed on an enclosing opener it would be skipped and the body would read
-    one finding. A block with no matching close cannot be shown to end anywhere, so it owns
-    nothing and the summary keeps its own count.
+    zero. A block with no matching close cannot be shown to end anywhere, so the bold line
+    owns nothing — it is not a heading, and the summary keeps its own count.
     """
     body = (
         '**⚠️ Outside diff range comments (1)** <details> <summary>Major · a.py</summary> fix '
@@ -953,16 +953,17 @@ def test_an_unclosed_bold_block_owns_nothing() -> None:
 
     verdict = _verdict(_read(_review_body(body)))
 
-    assert verdict['review_body_findings_total'] == 3, verdict
-    assert [row['id'] for row in verdict['undisposed']] == ['outside-diff-1', 'nitpick-1', 'nitpick-2']
+    assert verdict['review_body_findings_total'] == 2, verdict
+    assert [row['id'] for row in verdict['undisposed']] == ['nitpick-1', 'nitpick-2']
 
 
-def test_a_bold_mention_in_prose_owns_no_block() -> None:
-    """⛔ A heading quoted in a sentence must not claim the block that follows it.
+def test_a_bold_mention_in_prose_owns_no_block_and_mints_nothing() -> None:
+    """⛔ A heading quoted in a sentence is not a heading.
 
     The bold span states exactly the label and its count, but a prose word sits between it
-    and the next block, so it is a mention: owning that block would read the nitpick section
-    as the mention's rows and lose its findings.
+    and the next block. Owning that block would read the nitpick section as the mention's
+    rows; minting the span as a heading would leave a phantom `outside-diff-1` that survives
+    every disposition of the real findings.
     """
     body = (
         '**Outside diff range comments (1)** is empty this time. '
@@ -971,8 +972,53 @@ def test_a_bold_mention_in_prose_owns_no_block() -> None:
 
     verdict = _verdict(_read(_review_body(body)))
 
-    assert verdict['review_body_findings_total'] == 3, verdict
-    assert [row['id'] for row in verdict['undisposed']] == ['outside-diff-1', 'nitpick-1', 'nitpick-2']
+    assert verdict['review_body_findings_total'] == 2, verdict
+    assert [row['id'] for row in verdict['undisposed']] == ['nitpick-1', 'nitpick-2']
+
+
+def test_a_br_tag_between_a_bold_heading_and_its_block_is_markup() -> None:
+    """`<br>` is markup, not prose: the heading still owns the block below it."""
+    body = (
+        '**Outside diff range comments (1)**<br>'
+        '<details><summary>Major · src/a.py (2)</summary> the guard coerces UNKNOWN </details>'
+    )
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['review_body_findings_total'] == 1, verdict
+    assert [row['id'] for row in verdict['undisposed']] == ['outside-diff-1']
+
+
+def test_a_bold_heading_does_not_own_a_declared_non_finding_list() -> None:
+    """⛔ Ownership stops at a file list, so its 15 rows are never the heading's findings."""
+    body = (
+        '**Outside diff range comments** '
+        '<details><summary>Major · a.py</summary> fix <!-- cr-comment:v1:aaaaaaaaaaaaaaaaaaaaaaaa --> </details>'
+        '<details><summary>Files selected for processing: 15</summary> * `a.py` </details>'
+    )
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['review_body_findings_total'] == 1, verdict
+    assert [row['id'] for row in verdict['undisposed']] == ['outside-diff-1']
+
+
+def test_an_unclosed_code_sample_does_not_pair_with_a_later_close() -> None:
+    """⛔ A close tag in a LATER block must not close an opener in this one.
+
+    Pairing them would spread the prose region over the CAUTION heading between them, and its
+    finding would never reach the gate.
+    """
+    body = (
+        '<details><summary>🧹 Nitpick comments (1)</summary><blockquote>'
+        '<dl><dd>see <code>a.py:3 and the guard </dd></dl></blockquote></details> '
+        '**Outside diff range comments (1)** '
+        '<details><summary>Major · b.py</summary> see <code>b.py:9</code> </details>'
+    )
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert [row['section'] for row in verdict['undisposed']] == ['nitpick', 'outside-diff'], verdict
 
 
 def test_a_bold_heading_owns_consecutive_sibling_blocks() -> None:
@@ -987,6 +1033,21 @@ def test_a_bold_heading_owns_consecutive_sibling_blocks() -> None:
 
     assert verdict['review_body_findings_total'] == 2, verdict
     assert [row['id'] for row in verdict['undisposed']] == ['outside-diff-1', 'outside-diff-2']
+
+
+def test_an_implausible_declared_count_stops_the_gate() -> None:
+    """⛔ A body declaring more findings than the gate enumerates is a stop, not an allocation.
+
+    Refusing with a named cause keeps a hostile or broken title from exhausting the process,
+    and — unlike clipping — it cannot let a partial disposition list clear the block.
+    """
+    body = '<details><summary>🔎 Potential issues (999999)</summary> one row </details>'
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['merge_allowed'] is False
+    assert verdict['reason'] == 'undecidable_read'
+    assert 'this gate will enumerate' in verdict['detail']
 
 
 def test_a_bold_heading_does_not_swallow_a_nested_findings_section() -> None:
@@ -1048,10 +1109,9 @@ def test_a_counted_group_nested_deep_inside_a_bold_block_is_not_counted_twice() 
 def test_a_bold_heading_with_no_block_of_its_own_owns_nothing() -> None:
     """⛔ A bold label with no `<details>` after it must not swallow a later summary.
 
-    The summary below is at the TOP level, so its enclosing-block offset is ``None``. If a
-    heading with no block contributed ``None`` to the owned set, every such summary would be
-    skipped as that heading's row — a whole section dropped, and the gate could answer
-    `all_handled` over it.
+    The summary below is at the TOP level. If a heading with no block still minted, it would
+    leave a phantom finding, and if it owned the surrounding span the summary would be lost.
+    It does neither: the summary is counted and nothing else is.
     """
     body = (
         '> [!CAUTION] > **⚠️ Outside diff range comments (1)** > nothing to expand '
@@ -1060,15 +1120,16 @@ def test_a_bold_heading_with_no_block_of_its_own_owns_nothing() -> None:
 
     verdict = _verdict(_read(_review_body(body)))
 
-    assert verdict['review_body_findings_total'] == 3, verdict
-    assert [row['id'] for row in verdict['undisposed']] == ['outside-diff-1', 'nitpick-1', 'nitpick-2']
+    assert verdict['review_body_findings_total'] == 2, verdict
+    assert [row['id'] for row in verdict['undisposed']] == ['nitpick-1', 'nitpick-2']
 
 
 def test_a_bold_label_closing_its_block_owns_no_following_section() -> None:
     """⛔ The label sits at a depth whose block closes before the next section opens.
 
-    A bold label that ends the block it lives in must not claim the block that follows it:
-    that is another section's block, and its findings are not the label's rows.
+    A bold label that ends the block it lives in owns nothing that follows: that is another
+    section's block, and its findings are not the label's rows. The label also mints nothing,
+    so the section below is the only thing the body reports.
     """
     body = (
         '<details><summary>ℹ️ Review info</summary> **Outside diff range comments (1)** </details>'
@@ -1077,8 +1138,8 @@ def test_a_bold_label_closing_its_block_owns_no_following_section() -> None:
 
     verdict = _verdict(_read(_review_body(body)))
 
-    assert verdict['review_body_findings_total'] == 3, verdict
-    assert [row['id'] for row in verdict['undisposed']] == ['outside-diff-1', 'nitpick-1', 'nitpick-2']
+    assert verdict['review_body_findings_total'] == 2, verdict
+    assert [row['id'] for row in verdict['undisposed']] == ['nitpick-1', 'nitpick-2']
 
 
 def test_a_block_whose_summary_names_a_section_belongs_to_that_section() -> None:
@@ -1246,6 +1307,7 @@ def _documented_review_gate_reasons() -> set[str]:
     for paragraph in paragraphs:
         reasons.update(re.findall(r'\(`([a-z][a-z_]*)`', paragraph))
         reasons.update(re.findall(r'answers `([a-z][a-z_]*)`', paragraph))
+        reasons.update(re.findall(r'with `([a-z][a-z_]*)`', paragraph))
     return reasons
 
 
@@ -1306,7 +1368,7 @@ def test_the_merge_gate_states_the_reach_of_an_operator_selection() -> None:
     """
     section = _section_seven()
 
-    assert 'diff --name-only {selected_head}...{merge_head}' in section
+    assert 'diff --name-only --no-renames {selected_head} {merge_head}' in section
     assert 'adds no new logic when' in section
     assert 'documentation (`.md`, `.adoc`) or a test file' in section
     assert 'the default fails closed' in section
