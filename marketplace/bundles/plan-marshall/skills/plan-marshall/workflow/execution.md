@@ -536,10 +536,12 @@ residual deliverable" would be wrong or ambiguous:
 
    After EACH group's commit, complete the Step 10a bookkeeping for that
    commit (resolve `{commit_sha}` via `git rev-parse HEAD` in the worktree,
-   enumerate the commit's paths via
-   `git diff-tree --no-commit-id --name-only -r --root -z {commit_sha}`,
-   reading the NUL-terminated entries, and append
-   the `kind=change` ledger entry — with that group's `deliverable-id` — per
+   create the output directory (`mkdir -p {worktree_path}/.plan/temp` — git
+   creates none), enumerate the commit's paths with git writing them into a file —
+   `git diff-tree --no-commit-id --name-only -r --root -z --output={file} {commit_sha}`,
+   the form the Bash tool can follow because nobody has to read a NUL back out
+   of the shell — and append the `kind=change` ledger entry with
+   `--changed-paths-file {file}` — with that group's `deliverable-id` — per
    [`manage-change-ledger/SKILL.md`](../../manage-change-ledger/SKILL.md) §
    "Canonical invocations" → `append (kind=change)`).
 
@@ -570,16 +572,23 @@ transition:
 
 1. **Source the two facts the invocation leaves as placeholders.** Take the SHA
    from `unrecorded_commits[]` and its paths from git — never from memory and
-   never from a declared file list:
-   `git -C {worktree_path} diff-tree --no-commit-id --name-only -r -z {sha}`.
+   never from a declared file list — with git writing them into a file (create
+   the directory first: `mkdir -p {worktree_path}/.plan/temp`, because git
+   creates none):
+   `git -C {worktree_path} diff-tree --no-commit-id --name-only -r -z --output={file} {sha}`,
+   then pass `--changed-paths-file {file}`.
    Keep the `-z`: with git's default quoting a non-ASCII path comes back as a
    quoted escape sequence, and the ledger stores what it is given verbatim, so
-   the row would name a path that does not exist. Split on NUL and pass the real
-   paths.
+   the row would name a path that does not exist. `--output` is what makes the
+   procedure followable: the Bash tool renders a NUL byte as a space, so a list
+   read back out of the shell cannot be split on NUL and re-joined.
    A MERGE commit — a baseline merge on the branch — has no single changed-path
    set, and `diff-tree` over one enumerates nothing, so an append built from it
    would record an empty path list. Enumerate its first-parent diff instead:
-   `git -C {worktree_path} diff --name-only -z {sha}^1 {sha}`.
+   `git -C {worktree_path} diff --no-renames --name-only -z --output={file} {sha}^1 {sha}`.
+   `--no-renames` is not optional there: `git diff` follows rename detection by
+   default, so a rename the merge made would be recorded at its destination
+   only and the removed path would be lost.
 2. **Choose `--deliverable-id`.** Use the deliverable whose work the commit is
    when the commit IS a deliverable settlement; otherwise use the constant
    `handback-commit`, which is the id of a commit no deliverable owns — a gate
@@ -602,9 +611,12 @@ transition:
    this branch's commit. The mixed shape — `bookkeeping_gap` carrying a
    `remap_invocation` as well — takes the same rule: remap first.
    Then append only for the named SHAs the ledger still carries no row for.
-4. **Run the append invocation** the refusal printed for that SHA, with its
-   `DELIVERABLE_ID` / `CHANGED_PATHS` placeholders replaced by those two values.
-   Repeat for every SHA still unrecorded.
+4. **Run the append** the refusal printed for that SHA: take its `--deliverable-id`
+   (`DELIVERABLE_ID`) and `--worktree-root` from that invocation, and supply the
+   paths with `--changed-paths-file` from step 1 instead of the printed
+   `--changed-paths CHANGED_PATHS` — the printed form is the comma-separated one,
+   which is lossy for the paths step 1 exists to preserve, and supplying both
+   forms is refused. Repeat for every SHA still unrecorded.
 5. **Retry `manage-status transition --completed 5-execute` exactly once.** A
    second refusal halts loudly for the operator — do not loop.
 

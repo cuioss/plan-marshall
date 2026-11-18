@@ -6,11 +6,13 @@ ledger-append wiring documented in
 
 Step 10a is a five-sub-step chain-tail flow: (1) the per-deliverable commit,
 (2) the ``[OUTCOME]`` log, (3) ``git rev-parse HEAD`` → ``commit_sha``,
-(4) ``git diff-tree --no-commit-id --name-only -r {commit_sha}`` →
-``changed_paths``, (5) ``manage-change-ledger append --kind change`` with those
-git-sourced values. The contract these tests pin is that ``commit_sha`` and
-``changed_paths`` are GIT-SOURCED at the commit point and stored VERBATIM — not
-self-computed from the deliverable's declared ``affected_files``.
+(4) ``git diff-tree --no-commit-id --name-only -r --root -z --output={file}
+{commit_sha}`` → ``changed_paths``, (5) ``manage-change-ledger append --kind
+change --changed-paths-file {file}``. The contract these tests pin is that
+``commit_sha`` and ``changed_paths`` are GIT-SOURCED at the commit point and
+stored VERBATIM — not self-computed from the deliverable's declared
+``affected_files``, and not re-joined by a caller that had to read a NUL byte
+back out of the Bash tool's rendering.
 
 These tests model the FLOW (commit → git-source → append) rather than the CLI
 argparse surface (the latter is exercised exhaustively by
@@ -70,14 +72,16 @@ def _rev_parse_head(repo: Path) -> str:
     return _git(repo, 'rev-parse', 'HEAD').stdout.strip()
 
 
-def _diff_tree_paths(repo: Path, commit_sha: str) -> list[str]:
+def _diff_tree_paths(repo: Path, commit_sha: str, out: Path) -> list[str]:
     """Step 10a sub-step 4 — git-source the changed_paths for ``commit_sha``.
 
-    Mirrors ``git diff-tree --no-commit-id --name-only -r {commit_sha}`` exactly
-    as documented in the SKILL.md flow.
+    Mirrors ``git diff-tree --no-commit-id --name-only -r --root -z
+    --output={file} {commit_sha}`` exactly as documented in the SKILL.md flow:
+    git WRITES the NUL-separated list to a file, so nothing ever has to read a
+    NUL byte back out of the shell (which renders it as a space) and re-join it.
     """
-    out = _git(repo, 'diff-tree', '--no-commit-id', '--name-only', '-r', commit_sha).stdout
-    return [line for line in out.splitlines() if line.strip()]
+    _git(repo, 'diff-tree', '--no-commit-id', '--name-only', '-r', '--root', '-z', f'--output={out}', commit_sha)
+    return [part.decode('utf-8') for part in out.read_bytes().split(b'\0') if part]
 
 
 @pytest.fixture
@@ -150,7 +154,8 @@ def test_happy_path_appends_change_entry_with_git_sourced_values(env) -> None:
     )
     # Steps 3 + 4: git-source commit_sha and changed_paths from the commit.
     sourced_sha = _rev_parse_head(env.repo)
-    changed_paths = _diff_tree_paths(env.repo, commit_sha)
+    paths_file = env.base / 'changed-paths.nul'
+    changed_paths = _diff_tree_paths(env.repo, commit_sha, paths_file)
     assert sourced_sha == commit_sha
     assert set(changed_paths) == {'src/feature.py', 'test/test_feature.py'}
 
@@ -163,8 +168,8 @@ def test_happy_path_appends_change_entry_with_git_sourced_values(env) -> None:
         '5',
         '--commit-sha',
         sourced_sha,
-        '--changed-paths',
-        ','.join(changed_paths),
+        '--changed-paths-file',
+        str(paths_file),
     )
 
     assert result.success, result.stderr
@@ -188,7 +193,8 @@ def test_happy_path_appends_change_entry_with_git_sourced_values(env) -> None:
 def test_happy_path_task_id_alias_links_the_commit(env) -> None:
     # A single-file deliverable committed; flow uses the --task-id alias.
     commit_sha = _commit_deliverable(env.repo, ('src/only.py', 'x = 2\n'))
-    changed_paths = _diff_tree_paths(env.repo, commit_sha)
+    paths_file = env.base / 'changed-paths.nul'
+    changed_paths = _diff_tree_paths(env.repo, commit_sha, paths_file)
 
     # Step 5 with the --task-id alias instead of --deliverable-id.
     result = env.run(
@@ -199,8 +205,8 @@ def test_happy_path_task_id_alias_links_the_commit(env) -> None:
         'TASK-8',
         '--commit-sha',
         commit_sha,
-        '--changed-paths',
-        ','.join(changed_paths),
+        '--changed-paths-file',
+        str(paths_file),
     )
 
     # The alias populates deliverable_id and the commit is linked.
@@ -209,6 +215,7 @@ def test_happy_path_task_id_alias_links_the_commit(env) -> None:
     assert entry['deliverable_id'] == 'TASK-8'
     assert entry['commit_sha'] == commit_sha
     assert entry['changed_paths'] == ['src/only.py']
+    assert changed_paths == ['src/only.py'], 'the file form must carry the same single path'
 
 
 # ---------------------------------------------------------------------------

@@ -1367,6 +1367,15 @@ FOR each step_id in manifest.phase_6.steps:
           § Commit Changes. A raw `git commit` here would be refused by the enforcement
           guard in `6-finalize` on both harnesses — and would leave no row.
 
+          **Read the row's outcome — no boundary will surface it here.** The `5-execute`
+          boundary ran before this commit existed, so nothing downstream reports a row
+          that failed to write; it reads that row only if a loop-back re-enters
+          `5-execute` and the boundary runs again over the branch. Read `ledger_recorded`
+          on the commit result: when it is `false`, log a WARNING decision naming the
+          result's `ledger_error` and the ready-to-run `append --kind change` invocation
+          for that commit, and do not report the step as cleanly done while the row is
+          missing.
+
           **Re-stamp `head_at_completion` (mandatory for a head-dependent step)**: the instrumentation commit advances the feature-branch HEAD past the SHA the step recorded on its terminal `mark-step-done` call (the step captured `git rev-parse HEAD` BEFORE its edits were committed, because the dispatcher — not the step — owns the commit). For a `mutates_source: true` step that is ALSO head-dependent (resolve the step's own `head_dependent` fact — see § "Special case — HEAD-dependent steps"; do not consult an inline list), leaving the stale pre-commit SHA on the record makes the item-1 re-entry check observe `head_at_completion != live HEAD` and RE-FIRE the step on every resume — defeating the SKIP optimization. After the commit succeeds, resolve the new HEAD (`{new_commit_sha}`) and re-stamp the step's record so a converged-tree re-entry SKIPs correctly:
 
           ```bash
