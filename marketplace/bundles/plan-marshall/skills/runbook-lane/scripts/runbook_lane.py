@@ -1784,6 +1784,20 @@ def _checkout_revision(worktree: Path) -> str:
     return out.strip() if ok else ''
 
 
+def _worktree_is_clean(worktree: Path) -> bool | None:
+    """Whether *worktree* has no changed or untracked path; ``None`` if unreadable.
+
+    The footprint rule is read from the worktree's FILES, so a modified or
+    untracked file is a rule the head does not carry — a checkout on the right
+    commit with a rewritten workflow would otherwise decide the delta under a rule
+    nothing committed.
+    """
+    ok, out = _git_in(worktree, 'status', '--porcelain')
+    if not ok:
+        return None
+    return not out.strip()
+
+
 def _delta_paths(worktree: Path, base: str, head: str) -> list[str] | None:
     """Return the paths that changed from *base* to *head*, or ``None``.
 
@@ -1870,6 +1884,18 @@ def _sonar_stale_delta_verdict(
         verdict['detail'] = (
             f'worktree_not_at_head: the checkout is at {checkout or "an unreadable commit"} and the '
             f"head revision resolves to {head}; the footprint rule it carries is not the head's rule"
+        )
+        return verdict
+    clean = _worktree_is_clean(worktree)
+    if clean is None:
+        verdict['detail'] = 'worktree_unreadable: the checkout status could not be read'
+        return verdict
+    if not clean:
+        # A modified or untracked workflow file is a rule the head does not carry,
+        # so the same fail-closed answer as a checkout on another commit.
+        verdict['detail'] = (
+            'worktree_dirty: the checkout carries changed or untracked paths, so the rule it presents '
+            'is not the rule at the head'
         )
         return verdict
 

@@ -1156,7 +1156,18 @@ def cmd_read_open_issues(args):
     if pr:
         recheck = _verify_analysis_revision(project, pr)
         reported = str(recheck.get('analysis_revision') or '').strip()
-        if reported and reported != revision_result['analysis_revision']:
+        if not reported:
+            # A recheck that reports no revision has proved nothing: the sets were
+            # enumerated under the revision read at step 1b, and whether that is
+            # still the analysis is now unknown. Fail closed rather than confirm.
+            return _undecidable_read(
+                project,
+                pr,
+                'analysis_revision_unavailable_on_recheck: the revision could not be re-read after the enumeration',
+                analysis_revision=revision_result.get('analysis_revision', ''),
+                head_revision=revision_result.get('head_revision', ''),
+            )
+        if reported != revision_result['analysis_revision']:
             return _undecidable_read(
                 project,
                 pr,

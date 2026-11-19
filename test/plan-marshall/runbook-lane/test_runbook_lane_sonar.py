@@ -554,13 +554,15 @@ def _patch_delta(
     analysed=_ANALYSED,
     head=_HEAD,
     checkout=None,
+    clean=True,
     paths=('doc/adr/001.adoc',),
     rows=None,
     reason='',
 ):
-    """Stub the four seams the decision reads, leaving the decision itself real."""
+    """Stub the five seams the decision reads, leaving the decision itself real."""
     monkeypatch.setattr(lane, '_resolve_commit', lambda worktree, revision: analysed if revision == _ANALYSED else head)
     monkeypatch.setattr(lane, '_checkout_revision', lambda worktree: head if checkout is None else checkout)
+    monkeypatch.setattr(lane, '_worktree_is_clean', lambda worktree: clean)
     monkeypatch.setattr(lane, '_delta_paths', lambda worktree, base, tip: None if paths is None else list(paths))
     if rows is None:
         rows = [{'path': path, 'kind': 'docs-only'} for path in paths or ()]
@@ -618,6 +620,25 @@ def test_the_project_own_rule_decides_a_real_docs_only_delta(tmp_path: Path) -> 
     assert verdict['source'] == 'ci-workflow'
     assert verdict['changed_paths'] == ['doc/three.adoc']
     assert verdict['reason'].startswith('carried_forward_unbuilt_delta')
+
+
+def test_a_modified_workflow_file_stays_undecidable(tmp_path: Path) -> None:
+    """The regression the reviewer named: an uncommitted rule rewrite must not carry."""
+    repo = tmp_path / 'repo'
+    _repo_with_a_footprint_rule(repo)
+    analysed = _commit(repo, 'doc/two.adoc')
+    head = _commit(repo, 'doc/three.adoc')
+    (repo / '.github' / 'workflows' / 'ci.yml').write_text(
+        "name: CI\non:\n  pull_request:\n    paths-ignore:\n      - 'src/**'\nskip-on-docs-only: true\n",
+        encoding='utf-8',
+    )
+
+    verdict = lane.cmd_sonar_stale_delta(
+        _stale_args(analysis_revision=analysed, head_revision=head, worktree=str(repo))
+    )
+
+    assert verdict['carry_forward'] is False
+    assert verdict['detail'].startswith('worktree_dirty')
 
 
 def test_the_project_own_rule_refuses_a_real_buildable_delta(tmp_path: Path) -> None:
@@ -807,6 +828,25 @@ def test_a_worktree_on_another_commit_stays_undecidable(monkeypatch) -> None:
 
     assert verdict['carry_forward'] is False
     assert verdict['detail'].startswith('worktree_not_at_head')
+
+
+def test_a_dirty_worktree_stays_undecidable(monkeypatch) -> None:
+    """A modified or untracked workflow file is a rule the head does not carry."""
+    _patch_delta(monkeypatch, clean=False)
+
+    verdict = lane.cmd_sonar_stale_delta(_stale_args())
+
+    assert verdict['carry_forward'] is False
+    assert verdict['detail'].startswith('worktree_dirty')
+
+
+def test_an_unreadable_worktree_status_stays_undecidable(monkeypatch) -> None:
+    _patch_delta(monkeypatch, clean=None)
+
+    verdict = lane.cmd_sonar_stale_delta(_stale_args())
+
+    assert verdict['carry_forward'] is False
+    assert verdict['detail'].startswith('worktree_unreadable')
 
 
 def test_the_stale_delta_verb_is_reachable_through_its_cli_surface() -> None:

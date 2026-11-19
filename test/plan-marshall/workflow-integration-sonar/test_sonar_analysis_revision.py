@@ -495,6 +495,25 @@ class TestRevisionMovingDuringTheRead:
         assert result['open_issue_count'] is None
         assert 'analysis_revision_changed_during_read' in result['count_status_reason']
 
+    def test_a_recheck_that_reports_no_revision_is_undecidable(self, monkeypatch, plan_context):
+        """A recheck with nothing to report has proved nothing, so it confirms nothing."""
+        plan_context.plan_dir_for('rev-read-recheck-empty')
+        _install_api(monkeypatch, {})
+        first = {'count_status': 'confirmed', 'analysis_revision': _HEAD, 'head_revision': _HEAD}
+        empty = {'count_status': 'undecidable', 'analysis_revision': '', 'head_revision': _HEAD}
+        ce, head = _settled()
+
+        with (
+            ce,
+            head,
+            patch.object(sonar_mod, '_verify_analysis_revision', side_effect=[first, empty]),
+            patch.object(sonar_mod, '_fetch_issues', return_value={'status': 'success', 'issues': [], 'total': 0}),
+        ):
+            result = sonar_mod.cmd_read_open_issues(_read_args())
+
+        assert result['count_status'] == 'undecidable'
+        assert 'analysis_revision_unavailable_on_recheck' in result['count_status_reason']
+
 
 class TestBranchReadOutOfScope:
     """A fetch with no pull request keeps the CE contract, and says so.
