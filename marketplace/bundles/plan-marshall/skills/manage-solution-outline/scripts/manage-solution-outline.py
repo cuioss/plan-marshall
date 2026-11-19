@@ -21,7 +21,8 @@ Usage:
     python3 manage-solution-outline.py exists --plan-id EXAMPLE-PLAN
     python3 manage-solution-outline.py snapshot-criteria --plan-id EXAMPLE-PLAN
     python3 manage-solution-outline.py criteria-authorize --plan-id EXAMPLE-PLAN \\
-        --deliverable-number 2 --criterion "criterion text" --decision "operator: ..."
+        --deliverable-number 2 --criterion "criterion text" --decision "operator: ..." \\
+        [--decision-type {rewrite,retirement}]
     python3 manage-solution-outline.py criteria-refreeze-authorize --plan-id EXAMPLE-PLAN \\
         --decision "operator: approve the re-freeze"
     python3 manage-solution-outline.py get-module-context
@@ -44,7 +45,13 @@ from _architecture_core import (
     load_project_meta,
     migrate_key_packages,
 )
-from _criteria_snapshot import authorize_change, authorize_refreeze, write_snapshot
+from _criteria_snapshot import (
+    DECISION_REWRITE,
+    DECISION_TYPES,
+    authorize_change,
+    authorize_refreeze,
+    write_snapshot,
+)
 from _findings_core import query_assessments
 from _plan_parsing import (
     DECLARATION_FIELDS,
@@ -1269,11 +1276,11 @@ def cmd_snapshot_criteria(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def cmd_criteria_authorize(args: argparse.Namespace) -> dict[str, Any]:
-    """Log an operator decision authorizing one frozen criterion's change.
+    """Log an operator decision on one frozen criterion.
 
     A frozen criterion that the current outline no longer carries verbatim is a
-    blocking finding at the functional review. This verb is the single way that
-    change is authorized: it records the decision against the snapshot and then
+    blocking finding at the functional review, and only this verb's record clears
+    it. It records the decision against the snapshot and then
     writes the decision-log line. A log that cannot be written withdraws the
     authorization, and the error names what became of it: ``rolled_back`` (the
     edit is gone and the record matches the file), ``tamper_flagged`` (the edit is
@@ -1281,6 +1288,11 @@ def cmd_criteria_authorize(args: argparse.Namespace) -> dict[str, Any]:
     until the operator repairs it) or ``inconsistent`` (the undo itself could not be
     completed). A withdrawal that itself fails is reported in the error message
     rather than claimed.
+
+    ``--decision-type`` records WHAT the operator decided: ``rewrite`` (the default)
+    approves changing the criterion's text, and ``retirement`` is the operator's
+    decision to retire the deliverable that carries it — the only decision a
+    ``retired`` functional-review verdict closes on.
     """
     require_valid_plan_id(args)
 
@@ -1290,6 +1302,7 @@ def cmd_criteria_authorize(args: argparse.Namespace) -> dict[str, Any]:
         args.criterion,
         args.decision,
         phase=getattr(args, 'phase', '3-outline'),
+        decision_type=getattr(args, 'decision_type', DECISION_REWRITE),
     )
 
 
@@ -1706,7 +1719,7 @@ def main() -> int:
     # criteria-authorize
     authorize_parser = subparsers.add_parser(
         'criteria-authorize',
-        help='Log an operator decision authorizing one frozen criterion change',
+        help='Log an operator decision on a frozen criterion (rewrite or retirement)',
         allow_abbrev=False,
     )
     add_plan_id_arg(authorize_parser)
@@ -1715,17 +1728,28 @@ def main() -> int:
         type=int,
         required=True,
         dest='deliverable_number',
-        help='Deliverable whose frozen criterion the decision authorizes changing',
+        help='Deliverable whose frozen criterion the decision is recorded against',
     )
     authorize_parser.add_argument(
         '--criterion',
         required=True,
-        help='The frozen criterion text the decision authorizes changing',
+        help='The frozen criterion text the decision is recorded against',
     )
     authorize_parser.add_argument(
         '--decision',
         required=True,
-        help='The operator decision that authorizes the change',
+        help='The operator decision',
+    )
+    authorize_parser.add_argument(
+        '--decision-type',
+        choices=DECISION_TYPES,
+        default=DECISION_REWRITE,
+        dest='decision_type',
+        help=(
+            'What the operator decided: rewrite (default) approves changing the criterion text; '
+            'retirement is the decision to retire the deliverable that carries it, the only '
+            'decision a retired verdict closes on'
+        ),
     )
     authorize_parser.add_argument(
         '--phase',
