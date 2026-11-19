@@ -449,8 +449,9 @@ def _superseded_rejection_message(reason: str, cited: str, number: int) -> str:
     if reason == REFERENCE_SELF:
         return (
             f'superseded_by {cited!r} names the deliverable itself; a deliverable cannot '
-            'supersede itself — grade it `retired` instead, once every criterion of it is '
-            'authorized through criteria-authorize'
+            'supersede itself — grade it `retired` instead, once every criterion of it carries '
+            "the operator's own retirement decision recorded through criteria-authorize "
+            '--decision-type retirement'
         )
     if reason == REFERENCE_CYCLE:
         return f'superseded_by {cited!r} closes a supersede cycle back to deliverable {number}'
@@ -488,18 +489,27 @@ def _grade_row(
         return
     if verdict == RETIRED:
         state = retirement_state(read_snapshot(plan_id), number)
+        if state['state'] == RETIREMENT_CLOSED:
+            return
         if state['state'] == RETIREMENT_UNAUTHORIZED:
             named = ', '.join(repr(text) for text in state['unauthorized'])
             grading.errors.append(
-                f'{where}: retired with unauthorized criteria ({named}); every criterion of the '
-                'deliverable must be authorized through criteria-authorize before it can be retired'
+                f'{where}: retired with criteria that carry no retirement decision ({named}); every '
+                "criterion of the deliverable must carry the operator's own retirement decision, "
+                'recorded through criteria-authorize --decision-type retirement, before it can be retired'
             )
-        elif state['state'] != RETIREMENT_CLOSED:
+        else:
             grading.errors.append(
                 f'{where}: retired with nothing to authorize; a retired deliverable must carry at '
-                'least one frozen criterion, and every one of them must be authorized through '
-                'criteria-authorize'
+                "least one frozen criterion, and every one of them must carry the operator's own "
+                'retirement decision recorded through criteria-authorize --decision-type retirement'
             )
+        # A refused retirement closes nothing of its own, so its CURRENT criteria stay open
+        # in the completion gate. The grades the row does carry are still checked: returning
+        # before ``_grade_criteria`` is what let a rewritten deliverable pass ungraded.
+        carried = row.get('criteria')
+        if isinstance(carried, list) and carried:
+            _grade_criteria(grading, row, expected, facts, plan_id, evidence_root)
         return
     _grade_criteria(grading, row, expected, facts, plan_id, evidence_root)
     if verdict == 'not_met':
@@ -652,9 +662,11 @@ def validate_functional(
     must cite a CLOSING successor this outline carries — not itself, not a cycle,
     and with a ``met`` / ``met_with_residuals`` verdict — because free text, a
     self-citation or an unmet successor would close ungraded work. A ``retired`` row
-    must have every frozen criterion of its deliverable already authorized through
-    ``criteria-authorize``, because the retirement is the operator's decision and the
-    verdict only records it. When ``evidence_root`` is given, every path and test name a ``met`` criterion
+    must have every frozen criterion of its deliverable carry the operator's own
+    retirement decision, recorded through ``criteria-authorize --decision-type
+    retirement``: the retirement is the operator's decision and the verdict only
+    records it, and an authorization recorded to approve a rewrite is not one.
+    When ``evidence_root`` is given, every path and test name a ``met`` criterion
     cites is checked against the tree at the graded head; ``plan_id`` names the
     plan whose own ``build-results`` tree a ``.plan/`` citation is confined to.
     """
