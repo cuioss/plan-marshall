@@ -2,10 +2,10 @@
   "id": "PLAN-LB-165",
   "slug": "project-hygiene-orchestrator-config-documents-apply-changes",
   "workstream": "WS-03",
-  "status": "running",
+  "status": "shipped",
   "lane": "runbook",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "plan_marshall_plan_id": "rb-lb-165-project-hygiene-orchestrator-config-documents-apply-changes",
+  "pr": "2025",
+  "landing": "landings/PLAN-LB-165.md",
   "seq": 165
 }
