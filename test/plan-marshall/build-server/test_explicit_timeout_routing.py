@@ -280,7 +280,7 @@ def _rendered_routed_non_finish(monkeypatch, capsys, home: Path, **wait_fields) 
         'status': 'success',
         'job_status': 'timeout',
         'duration_seconds': JOB_ELAPSED_SECONDS,
-        'log_file': str(home / 'job-logs' / 'absent.log'),
+        'log_file': str(home / '.plan' / 'local' / 'marshalld' / 'job-logs' / 'absent.log'),
         **wait_fields,
     }
     cmd_run, config = _rendering_cmd_run(monkeypatch, _NonFinishClient(waited))

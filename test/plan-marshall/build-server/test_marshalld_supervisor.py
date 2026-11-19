@@ -399,6 +399,113 @@ def test_run_job_clean_env_excludes_secret(tmp_path):
     assert 'SECRET=' in captured  # the var resolved to empty, proving it was dropped
 
 
+@pytest.mark.skipif(
+    os.name == 'nt' or getattr(os, 'geteuid', lambda: -1)() == 0,
+    reason='the fixture is a read-only directory, which a root runner ignores',
+)
+def test_run_job_that_cannot_write_its_log_fails_without_running_the_child(tmp_path):
+    """No sink, no child: the log is opened before the spawn, so a build whose
+    output has nowhere to go is reported instead of started."""
+    log_dir = tmp_path / 'read-only'
+    log_dir.mkdir()
+    marker = tmp_path / 'child-ran'
+    log_dir.chmod(0o500)
+    try:
+        payload = asyncio.run(
+            supervisor.run_job(
+                [sys.executable, '-c', f'open({str(marker)!r}, "w").close()'],
+                str(tmp_path),
+                timeout=30,
+                log_file=str(log_dir / 'job.log'),
+            )
+        )
+    finally:
+        log_dir.chmod(0o700)
+
+    assert payload['status'] == 'failure'
+    assert payload['error'] == 'log_file_failed'
+    assert payload['reason'], 'the logging failure states no reason'
+    assert payload['log_file'] == str(log_dir / 'job.log')
+    assert not marker.exists(), 'the child ran even though its output had nowhere to go'
+
+
+@pytest.mark.skipif(os.name == 'nt', reason='POSIX symlink semantics gate this case')
+def test_a_log_path_that_is_a_symlink_is_refused_rather_than_followed(tmp_path):
+    """The log's name lives in a writable project tree, so a pre-created symlink
+    must not steer the write to another file."""
+    target = tmp_path / 'elsewhere'
+    target.write_text('untouched')
+    link = tmp_path / 'job.log'
+    link.symlink_to(target)
+
+    with pytest.raises(OSError):
+        supervisor._open_job_log(str(link))
+
+    assert target.read_text() == 'untouched', 'the symlink target was opened and truncated'
+
+
+@pytest.mark.skipif(os.name == 'nt', reason='POSIX FIFO semantics gate this case')
+def test_a_log_path_that_is_a_fifo_fails_instead_of_blocking(tmp_path):
+    """A FIFO opens only when a reader arrives, which would park the daemon's
+    single event loop for as long as the submitter likes."""
+    fifo = tmp_path / 'job.log'
+    os.mkfifo(fifo)
+
+    with pytest.raises(OSError):
+        supervisor._open_job_log(str(fifo))
+
+
+def test_a_log_path_hard_linked_to_another_file_is_refused_untruncated(tmp_path):
+    """A hard link passes every "is this a regular file" test, so it must be
+    refused BEFORE anything is truncated — the linked file's content survives."""
+    target = tmp_path / 'precious'
+    target.write_text('precious content')
+    log = tmp_path / 'job.log'
+    os.link(target, log)
+
+    with pytest.raises(OSError):
+        supervisor._open_job_log(str(log))
+
+    assert target.read_text() == 'precious content'
+
+
+def test_an_existing_log_is_truncated_only_after_validation(tmp_path):
+    """A rerun of one job id must start a fresh log, not append to stale output."""
+    log = tmp_path / 'job.log'
+    log.write_text('stale output\n')
+
+    sink = supervisor._open_job_log(str(log))
+    with sink:
+        sink.write(b'fresh output\n')
+
+    assert log.read_text() == 'fresh output\n'
+
+
+@pytest.mark.skipif(os.name == 'nt', reason='unlinking an open file is POSIX-only')
+def test_a_log_removed_mid_run_does_not_relabel_a_supervisor_timeout(tmp_path):
+    """A timeout is the supervisor's own verdict; a log that vanished under the
+    job outranks nothing. Only a would-be SUCCESS loses its credit without one."""
+    log_file = tmp_path / 'job.log'
+
+    async def _drive():
+        task = asyncio.create_task(
+            supervisor.run_job(
+                [sys.executable, '-c', 'import time; time.sleep(30)'],
+                str(tmp_path),
+                timeout=1,
+                log_file=str(log_file),
+            )
+        )
+        await asyncio.sleep(0.2)
+        log_file.unlink()
+        return await task
+
+    payload = asyncio.run(_drive())
+
+    assert payload['status'] == 'timeout'
+    assert 'log_file_failed' not in str(payload.get('error', ''))
+
+
 # =============================================================================
 # run_job — exit 0 is necessary but not sufficient
 # =============================================================================
