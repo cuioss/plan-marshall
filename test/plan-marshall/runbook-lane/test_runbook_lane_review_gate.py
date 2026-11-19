@@ -2238,7 +2238,7 @@ def test_a_counted_unknown_wrapper_reads_the_recognised_section_it_encloses() ->
 
     verdict = _verdict(_read(_review_body(body)))
 
-    assert verdict['review_body_findings_total'] == 10, verdict
+    assert verdict.get('review_body_findings_total') == 10, verdict
     assert [row['id'] for row in verdict['undisposed']] == [f'nitpick-{n}' for n in range(1, 11)]
 
 
@@ -2317,12 +2317,13 @@ def test_an_unclosed_code_in_a_nested_block_does_not_hide_a_heading_in_the_outer
 
 
 def test_a_dd_spanning_a_nested_block_keeps_the_heading_inside_it_a_quotation() -> None:
-    """⛔ D4's other edge: a row body (`<dd>`) is prose for the WHOLE block it sits in.
+    """⛔ Round-1 guard (not red before the fix): a row body is prose for its WHOLE block.
 
     The `<dd>` opens in the outer block, a nested `<details>` opens and closes inside it, and a
     heading-shaped bold span sits after that nested block but still inside the `<dd>`. A prose
     scope that reset at the nested block would read the quote as a heading and mint a finding
-    nobody wrote; the scope is per block, so the quote stays a quotation.
+    nobody wrote; the scope is per block, so the quote stays a quotation. This pins the shape a
+    first, simpler prose bound broke, so it is a guard on the fix rather than on the defect.
     """
     body = (
         '<details><summary>🧹 Nitpick comments (1)</summary><dd> see '
@@ -2337,13 +2338,13 @@ def test_a_dd_spanning_a_nested_block_keeps_the_heading_inside_it_a_quotation() 
 
 
 def test_a_blockless_counted_heading_nested_in_a_section_does_not_cut_its_rows() -> None:
-    """⛔ D1's nesting edge: the heading's own interval is blanked, not the section's span.
+    """⛔ D1's nesting edge: a nested counted heading must not END the section's span.
 
-    The nitpick section carries three marked rows, one of them before a blockless counted
-    CAUTION heading and two after it. Ending the section's span at that heading would lose the
-    two after it while the heading's own declaration counted once — fewer findings than the
-    body states. The heading's interval is blanked out of the section instead, so the rows on
-    both sides are read and the heading adds its own.
+    The nitpick section carries three marked rows, one before a blockless counted CAUTION
+    heading and two after it. Ending the section's span at that heading would lose the two
+    after it while the heading's own declaration counted once — fewer findings than the body
+    states. The heading is excluded from the boundary scan instead, so the section reads all
+    three rows and the heading adds its own declaration.
     """
     body = (
         '<details><summary>🧹 Nitpick comments</summary><blockquote>'
@@ -2385,8 +2386,39 @@ def test_a_counted_wrapper_carrying_content_after_its_section_stops_the_gate() -
     assert 'wrapper' in verdict['detail'], verdict
 
 
+def test_two_bold_runs_glued_together_are_both_read() -> None:
+    """⛔ D3's role rule: `**A****B**` is two bold runs, not one lost span.
+
+    The second run's opening marker has text on its left, so a rule that only looked leftwards
+    would read it as a closer and drop the run. A marker closes only when nothing attaches on
+    its right, which keeps both runs readable.
+    """
+    body = '**Major****⚠️ Outside diff range comments (1)** <details><summary>Major · a.py</summary> fix </details>'
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['review_body_findings_total'] == 1, verdict
+    assert [(row['section'], row['id']) for row in verdict['undisposed']] == [('outside-diff', 'outside-diff-1')]
+
+
+def test_a_counted_wrapper_enclosing_a_blockless_summary_stops_the_gate() -> None:
+    """⛔ D2: a section the wrapper encloses must own a CLOSED block, or the body stops.
+
+    The enclosed `<summary>` sits with no `<details>` of its own, so nothing beside it can be
+    told apart from what the wrapper itself says. Reading through would drop whichever of the
+    two statements the body made, so the shape stops with a cause naming the wrapper.
+    """
+    body = '<details><summary>Review (2)</summary><summary>🧹 Nitpick comments (1)</summary> x </details>'
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['merge_allowed'] is False, verdict
+    assert verdict['reason'] == 'undecidable_read', verdict
+    assert 'closed block of its own' in verdict['detail'], verdict
+
+
 def test_a_label_between_two_bold_runs_is_not_a_heading() -> None:
-    """⛔ D3's pairing edge: two bold runs with prose between them state no section.
+    """⛔ Round-1 guard (not red before the fix): two bold runs state no section between them.
 
     `**Major** Nitpick comments (2) **Quick win**` is one severity label, some prose and one
     win. Tiling every adjacent marker pair would read the middle prose as a nitpick heading and

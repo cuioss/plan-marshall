@@ -2427,7 +2427,9 @@ def _inside_prose(body: str, offset: int) -> bool:
     prose for the rest of that block and ends when the block does — so an unterminated
     ``<code>`` in one block cannot hide a heading in a later sibling block, and a ``<dd>`` that
     legitimately spans a nested block keeps its own scope instead of being cut at that block.
-    A tag in a block that has since closed is never counted, whichever depth it sat at.
+    A tag in a block that has since closed is never counted, whichever depth it sat at. The
+    scopes INHERIT: a tag left open in a parent block is still prose for a heading inside that
+    parent's nested blocks, because the parent's text still contains the heading.
     """
     scopes: list[dict[str, int]] = [{}]
     # A close sorts BEFORE an open at the same offset, so an empty block cannot leave its
@@ -2452,12 +2454,6 @@ def _inside_prose(body: str, offset: int) -> bool:
     return any(level > 0 for scope in scopes for level in scope.values())
 
 
-#: The characters that make the ``**`` before them a CLOSING marker: a word character, or the
-#: punctuation a written word ends with. Anything else — a space, a line or cell break, an
-#: opening bracket — leaves the marker an OPENER.
-_BOLD_CLOSE_PRECEDER_RE = re.compile(r'[\w)\]}!?.,:*/\-]')
-
-
 def _bold_spans(body: str) -> list[tuple[int, int, str]]:
     """Every ``(start, end, title)`` BOLD span, paired by OPENING and CLOSING markers.
 
@@ -2465,20 +2461,25 @@ def _bold_spans(body: str) -> list[tuple[int, int, str]]:
     ``**`` earlier in the body spends a real heading's opening marker as the closing marker of
     the pair before it and the heading is never read — an under-count.
 
-    A span is an OPENER followed by the next CLOSING marker, and a marker is a closer when the
-    character before it is a word character or closing punctuation. Pairing by that role,
-    rather than tiling every adjacent pair, does both jobs: the heading after a stray
-    ``**kwargs`` is still read, and the prose BETWEEN two bold runs is not read as a heading of
-    its own — ``**Major** Nitpick comments (2) **Quick win**`` states one severity label and one
-    win, not a nitpick section, so tiling would mint findings nobody wrote.
+    A marker is a CLOSING one when text attaches to it on the left and not on the right: it is
+    preceded by a non-space character that is not itself a marker, and followed by the end of
+    the body or by something that is not a letter or a digit. That is Markdown's own flanking
+    rule, and it does both jobs this parser needs — the heading after a stray ``**kwargs`` is
+    still read (two markers that both have text to their right are two openers), and the prose
+    BETWEEN two bold runs is not read as a heading of its own (``**Major** Nitpick comments (2)
+    **Quick win**`` states one severity label and one win). Reading by role rather than tiling
+    every adjacent pair also keeps ``**A****B**`` two spans and a title ending in an emoji or a
+    quotation mark closed.
     """
     markers = [match.start() for match in _BOLD_MARKER_RE.finditer(body)]
     spans: list[tuple[int, int, str]] = []
     opener: int | None = None
     for position in markers:
         preceded = body[position - 1] if position else ''
-        is_closer = bool(preceded) and _BOLD_CLOSE_PRECEDER_RE.fullmatch(preceded) is not None
-        if is_closer:
+        followed = body[position + len('**') : position + len('**') + 1]
+        closes = bool(preceded) and not preceded.isspace() and preceded != '*'
+        closes = closes and (not followed or not followed.isalnum())
+        if closes:
             if opener is not None:
                 title = body[opener + len('**') : position]
                 if '*' not in title:
@@ -2519,11 +2520,11 @@ def _heading_is_mentioned_in_prose(body: str, offset: int) -> bool:
     …``), a table, a tag or a block is not a sentence, so a counted heading above any of those
     is a heading — the shape where the drop rule read a declaration as zero findings.
 
-    The test keys on a LETTER continuing the sentence, which is the conservative direction for
-    a row: a continuation led by punctuation (``**: none this round.``) is read as a heading,
-    because reading it as prose instead would drop a dash-list row. The residual is a prose ROW
-    that happens to start with a letter, which is the same text as a mention and is named in
-    :func:`_body_findings`.
+    The test keys on a LETTER continuing the sentence. A continuation led by punctuation
+    (``**: none this round.``) is therefore read as a heading — over-counting rather than
+    dropping a row, which is the direction this gate permits. The residual is a prose ROW that
+    happens to start with a letter, which is the same text as a mention in the flattened form
+    (a surviving newline is treated as a space here) and is named in :func:`_body_findings`.
     """
     rest = body[offset:]
     if not rest.strip():
@@ -2845,12 +2846,14 @@ def _body_findings(
 
     A counted title this parser does not know that ENCLOSES a recognised section is a
     wrapper, not a section: it reads through, so the section inside it keeps its own
-    findings instead of the wrapper's count replacing them. Its own count is a GROUPING count
-    and is not compared with the sum of the sections it encloses (``Review (5)`` around one
-    nitpick section reads the nitpick section). A wrapper that says anything of its own beside
-    that section stops with a named cause. Only a ``<summary>`` child makes a wrapper
-    transparent; a wrapper holding a BOLD heading counts both, which errs toward more findings
-    — the direction this gate permits.
+    findings instead of the wrapper's count replacing them. Its own count is NOT reconciled
+    with the sections it encloses — ``Review (5)`` around one nitpick section reads that
+    section's findings, which errs toward fewer than the body states and is the one residual
+    :func:`_body_findings` accepts here, because the alternative (a stop) refused every body
+    this shape appears in and a counted wrapper is a grouping, not a second finding. A wrapper
+    that says anything of its own beside that section stops with a named cause. Only a
+    ``<summary>`` child makes a wrapper transparent; a wrapper holding a BOLD heading counts
+    both, which errs toward more findings — the direction this gate permits.
 
     A count larger than :data:`_MAX_ENUMERATED_FINDINGS` is the one remaining stop: a body
     that declares it would enumerate that many rows, so the gate names it rather than
@@ -2988,10 +2991,6 @@ def _body_findings(
         enclosing = _enclosing_block_close(body, start)
         return boundary if enclosing is None else min(boundary, enclosing)
 
-    # The interval each blockless counted heading speaks for: blanked out of any enclosing
-    # section's count, exactly like a bold heading's owned blocks.
-    _declared_spans = [(start, _span_end(start), start) for start, _end, _section, _declared in declared_headings]
-
     headings: list[tuple[int, int, str, int | None]] = []
     for index, _match in starts:
         if not _is_section(index):
@@ -3004,8 +3003,16 @@ def _body_findings(
             gap = body[end_of[index] : wrapper_close]
             for child in transparent[index]:
                 child_open, child_close = _enclosing_block_span(body, offset_of[child])
-                first = max(child_open - end_of[index], 0)
-                last = min(child_close - end_of[index], len(gap))
+                if child_open < end_of[index] or _block_close(body, child_open) is None:
+                    # A section the wrapper encloses that owns no CLOSED block of its own:
+                    # nothing beside it can be attributed, so the body stops rather than
+                    # dropping whatever the wrapper says around it.
+                    return [], (
+                        f'the counted wrapper {starts_by_index[index]!r} encloses a section without a '
+                        f'closed block of its own, so its findings cannot be read'
+                    )
+                first = child_open - end_of[index]
+                last = min(child_close, wrapper_close) - end_of[index]
                 if first < last:
                     gap = gap[:first] + ' ' * (last - first) + gap[last:]
             if re.search(r'[A-Za-z0-9]', re.sub(r'<[^>]+>', ' ', gap)):
@@ -3040,10 +3047,11 @@ def _body_findings(
         span = body[end:span_end]
         # A NESTED bold heading's own interval is counted by that heading, so it is blanked
         # here — same length, so every offset below stays where it was. This heading's own
-        # blocks are left intact: they are the span it counts. A blockless counted heading's
-        # own interval is blanked the same way, so the rows it declares over are not also
-        # counted as the enclosing section's.
-        for open_offset, close_offset, owner_start in [*owned_spans, *_declared_spans]:
+        # blocks are left intact: they are the span it counts. ONLY owning headings blank an
+        # interval: a blockless counted heading owns no rows of its own, so its declaration is
+        # added and the rows around it stay with the section they sit in — blanking its region
+        # would subtract rows nobody counted.
+        for open_offset, close_offset, owner_start in owned_spans:
             if owner_start != start and end < open_offset and close_offset < span_end:
                 span = span[: open_offset - end] + ' ' * (close_offset - open_offset) + span[close_offset - end :]
         count = _count_section_findings(
