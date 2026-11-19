@@ -192,7 +192,9 @@ def test_a_pre_change_authorization_does_not_close_a_retired_deliverable(plan_co
     path = _write_verdict(plan_dir, tmp_path, _retired_verdict())
 
     snapshot = _snap.read_snapshot(PLAN_ID)
-    assert all('decision_type' not in entry for entry in snapshot['authorized_changes']), snapshot['authorized_changes']
+    assert snapshot is not None, 'the plan must carry a readable criteria snapshot'
+    entries = snapshot['authorized_changes']
+    assert all('decision_type' not in entry for entry in entries), entries
     payload = review_support.run_validate(PLAN_ID, 'functional', path, None)
     state = _snap.retirement_state(snapshot, 1)
 
