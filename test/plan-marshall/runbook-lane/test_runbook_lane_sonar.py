@@ -113,13 +113,18 @@ def test_resolve_fails_closed_on_an_unreadable_sonar_block(tmp_path: Path, block
 # =============================================================================
 # the gate — an undecidable read never reaches the merge
 # =============================================================================
-def _gate_args(state: str = 'configured', count_status: str | None = 'confirmed', **flags: str) -> object:
-    """Build the namespace through the verb's own parser."""
+def _gate_args(state: str = 'configured', count_status: str | None = 'confirmed', **flags: str | bool) -> object:
+    """Build the namespace through the verb's own parser.
+
+    A ``True`` value is a bare switch, so a flag the verb declares as
+    ``store_true`` is passed the way the lane passes it.
+    """
     argv = ['sonar-gate', '--state', state]
     if count_status is not None:
         argv += ['--count-status', count_status]
     for name, value in flags.items():
-        argv += [f'--{name.replace("_", "-")}', value]
+        flag = f'--{name.replace("_", "-")}'
+        argv += [flag] if value is True else [flag, value]
     return parse_ns('plan-marshall', 'runbook-lane', 'runbook_lane.py', *argv)
 
 
@@ -893,6 +898,7 @@ def test_a_carried_forward_zero_admits_the_merge_under_its_own_reason() -> None:
     verdict = cmd_sonar_gate(
         _gate_args(
             open_count='0',
+            carried_forward=True,
             carried_forward_analysis_revision=_ANALYSED,
             carried_forward_head_revision=_HEAD,
         )
@@ -904,8 +910,37 @@ def test_a_carried_forward_zero_admits_the_merge_under_its_own_reason() -> None:
     assert verdict['carried_forward'] is True
 
 
+def test_a_carried_forward_pair_without_the_marker_is_refused() -> None:
+    """The read's own ``carried_forward`` marker is what makes the pair a claim.
+
+    Without it the pair is a caller's assertion tied to no read, which is the
+    opt-in marking PLAN-LB-167's D3 refused: a carried-forward figure could read
+    like a measurement of the head.
+    """
+    verdict = cmd_sonar_gate(
+        _gate_args(
+            open_count='0',
+            carried_forward_analysis_revision=_ANALYSED,
+            carried_forward_head_revision=_HEAD,
+        )
+    )
+
+    assert verdict['status'] == 'error'
+    assert verdict['error'] == 'carried_forward_unmarked'
+
+
+def test_the_marker_without_the_revision_pair_is_refused() -> None:
+    """A marker with no revisions asserts a carry-forward it cannot name."""
+    verdict = cmd_sonar_gate(_gate_args(open_count='0', carried_forward=True))
+
+    assert verdict['status'] == 'error'
+    assert verdict['error'] == 'carried_forward_incomplete'
+
+
 def test_a_carried_forward_pair_with_one_revision_is_refused() -> None:
-    verdict = cmd_sonar_gate(_gate_args(open_count='0', carried_forward_analysis_revision=_ANALYSED))
+    verdict = cmd_sonar_gate(
+        _gate_args(open_count='0', carried_forward=True, carried_forward_analysis_revision=_ANALYSED)
+    )
 
     assert verdict['status'] == 'error'
     assert verdict['error'] == 'carried_forward_incomplete'
@@ -916,6 +951,7 @@ def test_a_carried_forward_pair_with_equal_revisions_is_refused() -> None:
     verdict = cmd_sonar_gate(
         _gate_args(
             open_count='0',
+            carried_forward=True,
             carried_forward_analysis_revision=_ANALYSED,
             carried_forward_head_revision=_ANALYSED,
         )
@@ -930,6 +966,7 @@ def test_a_carried_forward_pair_on_a_failed_read_is_refused() -> None:
     verdict = cmd_sonar_gate(
         _gate_args(
             count_status='undecidable',
+            carried_forward=True,
             carried_forward_analysis_revision=_ANALYSED,
             carried_forward_head_revision=_HEAD,
         )
@@ -945,6 +982,7 @@ def test_a_carried_forward_read_still_needs_its_findings_disposed(tmp_path: Path
             _progress_file(tmp_path),
             open_count='2',
             open_keys='K1,K2',
+            carried_forward=True,
             carried_forward_analysis_revision=_ANALYSED,
             carried_forward_head_revision=_HEAD,
         )
@@ -961,3 +999,258 @@ def test_the_lane_text_states_the_carry_forward_rule() -> None:
     assert 'carried_forward_unbuilt_delta' in section, '§ 6 must name the distinct reason'
     assert '--analysed-revision' in section, '§ 6 must name the read licence'
     assert 'retry the read, and if it stays undecidable' in section, '§ 6 must keep the general stop'
+
+
+# =============================================================================
+# a consumer that delegates its build to a reusable workflow
+# =============================================================================
+_DELEGATED_REF = '9f8e7d6c5b4a39281706f5e4d3c2b1a09f8e7d6c'
+
+_DELEGATION_WORKFLOW = (
+    'name: Maven Build\n'
+    'on:\n'
+    '  pull_request:\n'
+    '    branches: [main]\n'
+    'jobs:\n'
+    '  build:\n'
+    f'    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@{_DELEGATED_REF}\n'
+)
+
+_CALLED_WORKFLOW = (
+    'name: Maven Build (Reusable)\n'
+    'on:\n'
+    '  workflow_call:\n'
+    '    inputs:\n'
+    '      skip-on-docs-only:\n'
+    '        default: true\n'
+    'jobs:\n'
+    '  config:\n'
+    '    runs-on: ubuntu-latest\n'
+    '  check-changes:\n'
+    '    needs: config\n'
+    '    outputs:\n'
+    '      should-build: ${{ steps.decide.outputs.should-build }}\n'
+    '  build:\n'
+    '    needs: [config, check-changes]\n'
+    "    if: always() && needs.check-changes.outputs.should-build != 'false'\n"
+    '  sonar-build:\n'
+    '    needs: [config, check-changes]\n'
+    "    if: always() && needs.check-changes.outputs.should-build != 'false' && github.actor != 'dependabot[bot]'\n"
+)
+
+
+def _checks(*, build: str = 'skipping', sonar: str = 'skipping', decider: str = 'pass', extra: tuple = ()):
+    """The head's check rows, in the shape ``ci checks status`` reports."""
+    rows = [
+        {'name': 'build / config', 'result': 'pass'},
+        {'name': 'build / check-changes', 'result': decider},
+        {'name': 'build / build (21)', 'result': build},
+        {'name': 'build / build (25)', 'result': build},
+        {'name': 'build / sonar-build', 'result': sonar},
+    ]
+    rows.extend(extra)
+    return rows
+
+
+def _repo_with_a_delegation(root: Path, workflow_text: str = _DELEGATION_WORKFLOW) -> None:
+    workflows = root / '.github' / 'workflows'
+    workflows.mkdir(parents=True)
+    (workflows / 'maven.yml').write_text(workflow_text, encoding='utf-8')
+
+
+def _patch_delegated(
+    monkeypatch,
+    *,
+    called=_CALLED_WORKFLOW,
+    rows=None,
+    read_reason='',
+    paths=('doc/adr/001.adoc',),
+):
+    """Stub the local git seams and the two remote reads, leaving the decision real."""
+    _patch_delta(monkeypatch, paths=paths)
+    monkeypatch.setattr(lane, '_read_delegated_workflow', lambda project_dir, repo, path, ref: (called, read_reason))
+    monkeypatch.setattr(lane, '_read_pr_checks', lambda project_dir, pr: (rows, ''))
+
+
+def test_a_delegating_consumer_decides_its_docs_delta_from_the_head_check_runs(tmp_path: Path, monkeypatch) -> None:
+    """The PLAN-LB-167 case: a checkout holding only a `uses:` delegation."""
+    repo = tmp_path / 'repo'
+    _repo_with_a_delegation(repo)
+    _patch_delegated(monkeypatch, rows=_checks())
+
+    verdict = lane.cmd_sonar_stale_delta(_stale_args(pr_number='7', worktree=str(repo)))
+
+    assert verdict['carry_forward'] is True
+    assert verdict['source'] == 'delegated-check-runs'
+    assert verdict['decider_jobs'] == ['check-changes']
+    assert verdict['gated_jobs'] == ['build', 'sonar-build']
+    assert verdict['reason'].startswith('carried_forward_unbuilt_delta')
+
+
+def test_a_delegating_head_the_ci_built_stays_undecidable(tmp_path: Path, monkeypatch) -> None:
+    """A source path on a head whose build jobs RAN is not a carried-forward delta."""
+    repo = tmp_path / 'repo'
+    _repo_with_a_delegation(repo)
+    _patch_delegated(monkeypatch, rows=_checks(build='pass'), paths=('src/main/java/A.java',))
+
+    verdict = lane.cmd_sonar_stale_delta(_stale_args(pr_number='7', worktree=str(repo)))
+
+    assert verdict['carry_forward'] is False
+    assert verdict['reason'] == 'undecidable_read'
+    assert verdict['detail'].startswith('delta_buildable')
+
+
+def test_a_failed_check_on_a_delegating_head_stays_undecidable(tmp_path: Path, monkeypatch) -> None:
+    """A skip beside a failed job is not the footprint gate's skip."""
+    repo = tmp_path / 'repo'
+    _repo_with_a_delegation(repo)
+    _patch_delegated(monkeypatch, rows=_checks(extra=({'name': 'build / conclusion', 'result': 'fail'},)))
+
+    verdict = lane.cmd_sonar_stale_delta(_stale_args(pr_number='7', worktree=str(repo)))
+
+    assert verdict['carry_forward'] is False
+    assert verdict['reason'] == 'undecidable_read'
+    assert verdict['detail'].startswith('delegated_check_not_green')
+
+
+def test_a_dependabot_skip_on_a_delegating_head_stays_undecidable(tmp_path: Path, monkeypatch) -> None:
+    """``sonar-build`` skipped for Dependabot while ``build`` ran is not a footprint skip."""
+    repo = tmp_path / 'repo'
+    _repo_with_a_delegation(repo)
+    _patch_delegated(monkeypatch, rows=_checks(build='pass'), paths=('src/main/java/A.java',))
+
+    verdict = lane.cmd_sonar_stale_delta(_stale_args(pr_number='7', worktree=str(repo)))
+
+    assert verdict['carry_forward'] is False
+    assert verdict['detail'].startswith('delta_buildable')
+
+
+def test_an_unpinned_delegation_stays_undecidable(tmp_path: Path, monkeypatch) -> None:
+    """A moving ref is not the rule the CI applied to this head."""
+    repo = tmp_path / 'repo'
+    _repo_with_a_delegation(
+        repo,
+        'name: Maven Build\non:\n  pull_request:\njobs:\n  build:\n'
+        '    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@main\n',
+    )
+    _patch_delegated(monkeypatch, rows=_checks())
+
+    verdict = lane.cmd_sonar_stale_delta(_stale_args(pr_number='7', worktree=str(repo)))
+
+    assert verdict['carry_forward'] is False
+    assert verdict['detail'].startswith('delegated_ref_unpinned')
+
+
+def test_an_unreachable_delegated_workflow_stays_undecidable(tmp_path: Path, monkeypatch) -> None:
+    repo = tmp_path / 'repo'
+    _repo_with_a_delegation(repo)
+    _patch_delegated(monkeypatch, called=None, read_reason='repository_not_accessible', rows=_checks())
+
+    verdict = lane.cmd_sonar_stale_delta(_stale_args(pr_number='7', worktree=str(repo)))
+
+    assert verdict['carry_forward'] is False
+    assert verdict['detail'].startswith('delegated_rule_unreachable')
+
+
+def test_a_delegated_workflow_with_no_footprint_gate_stays_undecidable(tmp_path: Path, monkeypatch) -> None:
+    repo = tmp_path / 'repo'
+    _repo_with_a_delegation(repo)
+    _patch_delegated(monkeypatch, called='jobs:\n  build:\n    runs-on: ubuntu-latest\n', rows=_checks())
+
+    verdict = lane.cmd_sonar_stale_delta(_stale_args(pr_number='7', worktree=str(repo)))
+
+    assert verdict['carry_forward'] is False
+    assert verdict['detail'].startswith('delegated_rule_unreadable')
+
+
+def test_an_unreadable_check_run_list_stays_undecidable(tmp_path: Path, monkeypatch) -> None:
+    repo = tmp_path / 'repo'
+    _repo_with_a_delegation(repo)
+    _patch_delegated(monkeypatch, rows=None)
+
+    verdict = lane.cmd_sonar_stale_delta(_stale_args(pr_number='7', worktree=str(repo)))
+
+    assert verdict['carry_forward'] is False
+    assert verdict['detail'].startswith('delegated_check_evidence_unreadable')
+
+
+def test_a_delegating_shape_without_a_pull_request_number_stays_undecidable(tmp_path: Path, monkeypatch) -> None:
+    repo = tmp_path / 'repo'
+    _repo_with_a_delegation(repo)
+    _patch_delegated(monkeypatch, rows=_checks())
+
+    verdict = lane.cmd_sonar_stale_delta(_stale_args(worktree=str(repo)))
+
+    assert verdict['carry_forward'] is False
+    assert verdict['detail'].startswith('delegated_check_evidence_missing')
+
+
+def test_a_workflow_holding_its_own_rule_still_decides_locally(tmp_path: Path) -> None:
+    """The delegation branch never shadows a rule the checkout holds."""
+    repo = tmp_path / 'repo'
+    _repo_with_a_footprint_rule(repo)
+    analysed = _commit(repo, 'doc/two.adoc')
+    head = _commit(repo, 'doc/three.adoc')
+
+    verdict = lane.cmd_sonar_stale_delta(
+        _stale_args(analysis_revision=analysed, head_revision=head, worktree=str(repo))
+    )
+
+    assert verdict['carry_forward'] is True
+    assert verdict['source'] == 'ci-workflow'
+
+
+# =============================================================================
+# the real-classifier twins of the two stubbed controls
+# =============================================================================
+
+
+def _git_init(root: Path) -> None:
+    import subprocess
+
+    for args in (
+        ('init', '-b', 'main'),
+        ('config', 'user.email', 'lane@example.com'),
+        ('config', 'user.name', 'lane'),
+        ('add', '.'),
+        ('commit', '-m', 'base'),
+    ):
+        subprocess.run(['git', '-C', str(root), *args], check=True, capture_output=True)
+
+
+def test_an_unreadable_footprint_rule_stays_undecidable_with_the_real_reader(tmp_path: Path) -> None:
+    """The real workflow reader, not a stubbed classifier, answers `rule_unreadable`."""
+    repo = tmp_path / 'repo'
+    workflows = repo / '.github' / 'workflows'
+    workflows.mkdir(parents=True)
+    (workflows / 'broken.yml').write_bytes(b'\xff\xfe this is not utf-8\n')
+    (repo / 'doc').mkdir()
+    (repo / 'doc' / 'one.adoc').write_text('one\n', encoding='utf-8')
+    _git_init(repo)
+    analysed = _commit(repo, 'doc/two.adoc')
+    head = _commit(repo, 'doc/three.adoc')
+
+    verdict = lane.cmd_sonar_stale_delta(
+        _stale_args(analysis_revision=analysed, head_revision=head, worktree=str(repo))
+    )
+
+    assert verdict['carry_forward'] is False
+    assert verdict['reason'] == 'undecidable_read'
+    assert verdict['detail'].startswith('rule_unreadable')
+
+
+def test_an_unplaceable_path_stays_undecidable_with_the_real_classifier(tmp_path: Path) -> None:
+    """The real classifier, not a stubbed row set, answers `buildable` for it."""
+    repo = tmp_path / 'repo'
+    _repo_with_a_footprint_rule(repo)
+    analysed = _commit(repo, 'doc/two.adoc')
+    (repo / 'mystery').mkdir()
+    head = _commit(repo, 'mystery/file.xyz')
+
+    verdict = lane.cmd_sonar_stale_delta(
+        _stale_args(analysis_revision=analysed, head_revision=head, worktree=str(repo))
+    )
+
+    assert verdict['carry_forward'] is False
+    assert verdict['reason'] == 'undecidable_read'
+    assert verdict['buildable_paths'] == ['mystery/file.xyz']

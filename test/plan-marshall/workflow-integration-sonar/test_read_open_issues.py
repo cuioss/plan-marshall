@@ -564,7 +564,16 @@ class TestStaleAnalysisLicence:
                 return_value={'status': 'success', 'issues': [_issue(key='K1')], 'total': 1},
             ),
         ):
-            result = cmd_read_open_issues(_args('--pr', '42', '--analysed-revision', self._STALE))
+            result = cmd_read_open_issues(
+                _args(
+                    '--pr',
+                    '42',
+                    '--analysed-revision',
+                    self._STALE,
+                    '--carried-forward-head-revision',
+                    self._HEAD,
+                )
+            )
 
         assert result['count_status'] == 'confirmed'
         assert result['carried_forward'] is True

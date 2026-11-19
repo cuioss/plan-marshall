@@ -728,6 +728,59 @@ def test_prepare_body_rejects_invalid_slot(plan_base_env):
 
 
 # ---------------------------------------------------------------------------
+# The plan-less sentinel shares one body store, so its default slot is refused.
+# Two concurrent plan-less callers (a runbook lane and a ledger land) would
+# otherwise write the same `pr-create-default.md` between one caller's
+# `prepare-body` and its `create`, and the second body would be consumed by the
+# first caller's create.
+# ---------------------------------------------------------------------------
+
+
+def test_prepare_body_refuses_the_shared_default_slot_under_no_plan(plan_base_env):
+    result = prepare_body('NO_PLAN', BODY_KIND_PR_CREATE)
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'shared_body_slot_refused'
+    assert '--slot' in result['message']
+
+
+def test_prepare_body_accepts_a_named_slot_under_no_plan(plan_base_env):
+    result = prepare_body('NO_PLAN', BODY_KIND_PR_CREATE, slot='land')
+
+    assert result['status'] == 'success'
+    assert result['slot'] == 'land'
+    assert result['path'].endswith('pr-create-land.md')
+
+
+def test_a_long_plan_identifier_is_a_valid_slot(plan_base_env):
+    """A lane's slot is its plan id, and a plan id outgrows a short name."""
+    slot = 'lb-171-lb-167-completion-delegating-checkout-gate-binding-body-slot'
+    result = prepare_body('NO_PLAN', BODY_KIND_PR_CREATE, slot=slot)
+
+    assert len(slot) > 64
+    assert result['status'] == 'success'
+    assert result['path'].endswith(f'pr-create-{slot}.md')
+
+
+def test_read_and_consume_body_refuses_the_shared_default_slot_under_no_plan(plan_base_env):
+    content, error = read_and_consume_body('NO_PLAN', BODY_KIND_PR_CREATE)
+
+    assert content is None
+    assert error is not None
+    assert error['error'] == 'shared_body_slot_refused'
+
+
+def test_read_and_consume_body_reads_the_named_slot_under_no_plan(plan_base_env):
+    prepared = prepare_body('NO_PLAN', BODY_KIND_PR_CREATE, slot='land')
+    Path(prepared['path']).write_text('the land body', encoding='utf-8')
+
+    content, error = read_and_consume_body('NO_PLAN', BODY_KIND_PR_CREATE, slot='land')
+
+    assert error is None
+    assert content == 'the land body'
+
+
+# ---------------------------------------------------------------------------
 # Script-side require_plan_exists guard
 #
 # prepare_body MUST refuse to materialise a body scratch path under a plan
