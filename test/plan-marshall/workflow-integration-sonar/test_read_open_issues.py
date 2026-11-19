@@ -43,6 +43,11 @@ cmd_read_open_issues = sonar_mod.cmd_read_open_issues
 #: module attribute. The two cases that exercise its own request re-bind it.
 _REAL_FETCH_HOTSPOTS = sonar_mod._fetch_hotspots
 
+#: The REAL analysis-revision gate, captured for the same reason: the autouse stub
+#: answers ``confirmed`` for every read, so a case about the gate's own behaviour
+#: re-binds it rather than asserting the stub's answer.
+_REAL_VERIFY_ANALYSIS_REVISION = sonar_mod._verify_analysis_revision
+
 _SUPPRESSABLE_RULE = 'java:S1135'
 
 
@@ -512,3 +517,84 @@ class _RecordingClient:
 
     def close(self):
         pass
+
+
+class TestStaleAnalysisLicence:
+    """A stale analysis is enumerated only when a NAMED revision licenses it.
+
+    The licence is the lane's own decision that the change since the analysed head
+    is one the project does not build; it names the revision the provider reported,
+    so a stale read that names nothing — or names another revision — keeps the stop
+    every stale analysis gets.
+    """
+
+    _STALE = 'b' * 40
+    _HEAD = 'a' * 40
+
+    def _stale(self):
+        return patch.object(
+            sonar_mod,
+            '_verify_analysis_revision',
+            return_value={
+                'count_status': 'undecidable',
+                'analysis_revision': self._STALE,
+                'head_revision': self._HEAD,
+                'count_status_reason': f'stale_analysis: analysed {self._STALE} != head {self._HEAD}',
+            },
+        )
+
+    def _settled(self):
+        return patch.object(sonar_mod, '_wait_for_ce_ready', return_value={'count_status': 'confirmed'})
+
+    def test_a_stale_analysis_never_enumerates_through_the_read_alone(self):
+        with self._stale(), self._settled(), patch.object(sonar_mod, '_fetch_issues') as fetch:
+            result = cmd_read_open_issues(_args('--pr', '42'))
+
+        assert result['count_status'] == 'undecidable'
+        assert result['open_issue_count'] is None
+        fetch.assert_not_called()
+
+    def test_the_named_revision_carries_the_read_forward(self):
+        with (
+            self._stale(),
+            self._settled(),
+            patch.object(
+                sonar_mod,
+                '_fetch_issues',
+                return_value={'status': 'success', 'issues': [_issue(key='K1')], 'total': 1},
+            ),
+        ):
+            result = cmd_read_open_issues(_args('--pr', '42', '--analysed-revision', self._STALE))
+
+        assert result['count_status'] == 'confirmed'
+        assert result['carried_forward'] is True
+        assert result['open_keys'] == ['K1']
+        assert result['analysis_revision'] == self._STALE
+        assert result['head_revision'] == self._HEAD
+
+    def test_a_non_pull_request_read_keeps_its_ce_state_contract(self):
+        """A branch read has no pull-request analysis to compare, so it keeps the CE contract."""
+        with (
+            patch.object(sonar_mod, '_verify_analysis_revision', _REAL_VERIFY_ANALYSIS_REVISION),
+            self._settled(),
+            patch.object(sonar_mod, '_fetch_issues', return_value={'status': 'success', 'issues': [], 'total': 0}),
+        ):
+            result = cmd_read_open_issues(_args())
+
+        assert result['count_status'] == 'confirmed'
+        assert result['analysis_revision'] == ''
+        assert result['head_revision'] == ''
+        assert 'carried_forward' not in result
+
+    def test_a_licence_without_a_pull_request_is_refused(self):
+        """A licence names a PR analysis; honouring it on a branch read would invent one."""
+        with (
+            self._settled(),
+            patch.object(sonar_mod, '_fetch_issues') as fetch,
+        ):
+            result = cmd_read_open_issues(_args('--analysed-revision', self._STALE))
+
+        assert result['count_status'] == 'undecidable'
+        assert result['open_issue_count'] is None
+        assert result['count_status_reason'] == 'analysed_revision_requires_a_pull_request'
+        fetch.assert_not_called()

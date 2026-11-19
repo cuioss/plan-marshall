@@ -69,7 +69,7 @@ Re-read every load-bearing point of the analysis at `file:line` in this run, and
 
 ### Step 6: Decide every item above the threshold
 
-For each item the contract's threshold rule decides, apply one of the contract's bounded decision acts and record it: log the decision through `manage-logging --store orchestrator`, write the `## Decisions` entry, and mark the item in place with a pointer to that record. An item whose decision changes another item's analysis is re-analysed — and its confidence reassigned — before it is either decided or presented: a decision here can leave a below-threshold item's recommendation stale for Step 7, and re-analysis before the DECISION alone would not catch that.
+For each item the contract's threshold rule decides, apply one of the contract's bounded decision acts and record it: log the decision through `manage-logging --store orchestrator`, write the `## Decisions` entry, and mark the item in place with a pointer to that record. An item whose analysis is changed by another item's decision is re-analysed — and its confidence reassigned — before it is either decided or presented: a decision here can leave a below-threshold item's recommendation stale for Step 7, and re-analysis before the DECISION alone would not catch that. Decisions are applied in item-number order; an item decided earlier that a later decision invalidates is re-analysed and, if it already carries a decided marker, reopened by recording a new decision entry that supersedes the previous one.
 
 The eight prohibitions hold here and need no restatement to bind, but this step names them so the checklist is complete: this verb NEVER **stages a plan**, NEVER **emits a command**, NEVER **transitions a queue row**, NEVER **edits the spec of a running row**, NEVER **relocates settled narrative**, NEVER **lands**, NEVER **retires an item without a positive account** of what closed it, and NEVER **records a plan-consequence decision without naming the follow-up**. A decision whose consequence is a plan is recorded as decided with that follow-up named, and the staging stays an act the operator words.
 
@@ -139,7 +139,7 @@ presented[P]{number,kind,source,confidence,proposal_count,recommended,answer,dec
   4,watch,watches,61,2,"proposal 1","proposal 1",operator
   5,candidate,landing_residue,55,2,"proposal 1","stop",operator
 already_decided[A]{number,kind,source,marker}:
-  1,defect,open_defects,"## Decisions entry of 2026-11-10"
+  1,defect,open_defects,"## Decisions entry"
 unreadable[U]{source,reason}:
   operator_questions,"the OPERATOR DECISIONS block in resume_anchor.md could not be read"
 resume_anchor: "{next action}"

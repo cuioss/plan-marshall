@@ -60,7 +60,7 @@ LLM consumers query findings via ``manage-findings query --type sonar-issue``.
 Usage:
     sonar.py fetch_findings --plan-id <P> --project <key> [--pr <id>] [--severities <list>] [--types <list>] [--ce-wait-timeout <secs>]
     sonar.py post_responses --plan-id <P> --project <key>
-    sonar.py read_open_issues --project <key> [--pr <id>] [--ce-wait-timeout <secs>]
+    sonar.py read_open_issues --project <key> [--pr <id>] [--ce-wait-timeout <secs>] [--analysed-revision <sha>]
     sonar.py --help
 """
 
@@ -996,6 +996,25 @@ def _undecidable_read(
     return result
 
 
+def _licenses_stale_analysis(revision_result: dict[str, Any], licensed_revision: str) -> bool:
+    """Whether *licensed_revision* is exactly the analysis the revision gate found stale.
+
+    A caller may assert "the enumeration of the analysed head is the read for this
+    head" — the carry-forward a lane decides when the change since that head is one
+    the project does not build. The assertion is honoured ONLY when it names the
+    revision the provider actually reported, and only for a ``stale_analysis``
+    verdict: a caller cannot license a revision nothing analysed, nor any other
+    undecidable state, so the stop every other stale analysis gets is unchanged.
+    """
+    if not licensed_revision:
+        return False
+    if revision_result.get('count_status') != 'undecidable':
+        return False
+    if not str(revision_result.get('count_status_reason') or '').startswith(_STALE_ANALYSIS):
+        return False
+    return licensed_revision == (revision_result.get('analysis_revision') or '')
+
+
 def cmd_read_open_issues(args):
     """PLAN-LESS READ verb: a pull request's open issues, returned without persisting.
 
@@ -1006,7 +1025,10 @@ def cmd_read_open_issues(args):
     2. Analysis-revision truth: the revision the provider reports for the pull
        request's analysis is compared with the PR head (the same gate
        ``fetch_findings`` applies), so a clean analysis of an older head is never
-       read as a clean analysis of this one.
+       read as a clean analysis of this one. A caller may license ONE exception —
+       ``--analysed-revision`` naming exactly the revision the provider analysed —
+       which enumerates that analysed head and marks the result ``carried_forward``.
+       Every other stale analysis still stops here.
     3. Fetch the PR-scoped new-code issues via ``_fetch_issues``, and the security
        hotspots still to review via ``_fetch_hotspots`` — the issue search does not
        return hotspots, so the second read is what keeps an unreviewed hotspot from
@@ -1022,18 +1044,26 @@ def cmd_read_open_issues(args):
     issues Sonar reports.
 
     Fail-loud: a typed ``unconfigured`` status when no Sonar credential is
-    configured (distinct from a read that failed). A CE timeout, a poll failure, a
-    stale or unreported analysis revision (PR-scoped reads), a REST/auth failure,
-    or a page truncated below the server's reported total returns
-    ``open_issue_count: None`` with ``count_status: undecidable`` and a
-    ``count_status_reason`` — NEVER a false ``0`` and never a short count.
+    configured (distinct from a read that failed). A CE timeout, a poll failure, an
+    unreported analysis revision, a stale analysis revision that no licence covers
+    (PR-scoped reads), a REST/auth failure, or a page truncated below the server's
+    reported total returns ``open_issue_count: None`` with
+    ``count_status: undecidable`` and a ``count_status_reason`` — NEVER a false
+    ``0`` and never a short count.
     """
     project: str = args.project
     pr: str | None = getattr(args, 'pr', None)
+    licensed_revision = (getattr(args, 'analysed_revision', None) or '').strip()
 
     missing = _sonar_credential_missing()
     if missing:
         return _sonar_unconfigured('read_open_issues', missing)
+
+    if licensed_revision and not pr:
+        # A licence names a pull-request analysis. A branch read has none to name,
+        # so honouring the flag would answer a count the caller believes covers a
+        # revision that was never compared: refuse it by name instead.
+        return _undecidable_read(project, pr, 'analysed_revision_requires_a_pull_request')
 
     # 1. Gate the count on a settled analysis. No manifest exists on this path,
     #    so the budget is the explicit flag or the conservative default.
@@ -1049,14 +1079,21 @@ def cmd_read_open_issues(args):
     #     the producer-side fetch applies, because a clean analysis of an older
     #     head reads exactly like a clean analysis of this one.
     revision_result = _verify_analysis_revision(project, pr)
+    carried_forward = False
     if revision_result['count_status'] != 'confirmed':
-        return _undecidable_read(
-            project,
-            pr,
-            revision_result.get('count_status_reason') or 'analysis does not match the head being read',
-            analysis_revision=revision_result.get('analysis_revision', ''),
-            head_revision=revision_result.get('head_revision', ''),
-        )
+        if not _licenses_stale_analysis(revision_result, licensed_revision):
+            return _undecidable_read(
+                project,
+                pr,
+                revision_result.get('count_status_reason') or 'analysis does not match the head being read',
+                analysis_revision=revision_result.get('analysis_revision', ''),
+                head_revision=revision_result.get('head_revision', ''),
+            )
+        # The caller named the very revision the provider analysed, and its own
+        # decision (the delta since that head is not built) is what licenses the
+        # enumeration. The figure is a measurement of the ANALYSED head, which the
+        # result states beside both revisions.
+        carried_forward = True
 
     # 2. Enumerate. The issue ``message`` is untrusted free text and stays out of
     #    this contract — the trusted structured fields are what a caller acts on.
@@ -1110,7 +1147,49 @@ def cmd_read_open_issues(args):
     open_hotspots = [hotspot for hotspot in raw_hotspots if hotspot.get('status', 'TO_REVIEW') == 'TO_REVIEW']
     open_keys = [issue['key'] for issue in issues if issue['key']] + [hotspot['key'] for hotspot in open_hotspots]
 
-    return {
+    # 4. The revision the enumeration happened under. Neither fetch carries an
+    #    analysis identifier, so an analysis that completed while they ran can
+    #    supply these sets while the result names the earlier revision. Re-reading
+    #    the revision detects a replacement completed before this point; the
+    #    provider exposes nothing that binds both requests to one analysis, so the
+    #    window is narrowed rather than closed.
+    if pr:
+        recheck = _verify_analysis_revision(project, pr)
+        reported = str(recheck.get('analysis_revision') or '').strip()
+        rechecked_head = str(recheck.get('head_revision') or '').strip()
+        if not reported:
+            # A recheck that reports no revision has proved nothing: the sets were
+            # enumerated under the revision read at step 1b, and whether that is
+            # still the analysis is now unknown. Fail closed rather than confirm.
+            return _undecidable_read(
+                project,
+                pr,
+                'analysis_revision_unavailable_on_recheck: the revision could not be re-read after the enumeration',
+                analysis_revision=revision_result.get('analysis_revision', ''),
+                head_revision=revision_result.get('head_revision', ''),
+            )
+        if reported != revision_result['analysis_revision']:
+            return _undecidable_read(
+                project,
+                pr,
+                f'analysis_revision_changed_during_read: {revision_result["analysis_revision"]} -> {reported}',
+                analysis_revision=revision_result.get('analysis_revision', ''),
+                head_revision=revision_result.get('head_revision', ''),
+            )
+        if not rechecked_head or rechecked_head != revision_result['head_revision']:
+            # The analysis can stay put while the head moves: a push during the
+            # enumeration leaves the count measured over the same analysis but the
+            # answer naming a head that is no longer the head. Fail closed.
+            return _undecidable_read(
+                project,
+                pr,
+                'head_revision_changed_during_read: '
+                f'{revision_result["head_revision"]} -> {rechecked_head or "unavailable"}',
+                analysis_revision=revision_result.get('analysis_revision', ''),
+                head_revision=revision_result.get('head_revision', ''),
+            )
+
+    result: dict[str, Any] = {
         'status': 'success',
         'operation': 'read_open_issues',
         'provider': 'sonar',
@@ -1126,6 +1205,16 @@ def cmd_read_open_issues(args):
         'issues': issues,
         'hotspots': open_hotspots,
     }
+    if carried_forward:
+        # The confirmation is of the ANALYSED head, not of this one. The reason
+        # travels beside the count so no caller can read it as a measurement of
+        # the head the pull request now points at.
+        result['carried_forward'] = True
+        result['count_status_reason'] = (
+            f'carried_forward_from_analysed_head: analysed {revision_result["analysis_revision"]} '
+            f'!= head {revision_result["head_revision"]}'
+        )
+    return result
 
 
 # ============================================================================
@@ -1309,6 +1398,15 @@ Examples:
                         'type': int,
                         'help': 'Override the CE-readiness wait budget in seconds (default: 600; this path '
                         'has no plan manifest to read a configured budget from)',
+                    },
+                    {
+                        'flags': ['--analysed-revision'],
+                        'dest': 'analysed_revision',
+                        'help': (
+                            'The analysed revision whose enumeration stands for this head. Honoured ONLY '
+                            'when it equals the revision the provider reported for a stale analysis; every '
+                            'other stale analysis still answers undecidable'
+                        ),
                     },
                 ],
             },

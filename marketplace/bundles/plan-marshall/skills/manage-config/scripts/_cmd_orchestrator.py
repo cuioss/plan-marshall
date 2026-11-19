@@ -276,8 +276,33 @@ def cmd_orchestrator_get(args) -> dict:
     if rejection is not None:
         return rejection
 
+    config = load_config()
+    orch_present = 'orchestrator' in config
+    orch_block = config.get('orchestrator') if orch_present else None
+    # A PRESENT block of the wrong type, or an explicit JSON `null`, is a
+    # malformed file, not an unset knob: falling through to the seeded default
+    # here would answer `success` with a value no reader wrote, which is the
+    # fail-OPEN direction the whole verb exists to avoid. Only an ABSENT block
+    # takes the default path. Validate BEFORE the `use_worktree` special case so
+    # a malformed (including null) block is rejected for every field.
+    if orch_present and (orch_block is None or not isinstance(orch_block, dict)):
+        return error_exit('orchestrator block in marshal.json is not a dictionary')
+
     if field == 'use_worktree':
         knob_path = orchestrator_knob_config_path()
+        # Fail closed on a malformed (including explicit null) main-anchored
+        # orchestrator block, mirroring the local check above: the use_worktree
+        # read returns False for such a block, which would otherwise answer
+        # `success` for a setting no reader wrote.
+        if knob_path is not None:
+            try:
+                main_data = json.loads(knob_path.read_text(encoding='utf-8'))
+            except (OSError, ValueError):
+                main_data = None
+            if isinstance(main_data, dict) and 'orchestrator' in main_data:
+                main_block = main_data.get('orchestrator')
+                if main_block is None or not isinstance(main_block, dict):
+                    return error_exit('orchestrator block in marshal.json is not a dictionary')
         return success_exit(
             {
                 'field': field,
@@ -286,15 +311,6 @@ def cmd_orchestrator_get(args) -> dict:
                 'knob_path': str(knob_path) if knob_path is not None else None,
             }
         )
-
-    config = load_config()
-    orch_block = config.get('orchestrator')
-    # A PRESENT block of the wrong type is a malformed file, not an unset knob:
-    # falling through to the seeded default here would answer `success` with a
-    # value no reader wrote, which is the fail-OPEN direction the whole verb
-    # exists to avoid. Only an ABSENT block takes the default path.
-    if orch_block is not None and not isinstance(orch_block, dict):
-        return error_exit('orchestrator block in marshal.json is not a dictionary')
     # When the field is unset in the live block, fall back to the canonical
     # default from DEFAULT_ORCHESTRATOR (so `auto_emit` reads its seeded `False`
     # and `parallelization_scope` its seeded `1`). The value is advisory on an

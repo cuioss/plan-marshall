@@ -58,6 +58,7 @@ import argparse
 import json
 import os
 import re
+import unicodedata
 from pathlib import Path
 from typing import Any, NamedTuple
 
@@ -1649,6 +1650,53 @@ def cmd_build_routing(args: argparse.Namespace) -> dict[str, Any]:
     return result
 
 
+def _classify_paths(project_dir: Path, paths: list[str]) -> tuple[list[dict[str, Any]], str, str]:
+    """Classify *paths* with the PROJECT's own footprint rule.
+
+    Returns ``(rows, source, reason)``. ``source`` is ``ci-workflow`` when the
+    checkout holds the rule and ``architecture`` when it does not. A non-empty
+    ``reason`` means the rule could not be read at all: every path is then
+    ``buildable`` (skip nothing) and the caller reports why, so an unreadable rule
+    costs a local build rather than a skipped CI one.
+
+    One seam for both consumers of the rule — the build gate and the stale-analysis
+    carry-forward — because two copies of it would let one skip what the other
+    builds.
+    """
+    extra, skip, reason = _read_footprint_rule(project_dir)
+    if extra is not None:
+        source = 'ci-workflow'
+        module_prefixes: list[str] = []
+    else:
+        source = 'architecture'
+        module_prefixes = _architecture_module_prefixes(project_dir) or ['']
+    doc_surfaces = _architecture_documentation_surfaces(project_dir)
+
+    if reason:
+        return [{'path': path, 'kind': 'buildable'} for path in paths], source, reason
+    try:
+        rows = [
+            {
+                'path': path,
+                'kind': _classify_path(path, extra or [], skip, module_prefixes, doc_surfaces, source),
+            }
+            for path in paths
+        ]
+    except _GlobHelperUnavailable as exc:
+        # The shared glob translator is unavailable: absent from a partial
+        # install, or raising something other than ImportError while it is
+        # imported (a missing dependency of its own, a broken module body).
+        # Build everything and name the cause: a broken translator must never
+        # be read as "no path matches", which for a skip rule would skip, and
+        # an uncaught non-ImportError must not abort the classifier.
+        return (
+            [{'path': path, 'kind': 'buildable'} for path in paths],
+            source,
+            f'glob helper unavailable: {exc}',
+        )
+    return rows, source, ''
+
+
 def cmd_build_classify(args: argparse.Namespace) -> dict[str, Any]:
     """Classify the changed paths so the build gate can skip a docs-only change.
 
@@ -1662,37 +1710,7 @@ def cmd_build_classify(args: argparse.Namespace) -> dict[str, Any]:
     if not paths:
         return {'status': 'error', 'error': 'no_paths', 'message': 'no changed paths to classify'}
 
-    extra, skip, reason = _read_footprint_rule(project_dir)
-    if extra is not None:
-        source = 'ci-workflow'
-        module_prefixes: list[str] = []
-    else:
-        source = 'architecture'
-        module_prefixes = _architecture_module_prefixes(project_dir) or ['']
-    doc_surfaces = _architecture_documentation_surfaces(project_dir)
-
-    if reason:
-        # The opt-in was found but its rule could not be read: skip nothing, so
-        # the unknown rule costs a local build rather than a skipped CI one.
-        rows = [{'path': path, 'kind': 'buildable'} for path in paths]
-    else:
-        try:
-            rows = [
-                {
-                    'path': path,
-                    'kind': _classify_path(path, extra or [], skip, module_prefixes, doc_surfaces, source),
-                }
-                for path in paths
-            ]
-        except _GlobHelperUnavailable as exc:
-            # The shared glob translator is unavailable: absent from a partial
-            # install, or raising something other than ImportError while it is
-            # imported (a missing dependency of its own, a broken module body).
-            # Build everything and name the cause: a broken translator must never
-            # be read as "no path matches", which for a skip rule would skip, and
-            # an uncaught non-ImportError must not abort the classifier.
-            rows = [{'path': path, 'kind': 'buildable'} for path in paths]
-            reason = f'glob helper unavailable: {exc}'
+    rows, source, reason = _classify_paths(project_dir, paths)
     buildable = any(row['kind'] == 'buildable' for row in rows)
     result: dict[str, Any] = {
         'status': 'success',
@@ -1707,6 +1725,294 @@ def cmd_build_classify(args: argparse.Namespace) -> dict[str, Any]:
     if reason:
         result['reason'] = reason
     return result
+
+
+# =============================================================================
+# sonar-stale-delta — a stale analysis whose delta the project does not build
+# =============================================================================
+
+#: The name a carried-forward read's verdict carries: the delta between the
+#: analysed head and the head was positively classified as a path set the project
+#: does not build, so the enumeration of the analysed head stands in for this
+#: head's. A distinct name, so a carried-forward figure never reads like a
+#: measurement of the current head.
+_CARRY_FORWARD_UNBUILT = 'carried_forward_unbuilt_delta'
+
+
+def _git_in(worktree: Path, *args: str) -> tuple[bool, str]:
+    """Run one git command against *worktree*; return ``(ok, stdout)``.
+
+    ``ok`` is ``False`` for a non-zero exit AND for a command that could not be
+    started at all, so a caller never reads absent output as an empty answer.
+    """
+    import subprocess
+
+    try:
+        completed = subprocess.run(
+            ['git', '-C', str(worktree), *args],
+            capture_output=True,
+            text=True,
+            timeout=120,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False, ''
+    if completed.returncode != 0:
+        return False, ''
+    return True, completed.stdout
+
+
+def _resolve_commit(worktree: Path, revision: str) -> str:
+    """Return the commit *revision* names in *worktree*, or ``''``.
+
+    An unresolvable revision — one the checkout does not hold, a branch that was
+    force-pushed away — is the empty string, which the caller reads as "cannot
+    decide" and never as "nothing changed".
+    """
+    if not revision.strip():
+        return ''
+    ok, out = _git_in(worktree, 'rev-parse', '--verify', '--quiet', f'{revision}^{{commit}}')
+    return out.strip() if ok else ''
+
+
+def _checkout_revision(worktree: Path) -> str:
+    """Return the commit *worktree* has checked out, or ``''``.
+
+    The footprint rule is read from the worktree's FILES, so the commit it holds
+    is part of that read: a rule from another commit is not the head's rule.
+    """
+    ok, out = _git_in(worktree, 'rev-parse', 'HEAD')
+    return out.strip() if ok else ''
+
+
+def _worktree_is_clean(worktree: Path) -> bool | None:
+    """Whether *worktree* has no changed or untracked path; ``None`` if unreadable.
+
+    The footprint rule is read from the worktree's FILES, so a modified or
+    untracked file is a rule the head does not carry — a checkout on the right
+    commit with a rewritten workflow would otherwise decide the delta under a rule
+    nothing committed.
+    """
+    ok, out = _git_in(worktree, 'status', '--porcelain')
+    if not ok:
+        return None
+    return not out.strip()
+
+
+def _ignored_workflow_inputs(worktree: Path) -> list[str] | None:
+    """Return ignored-untracked files under the CI workflow dir, or ``None``.
+
+    ``git status --porcelain`` omits ignored paths, but the footprint rule is read
+    from the DIRECTORY, so an ignored workflow file is a rule the head does not
+    carry. ``None`` says the read itself failed, which is not "none found".
+    """
+    ok, out = _git_in(
+        worktree,
+        'ls-files',
+        '--others',
+        '--ignored',
+        '--exclude-standard',
+        '--',
+        '/'.join(_CI_WORKFLOW_DIR),
+    )
+    if not ok:
+        return None
+    return [line.strip() for line in out.splitlines() if line.strip()]
+
+
+def _delta_paths(worktree: Path, base: str, head: str) -> list[str] | None:
+    """Return the paths that changed from *base* to *head*, or ``None``.
+
+    ``None`` is the load-bearing answer: it says the change could not be listed,
+    which is never read as an empty change. Renames are not followed, so a rename
+    reports both its source and its destination.
+    """
+    ok, out = _git_in(worktree, 'diff', '--name-only', '--no-renames', base, head)
+    if not ok:
+        return None
+    return [line.strip() for line in out.splitlines() if line.strip()]
+
+
+def _sonar_stale_delta_verdict(
+    state: str,
+    count_status: str | None,
+    analysis_revision: str,
+    head_revision: str,
+    worktree: Path,
+) -> dict[str, Any]:
+    """Decide whether a stale analysis is the read for this head.
+
+    The case this exists for: a head the project's CI deliberately never analyses
+    (``skip-on-docs-only``), where the pull-request analysis stays on an earlier
+    head forever. Retrying that read can never succeed, so the lane decides it
+    from the analysed head instead — but only when the change from that head to
+    this one is positively a path set the project does not build.
+
+    Fail-closed is the whole design: ``carry_forward`` is ``True`` only when every
+    changed path was classified as not built by the project's own rule. An
+    unresolvable revision, an unlistable diff, an unreadable rule and a single
+    buildable path all answer ``carry_forward: false`` with the lane's own
+    ``undecidable_read``, which is the state the merge gate already refuses.
+    """
+    verdict: dict[str, Any] = {
+        'status': 'success',
+        'operation': 'sonar-stale-delta',
+        'state': state,
+        'count_status': count_status or '',
+        'carry_forward': False,
+        'reason': 'undecidable_read',
+        'analysis_revision': analysis_revision,
+        'head_revision': head_revision,
+    }
+    if state == 'not_configured':
+        verdict['reason'] = 'not_configured'
+        return verdict
+    if count_status != 'undecidable':
+        # A confirmed or unconfigured read is not the case this decides; only a
+        # stale analysis is carried forward, never a settled one.
+        verdict['reason'] = 'count_status_not_stale'
+        return verdict
+    if not analysis_revision or not head_revision:
+        verdict['detail'] = 'revision_missing: both revisions must be reported to decide a carried-forward read'
+        return verdict
+    if not worktree.is_dir():
+        verdict['detail'] = f'worktree_unreadable: {worktree} is not a directory'
+        return verdict
+
+    analysed = _resolve_commit(worktree, analysis_revision)
+    if not analysed:
+        verdict['detail'] = (
+            f'revision_unresolvable: the analysed revision {analysis_revision} is not present in the routed checkout'
+        )
+        return verdict
+    head = _resolve_commit(worktree, head_revision)
+    if not head:
+        verdict['detail'] = (
+            f'revision_unresolvable: the head revision {head_revision} is not present in the routed checkout'
+        )
+        return verdict
+    if analysed == head:
+        # The same commit on both sides is not a stale analysis at all, so the
+        # carried-forward sentence would assert a difference that does not exist.
+        verdict['detail'] = (
+            f'revisions_equal: analysed {analysis_revision} and head {head_revision} are the same commit'
+        )
+        return verdict
+    checkout = _checkout_revision(worktree)
+    if checkout != head:
+        # The rule that decides this delta is read from the worktree's files, so a
+        # worktree on another commit carries another rule — and a rule from the
+        # wrong commit can call a path unbuilt that the head builds.
+        verdict['detail'] = (
+            f'worktree_not_at_head: the checkout is at {checkout or "an unreadable commit"} and the '
+            f"head revision resolves to {head}; the footprint rule it carries is not the head's rule"
+        )
+        return verdict
+    clean = _worktree_is_clean(worktree)
+    if clean is None:
+        verdict['detail'] = 'worktree_unreadable: the checkout status could not be read'
+        return verdict
+    if not clean:
+        # A modified or untracked workflow file is a rule the head does not carry,
+        # so the same fail-closed answer as a checkout on another commit.
+        verdict['detail'] = (
+            'worktree_dirty: the checkout carries changed or untracked paths, so the rule it presents '
+            'is not the rule at the head'
+        )
+        return verdict
+    ignored = _ignored_workflow_inputs(worktree)
+    if ignored is None:
+        verdict['detail'] = 'worktree_unreadable: the ignored-path read of the workflow directory failed'
+        return verdict
+    if ignored:
+        verdict['detail'] = (
+            'worktree_ignored_inputs: the workflow directory carries ignored files the head does not '
+            f'carry ({", ".join(ignored)}), and the rule is read from the directory'
+        )
+        return verdict
+
+    paths = _delta_paths(worktree, analysed, head)
+    if paths is None:
+        verdict['detail'] = f'diff_failed: the change from {analysis_revision} to {head_revision} could not be listed'
+        return verdict
+    verdict['changed_paths'] = paths
+    if not paths:
+        verdict['carry_forward'] = True
+        verdict['source'] = 'none'
+        verdict['reason'] = (
+            f'{_CARRY_FORWARD_UNBUILT}: analysed {analysis_revision} != head {head_revision}; '
+            'the delta since the analysed head is empty'
+        )
+        return verdict
+
+    rows, source, rule_reason = _classify_paths(worktree, paths)
+    verdict['source'] = source
+    if rule_reason:
+        # A rule that could not be read is not a rule that skips nothing: every
+        # path is buildable, so the read stays undecidable rather than carried.
+        verdict['detail'] = f'rule_unreadable: {rule_reason}'
+        return verdict
+    buildable = [row['path'] for row in rows if row['kind'] == 'buildable']
+    if buildable:
+        verdict['buildable_paths'] = buildable
+        verdict['detail'] = (
+            f'delta_buildable: {len(buildable)} of {len(paths)} changed path(s) are paths the project builds'
+        )
+        return verdict
+
+    verdict['carry_forward'] = True
+    verdict['reason'] = (
+        f'{_CARRY_FORWARD_UNBUILT}: analysed {analysis_revision} != head {head_revision}; '
+        'the delta since the analysed head is not built'
+    )
+    return verdict
+
+
+def cmd_sonar_stale_delta(args: argparse.Namespace) -> dict[str, Any]:
+    """Report whether a stale Sonar analysis may stand as this head's read."""
+    state = getattr(args, 'state', None)
+    if state not in _SONAR_STATES:
+        return {
+            'status': 'error',
+            'error': 'invalid_sonar_state',
+            'message': f'--state must be one of {", ".join(_SONAR_STATES)}; got {state!r}',
+        }
+    count_status = getattr(args, 'count_status', None)
+    if state == 'configured':
+        if count_status not in _SONAR_COUNT_STATUSES:
+            return {
+                'status': 'error',
+                'error': 'invalid_count_status',
+                'message': (
+                    f'--count-status must be one of {", ".join(_SONAR_COUNT_STATUSES)} '
+                    f'when --state configured; got {count_status!r}'
+                ),
+            }
+    elif count_status is not None:
+        return {
+            'status': 'error',
+            'error': 'state_contradicts_read',
+            'message': 'a not_configured state carries no read; drop --count-status',
+        }
+    elif getattr(args, 'analysis_revision', None) is not None or getattr(args, 'head_revision', None) is not None:
+        # Symmetric with the other two Sonar verbs: a project with no Sonar has no
+        # read, so revisions beside `not_configured` are a contradiction rather
+        # than an input the verb silently ignores.
+        return {
+            'status': 'error',
+            'error': 'state_contradicts_read',
+            'message': (
+                'a not_configured state carries no read; drop --count-status, --analysis-revision and --head-revision'
+            ),
+        }
+    worktree = Path(getattr(args, 'worktree', None) or '.').resolve()
+    return _sonar_stale_delta_verdict(
+        state,
+        count_status,
+        (getattr(args, 'analysis_revision', '') or '').strip(),
+        (getattr(args, 'head_revision', '') or '').strip(),
+        worktree,
+    )
 
 
 def _operator_selection_records(progress_file: Path) -> set[str] | None:
@@ -1740,6 +2046,73 @@ def _operator_selection_records(progress_file: Path) -> set[str] | None:
     return recorded
 
 
+def _carried_forward_revisions(
+    args: argparse.Namespace,
+) -> tuple[tuple[str, str] | None, dict[str, Any] | None]:
+    """Read the carried-forward revision pair, or refuse it.
+
+    A carried-forward read is licensed by TWO facts that only make sense together:
+    the analysed revision the enumeration was measured at, and the head it stands
+    in for. One alone describes no read, so it is refused rather than
+    half-recorded, and the pair is refused on any read that is not a confirmed
+    enumeration — the carry-forward renames a measured figure, never a failed one.
+    """
+    analysed = (getattr(args, 'carried_forward_analysis_revision', None) or '').strip()
+    head = (getattr(args, 'carried_forward_head_revision', None) or '').strip()
+    if not analysed and not head:
+        return None, None
+    if not analysed or not head:
+        return None, {
+            'status': 'error',
+            'error': 'carried_forward_incomplete',
+            'message': (
+                'a carried-forward read names both revisions: '
+                '--carried-forward-analysis-revision and --carried-forward-head-revision'
+            ),
+        }
+    if analysed == head:
+        # Two equal revisions describe a settled read, not a carried-forward one:
+        # the verdict would assert a difference that does not exist.
+        return None, {
+            'status': 'error',
+            'error': 'carried_forward_revisions_equal',
+            'message': (
+                'the carried-forward analysed revision and head revision are the same commit; '
+                'a carried-forward read names the head an earlier analysis is standing in for'
+            ),
+        }
+    if getattr(args, 'count_status', None) != 'confirmed':
+        return None, {
+            'status': 'error',
+            'error': 'carried_forward_requires_confirmed',
+            'message': (
+                'a carried-forward read is a confirmed enumeration of the analysed head; '
+                f'--count-status is {getattr(args, "count_status", None)!r}'
+            ),
+        }
+    return (analysed, head), None
+
+
+def _carried_forward(verdict: dict[str, Any], carried_forward: tuple[str, str] | None) -> dict[str, Any]:
+    """Re-name an ADMITTING verdict as a carried-forward read.
+
+    A carried-forward figure is a measured figure of an EARLIER head, so a verdict
+    that admitted it on ``no_open_issues`` would read like a measurement of this
+    one. The distinct name carries both revisions and the fact that the delta was
+    not built, so the landing and the operator see which head was counted.
+    """
+    if carried_forward is None or not verdict.get('merge_allowed'):
+        return verdict
+    analysed, head = carried_forward
+    verdict['reason'] = (
+        f'{_CARRY_FORWARD_UNBUILT}: analysed {analysed} != head {head}; the delta since the analysed head is not built'
+    )
+    verdict['carried_forward'] = True
+    verdict['analysis_revision'] = analysed
+    verdict['head_revision'] = head
+    return verdict
+
+
 def _sonar_gate_verdict(
     state: str,
     count_status: str | None,
@@ -1748,6 +2121,7 @@ def _sonar_gate_verdict(
     selected_keys: list[str],
     recorded_keys: set[str] | None = None,
     hotspot_keys: list[str] | None = None,
+    carried_forward: tuple[str, str] | None = None,
 ) -> dict[str, Any]:
     """Decide whether the Sonar read admits the merge (section 7's condition).
 
@@ -1813,13 +2187,16 @@ def _sonar_gate_verdict(
                 'reason': 'confirmed_zero_with_open_keys',
                 'open_issue_count': 0,
             }
-        return {
-            'status': 'success',
-            'operation': 'sonar-gate',
-            'merge_allowed': True,
-            'reason': 'no_open_issues',
-            'open_issue_count': 0,
-        }
+        return _carried_forward(
+            {
+                'status': 'success',
+                'operation': 'sonar-gate',
+                'merge_allowed': True,
+                'reason': 'no_open_issues',
+                'open_issue_count': 0,
+            },
+            carried_forward,
+        )
     if len(set(open_keys)) < count:
         # Distinct keys, not list length: a repeated key enumerates one issue
         # twice, so `--open-count 2 --open-keys K1,K1` would otherwise pass a
@@ -1869,14 +2246,17 @@ def _sonar_gate_verdict(
                 'open_issue_count': count,
                 'unrecorded_keys': unrecorded,
             }
-    return {
-        'status': 'success',
-        'operation': 'sonar-gate',
-        'merge_allowed': True,
-        'reason': 'all_open_issues_operator_selected',
-        'open_issue_count': count,
-        'selected_count': len(selected),
-    }
+    return _carried_forward(
+        {
+            'status': 'success',
+            'operation': 'sonar-gate',
+            'merge_allowed': True,
+            'reason': 'all_open_issues_operator_selected',
+            'open_issue_count': count,
+            'selected_count': len(selected),
+        },
+        carried_forward,
+    )
 
 
 def cmd_sonar_gate(args: argparse.Namespace) -> dict[str, Any]:
@@ -1915,13 +2295,16 @@ def cmd_sonar_gate(args: argparse.Namespace) -> dict[str, Any]:
             or getattr(args, 'open_keys', None) is not None
             or getattr(args, 'operator_selected_keys', None) is not None
             or getattr(args, 'hotspot_keys', None) is not None
+            or getattr(args, 'carried_forward_analysis_revision', None) is not None
+            or getattr(args, 'carried_forward_head_revision', None) is not None
         ):
             return {
                 'status': 'error',
                 'error': 'state_contradicts_read',
                 'message': (
                     'a not_configured state carries no read; drop --count-status, --open-count, '
-                    '--open-keys, --operator-selected-keys and --hotspot-keys'
+                    '--open-keys, --operator-selected-keys, --hotspot-keys and the '
+                    '--carried-forward-* revisions'
                 ),
             }
         return _sonar_gate_verdict(state, None, None, [], [])
@@ -1934,6 +2317,9 @@ def cmd_sonar_gate(args: argparse.Namespace) -> dict[str, Any]:
                 f'when --state configured; got {count_status!r}'
             ),
         }
+    carried_forward_revisions, carried_forward_error = _carried_forward_revisions(args)
+    if carried_forward_error is not None:
+        return carried_forward_error
     if getattr(args, 'operator_selected_keys', None) and not getattr(args, 'progress_file', None):
         # A selection with no record behind it is exactly the self-attested
         # dismissal this gate exists to remove. The flag alone is the lane's word;
@@ -1975,6 +2361,7 @@ def cmd_sonar_gate(args: argparse.Namespace) -> dict[str, Any]:
         _split_csv(getattr(args, 'operator_selected_keys', None)),
         _progress_selection(getattr(args, 'progress_file', None)),
         _split_csv(getattr(args, 'hotspot_keys', None)),
+        carried_forward_revisions,
     )
 
 
@@ -2017,19 +2404,23 @@ def cmd_sonar_facts(args: argparse.Namespace) -> dict[str, Any]:
             'message': f'--state must be one of {", ".join(_SONAR_STATES)}; got {state!r}',
         }
 
+    # Assigned on both branches so the analysed-revision guard below can read it
+    # without a branch-dependent rebind.
+    count_status = None
     if state == 'not_configured':
         # Symmetric with the gate: a read supplied beside `not_configured` is a
         # contradiction, and rendering `n/a` over it would hide that the caller
         # read one project's issues and reported another project's state.
         if any(
-            getattr(args, name, None) is not None for name in ('count_status', 'open_count', 'rules', 'gate_status')
+            getattr(args, name, None) is not None
+            for name in ('count_status', 'open_count', 'rules', 'gate_status', 'analysed_revision')
         ):
             return {
                 'status': 'error',
                 'error': 'state_contradicts_read',
                 'message': (
                     'a not_configured state carries no read; drop --count-status, --open-count, '
-                    '--rules and --gate-status'
+                    '--rules, --gate-status and --analysed-revision'
                 ),
             }
         count, rules = 'n/a', 'n/a'
@@ -2086,6 +2477,21 @@ def cmd_sonar_facts(args: argparse.Namespace) -> dict[str, Any]:
                 }
 
     fact_lines = [f'{_SONAR_OPEN_ISSUES_FACT}={count}', f'step.{_SONAR_FACT_STEP}.open_issue_rules={rules}']
+    # The analysed revision rides beside a CONFIRMED count only. A carried-forward
+    # figure is a figure of that revision, so the fact must name it — otherwise a
+    # reader takes an enumeration of an earlier head for a measurement of this one.
+    analysed_revision = (getattr(args, 'analysed_revision', None) or '').strip()
+    if analysed_revision:
+        if count_status != 'confirmed':
+            return {
+                'status': 'error',
+                'error': 'analysed_revision_requires_confirmed',
+                'message': (
+                    '--analysed-revision names the head a confirmed figure was measured at; '
+                    f'--count-status is {count_status!r}, which measured nothing'
+                ),
+            }
+        fact_lines.append(f'step.{_SONAR_FACT_STEP}.analysed_revision={analysed_revision}')
     # The quality-gate fact is OPTIONAL and rides only when the caller read one:
     # a line asserting a state nothing observed would be worse than its absence.
     if gate_status is not None:
@@ -2218,17 +2624,24 @@ _DETAILS_TOKEN_RE = re.compile(r'</?details\b[^>]*>', re.IGNORECASE)
 #: exactly like every other section's.
 _UNCLASSIFIED_SECTION = 'unclassified'
 
-#: A BOLD span — the second shape a reviewer writes a section heading in. OBSERVED on
-#: ``cuioss/plan-marshall#1983`` and ``#1984``, where ``**⚠️ Outside diff range comments
-#: (1)**`` heads a ``[!CAUTION]`` block whose finding rides a ``<summary>`` row that
-#: declares no count of its own.
-_BOLD_SPAN_RE = re.compile(r'\*\*(?P<title>[^*]+?)\*\*')
+#: A BOLD marker, and the span pairing this parser derives from the marker positions. A
+#: reviewer writes a section heading in a second shape — OBSERVED on ``cuioss/plan-marshall#1983``
+#: and ``#1984``, where ``**⚠️ Outside diff range comments (1)**`` heads a ``[!CAUTION]`` block
+#: whose finding rides a ``<summary>`` row that declares no count of its own.
+#:
+#: Pairing is by MARKER ROLE, never a non-overlapping ``finditer`` over the whole body: one
+#: stray ``**`` earlier in the body (``x **kwargs y **⚠️ Outside diff range comments (1)**``)
+#: would spend a real heading's opening marker as the closing marker of the pair before it, and
+#: the heading would never be read — an UNDER-count, the one direction this gate must never
+#: take. An opener is the next CLOSING marker's partner (``_bold_spans``), so the heading is
+#: read whatever an unpaired marker did earlier.
+_BOLD_MARKER_RE = re.compile(r'\*\*')
 
 #: The elements whose text is PROSE, never a heading: a finding's own row body (``<dd>``)
 #: and an inline code sample (``<code>``). A reviewer quotes section headings inside them,
 #: and reading such a quote as a heading would cut the enclosing section's span short — an
 #: UNDER-count, the one direction this gate must never take. A region that is never closed
-#: runs to the end of the body, which is the fail-safe direction.
+#: runs to the end of the BLOCK it sits in, which is the fail-safe direction.
 _PROSE_TAG_RE = re.compile(r'<(?P<close>/?)(?P<name>dd|code)\b[^>]*>', re.IGNORECASE)
 
 #: The count a normalised bold heading still carries after normalisation — removed before
@@ -2237,6 +2650,9 @@ _HEADING_TRAILING_COUNT_RE = re.compile(r'\s*(?:\(\d+\)|\d+)\s*$')
 
 #: A BOLD span inside a Markdown code span is a QUOTE of the heading, not a heading: a
 #: reviewer writes `` `**Outside diff range comments (1)**` `` when it discusses the rule.
+#: Only a code span holding the heading and nothing else is read as that quotation — a
+#: stray backtick earlier in the body pairs with a later one and spans the prose between
+#: them, so a wider match would hide a real heading (see ``_quoted_in_a_code_span``).
 _BACKTICK_SPAN_RE = re.compile(r'`[^`]*`')
 
 #: The severity words a review ROW opens with, and the location marker it carries. A block
@@ -2413,12 +2829,148 @@ def _inside_prose(body: str, offset: int) -> bool:
     reading one as a heading would end the enclosing section's span there and lose every
     finding after it.
 
-    The scan is bounded by the region that is OPEN at ``offset`` — the innermost enclosing
-    block, or the top-level prose since the last closed block. That is what stops an
-    unterminated ``<code>`` in one block from hiding a heading in the next one, and a closing
-    tag in a later block from closing an opener in an earlier one.
+    Prose scopes are per BLOCK, at every depth. A ``<dd>`` or ``<code>`` opened in a block is
+    prose for the rest of that block and ends when the block does — so an unterminated
+    ``<code>`` in one block cannot hide a heading in a later sibling block, and a ``<dd>`` that
+    legitimately spans a nested block keeps its own scope instead of being cut at that block.
+    A tag in a block that has since closed is never counted, whichever depth it sat at. The
+    scopes INHERIT: a tag left open in a parent block is still prose for a heading inside that
+    parent's nested blocks, because the parent's text still contains the heading.
     """
-    region_start = 0
+    scopes: list[dict[str, int]] = [{}]
+    # A close sorts BEFORE an open at the same offset, so an empty block cannot leave its
+    # opener on the stack.
+    events: list[tuple[int, int, str, str, bool]] = []
+    for block in _DETAILS_TOKEN_RE.finditer(body, 0, offset):
+        closing = block.group(0).startswith('</')
+        events.append((block.start(), 0 if closing else 1, 'block', '', closing))
+    for prose in _PROSE_TAG_RE.finditer(body, 0, offset):
+        closing = bool(prose.group('close'))
+        events.append((prose.start(), 0 if closing else 1, 'prose', prose.group('name').lower(), closing))
+    for _position, _order, kind, name, closing in sorted(events):
+        if kind == 'block':
+            if closing:
+                if len(scopes) > 1:
+                    scopes.pop()
+            else:
+                scopes.append({})
+            continue
+        depth = scopes[-1]
+        depth[name] = max(0, depth.get(name, 0) + (-1 if closing else 1))
+    return any(level > 0 for scope in scopes for level in scope.values())
+
+
+#: The ASCII punctuation CommonMark counts as punctuation for its flanking rule — a class the
+#: Unicode categories do not match (``<`` is a math symbol, not a ``P*`` code point).
+_ASCII_PUNCTUATION = frozenset('!"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~')
+
+
+def _is_punctuation(character: str) -> bool:
+    """Whether ``character`` is punctuation in Markdown's flanking rule."""
+    if not character:
+        return False
+    return character in _ASCII_PUNCTUATION or unicodedata.category(character).startswith('P')
+
+
+def _bold_spans(body: str) -> list[tuple[int, int, str]]:
+    """Every ``(start, end, title)`` BOLD span, paired by OPENING and CLOSING markers.
+
+    ``finditer`` over a single-span pattern pairs markers NON-OVERLAPPINGLY, so one stray
+    ``**`` earlier in the body spends a real heading's opening marker as the closing marker of
+    the pair before it and the heading is never read — an under-count.
+
+    A marker's role is Markdown's own flanking rule: it can OPEN when text does not attach on
+    its left (or punctuation does, while the marker itself is followed by non-punctuation), and
+    it can CLOSE when text attaches on its left and nothing that could start a word sits on its
+    right. A marker that could do both closes only when a heading is already open, so
+    ``text**Heading**`` still reads as one span while ``>**⚠️ Heading**`` (an opener glued to
+    punctuation) does not spend itself as a closer. That single rule does everything this parser
+    needs: the heading after a stray ``**kwargs`` is still read (two markers with words to their
+    right are two openers), the prose BETWEEN two bold runs is not read as a heading of its own
+    (``**Major** Nitpick comments (2) **Quick win**`` states one severity label and one win),
+    ``**A****B**`` is two spans, and a title ending in an emoji or a quotation mark closes.
+    """
+    spans: list[tuple[int, int, str]] = []
+    opener: int | None = None
+    for marker in _BOLD_MARKER_RE.finditer(body):
+        before = body[marker.start() - 1] if marker.start() else ''
+        after = body[marker.end() : marker.end() + 1]
+        can_open = (
+            bool(after)
+            and not after.isspace()
+            and (not _is_punctuation(after) or not before or before.isspace() or _is_punctuation(before))
+        )
+        can_close = (
+            bool(before)
+            and not before.isspace()
+            and (not _is_punctuation(before) or not after or after.isspace() or _is_punctuation(after))
+        )
+        if not (can_close and not (can_open and opener is None)):
+            opener = marker.start()
+            continue
+        if opener is not None:
+            # A delimiter RUN can carry three markers (`***Heading***`), so the run's inner
+            # asterisks belong to the delimiter, not to the title: stripping them keeps a
+            # triple-emphasis heading readable while a title with an asterisk INSIDE it still is
+            # not a span.
+            title = body[opener + len('**') : marker.start()].strip('*')
+            if title and '*' not in title:
+                spans.append((opener, marker.end(), title))
+        opener = None
+    return spans
+
+
+def _quoted_in_a_code_span(body: str, start: int, end: int) -> bool:
+    """Whether the bold span at ``start``–``end`` is the WHOLE content of a code span.
+
+    A reviewer quotes a heading as a code span (`` `**Outside diff range comments (1)**` ``).
+    A code span that holds the heading plus other text is not that quotation: a stray backtick
+    earlier in the body pairs with a later one and spans prose on both sides of a real heading,
+    and reading it as a quotation would drop the heading's findings — the direction this gate
+    must never take.
+    """
+    heading = body[start:end].strip()
+    for span in _BACKTICK_SPAN_RE.finditer(body):
+        if span.start() <= start and end <= span.end():
+            return body[span.start() + 1 : span.end() - 1].strip() == heading
+    return False
+
+
+#: What separates a bold heading from the text after it in the flattened display form a
+#: review body arrives in: the blockquote markers and line markup the flatten inserts.
+_FLATTENED_BREAK_RE = re.compile(r'^(?:[\s>]|<br\s*/?>)*', re.IGNORECASE)
+
+
+def _heading_is_mentioned_in_prose(body: str, offset: int) -> bool:
+    """Whether a SENTENCE runs on past the bold heading ending at ``offset``.
+
+    ``**Outside diff range comments (1)** is empty this time.`` is a heading QUOTED in prose:
+    the sentence continues past the closing marker, so the span is not a heading over what
+    follows, and minting a finding for it would be a phantom. A list row (``- `src/a.py:12`
+    …``), a table, a tag or a block is not a sentence, so a counted heading above any of those
+    is a heading — the shape where the drop rule read a declaration as zero findings.
+
+    The test keys on a LETTER continuing the sentence. A continuation led by punctuation
+    (``**: none this round.``) is therefore read as a heading — over-counting rather than
+    dropping a row, which is the direction this gate permits. The residual is a prose ROW that
+    happens to start with a letter, which is the same text as a mention in the flattened form
+    (a surviving newline is treated as a space here) and is named in :func:`_body_findings`.
+    """
+    rest = body[offset:]
+    if not rest.strip():
+        return False
+    break_match = _FLATTENED_BREAK_RE.match(rest)
+    remainder = rest[break_match.end() :] if break_match is not None else rest
+    return bool(remainder) and remainder[0].isalpha()
+
+
+def _enclosing_block_span(body: str, offset: int) -> tuple[int, int]:
+    """Return the ``(open, close)`` offsets of the innermost block OPEN at ``offset``.
+
+    The offsets are the ``<details>`` opener's and its matching closer's. A block that is never
+    closed runs to the end of the body — the fail-safe direction for a caller measuring what a
+    block contains.
+    """
     stack: list[int] = []
     for token in _DETAILS_TOKEN_RE.finditer(body):
         if token.start() >= offset:
@@ -2426,20 +2978,27 @@ def _inside_prose(body: str, offset: int) -> bool:
         if token.group(0).startswith('</'):
             if stack:
                 stack.pop()
-            if not stack:
-                region_start = token.end()
         else:
             stack.append(token.start())
-    if stack:
-        region_start = stack[-1]
-    depth: dict[str, int] = {}
-    for token in _PROSE_TAG_RE.finditer(body, region_start):
-        if token.start() >= offset:
-            break
-        name = token.group('name').lower()
-        direction = -1 if token.group('close') else 1
-        depth[name] = max(0, depth.get(name, 0) + direction)
-    return any(level > 0 for level in depth.values())
+    if not stack:
+        return offset, offset
+    closing = _block_close(body, stack[-1])
+    return stack[-1], len(body) if closing is None else closing
+
+
+def _inside_non_finding_block(body: str, offset: int) -> bool:
+    """Whether ``offset`` sits inside a block titled as a declared NON-FINDING block.
+
+    A bold label inside a ``Review info`` block is a label on boilerplate, not a section over
+    the body: the block states nothing about this change, so the label's count is not a
+    finding's.
+    """
+    opener, _close = _enclosing_block_span(body, offset)
+    if opener == offset:
+        # No block is open here: the sentinel is the offset itself.
+        return False
+    title = _block_summary_title(body, opener)
+    return title is not None and _is_non_finding_title(title)
 
 
 def _enclosing_sections(
@@ -2692,8 +3251,10 @@ def _body_findings(
     fresh sha looks like.
 
     An inline count the reviewer states only as its status line (the registry's
-    ``review_body_summary_patterns`` literal) is read as the ``inline`` section
-    when no inline section block is present — one declaration, one reading.
+    ``review_body_summary_patterns`` literal) is read as the ``inline`` section too. The status
+    line and an inline section are two statements about the same findings, so the LARGER of the
+    two is the count — a body whose second statement is bigger never reads fewer findings than
+    it declares, and one whose statements agree mints nothing twice.
 
     A section heading is read in THREE shapes, so no block a reviewer filled goes
     unread: a ``<summary>`` title naming a findings section, a BOLD line that states
@@ -2704,6 +3265,27 @@ def _body_findings(
     never a heading: inside a heading it is that heading's content (the per-file grouping),
     and with no enclosing heading it is ignored, exactly as it was before this parser read
     more than one heading shape.
+
+    A counted BOLD heading is read even when it owns no ``<details>`` block: its declared
+    count is a statement about the rows below it, and dropping it is the under-count this
+    gate forbids. Only a heading a sentence runs on from (a mention in prose) or a label
+    inside a declared non-finding block mints nothing — and that mention rule is the one place
+    two shapes cannot be told apart: in the flattened display form a heading over a prose ROW
+    and a heading quoted in a sentence are the same text, so the standing rule that a mention
+    mints nothing wins, and a prose row that reads as a continuation is the one residual
+    under-count this parser accepts. Row shapes with a marker of their own — a bullet, a
+    table, a tag, a block — are read.
+
+    A counted title this parser does not know that ENCLOSES a recognised section is a
+    wrapper, not a section: it reads through, so the section inside it keeps its own
+    findings instead of the wrapper's count replacing them. Its own count is NOT reconciled
+    with the sections it encloses — ``Review (5)`` around one nitpick section reads that
+    section's findings, which errs toward fewer than the body states and is the one residual
+    :func:`_body_findings` accepts here, because the alternative (a stop) refused every body
+    this shape appears in and a counted wrapper is a grouping, not a second finding. A wrapper
+    that says anything of its own beside that section stops with a named cause. Only a
+    ``<summary>`` child makes a wrapper transparent; a wrapper holding a BOLD heading counts
+    both, which errs toward more findings — the direction this gate permits.
 
     A count larger than :data:`_MAX_ENUMERATED_FINDINGS` is the one remaining stop: a body
     that declares it would enumerate that many rows, so the gate names it rather than
@@ -2716,16 +3298,32 @@ def _body_findings(
     offset_of = {index: match.start() for index, match in starts}
     end_of = {index: match.end() for index, match in starts}
     containers = _enclosing_sections(body, matches, heading_at)
+    starts_by_index = {index: match.group('title') for index, match in starts}
+    # A counted title this parser does not know can be a WRAPPER: a group whose content is a
+    # recognised section (`<summary>Review (1)</summary><details><summary>Nitpick comments
+    # (10)</summary>…`). Reading the wrapper's own count as its findings made the outer 1 win
+    # over the inner 10 — the under-count this rule closes. Such a wrapper is read
+    # THROUGH, so it mints nothing and the section inside it is a section of its own.
+    transparent: dict[int, list[int]] = {}
+    for index, title in starts_by_index.items():
+        holder = containers.get(index)
+        if holder is None or heading_at.get(holder) != _UNCLASSIFIED_SECTION:
+            continue
+        if _section_for_title(title)[0] is not None:
+            transparent.setdefault(holder, []).append(index)
+    transparent_children = frozenset(child for children in transparent.values() for child in children)
 
     def _is_content(index: int) -> bool:
-        """Whether this summary sits inside a HEADING — a per-file grouping, not a heading."""
-        return containers.get(index) is not None
+        """Whether this summary sits inside a HEADING — a per-file grouping, not a heading.
+
+        A recognised section inside a counted wrapper is NOT content: the wrapper reads through
+        it, so the section keeps its own findings.
+        """
+        return index not in transparent_children and containers.get(index) is not None
 
     def _is_section(index: int) -> bool:
         """Whether this summary is a section heading."""
         return not _is_content(index) and heading_at[index] is not None
-
-    starts_by_index = {index: match.group('title') for index, match in starts}
 
     def _is_span_boundary(index: int) -> bool:
         """Whether this summary ENDS the span of the section before it.
@@ -2749,20 +3347,20 @@ def _body_findings(
     # bold heading ends the span of the summary section above it, and owns the span below.
     # A bold span inside a `<summary>` is that summary's own decoration (`<summary>**Nitpick
     # comments (3)**</summary>`), never a second heading over the same block; one inside a
-    # finding's row body or a code sample is a QUOTE of a heading; and one that owns no block
-    # is a heading MENTIONED in prose ("**Outside diff range comments (1)** is empty this
-    # time"), which must not mint a finding of its own.
+    # finding's row body or a code sample is a QUOTE of a heading; and one a sentence runs on
+    # from ("**Outside diff range comments (1)** is empty this time") is a heading MENTIONED
+    # in prose, which must not mint a finding of its own.
     summary_spans = [(match.start(), match.end()) for _index, match in starts]
 
     def _lies_within(offset: int, spans: list[tuple[int, int]]) -> bool:
         return any(start <= offset < end for start, end in spans)
 
     bold_candidates = [
-        (match.start(), match.end(), section, declared)
-        for match in _BOLD_SPAN_RE.finditer(body)
-        if not _lies_within(match.start(), summary_spans) and not _inside_prose(body, match.start())
-        if not any(span.start() <= match.start() < span.end() for span in _BACKTICK_SPAN_RE.finditer(body))
-        for section, declared in (_bold_heading_section(match.group('title')),)
+        (start, end, section, declared)
+        for start, end, title in _bold_spans(body)
+        if not _lies_within(start, summary_spans) and not _inside_prose(body, start)
+        if not _quoted_in_a_code_span(body, start, end)
+        for section, declared in (_bold_heading_section(title),)
         if section is not None
     ]
     # A heading that names a section, sits beside a row block, and cannot see that block's end
@@ -2777,6 +3375,18 @@ def _body_findings(
         start: _owned_blocks(body, heading_end) for start, heading_end, _section, _declared in bold_candidates
     }
     bold_headings = [candidate for candidate in bold_candidates if owned_blocks.get(candidate[0])]
+    # A counted heading that owns no `<details>` block is still a heading: the reviewer DECLARED
+    # the findings, and dropping the declaration is the under-count this rule closes. Two
+    # shapes are not that heading — a bold span a SENTENCE runs on from (a heading mentioned in
+    # prose), and a label inside a declared NON-FINDING block (boilerplate's own title).
+    declared_headings = [
+        candidate
+        for candidate in bold_candidates
+        if not owned_blocks.get(candidate[0])
+        and candidate[3]
+        and not _heading_is_mentioned_in_prose(body, candidate[1])
+        and not _inside_non_finding_block(body, candidate[0])
+    ]
     owned_spans = [
         (open_offset, close_offset, start)
         for start, _end, _section, _declared in bold_headings
@@ -2785,6 +3395,14 @@ def _body_findings(
     boundary_starts = sorted(
         [match.start() for index, match in starts if _is_span_boundary(index)]
         + [start for start, _end, _section, _declared in bold_headings]
+        + [start for start, _end, _section, _declared in declared_headings]
+    )
+    # A bold heading nested in another heading's span does not END that span: its own interval
+    # is blanked out of the count instead, so the rows on both sides of it are read by their
+    # own section. That is as true of a counted heading with no block as of one that owns one.
+    nested_starts = frozenset(
+        [start for start, _end, _section, _declared in bold_headings]
+        + [start for start, _end, _section, _declared in declared_headings]
     )
 
     def _span_end(start: int) -> int:
@@ -2795,12 +3413,13 @@ def _body_findings(
             # block is a boundary for every other heading, but cutting the block's own span
             # at it would leave an undeclared bold heading counting an empty span.
             return blocks[-1][1]
-        # A summary section's span is bounded by the next SECTION boundary — never by a bold
-        # heading nested inside its own block, whose interval is excluded from the count
-        # instead, so the rows on either side of it are both read.
-        bold_starts = {start_ for start_, _end, _section, _declared in bold_headings}
+        # A section's span is bounded by the next SECTION boundary — never by a bold heading
+        # nested inside its own block (owning one or not), whose interval is excluded from the
+        # count instead, so the rows on either side of it are both read. Only an OWNING heading
+        # has an interval to blank; a blockless counted heading contributes its declaration and
+        # leaves the rows around it with the section they sit in.
         boundary = next(
-            (bound_ for bound_ in boundary_starts if bound_ > start and bound_ not in bold_starts),
+            (bound_ for bound_ in boundary_starts if bound_ > start and bound_ not in nested_starts),
             len(body),
         )
         enclosing = _enclosing_block_close(body, start)
@@ -2808,6 +3427,38 @@ def _body_findings(
 
     headings: list[tuple[int, int, str, int | None]] = []
     for index, _match in starts:
+        if index in transparent:
+            # The wrapper reads through the section it encloses, so it mints nothing — unless it
+            # says something of its own BESIDE that section (before, between or after it), which
+            # nobody could then attribute: a stop with a named cause, never a count that drops it.
+            # The check runs BEFORE the section filter: a wrapper nested inside another counted
+            # wrapper is that wrapper's content, and validating only the sections that are emitted
+            # would leave the nested one's prose unread.
+            _open, wrapper_close = _enclosing_block_span(body, offset_of[index])
+            gap = body[end_of[index] : wrapper_close]
+            for child in transparent[index]:
+                child_open, child_close = _enclosing_block_span(body, offset_of[child])
+                if child_open < end_of[index] or _block_close(body, child_open) is None:
+                    # A section the wrapper encloses that owns no CLOSED block of its own:
+                    # nothing beside it can be attributed, so the body stops rather than
+                    # dropping whatever the wrapper says around it.
+                    return [], (
+                        f'the counted wrapper {starts_by_index[index]!r} encloses a section without a '
+                        f'closed block of its own, so its findings cannot be read'
+                    )
+                first = child_open - end_of[index]
+                last = min(child_close, wrapper_close) - end_of[index]
+                if first < last:
+                    gap = gap[:first] + ' ' * (last - first) + gap[last:]
+            # ANY non-whitespace text is the wrapper's own content: a letter-or-digit test would
+            # pass a non-ASCII sentence and a symbol-only note, and reading through would drop
+            # both.
+            if re.sub(r'<[^>]+>', ' ', gap).strip():
+                return [], (
+                    f'the counted wrapper {starts_by_index[index]!r} carries content beside the '
+                    f'section it encloses, so its findings cannot be read'
+                )
+            continue
         if not _is_section(index):
             continue
         title = starts_by_index[index]
@@ -2823,19 +3474,21 @@ def _body_findings(
             continue
         headings.append((offset_of[index], end_of[index], section, declared))
     headings.extend(bold_headings)
+    headings.extend(declared_headings)
     headings.sort(key=lambda heading: heading[0])
 
     heading_offsets = frozenset(start for start, _end, _section, _declared in headings)
     findings: list[dict[str, str]] = []
-    seen_inline = False
+    inline_from_sections = 0
     for start, end, section, declared in headings:
-        if section == 'inline':
-            seen_inline = True
         span_end = _span_end(start)
         span = body[end:span_end]
         # A NESTED bold heading's own interval is counted by that heading, so it is blanked
         # here — same length, so every offset below stays where it was. This heading's own
-        # blocks are left intact: they are the span it counts.
+        # blocks are left intact: they are the span it counts. ONLY owning headings blank an
+        # interval: a blockless counted heading owns no rows of its own, so its declaration is
+        # added and the rows around it stay with the section they sit in — blanking its region
+        # would subtract rows nobody counted.
         for open_offset, close_offset, owner_start in owned_spans:
             if owner_start != start and end < open_offset and close_offset < span_end:
                 span = span[: open_offset - end] + ' ' * (close_offset - open_offset) + span[close_offset - end :]
@@ -2851,9 +3504,23 @@ def _body_findings(
                 f'{_MAX_ENUMERATED_FINDINGS} this gate will enumerate'
             )
         findings.extend(_numbered_findings(reviewer, section, count, counters))
+        if section == 'inline':
+            inline_from_sections += count
 
-    if not seen_inline:
-        findings.extend(_inline_status_findings(reviewer, body, bot_kind, counters))
+    # The reviewer's status line and any inline section are two statements about the SAME
+    # inline findings, so the larger one is the count — the same rule the sections themselves
+    # follow. Reading the status line only when no inline section exists let a blockless
+    # ``**Inline comments (2)**`` heading suppress a status line declaring four, which would
+    # read fewer findings than the body states; the shortfall is minted instead, and a body
+    # whose two statements agree mints nothing twice. The shortfall is capped like every other
+    # count, so a hostile status line cannot allocate the process to death.
+    supplement = max(0, _inline_status_count(body, bot_kind) - inline_from_sections)
+    if supplement > _MAX_ENUMERATED_FINDINGS:
+        return [], (
+            f'{supplement} inline findings declared by the status line, above the '
+            f'{_MAX_ENUMERATED_FINDINGS} this gate will enumerate'
+        )
+    findings.extend(_numbered_findings(reviewer, 'inline', supplement, counters))
     return findings, None
 
 
@@ -2871,13 +3538,8 @@ def _numbered_findings(
     return rows
 
 
-def _inline_status_findings(
-    reviewer: str,
-    body: str,
-    bot_kind: str,
-    counters: dict[str, int],
-) -> list[dict[str, str]]:
-    """Read the reviewer's inline count off its declared status line, if any.
+def _inline_status_count(body: str, bot_kind: str) -> int:
+    """Read the reviewer's inline count off its declared status line, or ``0``.
 
     The literal comes from the registry (``review_body_summary_patterns``), never
     from this module: the bot standard remains the one place the phrase lives.
@@ -2889,7 +3551,7 @@ def _inline_status_findings(
     from the literal is the same read on a flattened and on a structured body.
     """
     if not bot_kind:
-        return []
+        return 0
     import bot_registry
 
     for pattern in bot_registry.review_body_summary_patterns(bot_kind):
@@ -2899,8 +3561,8 @@ def _inline_status_findings(
         declared = re.match(r'\s*(\d+)', body[index + len(pattern) :])
         if declared is None:
             continue
-        return _numbered_findings(reviewer, 'inline', int(declared.group(1)), counters)
-    return []
+        return int(declared.group(1))
+    return 0
 
 
 def _bot_of(comment: dict[str, Any]) -> str:
@@ -3486,6 +4148,40 @@ def main() -> int:
     classify_parser.add_argument('--paths', required=True, help='Comma-separated changed paths')
     classify_parser.add_argument('--project-dir', default='.', help='Project root (default: current directory)')
 
+    stale_parser = subparsers.add_parser(
+        'sonar-stale-delta',
+        help="Decide whether a stale Sonar analysis may stand as this head's read",
+        allow_abbrev=False,
+    )
+    stale_parser.add_argument(
+        '--state',
+        required=True,
+        help='The state resolve reported: configured, or not_configured',
+    )
+    stale_parser.add_argument(
+        '--count-status',
+        dest='count_status',
+        default=None,
+        help="The read's count_status (only undecidable can be carried forward)",
+    )
+    stale_parser.add_argument(
+        '--analysis-revision',
+        dest='analysis_revision',
+        default=None,
+        help='The revision the read reported as analysed',
+    )
+    stale_parser.add_argument(
+        '--head-revision',
+        dest='head_revision',
+        default=None,
+        help='The revision the read reported as the head',
+    )
+    stale_parser.add_argument(
+        '--worktree',
+        default='.',
+        help='The routed checkout the analysed revision and the delta are resolved in',
+    )
+
     gate_parser = subparsers.add_parser(
         'sonar-gate', help="Decide whether the pull request's Sonar state admits the merge", allow_abbrev=False
     )
@@ -3537,6 +4233,18 @@ def main() -> int:
         default=None,
         help='Retired: a lane-recorded dismissal is refused (lane_dismissal_not_accepted)',
     )
+    gate_parser.add_argument(
+        '--carried-forward-analysis-revision',
+        dest='carried_forward_analysis_revision',
+        default=None,
+        help='The analysed revision a carried-forward read was measured at (name both this and the head)',
+    )
+    gate_parser.add_argument(
+        '--carried-forward-head-revision',
+        dest='carried_forward_head_revision',
+        default=None,
+        help='The head a carried-forward read stands in for (name both this and the analysed revision)',
+    )
 
     facts_parser = subparsers.add_parser(
         'sonar-facts',
@@ -3571,6 +4279,12 @@ def main() -> int:
         dest='gate_status',
         default=None,
         help='The new-code quality-gate status read at the merge head: ok, error, not_computed or unknown',
+    )
+    facts_parser.add_argument(
+        '--analysed-revision',
+        dest='analysed_revision',
+        default=None,
+        help='The analysed revision a carried-forward confirmed figure was measured at',
     )
 
     review_parser = subparsers.add_parser(
@@ -3626,6 +4340,13 @@ def main() -> int:
         return 0
     if args.command == 'sonar-gate':
         data = cmd_sonar_gate(args)
+        if data.get('status') == 'error':
+            output_toon_error(data['error'], data.get('message', data['error']))
+            return 0
+        output_toon(data)
+        return 0
+    if args.command == 'sonar-stale-delta':
+        data = cmd_sonar_stale_delta(args)
         if data.get('status') == 'error':
             output_toon_error(data['error'], data.get('message', data['error']))
             return 0

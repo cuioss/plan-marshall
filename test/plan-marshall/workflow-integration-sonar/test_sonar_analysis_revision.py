@@ -92,10 +92,12 @@ def _fetch_args(plan_id, pr='42'):
     )
 
 
-def _read_args(pr='42'):
+def _read_args(pr='42', analysed=None):
     argv = ['--project', _PROJECT]
     if pr is not None:
         argv += ['--pr', pr]
+    if analysed is not None:
+        argv += ['--analysed-revision', analysed]
     return parse_ns(
         'plan-marshall',
         'workflow-integration-sonar',
@@ -358,6 +360,182 @@ class TestPlanlessReadRevision:
 
         assert result['count_status'] == 'confirmed'
         assert result['open_issue_count'] == 0
+
+
+class TestLicensedStaleAnalysis:
+    """One named revision may be enumerated, and only that one.
+
+    The lane decides that the change since the analysed head is one the project
+    does not build, and licenses exactly that revision. The read then measures the
+    ANALYSED head and says so; every other stale analysis keeps the unchanged stop.
+    """
+
+    def test_the_named_analysed_revision_enumerates_the_analysed_head(self, monkeypatch, plan_context):
+        plan_context.plan_dir_for('rev-licensed')
+        _install_api(monkeypatch, {_PR_LIST: _pr_listing(_STALE)})
+        ce, head = _settled()
+
+        with (
+            ce,
+            head,
+            patch.object(sonar_mod, '_fetch_issues', return_value={'status': 'success', 'issues': [], 'total': 0}),
+        ):
+            result = sonar_mod.cmd_read_open_issues(_read_args(analysed=_STALE))
+
+        assert result['count_status'] == 'confirmed'
+        assert result['carried_forward'] is True
+        assert result['open_issue_count'] == 0
+        assert result['analysis_revision'] == _STALE
+        assert result['head_revision'] == _HEAD
+        assert result['count_status_reason'].startswith('carried_forward_from_analysed_head')
+        assert _STALE in result['count_status_reason']
+        assert _HEAD in result['count_status_reason']
+
+    def test_a_licensed_read_enumerates_the_keys_of_the_analysed_head(self, monkeypatch, plan_context):
+        """The figure is measured, not assumed: the keys travel with the count."""
+        plan_context.plan_dir_for('rev-licensed-keys')
+        _install_api(monkeypatch, {_PR_LIST: _pr_listing(_STALE)})
+        ce, head = _settled()
+        issues = [
+            {'key': 'ISSUE-1', 'rule': 'java:S1', 'file': 'A.java', 'line': 1, 'type': 'CODE_SMELL'},
+            {'key': 'ISSUE-2', 'rule': 'java:S2', 'file': 'B.java', 'line': 2, 'type': 'BUG'},
+        ]
+
+        with (
+            ce,
+            head,
+            patch.object(sonar_mod, '_fetch_issues', return_value={'status': 'success', 'issues': issues, 'total': 2}),
+        ):
+            result = sonar_mod.cmd_read_open_issues(_read_args(analysed=_STALE))
+
+        assert result['open_issue_count'] == 2
+        assert result['open_keys'] == ['ISSUE-1', 'ISSUE-2']
+        assert result['rules'] == ['java:S1', 'java:S2']
+        assert result['carried_forward'] is True
+
+    def test_a_different_named_revision_keeps_the_stop(self, monkeypatch, plan_context):
+        """A licence that names another revision licenses nothing."""
+        plan_context.plan_dir_for('rev-licensed-wrong')
+        _install_api(monkeypatch, {_PR_LIST: _pr_listing(_STALE)})
+        ce, head = _settled()
+
+        with ce, head, patch.object(sonar_mod, '_fetch_issues') as fetch:
+            result = sonar_mod.cmd_read_open_issues(_read_args(analysed=_HEAD))
+
+        assert result['count_status'] == 'undecidable'
+        assert result['open_issue_count'] is None
+        assert result['count_status_reason'].startswith('stale_analysis')
+        fetch.assert_not_called()
+
+    def test_a_licence_cannot_cover_an_unreported_revision(self, monkeypatch, plan_context):
+        plan_context.plan_dir_for('rev-licensed-nocommit')
+        _install_api(monkeypatch, {_PR_LIST: _pr_listing(with_commit=False)})
+        ce, head = _settled()
+
+        with ce, head, patch.object(sonar_mod, '_fetch_issues') as fetch:
+            result = sonar_mod.cmd_read_open_issues(_read_args(analysed=_STALE))
+
+        assert result['count_status'] == 'undecidable'
+        assert result['count_status_reason'] == 'analysis_revision_unavailable'
+        fetch.assert_not_called()
+
+    def test_a_licence_cannot_cover_an_unresolvable_head(self, monkeypatch, plan_context):
+        plan_context.plan_dir_for('rev-licensed-nohead')
+        _install_api(monkeypatch, {_PR_LIST: _pr_listing(_STALE)})
+        ce, head = _settled(head='')
+
+        with ce, head, patch.object(sonar_mod, '_fetch_issues') as fetch:
+            result = sonar_mod.cmd_read_open_issues(_read_args(analysed=_STALE))
+
+        assert result['count_status'] == 'undecidable'
+        assert result['count_status_reason'] == 'head_revision_unavailable'
+        fetch.assert_not_called()
+
+    def test_a_matching_analysis_is_confirmed_without_the_carried_forward_mark(self, monkeypatch, plan_context):
+        plan_context.plan_dir_for('rev-licensed-match')
+        _install_api(monkeypatch, {_PR_LIST: _pr_listing(_HEAD)})
+        ce, head = _settled()
+
+        with (
+            ce,
+            head,
+            patch.object(sonar_mod, '_fetch_issues', return_value={'status': 'success', 'issues': [], 'total': 0}),
+        ):
+            result = sonar_mod.cmd_read_open_issues(_read_args(analysed=_HEAD))
+
+        assert result['count_status'] == 'confirmed'
+        assert 'carried_forward' not in result
+        assert 'count_status_reason' not in result
+
+
+class TestRevisionMovingDuringTheRead:
+    """An analysis that completes mid-read makes the enumeration another head's."""
+
+    def test_a_revision_that_moves_during_the_read_is_undecidable(self, monkeypatch, plan_context):
+        plan_context.plan_dir_for('rev-read-moved')
+        _install_api(monkeypatch, {})
+        first = {'count_status': 'confirmed', 'analysis_revision': _HEAD, 'head_revision': _HEAD}
+        moved = {
+            'count_status': 'undecidable',
+            'analysis_revision': _STALE,
+            'head_revision': _HEAD,
+            'count_status_reason': f'stale_analysis: analysed {_STALE} != head {_HEAD}',
+        }
+        ce, head = _settled()
+
+        with (
+            ce,
+            head,
+            patch.object(sonar_mod, '_verify_analysis_revision', side_effect=[first, moved]),
+            patch.object(sonar_mod, '_fetch_issues', return_value={'status': 'success', 'issues': [], 'total': 0}),
+        ):
+            result = sonar_mod.cmd_read_open_issues(_read_args())
+
+        assert result['count_status'] == 'undecidable'
+        assert result['open_issue_count'] is None
+        assert 'analysis_revision_changed_during_read' in result['count_status_reason']
+
+    def test_a_head_that_moves_during_the_read_is_undecidable(self, monkeypatch, plan_context):
+        """The analysis can stay put while the head moves, so the head is checked too."""
+        plan_context.plan_dir_for('rev-read-head-moved')
+        _install_api(monkeypatch, {})
+        first = {'count_status': 'confirmed', 'analysis_revision': _HEAD, 'head_revision': _HEAD}
+        moved_head = 'c' * 40
+        later = {'count_status': 'undecidable', 'analysis_revision': _HEAD, 'head_revision': moved_head}
+        ce, head = _settled()
+
+        with (
+            ce,
+            head,
+            patch.object(sonar_mod, '_verify_analysis_revision', side_effect=[first, later]),
+            patch.object(sonar_mod, '_fetch_issues', return_value={'status': 'success', 'issues': [], 'total': 0}),
+        ):
+            result = sonar_mod.cmd_read_open_issues(_read_args())
+
+        assert result['count_status'] == 'undecidable'
+        assert result['open_issue_count'] is None
+        assert result['count_status_reason'].startswith('head_revision_changed_during_read')
+        assert moved_head in result['count_status_reason']
+
+    def test_a_recheck_that_reports_no_revision_is_undecidable(self, monkeypatch, plan_context):
+        """A recheck with nothing to report has proved nothing, so it confirms nothing."""
+        plan_context.plan_dir_for('rev-read-recheck-empty')
+        _install_api(monkeypatch, {})
+        first = {'count_status': 'confirmed', 'analysis_revision': _HEAD, 'head_revision': _HEAD}
+        empty = {'count_status': 'undecidable', 'analysis_revision': '', 'head_revision': _HEAD}
+        ce, head = _settled()
+
+        with (
+            ce,
+            head,
+            patch.object(sonar_mod, '_verify_analysis_revision', side_effect=[first, empty]),
+            patch.object(sonar_mod, '_fetch_issues', return_value={'status': 'success', 'issues': [], 'total': 0}),
+        ):
+            result = sonar_mod.cmd_read_open_issues(_read_args())
+
+        assert result['count_status'] == 'undecidable'
+        assert result['open_issue_count'] is None
+        assert 'analysis_revision_unavailable_on_recheck' in result['count_status_reason']
 
 
 class TestBranchReadOutOfScope:
