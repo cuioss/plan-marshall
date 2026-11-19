@@ -17,12 +17,13 @@ executor regeneration and the registry write to the operator. This command adds
 those two follow-ups and ends by naming the restart it cannot perform.
 
 **Operator-only, by convention.** This harness publishes no key that withholds a
-skill from model invocation: `marketplace/targets/antigravity/frontmatter-rules.json`
-lists `model`, `effort`, `mode`, `tools` and `user-invocable`, and none of them
-restricts model invocation. The entry point is a skill whose description carries an
-invocation trigger, so "user-invoked by construction" is not assumed for it: what
-keeps a model from invoking it here is **not shown by reading** in this repository,
-and the claim is recorded as unconfirmed rather than as a guarantee.
+skill from model invocation: its target metadata,
+`marketplace/targets/antigravity/frontmatter-rules.json`, is the authoritative
+field set, and none of it restricts model invocation. The entry point is a skill
+whose description carries an invocation trigger, so "user-invoked by construction"
+is not assumed for it: what keeps a model from invoking it here is **not shown by
+reading** in this repository, and the claim is recorded as unconfirmed rather than
+as a guarantee.
 
 ## Instructions
 

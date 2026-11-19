@@ -841,11 +841,13 @@ def test_orchestrator_get_reads_an_absent_block_as_the_seeded_default(plan_conte
     """
     _write_marshal(plan_context.fixture_dir, {})
 
-    for field in ('auto_emit', 'decision_confidence_threshold', 'parallelization_scope'):
+    fields = [field for field in _cmd_orchestrator_mod.ORCHESTRATOR_SCALAR_FIELDS if field != 'use_worktree']
+    assert fields, 'the scalar whitelist resolved no ordinary field — the absent-block check would be vacuous'
+    for field in fields:
         get_result = cmd_orchestrator_get(Namespace(field=field))
 
         assert get_result['status'] == 'success', f'{field} was refused on an absent block: {get_result}'
-        assert get_result['value'] == _config_defaults_mod.DEFAULT_ORCHESTRATOR[field]
+        assert get_result['value'] == _config_defaults_mod.DEFAULT_ORCHESTRATOR.get(field)
         assert get_result['set'] is False
 
 

@@ -653,7 +653,9 @@ def _idempotence_block(text: str) -> str:
 
 class TestStepSixDecisionSemantics:
     def test_the_reworded_invalidation_sentence_stays(self):
-        assert _names_reworded_sentence(_read(WORKFLOW_DOC)), (
+        block = _decision_semantics_block(_read(WORKFLOW_DOC))
+
+        assert _names_reworded_sentence(block), (
             "Step 6 no longer carries the reworded sentence — 'another item's decision' must stay "
             'attributable to the item whose analysis changed'
         )
@@ -669,8 +671,9 @@ class TestStepSixDecisionSemantics:
 
     def test_the_item_number_ordering_stays_as_a_stand_alone_sentence(self):
         text = _read(WORKFLOW_DOC)
+        block = _decision_semantics_block(text)
 
-        assert _ORDERING_SENTENCE in text, 'Step 6 no longer states that decisions are applied in item-number order'
+        assert _ORDERING_SENTENCE in block, 'Step 6 no longer states that decisions are applied in item-number order'
         assert '; an item decided earlier' not in text, (
             'the item-number ordering still carries a reopen clause after it'
         )
@@ -712,4 +715,6 @@ class TestStepSixDecisionSemantics:
             text.replace(_REWORDED_SENTENCE, 'An item changed by a decision is re-analysed'), encoding='utf-8'
         )
 
-        assert not _names_reworded_sentence(_read(fixture)), 'a removed reworded sentence must be reported'
+        assert not _names_reworded_sentence(_decision_semantics_block(_read(fixture))), (
+            'a removed reworded sentence must be reported'
+        )

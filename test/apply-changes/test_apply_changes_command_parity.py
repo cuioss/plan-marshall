@@ -45,7 +45,7 @@ from _harness_entry_point_scan import (
 )
 
 from conftest import PROJECT_ROOT
-from marketplace.targets.sync import SYNC_TARGETS
+from marketplace.targets.sync import CLAUDE_TARGET, SYNC_TARGETS
 
 _COMMAND_NAME = 'apply-changes'
 
@@ -144,10 +144,18 @@ _UNCONFIRMED_CLAUSE = 'not shown by reading'
 #: against the data instead of only against its own prose. A rules file that ever
 #: gains the withholding key makes the gap statement false, and this map is what
 #: turns that into a red test rather than a stale paragraph.
-_HARNESS_RULES_FILES: dict[str, str] = {
+#:
+#: The PATH is explicit data: `sync.py` publishes no rules-file path and defines no
+#: directory-naming convention for one, so it cannot be derived from the target
+#: name. The KEY SET is not a second manifest — it is derived from the engine's own
+#: synced harnesses, minus the one harness that publishes the key.
+_RULES_FILE_PATHS: dict[str, str] = {
     'opencode': 'marketplace/targets/opencode/frontmatter-rules.json',
     'antigravity': 'marketplace/targets/antigravity/frontmatter-rules.json',
 }
+_GAP_HARNESSES: tuple[str, ...] = tuple(harness for harness in SYNC_TARGETS if harness != CLAUDE_TARGET)
+_HARNESS_RULES_FILES: dict[str, str] = {harness: _RULES_FILE_PATHS[harness] for harness in _GAP_HARNESSES}
+assert _HARNESS_RULES_FILES, 'the engine syncs no non-Claude harness, so the gap-claim checks would be vacuous'
 
 
 def _read(root: Path, relative: str) -> str:
@@ -356,15 +364,18 @@ def _operator_only_violations(texts: dict[str, str], root: Path = PROJECT_ROOT) 
     for harness, text in texts.items():
         if harness == 'claude':
             continue
+        body = collapsed(text).casefold()
+        # The uncertainty tag is checked BEFORE the key branch: an entry point that
+        # has acquired the key still owes the statement that its effect is unproven,
+        # and a `continue` here would let exactly that case through unmarked.
+        if _UNCONFIRMED_CLAUSE not in body:
+            problems.append(f'the {harness} entry point should mark the operator-only claim as {_UNCONFIRMED_CLAUSE}')
         if frontmatter(text).get(_OPERATOR_ONLY_KEY, '').casefold() == 'true':
             continue
-        body = collapsed(text).casefold()
         if _GAP_CLAUSE not in body:
             problems.append(
                 f'the {harness} entry point should record that its harness publishes {_GAP_CLAUSE} the command'
             )
-        if _UNCONFIRMED_CLAUSE not in body:
-            problems.append(f'the {harness} entry point should mark the operator-only claim as {_UNCONFIRMED_CLAUSE}')
         if harness in _HARNESS_RULES_FILES and _gap_claim_contradicted(root, harness):
             problems.append(
                 f'the {harness} gap statement is now false: {_HARNESS_RULES_FILES[harness]} carries '
@@ -452,13 +463,10 @@ def test_the_command_is_operator_only_on_every_harness():
 def test_each_gap_claiming_harness_has_its_rules_file_to_check_against():
     """Non-vacuity: the contradiction guard reads a real file in the shipped tree.
 
-    The map is also joined to the entry-point population, so a harness added to the
-    engine cannot get the prose check while silently missing the metadata one.
+    The map's key set is DERIVED from the engine's synced harnesses, so it cannot
+    fall behind them; what is left to verify is that each cited path exists and that
+    the shipped metadata still contradicts nothing.
     """
-    assert set(_HARNESS_RULES_FILES) == set(_ENTRY_POINT_PATHS) - {'claude'}, (
-        f'the gap-claiming harnesses {sorted(_HARNESS_RULES_FILES)} do not match the non-Claude '
-        f'entry points {sorted(set(_ENTRY_POINT_PATHS) - {"claude"})}'
-    )
     for harness, relative in _HARNESS_RULES_FILES.items():
         assert (PROJECT_ROOT / relative).is_file(), f'the {harness} gap claim cites a file that does not exist'
         assert not _gap_claim_contradicted(PROJECT_ROOT, harness), (
@@ -499,6 +507,15 @@ def test_operator_only_controls(tmp_path: Path):
     reported = _operator_only_violations(_entry_texts(tmp_path))
     assert any(_UNCONFIRMED_CLAUSE in problem for problem in reported), (
         f'an unconfirmed claim relabelled as confirmed must be reported, got {reported}'
+    )
+
+    keyed_opencode = (
+        f'---\ndescription: A stub command.\n{_OPERATOR_ONLY_KEY}: true\n---\n\nNothing is recorded here.\n'
+    )
+    _plant(tmp_path, {'opencode': keyed_opencode})
+    reported = _operator_only_violations(_entry_texts(tmp_path))
+    assert any('opencode' in problem and _UNCONFIRMED_CLAUSE in problem for problem in reported), (
+        f'a keyed non-Claude entry point that omits the uncertainty tag must still be reported, got {reported}'
     )
 
 

@@ -65,7 +65,6 @@ _STALE_PARSER_CLAUSE = 'ci pr comments'
 _PROVIDER_READ_MARKERS: tuple[str, ...] = ("provider's own single", "provider's single")
 
 #: The merge-gate read the standard defines each number as.
-_STANDARD_HEAD_MARKER = 'on the head'
 
 #: The review gate's own data fetch, read from the script rather than trusted from
 #: the prose beside it.
@@ -121,12 +120,23 @@ def _carries_stale_parser_clause(text: str) -> bool:
     return _STALE_PARSER_CLAUSE in text
 
 
-def _standard_rows(text: str) -> str:
-    """The standard's review-number rows and its Sonar fact table."""
-    rows = [line for line in text.splitlines() if line.startswith('| `unresolved_review_threads`')]
-    rows += [line for line in text.splitlines() if line.startswith('| `sonar_open_new_issues`')]
-    assert rows, 'landing-payload-spec.md carries no review-number or Sonar row'
-    return '\n'.join(rows) + '\n' + _between(text, '## Sonar open-issue facts', 'Two sentinels are legal', 'spec')
+#: Every metric the false-claim paragraph compares, with the semantics its own
+#: standard row must state. Per metric, never one combined substring: a single
+#: head-bound row would otherwise satisfy the check for all four.
+_STANDARD_METRICS: tuple[tuple[str, str], ...] = (
+    ('unresolved_review_threads', 'on the head'),
+    ('review_body_findings_total', 'on the head'),
+    ('review_body_findings_handled', 'carry a disposition'),
+    ('sonar_open_new_issues', 'merge head'),
+)
+
+
+def _standard_rows(text: str, metric: str) -> list[str]:
+    """Every standard row that defines ``metric`` — one in the key table, plus the
+    Sonar section's own table where that metric has a second carrier."""
+    rows = [line for line in text.splitlines() if line.startswith(f'| `{metric}`')]
+    assert rows, f'landing-payload-spec.md carries no `{metric}` row'
+    return rows
 
 
 def _review_read_block(script: str) -> str:
@@ -213,16 +223,30 @@ class TestFalseClaimIsHeadBound:
 
 class TestTheStandardAgrees:
     def test_the_standard_defines_the_numbers_as_the_merge_gates_read_on_the_head(self):
-        rows = _standard_rows(_read(_LANDING_SPEC))
+        spec = _read(_LANDING_SPEC)
 
-        assert _STANDARD_HEAD_MARKER in rows, (
-            'landing-payload-spec.md no longer defines the review numbers and the Sonar count as the '
-            "merge gate's read on the head — the analyze paragraph would be head-bound against a "
-            'standard that says something else'
+        for metric, phrase in _STANDARD_METRICS:
+            for row in _standard_rows(spec, metric):
+                assert phrase in row, (
+                    f'the `{metric}` row no longer states {phrase!r} — the analyze paragraph would be '
+                    f'head-bound against a standard that says something else. Row read: {row!r}'
+                )
+
+    def test_a_row_redefined_on_the_live_pr_state_is_detected(self, tmp_path):
+        spec = _read(_LANDING_SPEC)
+        fixture = tmp_path / 'live-state-spec.md'
+        fixture.write_text(
+            spec.replace('the merge gate read on the head', "the merge gate read against the PR's current state", 1),
+            encoding='utf-8',
         )
-        assert 'merge head' in rows or 'merge gate' in rows, (
-            'the standard does not name the merge read the numbers come from'
-        )
+
+        offenders = [
+            metric
+            for metric, phrase in _STANDARD_METRICS
+            if not all(phrase in row for row in _standard_rows(_read(fixture), metric))
+        ]
+
+        assert 'unresolved_review_threads' in offenders, 'a row scoped to the live PR state must be reported'
 
 
 # =============================================================================
