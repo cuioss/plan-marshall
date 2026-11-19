@@ -2,10 +2,10 @@
   "id": "PLAN-LB-167",
   "slug": "sonar-read-on-a-head-ci-never-analyses",
   "workstream": "WS-04",
-  "status": "running",
+  "status": "shipped",
   "lane": "runbook",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "plan_marshall_plan_id": "rb-lb-167-sonar-read-on-a-head-ci-never-analyses",
+  "pr": "2028",
+  "landing": "landings/PLAN-LB-167.md",
   "seq": 167
 }
