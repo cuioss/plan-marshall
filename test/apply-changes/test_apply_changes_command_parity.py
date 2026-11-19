@@ -450,7 +450,15 @@ def test_the_command_is_operator_only_on_every_harness():
 
 
 def test_each_gap_claiming_harness_has_its_rules_file_to_check_against():
-    """Non-vacuity: the contradiction guard reads a real file in the shipped tree."""
+    """Non-vacuity: the contradiction guard reads a real file in the shipped tree.
+
+    The map is also joined to the entry-point population, so a harness added to the
+    engine cannot get the prose check while silently missing the metadata one.
+    """
+    assert set(_HARNESS_RULES_FILES) == set(_ENTRY_POINT_PATHS) - {'claude'}, (
+        f'the gap-claiming harnesses {sorted(_HARNESS_RULES_FILES)} do not match the non-Claude '
+        f'entry points {sorted(set(_ENTRY_POINT_PATHS) - {"claude"})}'
+    )
     for harness, relative in _HARNESS_RULES_FILES.items():
         assert (PROJECT_ROOT / relative).is_file(), f'the {harness} gap claim cites a file that does not exist'
         assert not _gap_claim_contradicted(PROJECT_ROOT, harness), (

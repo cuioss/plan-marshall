@@ -71,10 +71,10 @@ _STANDARD_HEAD_MARKER = 'on the head'
 #: the prose beside it.
 _REVIEW_READ_FUNCTION = 'def _read_review_surfaces('
 _IN_PROCESS_FETCH = 'fetch_pr_comments_data('
-#: The precise shape of a shelled-out read: the module import a subprocess call
-#: needs. Absence of the bare word `subprocess` would also fire on an explanatory
-#: docstring sentence, which is a false positive, not a drift.
-_SUBPROCESS_MARKER = 'import subprocess'
+#: The precise shape of a shelled-out read: a call on the subprocess module. The
+#: bare word would also fire on an explanatory docstring sentence, and the import
+#: alone misses the module-level-import-then-call shape this repository uses.
+_SUBPROCESS_MARKER = 'subprocess.'
 _CI_SUBCOMMAND_LITERAL = "'pr comments'"
 
 
@@ -250,7 +250,12 @@ class TestTheParserClause:
         fixture = tmp_path / 'stale.md'
         fixture.write_text(planted, encoding='utf-8')
 
-        assert _carries_stale_parser_clause(_read(fixture)), 'a stale subcommand clause must be reported'
+        read_back = _read(fixture)
+
+        assert _carries_stale_parser_clause(read_back), 'a stale subcommand clause must be reported'
+        assert not _names_the_provider_read(read_back), (
+            'the provider-read detector must stop firing when the phrase is gone'
+        )
 
     def test_the_review_gate_reads_the_provider_in_process(self):
         block = _review_read_block(_read(_REVIEW_GATE_SCRIPT))
@@ -269,10 +274,10 @@ class TestTheParserClause:
         shelled.write_text(block.replace(_IN_PROCESS_FETCH, "run_ci('pr comments')"), encoding='utf-8')
         subprocess_use = tmp_path / 'subprocess-use.py'
         subprocess_use.write_text(
-            block.replace('    try:\n', '    import subprocess\n\n    try:\n', 1),
+            block.replace('    try:\n', "    subprocess.run(['gh', 'api'])\n\n    try:\n", 1),
             encoding='utf-8',
         )
 
         assert not _reads_the_provider_in_process(_read(shelled)), 'a shelled-out read must not read as in-process'
         assert _shells_out_to_the_comments_subcommand(_read(shelled)), 'a carved command list must be reported'
-        assert not _reads_the_provider_in_process(_read(subprocess_use)), 'a subprocess import must be reported'
+        assert not _reads_the_provider_in_process(_read(subprocess_use)), 'a subprocess call must be reported'

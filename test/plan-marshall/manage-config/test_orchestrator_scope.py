@@ -884,7 +884,10 @@ def test_invalid_json_in_the_local_marshal_never_answers_a_seeded_default(plan_c
 
     try:
         get_result = cmd_orchestrator_get(Namespace(field=_THRESHOLD_FIELD))
-    except (ValueError, SystemExit):
+    except SystemExit as exc:
+        assert exc.code not in (0, None), 'a malformed file exited successfully'
+        return
+    except ValueError:
         return
 
     assert get_result['status'] != 'success', f'a malformed file answered success: {get_result}'
