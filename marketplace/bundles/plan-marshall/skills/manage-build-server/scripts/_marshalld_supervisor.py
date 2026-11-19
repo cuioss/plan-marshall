@@ -233,15 +233,16 @@ async def _pump(stream: asyncio.StreamReader | None, sink: IO[bytes], progress: 
         chunk = await stream.read(_READ_CHUNK)
         if not chunk:
             return failure
+        # Liveness is about the CHILD still producing, so it is marked before the
+        # write decision: output arriving is progress even when its log is gone.
+        if progress is not None:
+            progress.mark()
         if failure is not None:
             continue
         try:
             sink.write(chunk)
         except OSError as exc:
             failure = exc
-            continue
-        if progress is not None:
-            progress.mark()
 
 
 def _terminal_payload(
@@ -406,9 +407,11 @@ The log belongs to the tree that produced it, not to the machine that ran it: a
 daemon-routed build's child runs ``{tree}/.plan/execute-script.py`` with ``cwd``
 inside that tree, and its log is reachable by the same rule — a consumer that may
 read the project (and nothing outside it) can open the ``log_file`` a build result
-names. The tier is the project's own machine-local ``.plan/local``, which every
-plan-marshall project's ``.gitignore`` covers, so a log never surfaces as an
-untracked change, and the subtree is removed with the worktree it was written in.
+names. Inside the project, the tier is the machine-local ``.plan/local`` a plan-marshall
+project ignores once ``marshall-steward:gitignore_setup`` has written its ignore
+rules, so a log does not surface as an untracked change in such a checkout. That
+is a precondition of the tier, not something this module enforces: a checkout
+registered without the rule shows the log in ``git status``.
 """
 
 

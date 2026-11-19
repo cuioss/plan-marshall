@@ -767,38 +767,59 @@ class Daemon:
         project_root = Path(canonicalize_root(spec.project_path))
         directory = self._log_dir if self._log_dir is not None else job_log_dir(project_root)
         log_file = str(directory / f'{job_id}.log')
-        if self._log_dir is None and not project_root.is_dir():
-            # A missing tree is not the daemon's to fabricate: creating
-            # `.plan/local/...` under a non-existent root would both invent a
-            # project tree and hide the real condition behind a later spawn failure.
-            # An explicitly injected ``log_dir`` is exempt — it writes no part of
-            # the tree, so a tree it does not touch cannot make it unusable.
-            raise JobLogUnavailable(log_file, f'the submitting project tree {project_root} is not a directory')
-        if self._log_dir is None and not (project_root / '.plan').is_dir():
-            raise JobLogUnavailable(log_file, f'the submitting project tree {project_root} holds no .plan directory')
         if self._log_dir is None:
+            # The probes touch the tree, so they are inside the logging-failure leg:
+            # a directory that cannot be searched is a tree that cannot hold a log.
+            try:
+                root_ok = project_root.is_dir()
+                plan_ok = root_ok and (project_root / '.plan').is_dir()
+            except OSError as exc:
+                raise JobLogUnavailable(
+                    log_file, f'the submitting project tree {project_root} cannot be inspected: {exc}'
+                ) from exc
+            if not root_ok:
+                # A missing tree is not the daemon's to fabricate: creating
+                # `.plan/local/...` under a non-existent root would both invent a
+                # project tree and hide the real condition behind a later spawn
+                # failure. An explicitly injected ``log_dir`` is exempt — it writes
+                # no part of the tree, so a tree it does not touch cannot matter.
+                raise JobLogUnavailable(log_file, f'the submitting project tree {project_root} is not a directory')
+            if not plan_ok:
+                raise JobLogUnavailable(
+                    log_file, f'the submitting project tree {project_root} holds no .plan directory'
+                )
             # No symlinked component between the tree root and the log directory: a
             # symlink would redirect the write outside the tree while the lexical
             # path still looks in-tree. Checked BEFORE anything is created, so the
             # escaped target is not materialised first.
-            probe = project_root
-            for part in directory.relative_to(project_root).parts:
-                probe = probe / part
-                if probe.is_symlink():
-                    raise JobLogUnavailable(
-                        log_file,
-                        f'the log directory component {probe} is a symlink, which would place the log outside the tree',
-                    )
+            try:
+                probe = project_root
+                for part in directory.relative_to(project_root).parts:
+                    probe = probe / part
+                    if probe.is_symlink():
+                        raise JobLogUnavailable(
+                            log_file,
+                            f'the log directory component {probe} is a symlink, which would place the log outside the tree',
+                        )
+            except OSError as exc:
+                raise JobLogUnavailable(log_file, f'the log directory {directory} cannot be inspected: {exc}') from exc
+        # Created one component at a time under the EXISTING `.plan`, never with
+        # `parents=True`: a tree that vanished under the queue must fail the job, not
+        # be recreated from a stale check. An injected directory is created as given.
         try:
-            directory.mkdir(mode=_DIR_MODE, parents=True, exist_ok=True)
+            if self._log_dir is None:
+                anchor = project_root / '.plan'
+                for part in ('local', 'marshalld', 'job-logs'):
+                    anchor = anchor / part
+                    if not anchor.exists():
+                        anchor.mkdir()
+            else:
+                directory.mkdir(mode=_DIR_MODE, parents=True, exist_ok=True)
             if directory.stat().st_mode & 0o777 != _DIR_MODE:
                 os.chmod(directory, _DIR_MODE)
         except OSError as exc:
             raise JobLogUnavailable(log_file, str(exc)) from exc
         if self._log_dir is None:
-            # The tier is the project's own, and a symlinked component would put the
-            # log somewhere else entirely: the resolved directory must stay under the
-            # resolved tree, or the containment the location promises is not real.
             resolved_root = project_root.resolve()
             if not directory.resolve().is_relative_to(resolved_root):
                 raise JobLogUnavailable(

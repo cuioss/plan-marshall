@@ -158,9 +158,11 @@ def test_two_jobs_of_one_project_keep_separate_logs(home, tmp_path):
     assert first_log.resolve().is_relative_to(project.resolve())
     assert second_log.resolve().is_relative_to(project.resolve())
     assert first_log.exists() and second_log.exists()
-    # Each log holds its OWN job's output — neither overwrote the other.
-    assert _NOTATION in first_log.read_text(encoding='utf-8')
-    assert _OTHER_NOTATION in second_log.read_text(encoding='utf-8')
+    # Each log holds its OWN job's output — compared as whole lines, because one
+    # notation is a prefix of the other and a substring check would not notice a
+    # log that carries the wrong job's output.
+    assert first_log.read_text(encoding='utf-8').splitlines() == [f'job-output {_NOTATION} run']
+    assert second_log.read_text(encoding='utf-8').splitlines() == [f'job-output {_OTHER_NOTATION} run']
     _no_machine_global_job_logs(home)
 
 
