@@ -60,7 +60,7 @@ LLM consumers query findings via ``manage-findings query --type sonar-issue``.
 Usage:
     sonar.py fetch_findings --plan-id <P> --project <key> [--pr <id>] [--severities <list>] [--types <list>] [--ce-wait-timeout <secs>]
     sonar.py post_responses --plan-id <P> --project <key>
-    sonar.py read_open_issues --project <key> [--pr <id>] [--ce-wait-timeout <secs>]
+    sonar.py read_open_issues --project <key> [--pr <id>] [--ce-wait-timeout <secs>] [--analysed-revision <sha>]
     sonar.py --help
 """
 
@@ -996,6 +996,25 @@ def _undecidable_read(
     return result
 
 
+def _licenses_stale_analysis(revision_result: dict[str, Any], licensed_revision: str) -> bool:
+    """Whether *licensed_revision* is exactly the analysis the revision gate found stale.
+
+    A caller may assert "the enumeration of the analysed head is the read for this
+    head" — the carry-forward a lane decides when the change since that head is one
+    the project does not build. The assertion is honoured ONLY when it names the
+    revision the provider actually reported, and only for a ``stale_analysis``
+    verdict: a caller cannot license a revision nothing analysed, nor any other
+    undecidable state, so the stop every other stale analysis gets is unchanged.
+    """
+    if not licensed_revision:
+        return False
+    if revision_result.get('count_status') != 'undecidable':
+        return False
+    if not str(revision_result.get('count_status_reason') or '').startswith(_STALE_ANALYSIS):
+        return False
+    return licensed_revision == (revision_result.get('analysis_revision') or '')
+
+
 def cmd_read_open_issues(args):
     """PLAN-LESS READ verb: a pull request's open issues, returned without persisting.
 
@@ -1006,7 +1025,10 @@ def cmd_read_open_issues(args):
     2. Analysis-revision truth: the revision the provider reports for the pull
        request's analysis is compared with the PR head (the same gate
        ``fetch_findings`` applies), so a clean analysis of an older head is never
-       read as a clean analysis of this one.
+       read as a clean analysis of this one. A caller may license ONE exception —
+       ``--analysed-revision`` naming exactly the revision the provider analysed —
+       which enumerates that analysed head and marks the result ``carried_forward``.
+       Every other stale analysis still stops here.
     3. Fetch the PR-scoped new-code issues via ``_fetch_issues``, and the security
        hotspots still to review via ``_fetch_hotspots`` — the issue search does not
        return hotspots, so the second read is what keeps an unreviewed hotspot from
@@ -1049,14 +1071,22 @@ def cmd_read_open_issues(args):
     #     the producer-side fetch applies, because a clean analysis of an older
     #     head reads exactly like a clean analysis of this one.
     revision_result = _verify_analysis_revision(project, pr)
+    carried_forward = False
     if revision_result['count_status'] != 'confirmed':
-        return _undecidable_read(
-            project,
-            pr,
-            revision_result.get('count_status_reason') or 'analysis does not match the head being read',
-            analysis_revision=revision_result.get('analysis_revision', ''),
-            head_revision=revision_result.get('head_revision', ''),
-        )
+        licensed_revision = (getattr(args, 'analysed_revision', None) or '').strip()
+        if not _licenses_stale_analysis(revision_result, licensed_revision):
+            return _undecidable_read(
+                project,
+                pr,
+                revision_result.get('count_status_reason') or 'analysis does not match the head being read',
+                analysis_revision=revision_result.get('analysis_revision', ''),
+                head_revision=revision_result.get('head_revision', ''),
+            )
+        # The caller named the very revision the provider analysed, and its own
+        # decision (the delta since that head is not built) is what licenses the
+        # enumeration. The figure is a measurement of the ANALYSED head, which the
+        # result states beside both revisions.
+        carried_forward = True
 
     # 2. Enumerate. The issue ``message`` is untrusted free text and stays out of
     #    this contract — the trusted structured fields are what a caller acts on.
@@ -1110,7 +1140,7 @@ def cmd_read_open_issues(args):
     open_hotspots = [hotspot for hotspot in raw_hotspots if hotspot.get('status', 'TO_REVIEW') == 'TO_REVIEW']
     open_keys = [issue['key'] for issue in issues if issue['key']] + [hotspot['key'] for hotspot in open_hotspots]
 
-    return {
+    result: dict[str, Any] = {
         'status': 'success',
         'operation': 'read_open_issues',
         'provider': 'sonar',
@@ -1126,6 +1156,16 @@ def cmd_read_open_issues(args):
         'issues': issues,
         'hotspots': open_hotspots,
     }
+    if carried_forward:
+        # The confirmation is of the ANALYSED head, not of this one. The reason
+        # travels beside the count so no caller can read it as a measurement of
+        # the head the pull request now points at.
+        result['carried_forward'] = True
+        result['count_status_reason'] = (
+            f'carried_forward_from_analysed_head: analysed {revision_result["analysis_revision"]} '
+            f'!= head {revision_result["head_revision"]}'
+        )
+    return result
 
 
 # ============================================================================
@@ -1309,6 +1349,15 @@ Examples:
                         'type': int,
                         'help': 'Override the CE-readiness wait budget in seconds (default: 600; this path '
                         'has no plan manifest to read a configured budget from)',
+                    },
+                    {
+                        'flags': ['--analysed-revision'],
+                        'dest': 'analysed_revision',
+                        'help': (
+                            'The analysed revision whose enumeration stands for this head. Honoured ONLY '
+                            'when it equals the revision the provider reported for a stale analysis; every '
+                            'other stale analysis still answers undecidable'
+                        ),
                     },
                 ],
             },
