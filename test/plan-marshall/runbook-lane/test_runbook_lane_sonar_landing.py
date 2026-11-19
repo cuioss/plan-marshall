@@ -233,6 +233,39 @@ def test_the_gate_status_is_validated_with_a_named_error() -> None:
     assert verdict['error'] == 'invalid_gate_status'
 
 
+def test_the_analysed_revision_rides_beside_a_carried_forward_count() -> None:
+    """The figure was measured at another head, so the fact names that head."""
+    facts = cmd_sonar_facts(_facts_args(open_count='0', analysed_revision='b' * 40))
+
+    assert facts['fact_lines'] == [
+        f'{_COUNT_FACT}=0',
+        f'{_RULES_FACT}=none',
+        f'step.sonar-roundtrip.analysed_revision={"b" * 40}',
+    ]
+    assert check_landing_completeness(_landing(list(facts['fact_lines']))) == (True, [])
+
+
+def test_an_analysed_revision_on_a_failed_read_is_refused() -> None:
+    """A revision names a measurement; a failed read made none to name."""
+    verdict = cmd_sonar_facts(_facts_args(count_status='undecidable', analysed_revision='b' * 40))
+
+    assert verdict['status'] == 'error'
+    assert verdict['error'] == 'analysed_revision_requires_confirmed'
+
+
+def test_a_project_without_sonar_refuses_an_analysed_revision() -> None:
+    verdict = cmd_sonar_facts(_facts_args(state='not_configured', count_status=None, analysed_revision='b' * 40))
+
+    assert verdict['status'] == 'error'
+    assert verdict['error'] == 'state_contradicts_read'
+
+
+def test_no_analysed_revision_line_rides_without_one() -> None:
+    facts = cmd_sonar_facts(_facts_args(open_count='0'))
+
+    assert not any('analysed_revision' in line for line in facts['fact_lines'])
+
+
 def test_the_required_landing_key_set_names_the_review_and_sonar_numbers() -> None:
     assert LANDING_REQUIRED_KEYS == (
         'schema',
