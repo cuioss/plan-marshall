@@ -585,18 +585,28 @@ async def run_job(
 
     timed_out = False
     pump_results: list[Any] = []
-    with sink:
-        pumps = [
-            asyncio.create_task(_pump(proc.stdout, sink, progress)),
-            asyncio.create_task(_pump(proc.stderr, sink, progress)),
-        ]
-        try:
-            await asyncio.wait_for(proc.wait(), timeout=timeout)
-        except TimeoutError:
-            timed_out = True
-            await _stop_job_tree(proc)
-        finally:
-            pump_results = await asyncio.gather(*pumps, return_exceptions=True)
+    try:
+        with sink:
+            pumps = [
+                asyncio.create_task(_pump(proc.stdout, sink, progress)),
+                asyncio.create_task(_pump(proc.stderr, sink, progress)),
+            ]
+            try:
+                await asyncio.wait_for(proc.wait(), timeout=timeout)
+            except TimeoutError:
+                timed_out = True
+                await _stop_job_tree(proc)
+            finally:
+                pump_results = await asyncio.gather(*pumps, return_exceptions=True)
+    except OSError as exc:
+        # Closing the buffered sink flushes what is still pending, so the LAST write
+        # of a small output can fail here rather than in a pump. It is the same
+        # logging failure, reported the same way.
+        return log_file_failure_payload(
+            log_file,
+            command_str,
+            f'the job log at {log_file} could not be flushed when the job ended: {exc}',
+        )
 
     # A voice that could not be written is a failed logging outcome, not a build
     # verdict: the pumps swallowed nothing on purpose, so a write failure is
@@ -611,19 +621,20 @@ async def run_job(
             command_str,
             f'the job log at {log_file} could not be written while the job ran: {write_failure}',
         )
-    if not Path(log_file).exists():
-        # The log was removed under the job (a worktree cleaned up while its build
-        # was still running). Without it the wrapper's own verdict cannot be read,
-        # so an exit-0 wrapper must not be reported as a green build.
+
+    duration = int(progress.elapsed())
+    status = classify_terminal(proc.returncode, timed_out=timed_out)
+    returncode = proc.returncode
+    # A log removed under a still-running job (a worktree cleaned up mid-build) takes
+    # the wrapper's own verdict with it, so an exit-0 child must not be reported as a
+    # green build. A timeout or an external kill is a verdict of ITS OWN — it outranks
+    # log content and is never re-labelled by the missing file.
+    if status == 'success' and not Path(log_file).exists():
         return log_file_failure_payload(
             log_file,
             command_str,
             f'the job log at {log_file} disappeared before its verdict could be read',
         )
-
-    duration = int(progress.elapsed())
-    status = classify_terminal(proc.returncode, timed_out=timed_out)
-    returncode = proc.returncode
     # Exit 0 is necessary but not sufficient: the build wrapper exits 0 even when
     # the build failed, so a `success` classification only stands when the
     # emitted build TOON affirmatively agrees. The supervisor's OWN timeout /

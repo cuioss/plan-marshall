@@ -455,6 +455,31 @@ def test_a_log_path_that_is_a_fifo_fails_instead_of_blocking(tmp_path):
         supervisor._open_job_log(str(fifo))
 
 
+@pytest.mark.skipif(os.name == 'nt', reason='unlinking an open file is POSIX-only')
+def test_a_log_removed_mid_run_does_not_relabel_a_supervisor_timeout(tmp_path):
+    """A timeout is the supervisor's own verdict; a log that vanished under the
+    job outranks nothing. Only a would-be SUCCESS loses its credit without one."""
+    log_file = tmp_path / 'job.log'
+
+    async def _drive():
+        task = asyncio.create_task(
+            supervisor.run_job(
+                [sys.executable, '-c', 'import time; time.sleep(30)'],
+                str(tmp_path),
+                timeout=1,
+                log_file=str(log_file),
+            )
+        )
+        await asyncio.sleep(0.2)
+        log_file.unlink()
+        return await task
+
+    payload = asyncio.run(_drive())
+
+    assert payload['status'] == 'timeout'
+    assert 'log_file_failed' not in str(payload.get('error', ''))
+
+
 # =============================================================================
 # run_job — exit 0 is necessary but not sufficient
 # =============================================================================
