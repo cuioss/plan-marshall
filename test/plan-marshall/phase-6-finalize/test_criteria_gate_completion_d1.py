@@ -547,17 +547,20 @@ def _retired(plan_dir: Path, tmp_path: Path) -> None:
 
 
 def _authorize(criterion: str) -> None:
-    payload = _snap.authorize_change(PLAN_ID, 1, criterion, 'operator: the deliverable is retired')
+    """Record the operator's RETIREMENT decision for ``criterion`` (PLAN-LB-169)."""
+    payload = _snap.authorize_change(
+        PLAN_ID, 1, criterion, 'operator: the deliverable is retired', decision_type='retirement'
+    )
     assert payload['status'] == 'success', payload
 
 
 def test_a_retired_deliverable_is_closed_by_the_completion_gate(plan_context, tmp_path) -> None:
-    """CONTROL: the gate reads a fully authorized retirement as closed.
+    """The gate reads a fully retired deliverable as closed.
 
-    This holds on the unfixed tree as well — ``open_criteria`` already skips each
-    criterion an operator authorized — so it pins the required behaviour rather than
-    the retirement branch's necessity. What the branch owns is the fail-closed half,
-    pinned by ``test_an_invalid_retirement_closes_nothing_not_even_a_graded_criterion``.
+    The helper records a RETIREMENT decision, so this cannot run at the unfixed tree
+    (which has no decision type); it pins the required behaviour. What the retirement
+    branch owns beyond it is the fail-closed half, pinned by
+    ``test_an_invalid_retirement_closes_nothing_not_even_a_graded_criterion``.
     """
     plan_dir = _plan(plan_context, ['a', 'b'], freeze_from=['a', 'b'])
     _authorize('a')
@@ -571,11 +574,10 @@ def test_a_retired_deliverable_is_closed_by_the_completion_gate(plan_context, tm
 
 
 def test_a_criterion_authorized_after_the_retired_verdict_still_closes_it(plan_context, tmp_path) -> None:
-    """The verdict and the authorizations are two writes, and the gate reads both live.
+    """The verdict and the retirement decisions are two writes, and the gate reads both live.
 
-    The order the two writes land in therefore decides nothing: a criterion authorized
-    after the verdict was filed closes exactly like one authorized before it. CONTROL:
-    like the test above, this holds on the unfixed tree too.
+    The order the two writes land in therefore decides nothing: a retirement decision
+    recorded after the verdict was filed closes exactly like one recorded before it.
     """
     plan_dir = _plan(plan_context, ['a', 'b'], freeze_from=['a', 'b'])
     _authorize('a')
@@ -605,12 +607,8 @@ def test_a_valid_retirement_does_not_re_open_the_criteria_its_row_graded(plan_co
 
     A delta round copies the previous row's criterion grades into the row it re-grades,
     so a retirement can arrive beside a ``not_met`` grade from the round before it. Once
-    every criterion is authorized the retirement closes the deliverable: reading those
-    stale grades would re-open work the operator closed.
-
-    CONTROL, like its two neighbours: the per-criterion authorization skip already
-    closes every criterion here on the unfixed tree, so this pins the required
-    behaviour rather than the retirement branch.
+    every criterion carries a retirement decision the retirement closes the deliverable:
+    reading those stale grades would re-open work the operator closed.
     """
     plan_dir = _plan(plan_context, ['a', 'b'], freeze_from=['a', 'b'])
     _authorize('a')
@@ -638,11 +636,11 @@ def test_a_valid_retirement_does_not_re_open_the_criteria_its_row_graded(plan_co
 
 
 def test_an_invalid_retirement_closes_nothing_not_even_a_graded_criterion(plan_context, tmp_path) -> None:
-    """A retirement missing an authorization releases NO criterion, graded or not.
+    """A retirement missing a retirement decision releases NO criterion, graded or not.
 
     The gate reads the verdict without running the validator, so trusting a ``met``
     grade carried by a row whose own precondition fails would let an unverified
-    retirement close work no operator authorized.
+    retirement close work no operator retired.
     """
     plan_dir = _plan(plan_context, ['a', 'b'], freeze_from=['a', 'b'])
     _sealed_live(
