@@ -127,6 +127,19 @@ _HARNESS_LOCATION_MARKERS: tuple[str, ...] = ('plugin cache', '~/.claude', '.con
 #: defect the gate pin exists to prevent.
 _RESTRICTIVE_MARKERS: tuple[str, ...] = ('only when', 'under the same')
 
+#: The frontmatter key that withholds a command or skill from model invocation. One
+#: harness publishes it; the other two publish no such key, and the gap is recorded
+#: in the entry point beside the sequence rather than in a PR body.
+_OPERATOR_ONLY_KEY = 'disable-model-invocation'
+
+#: What a harness without the key must say instead: that it publishes no key that
+#: withholds the command, and what keeps a model from invoking it there.
+_GAP_CLAUSE = 'no key that withholds'
+
+#: The tag every entry point must carry on the operator-only claim — the key's own
+#: effect is not shown by reading, and saying so is what keeps the claim honest.
+_UNCONFIRMED_CLAUSE = 'not shown by reading'
+
 
 def _read(root: Path, relative: str) -> str:
     """``relative`` read from ``root``, failing when the path is absent."""
@@ -293,6 +306,38 @@ def _settings_allow(root: Path = PROJECT_ROOT) -> list[str]:
     return list(payload['permissions']['allow'])
 
 
+def _operator_only_violations(texts: dict[str, str]) -> list[str]:
+    """Problems with the operator-only pin, per harness.
+
+    The Claude entry point carries the key. A harness that publishes no such key
+    declares the gap and what keeps a model from invoking the command there. Every
+    entry point tags the claim as unconfirmed, because whether either harness
+    honours its frontmatter is a runtime behaviour this repository only cites.
+    """
+    problems: list[str] = []
+    claude = texts.get('claude')
+    if claude is None:
+        return ['no claude entry point was read, so the operator-only key cannot be pinned']
+    if frontmatter(claude).get(_OPERATOR_ONLY_KEY, '').casefold() != 'true':
+        problems.append(f'the claude entry point should declare {_OPERATOR_ONLY_KEY}: true')
+    if _UNCONFIRMED_CLAUSE not in collapsed(claude).casefold():
+        problems.append(f"the claude entry point should record that the key's effect is {_UNCONFIRMED_CLAUSE}")
+
+    for harness, text in texts.items():
+        if harness == 'claude':
+            continue
+        if frontmatter(text).get(_OPERATOR_ONLY_KEY, '').casefold() == 'true':
+            continue
+        body = collapsed(text).casefold()
+        if _GAP_CLAUSE not in body:
+            problems.append(
+                f'the {harness} entry point should record that its harness publishes {_GAP_CLAUSE} the command'
+            )
+        if _UNCONFIRMED_CLAUSE not in body:
+            problems.append(f'the {harness} entry point should mark the operator-only claim as {_UNCONFIRMED_CLAUSE}')
+    return problems
+
+
 def _plant(root: Path, overrides: dict[str, str]) -> None:
     """Write every entry point under ``root``, replacing the harnesses in ``overrides``."""
     for harness, relative in _ENTRY_POINTS:
@@ -362,6 +407,47 @@ def test_no_entry_point_prescribes_a_direct_wrapper_call():
 def test_the_three_entry_points_are_mirrors_and_carry_the_post_run_block():
     """Equal command lists, one byte-identical post-run block, and the reload named only there."""
     assert _mirror_violations(_entry_texts()) == []
+
+
+def test_the_command_is_operator_only_on_every_harness():
+    """The key where the harness publishes one, the recorded gap where it does not."""
+    assert _operator_only_violations(_entry_texts()) == []
+
+
+def test_operator_only_controls(tmp_path: Path):
+    """Matched control: a missing key, a missing gap clause and a missing tag all fire.
+
+    Each fixture is a STUB entry point rather than a substitution into the real
+    text: a phrase-level replace would silently do nothing (and pass) if the doc
+    re-wrapped the phrase across a line, and a control that cannot fire is the
+    shape this file exists against.
+    """
+    stub = '---\nname: apply-changes\ndescription: A stub entry point.\n---\n\nRuns the sequence.\n'
+
+    _plant(tmp_path, {'claude': stub})
+    reported = _operator_only_violations(_entry_texts(tmp_path))
+    assert any(_OPERATOR_ONLY_KEY in problem for problem in reported), (
+        f'a claude entry point with no operator-only key must be reported, got {reported}'
+    )
+
+    _plant(tmp_path, {})
+    assert _operator_only_violations(_entry_texts(tmp_path)) == [], 'the unmodified entry points must stay clean'
+
+    _plant(tmp_path, {'opencode': '---\ndescription: A stub command.\n---\n\nNothing is recorded here.\n'})
+    reported = _operator_only_violations(_entry_texts(tmp_path))
+    assert any('opencode' in problem for problem in reported), (
+        f'a harness without the key and without the recorded gap must be reported, got {reported}'
+    )
+
+    keyed_only = (
+        '---\nname: apply-changes\ndescription: A stub entry point.\n'
+        f'{_OPERATOR_ONLY_KEY}: true\n---\n\nRuns the sequence.\n'
+    )
+    _plant(tmp_path, {'claude': keyed_only})
+    reported = _operator_only_violations(_entry_texts(tmp_path))
+    assert any(_UNCONFIRMED_CLAUSE in problem for problem in reported), (
+        f'an unconfirmed claim relabelled as confirmed must be reported, got {reported}'
+    )
 
 
 def test_missing_entry_point_control(tmp_path: Path):
