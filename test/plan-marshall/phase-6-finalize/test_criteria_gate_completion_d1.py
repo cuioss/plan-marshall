@@ -552,6 +552,13 @@ def _authorize(criterion: str) -> None:
 
 
 def test_a_retired_deliverable_is_closed_by_the_completion_gate(plan_context, tmp_path) -> None:
+    """CONTROL: the gate reads a fully authorized retirement as closed.
+
+    This holds on the unfixed tree as well — ``open_criteria`` already skips each
+    criterion an operator authorized — so it pins the required behaviour rather than
+    the retirement branch's necessity. What the branch owns is the fail-closed half,
+    pinned by ``test_an_invalid_retirement_closes_nothing_not_even_a_graded_criterion``.
+    """
     plan_dir = _plan(plan_context, ['a', 'b'], freeze_from=['a', 'b'])
     _authorize('a')
     _authorize('b')
@@ -567,7 +574,8 @@ def test_a_criterion_authorized_after_the_retired_verdict_still_closes_it(plan_c
     """The verdict and the authorizations are two writes, and the gate reads both live.
 
     The order the two writes land in therefore decides nothing: a criterion authorized
-    after the verdict was filed closes exactly like one authorized before it.
+    after the verdict was filed closes exactly like one authorized before it. CONTROL:
+    like the test above, this holds on the unfixed tree too.
     """
     plan_dir = _plan(plan_context, ['a', 'b'], freeze_from=['a', 'b'])
     _authorize('a')
@@ -599,6 +607,10 @@ def test_a_valid_retirement_does_not_re_open_the_criteria_its_row_graded(plan_co
     so a retirement can arrive beside a ``not_met`` grade from the round before it. Once
     every criterion is authorized the retirement closes the deliverable: reading those
     stale grades would re-open work the operator closed.
+
+    CONTROL, like its two neighbours: the per-criterion authorization skip already
+    closes every criterion here on the unfixed tree, so this pins the required
+    behaviour rather than the retirement branch.
     """
     plan_dir = _plan(plan_context, ['a', 'b'], freeze_from=['a', 'b'])
     _authorize('a')
