@@ -1156,6 +1156,7 @@ def cmd_read_open_issues(args):
     if pr:
         recheck = _verify_analysis_revision(project, pr)
         reported = str(recheck.get('analysis_revision') or '').strip()
+        rechecked_head = str(recheck.get('head_revision') or '').strip()
         if not reported:
             # A recheck that reports no revision has proved nothing: the sets were
             # enumerated under the revision read at step 1b, and whether that is
@@ -1172,6 +1173,18 @@ def cmd_read_open_issues(args):
                 project,
                 pr,
                 f'analysis_revision_changed_during_read: {revision_result["analysis_revision"]} -> {reported}',
+                analysis_revision=revision_result.get('analysis_revision', ''),
+                head_revision=revision_result.get('head_revision', ''),
+            )
+        if not rechecked_head or rechecked_head != revision_result['head_revision']:
+            # The analysis can stay put while the head moves: a push during the
+            # enumeration leaves the count measured over the same analysis but the
+            # answer naming a head that is no longer the head. Fail closed.
+            return _undecidable_read(
+                project,
+                pr,
+                'head_revision_changed_during_read: '
+                f'{revision_result["head_revision"]} -> {rechecked_head or "unavailable"}',
                 analysis_revision=revision_result.get('analysis_revision', ''),
                 head_revision=revision_result.get('head_revision', ''),
             )
