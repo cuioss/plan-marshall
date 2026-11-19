@@ -91,6 +91,8 @@ Merging a pull request is part of the process, not a separate decision that need
 
 What this does not waive: the merge gate itself (a failing or unread gate still blocks the merge and is reported), the merge mutex, and the rule that an unrelated outward-facing action (force-push, deleting a branch the plan did not create, closing someone else's PR) still needs its own instruction.
 
+## Standalone Plan Lane (doc/plans/)
+
 Plans under `doc/plans/` execute **outside the plan-marshall command lifecycle** — no `/plan-marshall`, no `/plan-orchestrator`, no `.plan/execute-script.py`, and none of the git-ignored `.plan/local/` state. The lane exists because `.plan/local/` is git-ignored: its state (plan directories, orchestrator ledgers, findings, locks, and the generated executor) lives only on the machine that created it, so a cloud session at claude.ai/code clones the repository and has none of it. Everything a `doc/plans/` plan needs is in git — including the git-tracked `.plan/marshal.json`, which the lane may read.
 
 **The complete working contract is the `cloud-plan-lane` skill** (`.claude/skills/cloud-plan-lane/SKILL.md`), loaded as the first action of every run:

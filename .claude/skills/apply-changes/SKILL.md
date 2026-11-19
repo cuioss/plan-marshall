@@ -2,6 +2,7 @@
 name: apply-changes
 description: Carry a plan-marshall bundle change to a restart-ready machine — regenerate the targets, sync every harness install, refresh the executor, reconcile the daemon and pin the registry in one run
 user-invocable: true
+disable-model-invocation: true
 mode: script-executor
 allowed-tools: Bash
 ---
