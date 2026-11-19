@@ -1649,6 +1649,53 @@ def cmd_build_routing(args: argparse.Namespace) -> dict[str, Any]:
     return result
 
 
+def _classify_paths(project_dir: Path, paths: list[str]) -> tuple[list[dict[str, Any]], str, str]:
+    """Classify *paths* with the PROJECT's own footprint rule.
+
+    Returns ``(rows, source, reason)``. ``source`` is ``ci-workflow`` when the
+    checkout holds the rule and ``architecture`` when it does not. A non-empty
+    ``reason`` means the rule could not be read at all: every path is then
+    ``buildable`` (skip nothing) and the caller reports why, so an unreadable rule
+    costs a local build rather than a skipped CI one.
+
+    One seam for both consumers of the rule — the build gate and the stale-analysis
+    carry-forward — because two copies of it would let one skip what the other
+    builds.
+    """
+    extra, skip, reason = _read_footprint_rule(project_dir)
+    if extra is not None:
+        source = 'ci-workflow'
+        module_prefixes: list[str] = []
+    else:
+        source = 'architecture'
+        module_prefixes = _architecture_module_prefixes(project_dir) or ['']
+    doc_surfaces = _architecture_documentation_surfaces(project_dir)
+
+    if reason:
+        return [{'path': path, 'kind': 'buildable'} for path in paths], source, reason
+    try:
+        rows = [
+            {
+                'path': path,
+                'kind': _classify_path(path, extra or [], skip, module_prefixes, doc_surfaces, source),
+            }
+            for path in paths
+        ]
+    except _GlobHelperUnavailable as exc:
+        # The shared glob translator is unavailable: absent from a partial
+        # install, or raising something other than ImportError while it is
+        # imported (a missing dependency of its own, a broken module body).
+        # Build everything and name the cause: a broken translator must never
+        # be read as "no path matches", which for a skip rule would skip, and
+        # an uncaught non-ImportError must not abort the classifier.
+        return (
+            [{'path': path, 'kind': 'buildable'} for path in paths],
+            source,
+            f'glob helper unavailable: {exc}',
+        )
+    return rows, source, ''
+
+
 def cmd_build_classify(args: argparse.Namespace) -> dict[str, Any]:
     """Classify the changed paths so the build gate can skip a docs-only change.
 
@@ -1662,37 +1709,7 @@ def cmd_build_classify(args: argparse.Namespace) -> dict[str, Any]:
     if not paths:
         return {'status': 'error', 'error': 'no_paths', 'message': 'no changed paths to classify'}
 
-    extra, skip, reason = _read_footprint_rule(project_dir)
-    if extra is not None:
-        source = 'ci-workflow'
-        module_prefixes: list[str] = []
-    else:
-        source = 'architecture'
-        module_prefixes = _architecture_module_prefixes(project_dir) or ['']
-    doc_surfaces = _architecture_documentation_surfaces(project_dir)
-
-    if reason:
-        # The opt-in was found but its rule could not be read: skip nothing, so
-        # the unknown rule costs a local build rather than a skipped CI one.
-        rows = [{'path': path, 'kind': 'buildable'} for path in paths]
-    else:
-        try:
-            rows = [
-                {
-                    'path': path,
-                    'kind': _classify_path(path, extra or [], skip, module_prefixes, doc_surfaces, source),
-                }
-                for path in paths
-            ]
-        except _GlobHelperUnavailable as exc:
-            # The shared glob translator is unavailable: absent from a partial
-            # install, or raising something other than ImportError while it is
-            # imported (a missing dependency of its own, a broken module body).
-            # Build everything and name the cause: a broken translator must never
-            # be read as "no path matches", which for a skip rule would skip, and
-            # an uncaught non-ImportError must not abort the classifier.
-            rows = [{'path': path, 'kind': 'buildable'} for path in paths]
-            reason = f'glob helper unavailable: {exc}'
+    rows, source, reason = _classify_paths(project_dir, paths)
     buildable = any(row['kind'] == 'buildable' for row in rows)
     result: dict[str, Any] = {
         'status': 'success',
@@ -1707,6 +1724,199 @@ def cmd_build_classify(args: argparse.Namespace) -> dict[str, Any]:
     if reason:
         result['reason'] = reason
     return result
+
+
+# =============================================================================
+# sonar-stale-delta — a stale analysis whose delta the project does not build
+# =============================================================================
+
+#: The name a carried-forward read's verdict carries: the delta between the
+#: analysed head and the head was positively classified as a path set the project
+#: does not build, so the enumeration of the analysed head stands in for this
+#: head's. A distinct name, so a carried-forward figure never reads like a
+#: measurement of the current head.
+_CARRY_FORWARD_UNBUILT = 'carried_forward_unbuilt_delta'
+
+
+def _git_in(worktree: Path, *args: str) -> tuple[bool, str]:
+    """Run one git command against *worktree*; return ``(ok, stdout)``.
+
+    ``ok`` is ``False`` for a non-zero exit AND for a command that could not be
+    started at all, so a caller never reads absent output as an empty answer.
+    """
+    import subprocess
+
+    try:
+        completed = subprocess.run(
+            ['git', '-C', str(worktree), *args],
+            capture_output=True,
+            text=True,
+            timeout=120,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False, ''
+    if completed.returncode != 0:
+        return False, ''
+    return True, completed.stdout
+
+
+def _resolve_commit(worktree: Path, revision: str) -> str:
+    """Return the commit *revision* names in *worktree*, or ``''``.
+
+    An unresolvable revision — one the checkout does not hold, a branch that was
+    force-pushed away — is the empty string, which the caller reads as "cannot
+    decide" and never as "nothing changed".
+    """
+    if not revision.strip():
+        return ''
+    ok, out = _git_in(worktree, 'rev-parse', '--verify', '--quiet', f'{revision}^{{commit}}')
+    return out.strip() if ok else ''
+
+
+def _delta_paths(worktree: Path, base: str, head: str) -> list[str] | None:
+    """Return the paths that changed from *base* to *head*, or ``None``.
+
+    ``None`` is the load-bearing answer: it says the change could not be listed,
+    which is never read as an empty change. Renames are not followed, so a rename
+    reports both its source and its destination.
+    """
+    ok, out = _git_in(worktree, 'diff', '--name-only', '--no-renames', base, head)
+    if not ok:
+        return None
+    return [line.strip() for line in out.splitlines() if line.strip()]
+
+
+def _sonar_stale_delta_verdict(
+    state: str,
+    count_status: str | None,
+    analysis_revision: str,
+    head_revision: str,
+    worktree: Path,
+) -> dict[str, Any]:
+    """Decide whether a stale analysis is the read for this head.
+
+    The case this exists for: a head the project's CI deliberately never analyses
+    (``skip-on-docs-only``), where the pull-request analysis stays on an earlier
+    head forever. Retrying that read can never succeed, so the lane decides it
+    from the analysed head instead — but only when the change from that head to
+    this one is positively a path set the project does not build.
+
+    Fail-closed is the whole design: ``carry_forward`` is ``True`` only when every
+    changed path was classified as not built by the project's own rule. An
+    unresolvable revision, an unlistable diff, an unreadable rule and a single
+    buildable path all answer ``carry_forward: false`` with the lane's own
+    ``undecidable_read``, which is the state the merge gate already refuses.
+    """
+    verdict: dict[str, Any] = {
+        'status': 'success',
+        'operation': 'sonar-stale-delta',
+        'state': state,
+        'count_status': count_status or '',
+        'carry_forward': False,
+        'reason': 'undecidable_read',
+        'analysis_revision': analysis_revision,
+        'head_revision': head_revision,
+    }
+    if state == 'not_configured':
+        verdict['reason'] = 'not_configured'
+        return verdict
+    if count_status != 'undecidable':
+        # A confirmed or unconfigured read is not the case this decides; only a
+        # stale analysis is carried forward, never a settled one.
+        verdict['reason'] = 'count_status_not_stale'
+        return verdict
+    if not analysis_revision or not head_revision:
+        verdict['detail'] = 'revision_missing: both revisions must be reported to decide a carried-forward read'
+        return verdict
+    if not worktree.is_dir():
+        verdict['detail'] = f'worktree_unreadable: {worktree} is not a directory'
+        return verdict
+
+    analysed = _resolve_commit(worktree, analysis_revision)
+    if not analysed:
+        verdict['detail'] = (
+            f'revision_unresolvable: the analysed revision {analysis_revision} is not present in the routed checkout'
+        )
+        return verdict
+    head = _resolve_commit(worktree, head_revision)
+    if not head:
+        verdict['detail'] = (
+            f'revision_unresolvable: the head revision {head_revision} is not present in the routed checkout'
+        )
+        return verdict
+
+    paths = _delta_paths(worktree, analysed, head)
+    if paths is None:
+        verdict['detail'] = f'diff_failed: the change from {analysis_revision} to {head_revision} could not be listed'
+        return verdict
+    verdict['changed_paths'] = paths
+    if not paths:
+        verdict['carry_forward'] = True
+        verdict['source'] = 'none'
+        verdict['reason'] = (
+            f'{_CARRY_FORWARD_UNBUILT}: analysed {analysis_revision} != head {head_revision}; '
+            'the delta since the analysed head is empty'
+        )
+        return verdict
+
+    rows, source, rule_reason = _classify_paths(worktree, paths)
+    verdict['source'] = source
+    if rule_reason:
+        # A rule that could not be read is not a rule that skips nothing: every
+        # path is buildable, so the read stays undecidable rather than carried.
+        verdict['detail'] = f'rule_unreadable: {rule_reason}'
+        return verdict
+    buildable = [row['path'] for row in rows if row['kind'] == 'buildable']
+    if buildable:
+        verdict['buildable_paths'] = buildable
+        verdict['detail'] = (
+            f'delta_buildable: {len(buildable)} of {len(paths)} changed path(s) are paths the project builds'
+        )
+        return verdict
+
+    verdict['carry_forward'] = True
+    verdict['reason'] = (
+        f'{_CARRY_FORWARD_UNBUILT}: analysed {analysis_revision} != head {head_revision}; '
+        'the delta since the analysed head is not built'
+    )
+    return verdict
+
+
+def cmd_sonar_stale_delta(args: argparse.Namespace) -> dict[str, Any]:
+    """Report whether a stale Sonar analysis may stand as this head's read."""
+    state = getattr(args, 'state', None)
+    if state not in _SONAR_STATES:
+        return {
+            'status': 'error',
+            'error': 'invalid_sonar_state',
+            'message': f'--state must be one of {", ".join(_SONAR_STATES)}; got {state!r}',
+        }
+    count_status = getattr(args, 'count_status', None)
+    if state == 'configured':
+        if count_status not in _SONAR_COUNT_STATUSES:
+            return {
+                'status': 'error',
+                'error': 'invalid_count_status',
+                'message': (
+                    f'--count-status must be one of {", ".join(_SONAR_COUNT_STATUSES)} '
+                    f'when --state configured; got {count_status!r}'
+                ),
+            }
+    elif count_status is not None:
+        return {
+            'status': 'error',
+            'error': 'state_contradicts_read',
+            'message': 'a not_configured state carries no read; drop --count-status',
+        }
+    worktree = Path(getattr(args, 'worktree', None) or '.').resolve()
+    return _sonar_stale_delta_verdict(
+        state,
+        count_status,
+        (getattr(args, 'analysis_revision', '') or '').strip(),
+        (getattr(args, 'head_revision', '') or '').strip(),
+        worktree,
+    )
 
 
 def _operator_selection_records(progress_file: Path) -> set[str] | None:
@@ -1740,6 +1950,62 @@ def _operator_selection_records(progress_file: Path) -> set[str] | None:
     return recorded
 
 
+def _carried_forward_revisions(
+    args: argparse.Namespace,
+) -> tuple[tuple[str, str] | None, dict[str, Any] | None]:
+    """Read the carried-forward revision pair, or refuse it.
+
+    A carried-forward read is licensed by TWO facts that only make sense together:
+    the analysed revision the enumeration was measured at, and the head it stands
+    in for. One alone describes no read, so it is refused rather than
+    half-recorded, and the pair is refused on any read that is not a confirmed
+    enumeration — the carry-forward renames a measured figure, never a failed one.
+    """
+    analysed = (getattr(args, 'carried_forward_analysis_revision', None) or '').strip()
+    head = (getattr(args, 'carried_forward_head_revision', None) or '').strip()
+    if not analysed and not head:
+        return None, None
+    if not analysed or not head:
+        return None, {
+            'status': 'error',
+            'error': 'carried_forward_incomplete',
+            'message': (
+                'a carried-forward read names both revisions: '
+                '--carried-forward-analysis-revision and --carried-forward-head-revision'
+            ),
+        }
+    if getattr(args, 'count_status', None) != 'confirmed':
+        return None, {
+            'status': 'error',
+            'error': 'carried_forward_requires_confirmed',
+            'message': (
+                'a carried-forward read is a confirmed enumeration of the analysed head; '
+                f'--count-status is {getattr(args, "count_status", None)!r}'
+            ),
+        }
+    return (analysed, head), None
+
+
+def _carried_forward(verdict: dict[str, Any], carried_forward: tuple[str, str] | None) -> dict[str, Any]:
+    """Re-name an ADMITTING verdict as a carried-forward read.
+
+    A carried-forward figure is a measured figure of an EARLIER head, so a verdict
+    that admitted it on ``no_open_issues`` would read like a measurement of this
+    one. The distinct name carries both revisions and the fact that the delta was
+    not built, so the landing and the operator see which head was counted.
+    """
+    if carried_forward is None or not verdict.get('merge_allowed'):
+        return verdict
+    analysed, head = carried_forward
+    verdict['reason'] = (
+        f'{_CARRY_FORWARD_UNBUILT}: analysed {analysed} != head {head}; the delta since the analysed head is not built'
+    )
+    verdict['carried_forward'] = True
+    verdict['analysis_revision'] = analysed
+    verdict['head_revision'] = head
+    return verdict
+
+
 def _sonar_gate_verdict(
     state: str,
     count_status: str | None,
@@ -1748,6 +2014,7 @@ def _sonar_gate_verdict(
     selected_keys: list[str],
     recorded_keys: set[str] | None = None,
     hotspot_keys: list[str] | None = None,
+    carried_forward: tuple[str, str] | None = None,
 ) -> dict[str, Any]:
     """Decide whether the Sonar read admits the merge (section 7's condition).
 
@@ -1813,13 +2080,16 @@ def _sonar_gate_verdict(
                 'reason': 'confirmed_zero_with_open_keys',
                 'open_issue_count': 0,
             }
-        return {
-            'status': 'success',
-            'operation': 'sonar-gate',
-            'merge_allowed': True,
-            'reason': 'no_open_issues',
-            'open_issue_count': 0,
-        }
+        return _carried_forward(
+            {
+                'status': 'success',
+                'operation': 'sonar-gate',
+                'merge_allowed': True,
+                'reason': 'no_open_issues',
+                'open_issue_count': 0,
+            },
+            carried_forward,
+        )
     if len(set(open_keys)) < count:
         # Distinct keys, not list length: a repeated key enumerates one issue
         # twice, so `--open-count 2 --open-keys K1,K1` would otherwise pass a
@@ -1869,14 +2139,17 @@ def _sonar_gate_verdict(
                 'open_issue_count': count,
                 'unrecorded_keys': unrecorded,
             }
-    return {
-        'status': 'success',
-        'operation': 'sonar-gate',
-        'merge_allowed': True,
-        'reason': 'all_open_issues_operator_selected',
-        'open_issue_count': count,
-        'selected_count': len(selected),
-    }
+    return _carried_forward(
+        {
+            'status': 'success',
+            'operation': 'sonar-gate',
+            'merge_allowed': True,
+            'reason': 'all_open_issues_operator_selected',
+            'open_issue_count': count,
+            'selected_count': len(selected),
+        },
+        carried_forward,
+    )
 
 
 def cmd_sonar_gate(args: argparse.Namespace) -> dict[str, Any]:
@@ -1915,13 +2188,16 @@ def cmd_sonar_gate(args: argparse.Namespace) -> dict[str, Any]:
             or getattr(args, 'open_keys', None) is not None
             or getattr(args, 'operator_selected_keys', None) is not None
             or getattr(args, 'hotspot_keys', None) is not None
+            or getattr(args, 'carried_forward_analysis_revision', None) is not None
+            or getattr(args, 'carried_forward_head_revision', None) is not None
         ):
             return {
                 'status': 'error',
                 'error': 'state_contradicts_read',
                 'message': (
                     'a not_configured state carries no read; drop --count-status, --open-count, '
-                    '--open-keys, --operator-selected-keys and --hotspot-keys'
+                    '--open-keys, --operator-selected-keys, --hotspot-keys and the '
+                    '--carried-forward-* revisions'
                 ),
             }
         return _sonar_gate_verdict(state, None, None, [], [])
@@ -1934,6 +2210,9 @@ def cmd_sonar_gate(args: argparse.Namespace) -> dict[str, Any]:
                 f'when --state configured; got {count_status!r}'
             ),
         }
+    carried_forward_revisions, carried_forward_error = _carried_forward_revisions(args)
+    if carried_forward_error is not None:
+        return carried_forward_error
     if getattr(args, 'operator_selected_keys', None) and not getattr(args, 'progress_file', None):
         # A selection with no record behind it is exactly the self-attested
         # dismissal this gate exists to remove. The flag alone is the lane's word;
@@ -1975,6 +2254,7 @@ def cmd_sonar_gate(args: argparse.Namespace) -> dict[str, Any]:
         _split_csv(getattr(args, 'operator_selected_keys', None)),
         _progress_selection(getattr(args, 'progress_file', None)),
         _split_csv(getattr(args, 'hotspot_keys', None)),
+        carried_forward_revisions,
     )
 
 
@@ -2017,19 +2297,23 @@ def cmd_sonar_facts(args: argparse.Namespace) -> dict[str, Any]:
             'message': f'--state must be one of {", ".join(_SONAR_STATES)}; got {state!r}',
         }
 
+    # Assigned on both branches so the analysed-revision guard below can read it
+    # without a branch-dependent rebind.
+    count_status = None
     if state == 'not_configured':
         # Symmetric with the gate: a read supplied beside `not_configured` is a
         # contradiction, and rendering `n/a` over it would hide that the caller
         # read one project's issues and reported another project's state.
         if any(
-            getattr(args, name, None) is not None for name in ('count_status', 'open_count', 'rules', 'gate_status')
+            getattr(args, name, None) is not None
+            for name in ('count_status', 'open_count', 'rules', 'gate_status', 'analysed_revision')
         ):
             return {
                 'status': 'error',
                 'error': 'state_contradicts_read',
                 'message': (
                     'a not_configured state carries no read; drop --count-status, --open-count, '
-                    '--rules and --gate-status'
+                    '--rules, --gate-status and --analysed-revision'
                 ),
             }
         count, rules = 'n/a', 'n/a'
@@ -2086,6 +2370,21 @@ def cmd_sonar_facts(args: argparse.Namespace) -> dict[str, Any]:
                 }
 
     fact_lines = [f'{_SONAR_OPEN_ISSUES_FACT}={count}', f'step.{_SONAR_FACT_STEP}.open_issue_rules={rules}']
+    # The analysed revision rides beside a CONFIRMED count only. A carried-forward
+    # figure is a figure of that revision, so the fact must name it — otherwise a
+    # reader takes an enumeration of an earlier head for a measurement of this one.
+    analysed_revision = (getattr(args, 'analysed_revision', None) or '').strip()
+    if analysed_revision:
+        if count_status != 'confirmed':
+            return {
+                'status': 'error',
+                'error': 'analysed_revision_requires_confirmed',
+                'message': (
+                    '--analysed-revision names the head a confirmed figure was measured at; '
+                    f'--count-status is {count_status!r}, which measured nothing'
+                ),
+            }
+        fact_lines.append(f'step.{_SONAR_FACT_STEP}.analysed_revision={analysed_revision}')
     # The quality-gate fact is OPTIONAL and rides only when the caller read one:
     # a line asserting a state nothing observed would be worse than its absence.
     if gate_status is not None:
@@ -3486,6 +3785,40 @@ def main() -> int:
     classify_parser.add_argument('--paths', required=True, help='Comma-separated changed paths')
     classify_parser.add_argument('--project-dir', default='.', help='Project root (default: current directory)')
 
+    stale_parser = subparsers.add_parser(
+        'sonar-stale-delta',
+        help="Decide whether a stale Sonar analysis may stand as this head's read",
+        allow_abbrev=False,
+    )
+    stale_parser.add_argument(
+        '--state',
+        required=True,
+        help='The state resolve reported: configured, or not_configured',
+    )
+    stale_parser.add_argument(
+        '--count-status',
+        dest='count_status',
+        default=None,
+        help="The read's count_status (only undecidable can be carried forward)",
+    )
+    stale_parser.add_argument(
+        '--analysis-revision',
+        dest='analysis_revision',
+        default=None,
+        help='The revision the read reported as analysed',
+    )
+    stale_parser.add_argument(
+        '--head-revision',
+        dest='head_revision',
+        default=None,
+        help='The revision the read reported as the head',
+    )
+    stale_parser.add_argument(
+        '--worktree',
+        default='.',
+        help='The routed checkout the analysed revision and the delta are resolved in',
+    )
+
     gate_parser = subparsers.add_parser(
         'sonar-gate', help="Decide whether the pull request's Sonar state admits the merge", allow_abbrev=False
     )
@@ -3537,6 +3870,18 @@ def main() -> int:
         default=None,
         help='Retired: a lane-recorded dismissal is refused (lane_dismissal_not_accepted)',
     )
+    gate_parser.add_argument(
+        '--carried-forward-analysis-revision',
+        dest='carried_forward_analysis_revision',
+        default=None,
+        help='The analysed revision a carried-forward read was measured at (name both this and the head)',
+    )
+    gate_parser.add_argument(
+        '--carried-forward-head-revision',
+        dest='carried_forward_head_revision',
+        default=None,
+        help='The head a carried-forward read stands in for (name both this and the analysed revision)',
+    )
 
     facts_parser = subparsers.add_parser(
         'sonar-facts',
@@ -3571,6 +3916,12 @@ def main() -> int:
         dest='gate_status',
         default=None,
         help='The new-code quality-gate status read at the merge head: ok, error, not_computed or unknown',
+    )
+    facts_parser.add_argument(
+        '--analysed-revision',
+        dest='analysed_revision',
+        default=None,
+        help='The analysed revision a carried-forward confirmed figure was measured at',
     )
 
     review_parser = subparsers.add_parser(
@@ -3626,6 +3977,13 @@ def main() -> int:
         return 0
     if args.command == 'sonar-gate':
         data = cmd_sonar_gate(args)
+        if data.get('status') == 'error':
+            output_toon_error(data['error'], data.get('message', data['error']))
+            return 0
+        output_toon(data)
+        return 0
+    if args.command == 'sonar-stale-delta':
+        data = cmd_sonar_stale_delta(args)
         if data.get('status') == 'error':
             output_toon_error(data['error'], data.get('message', data['error']))
             return 0
