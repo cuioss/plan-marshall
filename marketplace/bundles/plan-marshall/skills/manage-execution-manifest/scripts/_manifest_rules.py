@@ -784,6 +784,8 @@ def _ceremony_finalize_insert_index(phase_6_steps: list[str]) -> int:
 def _apply_ceremony_finalize_selection(
     phase_6_steps: list[str],
     gates: dict[str, str],
+    *,
+    commit_and_push: bool = True,
 ) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
     """Force ceremony finalize gates in (``always``) / out (``never``) in-place.
 
@@ -793,8 +795,19 @@ def _apply_ceremony_finalize_selection(
       ``phase_6_steps`` (a no-op when already absent).
     - ``always`` → ensure the gate's canonical step is present, inserting it
       before the plan-mutating tail when absent (a no-op when any match-set form
-      is already present).
+      is already present) — UNLESS the plan is local-only, see below.
     - any other value (``auto`` / malformed) → defer (no-op).
+
+    **"No push" always wins.** When ``commit_and_push`` is ``False`` the transform
+    never inserts a member of :data:`_COMMIT_PUSH_DROP_STEPS` — the steps the
+    ``commit_push_disabled`` pre-filter already removed because no downstream push
+    exists (``push``, ``pre-push-quality-gate``, ``functional-review``,
+    ``code-review``). A gate forced ``always`` therefore cannot hand a local-only
+    plan a step it cannot run. ``push`` owns no ceremony gate, so the guard binds
+    exactly the three gated members of that set and changes nothing else: every
+    other gate still force-inserts, and a plan whose ``commit_and_push`` is
+    ``True`` is untouched. This transform runs AFTER the pre-filter, so without
+    the guard an operator-set ``always`` would re-add what that pre-filter removed.
 
     ``automatic-review`` is NEVER touched — the gate map contains only the
     ceremony finalize steps, so the bot-review invariant is structurally
@@ -817,6 +830,10 @@ def _apply_ceremony_finalize_selection(
                 phase_6_steps[:] = [s for s in phase_6_steps if s not in match_set]
                 forced_out.append({'gate': gate, 'step': present[0]})
         elif value == 'always':
+            if not commit_and_push and canonical in _COMMIT_PUSH_DROP_STEPS:
+                # "No push" always wins: the commit_push_disabled pre-filter dropped
+                # this push-only step, and a gate value may not put it back.
+                continue
             if not any(s in match_set for s in phase_6_steps):
                 insert_index = _ceremony_finalize_insert_index(phase_6_steps)
                 phase_6_steps.insert(insert_index, canonical)
