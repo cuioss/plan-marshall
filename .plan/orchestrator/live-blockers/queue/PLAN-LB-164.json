@@ -2,10 +2,10 @@
   "id": "PLAN-LB-164",
   "slug": "build-daemon-job-log-in-project-tree",
   "workstream": "WS-02",
-  "status": "running",
+  "status": "shipped",
   "lane": "runbook",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "plan_marshall_plan_id": "rb-lb-164-build-daemon-job-log-in-project-tree",
+  "pr": "2023",
+  "landing": "landings/PLAN-LB-164.md",
   "seq": 164
 }

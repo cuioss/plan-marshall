@@ -2,10 +2,10 @@
   "id": "PLAN-LB-166",
   "slug": "manifest-no-push-always-wins",
   "workstream": "WS-01",
-  "status": "running",
+  "status": "shipped",
   "lane": "runbook",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "plan_marshall_plan_id": "rb-lb-166-manifest-no-push-always-wins",
+  "pr": "2018",
+  "landing": "landings/PLAN-LB-166.md",
   "seq": 166
 }
