@@ -547,12 +547,15 @@ def _retired(plan_dir: Path, tmp_path: Path) -> None:
 
 
 def _authorize(criterion: str) -> None:
-    payload = _snap.authorize_change(PLAN_ID, 1, criterion, 'operator: the deliverable is retired')
+    """Record the operator's RETIREMENT decision for ``criterion`` (PLAN-LB-169)."""
+    payload = _snap.authorize_change(
+        PLAN_ID, 1, criterion, 'operator: the deliverable is retired', decision_type='retirement'
+    )
     assert payload['status'] == 'success', payload
 
 
 def test_a_retired_deliverable_is_closed_by_the_completion_gate(plan_context, tmp_path) -> None:
-    """CONTROL: the gate reads a fully authorized retirement as closed.
+    """CONTROL: the gate reads a fully retired deliverable as closed.
 
     This holds on the unfixed tree as well — ``open_criteria`` already skips each
     criterion an operator authorized — so it pins the required behaviour rather than
@@ -638,11 +641,11 @@ def test_a_valid_retirement_does_not_re_open_the_criteria_its_row_graded(plan_co
 
 
 def test_an_invalid_retirement_closes_nothing_not_even_a_graded_criterion(plan_context, tmp_path) -> None:
-    """A retirement missing an authorization releases NO criterion, graded or not.
+    """A retirement missing a retirement decision releases NO criterion, graded or not.
 
     The gate reads the verdict without running the validator, so trusting a ``met``
     grade carried by a row whose own precondition fails would let an unverified
-    retirement close work no operator authorized.
+    retirement close work no operator retired.
     """
     plan_dir = _plan(plan_context, ['a', 'b'], freeze_from=['a', 'b'])
     _sealed_live(

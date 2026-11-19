@@ -377,9 +377,10 @@ def test_an_underscore_or_word_joined_token_is_not_a_citation(plan_context, tmp_
 #
 # A deliverable the operator retired with no successor is not ``superseded`` (nothing takes
 # the work over) and not ``not_met`` (nothing is missing). ``retired`` closes it ONLY through
-# ``criteria-authorize``: the operator authorizes every criterion of the deliverable, one
-# decision each, and the verdict then records the retirement. The precondition is the whole
-# guard, so every control below is the input that must still be refused.
+# ``criteria-authorize``: the operator records a RETIREMENT decision for every criterion of the
+# deliverable, one decision each, and the verdict then records the retirement. An authorization
+# recorded to approve a rewrite is not a retirement decision (PLAN-LB-169), so the precondition
+# is the whole guard and every control below is the input that must still be refused.
 
 
 def _retirement_outline() -> str:
@@ -421,7 +422,10 @@ def _retired_verdict() -> dict[str, Any]:
 
 
 def _authorize(number: int, criterion: str) -> None:
-    payload = _snap.authorize_change(PLAN_ID, number, criterion, 'operator: the deliverable is retired')
+    """Record the operator's RETIREMENT decision for one frozen criterion (PLAN-LB-169)."""
+    payload = _snap.authorize_change(
+        PLAN_ID, number, criterion, 'operator: the deliverable is retired', decision_type='retirement'
+    )
     assert payload['status'] == 'success', payload
 
 
