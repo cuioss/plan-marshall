@@ -1484,9 +1484,10 @@ def retirement_state(snapshot: dict[str, Any] | None, number: Any) -> dict[str, 
 
     The validator refuses every state but ``closed``. The completion gate closes only
     on ``closed``; in any other state the retirement closes nothing of its own, so a
-    criterion it graded ``met`` is read as ungraded. An authorization the operator
-    recorded separately is NOT the verdict's to overrule, so that criterion still
-    closes on its own decision.
+    criterion it graded ``met`` is read as ungraded. A RETIREMENT decision the
+    operator recorded for one criterion still closes that criterion on its own; a
+    rewrite authorization closes nothing of the retirement, which is why every other
+    criterion stays open.
     """
     if snapshot is None:
         return {'state': RETIREMENT_NO_SNAPSHOT, 'criteria': [], 'unauthorized': []}
@@ -2033,8 +2034,8 @@ def deliverable_reference_rejection(
       :data:`REFERENCE_UNKNOWN`;
     * it must not be the deliverable's own number — :data:`REFERENCE_SELF`; a
       deliverable retired by operator decision with no successor has its own route
-      (the ``retired`` verdict, valid only once every criterion of it is authorized),
-      so it does not supersede itself;
+      (the ``retired`` verdict, valid only once every criterion of it carries the
+      operator's retirement decision), so it does not supersede itself;
     * following ``superseded_by`` from the successor must not come back to this
       deliverable — :data:`REFERENCE_CYCLE`;
     * the successor's own verdict must be a CLOSING one: :data:`SUCCESSOR_NOT_MET`
@@ -2126,7 +2127,8 @@ def open_criteria(plan_id: str, verdict_file: Path | None = None) -> dict[str, A
     Anything else is open, which is the fail-closed direction. Five deliberate
     states additionally close criteria rather than reading them as open work:
 
-    * an operator decision authorizes the exact change (``authorized_changes``);
+    * an operator decision authorizes the exact change (``authorized_changes``); under a
+      ``retired`` verdict only a RETIREMENT decision does — see the ``retired`` bullet;
     * the deliverable's verdict is ``superseded`` AND its ``superseded_by`` names a
       CLOSING successor the snapshot carries — not the deliverable itself, not a
       cycle, and with a ``met`` / ``met_with_residuals`` verdict
@@ -2135,8 +2137,9 @@ def open_criteria(plan_id: str, verdict_file: Path | None = None) -> dict[str, A
       deliverable carries the operator's own retirement decision
       (:func:`retirement_state`) — the operator's retirement route for a deliverable
       with no successor. A retirement still missing a retirement decision closes
-      nothing of its own, so a criterion it graded ``met`` is read as ungraded; a
-      criterion the operator authorized separately still closes on that decision;
+      nothing of its own, so a criterion it graded ``met`` is read as ungraded, and a
+      rewrite authorization closes nothing of it: a criterion the operator recorded a
+      retirement decision for still closes on that decision, every other one stays open;
     * the operator closed the review past its round cap (:func:`_review_closed_reason`);
     * the manifest dropped the functional review (:func:`functional_review_drop_reason`)
       — the completion gate exempts exactly this case, and ``source: review_dropped``
@@ -2214,15 +2217,22 @@ def open_criteria(plan_id: str, verdict_file: Path | None = None) -> dict[str, A
         for index, criterion in enumerate(row.get('criteria') or [], start=1):
             raw = criterion.get('text') if isinstance(criterion, dict) else criterion
             text = normalize_criterion(raw)
-            if _authorization(snapshot, number, text):
+            # What closes a criterion is the operator's decision about IT: for a retired
+            # row that is a RETIREMENT decision only — a decision recorded to approve the
+            # criterion's rewrite authorizes the change and closes nothing of a retirement —
+            # while under every other verdict any recorded decision is the drift exemption.
+            decided = (
+                _retirement_decision(snapshot, number, text) if retired else _authorization(snapshot, number, text)
+            )
+            if decided:
                 continue
             # A REJECTED supersede and an INVALID retirement close nothing of their own:
             # the verdict itself is invalid, so the grades its row carries close nothing
             # even where the reviewer marked one ``met``. The completion gate reads this
             # answer without running the validator, so trusting those grades would let a
-            # self-citation — or a retirement missing its authorizations — release
-            # ungraded work. A separately recorded authorization still closes its own
-            # criterion below, because that decision is not the verdict's to overrule.
+            # self-citation — or a retirement missing its retirement decisions — release
+            # ungraded work. A retirement decision recorded for one criterion still closes
+            # that criterion, because that decision is not the verdict's to overrule.
             status = 'ungraded' if (superseded or retired) else _graded_status(graded, text, index, number)
             if status == 'met':
                 continue

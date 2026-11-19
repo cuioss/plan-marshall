@@ -504,12 +504,20 @@ def _grade_row(
                 "least one frozen criterion, and every one of them must carry the operator's own "
                 'retirement decision recorded through criteria-authorize --decision-type retirement'
             )
-        # A refused retirement closes nothing of its own, so its CURRENT criteria stay open
-        # in the completion gate. The grades the row does carry are still checked: returning
-        # before ``_grade_criteria`` is what let a rewritten deliverable pass ungraded.
+        # A refused retirement closes nothing of its own, so its CURRENT criteria stay
+        # open in the completion gate. The grades the row does carry are still checked,
+        # and a row that carries none is graded as evaluating no criterion at all:
+        # returning before ``_grade_criteria`` is what let a rewritten deliverable pass
+        # ungraded.
         carried = row.get('criteria')
-        if isinstance(carried, list) and carried:
-            _grade_criteria(grading, row, expected, facts, plan_id, evidence_root)
+        _grade_criteria(
+            grading,
+            {**row, 'criteria': carried if isinstance(carried, list) else []},
+            expected,
+            facts,
+            plan_id,
+            evidence_root,
+        )
         return
     _grade_criteria(grading, row, expected, facts, plan_id, evidence_root)
     if verdict == 'not_met':

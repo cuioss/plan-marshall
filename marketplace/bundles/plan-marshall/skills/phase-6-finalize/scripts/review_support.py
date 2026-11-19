@@ -83,14 +83,15 @@ or ``may_close: false`` on a round without a blocking finding.
 ``not_met`` deliverable and an ``unevidenced`` criterion, which default to
 ``implementation`` — the gap is missing work unless the author says otherwise.
 
-A ``retired`` row's criterion grades are not read (a delta round may carry the
+A VALID ``retired`` row's criterion grades are not read (a delta round may carry the
 previous round's rows forward), so the verdict closes nothing on them: it is
 accepted only when every frozen criterion of its deliverable carries the operator's
 own retirement decision, recorded through ``criteria-authorize --decision-type
 retirement``. An authorization recorded to approve a rewrite is not a retirement
-decision, so the retirement is refused and its current criteria are still graded; a
-``retired`` row files no ``deliverable_not_met`` finding. A deliverable that froze no
-criterion has nothing to authorize and is refused.
+decision, so the retirement is refused and its current criteria are still graded (a
+row carrying none is reported as evaluating no criterion); a ``retired`` row files no
+``deliverable_not_met`` finding. A deliverable that froze no criterion has nothing to
+authorize and is refused.
 
 Usage::
 
