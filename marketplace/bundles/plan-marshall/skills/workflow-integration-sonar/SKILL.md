@@ -196,10 +196,12 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar f
 **Usage:**
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar read_open_issues \
-  --project {project_key} --pr {pr} [--ce-wait-timeout {secs}]
+  --project {project_key} --pr {pr} [--ce-wait-timeout {secs}] [--analysed-revision {sha}]
 ```
 
-**Output:** TOON carrying `count_status` (`confirmed` | `undecidable`), `open_issue_count` (`0`-or-more on `confirmed` — the open ISSUES plus the security hotspots still to review — and `null` on `undecidable`, never a false `0`), `open_keys[]` (every open key, issue and hotspot together, as one enumerated set), `hotspots[]` (the open security hotspots, with their `securityCategory` rather than a rule), `analysis_revision` and `head_revision` (the compared pair; both blank on a non-PR read, where no comparison happens), `rules[]`, `files[]`, `issues[]` and `count_status_reason` on `undecidable`. An unconfigured provider returns the typed `unconfigured` status, distinct from a read that failed. The issue `message` is deliberately absent: the trusted structured fields are what a caller acts on.
+**Carrying a stale analysis forward (`--analysed-revision`).** A pull request whose head the project's CI never builds (`skip-on-docs-only`) keeps the analysis on a commit the CI does not build, so the revision comparison answers `stale_analysis` on every such head and a retry can never succeed. `--analysed-revision {sha}` is the ONE licence past that gate, and it is narrow on purpose: it is honoured only when the provider reported `stale_analysis` AND `{sha}` equals the revision the provider actually analysed. Anything else keeps the stop unchanged — an unreported revision, an unresolvable head, a different stale revision, a CE timeout and an auth failure all still answer `undecidable`. When the licence holds the read enumerates the ANALYSED head and carries `count_status: confirmed`, `carried_forward: true`, both revisions, and a `count_status_reason` of `carried_forward_from_analysed_head: analysed {sha} != head {sha}` — so the count is a measurement of that head, never a claim about the current one. It is the caller's job to establish that the change since the analysed head is one the project does not build; this verb does not decide that, and it never licenses a revision the provider did not analyse.
+
+**Output:** TOON carrying `count_status` (`confirmed` | `undecidable`), `open_issue_count` (`0`-or-more on `confirmed` — the open ISSUES plus the security hotspots still to review — and `null` on `undecidable`, never a false `0`), `open_keys[]` (every open key, issue and hotspot together, as one enumerated set), `hotspots[]` (the open security hotspots, with their `securityCategory` rather than a rule), `analysis_revision` and `head_revision` (the compared pair; both blank on a non-PR read, where no comparison happens), `rules[]`, `files[]`, `issues[]`, `count_status_reason` on `undecidable` and on a carried-forward `confirmed` read, and `carried_forward: true` only on that carried-forward read. An unconfigured provider returns the typed `unconfigured` status, distinct from a read that failed. The issue `message` is deliberately absent: the trusted structured fields are what a caller acts on.
 
 ### Scan-Summary Marker (sonar-scan-summary.jsonl)
 
@@ -285,7 +287,7 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar p
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar read_open_issues \
-  --project PROJECT [--pr PR] [--ce-wait-timeout CE_WAIT_TIMEOUT]
+  --project PROJECT [--pr PR] [--ce-wait-timeout CE_WAIT_TIMEOUT] [--analysed-revision ANALYSED_REVISION]
 ```
 
 ### sonar_rest — search
