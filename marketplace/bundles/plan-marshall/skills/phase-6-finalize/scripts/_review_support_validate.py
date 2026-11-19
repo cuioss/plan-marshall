@@ -30,6 +30,9 @@ from _criteria_snapshot import (
     REFERENCE_UNKNOWN,
     REFERENCE_UNREADABLE,
     REQUEST_MISSING,
+    RETIRED,
+    RETIREMENT_CLOSED,
+    RETIREMENT_UNAUTHORIZED,
     SPEC_MISSING,
     SUCCESSOR_SUPERSEDED,
     SUPERSEDED,
@@ -37,6 +40,8 @@ from _criteria_snapshot import (
     canonical_digest,
     deliverable_reference_rejection,
     normalize_criterion,
+    read_snapshot,
+    retirement_state,
     seal_verdict,
     verdict_row_matches,
 )
@@ -45,7 +50,7 @@ from file_ops import cwd_checkout_root, get_build_results_dir
 KIND_FUNCTIONAL = 'functional'
 KIND_CODE = 'code'
 
-FUNCTIONAL_VERDICTS = ('met', 'met_with_residuals', 'not_met', 'superseded')
+FUNCTIONAL_VERDICTS = ('met', 'met_with_residuals', 'not_met', 'superseded', RETIRED)
 #: The verdicts that claim the deliverable's value is delivered, so must evidence a criterion.
 #: The SAME tuple :data:`CLOSING_VERDICTS` names in ``_criteria_snapshot`` — imported
 #: rather than restated, so a verdict added there cannot leave this copy behind.
@@ -87,14 +92,14 @@ HEAD_TOKEN_RE = re.compile(r'(?i)\bhead\b')
 EVIDENCE_PATH_RE = re.compile(r'^([^:\s]+\.\w+)(?::\d+(?:-\d+)?)?(?:::(\S+))?$')
 
 #: The facts a valid functional verdict records, before the two shared counts.
+#: The per-verdict counters are DERIVED from :data:`FUNCTIONAL_VERDICTS`, because
+#: ``_grade_row`` builds each name with ``f'deliverables_{verdict}'``: a verdict
+#: added to the tuple alone would otherwise raise a KeyError mid-grading.
 FUNCTIONAL_FACT_KEYS = (
     'deliverables_reviewed',
     'criteria_checked',
     'files_read',
-    'deliverables_met',
-    'deliverables_met_with_residuals',
-    'deliverables_not_met',
-    'deliverables_superseded',
+    *(f'deliverables_{verdict}' for verdict in FUNCTIONAL_VERDICTS),
     'criteria_unevidenced',
     'unrequested_changes',
     'false_self_reports',
@@ -444,7 +449,8 @@ def _superseded_rejection_message(reason: str, cited: str, number: int) -> str:
     if reason == REFERENCE_SELF:
         return (
             f'superseded_by {cited!r} names the deliverable itself; a deliverable cannot '
-            'supersede itself — retire it through the criteria-authorize route instead'
+            'supersede itself — grade it `retired` instead, once every criterion of it is '
+            'authorized through criteria-authorize'
         )
     if reason == REFERENCE_CYCLE:
         return f'superseded_by {cited!r} closes a supersede cycle back to deliverable {number}'
@@ -479,6 +485,21 @@ def _grade_row(
             rejection = deliverable_reference_rejection(cited, outline_numbers, own_number=number, verdicts=verdicts)
             if rejection is not None:
                 grading.errors.append(f'{where}: {_superseded_rejection_message(rejection, cited, number)}')
+        return
+    if verdict == RETIRED:
+        state = retirement_state(read_snapshot(plan_id), number)
+        if state['state'] == RETIREMENT_UNAUTHORIZED:
+            named = ', '.join(repr(text) for text in state['unauthorized'])
+            grading.errors.append(
+                f'{where}: retired with unauthorized criteria ({named}); every criterion of the '
+                'deliverable must be authorized through criteria-authorize before it can be retired'
+            )
+        elif state['state'] != RETIREMENT_CLOSED:
+            grading.errors.append(
+                f'{where}: retired with nothing to authorize; a retired deliverable must carry at '
+                'least one frozen criterion, and every one of them must be authorized through '
+                'criteria-authorize'
+            )
         return
     _grade_criteria(grading, row, expected, facts, plan_id, evidence_root)
     if verdict == 'not_met':
@@ -561,8 +582,8 @@ def report_unmatched_rows(
     verdict entry the freeze could not bind — the criterion it was meant to grade
     stays ``ungraded`` and open.
 
-    Two cases are not reported. A ``superseded`` deliverable's criteria are not
-    graded at all. And a row whose text is a CURRENT outline criterion is the author
+    Two cases are not reported. A ``superseded`` or ``retired`` deliverable's criteria
+    are not graded at all. And a row whose text is a CURRENT outline criterion is the author
     grading the outline as it now reads: an operator-authorized change lands there
     (and an unauthorized one is already a blocking criterion-drift finding), so the
     row is not surplus.
@@ -586,7 +607,7 @@ def report_unmatched_rows(
     for row in verdict.get('deliverables') or []:
         if not isinstance(row, dict):
             continue
-        if str(row.get('verdict') or '') == SUPERSEDED:
+        if str(row.get('verdict') or '') in (SUPERSEDED, RETIRED):
             continue
         number = deliverable_number(row.get('number'))
         frozen = frozen_by_number.get(number)
@@ -627,11 +648,13 @@ def validate_functional(
 
     Requires exactly one row per outline deliverable. Each ``deliverables``
     entry of ``deliverables`` carries ``number``, ``title`` and
-    ``success_criteria`` (the outline's criterion bullets). A ``superseded`` row
+    ``success_criteria`` (the outline's criterion lists). A ``superseded`` row
     must cite a CLOSING successor this outline carries — not itself, not a cycle,
     and with a ``met`` / ``met_with_residuals`` verdict — because free text, a
-    self-citation or an unmet successor would close ungraded work. When
-    ``evidence_root`` is given, every path and test name a ``met`` criterion
+    self-citation or an unmet successor would close ungraded work. A ``retired`` row
+    must have every frozen criterion of its deliverable already authorized through
+    ``criteria-authorize``, because the retirement is the operator's decision and the
+    verdict only records it. When ``evidence_root`` is given, every path and test name a ``met`` criterion
     cites is checked against the tree at the graded head; ``plan_id`` names the
     plan whose own ``build-results`` tree a ``.plan/`` citation is confined to.
     """

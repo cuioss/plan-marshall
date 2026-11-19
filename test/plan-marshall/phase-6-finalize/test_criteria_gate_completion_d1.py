@@ -528,3 +528,142 @@ def test_one_genuinely_unmet_criterion_is_still_refused(plan_context, tmp_path) 
 
     assert payload['open_count'] == 1, payload
     assert payload['open'][0]['criterion'] == 'b'
+
+
+# --- D1 (d): a deliverable the operator retired closes the gate ----------------------------
+
+
+def _retired(plan_dir: Path, tmp_path: Path) -> None:
+    _sealed_live(
+        plan_dir,
+        tmp_path,
+        {
+            'deliverables': [{'number': 1, 'verdict': 'retired'}],
+            'unrequested_changes': [],
+            'self_reports': [],
+            'files_read': [],
+        },
+    )
+
+
+def _authorize(criterion: str) -> None:
+    payload = _snap.authorize_change(PLAN_ID, 1, criterion, 'operator: the deliverable is retired')
+    assert payload['status'] == 'success', payload
+
+
+def test_a_retired_deliverable_is_closed_by_the_completion_gate(plan_context, tmp_path) -> None:
+    """CONTROL: the gate reads a fully authorized retirement as closed.
+
+    This holds on the unfixed tree as well — ``open_criteria`` already skips each
+    criterion an operator authorized — so it pins the required behaviour rather than
+    the retirement branch's necessity. What the branch owns is the fail-closed half,
+    pinned by ``test_an_invalid_retirement_closes_nothing_not_even_a_graded_criterion``.
+    """
+    plan_dir = _plan(plan_context, ['a', 'b'], freeze_from=['a', 'b'])
+    _authorize('a')
+    _authorize('b')
+    _retired(plan_dir, tmp_path)
+
+    payload = _snap.open_criteria(PLAN_ID)
+
+    assert payload['source'] == 'snapshot', payload
+    assert payload['open_count'] == 0, payload
+
+
+def test_a_criterion_authorized_after_the_retired_verdict_still_closes_it(plan_context, tmp_path) -> None:
+    """The verdict and the authorizations are two writes, and the gate reads both live.
+
+    The order the two writes land in therefore decides nothing: a criterion authorized
+    after the verdict was filed closes exactly like one authorized before it. CONTROL:
+    like the test above, this holds on the unfixed tree too.
+    """
+    plan_dir = _plan(plan_context, ['a', 'b'], freeze_from=['a', 'b'])
+    _authorize('a')
+    _retired(plan_dir, tmp_path)
+    _authorize('b')
+
+    payload = _snap.open_criteria(PLAN_ID)
+
+    assert payload['open_count'] == 0, payload
+
+
+def test_a_retired_deliverable_with_one_unauthorized_criterion_stays_open(plan_context, tmp_path) -> None:
+    """Fail-closed control: the gate never runs the validator, so it re-derives the precondition."""
+    plan_dir = _plan(plan_context, ['a', 'b'], freeze_from=['a', 'b'])
+    _authorize('a')
+    _retired(plan_dir, tmp_path)
+
+    payload = _snap.open_criteria(PLAN_ID)
+
+    assert payload['open_count'] == 1, payload
+    assert payload['open'][0]['criterion'] == 'b', payload
+    assert payload['open'][0]['status'] == 'ungraded', payload
+
+
+def test_a_valid_retirement_does_not_re_open_the_criteria_its_row_graded(plan_context, tmp_path) -> None:
+    """A valid retirement closes the criteria, and grades a stale row carries do not re-open them.
+
+    A delta round copies the previous row's criterion grades into the row it re-grades,
+    so a retirement can arrive beside a ``not_met`` grade from the round before it. Once
+    every criterion is authorized the retirement closes the deliverable: reading those
+    stale grades would re-open work the operator closed.
+
+    CONTROL, like its two neighbours: the per-criterion authorization skip already
+    closes every criterion here on the unfixed tree, so this pins the required
+    behaviour rather than the retirement branch.
+    """
+    plan_dir = _plan(plan_context, ['a', 'b'], freeze_from=['a', 'b'])
+    _authorize('a')
+    _authorize('b')
+    _sealed_live(
+        plan_dir,
+        tmp_path,
+        {
+            'deliverables': [
+                {
+                    'number': 1,
+                    'verdict': 'retired',
+                    'criteria': [{'criterion': 'b', 'status': 'not_met', 'evidence': []}],
+                }
+            ],
+            'unrequested_changes': [],
+            'self_reports': [],
+            'files_read': [],
+        },
+    )
+
+    payload = _snap.open_criteria(PLAN_ID)
+
+    assert payload['open_count'] == 0, payload
+
+
+def test_an_invalid_retirement_closes_nothing_not_even_a_graded_criterion(plan_context, tmp_path) -> None:
+    """A retirement missing an authorization releases NO criterion, graded or not.
+
+    The gate reads the verdict without running the validator, so trusting a ``met``
+    grade carried by a row whose own precondition fails would let an unverified
+    retirement close work no operator authorized.
+    """
+    plan_dir = _plan(plan_context, ['a', 'b'], freeze_from=['a', 'b'])
+    _sealed_live(
+        plan_dir,
+        tmp_path,
+        {
+            'deliverables': [
+                {
+                    'number': 1,
+                    'verdict': 'retired',
+                    'criteria': [{'criterion': 'a', 'status': 'met', 'evidence': ['src/parser.py:1']}],
+                }
+            ],
+            'unrequested_changes': [],
+            'self_reports': [],
+            'files_read': ['src/parser.py'],
+        },
+    )
+
+    payload = _snap.open_criteria(PLAN_ID)
+
+    assert payload['open_count'] == 2, payload
+    assert {row['criterion'] for row in payload['open']} == {'a', 'b'}, payload
+    assert {row['status'] for row in payload['open']} == {'ungraded'}, payload

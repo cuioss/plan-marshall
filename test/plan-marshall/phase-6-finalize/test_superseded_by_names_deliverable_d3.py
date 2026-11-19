@@ -39,14 +39,14 @@ def _outline() -> str:
     )
 
 
-def _plan(plan_context: Any, *, freeze: bool = False) -> Path:
+def _plan(plan_context: Any, *, freeze: bool = False, outline: str | None = None) -> Path:
     plan_dir = Path(plan_context.plan_dir_for(PLAN_ID))
     (plan_dir / 'status.json').write_text(
         json.dumps({'title': 'fixture', 'phases': [], 'current_phase': '6-finalize', 'metadata': {}}),
         encoding='utf-8',
     )
     (plan_dir / 'references.json').write_text(json.dumps({'base_branch': 'main'}), encoding='utf-8')
-    (plan_dir / 'solution_outline.md').write_text(_outline(), encoding='utf-8')
+    (plan_dir / 'solution_outline.md').write_text(_outline() if outline is None else outline, encoding='utf-8')
     if freeze:
         assert _snap.write_snapshot(PLAN_ID)['status'] == 'success'
     return plan_dir
@@ -371,3 +371,134 @@ def test_an_underscore_or_word_joined_token_is_not_a_citation(plan_context, tmp_
     )
 
     assert any('superseded_by' in error for error in validated['errors']), validated
+
+
+# --- the retired verdict: an operator retirement with no successor -------------------------
+#
+# A deliverable the operator retired with no successor is not ``superseded`` (nothing takes
+# the work over) and not ``not_met`` (nothing is missing). ``retired`` closes it ONLY through
+# ``criteria-authorize``: the operator authorizes every criterion of the deliverable, one
+# decision each, and the verdict then records the retirement. The precondition is the whole
+# guard, so every control below is the input that must still be refused.
+
+
+def _retirement_outline() -> str:
+    """Deliverable 1 carries TWO criteria, so "one unauthorized" is a real subset."""
+    return (
+        '# Solution: retire verdict\n\n## Summary\n\nFixture plan.\n\n## Deliverables\n\n'
+        '### 1. Deliver the parser\n\n**Affected files:**\n- `src/parser.py` (write-new)\n\n'
+        '**Success Criteria:**\n- parser accepts input\n- parser rejects garbage\n\n'
+        '### 2. Deliver the documentation\n\n**Affected files:**\n- `doc/parser.md` (write-new)\n\n'
+        '**Success Criteria:**\n- usage is documented\n'
+    )
+
+
+def _no_criteria_outline() -> str:
+    """Deliverable 1 carries an EMPTY success-criteria block: nothing to authorize."""
+    return (
+        '# Solution: no criteria\n\n## Summary\n\nFixture plan.\n\n## Deliverables\n\n'
+        '### 1. Deliver the parser\n\n**Affected files:**\n- `src/parser.py` (write-new)\n\n'
+        '**Success Criteria:**\n\n'
+        '### 2. Deliver the documentation\n\n**Affected files:**\n- `doc/parser.md` (write-new)\n\n'
+        '**Success Criteria:**\n- usage is documented\n'
+    )
+
+
+def _retired_verdict() -> dict[str, Any]:
+    return {
+        'deliverables': [
+            {'number': 1, 'verdict': 'retired'},
+            {
+                'number': 2,
+                'verdict': 'met',
+                'criteria': [{'criterion': 'usage is documented', 'status': 'met', 'evidence': ['doc/parser.md:1']}],
+            },
+        ],
+        'unrequested_changes': [],
+        'self_reports': [],
+        'files_read': [],
+    }
+
+
+def _authorize(number: int, criterion: str) -> None:
+    payload = _snap.authorize_change(PLAN_ID, number, criterion, 'operator: the deliverable is retired')
+    assert payload['status'] == 'success', payload
+
+
+def test_a_retired_row_with_every_criterion_authorized_is_accepted(plan_context, tmp_path, monkeypatch) -> None:
+    # The evidence-existence leg is not this clause's subject; the closed criteria are.
+    monkeypatch.setattr(review_support, '_main_checkout_root', lambda: None)
+    plan_dir = _plan(plan_context, freeze=True, outline=_retirement_outline())
+    _authorize(1, 'parser accepts input')
+    _authorize(1, 'parser rejects garbage')
+    path = _write_verdict(plan_dir, tmp_path, _retired_verdict())
+
+    payload = review_support.run_validate(PLAN_ID, 'functional', path, None)
+    criteria = _snap.open_criteria(PLAN_ID)
+
+    assert payload['errors'] == [], payload
+    assert payload['valid'] is True, payload
+    assert [finding for finding in payload['findings'] if finding['kind'] == 'deliverable_not_met'] == [], payload
+    assert criteria['open_count'] == 0, criteria
+
+
+def test_a_retired_row_with_one_unauthorized_criterion_is_refused_naming_it(plan_context, tmp_path) -> None:
+    plan_dir = _plan(plan_context, freeze=True, outline=_retirement_outline())
+    _authorize(1, 'parser accepts input')
+    path = _write_verdict(plan_dir, tmp_path, _retired_verdict())
+
+    payload = review_support.run_validate(PLAN_ID, 'functional', path, None)
+    criteria = _snap.open_criteria(PLAN_ID)
+
+    assert payload['valid'] is False, payload
+    assert any('retired' in error and 'parser rejects garbage' in error for error in payload['errors']), payload
+    assert any(row['criterion'] == 'parser rejects garbage' for row in criteria['open']), criteria
+
+
+def test_a_retired_row_with_no_criteria_to_authorize_is_refused(plan_context, tmp_path) -> None:
+    plan_dir = _plan(plan_context, freeze=True, outline=_no_criteria_outline())
+    path = _write_verdict(plan_dir, tmp_path, _retired_verdict())
+
+    payload = review_support.run_validate(PLAN_ID, 'functional', path, None)
+
+    assert payload['valid'] is False, payload
+    assert any('retired' in error and 'nothing to authorize' in error for error in payload['errors']), payload
+
+
+def test_a_not_met_row_still_files_its_blocking_deliverable_row(plan_context, tmp_path, monkeypatch) -> None:
+    """Control: the retirement route takes nothing away from ``not_met``."""
+    monkeypatch.setattr(review_support, '_main_checkout_root', lambda: None)
+    plan_dir = _plan(plan_context, freeze=True, outline=_retirement_outline())
+    path = _write_verdict(
+        plan_dir,
+        tmp_path,
+        {
+            'deliverables': [
+                {
+                    'number': 1,
+                    'verdict': 'not_met',
+                    'criteria': [
+                        {'criterion': 'parser accepts input', 'status': 'met', 'evidence': ['src/parser.py:1']},
+                        {'criterion': 'parser rejects garbage', 'status': 'not_met', 'evidence': []},
+                    ],
+                },
+                {
+                    'number': 2,
+                    'verdict': 'met',
+                    'criteria': [
+                        {'criterion': 'usage is documented', 'status': 'met', 'evidence': ['doc/parser.md:1']}
+                    ],
+                },
+            ],
+            'unrequested_changes': [],
+            'self_reports': [],
+            'files_read': [],
+        },
+    )
+
+    payload = review_support.run_validate(PLAN_ID, 'functional', path, None)
+
+    blocking = [finding for finding in payload.get('findings') or [] if finding['kind'] == 'deliverable_not_met']
+    assert len(blocking) == 1, payload
+    assert blocking[0]['severity'] == 'blocking', payload
+    assert blocking[0]['ref'] == 'D1', payload

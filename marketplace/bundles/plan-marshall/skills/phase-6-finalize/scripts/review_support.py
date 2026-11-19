@@ -45,7 +45,7 @@ Verdict file schemas (JSON — the rows nest criteria and evidence lists)::
 
     functional:
       {"deliverables": [{"number": 1,
-                         "verdict": "met|met_with_residuals|not_met|superseded",
+                         "verdict": "met|met_with_residuals|not_met|superseded|retired",
                          "criteria": [{"criterion": str,
                                        "criterion_id": "C1 (optional; D1.C1 also accepted)",
                                        "status": "met|unevidenced|not_met",
@@ -82,6 +82,12 @@ or ``may_close: false`` on a round without a blocking finding.
 ``fix_kind`` is required on every item that grades ``blocking`` except a
 ``not_met`` deliverable and an ``unevidenced`` criterion, which default to
 ``implementation`` — the gap is missing work unless the author says otherwise.
+
+A ``retired`` row's criterion grades are not read (a delta round may carry the
+previous round's rows forward), so the verdict closes nothing on them: it is
+accepted only when every frozen criterion of its deliverable is already authorized
+through ``criteria-authorize``, and it files no ``deliverable_not_met`` finding. A
+deliverable that froze no criterion has nothing to authorize and is refused.
 
 Usage::
 
