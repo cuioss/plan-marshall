@@ -2235,6 +2235,16 @@ _PROSE_TAG_RE = re.compile(r'<(?P<close>/?)(?P<name>dd|code)\b[^>]*>', re.IGNORE
 #: the label comparison so a heading matches its label whichever spelling declared it.
 _HEADING_TRAILING_COUNT_RE = re.compile(r'\s*(?:\(\d+\)|\d+)\s*$')
 
+#: A BOLD span inside a Markdown code span is a QUOTE of the heading, not a heading: a
+#: reviewer writes `` `**Outside diff range comments (1)**` `` when it discusses the rule.
+_BACKTICK_SPAN_RE = re.compile(r'`[^`]*`')
+
+#: The severity words a review ROW opens with, and the location marker it carries. A block
+#: whose summary is a counted title continues a bold heading's ownership only when it looks
+#: like a ROW; a bare counted title (`Potential issues (2)`) is a section of its own.
+_ROW_SEVERITY_RE = re.compile(r'^(?:🟠|🟡|🔴|⚪|🟢)?\s*(?:major|minor|critical|trivial|info)\b', re.IGNORECASE)
+_ROW_LOCATION_RE = re.compile(r'\b[\w./-]+\.[A-Za-z0-9]+\s*:\s*\d+')
+
 #: The most findings the gate will enumerate for one section. A reviewer's declared count
 #: is its own claim; a count above this is a body the gate refuses to materialize rather
 #: than one it trusts, because enumerating it would exhaust the process before any verdict.
@@ -2285,7 +2295,9 @@ def _owned_blocks(body: str, heading_end: int) -> list[tuple[int, int]]:
             return spans
         if not _adjacent_to_heading(body, boundary, token.start()):
             return spans
-        if _block_opens_a_section(body, token.start()) or _block_opens_a_non_finding_list(body, token.start()):
+        if _block_opens_a_section_or_a_bare_counted_title(body, token.start()):
+            return spans
+        if _block_opens_a_non_finding_list(body, token.start()):
             return spans
         spans.append((token.start(), close))
         closing_token = _DETAILS_TOKEN_RE.match(body, close)
@@ -2317,14 +2329,28 @@ def _block_opens_a_non_finding_list(body: str, opener: int) -> bool:
 
 
 def _block_opens_a_section(body: str, opener: int) -> bool:
-    """Whether the block at ``opener`` opens with a ``<summary>`` naming a FINDINGS section.
-
-    Only a recognised section name counts: a row summary that merely declares a count (a
-    severity line with a ``file:line``) is the block's own row, and stopping on it would hand
-    the block to a section nobody wrote.
-    """
+    """Whether the block at ``opener`` opens with a ``<summary>`` naming a FINDINGS section."""
     title = _block_summary_title(body, opener)
     return title is not None and _section_for_title(title)[0] is not None
+
+
+def _block_opens_a_section_or_a_bare_counted_title(body: str, opener: int) -> bool:
+    """Whether the block at ``opener`` is a SECTION of its own rather than a bold heading's row.
+
+    A block whose summary names a findings section is a section. So is a block whose summary
+    is a counted title that looks like neither a row's severity line nor a row's
+    ``file:line`` location: `Potential issues (2)` is a section, while `Major · src/a.py (2)`
+    is the row of the bold heading above it.
+    """
+    title = _block_summary_title(body, opener)
+    if title is None:
+        return False
+    if _section_for_title(title)[0] is not None:
+        return True
+    if _declared_count(title) is None:
+        return False
+    plain = re.sub(r'<[^>]+>', ' ', title).strip()
+    return _ROW_SEVERITY_RE.match(plain) is None and _ROW_LOCATION_RE.search(plain) is None
 
 
 def _block_summary_title(body: str, opener: int) -> str | None:
@@ -2347,6 +2373,36 @@ def _block_close(body: str, opener: int) -> int | None:
         if depth == 0:
             return token.start()
     return None
+
+
+def _adjacent_unclosed_block(body: str, heading_end: int) -> bool:
+    """Whether an ADJACENT block after the heading is never closed.
+
+    A standalone findings heading followed by a block that cannot be closed is a body whose
+    findings nobody can enumerate — the block's rows would be invisible and the gate could
+    answer `all_handled`. That is a stop, never a silent skip.
+    """
+    for token in _DETAILS_TOKEN_RE.finditer(body, heading_end):
+        if token.group(0).startswith('</'):
+            return False
+        if not _adjacent_to_heading(body, heading_end, token.start()):
+            return False
+        return _block_close(body, token.start()) is None
+    return False
+
+
+def _enclosing_block_close(body: str, offset: int) -> int | None:
+    """Return the close offset of the innermost block OPEN at ``offset``, or ``None``."""
+    stack: list[int] = []
+    for token in _DETAILS_TOKEN_RE.finditer(body):
+        if token.start() >= offset:
+            break
+        if token.group(0).startswith('</'):
+            if stack:
+                stack.pop()
+        else:
+            stack.append(token.start())
+    return _block_close(body, stack[-1]) if stack else None
 
 
 def _inside_prose(body: str, offset: int) -> bool:
@@ -2705,9 +2761,15 @@ def _body_findings(
         (match.start(), match.end(), section, declared)
         for match in _BOLD_SPAN_RE.finditer(body)
         if not _lies_within(match.start(), summary_spans) and not _inside_prose(body, match.start())
+        if not any(span.start() <= match.start() < span.end() for span in _BACKTICK_SPAN_RE.finditer(body))
         for section, declared in (_bold_heading_section(match.group('title')),)
         if section is not None
     ]
+    # A heading that names a section, sits beside a row block, and cannot see that block's end
+    # is a body whose findings cannot be enumerated: stop rather than drop them silently.
+    for candidate in bold_candidates:
+        if not _owned_blocks(body, candidate[1]) and _adjacent_unclosed_block(body, candidate[1]):
+            return [], f'the block under {candidate[2]!r} is never closed, so its findings cannot be read'
     # The blocks each bold heading OWNS, and the span it therefore covers. Ownership is that
     # identity, never mere precedence — a section summary inside any other block is a
     # section of its own, and treating it as the bold heading's row would drop its findings.
@@ -2716,7 +2778,7 @@ def _body_findings(
     }
     bold_headings = [candidate for candidate in bold_candidates if owned_blocks.get(candidate[0])]
     owned_spans = [
-        (open_offset, close_offset)
+        (open_offset, close_offset, start)
         for start, _end, _section, _declared in bold_headings
         for open_offset, close_offset in owned_blocks.get(start, [])
     ]
@@ -2733,14 +2795,23 @@ def _body_findings(
             # block is a boundary for every other heading, but cutting the block's own span
             # at it would leave an undeclared bold heading counting an empty span.
             return blocks[-1][1]
-        return next((boundary for boundary in boundary_starts if boundary > start), len(body))
+        # A summary section's span is bounded by the next SECTION boundary — never by a bold
+        # heading nested inside its own block, whose interval is excluded from the count
+        # instead, so the rows on either side of it are both read.
+        bold_starts = {start_ for start_, _end, _section, _declared in bold_headings}
+        boundary = next(
+            (bound_ for bound_ in boundary_starts if bound_ > start and bound_ not in bold_starts),
+            len(body),
+        )
+        enclosing = _enclosing_block_close(body, start)
+        return boundary if enclosing is None else min(boundary, enclosing)
 
     headings: list[tuple[int, int, str, int | None]] = []
     for index, _match in starts:
         if not _is_section(index):
             continue
         title = starts_by_index[index]
-        owned = any(open_offset < offset_of[index] < close_offset for open_offset, close_offset in owned_spans)
+        owned = any(open_offset < offset_of[index] < close_offset for open_offset, close_offset, _owner in owned_spans)
         if owned and _section_for_title(title)[0] is None:
             # A summary inside a block a bold heading owns is that block's row. A summary
             # that NAMES a findings section is not: it is a section of its own, and the outer
@@ -2760,8 +2831,16 @@ def _body_findings(
     for start, end, section, declared in headings:
         if section == 'inline':
             seen_inline = True
+        span_end = _span_end(start)
+        span = body[end:span_end]
+        # A NESTED bold heading's own interval is counted by that heading, so it is blanked
+        # here — same length, so every offset below stays where it was. This heading's own
+        # blocks are left intact: they are the span it counts.
+        for open_offset, close_offset, owner_start in owned_spans:
+            if owner_start != start and end < open_offset and close_offset < span_end:
+                span = span[: open_offset - end] + ' ' * (close_offset - open_offset) + span[close_offset - end :]
         count = _count_section_findings(
-            body[end : _span_end(start)],
+            span,
             declared,
             excluded_offsets=heading_offsets,
             span_start=end,

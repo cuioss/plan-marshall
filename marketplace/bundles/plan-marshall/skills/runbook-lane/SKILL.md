@@ -998,6 +998,13 @@ head being merged. A head whose `review-gate` read is not clean inherits nothing
 
 **Enqueue and settle:**
 
+The enqueue is issued for the head the checks above read, and for no other head. Re-read the head
+immediately before enqueuing (`ci pr view`'s head sha, or the merge-queue response's own head): if it
+moved since the reads, STOP — do not enqueue — and go back to the reach decision, the build gate, the
+CI wait and the `review-gate` read for the new head. The platform queue re-runs CI on whatever head it
+finds, but it does not re-run the reach decision or the review read, so a head that changed underneath
+a cleared record would enter the queue uncleared.
+
 The enqueue takes no merge mutex: the platform queue serializes the merge and re-tests it against the
 updated base, so two enqueued pull requests cannot interleave their merge commits — the queue is the
 serialization the mutex would otherwise provide, and holding both would only serialize work that is

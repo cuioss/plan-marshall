@@ -939,12 +939,11 @@ def test_a_label_shaped_quote_in_a_row_body_is_not_a_heading() -> None:
 
 
 def test_an_unclosed_bold_block_owns_nothing() -> None:
-    """⛔ An unbalanced `<details>` must not swallow every section after it.
+    """⛔ An unbalanced `<details>` must not swallow every section after it — and must not pass.
 
-    The later summary is a DIRECT child of the unclosed block, which is what makes the case
-    discriminating: keyed on an enclosing opener it would be skipped and the body would read
-    zero. A block with no matching close cannot be shown to end anywhere, so the bold line
-    owns nothing — it is not a heading, and the summary keeps its own count.
+    A block with no matching close cannot be shown to end anywhere, so the heading owns
+    nothing; and because the heading declares findings over a block nobody can read, the body
+    is a stop rather than an `all_handled`.
     """
     body = (
         '**⚠️ Outside diff range comments (1)** <details> <summary>Major · a.py</summary> fix '
@@ -953,20 +952,22 @@ def test_an_unclosed_bold_block_owns_nothing() -> None:
 
     verdict = _verdict(_read(_review_body(body)))
 
-    assert verdict['review_body_findings_total'] == 2, verdict
-    assert [row['id'] for row in verdict['undisposed']] == ['nitpick-1', 'nitpick-2']
+    assert verdict['merge_allowed'] is False
+    assert verdict['reason'] == 'undecidable_read'
+    assert 'never closed' in verdict['detail']
 
 
 def test_a_bold_mention_in_prose_owns_no_block_and_mints_nothing() -> None:
     """⛔ A heading quoted in a sentence is not a heading.
 
-    The bold span states exactly the label and its count, but a prose word sits between it
-    and the next block. Owning that block would read the nitpick section as the mention's
-    rows; minting the span as a heading would leave a phantom `outside-diff-1` that survives
-    every disposition of the real findings.
+    An ordinary row block follows the sentence and the section comes after it, so the fixture
+    discriminates: without the adjacency guard the mention would own that row block and mint
+    `outside-diff-1`. Minting the span as a heading would leave a phantom finding that
+    survives every disposition of the real ones.
     """
     body = (
         '**Outside diff range comments (1)** is empty this time. '
+        '<details><summary>Major · a.py</summary> fix </details>'
         '<details><summary>🧹 Nitpick comments (2)</summary><blockquote> a b </blockquote></details>'
     )
 
@@ -974,6 +975,69 @@ def test_a_bold_mention_in_prose_owns_no_block_and_mints_nothing() -> None:
 
     assert verdict['review_body_findings_total'] == 2, verdict
     assert [row['id'] for row in verdict['undisposed']] == ['nitpick-1', 'nitpick-2']
+
+
+def test_a_bold_label_quoted_in_a_code_span_is_not_a_heading() -> None:
+    """⛔ A label inside backticks is a quotation, and owns nothing."""
+    body = (
+        'The rule reads `**Outside diff range comments (1)**` in the lane text. '
+        '<details><summary>Notes</summary> prose only </details>'
+    )
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['review_body_findings_total'] == 0, verdict
+
+
+def test_an_unclosed_adjacent_row_block_stops_the_gate() -> None:
+    """⛔ A declared heading beside a block that never closes is a stop, not a silent zero."""
+    body = '**Outside diff range comments (1)** <details><summary>Major · a.py</summary> fix'
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['merge_allowed'] is False
+    assert verdict['reason'] == 'undecidable_read'
+    assert 'never closed' in verdict['detail']
+
+
+def test_a_bold_heading_does_not_own_a_bare_counted_section() -> None:
+    """⛔ `Potential issues (2)` is a section; `Major · a.py (2)` is a row.
+
+    Extending the bold heading's ownership over the sibling section would drop its two
+    findings, and disposing the heading's one finding would then clear the gate.
+    """
+    body = (
+        '**Outside diff range comments (1)** '
+        '<details><summary>Major · a.py (2)</summary> fix </details>'
+        '<details><summary>🔎 Potential issues (2)</summary> first second </details>'
+    )
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['review_body_findings_total'] == 3, verdict
+    assert [row['section'] for row in verdict['undisposed']] == ['outside-diff', 'unclassified', 'unclassified']
+
+
+def test_an_outer_section_reads_the_rows_below_a_nested_bold_heading() -> None:
+    """⛔ A nested bold section must not end the outer section's scan.
+
+    One marked nitpick row sits before the nested CAUTION section and one after it; both are
+    the outer section's, and the nested heading's own interval is counted by the nested
+    heading.
+    """
+    body = (
+        '<details><summary>🧹 Nitpick comments</summary><blockquote>'
+        'first <!-- cr-comment:v1:aaaaaaaaaaaaaaaaaaaaaaaa --> '
+        '**Outside diff range comments (1)** '
+        '<details><summary>Major · b.py</summary> fix </details> '
+        'second <!-- cr-comment:v1:bbbbbbbbbbbbbbbbbbbbbbbb -->'
+        '</blockquote></details>'
+    )
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['review_body_findings_total'] == 3, verdict
+    assert [row['section'] for row in verdict['undisposed']] == ['nitpick', 'nitpick', 'outside-diff']
 
 
 def test_a_br_tag_between_a_bold_heading_and_its_block_is_markup() -> None:
