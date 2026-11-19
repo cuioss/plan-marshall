@@ -191,6 +191,6 @@ These specific mistakes have been observed when transferring `gh`/`glab` flag na
 | `ci checks status --branch X` | `ci checks status --head X` _or_ `ci checks status --pr-number 123` | The branch flag is `--head`, **not** `--branch` |
 | `ci pr merge --merge-method squash` | `ci pr merge --pr-number 123 --strategy squash` | Flag is `--strategy`, not `--merge-method` |
 | `ci issue wait-for-close --issue 123` | `ci issue wait-for-close --issue-number 123` | The two `issue wait-for-*` verbs take `--issue-number`; the rest of the `issue` group takes `--issue` |
-| `ci pr create --body-file body.md` | `ci pr prepare-body --plan-id NO_PLAN` → Write → `ci pr create --title T --plan-id NO_PLAN` | `gh pr create` has a `--body-file`; this leaf does not. The prepare/consume body store is the only body channel, and `NO_PLAN` is the plan-less route into it |
+| `ci pr create --body-file body.md` | `ci pr prepare-body --plan-id NO_PLAN --slot {own}` → Write → `ci pr create --title T --plan-id NO_PLAN --slot {own}` | `gh pr create` has a `--body-file`; this leaf does not. The prepare/consume body store is the only body channel, `NO_PLAN` is the plan-less route into it, and each plan-less caller names its own slot because the store is shared |
 
 When in doubt, load the relevant group standards file (`pr-operations.md`, `pr-review-operations.md`, `ci-operations.md`, `issue-operations.md`) for full examples and result schemas.

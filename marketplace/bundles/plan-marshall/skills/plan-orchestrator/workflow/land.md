@@ -35,7 +35,7 @@ The verb is invoked as `/plan-orchestrator land` or `/plan-orchestrator land req
 `land` is the one sanctioned write-side use of `plan-marshall:tools-integration-ci:ci` in the orchestrator (see the [small-ops carve-out](../../persona-plan-orchestrator/standards/orchestration-model.md#small-ops-carve-out)). Every call below is written exactly as the live `--help` accepts it:
 
 - The read verbs (`pr queue-state`, `pr list`, `checks wait`, `pr wait-for-queue-settle`) and `pr merge-queue` declare no verb-level `--plan-id`. A `--plan-id` or `--project-dir` for them is a router flag and goes BEFORE the first verb token; this workflow passes neither.
-- The body-consumer verbs (`pr prepare-body`, `pr create`) declare a required `--plan-id` AFTER the verb. The land is bound to no plan, so both take `--plan-id NO_PLAN`.
+- The body-consumer verbs (`pr prepare-body`, `pr create`) declare a required `--plan-id` AFTER the verb. The land is bound to no plan, so both take `--plan-id NO_PLAN`, and both name the land's own body slot (`--slot land`): the plan-less body store is shared, and its default slot is refused.
 - Every long wait passes an explicit `--timeout 540` and is run synchronously with a Bash timeout of 600000ms, so the wait returns its own verdict inside the tool call.
 
 ## Workflow
@@ -133,14 +133,14 @@ Allocate the body file:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr prepare-body \
-  --plan-id NO_PLAN
+  --plan-id NO_PLAN --slot land
 ```
 
-Write the snapshot's `body` verbatim to the returned path with the `Write` tool. The body carries no attribution footer and none is added.
+Write the snapshot's `body` verbatim to the returned path with the `Write` tool. The body carries no attribution footer and none is added. The slot is the land's OWN: under the `NO_PLAN` sentinel the body store is shared, and the default slot is refused because a concurrent plan-less caller (a runbook lane) would otherwise write the same file between this call and `pr create`.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr create \
-  --plan-id NO_PLAN --head chore/orchestrator-ledger --base {base_branch} --title "{title}"
+  --plan-id NO_PLAN --slot land --head chore/orchestrator-ledger --base {base_branch} --title "{title}"
 ```
 
 `{title}` is the snapshot's `title` and `{base_branch}` is the value Step 1 kept from `land status`, so the PR merges into the branch the land works against even when that is not the repository's default branch. When Step 2 reached this step through `land snapshot --extend`, the title and body come from that call's return.
