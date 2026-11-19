@@ -2504,8 +2504,12 @@ def _bold_spans(body: str) -> list[tuple[int, int, str]]:
             opener = marker.start()
             continue
         if opener is not None:
-            title = body[opener + len('**') : marker.start()]
-            if '*' not in title:
+            # A delimiter RUN can carry three markers (`***Heading***`), so the run's inner
+            # asterisks belong to the delimiter, not to the title: stripping them keeps a
+            # triple-emphasis heading readable while a title with an asterisk INSIDE it still is
+            # not a span.
+            title = body[opener + len('**') : marker.start()].strip('*')
+            if title and '*' not in title:
                 spans.append((opener, marker.end(), title))
         opener = None
     return spans
@@ -3018,12 +3022,13 @@ def _body_findings(
 
     headings: list[tuple[int, int, str, int | None]] = []
     for index, _match in starts:
-        if not _is_section(index):
-            continue
         if index in transparent:
             # The wrapper reads through the section it encloses, so it mints nothing — unless it
             # says something of its own BESIDE that section (before, between or after it), which
             # nobody could then attribute: a stop with a named cause, never a count that drops it.
+            # The check runs BEFORE the section filter: a wrapper nested inside another counted
+            # wrapper is that wrapper's content, and validating only the sections that are emitted
+            # would leave the nested one's prose unread.
             _open, wrapper_close = _enclosing_block_span(body, offset_of[index])
             gap = body[end_of[index] : wrapper_close]
             for child in transparent[index]:
@@ -3040,11 +3045,16 @@ def _body_findings(
                 last = min(child_close, wrapper_close) - end_of[index]
                 if first < last:
                     gap = gap[:first] + ' ' * (last - first) + gap[last:]
-            if re.search(r'[A-Za-z0-9]', re.sub(r'<[^>]+>', ' ', gap)):
+            # ANY non-whitespace text is the wrapper's own content: a letter-or-digit test would
+            # pass a non-ASCII sentence and a symbol-only note, and reading through would drop
+            # both.
+            if re.sub(r'<[^>]+>', ' ', gap).strip():
                 return [], (
                     f'the counted wrapper {starts_by_index[index]!r} carries content beside the '
                     f'section it encloses, so its findings cannot be read'
                 )
+            continue
+        if not _is_section(index):
             continue
         title = starts_by_index[index]
         owned = any(open_offset < offset_of[index] < close_offset for open_offset, close_offset, _owner in owned_spans)
@@ -3097,15 +3107,15 @@ def _body_findings(
     # follow. Reading the status line only when no inline section exists let a blockless
     # ``**Inline comments (2)**`` heading suppress a status line declaring four, which would
     # read fewer findings than the body states; the shortfall is minted instead, and a body
-    # whose two statements agree mints nothing twice.
-    findings.extend(
-        _numbered_findings(
-            reviewer,
-            'inline',
-            max(0, _inline_status_count(body, bot_kind) - inline_from_sections),
-            counters,
+    # whose two statements agree mints nothing twice. The shortfall is capped like every other
+    # count, so a hostile status line cannot allocate the process to death.
+    supplement = max(0, _inline_status_count(body, bot_kind) - inline_from_sections)
+    if supplement > _MAX_ENUMERATED_FINDINGS:
+        return [], (
+            f'{supplement} inline findings declared by the status line, above the '
+            f'{_MAX_ENUMERATED_FINDINGS} this gate will enumerate'
         )
-    )
+    findings.extend(_numbered_findings(reviewer, 'inline', supplement, counters))
     return findings, None
 
 

@@ -2458,6 +2458,79 @@ def test_a_counted_wrapper_enclosing_a_blockless_summary_stops_the_gate() -> Non
     assert 'closed block of its own' in verdict['detail'], verdict
 
 
+def test_a_triple_emphasis_heading_is_still_read() -> None:
+    """⛔ CR: `***Heading (1)***` is a heading — the delimiter run's asterisks are not a title.
+
+    A triple delimiter puts an asterisk inside the span's raw title, so a title carrying one was
+    skipped and the heading lost — fewer findings than the body declares. The delimiter run is
+    stripped from the edges of the title, and an asterisk INSIDE it still disqualifies the span.
+    """
+    body = '***Outside diff range comments (1)*** <details><summary>Major · a.py</summary> fix </details>'
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['review_body_findings_total'] == 1, verdict
+    assert [(row['section'], row['id']) for row in verdict['undisposed']] == [('outside-diff', 'outside-diff-1')]
+
+
+def test_a_wrapper_enclosing_non_ascii_content_stops_the_gate() -> None:
+    """⛔ CR: any non-whitespace text beside the enclosed section is the wrapper's own content.
+
+    A letter-or-digit test passes a non-ASCII sentence and a symbol-only note, and reading
+    through would drop both — the count the body states, unread.
+    """
+    for note in ('修复权限检查', '⚠️'):
+        body = (
+            f'<details><summary>Review (2)</summary> {note} '
+            '<details><summary>🧹 Nitpick comments (1)</summary> a </details></details>'
+        )
+
+        verdict = _verdict(_read(_review_body(body)))
+
+        assert verdict['merge_allowed'] is False, (note, verdict)
+        assert verdict['reason'] == 'undecidable_read', (note, verdict)
+        assert 'carries content beside' in verdict['detail'], (note, verdict)
+
+
+def test_a_wrapper_nested_in_another_wrapper_is_validated_too() -> None:
+    """⛔ CR: a transparent wrapper inside a counted wrapper must still be checked.
+
+    `Review (1)` encloses `Group (2)`, which holds prose beside a recognised section. The inner
+    wrapper is the outer one's CONTENT, so validating only the sections that get emitted skipped
+    it and its prose was dropped; the check now runs before that filter.
+    """
+    body = (
+        '<details><summary>Review (1)</summary>'
+        '<details><summary>Group (2)</summary> a concern of its own '
+        '<details><summary>🧹 Nitpick comments (1)</summary> x </details></details></details>'
+    )
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['merge_allowed'] is False, verdict
+    assert verdict['reason'] == 'undecidable_read', verdict
+    assert "'Group (2)'" in verdict['detail'], verdict
+
+
+def test_an_implausible_status_line_count_stops_the_gate() -> None:
+    """⛔ CR: the inline shortfall is capped like every other count.
+
+    An inline section of 1 beside a status line declaring a billion would pass the section's own
+    limit check and then allocate the supplement, one dict per finding. The named stop covers the
+    status line's count too.
+    """
+    body = (
+        '**Actionable comments posted: 1000000000** **Inline comments (1)** '
+        '<details><summary>🧹 Nitpick comments (1)</summary> a </details>'
+    )
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['merge_allowed'] is False, verdict
+    assert verdict['reason'] == 'undecidable_read', verdict
+    assert 'this gate will enumerate' in verdict['detail'], verdict
+
+
 def test_a_label_between_two_bold_runs_is_not_a_heading() -> None:
     """⛔ Round-1 guard (not red before the fix): two bold runs state no section between them.
 
