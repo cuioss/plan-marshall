@@ -2186,6 +2186,11 @@ def open_criteria(plan_id: str, verdict_file: Path | None = None) -> dict[str, A
         return {'source': 'review_closed', 'closed_reason': closed_reason, 'open_count': 0, 'open': []}
     path = verdict_file if verdict_file is not None else base_path('plans', plan_id, FUNCTIONAL_VERDICT_FILE)
     verdict, verdict_state = _checked_verdict(path, plan_id)
+    # A verdict that exists but no longer matches its seal was edited after it was filed,
+    # so nothing it says can be trusted — including that a deliverable is NOT retired.
+    # Fail closed: no decision exemption closes a criterion while the verdict is untrusted,
+    # because the row that would say which deliverable was retired is exactly what changed.
+    untrusted_verdict = verdict_state in ('unsealed', 'unreadable')
     snapshot_numbers = {row.get('number') for row in snapshot.get('deliverables') or [] if isinstance(row, dict)}
     rows: list[dict[str, Any]] = []
     for row in snapshot.get('deliverables') or []:
@@ -2221,8 +2226,13 @@ def open_criteria(plan_id: str, verdict_file: Path | None = None) -> dict[str, A
             # row that is a RETIREMENT decision only — a decision recorded to approve the
             # criterion's rewrite authorizes the change and closes nothing of a retirement —
             # while under every other verdict any recorded decision is the drift exemption.
+            # An untrusted verdict closes nothing on a decision: see ``untrusted_verdict``.
             decided = (
-                _retirement_decision(snapshot, number, text) if retired else _authorization(snapshot, number, text)
+                False
+                if untrusted_verdict
+                else (
+                    _retirement_decision(snapshot, number, text) if retired else _authorization(snapshot, number, text)
+                )
             )
             if decided:
                 continue

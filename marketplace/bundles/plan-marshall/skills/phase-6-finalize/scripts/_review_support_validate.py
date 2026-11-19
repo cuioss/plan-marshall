@@ -510,9 +510,17 @@ def _grade_row(
         # returning before ``_grade_criteria`` is what let a rewritten deliverable pass
         # ungraded.
         carried = row.get('criteria')
+        graded_rows = carried if isinstance(carried, list) else []
+        if not graded_rows:
+            # Independent of the outline's criterion count: a refusal is graded on the
+            # criteria its row carries, and a row carrying none evaluates nothing at all —
+            # the count check below cannot say that when the outline carries none either.
+            grading.errors.append(
+                f'{where}: retired with no criterion grades; a refused retirement is graded on the criteria it carries'
+            )
         _grade_criteria(
             grading,
-            {**row, 'criteria': carried if isinstance(carried, list) else []},
+            {**row, 'criteria': graded_rows},
             expected,
             facts,
             plan_id,

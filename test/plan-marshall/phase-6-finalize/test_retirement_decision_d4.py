@@ -319,6 +319,47 @@ def test_a_refused_retirement_carrying_no_grades_is_reported_ungraded(plan_conte
     assert any('0 criteria rows' in error for error in payload['errors']), payload
 
 
+def test_a_refused_retirement_with_no_grades_is_reported_even_with_no_outline_criteria(plan_context, tmp_path) -> None:
+    """The empty-grading diagnostic does not depend on the outline's criterion count.
+
+    With no current criteria the count check has nothing to compare against, so the row
+    carrying none would otherwise be refused without ever saying that it grades nothing.
+    """
+    plan_dir = _plan(plan_context, rewrites=[])
+    _authorize(1, 'parser accepts input', 'rewrite')
+    _authorize(1, 'parser rejects garbage', 'rewrite')
+    path = _write_verdict(plan_dir, tmp_path, _retired_verdict())
+
+    payload = review_support.run_validate(PLAN_ID, 'functional', path, None)
+
+    assert payload['valid'] is False, payload
+    assert any('no criterion grades' in error for error in payload['errors']), payload
+
+
+def test_an_unsealed_verdict_closes_nothing_on_a_rewrite_authorization(plan_context, tmp_path) -> None:
+    """An edited verdict is untrusted: the gate must not fall back to the rewrite path.
+
+    Removing the authorship marker turns the sealed verdict into an unsealed one, so the
+    gate cannot read that the deliverable was retired — and must not let the more
+    permissive rewrite exemption close what the retirement rule left open.
+    """
+    plan_dir = _plan(plan_context)
+    _authorize(1, 'parser accepts input', 'rewrite')
+    _authorize(1, 'parser rejects garbage', 'rewrite')
+    path = Path(_write_verdict(plan_dir, tmp_path, _retired_verdict()))
+    document = json.loads(path.read_text(encoding='utf-8'))
+    document.pop(_snap.AUTHORED_KEY, None)
+    path.write_text(json.dumps(document), encoding='utf-8')
+
+    criteria = _snap.open_criteria(PLAN_ID)
+
+    assert criteria['verdict_state'] == 'unsealed', criteria
+    # Fail closed across the whole verdict: deliverable 1's two criteria AND deliverable
+    # 2's one read open, because the document that graded them is no longer trustworthy.
+    assert criteria['open_count'] == 3, criteria
+    assert {row['criterion'] for row in criteria['open']} >= set(FROZEN), criteria
+
+
 # --- controls: unchanged from ``main`` ``46d3308ea`` ---------------------------------------
 
 
