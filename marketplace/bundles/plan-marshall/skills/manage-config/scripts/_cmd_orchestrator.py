@@ -290,6 +290,19 @@ def cmd_orchestrator_get(args) -> dict:
 
     if field == 'use_worktree':
         knob_path = orchestrator_knob_config_path()
+        # Fail closed on a malformed (including explicit null) main-anchored
+        # orchestrator block, mirroring the local check above: the use_worktree
+        # read returns False for such a block, which would otherwise answer
+        # `success` for a setting no reader wrote.
+        if knob_path is not None:
+            try:
+                main_data = json.loads(knob_path.read_text(encoding='utf-8'))
+            except (OSError, ValueError):
+                main_data = None
+            if isinstance(main_data, dict) and 'orchestrator' in main_data:
+                main_block = main_data.get('orchestrator')
+                if main_block is None or not isinstance(main_block, dict):
+                    return error_exit('orchestrator block in marshal.json is not a dictionary')
         return success_exit(
             {
                 'field': field,
