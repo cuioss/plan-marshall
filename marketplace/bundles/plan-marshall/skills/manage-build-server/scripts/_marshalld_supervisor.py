@@ -97,6 +97,7 @@ import asyncio
 import contextlib
 import os
 import signal
+import stat
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -386,16 +387,12 @@ _JOB_LOG_SUBDIR = Path('.plan') / 'local' / 'marshalld' / 'job-logs'
 """Where a job log lives, relative to the submitting project's tree root.
 
 The log belongs to the tree that produced it, not to the machine that ran it: a
-daemon-routed build's child already runs ``{tree}/.plan/execute-script.py`` with
-``cwd`` inside that tree, and its log must be reachable by the same rule — a
-consumer that may read the project (and nothing outside it) has to be able to open
-the ``log_file`` a build result names. The tier is the project's own machine-local
-``.plan/local``, which every plan-marshall project's ``.gitignore`` already covers,
-so a log never surfaces as an untracked change, and the subtree is removed with
-the worktree it was written in.
-
-The naming deliberately mirrors the machine-global ``marshalld/job-logs`` it
-replaces, so the move is legible to anyone who knew the old path.
+daemon-routed build's child runs ``{tree}/.plan/execute-script.py`` with ``cwd``
+inside that tree, and its log is reachable by the same rule — a consumer that may
+read the project (and nothing outside it) can open the ``log_file`` a build result
+names. The tier is the project's own machine-local ``.plan/local``, which every
+plan-marshall project's ``.gitignore`` covers, so a log never surfaces as an
+untracked change, and the subtree is removed with the worktree it was written in.
 """
 
 
@@ -460,6 +457,44 @@ def log_file_failure_payload(log_file: str, command_str: str, reason: str) -> di
     )
 
 
+_JOB_LOG_FILE_MODE = 0o600
+"""Mode a job log is created with — build output is the project's own business."""
+
+
+def _open_job_log(log_file: str) -> IO[bytes]:
+    """Open (and create) a job log for writing, refusing anything but a regular file.
+
+    The path sits inside a project the submitting user can write, so the open must
+    not be steerable by something already at that name: ``O_NOFOLLOW`` rejects a
+    pre-created symlink, ``O_NONBLOCK`` makes a FIFO fail instead of parking the
+    daemon's event loop on an open that waits for a reader, and the ``S_ISREG``
+    check covers a device or socket the flags alone would accept. The file is
+    created ``0600`` and tightened if an earlier writer left it wider.
+
+    Args:
+        log_file: The job's log path, already inside the submitting tree.
+
+    Returns:
+        The write sink.
+
+    Raises:
+        OSError: when the path cannot be opened, or is not a regular file.
+    """
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+    flags |= getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_NONBLOCK', 0)
+    fd = os.open(log_file, flags, _JOB_LOG_FILE_MODE)
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode):
+            raise OSError(f'{log_file} is not a regular file')
+        if hasattr(os, 'fchmod') and info.st_mode & 0o777 != _JOB_LOG_FILE_MODE:
+            os.fchmod(fd, _JOB_LOG_FILE_MODE)
+    except BaseException:
+        os.close(fd)
+        raise
+    return os.fdopen(fd, 'wb')
+
+
 async def run_job(
     command: list[str],
     cwd: str,
@@ -515,8 +550,13 @@ async def run_job(
     # the job's log fails the job (as a LAUNCH fault) instead of starting a build
     # whose output has nowhere to go. There is no fall-back directory: writing the
     # log anywhere but the submitting tree is the defect this location removes.
+    #
+    # The creation is deliberately not a plain `open()`: the path is inside a
+    # project the submitting user can write, so a pre-created symlink or FIFO at
+    # that name must not be followed (a FIFO would block the daemon's event loop)
+    # and the file must be private, whatever the process umask says.
     try:
-        sink = open(log_file, 'wb')
+        sink = _open_job_log(log_file)
     except OSError as exc:
         return log_file_failure_payload(
             log_file,
@@ -536,12 +576,15 @@ async def run_job(
             start_new_session=not _IS_WINDOWS,
         )
     except OSError:
-        # The sink exists but no build will write into it; release the handle
-        # rather than leaking it, and let the caller's own failure leg report.
+        # The sink exists but no build will write into it; release the handle and
+        # remove the empty file, so a job that never started leaves no log behind.
         sink.close()
+        with contextlib.suppress(OSError):
+            Path(log_file).unlink()
         raise
 
     timed_out = False
+    pump_results: list[Any] = []
     with sink:
         pumps = [
             asyncio.create_task(_pump(proc.stdout, sink, progress)),
@@ -553,7 +596,30 @@ async def run_job(
             timed_out = True
             await _stop_job_tree(proc)
         finally:
-            await asyncio.gather(*pumps, return_exceptions=True)
+            pump_results = await asyncio.gather(*pumps, return_exceptions=True)
+
+    # A voice that could not be written is a failed logging outcome, not a build
+    # verdict: the pumps swallowed nothing on purpose, so a write failure is
+    # reported as itself rather than leaving a truncated log beside a green result.
+    write_failure = next(
+        (result for result in pump_results if isinstance(result, OSError)),
+        None,
+    )
+    if write_failure is not None:
+        return log_file_failure_payload(
+            log_file,
+            command_str,
+            f'the job log at {log_file} could not be written while the job ran: {write_failure}',
+        )
+    if not Path(log_file).exists():
+        # The log was removed under the job (a worktree cleaned up while its build
+        # was still running). Without it the wrapper's own verdict cannot be read,
+        # so an exit-0 wrapper must not be reported as a green build.
+        return log_file_failure_payload(
+            log_file,
+            command_str,
+            f'the job log at {log_file} disappeared before its verdict could be read',
+        )
 
     duration = int(progress.elapsed())
     status = classify_terminal(proc.returncode, timed_out=timed_out)

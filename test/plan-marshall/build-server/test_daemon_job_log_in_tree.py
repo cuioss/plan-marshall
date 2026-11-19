@@ -3,10 +3,10 @@
 """A daemon-routed job writes its log INSIDE the submitting project's tree.
 
 The invariant these tests pin is a location, not a value: a build result's
-``log_file`` names a path inside the tree the job was submitted for. It used to
-name ``{daemon_dir}/job-logs/{job_id}.log``, outside that tree — so every consumer
-that reads the named log was reading outside the project, and one confined to the
-project had to break a rule on every routed build.
+``log_file`` names a path, under the tree the job was submitted for, that a
+consumer confined to that project can open. A path outside the tree — the daemon's
+machine-global state directory, say — makes the named log unreadable to exactly the
+consumer the result is for.
 
 Four properties hold together:
 
@@ -14,7 +14,7 @@ Four properties hold together:
   exists, and it holds the job's own output;
 * two jobs of ONE project do not overwrite each other's log;
 * a log that cannot be written in the tree is a RECORDED logging failure, and it
-  never falls back to the machine-global directory;
+  never falls back to a directory outside the tree;
 * the log's life follows the tree — removing the tree removes its logs, and the
   daemon's journal retention neither depends on nor deletes them.
 
@@ -49,9 +49,9 @@ _OTHER_NOTATION = 'plan-marshall:build-pyproject:pyproject_build_other'
 #: file that merely exists at the right place.
 _EXECUTOR_STUB = 'import sys\nprint("job-output " + " ".join(sys.argv[1:]))\n'
 
-#: The in-tree directory the daemon is expected to write job logs into: the
-#: project's own machine-local tier, mirroring the ``marshalld/job-logs`` naming
-#: the machine-global directory used to carry.
+#: The in-tree directory the daemon writes job logs into: the project's own
+#: machine-local tier, under the ``marshalld/job-logs`` subdirectory name the
+#: daemon uses for its per-job logs.
 _LOG_SUBDIR = Path('.plan') / 'local' / 'marshalld' / 'job-logs'
 
 
@@ -131,10 +131,13 @@ def test_job_log_is_written_inside_the_submitting_project_tree(home, tmp_path):
     log_file = result['log_file']
     assert log_file, 'the result carries no log_file'
     log_path = Path(log_file)
-    assert log_path.is_relative_to(project.resolve()), f'{log_path} is outside {project}'
+    # `resolve()` on both sides: the promise is about where the log really is,
+    # not about the spelling of the path the result carries.
+    assert log_path.resolve().is_relative_to(project.resolve()), f'{log_path} is outside {project}'
     assert log_path.exists(), 'the reported log file does not exist'
     assert _NOTATION in log_path.read_text(encoding='utf-8'), 'the log does not hold the job output'
     assert log_path.parent == project.resolve() / _LOG_SUBDIR
+    assert log_path.stat().st_mode & 0o077 == 0, 'the job log is readable by other users'
     _no_machine_global_job_logs(home)
 
 
@@ -152,8 +155,8 @@ def test_two_jobs_of_one_project_keep_separate_logs(home, tmp_path):
     first_log = Path(first['log_file'])
     second_log = Path(second['log_file'])
     assert first_log != second_log, 'two jobs of one project wrote the same log file'
-    assert first_log.is_relative_to(project.resolve())
-    assert second_log.is_relative_to(project.resolve())
+    assert first_log.resolve().is_relative_to(project.resolve())
+    assert second_log.resolve().is_relative_to(project.resolve())
     assert first_log.exists() and second_log.exists()
     # Each log holds its OWN job's output — neither overwrote the other.
     assert _NOTATION in first_log.read_text(encoding='utf-8')
@@ -203,6 +206,24 @@ def test_missing_project_tree_records_a_logging_failure_without_being_created(ho
     _no_machine_global_job_logs(home)
 
 
+def test_a_log_directory_resolving_outside_the_tree_is_refused(home, tmp_path):
+    # The containment the location promises is about the log's TARGET: a symlinked
+    # `.plan/local` would put the file outside the tree while the lexical path still
+    # looks in-tree, so the job is refused instead.
+    project = tmp_path / 'proj'
+    outside = tmp_path / 'outside'
+    outside.mkdir()
+    canonical = _register_project(project)
+    (project / '.plan' / 'local').symlink_to(outside, target_is_directory=True)
+
+    result = _run_jobs([_spec(canonical)])[0]
+
+    assert result['status'] == STATUS_FAILURE, result
+    assert result.get('error') == 'log_file_failed', result
+    assert list(outside.iterdir()) == [], 'a log was written outside the submitting tree'
+    _no_machine_global_job_logs(home)
+
+
 # =============================================================================
 # The log's life follows the tree
 # =============================================================================
@@ -218,7 +239,7 @@ def test_removing_the_tree_removes_its_logs(home, tmp_path):
     result = _run_jobs([_spec(canonical)])[0]
 
     log_path = Path(result['log_file'])
-    assert log_path.is_relative_to(worktree.resolve())
+    assert log_path.resolve().is_relative_to(worktree.resolve())
     assert log_path.exists()
 
     shutil.rmtree(worktree)
@@ -252,6 +273,6 @@ def test_journal_gc_ignores_the_in_tree_log(home, tmp_path):
 
     assert job_id in removed
     log_path = Path(result['log_file'])
-    assert log_path.is_relative_to(project.resolve())
+    assert log_path.resolve().is_relative_to(project.resolve())
     assert log_path.exists(), 'journal retention deleted the in-tree log'
     _no_machine_global_job_logs(home)

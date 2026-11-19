@@ -138,10 +138,9 @@ def ensure_daemon_dir() -> Path:
     """Create the marshalld state dir ``0o700`` and return it.
 
     Only machine-global state lives here — socket, pidfile, daemon log, registry,
-    journal, interaction audit. Per-job build logs deliberately do NOT: they are
-    written inside the submitting project's tree (see
-    :func:`_marshalld_supervisor.job_log_dir`), so no ``job-logs`` directory is
-    created on this tier any more.
+    journal, interaction audit. Per-job build logs live inside the submitting
+    project's tree instead (see :func:`_marshalld_supervisor.job_log_dir`), so this
+    tier carries no ``job-logs`` directory.
     """
     ensure_home_root()
     directory = daemon_dir()
@@ -736,13 +735,20 @@ class Daemon:
         """Return the job's log path, creating its directory inside the tree.
 
         The directory is the SUBMITTING PROJECT's own ``.plan/local/marshalld/
-        job-logs`` (see :func:`job_log_dir`): the child already runs inside that
-        tree, so its log belongs there too, a consumer that may read the project can
-        open the ``log_file`` the result names, and the log is removed with the
-        worktree. An injected ``log_dir`` replaces it for a caller that needs a
-        fixed directory; it is never used as a fall-back for a tree that fails.
-        Either way ``job_id`` — unique per submit — is the FILE name, which is what
-        keeps two jobs of one project apart.
+        job-logs`` (see :func:`job_log_dir`): the child runs inside that tree, so its
+        log belongs there too, a consumer that may read the project can open the
+        ``log_file`` the result names, and the log is removed with the worktree. An
+        injected ``log_dir`` replaces it for a caller that needs a fixed directory;
+        it is never used as a fall-back for a tree that fails. Either way ``job_id``
+        — unique per submit — is the FILE name, which is what keeps two jobs of one
+        project apart.
+
+        Three things are refused rather than worked around, because each of them
+        would put the log somewhere the result's path does not promise: a project
+        tree that is not there or holds no ``.plan``, a log directory that resolves
+        outside the tree (a symlinked component), and a directory that cannot be
+        created. The directory is created ``0o700`` and tightened if it already
+        exists wider, so a shared project tree does not publish build output.
 
         Args:
             job_id: The job identifier (unique per submit).
@@ -753,15 +759,14 @@ class Daemon:
 
         Raises:
             JobLogUnavailable: when the log cannot be written in the tree — the
-                tree does not exist, or its log directory cannot be created (a
-                read-only tree). Both are REPORTED, never worked around: the log
-                belongs in the submitting tree, so there is nowhere else to put it.
-                An injected ``log_dir`` is exempt from the missing-tree check, since
-                it writes no part of the submitting tree.
+                tree or its ``.plan`` is missing, the directory cannot be created
+                (a read-only tree), or it resolves outside the tree. An injected
+                ``log_dir`` is exempt from the tree checks, since it writes no part
+                of the submitting tree.
         """
-        directory = self._log_dir if self._log_dir is not None else job_log_dir(spec.project_path)
+        project_root = Path(canonicalize_root(spec.project_path))
+        directory = self._log_dir if self._log_dir is not None else job_log_dir(project_root)
         log_file = str(directory / f'{job_id}.log')
-        project_root = Path(spec.project_path)
         if self._log_dir is None and not project_root.is_dir():
             # A missing tree is not the daemon's to fabricate: creating
             # `.plan/local/...` under a non-existent root would both invent a
@@ -769,10 +774,37 @@ class Daemon:
             # An explicitly injected ``log_dir`` is exempt — it writes no part of
             # the tree, so a tree it does not touch cannot make it unusable.
             raise JobLogUnavailable(log_file, f'the submitting project tree {project_root} is not a directory')
+        if self._log_dir is None and not (project_root / '.plan').is_dir():
+            raise JobLogUnavailable(log_file, f'the submitting project tree {project_root} holds no .plan directory')
+        if self._log_dir is None:
+            # No symlinked component between the tree root and the log directory: a
+            # symlink would redirect the write outside the tree while the lexical
+            # path still looks in-tree. Checked BEFORE anything is created, so the
+            # escaped target is not materialised first.
+            probe = project_root
+            for part in directory.relative_to(project_root).parts:
+                probe = probe / part
+                if probe.is_symlink():
+                    raise JobLogUnavailable(
+                        log_file,
+                        f'the log directory component {probe} is a symlink, which would place the log outside the tree',
+                    )
         try:
             directory.mkdir(mode=_DIR_MODE, parents=True, exist_ok=True)
+            if directory.stat().st_mode & 0o777 != _DIR_MODE:
+                os.chmod(directory, _DIR_MODE)
         except OSError as exc:
             raise JobLogUnavailable(log_file, str(exc)) from exc
+        if self._log_dir is None:
+            # The tier is the project's own, and a symlinked component would put the
+            # log somewhere else entirely: the resolved directory must stay under the
+            # resolved tree, or the containment the location promises is not real.
+            resolved_root = project_root.resolve()
+            if not directory.resolve().is_relative_to(resolved_root):
+                raise JobLogUnavailable(
+                    log_file,
+                    f'the log directory {directory} resolves outside the submitting project tree {resolved_root}',
+                )
         return log_file
 
     async def _execute(self, job_id: str, spec_dict: dict[str, Any]) -> None:

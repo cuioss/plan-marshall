@@ -429,6 +429,32 @@ def test_run_job_that_cannot_write_its_log_fails_without_running_the_child(tmp_p
     assert not marker.exists(), 'the child ran even though its output had nowhere to go'
 
 
+@pytest.mark.skipif(os.name == 'nt', reason='POSIX symlink semantics gate this case')
+def test_a_log_path_that_is_a_symlink_is_refused_rather_than_followed(tmp_path):
+    """The log's name lives in a writable project tree, so a pre-created symlink
+    must not steer the write to another file."""
+    target = tmp_path / 'elsewhere'
+    target.write_text('untouched')
+    link = tmp_path / 'job.log'
+    link.symlink_to(target)
+
+    with pytest.raises(OSError):
+        supervisor._open_job_log(str(link))
+
+    assert target.read_text() == 'untouched', 'the symlink target was opened and truncated'
+
+
+@pytest.mark.skipif(os.name == 'nt', reason='POSIX FIFO semantics gate this case')
+def test_a_log_path_that_is_a_fifo_fails_instead_of_blocking(tmp_path):
+    """A FIFO opens only when a reader arrives, which would park the daemon's
+    single event loop for as long as the submitter likes."""
+    fifo = tmp_path / 'job.log'
+    os.mkfifo(fifo)
+
+    with pytest.raises(OSError):
+        supervisor._open_job_log(str(fifo))
+
+
 # =============================================================================
 # run_job — exit 0 is necessary but not sufficient
 # =============================================================================
