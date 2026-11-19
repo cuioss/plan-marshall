@@ -214,7 +214,8 @@ _BODY_SLOT_RE = re.compile(r'^[a-z0-9][a-z0-9-]{0,127}$')
 #: callers share ONE store (a runbook lane, a ledger land, a steward landing), so
 #: the default slot is a single file: a second caller writing it between the first
 #: caller's `prepare-body` and its `create` makes the first consume the second's
-#: body. PR #2028 shipped another plan's text by exactly that route.
+#: body. That mechanism is what the per-caller slot removes; a pull request whose
+#: body describes another plan is consistent with it.
 _NO_PLAN_SENTINEL = 'NO_PLAN'
 _DEFAULT_BODY_SLOT = 'default'
 
@@ -222,10 +223,9 @@ _DEFAULT_BODY_SLOT = 'default'
 def _resolve_body_slot(slot: str | None) -> str:
     """Validate an optional slot identifier; default to 'default'.
 
-    The length bound is generous on purpose: a caller whose natural slot is its
-    plan id (a runbook lane's own name) outgrows a short identifier, and a
-    truncation would let two callers whose ids differ only in the tail collide on
-    one slot — the shared-slot defect in a quieter form.
+    The length bound keeps a slot one path segment while letting a caller use its
+    natural name as the slot: a runbook lane's own identifier is its plan id, and
+    an artificial short name would be a second spelling of the same thing.
     """
     if slot is None or slot == '':
         return _DEFAULT_BODY_SLOT
@@ -379,13 +379,19 @@ def read_and_consume_body(
         }
 
     refusal = _refuse_shared_planless_slot(plan_id, slot)
-    if refusal is not None:
-        return None, refusal
-
     try:
         path = get_body_path(plan_id, kind, slot)
     except ValueError as e:
         return None, {'status': 'error', 'error': 'invalid_kind', 'message': str(e)}
+
+    if refusal is not None:
+        # A plan-less caller that consumes an OPTIONAL body and has none is not
+        # reading a shared file at all (a title-only `pr edit`), so the refusal
+        # applies only where a body would actually be read — including the case
+        # where the shared default file exists and could be somebody else's.
+        if required or path.exists():
+            return None, refusal
+        return '', None
 
     if not path.exists():
         if not required:

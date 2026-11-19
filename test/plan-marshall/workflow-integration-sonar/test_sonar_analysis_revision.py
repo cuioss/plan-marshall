@@ -712,3 +712,7 @@ def test_the_skill_contract_states_the_head_bound_licence() -> None:
     assert '--carried-forward-head-revision' in text
     assert 'carried_forward_head_mismatch' in text
     assert 'analysed_revision_requires_verified_head' in text
+    # The cause, stated the right way round: the CURRENT head is the one the CI
+    # does not build; the analysed head is one it did build.
+    assert 'one the CI did build' in text
+    assert 'keeps the analysis on a commit the CI does not build' not in text

@@ -1003,6 +1003,7 @@ def test_the_lane_text_states_the_carry_forward_rule() -> None:
     assert 'carried_forward_unbuilt_delta' in section, '§ 6 must name the distinct reason'
     assert '--analysed-revision' in section, '§ 6 must name the read licence'
     assert 'retry the read, and if it stays undecidable' in section, '§ 6 must keep the general stop'
+    assert 'NOT in that retry class' in section, '§ 6 must exempt a refused stale read from the retry'
 
 
 # =============================================================================
@@ -1051,6 +1052,9 @@ def _checks(*, build: str = 'skipping', sonar: str = 'skipping', decider: str = 
         {'name': 'build / build (21)', 'result': build},
         {'name': 'build / build (25)', 'result': build},
         {'name': 'build / sonar-build', 'result': sonar},
+        # A review bot's row, which is on EVERY pull request of this repository: it
+        # belongs to no job of the called workflow, so it cannot decide the verdict.
+        {'name': 'CodeRabbit', 'result': 'pending'},
     ]
     rows.extend(extra)
     return rows
@@ -1092,7 +1096,7 @@ def test_a_delegating_consumer_decides_its_docs_delta_from_the_head_check_runs(t
 
 
 def test_a_delegating_head_the_ci_built_stays_undecidable(tmp_path: Path, monkeypatch) -> None:
-    """A source path on a head whose build jobs RAN is not a carried-forward delta."""
+    """A head whose build jobs RAN is not a carried-forward delta, whatever the delta looks like."""
     repo = tmp_path / 'repo'
     _repo_with_a_delegation(repo)
     _patch_delegated(monkeypatch, rows=_checks(build='pass'), paths=('src/main/java/A.java',))
@@ -1101,14 +1105,14 @@ def test_a_delegating_head_the_ci_built_stays_undecidable(tmp_path: Path, monkey
 
     assert verdict['carry_forward'] is False
     assert verdict['reason'] == 'undecidable_read'
-    assert verdict['detail'].startswith('delta_buildable')
+    assert verdict['detail'].startswith('delegated_gated_job_ran')
 
 
 def test_a_failed_check_on_a_delegating_head_stays_undecidable(tmp_path: Path, monkeypatch) -> None:
-    """A skip beside a failed job is not the footprint gate's skip."""
+    """A skip beside a failed job of the called workflow is not the footprint gate's skip."""
     repo = tmp_path / 'repo'
     _repo_with_a_delegation(repo)
-    _patch_delegated(monkeypatch, rows=_checks(extra=({'name': 'build / conclusion', 'result': 'fail'},)))
+    _patch_delegated(monkeypatch, rows=_checks(sonar='fail'))
 
     verdict = lane.cmd_sonar_stale_delta(_stale_args(pr_number='7', worktree=str(repo)))
 
@@ -1118,15 +1122,56 @@ def test_a_failed_check_on_a_delegating_head_stays_undecidable(tmp_path: Path, m
 
 
 def test_a_dependabot_skip_on_a_delegating_head_stays_undecidable(tmp_path: Path, monkeypatch) -> None:
-    """``sonar-build`` skipped for Dependabot while ``build`` ran is not a footprint skip."""
+    """The Dependabot shape: a docs-only delta, and ``build`` ran while ``sonar-build`` skipped.
+
+    The delta alone would look carryable. The evidence refuses it because a job the
+    footprint decision gates actually ran, so the skip cannot be attributed to that
+    decision.
+    """
     repo = tmp_path / 'repo'
     _repo_with_a_delegation(repo)
-    _patch_delegated(monkeypatch, rows=_checks(build='pass'), paths=('src/main/java/A.java',))
+    _patch_delegated(monkeypatch, rows=_checks(build='pass', sonar='skipping'))
 
     verdict = lane.cmd_sonar_stale_delta(_stale_args(pr_number='7', worktree=str(repo)))
 
     assert verdict['carry_forward'] is False
-    assert verdict['detail'].startswith('delta_buildable')
+    assert verdict['detail'].startswith('delegated_gated_job_ran')
+
+
+def test_a_decider_that_did_not_run_stays_undecidable(tmp_path: Path, monkeypatch) -> None:
+    """With the opt-in off the deciding job is skipped, so nothing suppressed the build."""
+    repo = tmp_path / 'repo'
+    _repo_with_a_delegation(repo)
+    _patch_delegated(monkeypatch, rows=_checks(decider='skipping'))
+
+    verdict = lane.cmd_sonar_stale_delta(_stale_args(pr_number='7', worktree=str(repo)))
+
+    assert verdict['carry_forward'] is False
+    assert verdict['detail'].startswith('delegated_decider_not_success')
+
+
+def test_a_path_the_project_architecture_builds_vetoes_the_skip(tmp_path: Path, monkeypatch) -> None:
+    """A placeable source path contradicts the skip, so the CI's decision does not stand."""
+    repo = tmp_path / 'repo'
+    _repo_with_a_delegation(repo)
+    _patch_delegated(monkeypatch, rows=_checks(), paths=('src/main/java/A.java',))
+    monkeypatch.setattr(lane, '_architecture_module_prefixes', lambda project_dir: ['src/main/java/'])
+
+    verdict = lane.cmd_sonar_stale_delta(_stale_args(pr_number='7', worktree=str(repo)))
+
+    assert verdict['carry_forward'] is False
+    assert verdict['detail'].startswith('delegated_paths_buildable')
+
+
+def test_an_unrelated_check_row_cannot_freeze_the_delegated_decision(tmp_path: Path, monkeypatch) -> None:
+    """A review bot's pending row belongs to no job of the called workflow."""
+    repo = tmp_path / 'repo'
+    _repo_with_a_delegation(repo)
+    _patch_delegated(monkeypatch, rows=_checks(extra=({'name': 'Sourcery review', 'result': 'pending'},)))
+
+    verdict = lane.cmd_sonar_stale_delta(_stale_args(pr_number='7', worktree=str(repo)))
+
+    assert verdict['carry_forward'] is True
 
 
 def test_an_unpinned_delegation_stays_undecidable(tmp_path: Path, monkeypatch) -> None:
@@ -1190,10 +1235,15 @@ def test_a_delegating_shape_without_a_pull_request_number_stays_undecidable(tmp_
 
 
 def test_a_workflow_holding_its_own_rule_still_decides_locally(tmp_path: Path) -> None:
-    """The delegation branch never shadows a rule the checkout holds."""
+    """The delegation branch never shadows a rule the checkout holds, even beside one."""
+    import subprocess
+
     repo = tmp_path / 'repo'
     _repo_with_a_footprint_rule(repo)
-    analysed = _commit(repo, 'doc/two.adoc')
+    (repo / '.github' / 'workflows' / 'delegating.yml').write_text(_DELEGATION_WORKFLOW, encoding='utf-8')
+    for args in (('add', '.'), ('commit', '-m', 'delegation'), ('rev-parse', 'HEAD')):
+        completed = subprocess.run(['git', '-C', str(repo), *args], check=True, capture_output=True, text=True)
+    analysed = completed.stdout.strip()
     head = _commit(repo, 'doc/three.adoc')
 
     verdict = lane.cmd_sonar_stale_delta(
