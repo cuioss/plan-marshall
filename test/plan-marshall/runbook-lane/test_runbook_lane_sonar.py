@@ -113,7 +113,7 @@ def test_resolve_fails_closed_on_an_unreadable_sonar_block(tmp_path: Path, block
 # =============================================================================
 # the gate — an undecidable read never reaches the merge
 # =============================================================================
-def _gate_args(state: str = 'configured', count_status: str | None = 'confirmed', **flags: str | bool) -> object:
+def _gate_args(state: str = 'configured', count_status: str | None = 'confirmed', **flags: Any) -> object:
     """Build the namespace through the verb's own parser.
 
     A ``True`` value is a bare switch, so a flag the verb declares as
@@ -124,7 +124,11 @@ def _gate_args(state: str = 'configured', count_status: str | None = 'confirmed'
         argv += ['--count-status', count_status]
     for name, value in flags.items():
         flag = f'--{name.replace("_", "-")}'
-        argv += [flag] if value is True else [flag, value]
+        if isinstance(value, bool):
+            if value:
+                argv.append(flag)
+            continue
+        argv.extend([flag, value])
     return parse_ns('plan-marshall', 'runbook-lane', 'runbook_lane.py', *argv)
 
 
@@ -307,7 +311,7 @@ def _progress_file(tmp_path: Path, *keys: str) -> Path:
     return path
 
 
-def _gate_with_progress(progress: Path, **flags: str) -> Any:
+def _gate_with_progress(progress: Path, **flags: Any) -> Any:
     """Build the namespace, then attach the progress file the flag parser would set."""
     args: Any = _gate_args(**flags)
     args.progress_file = str(progress)

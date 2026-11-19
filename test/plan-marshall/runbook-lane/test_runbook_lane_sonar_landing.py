@@ -17,6 +17,8 @@ removed from the schema turns this red.
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 from test_runbook_lane import _PYPROJECT_EXEC, _run_resolve, _seed_fixture
 
@@ -37,13 +39,17 @@ _COUNT_FACT = 'sonar_open_new_issues'
 _RULES_FACT = 'step.sonar-roundtrip.open_issue_rules'
 
 
-def _facts_args(state: str = 'configured', count_status: str | None = 'confirmed', **flags: str | bool):
+def _facts_args(state: str = 'configured', count_status: str | None = 'confirmed', **flags: Any):
     argv = ['sonar-facts', '--state', state]
     if count_status is not None:
         argv += ['--count-status', count_status]
     for name, value in flags.items():
         flag = f'--{name.replace("_", "-")}'
-        argv += [flag] if value is True else [flag, value]
+        if isinstance(value, bool):
+            if value:
+                argv.append(flag)
+            continue
+        argv.extend([flag, value])
     return parse_ns('plan-marshall', 'runbook-lane', 'runbook_lane.py', *argv)
 
 
