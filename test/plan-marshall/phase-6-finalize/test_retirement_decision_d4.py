@@ -34,15 +34,24 @@ import review_support
 PLAN_ID = 'lb169-retirement-decision-d4'
 
 
-def _retirement_outline() -> str:
-    """Deliverable 1 carries TWO criteria, so "one without a decision" is a real subset."""
+def _outline(criteria: list[str]) -> str:
+    body = '\n'.join(f'- {text}' for text in criteria)
     return (
         '# Solution: retirement decision\n\n## Summary\n\nFixture plan.\n\n## Deliverables\n\n'
         '### 1. Deliver the parser\n\n**Affected files:**\n- `src/parser.py` (write-new)\n\n'
-        '**Success Criteria:**\n- parser accepts input\n- parser rejects garbage\n\n'
+        f'**Success Criteria:**\n{body}\n\n'
         '### 2. Deliver the documentation\n\n**Affected files:**\n- `doc/parser.md` (write-new)\n\n'
         '**Success Criteria:**\n- usage is documented\n'
     )
+
+
+FROZEN = ['parser accepts input', 'parser rejects garbage']
+REWRITTEN = ['parser accepts the input', 'parser rejects the garbage']
+
+
+def _retirement_outline() -> str:
+    """Deliverable 1 carries TWO criteria, so "one without a decision" is a real subset."""
+    return _outline(FROZEN)
 
 
 def _no_criteria_outline() -> str:
@@ -56,7 +65,7 @@ def _no_criteria_outline() -> str:
     )
 
 
-def _plan(plan_context: Any, outline: str | None = None) -> Path:
+def _plan(plan_context: Any, outline: str | None = None, *, rewrites: list[str] | None = None) -> Path:
     plan_dir = Path(plan_context.plan_dir_for(PLAN_ID))
     # The freeze binds its digest in the status record, so the plan must have one.
     (plan_dir / 'status.json').write_text(
@@ -75,6 +84,9 @@ def _plan(plan_context: Any, outline: str | None = None) -> Path:
         _retirement_outline() if outline is None else outline, encoding='utf-8'
     )
     assert _snap.write_snapshot(PLAN_ID)['status'] == 'success'
+    if rewrites is not None:
+        # Freeze first, rewrite the outline after — the shape the defect statement names.
+        (plan_dir / 'solution_outline.md').write_text(_outline(rewrites), encoding='utf-8')
     return plan_dir
 
 
@@ -189,6 +201,29 @@ def test_a_pre_change_authorization_does_not_close_a_retired_deliverable(plan_co
     assert state['unauthorized'] == ['parser accepts input', 'parser rejects garbage'], state
 
 
+def test_the_defect_input_is_refused_and_the_gate_stays_open(plan_context, tmp_path) -> None:
+    """The spec's own input: frozen ``[a, b]`` rewritten to ``[a', b']``, both rewrites authorized.
+
+    The rewrite approvals keep their drift meaning (no ``criterion_rewritten`` finding),
+    and they close NOTHING of the retirement: the validator refuses it and the completion
+    gate, which never runs the validator, reads both frozen criteria as open.
+    """
+    plan_dir = _plan(plan_context, rewrites=REWRITTEN)
+    _authorize(1, 'parser accepts input', 'rewrite')
+    _authorize(1, 'parser rejects garbage', 'rewrite')
+    path = _write_verdict(plan_dir, tmp_path, _retired_verdict())
+
+    payload = review_support.run_validate(PLAN_ID, 'functional', path, None)
+    criteria = _snap.open_criteria(PLAN_ID)
+
+    assert payload['valid'] is False, payload
+    assert not any('criterion' in error and 'rewritten' in error for error in payload['errors']), payload
+    assert any('retirement decision' in error for error in payload['errors']), payload
+    assert criteria['open_count'] == 2, criteria
+    assert {row['criterion'] for row in criteria['open']} == set(FROZEN), criteria
+    assert {row['status'] for row in criteria['open']} == {'ungraded'}, criteria
+
+
 def test_a_retirement_decision_closes_a_retired_deliverable(plan_context, tmp_path) -> None:
     """The operator's own retirement decision per criterion still closes it, as before."""
     plan_dir = _plan(plan_context)
@@ -214,6 +249,7 @@ def test_a_mixed_record_is_refused_naming_only_the_rewrite_criterion(plan_contex
 
     payload = review_support.run_validate(PLAN_ID, 'functional', path, None)
     state = _snap.retirement_state(_snap.read_snapshot(PLAN_ID), 1)
+    criteria = _snap.open_criteria(PLAN_ID)
 
     assert payload['valid'] is False, payload
     refusal = next(error for error in payload['errors'] if 'retired' in error)
@@ -221,22 +257,30 @@ def test_a_mixed_record_is_refused_naming_only_the_rewrite_criterion(plan_contex
     assert 'parser accepts input' not in refusal, payload
     assert state['state'] == 'unauthorized', state
     assert state['unauthorized'] == ['parser rejects garbage'], state
+    # A criterion the operator DID record a retirement decision for closes on that
+    # decision; the one behind a rewrite stays open.
+    assert criteria['open_count'] == 1, criteria
+    assert criteria['open'][0]['criterion'] == 'parser rejects garbage', criteria
 
 
-def test_the_gate_reads_the_one_shared_predicate(plan_context, tmp_path) -> None:
-    """The gate asks ``retirement_state``; it holds no second reading of the rule.
+def test_a_rewrite_authorization_closes_nothing_in_the_gate(plan_context, tmp_path) -> None:
+    """The gate re-derives the one predicate; it holds no second, type-blind reading.
 
-    ``open_criteria`` reads the same predicate the validator calls, so a rewrite
-    authorization is a rewrite by BOTH readers.
+    ``open_criteria`` asks whether each criterion carries a RETIREMENT decision, not
+    whether it carries any decision, so a rewrite authorization leaves both open.
     """
     plan_dir = _plan(plan_context)
     _authorize(1, 'parser accepts input', 'rewrite')
     _authorize(1, 'parser rejects garbage', 'rewrite')
     _write_verdict(plan_dir, tmp_path, _retired_verdict())
 
+    criteria = _snap.open_criteria(PLAN_ID)
     state = _snap.retirement_state(_snap.read_snapshot(PLAN_ID), 1)
 
     assert state['state'] == 'unauthorized', state
+    assert criteria['open_count'] == 2, criteria
+    assert {row['criterion'] for row in criteria['open']} == set(FROZEN), criteria
+    assert {row['status'] for row in criteria['open']} == {'ungraded'}, criteria
 
 
 # --- D2: a refused retirement grades the current criteria and closes nothing ---------------
@@ -257,6 +301,19 @@ def test_a_refused_retirement_still_grades_the_criteria_its_row_carries(plan_con
     # The met -> unevidenced rewrite is produced by ``_grade_criteria`` alone, so its
     # presence is what shows the refused retirement did not return before grading.
     assert {'deliverable': 1, 'criterion': 1, 'from': 'met', 'to': 'unevidenced'} in payload['rewrites'], payload
+
+
+def test_a_refused_retirement_carrying_no_grades_is_reported_ungraded(plan_context, tmp_path) -> None:
+    """The defect's own row shape — ``{number: 1, verdict: retired}`` — is graded, not skipped."""
+    plan_dir = _plan(plan_context)
+    _authorize(1, 'parser accepts input', 'rewrite')
+    _authorize(1, 'parser rejects garbage', 'rewrite')
+    path = _write_verdict(plan_dir, tmp_path, _retired_verdict())
+
+    payload = review_support.run_validate(PLAN_ID, 'functional', path, None)
+
+    assert payload['valid'] is False, payload
+    assert any('0 criteria rows' in error for error in payload['errors']), payload
 
 
 # --- controls: unchanged from ``main`` ``46d3308ea`` ---------------------------------------
