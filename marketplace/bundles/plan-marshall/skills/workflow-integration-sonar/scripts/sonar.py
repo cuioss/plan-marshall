@@ -60,7 +60,8 @@ LLM consumers query findings via ``manage-findings query --type sonar-issue``.
 Usage:
     sonar.py fetch_findings --plan-id <P> --project <key> [--pr <id>] [--severities <list>] [--types <list>] [--ce-wait-timeout <secs>]
     sonar.py post_responses --plan-id <P> --project <key>
-    sonar.py read_open_issues --project <key> [--pr <id>] [--ce-wait-timeout <secs>] [--analysed-revision <sha>]
+    sonar.py read_open_issues --project <key> [--pr <id>] [--ce-wait-timeout <secs>]
+        [--analysed-revision <sha> --carried-forward-head-revision <sha>]
     sonar.py --help
 """
 
@@ -996,21 +997,29 @@ def _undecidable_read(
     return result
 
 
-def _licenses_stale_analysis(revision_result: dict[str, Any], licensed_revision: str) -> bool:
-    """Whether *licensed_revision* is exactly the analysis the revision gate found stale.
+def _licenses_stale_analysis(revision_result: dict[str, Any], licensed_revision: str, licensed_head: str) -> bool:
+    """Whether the licence names exactly the stale analysis AND the head it stands in for.
 
     A caller may assert "the enumeration of the analysed head is the read for this
     head" — the carry-forward a lane decides when the change since that head is one
     the project does not build. The assertion is honoured ONLY when it names the
-    revision the provider actually reported, and only for a ``stale_analysis``
-    verdict: a caller cannot license a revision nothing analysed, nor any other
-    undecidable state, so the stop every other stale analysis gets is unchanged.
+    revision the provider actually reported AND the head the decision verified, and
+    only for a ``stale_analysis`` verdict: a caller cannot license a revision
+    nothing analysed, nor any other undecidable state, so the stop every other stale
+    analysis gets is unchanged.
+
+    The head is what makes the licence narrow. The analysed revision is DISCLOSED by
+    every ``undecidable`` read, so a licence naming it alone could be assembled from
+    an output no decision ever classified; requiring the head the decision verified
+    means a read whose head moved is refused rather than carried.
     """
-    if not licensed_revision:
+    if not licensed_revision or not licensed_head:
         return False
     if revision_result.get('count_status') != 'undecidable':
         return False
     if not str(revision_result.get('count_status_reason') or '').startswith(_STALE_ANALYSIS):
+        return False
+    if licensed_head != (revision_result.get('head_revision') or ''):
         return False
     return licensed_revision == (revision_result.get('analysis_revision') or '')
 
@@ -1026,9 +1035,13 @@ def cmd_read_open_issues(args):
        request's analysis is compared with the PR head (the same gate
        ``fetch_findings`` applies), so a clean analysis of an older head is never
        read as a clean analysis of this one. A caller may license ONE exception —
-       ``--analysed-revision`` naming exactly the revision the provider analysed —
-       which enumerates that analysed head and marks the result ``carried_forward``.
-       Every other stale analysis still stops here.
+       ``--analysed-revision`` naming exactly the revision the provider analysed,
+       together with ``--carried-forward-head-revision`` naming the head its own
+       decision verified — which enumerates that analysed head and marks the result
+       ``carried_forward``. The head binding is what keeps the licence narrow: the
+       analysed revision is disclosed by every ``undecidable`` read, so a licence
+       without the verified head is refused, and so is one whose head is not the head
+       the provider now reports. Every other stale analysis still stops here.
     3. Fetch the PR-scoped new-code issues via ``_fetch_issues``, and the security
        hotspots still to review via ``_fetch_hotspots`` — the issue search does not
        return hotspots, so the second read is what keeps an unreviewed hotspot from
@@ -1054,16 +1067,24 @@ def cmd_read_open_issues(args):
     project: str = args.project
     pr: str | None = getattr(args, 'pr', None)
     licensed_revision = (getattr(args, 'analysed_revision', None) or '').strip()
+    licensed_head = (getattr(args, 'carried_forward_head_revision', None) or '').strip()
 
     missing = _sonar_credential_missing()
     if missing:
         return _sonar_unconfigured('read_open_issues', missing)
 
-    if licensed_revision and not pr:
+    if (licensed_revision or licensed_head) and not pr:
         # A licence names a pull-request analysis. A branch read has none to name,
         # so honouring the flag would answer a count the caller believes covers a
         # revision that was never compared: refuse it by name instead.
         return _undecidable_read(project, pr, 'analysed_revision_requires_a_pull_request')
+    if licensed_revision and not licensed_head:
+        # The licence is bound to the head the decision verified. Without it the
+        # caller supplies only the revision every undecidable read discloses, and
+        # the read would confirm a head whose delta nothing classified.
+        return _undecidable_read(project, pr, 'analysed_revision_requires_verified_head')
+    if licensed_head and not licensed_revision:
+        return _undecidable_read(project, pr, 'carried_forward_head_requires_an_analysed_revision')
 
     # 1. Gate the count on a settled analysis. No manifest exists on this path,
     #    so the budget is the explicit flag or the conservative default.
@@ -1081,7 +1102,19 @@ def cmd_read_open_issues(args):
     revision_result = _verify_analysis_revision(project, pr)
     carried_forward = False
     if revision_result['count_status'] != 'confirmed':
-        if not _licenses_stale_analysis(revision_result, licensed_revision):
+        reported_head = str(revision_result.get('head_revision') or '')
+        if licensed_revision and reported_head and licensed_head != reported_head:
+            # The decision verified one head; the pull request now points at another,
+            # so a push landed between the two calls and the licence covers a head
+            # that is no longer the head.
+            return _undecidable_read(
+                project,
+                pr,
+                f'carried_forward_head_mismatch: decided {licensed_head} but the head is {reported_head}',
+                analysis_revision=revision_result.get('analysis_revision', ''),
+                head_revision=reported_head,
+            )
+        if not _licenses_stale_analysis(revision_result, licensed_revision, licensed_head):
             return _undecidable_read(
                 project,
                 pr,
@@ -1404,8 +1437,18 @@ Examples:
                         'dest': 'analysed_revision',
                         'help': (
                             'The analysed revision whose enumeration stands for this head. Honoured ONLY '
-                            'when it equals the revision the provider reported for a stale analysis; every '
+                            'when it equals the revision the provider reported for a stale analysis AND '
+                            '--carried-forward-head-revision names the head the decision verified; every '
                             'other stale analysis still answers undecidable'
+                        ),
+                    },
+                    {
+                        'flags': ['--carried-forward-head-revision'],
+                        'dest': 'carried_forward_head_revision',
+                        'help': (
+                            'The head the carry-forward decision verified with --analysed-revision. The '
+                            'licence is bound to it: a read whose reported head differs is refused, so a '
+                            'push between the decision and the read cannot be licensed'
                         ),
                     },
                 ],

@@ -58,6 +58,7 @@ import argparse
 import json
 import os
 import re
+import sys
 import unicodedata
 from pathlib import Path
 from typing import Any, NamedTuple
@@ -1833,12 +1834,284 @@ def _delta_paths(worktree: Path, base: str, head: str) -> list[str] | None:
     return [line.strip() for line in out.splitlines() if line.strip()]
 
 
+# =============================================================================
+# Delegated footprint rule — a consumer whose CI delegates its build
+# =============================================================================
+#
+# A consumer may hold no footprint rule at all: its workflow's only job is a
+# ``uses:`` delegation to a reusable workflow another repository owns, and the
+# ignore list lives in that workflow's own action code. Reading the globs out of
+# somebody else's Python module would be guessing at their internals, so the lane
+# reads the RULE THE CI APPLIED instead — the head's check-runs — and derives
+# which jobs the decision gates from the called workflow's job graph. No job name
+# is guessed and no glob list is invented: both come from the called workflow,
+# which the consumer pins by ref.
+
+#: A job-level ``uses:`` line. The target is ``owner/repo/rest@ref``.
+_USES_LINE_RE = re.compile(r'^\s*uses:\s*(?P<target>[^\s#]+)\s*(?:#.*)?$')
+
+#: A ref that PINS: a full commit SHA, or a version tag. A branch name moves, and
+#: a rule read from a moving ref is not the rule the head's run applied.
+_PINNED_REF_RE = re.compile(r'^(?:[0-9a-fA-F]{40}|v?\d+(?:\.\d+)*)$')
+
+#: A reference to another job's output inside an ``if:`` expression. The job id
+#: names the DECIDER when it gates another job, and the gating job is the one
+#: whose condition carries it.
+_NEEDS_OUTPUT_REF_RE = re.compile(r'needs\.(?P<job>[A-Za-z0-9_-]+)\.outputs\.')
+
+#: A top-level job id under ``jobs:`` (two-space indent, no value).
+_JOB_ID_RE = re.compile(r'^ {2}(?P<job>[A-Za-z0-9_-]+):\s*$')
+
+#: The check-run bucket values that mean "this job did not run". ``gh`` reports
+#: ``skipping``; ``skipped`` is accepted because a provider may spell it that way.
+_SKIPPED_CHECK_RESULTS = frozenset({'skipping', 'skipped'})
+
+#: The check-run bucket values that mean "this job ran and passed".
+_PASSED_CHECK_RESULTS = frozenset({'pass', 'success'})
+
+#: The check-run bucket values that FAIL the head's evidence. A failed or cancelled
+#: job is a skip for another reason, never the footprint gate's.
+_FAILED_CHECK_RESULTS = frozenset({'fail', 'failure', 'cancel', 'cancelled'})
+
+_SPLIT_FOOTPRINT_SOURCE = 'delegated-check-runs'
+
+
+def _delegated_workflow_spec(project_dir: Path) -> tuple[dict[str, str] | None, str]:
+    """Return the workflow this checkout delegates its build to, or a refusal.
+
+    ``({'repo', 'path', 'ref'}, '')`` for a readable, PINNED delegation;
+    ``(None, '')`` when no workflow delegates; ``(None, '<reason>')`` when a
+    delegation exists but cannot be read as a pinned reference — the fail-closed
+    answer, because an unpinned target is not the rule this head ran under.
+    """
+    for workflow in _iter_workflow_files(project_dir):
+        try:
+            text = workflow.read_text(encoding='utf-8')
+        except (OSError, UnicodeDecodeError) as exc:
+            return None, f'rule_unreadable: {workflow.name}: {type(exc).__name__}'
+        for line in text.splitlines():
+            match = _USES_LINE_RE.match(line)
+            if not match:
+                continue
+            target = match.group('target').strip().strip('"\'')
+            if target.startswith('./') or '@' not in target:
+                # A local (in-repo) action or workflow is not a delegation to
+                # another repository's rule; it carries no separate ref either.
+                continue
+            path_part, ref = target.rsplit('@', 1)
+            parts = path_part.split('/')
+            workflow_path = '/'.join(parts[2:])
+            if len(parts) < 4 or not workflow_path.endswith(_WORKFLOW_SUFFIXES):
+                # Not a reusable WORKFLOW (an action or a docker reference): its
+                # rule is not a footprint decision, so it is not this branch.
+                continue
+            if not _PINNED_REF_RE.match(ref):
+                return None, (
+                    f'delegated_ref_unpinned: {target} names {ref!r}, which is not a pinned commit or '
+                    'version; the footprint rule it carries is not the one this head ran under'
+                )
+            return {'repo': f'{parts[0]}/{parts[1]}', 'path': workflow_path, 'ref': ref}, ''
+    return None, ''
+
+
+def _called_workflow_jobs(lines: list[str]) -> dict[str, dict[str, Any]]:
+    """Return the called workflow's jobs, with the fields the graph is read from.
+
+    A line-level reader, because the lane carries no YAML parser and the only
+    questions asked are structural: does this job declare outputs, and does its
+    ``if:`` reference another job's output.
+    """
+    jobs: dict[str, dict[str, Any]] = {}
+    in_jobs = False
+    current: dict[str, Any] | None = None
+    for line in lines:
+        if not line.strip() or line.lstrip().startswith('#'):
+            continue
+        indent = len(line) - len(line.lstrip(' '))
+        if indent == 0:
+            in_jobs = line.strip() == 'jobs:'
+            current = None
+            continue
+        if not in_jobs:
+            continue
+        job_match = _JOB_ID_RE.match(line)
+        if job_match:
+            current = {'id': job_match.group('job'), 'if': '', 'outputs': [], 'declares_outputs': False}
+            jobs[current['id']] = current
+            continue
+        if current is None:
+            continue
+        stripped = line.strip()
+        if stripped.startswith('if:'):
+            current['if'] = stripped[len('if:') :].strip()
+        elif stripped == 'outputs:' and indent == 4:
+            current['declares_outputs'] = True
+        elif current['declares_outputs'] and indent == 6 and stripped.endswith(':'):
+            current['outputs'].append(stripped[:-1].strip())
+    return jobs
+
+
+def _footprint_job_graph(text: str) -> tuple[list[str], list[str], str]:
+    """Return ``(deciders, gated, reason)`` for the called workflow's job graph.
+
+    A DECIDER is a job that declares outputs and whose output gates another job's
+    ``if:``. A GATED job is one whose condition references a decider's output. The
+    two sets are read out of the workflow, so no job name is invented; a graph
+    with no decider, or a decider gating nothing, is unreadable rather than empty.
+    """
+    jobs = _called_workflow_jobs(text.splitlines())
+    gating_refs = {
+        job['id']: {match.group('job') for match in _NEEDS_OUTPUT_REF_RE.finditer(job['if'])} for job in jobs.values()
+    }
+    referenced = {job_id for refs in gating_refs.values() for job_id in refs}
+    deciders = sorted(job['id'] for job in jobs.values() if job['declares_outputs'] and job['id'] in referenced)
+    gated = sorted(job_id for job_id, refs in gating_refs.items() if set(deciders) & refs)
+    if not deciders:
+        return (
+            [],
+            [],
+            (
+                'delegated_rule_unreadable: the called workflow declares no job whose output gates another '
+                'job, so there is no footprint decision to read'
+            ),
+        )
+    if not gated:
+        return (
+            [],
+            [],
+            (
+                f'delegated_rule_unreadable: the called workflow gates no job on {", ".join(deciders)}, so its '
+                'footprint decision suppresses nothing'
+            ),
+        )
+    return deciders, gated, ''
+
+
+def _run_ci(project_dir: Path, argv: list[str]) -> tuple[dict[str, Any] | None, str]:
+    """Run one CI read through the project's executor, and parse its TOON answer.
+
+    The read goes through the CI abstraction, never a provider CLI: the executor
+    the project carries is the only supported entry point, and its absence is a
+    named reason rather than a silent empty answer.
+    """
+    import subprocess
+
+    from toon_parser import parse_toon
+
+    executor = project_dir / '.plan' / 'execute-script.py'
+    if not executor.is_file():
+        return None, 'executor_absent_from_the_project'
+    try:
+        completed = subprocess.run(
+            [sys.executable, str(executor), 'plan-marshall:tools-integration-ci:ci', *argv],
+            cwd=str(project_dir),
+            capture_output=True,
+            text=True,
+            timeout=120,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return None, f'the CI read could not be started: {type(exc).__name__}'
+    if completed.returncode != 0:
+        detail = (completed.stderr or '').strip().splitlines()
+        return None, detail[-1] if detail else f'exit {completed.returncode}'
+    try:
+        parsed = parse_toon(completed.stdout)
+    except Exception:
+        return None, 'the CI read answered a body this reader could not parse'
+    if parsed.get('status') != 'success':
+        return None, str(parsed.get('error') or parsed.get('message') or 'the CI read failed')
+    return parsed, ''
+
+
+def _read_delegated_workflow(project_dir: Path, repo: str, path: str, ref: str) -> tuple[str | None, str]:
+    """Read the called reusable workflow at the ref the delegation pins."""
+    result, reason = _run_ci(project_dir, ['repo', 'file', 'read', '--repo', repo, '--path', path, '--ref', ref])
+    if result is None:
+        return None, reason
+    if result.get('state') != 'found':
+        return None, f'state {result.get("state")!r}'
+    content = result.get('content')
+    if not isinstance(content, str) or not content:
+        return None, 'the read carried no content'
+    return content, ''
+
+
+def _read_pr_checks(project_dir: Path, pr_number: str) -> tuple[list[dict[str, Any]] | None, str]:
+    """Read the pull request's check rows for its current head."""
+    result, reason = _run_ci(project_dir, ['checks', 'status', '--pr-number', str(pr_number)])
+    if result is None:
+        return None, reason
+    rows = result.get('checks')
+    if not isinstance(rows, list):
+        return None, 'the read carried no check list'
+    return rows, ''
+
+
+def _check_row_job_id(name: str) -> str:
+    """Return the called-workflow job id a check-run name belongs to.
+
+    A called workflow's jobs report as ``<caller job> / <called job>``, and a
+    matrix leg appends `` (value)``, so the id is the last ``/``-segment without
+    its leg suffix.
+    """
+    segment = str(name).rsplit('/', 1)[-1].strip()
+    for suffix in (' (', ' ['):
+        position = segment.find(suffix)
+        if position > 0:
+            segment = segment[:position].strip()
+    return segment
+
+
+def _delegated_check_evidence(rows: list[dict[str, Any]], deciders: list[str], gated: list[str]) -> str:
+    """Return the refusal reason the head's check-runs give, or ``''`` to carry.
+
+    The conditions are the fail-closed reading of "the CI skipped the build for the
+    footprint reason":
+    every check settled (nothing failed, was cancelled or is pending); every
+    DECIDER passed (a skipped decider means the opt-in was off or the run decided
+    something else); and every GATED job was skipped (a gated job that ran means the
+    CI built this head, whatever the delta looks like).
+    """
+    by_job: dict[str, list[str]] = {}
+    for row in rows:
+        result = str(row.get('result') or '').strip().lower()
+        name = str(row.get('name') or '?')
+        by_job.setdefault(_check_row_job_id(name), []).append(result)
+        if result in _FAILED_CHECK_RESULTS:
+            return f'delegated_check_not_green: {name} is {result}; a failed or cancelled job is not a footprint skip'
+        if result not in _PASSED_CHECK_RESULTS | _SKIPPED_CHECK_RESULTS:
+            return f'delegated_check_not_green: {name} is {result!r}, which has not settled'
+    if not rows:
+        return 'delegated_check_evidence_unreadable: the head reported no check-runs'
+    for decider in deciders:
+        results = by_job.get(decider)
+        if not results:
+            return f'delegated_check_evidence_incomplete: the decider {decider} reports no check-run'
+        if any(result not in _PASSED_CHECK_RESULTS for result in results):
+            return (
+                f'delegated_decider_not_success: {decider} reports {", ".join(results)}; a footprint gate '
+                'that did not succeed did not suppress this head'
+            )
+    for job_id in gated:
+        results = by_job.get(job_id)
+        if not results:
+            return f'delegated_check_evidence_incomplete: the gated job {job_id} reports no check-run'
+        if any(result not in _SKIPPED_CHECK_RESULTS for result in results):
+            return (
+                f'delta_buildable: the CI ran {job_id} on this head ({", ".join(results)}), so the delta '
+                'is not a path set the project does not build'
+            )
+    return ''
+
+
 def _sonar_stale_delta_verdict(
     state: str,
     count_status: str | None,
     analysis_revision: str,
     head_revision: str,
     worktree: Path,
+    pr_number: str = '',
 ) -> dict[str, Any]:
     """Decide whether a stale analysis is the read for this head.
 
@@ -1945,6 +2218,51 @@ def _sonar_stale_delta_verdict(
         )
         return verdict
 
+    # A consumer whose CI delegates its build holds no footprint rule of its own,
+    # so the rule is read where the CI APPLIED it: the head's check-runs, with the
+    # gated job set derived from the called workflow's own graph.
+    delegated, delegated_reason = _delegated_workflow_spec(worktree)
+    own_rule, _, _ = _read_footprint_rule(worktree)
+    if own_rule is None and (delegated is not None or delegated_reason):
+        if delegated_reason:
+            verdict['detail'] = delegated_reason
+            return verdict
+        assert delegated is not None  # narrowing after the reason guard
+        called, read_reason = _read_delegated_workflow(worktree, delegated['repo'], delegated['path'], delegated['ref'])
+        if called is None:
+            verdict['detail'] = (
+                f'delegated_rule_unreachable: {delegated["repo"]} {delegated["path"]}@{delegated["ref"]}: {read_reason}'
+            )
+            return verdict
+        deciders, gated, graph_reason = _footprint_job_graph(called)
+        if graph_reason:
+            verdict['detail'] = graph_reason
+            return verdict
+        if not pr_number:
+            verdict['detail'] = (
+                "delegated_check_evidence_missing: this project delegates its footprint rule, so the head's "
+                'check-runs are the evidence and --pr-number is required'
+            )
+            return verdict
+        rows, checks_reason = _read_pr_checks(worktree, pr_number)
+        if rows is None:
+            verdict['detail'] = f'delegated_check_evidence_unreadable: {checks_reason}'
+            return verdict
+        evidence_reason = _delegated_check_evidence(rows, deciders, gated)
+        if evidence_reason:
+            verdict['detail'] = evidence_reason
+            return verdict
+        verdict['carry_forward'] = True
+        verdict['source'] = _SPLIT_FOOTPRINT_SOURCE
+        verdict['decider_jobs'] = deciders
+        verdict['gated_jobs'] = gated
+        verdict['reason'] = (
+            f'{_CARRY_FORWARD_UNBUILT}: analysed {analysis_revision} != head {head_revision}; '
+            f'the delegating CI gated {", ".join(gated)} on {", ".join(deciders)} and skipped them all '
+            'on this head, so the delta since the analysed head is not built'
+        )
+        return verdict
+
     rows, source, rule_reason = _classify_paths(worktree, paths)
     verdict['source'] = source
     if rule_reason:
@@ -2012,6 +2330,7 @@ def cmd_sonar_stale_delta(args: argparse.Namespace) -> dict[str, Any]:
         (getattr(args, 'analysis_revision', '') or '').strip(),
         (getattr(args, 'head_revision', '') or '').strip(),
         worktree,
+        str(getattr(args, 'pr_number', '') or '').strip(),
     )
 
 
@@ -2049,19 +2368,51 @@ def _operator_selection_records(progress_file: Path) -> set[str] | None:
 def _carried_forward_revisions(
     args: argparse.Namespace,
 ) -> tuple[tuple[str, str] | None, dict[str, Any] | None]:
-    """Read the carried-forward revision pair, or refuse it.
+    """Read the carried-forward marking and its revision pair, or refuse them.
 
-    A carried-forward read is licensed by TWO facts that only make sense together:
-    the analysed revision the enumeration was measured at, and the head it stands
-    in for. One alone describes no read, so it is refused rather than
+    A carried-forward read is licensed by THREE facts that only make sense
+    together: the read's own ``carried_forward`` marker, the analysed revision the
+    enumeration was measured at, and the head it stands in for. The marker is what
+    ties the pair to a READ — the gate refuses an opt-in marking, where a caller
+    could supply the pair alone and get a carried-forward rename tied to no read at
+    all. One revision alone describes no read either, so it is refused rather than
     half-recorded, and the pair is refused on any read that is not a confirmed
     enumeration — the carry-forward renames a measured figure, never a failed one.
     """
+    marked = bool(getattr(args, 'carried_forward', False))
     analysed = (getattr(args, 'carried_forward_analysis_revision', None) or '').strip()
     head = (getattr(args, 'carried_forward_head_revision', None) or '').strip()
-    if not analysed and not head:
+    if not marked and not analysed and not head:
         return None, None
-    if not analysed or not head:
+    if not marked:
+        return None, {
+            'status': 'error',
+            'error': 'carried_forward_unmarked',
+            'message': (
+                "a carried-forward figure carries the read's own `carried_forward: true` marker: pass "
+                '--carried-forward beside --carried-forward-analysis-revision and '
+                '--carried-forward-head-revision, never the revision pair alone'
+            ),
+        }
+    if not analysed:
+        return None, {
+            'status': 'error',
+            'error': 'carried_forward_incomplete',
+            'message': (
+                'a carried-forward read names both revisions: '
+                '--carried-forward-analysis-revision and --carried-forward-head-revision'
+            ),
+        }
+    if getattr(args, 'count_status', None) != 'confirmed':
+        return None, {
+            'status': 'error',
+            'error': 'carried_forward_requires_confirmed',
+            'message': (
+                'a carried-forward read is a confirmed enumeration of the analysed head; '
+                f'--count-status is {getattr(args, "count_status", None)!r}'
+            ),
+        }
+    if not head:
         return None, {
             'status': 'error',
             'error': 'carried_forward_incomplete',
@@ -2079,15 +2430,6 @@ def _carried_forward_revisions(
             'message': (
                 'the carried-forward analysed revision and head revision are the same commit; '
                 'a carried-forward read names the head an earlier analysis is standing in for'
-            ),
-        }
-    if getattr(args, 'count_status', None) != 'confirmed':
-        return None, {
-            'status': 'error',
-            'error': 'carried_forward_requires_confirmed',
-            'message': (
-                'a carried-forward read is a confirmed enumeration of the analysed head; '
-                f'--count-status is {getattr(args, "count_status", None)!r}'
             ),
         }
     return (analysed, head), None
@@ -2295,6 +2637,7 @@ def cmd_sonar_gate(args: argparse.Namespace) -> dict[str, Any]:
             or getattr(args, 'open_keys', None) is not None
             or getattr(args, 'operator_selected_keys', None) is not None
             or getattr(args, 'hotspot_keys', None) is not None
+            or getattr(args, 'carried_forward', None)
             or getattr(args, 'carried_forward_analysis_revision', None) is not None
             or getattr(args, 'carried_forward_head_revision', None) is not None
         ):
@@ -2303,7 +2646,7 @@ def cmd_sonar_gate(args: argparse.Namespace) -> dict[str, Any]:
                 'error': 'state_contradicts_read',
                 'message': (
                     'a not_configured state carries no read; drop --count-status, --open-count, '
-                    '--open-keys, --operator-selected-keys, --hotspot-keys and the '
+                    '--open-keys, --operator-selected-keys, --hotspot-keys, --carried-forward and the '
                     '--carried-forward-* revisions'
                 ),
             }
@@ -2413,14 +2756,21 @@ def cmd_sonar_facts(args: argparse.Namespace) -> dict[str, Any]:
         # read one project's issues and reported another project's state.
         if any(
             getattr(args, name, None) is not None
-            for name in ('count_status', 'open_count', 'rules', 'gate_status', 'analysed_revision')
-        ):
+            for name in (
+                'count_status',
+                'open_count',
+                'rules',
+                'gate_status',
+                'analysed_revision',
+                'carried_forward_head_revision',
+            )
+        ) or getattr(args, 'carried_forward', False):
             return {
                 'status': 'error',
                 'error': 'state_contradicts_read',
                 'message': (
                     'a not_configured state carries no read; drop --count-status, --open-count, '
-                    '--rules, --gate-status and --analysed-revision'
+                    '--rules, --gate-status, --carried-forward and the carried-forward revisions'
                 ),
             }
         count, rules = 'n/a', 'n/a'
@@ -2477,21 +2827,53 @@ def cmd_sonar_facts(args: argparse.Namespace) -> dict[str, Any]:
                 }
 
     fact_lines = [f'{_SONAR_OPEN_ISSUES_FACT}={count}', f'step.{_SONAR_FACT_STEP}.open_issue_rules={rules}']
-    # The analysed revision rides beside a CONFIRMED count only. A carried-forward
-    # figure is a figure of that revision, so the fact must name it — otherwise a
-    # reader takes an enumeration of an earlier head for a measurement of this one.
+    # A carried-forward figure is a figure of an EARLIER head, so the fact must say
+    # three things together: that it is carried forward, which head was analysed and
+    # which head it stands in for. The read's own marker is required — a figure
+    # measured elsewhere must never render as this head's measurement.
+    marked = bool(getattr(args, 'carried_forward', False))
     analysed_revision = (getattr(args, 'analysed_revision', None) or '').strip()
+    carried_forward_head = (getattr(args, 'carried_forward_head_revision', None) or '').strip()
+    if not marked and (analysed_revision or carried_forward_head):
+        return {
+            'status': 'error',
+            'error': 'carried_forward_unmarked',
+            'message': (
+                "a carried-forward figure carries the read's own `carried_forward: true` marker: pass "
+                '--carried-forward beside --analysed-revision and --carried-forward-head-revision'
+            ),
+        }
+    if marked and not analysed_revision:
+        return {
+            'status': 'error',
+            'error': 'carried_forward_incomplete',
+            'message': (
+                '--carried-forward names both revisions: --analysed-revision (measured at) and '
+                '--carried-forward-head-revision (standing in for)'
+            ),
+        }
+    if analysed_revision and count_status != 'confirmed':
+        return {
+            'status': 'error',
+            'error': 'analysed_revision_requires_confirmed',
+            'message': (
+                '--analysed-revision names the head a confirmed figure was measured at; '
+                f'--count-status is {count_status!r}, which measured nothing'
+            ),
+        }
+    if marked and not carried_forward_head:
+        return {
+            'status': 'error',
+            'error': 'carried_forward_incomplete',
+            'message': (
+                '--carried-forward names both revisions: --analysed-revision (measured at) and '
+                '--carried-forward-head-revision (standing in for)'
+            ),
+        }
     if analysed_revision:
-        if count_status != 'confirmed':
-            return {
-                'status': 'error',
-                'error': 'analysed_revision_requires_confirmed',
-                'message': (
-                    '--analysed-revision names the head a confirmed figure was measured at; '
-                    f'--count-status is {count_status!r}, which measured nothing'
-                ),
-            }
         fact_lines.append(f'step.{_SONAR_FACT_STEP}.analysed_revision={analysed_revision}')
+        fact_lines.append(f'step.{_SONAR_FACT_STEP}.carried_forward_head_revision={carried_forward_head}')
+        fact_lines.append(f'step.{_SONAR_FACT_STEP}.carried_forward=true')
     # The quality-gate fact is OPTIONAL and rides only when the caller read one:
     # a line asserting a state nothing observed would be worse than its absence.
     if gate_status is not None:
@@ -4181,6 +4563,12 @@ def main() -> int:
         default='.',
         help='The routed checkout the analysed revision and the delta are resolved in',
     )
+    stale_parser.add_argument(
+        '--pr-number',
+        dest='pr_number',
+        default=None,
+        help='The pull request whose head check-runs decide a delegated footprint rule',
+    )
 
     gate_parser = subparsers.add_parser(
         'sonar-gate', help="Decide whether the pull request's Sonar state admits the merge", allow_abbrev=False
@@ -4234,6 +4622,12 @@ def main() -> int:
         help='Retired: a lane-recorded dismissal is refused (lane_dismissal_not_accepted)',
     )
     gate_parser.add_argument(
+        '--carried-forward',
+        dest='carried_forward',
+        action='store_true',
+        help="The read's own carried_forward marker; it must accompany the revision pair",
+    )
+    gate_parser.add_argument(
         '--carried-forward-analysis-revision',
         dest='carried_forward_analysis_revision',
         default=None,
@@ -4281,10 +4675,22 @@ def main() -> int:
         help='The new-code quality-gate status read at the merge head: ok, error, not_computed or unknown',
     )
     facts_parser.add_argument(
+        '--carried-forward',
+        dest='carried_forward',
+        action='store_true',
+        help="The read's own carried_forward marker; a carried-forward figure must carry it",
+    )
+    facts_parser.add_argument(
         '--analysed-revision',
         dest='analysed_revision',
         default=None,
         help='The analysed revision a carried-forward confirmed figure was measured at',
+    )
+    facts_parser.add_argument(
+        '--carried-forward-head-revision',
+        dest='carried_forward_head_revision',
+        default=None,
+        help='The head a carried-forward figure stands in for',
     )
 
     review_parser = subparsers.add_parser(
