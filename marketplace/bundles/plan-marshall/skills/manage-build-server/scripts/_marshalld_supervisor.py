@@ -215,15 +215,31 @@ class JobProgress:
         return time.monotonic() - self.last_activity
 
 
-async def _pump(stream: asyncio.StreamReader | None, sink: IO[bytes], progress: JobProgress | None) -> None:
-    """Stream a child pipe to the log sink, marking progress on each chunk."""
+async def _pump(stream: asyncio.StreamReader | None, sink: IO[bytes], progress: JobProgress | None) -> OSError | None:
+    """Stream a child pipe to the log sink, marking progress on each chunk.
+
+    A write that fails is REMEMBERED and not raised: the pump keeps draining its
+    pipe, because a pump that stops reading lets the child block on a full pipe
+    and the job then only ends at its timeout. The failure is returned instead, so
+    the caller can report the logging outcome after the child has ended.
+
+    Returns:
+        The first write failure, or ``None`` when every chunk was written.
+    """
     if stream is None:
-        return
+        return None
+    failure: OSError | None = None
     while True:
         chunk = await stream.read(_READ_CHUNK)
         if not chunk:
-            return
-        sink.write(chunk)
+            return failure
+        if failure is not None:
+            continue
+        try:
+            sink.write(chunk)
+        except OSError as exc:
+            failure = exc
+            continue
         if progress is not None:
             progress.mark()
 
@@ -399,10 +415,10 @@ untracked change, and the subtree is removed with the worktree it was written in
 class JobLogUnavailable(RuntimeError):
     """The job log could not be prepared inside the submitting project's tree.
 
-    This is a failure the daemon REPORTS, never one it works around: a
-    machine-global copy of a job log is precisely the defect the in-tree location
-    removes, so an unwritable tree fails the job instead of re-offending. The two
-    fields make the failure legible — the path that could not be used, and why.
+    This is a failure the daemon REPORTS, never one it works around: a job's log
+    lives in the tree that produced it and nowhere else, so a tree that cannot hold
+    it fails the job. The two fields make the failure legible — the path that could
+    not be used, and why.
 
     Attributes:
         log_file: The in-tree path the job's log was to be written at.
@@ -428,29 +444,42 @@ def job_log_dir(project_root: str | Path) -> Path:
     return Path(project_root) / _JOB_LOG_SUBDIR
 
 
-def log_file_failure_payload(log_file: str, command_str: str, reason: str) -> dict[str, Any]:
-    """Render the RECORDED failure of a job whose log could not be written.
+def log_file_failure_payload(
+    log_file: str,
+    command_str: str,
+    reason: str,
+    *,
+    duration_seconds: int = 0,
+    exit_code: int = -1,
+) -> dict[str, Any]:
+    """Render the RECORDED failure of a job whose log could not be used.
 
-    It is a LAUNCH fault (``log_file_failed``), not a red build: no child was
-    started, so there is no test row, no bound and no verdict to report. The
-    identifier is the one the in-process wrapper emits for the same condition, so
-    the failure carries a single name in this tree; how the routed client renders a
-    daemon ``failure`` is its own surface (:mod:`_build_execute_factory`), not this
-    module's.
+    It is a LAUNCH fault (``log_file_failed``), so a consumer must report it as
+    itself rather than as a build that ran and failed. The identifier is the one the
+    in-process wrapper emits for the same condition, so the failure carries a single
+    name in this tree; how the routed client renders a daemon ``failure`` is its own
+    surface (:mod:`_build_execute_factory`), not this module's.
+
+    The defaults are the PRE-SPAWN shape — no child started, so there is no elapsed
+    time and no exit code. A failure detected after the child ended (its log could
+    not be written, flushed, or is gone) passes the elapsed duration and the child's
+    own exit code instead, so the payload never claims a build never ran.
 
     Args:
         log_file: The log path that could not be written.
-        command_str: The command that was not run.
+        command_str: The command the job was to run.
         reason: What prevented the write, in words.
+        duration_seconds: Elapsed job time, when a child had run.
+        exit_code: The child's exit code, when a child had run.
 
     Returns:
         A terminal ``failure`` payload carrying the named error and the reason.
     """
     return status_payload(
         STATUS_FAILURE,
-        duration_seconds=0,
+        duration_seconds=duration_seconds,
         log_file=log_file,
-        exit_code=-1,
+        exit_code=exit_code,
         error=ERROR_LOG_FILE_FAILED,
         reason=reason,
         command=command_str,
@@ -466,10 +495,13 @@ def _open_job_log(log_file: str) -> IO[bytes]:
 
     The path sits inside a project the submitting user can write, so the open must
     not be steerable by something already at that name: ``O_NOFOLLOW`` rejects a
-    pre-created symlink, ``O_NONBLOCK`` makes a FIFO fail instead of parking the
-    daemon's event loop on an open that waits for a reader, and the ``S_ISREG``
-    check covers a device or socket the flags alone would accept. The file is
-    created ``0600`` and tightened if an earlier writer left it wider.
+    pre-created symlink, an explicit ``lstat`` covers a platform without that flag,
+    ``O_NONBLOCK`` makes a FIFO fail instead of parking the daemon's event loop on an
+    open that waits for a reader, and the ``S_ISREG`` check covers a device or socket
+    the flags alone would accept. Nothing is truncated until the descriptor has been
+    validated — ``O_TRUNC`` would destroy a hard link's target before this function
+    could refuse it — and the file is created ``0600``, tightened when an earlier
+    writer left it wider.
 
     Args:
         log_file: The job's log path, already inside the submitting tree.
@@ -478,17 +510,23 @@ def _open_job_log(log_file: str) -> IO[bytes]:
         The write sink.
 
     Raises:
-        OSError: when the path cannot be opened, or is not a regular file.
+        OSError: when the path cannot be opened, is not a regular file, or is a
+            link to another file.
     """
-    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+    flags = os.O_WRONLY | os.O_CREAT
     flags |= getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_NONBLOCK', 0)
+    if not hasattr(os, 'O_NOFOLLOW') and Path(log_file).is_symlink():
+        raise OSError(f'{log_file} is a symlink')
     fd = os.open(log_file, flags, _JOB_LOG_FILE_MODE)
     try:
         info = os.fstat(fd)
         if not stat.S_ISREG(info.st_mode):
             raise OSError(f'{log_file} is not a regular file')
+        if info.st_nlink > 1:
+            raise OSError(f'{log_file} is hard-linked to another file')
         if hasattr(os, 'fchmod') and info.st_mode & 0o777 != _JOB_LOG_FILE_MODE:
             os.fchmod(fd, _JOB_LOG_FILE_MODE)
+        os.ftruncate(fd, 0)
     except BaseException:
         os.close(fd)
         raise
@@ -548,8 +586,8 @@ async def run_job(
 
     # The sink is opened BEFORE the child is spawned, so a tree that cannot hold
     # the job's log fails the job (as a LAUNCH fault) instead of starting a build
-    # whose output has nowhere to go. There is no fall-back directory: writing the
-    # log anywhere but the submitting tree is the defect this location removes.
+    # whose output has nowhere to go. The log lives in the submitting tree and
+    # nowhere else, so there is no second directory to fall back to.
     #
     # The creation is deliberately not a plain `open()`: the path is inside a
     # project the submitting user can write, so a pre-created symlink or FIFO at
@@ -585,6 +623,7 @@ async def run_job(
 
     timed_out = False
     pump_results: list[Any] = []
+    flush_failure: OSError | None = None
     try:
         with sink:
             pumps = [
@@ -602,39 +641,41 @@ async def run_job(
         # Closing the buffered sink flushes what is still pending, so the LAST write
         # of a small output can fail here rather than in a pump. It is the same
         # logging failure, reported the same way.
-        return log_file_failure_payload(
-            log_file,
-            command_str,
-            f'the job log at {log_file} could not be flushed when the job ended: {exc}',
-        )
-
-    # A voice that could not be written is a failed logging outcome, not a build
-    # verdict: the pumps swallowed nothing on purpose, so a write failure is
-    # reported as itself rather than leaving a truncated log beside a green result.
-    write_failure = next(
-        (result for result in pump_results if isinstance(result, OSError)),
-        None,
-    )
-    if write_failure is not None:
-        return log_file_failure_payload(
-            log_file,
-            command_str,
-            f'the job log at {log_file} could not be written while the job ran: {write_failure}',
-        )
+        flush_failure = exc
 
     duration = int(progress.elapsed())
     status = classify_terminal(proc.returncode, timed_out=timed_out)
     returncode = proc.returncode
-    # A log removed under a still-running job (a worktree cleaned up mid-build) takes
-    # the wrapper's own verdict with it, so an exit-0 child must not be reported as a
-    # green build. A timeout or an external kill is a verdict of ITS OWN — it outranks
-    # log content and is never re-labelled by the missing file.
-    if status == 'success' and not Path(log_file).exists():
-        return log_file_failure_payload(
-            log_file,
-            command_str,
-            f'the job log at {log_file} disappeared before its verdict could be read',
+    observed: dict[str, Any] = {
+        'duration_seconds': duration,
+        'exit_code': returncode if returncode is not None else -1,
+    }
+    if status not in ('timeout', STATUS_KILLED):
+        # A log that could not be written, or that vanished under the job, is a
+        # failed LOGGING outcome — but only where it could otherwise be mistaken for
+        # a verdict. A timeout or an external kill is the supervisor's own verdict
+        # and outranks log content, so it is never re-labelled by a broken log.
+        logging_failure = flush_failure or next(
+            (result for result in pump_results if isinstance(result, OSError)),
+            None,
         )
+        if logging_failure is not None:
+            return log_file_failure_payload(
+                log_file,
+                command_str,
+                f'the job log at {log_file} could not be written while the job ran: {logging_failure}',
+                **observed,
+            )
+        if status == 'success' and not Path(log_file).exists():
+            # The wrapper reports its verdict in the log, so a log removed under a
+            # finished exit-0 job takes that verdict with it. An exit-0 child must
+            # not be reported as a green build when its evidence is gone.
+            return log_file_failure_payload(
+                log_file,
+                command_str,
+                f'the job log at {log_file} disappeared before its verdict could be read',
+                **observed,
+            )
     # Exit 0 is necessary but not sufficient: the build wrapper exits 0 even when
     # the build failed, so a `success` classification only stands when the
     # emitted build TOON affirmatively agrees. The supervisor's OWN timeout /

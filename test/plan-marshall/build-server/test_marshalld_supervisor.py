@@ -455,6 +455,32 @@ def test_a_log_path_that_is_a_fifo_fails_instead_of_blocking(tmp_path):
         supervisor._open_job_log(str(fifo))
 
 
+def test_a_log_path_hard_linked_to_another_file_is_refused_untruncated(tmp_path):
+    """A hard link passes every "is this a regular file" test, so it must be
+    refused BEFORE anything is truncated — the linked file's content survives."""
+    target = tmp_path / 'precious'
+    target.write_text('precious content')
+    log = tmp_path / 'job.log'
+    os.link(target, log)
+
+    with pytest.raises(OSError):
+        supervisor._open_job_log(str(log))
+
+    assert target.read_text() == 'precious content'
+
+
+def test_an_existing_log_is_truncated_only_after_validation(tmp_path):
+    """A rerun of one job id must start a fresh log, not append to stale output."""
+    log = tmp_path / 'job.log'
+    log.write_text('stale output\n')
+
+    sink = supervisor._open_job_log(str(log))
+    with sink:
+        sink.write(b'fresh output\n')
+
+    assert log.read_text() == 'fresh output\n'
+
+
 @pytest.mark.skipif(os.name == 'nt', reason='unlinking an open file is POSIX-only')
 def test_a_log_removed_mid_run_does_not_relabel_a_supervisor_timeout(tmp_path):
     """A timeout is the supervisor's own verdict; a log that vanished under the

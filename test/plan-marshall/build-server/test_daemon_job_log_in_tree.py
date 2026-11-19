@@ -206,6 +206,10 @@ def test_missing_project_tree_records_a_logging_failure_without_being_created(ho
     _no_machine_global_job_logs(home)
 
 
+@pytest.mark.skipif(
+    os.name == 'nt',
+    reason='creating a symlink needs a privilege the Windows test runner does not have',
+)
 def test_a_log_directory_resolving_outside_the_tree_is_refused(home, tmp_path):
     # The containment the location promises is about the log's TARGET: a symlinked
     # `.plan/local` would put the file outside the tree while the lexical path still

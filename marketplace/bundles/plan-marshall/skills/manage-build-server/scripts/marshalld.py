@@ -821,9 +821,9 @@ class Daemon:
                 progress=self._progress.get(job_id),
             )
         except JobLogUnavailable as exc:
-            # A tree that cannot hold the job's log fails the JOB, with the
-            # condition named — never silently rerouted to the machine-global
-            # directory, which is the defect the in-tree location exists to remove.
+            # A tree that cannot hold the job's log fails the JOB, with the condition
+            # named: the log belongs in the submitting tree, so there is no other
+            # directory to write it to.
             payload = log_file_failure_payload(
                 exc.log_file,
                 ' '.join(str(token) for token in spec_dict.get('command') or []),
