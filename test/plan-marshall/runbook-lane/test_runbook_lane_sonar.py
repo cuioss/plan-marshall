@@ -522,3 +522,313 @@ def test_resolve_omits_the_ce_budget_without_sonar(tmp_path: Path) -> None:
 
     assert data['sonar'] == 'not_configured'
     assert 'sonar_ce_wait_timeout_seconds' not in data
+
+
+# =============================================================================
+# sonar-stale-delta — the carry-forward decision, and the gate that names it
+# =============================================================================
+_ANALYSED = 'b' * 40
+_HEAD = 'a' * 40
+
+
+def _stale_args(**overrides: str | None) -> object:
+    flags: dict[str, str | None] = {
+        'state': 'configured',
+        'count_status': 'undecidable',
+        'analysis_revision': _ANALYSED,
+        'head_revision': _HEAD,
+        'worktree': '.',
+    }
+    flags.update(overrides)
+    argv = ['sonar-stale-delta']
+    for name, value in flags.items():
+        if value is None:
+            continue
+        argv += [f'--{name.replace("_", "-")}', value]
+    return parse_ns('plan-marshall', 'runbook-lane', 'runbook_lane.py', *argv)
+
+
+def _patch_delta(monkeypatch, *, analysed=_ANALYSED, head=_HEAD, paths=('doc/adr/001.adoc',), rows=None, reason=''):
+    """Stub the three seams the decision reads, leaving the decision itself real."""
+    monkeypatch.setattr(lane, '_resolve_commit', lambda worktree, revision: analysed if revision == _ANALYSED else head)
+    monkeypatch.setattr(lane, '_delta_paths', lambda worktree, base, tip: None if paths is None else list(paths))
+    if rows is None:
+        rows = [{'path': path, 'kind': 'docs-only'} for path in paths or ()]
+    monkeypatch.setattr(lane, '_classify_paths', lambda project_dir, classified: (list(rows), 'ci-workflow', reason))
+
+
+def _repo_with_a_footprint_rule(root: Path) -> None:
+    """Build a real repository whose own CI rule classifies ``doc/**`` as not built."""
+    import subprocess
+
+    workflows = root / '.github' / 'workflows'
+    workflows.mkdir(parents=True)
+    (workflows / 'ci.yml').write_text(
+        "name: CI\non:\n  pull_request:\n    paths-ignore:\n      - 'doc/**'\nskip-on-docs-only: true\n",
+        encoding='utf-8',
+    )
+    (root / 'doc').mkdir()
+    (root / 'doc' / 'one.adoc').write_text('one\n', encoding='utf-8')
+    (root / 'src').mkdir()
+    (root / 'src' / 'Main.java').write_text('class Main {}\n', encoding='utf-8')
+    for args in (
+        ('init', '-b', 'main'),
+        ('config', 'user.email', 'lane@example.com'),
+        ('config', 'user.name', 'lane'),
+        ('add', '.'),
+        ('commit', '-m', 'base'),
+    ):
+        subprocess.run(['git', '-C', str(root), *args], check=True, capture_output=True)
+
+
+def _commit(root: Path, relative: str) -> str:
+    """Write *relative*, commit it, and return the commit sha."""
+    import subprocess
+
+    (root / relative).write_text('changed\n', encoding='utf-8')
+    for args in (('add', relative), ('commit', '-m', relative)):
+        subprocess.run(['git', '-C', str(root), *args], check=True, capture_output=True)
+    return subprocess.run(
+        ['git', '-C', str(root), 'rev-parse', 'HEAD'], check=True, capture_output=True, text=True
+    ).stdout.strip()
+
+
+def test_the_project_own_rule_decides_a_real_docs_only_delta(tmp_path: Path) -> None:
+    """End to end: the revision pair, the diff and the footprint rule are all real."""
+    repo = tmp_path / 'repo'
+    _repo_with_a_footprint_rule(repo)
+    analysed = _commit(repo, 'doc/two.adoc')
+    head = _commit(repo, 'doc/three.adoc')
+
+    verdict = lane.cmd_sonar_stale_delta(
+        _stale_args(analysis_revision=analysed, head_revision=head, worktree=str(repo))
+    )
+
+    assert verdict['carry_forward'] is True
+    assert verdict['source'] == 'ci-workflow'
+    assert verdict['changed_paths'] == ['doc/three.adoc']
+    assert verdict['reason'].startswith('carried_forward_unbuilt_delta')
+
+
+def test_the_project_own_rule_refuses_a_real_buildable_delta(tmp_path: Path) -> None:
+    repo = tmp_path / 'repo'
+    _repo_with_a_footprint_rule(repo)
+    analysed = _commit(repo, 'doc/two.adoc')
+    head = _commit(repo, 'src/Other.java')
+
+    verdict = lane.cmd_sonar_stale_delta(
+        _stale_args(analysis_revision=analysed, head_revision=head, worktree=str(repo))
+    )
+
+    assert verdict['carry_forward'] is False
+    assert verdict['reason'] == 'undecidable_read'
+    assert verdict['buildable_paths'] == ['src/Other.java']
+
+
+def test_a_revision_the_checkout_does_not_hold_stays_undecidable(tmp_path: Path) -> None:
+    repo = tmp_path / 'repo'
+    _repo_with_a_footprint_rule(repo)
+    head = _commit(repo, 'doc/two.adoc')
+
+    verdict = lane.cmd_sonar_stale_delta(
+        _stale_args(analysis_revision='0' * 40, head_revision=head, worktree=str(repo))
+    )
+
+    assert verdict['carry_forward'] is False
+    assert verdict['detail'].startswith('revision_unresolvable')
+
+
+def test_a_docs_only_delta_is_carried_forward_from_the_analysed_head(monkeypatch) -> None:
+    _patch_delta(monkeypatch)
+
+    verdict = lane.cmd_sonar_stale_delta(_stale_args(worktree='.'))
+
+    assert verdict['carry_forward'] is True
+    assert verdict['reason'].startswith('carried_forward_unbuilt_delta')
+    assert _ANALYSED in verdict['reason'] and _HEAD in verdict['reason']
+    assert verdict['changed_paths'] == ['doc/adr/001.adoc']
+
+
+def test_a_delta_carrying_one_buildable_path_stays_undecidable(monkeypatch) -> None:
+    _patch_delta(
+        monkeypatch,
+        paths=('doc/adr/001.adoc', 'src/main/java/A.java'),
+        rows=[
+            {'path': 'doc/adr/001.adoc', 'kind': 'docs-only'},
+            {'path': 'src/main/java/A.java', 'kind': 'buildable'},
+        ],
+    )
+
+    verdict = lane.cmd_sonar_stale_delta(_stale_args())
+
+    assert verdict['carry_forward'] is False
+    assert verdict['reason'] == 'undecidable_read'
+    assert verdict['buildable_paths'] == ['src/main/java/A.java']
+
+
+def test_an_unresolvable_analysed_revision_stays_undecidable(monkeypatch) -> None:
+    monkeypatch.setattr(lane, '_resolve_commit', lambda worktree, revision: '')
+    monkeypatch.setattr(lane, '_delta_paths', lambda *a: pytest.fail('an unresolvable revision must not be diffed'))
+
+    verdict = lane.cmd_sonar_stale_delta(_stale_args())
+
+    assert verdict['carry_forward'] is False
+    assert verdict['reason'] == 'undecidable_read'
+    assert verdict['detail'].startswith('revision_unresolvable')
+
+
+def test_an_unresolvable_head_revision_stays_undecidable(monkeypatch) -> None:
+    monkeypatch.setattr(lane, '_resolve_commit', lambda worktree, revision: '' if revision == _HEAD else _ANALYSED)
+    monkeypatch.setattr(lane, '_delta_paths', lambda *a: pytest.fail('an unresolvable revision must not be diffed'))
+
+    verdict = lane.cmd_sonar_stale_delta(_stale_args())
+
+    assert verdict['carry_forward'] is False
+    assert verdict['reason'] == 'undecidable_read'
+    assert verdict['detail'].startswith('revision_unresolvable')
+
+
+def test_a_failed_diff_stays_undecidable(monkeypatch) -> None:
+    """A diff that could not be listed is never read as an empty change."""
+    _patch_delta(monkeypatch, paths=None)
+
+    verdict = lane.cmd_sonar_stale_delta(_stale_args())
+
+    assert verdict['carry_forward'] is False
+    assert verdict['reason'] == 'undecidable_read'
+    assert verdict['detail'].startswith('diff_failed')
+
+
+def test_an_unreadable_footprint_rule_stays_undecidable(monkeypatch) -> None:
+    _patch_delta(monkeypatch, reason='ci.yml: UnicodeDecodeError')
+
+    verdict = lane.cmd_sonar_stale_delta(_stale_args())
+
+    assert verdict['carry_forward'] is False
+    assert verdict['reason'] == 'undecidable_read'
+    assert verdict['detail'].startswith('rule_unreadable')
+
+
+def test_an_unplaceable_path_stays_undecidable(monkeypatch) -> None:
+    """The classifier cannot place it, so it answers buildable: fail closed."""
+    _patch_delta(monkeypatch, paths=('mystery/file.xyz',), rows=[{'path': 'mystery/file.xyz', 'kind': 'buildable'}])
+
+    verdict = lane.cmd_sonar_stale_delta(_stale_args())
+
+    assert verdict['carry_forward'] is False
+    assert verdict['reason'] == 'undecidable_read'
+    assert verdict['buildable_paths'] == ['mystery/file.xyz']
+
+
+def test_a_missing_revision_pair_stays_undecidable(monkeypatch) -> None:
+    _patch_delta(monkeypatch)
+
+    verdict = lane.cmd_sonar_stale_delta(_stale_args(head_revision=''))
+
+    assert verdict['carry_forward'] is False
+    assert verdict['detail'].startswith('revision_missing')
+
+
+def test_an_empty_delta_is_carried_forward(monkeypatch) -> None:
+    _patch_delta(monkeypatch, paths=())
+
+    verdict = lane.cmd_sonar_stale_delta(_stale_args())
+
+    assert verdict['carry_forward'] is True
+    assert verdict['reason'].startswith('carried_forward_unbuilt_delta')
+    assert verdict['changed_paths'] == []
+
+
+def test_a_missing_worktree_stays_undecidable(tmp_path: Path, monkeypatch) -> None:
+    _patch_delta(monkeypatch)
+
+    verdict = lane.cmd_sonar_stale_delta(_stale_args(worktree=str(tmp_path / 'absent-tree')))
+
+    assert verdict['carry_forward'] is False
+    assert verdict['detail'].startswith('worktree_unreadable')
+
+
+def test_a_project_without_sonar_has_nothing_to_carry(monkeypatch) -> None:
+    _patch_delta(monkeypatch)
+
+    verdict = lane.cmd_sonar_stale_delta(_stale_args(state='not_configured', count_status=None))
+
+    assert verdict['carry_forward'] is False
+    assert verdict['reason'] == 'not_configured'
+
+
+def test_a_settled_read_is_not_the_case_this_decides(monkeypatch) -> None:
+    _patch_delta(monkeypatch)
+
+    verdict = lane.cmd_sonar_stale_delta(_stale_args(count_status='confirmed'))
+
+    assert verdict['carry_forward'] is False
+    assert verdict['reason'] == 'count_status_not_stale'
+
+
+def test_the_stale_delta_verb_is_reachable_through_its_cli_surface() -> None:
+    result = run_script(_SCRIPT, 'sonar-stale-delta', '--state', 'configured', '--count-status', 'undecidable')
+
+    assert result.success, result.stderr
+    assert result.toon()['carry_forward'] is False
+
+
+def test_a_carried_forward_zero_admits_the_merge_under_its_own_reason() -> None:
+    """The figure is a measurement of the analysed head, so the verdict says which."""
+    verdict = cmd_sonar_gate(
+        _gate_args(
+            open_count='0',
+            carried_forward_analysis_revision=_ANALYSED,
+            carried_forward_head_revision=_HEAD,
+        )
+    )
+
+    assert verdict['merge_allowed'] is True
+    assert verdict['reason'].startswith('carried_forward_unbuilt_delta')
+    assert _ANALYSED in verdict['reason'] and _HEAD in verdict['reason']
+    assert verdict['carried_forward'] is True
+
+
+def test_a_carried_forward_pair_with_one_revision_is_refused() -> None:
+    verdict = cmd_sonar_gate(_gate_args(open_count='0', carried_forward_analysis_revision=_ANALYSED))
+
+    assert verdict['status'] == 'error'
+    assert verdict['error'] == 'carried_forward_incomplete'
+
+
+def test_a_carried_forward_pair_on_a_failed_read_is_refused() -> None:
+    """The carry-forward renames a measured figure, never a failed one."""
+    verdict = cmd_sonar_gate(
+        _gate_args(
+            count_status='undecidable',
+            carried_forward_analysis_revision=_ANALYSED,
+            carried_forward_head_revision=_HEAD,
+        )
+    )
+
+    assert verdict['status'] == 'error'
+    assert verdict['error'] == 'carried_forward_requires_confirmed'
+
+
+def test_a_carried_forward_read_still_needs_its_findings_disposed(tmp_path: Path) -> None:
+    verdict = cmd_sonar_gate(
+        _gate_with_progress(
+            _progress_file(tmp_path),
+            open_count='2',
+            open_keys='K1,K2',
+            carried_forward_analysis_revision=_ANALYSED,
+            carried_forward_head_revision=_HEAD,
+        )
+    )
+
+    assert verdict['merge_allowed'] is False
+    assert verdict['reason'] == 'open_issues_not_operator_selected'
+
+
+def test_the_lane_text_states_the_carry_forward_rule() -> None:
+    section = _section('## 6. Pull request and reviews')
+
+    assert 'sonar-stale-delta' in section, '§ 6 must name the decision verb'
+    assert 'carried_forward_unbuilt_delta' in section, '§ 6 must name the distinct reason'
+    assert '--analysed-revision' in section, '§ 6 must name the read licence'
+    assert 'retry the read, and if it stays undecidable' in section, '§ 6 must keep the general stop'
