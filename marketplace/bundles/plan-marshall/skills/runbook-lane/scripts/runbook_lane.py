@@ -1798,6 +1798,27 @@ def _worktree_is_clean(worktree: Path) -> bool | None:
     return not out.strip()
 
 
+def _ignored_workflow_inputs(worktree: Path) -> list[str] | None:
+    """Return ignored-untracked files under the CI workflow dir, or ``None``.
+
+    ``git status --porcelain`` omits ignored paths, but the footprint rule is read
+    from the DIRECTORY, so an ignored workflow file is a rule the head does not
+    carry. ``None`` says the read itself failed, which is not "none found".
+    """
+    ok, out = _git_in(
+        worktree,
+        'ls-files',
+        '--others',
+        '--ignored',
+        '--exclude-standard',
+        '--',
+        '/'.join(_CI_WORKFLOW_DIR),
+    )
+    if not ok:
+        return None
+    return [line.strip() for line in out.splitlines() if line.strip()]
+
+
 def _delta_paths(worktree: Path, base: str, head: str) -> list[str] | None:
     """Return the paths that changed from *base* to *head*, or ``None``.
 
@@ -1896,6 +1917,16 @@ def _sonar_stale_delta_verdict(
         verdict['detail'] = (
             'worktree_dirty: the checkout carries changed or untracked paths, so the rule it presents '
             'is not the rule at the head'
+        )
+        return verdict
+    ignored = _ignored_workflow_inputs(worktree)
+    if ignored is None:
+        verdict['detail'] = 'worktree_unreadable: the ignored-path read of the workflow directory failed'
+        return verdict
+    if ignored:
+        verdict['detail'] = (
+            'worktree_ignored_inputs: the workflow directory carries ignored files the head does not '
+            f'carry ({", ".join(ignored)}), and the rule is read from the directory'
         )
         return verdict
 

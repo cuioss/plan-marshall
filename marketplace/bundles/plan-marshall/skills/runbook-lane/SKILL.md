@@ -846,7 +846,7 @@ whether to continue at the limit. Record every finding and its disposition.
      that is no longer the head. Re-run the decision for the new head and pass the gate only the pair
      it verified — never a pair the later head did not verify.
      A refusal (`revision_missing`, `revisions_equal`, `worktree_unreadable`, `worktree_not_at_head`,
-     `worktree_dirty`, `revision_unresolvable`, `diff_failed`, `rule_unreadable`, `delta_buildable`) leaves
+     `worktree_dirty`, `worktree_ignored_inputs`, `revision_unresolvable`, `diff_failed`, `rule_unreadable`, `delta_buildable`) leaves
      the read `undecidable`: a change the lane cannot place, a rule it could not read, a revision
      the checkout does not hold and a delta carrying one buildable path all stay blockers. A bare
      `0` is never produced.
