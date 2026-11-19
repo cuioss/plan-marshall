@@ -2,10 +2,10 @@
   "id": "PLAN-LB-163",
   "slug": "functional-review-retired-verdict",
   "workstream": "WS-01",
-  "status": "running",
+  "status": "shipped",
   "lane": "runbook",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "plan_marshall_plan_id": "rb-lb-163-functional-review-retired-verdict",
+  "pr": "2020",
+  "landing": "landings/PLAN-LB-163.md",
   "seq": 163
 }
