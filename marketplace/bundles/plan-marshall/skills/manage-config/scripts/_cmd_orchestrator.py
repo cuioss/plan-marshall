@@ -288,12 +288,14 @@ def cmd_orchestrator_get(args) -> dict:
         )
 
     config = load_config()
-    orch_block = config.get('orchestrator')
-    # A PRESENT block of the wrong type is a malformed file, not an unset knob:
-    # falling through to the seeded default here would answer `success` with a
-    # value no reader wrote, which is the fail-OPEN direction the whole verb
-    # exists to avoid. Only an ABSENT block takes the default path.
-    if orch_block is not None and not isinstance(orch_block, dict):
+    orch_present = 'orchestrator' in config
+    orch_block = config.get('orchestrator') if orch_present else None
+    # A PRESENT block of the wrong type, or an explicit JSON `null`, is a
+    # malformed file, not an unset knob: falling through to the seeded default
+    # here would answer `success` with a value no reader wrote, which is the
+    # fail-OPEN direction the whole verb exists to avoid. Only an ABSENT block
+    # takes the default path.
+    if orch_present and (orch_block is None or not isinstance(orch_block, dict)):
         return error_exit('orchestrator block in marshal.json is not a dictionary')
     # When the field is unset in the live block, fall back to the canonical
     # default from DEFAULT_ORCHESTRATOR (so `auto_emit` reads its seeded `False`
