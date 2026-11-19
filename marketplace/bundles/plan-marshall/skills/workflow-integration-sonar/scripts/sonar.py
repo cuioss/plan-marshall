@@ -1147,6 +1147,24 @@ def cmd_read_open_issues(args):
     open_hotspots = [hotspot for hotspot in raw_hotspots if hotspot.get('status', 'TO_REVIEW') == 'TO_REVIEW']
     open_keys = [issue['key'] for issue in issues if issue['key']] + [hotspot['key'] for hotspot in open_hotspots]
 
+    # 4. The revision the enumeration happened under. Neither fetch carries an
+    #    analysis identifier, so an analysis that completed while they ran can
+    #    supply these sets while the result names the earlier revision. Re-reading
+    #    the revision detects a replacement completed before this point; the
+    #    provider exposes nothing that binds both requests to one analysis, so the
+    #    window is narrowed rather than closed.
+    if pr:
+        recheck = _verify_analysis_revision(project, pr)
+        reported = str(recheck.get('analysis_revision') or '').strip()
+        if reported and reported != revision_result['analysis_revision']:
+            return _undecidable_read(
+                project,
+                pr,
+                f'analysis_revision_changed_during_read: {revision_result["analysis_revision"]} -> {reported}',
+                analysis_revision=revision_result.get('analysis_revision', ''),
+                head_revision=revision_result.get('head_revision', ''),
+            )
+
     result: dict[str, Any] = {
         'status': 'success',
         'operation': 'read_open_issues',

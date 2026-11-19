@@ -468,6 +468,34 @@ class TestLicensedStaleAnalysis:
         assert 'count_status_reason' not in result
 
 
+class TestRevisionMovingDuringTheRead:
+    """An analysis that completes mid-read makes the enumeration another head's."""
+
+    def test_a_revision_that_moves_during_the_read_is_undecidable(self, monkeypatch, plan_context):
+        plan_context.plan_dir_for('rev-read-moved')
+        _install_api(monkeypatch, {})
+        first = {'count_status': 'confirmed', 'analysis_revision': _HEAD, 'head_revision': _HEAD}
+        moved = {
+            'count_status': 'undecidable',
+            'analysis_revision': _STALE,
+            'head_revision': _HEAD,
+            'count_status_reason': f'stale_analysis: analysed {_STALE} != head {_HEAD}',
+        }
+        ce, head = _settled()
+
+        with (
+            ce,
+            head,
+            patch.object(sonar_mod, '_verify_analysis_revision', side_effect=[first, moved]),
+            patch.object(sonar_mod, '_fetch_issues', return_value={'status': 'success', 'issues': [], 'total': 0}),
+        ):
+            result = sonar_mod.cmd_read_open_issues(_read_args())
+
+        assert result['count_status'] == 'undecidable'
+        assert result['open_issue_count'] is None
+        assert 'analysis_revision_changed_during_read' in result['count_status_reason']
+
+
 class TestBranchReadOutOfScope:
     """A fetch with no pull request keeps the CE contract, and says so.
 

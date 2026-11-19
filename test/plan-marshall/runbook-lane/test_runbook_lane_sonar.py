@@ -548,9 +548,19 @@ def _stale_args(**overrides: str | None) -> object:
     return parse_ns('plan-marshall', 'runbook-lane', 'runbook_lane.py', *argv)
 
 
-def _patch_delta(monkeypatch, *, analysed=_ANALYSED, head=_HEAD, paths=('doc/adr/001.adoc',), rows=None, reason=''):
-    """Stub the three seams the decision reads, leaving the decision itself real."""
+def _patch_delta(
+    monkeypatch,
+    *,
+    analysed=_ANALYSED,
+    head=_HEAD,
+    checkout=None,
+    paths=('doc/adr/001.adoc',),
+    rows=None,
+    reason='',
+):
+    """Stub the four seams the decision reads, leaving the decision itself real."""
     monkeypatch.setattr(lane, '_resolve_commit', lambda worktree, revision: analysed if revision == _ANALYSED else head)
+    monkeypatch.setattr(lane, '_checkout_revision', lambda worktree: head if checkout is None else checkout)
     monkeypatch.setattr(lane, '_delta_paths', lambda worktree, base, tip: None if paths is None else list(paths))
     if rows is None:
         rows = [{'path': path, 'kind': 'docs-only'} for path in paths or ()]
@@ -787,6 +797,16 @@ def test_a_settled_read_is_not_the_case_this_decides(monkeypatch) -> None:
 
     assert verdict['carry_forward'] is False
     assert verdict['reason'] == 'count_status_not_stale'
+
+
+def test_a_worktree_on_another_commit_stays_undecidable(monkeypatch) -> None:
+    """The rule is read from the worktree's files, so the worktree must BE the head."""
+    _patch_delta(monkeypatch, checkout='c' * 40)
+
+    verdict = lane.cmd_sonar_stale_delta(_stale_args())
+
+    assert verdict['carry_forward'] is False
+    assert verdict['detail'].startswith('worktree_not_at_head')
 
 
 def test_the_stale_delta_verb_is_reachable_through_its_cli_surface() -> None:

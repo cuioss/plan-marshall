@@ -1774,6 +1774,16 @@ def _resolve_commit(worktree: Path, revision: str) -> str:
     return out.strip() if ok else ''
 
 
+def _checkout_revision(worktree: Path) -> str:
+    """Return the commit *worktree* has checked out, or ``''``.
+
+    The footprint rule is read from the worktree's FILES, so the commit it holds
+    is part of that read: a rule from another commit is not the head's rule.
+    """
+    ok, out = _git_in(worktree, 'rev-parse', 'HEAD')
+    return out.strip() if ok else ''
+
+
 def _delta_paths(worktree: Path, base: str, head: str) -> list[str] | None:
     """Return the paths that changed from *base* to *head*, or ``None``.
 
@@ -1850,6 +1860,16 @@ def _sonar_stale_delta_verdict(
         # carried-forward sentence would assert a difference that does not exist.
         verdict['detail'] = (
             f'revisions_equal: analysed {analysis_revision} and head {head_revision} are the same commit'
+        )
+        return verdict
+    checkout = _checkout_revision(worktree)
+    if checkout != head:
+        # The rule that decides this delta is read from the worktree's files, so a
+        # worktree on another commit carries another rule — and a rule from the
+        # wrong commit can call a path unbuilt that the head builds.
+        verdict['detail'] = (
+            f'worktree_not_at_head: the checkout is at {checkout or "an unreadable commit"} and the '
+            f"head revision resolves to {head}; the footprint rule it carries is not the head's rule"
         )
         return verdict
 
