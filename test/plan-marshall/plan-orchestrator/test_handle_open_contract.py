@@ -34,6 +34,10 @@ The pins, one group each:
   the concrete `--workflow` document the leaf loads.
 - **(g) Contract presence** — the standard carries the `Handle-Open Contract`
   heading, the persona names the one exception, and the router routes the verb.
+- **(h) Decision semantics** — Step 6 keeps the reworded invalidation sentence and
+  the item-number ordering, and states no reopen or supersede act of its own: the
+  contract carries four bounded decision acts, and a reopen rule would need its own
+  act, its own Idempotence carve-out and its own Output row.
 """
 
 from __future__ import annotations
@@ -596,3 +600,116 @@ class TestContractPresence:
         )
 
         assert not _persona_names_the_exception(_read(fixture))
+
+
+# =============================================================================
+# (h) Decision semantics — the reworded sentence stays, no reopen act appears
+# =============================================================================
+
+_STEP6_START = '### Step 6:'
+_STEP7_START = '### Step 7:'
+_IDEMPOTENCE_START = '## Idempotence'
+_OUTPUT_START = '## Output'
+
+#: The sentence the PLAN-LB-165 reword introduced, whose "its" ambiguity it fixes:
+#: the analysis that changes is THE ITEM's, not the other item's.
+_REWORDED_SENTENCE = "An item whose analysis is changed by another item's decision is re-analysed"
+
+#: The item-number ordering, kept as a stand-alone statement.
+_ORDERING_SENTENCE = 'Decisions are applied in item-number order.'
+
+#: Vocabulary that would state a reopen/supersede act. None of it belongs in a
+#: workflow whose contract carries four bounded decision acts and no reopen row.
+_REOPEN_VOCABULARY: tuple[str, ...] = ('supersed', 'reopen')
+
+
+def _decision_semantics_block(text: str) -> str:
+    """Step 6's own text, from its heading to Step 7's."""
+    return _between_bounded(text, _STEP6_START, _STEP7_START, 'handle-open.md')
+
+
+def _between_bounded(text: str, start_marker: str, end_marker: str, source: str) -> str:
+    start = text.find(start_marker)
+    assert start != -1, f'{source}: the block {start_marker!r} was not found'
+    tail = text[start + len(start_marker) :]
+    end = tail.find(end_marker)
+    assert end != -1, f'{source}: the block {start_marker!r} has no closing marker {end_marker!r}'
+    return tail[:end]
+
+
+def _reopen_vocabulary(text: str) -> list[str]:
+    """Every reopen/supersede marker the text carries, casefolded."""
+    lowered = text.casefold()
+    return [marker for marker in _REOPEN_VOCABULARY if marker in lowered]
+
+
+def _names_reworded_sentence(text: str) -> bool:
+    return _normalized(_REWORDED_SENTENCE) in _normalized(text)
+
+
+def _idempotence_block(text: str) -> str:
+    return _between_bounded(text, _IDEMPOTENCE_START, _OUTPUT_START, 'handle-open.md')
+
+
+class TestStepSixDecisionSemantics:
+    def test_the_reworded_invalidation_sentence_stays(self):
+        assert _names_reworded_sentence(_read(WORKFLOW_DOC)), (
+            "Step 6 no longer carries the reworded sentence — 'another item's decision' must stay "
+            'attributable to the item whose analysis changed'
+        )
+
+    def test_step_six_states_no_reopen_or_supersede_act(self):
+        block = _decision_semantics_block(_read(WORKFLOW_DOC))
+
+        offenders = _reopen_vocabulary(block)
+        assert offenders == [], (
+            f'Step 6 states a reopen/supersede act ({offenders}) that the contract does not carry: no '
+            'decision act, no Idempotence carve-out and no Output row admit it'
+        )
+
+    def test_the_item_number_ordering_stays_as_a_stand_alone_sentence(self):
+        text = _read(WORKFLOW_DOC)
+
+        assert _ORDERING_SENTENCE in text, 'Step 6 no longer states that decisions are applied in item-number order'
+        assert '; an item decided earlier' not in text, (
+            'the item-number ordering still carries a reopen clause after it'
+        )
+
+    def test_the_idempotence_rule_still_forbids_a_second_decision(self):
+        block = _idempotence_block(_read(WORKFLOW_DOC))
+
+        assert 'is not decided again' in block, (
+            'the Idempotence rule no longer says a decided item is not decided again — the sentence '
+            'that would need a carve-out for a reopen act is gone'
+        )
+
+    def test_the_contract_states_no_reopen_act(self):
+        prohibitions = _contract_prohibitions(_read(STANDARD))
+        decision_acts = _decision_acts_bullet(_read(STANDARD)).casefold()
+
+        assert prohibitions, 'the contract states no prohibition in its decision-acts bullet'
+        assert _reopen_vocabulary(decision_acts) == [], (
+            'the handle-open contract states a reopen/supersede act — a reopen rule exists only if the '
+            'contract gains the act, its Idempotence carve-out and its Output row in the same plan'
+        )
+
+    def test_a_planted_reopen_clause_is_detected(self, tmp_path):
+        text = _read(WORKFLOW_DOC)
+        planted = text.replace(
+            _ORDERING_SENTENCE,
+            f'{_ORDERING_SENTENCE}; an item decided earlier that a later decision invalidates is reopened '
+            'by recording a new decision entry that supersedes the previous one.',
+        )
+        fixture = tmp_path / 'planted-reopen.md'
+        fixture.write_text(planted, encoding='utf-8')
+
+        assert _reopen_vocabulary(_decision_semantics_block(_read(fixture))), 'a planted reopen act must be reported'
+
+    def test_a_removed_reworded_sentence_is_detected(self, tmp_path):
+        text = _read(WORKFLOW_DOC)
+        fixture = tmp_path / 'no-reword.md'
+        fixture.write_text(
+            text.replace(_REWORDED_SENTENCE, 'An item changed by a decision is re-analysed'), encoding='utf-8'
+        )
+
+        assert not _names_reworded_sentence(_read(fixture)), 'a removed reworded sentence must be reported'
