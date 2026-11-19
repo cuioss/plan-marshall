@@ -1916,7 +1916,7 @@ def cmd_sonar_stale_delta(args: argparse.Namespace) -> dict[str, Any]:
             'error': 'state_contradicts_read',
             'message': 'a not_configured state carries no read; drop --count-status',
         }
-    elif getattr(args, 'analysis_revision', None) or getattr(args, 'head_revision', None):
+    elif getattr(args, 'analysis_revision', None) is not None or getattr(args, 'head_revision', None) is not None:
         # Symmetric with the other two Sonar verbs: a project with no Sonar has no
         # read, so revisions beside `not_configured` are a contradiction rather
         # than an input the verb silently ignores.

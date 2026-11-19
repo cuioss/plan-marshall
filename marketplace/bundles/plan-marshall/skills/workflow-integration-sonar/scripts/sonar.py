@@ -1044,11 +1044,12 @@ def cmd_read_open_issues(args):
     issues Sonar reports.
 
     Fail-loud: a typed ``unconfigured`` status when no Sonar credential is
-    configured (distinct from a read that failed). A CE timeout, a poll failure, a
-    stale analysis revision that no licence covers (PR-scoped reads), a REST/auth
-    failure, or a page truncated below the server's reported total returns
-    ``open_issue_count: None`` with ``count_status: undecidable`` and a
-    ``count_status_reason`` — NEVER a false ``0`` and never a short count.
+    configured (distinct from a read that failed). A CE timeout, a poll failure, an
+    unreported analysis revision, a stale analysis revision that no licence covers
+    (PR-scoped reads), a REST/auth failure, or a page truncated below the server's
+    reported total returns ``open_issue_count: None`` with
+    ``count_status: undecidable`` and a ``count_status_reason`` — NEVER a false
+    ``0`` and never a short count.
     """
     project: str = args.project
     pr: str | None = getattr(args, 'pr', None)

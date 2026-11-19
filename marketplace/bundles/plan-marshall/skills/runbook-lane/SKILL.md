@@ -841,7 +841,8 @@ whether to continue at the limit. Record every finding and its disposition.
      `sonar-gate --state configured --count-status confirmed --open-count {n} --open-keys {open_keys} --carried-forward-analysis-revision {analysis_revision} --carried-forward-head-revision {head_revision} …`,
      and render the landing's figure with `sonar-facts … --analysed-revision {analysis_revision}` so
      the fact names the head it was measured at.
-     A refusal (`revision_unresolvable`, `diff_failed`, `rule_unreadable`, `delta_buildable`) leaves
+     A refusal (`revision_missing`, `revisions_equal`, `worktree_unreadable`,
+     `revision_unresolvable`, `diff_failed`, `rule_unreadable`, `delta_buildable`) leaves
      the read `undecidable`: a change the lane cannot place, a rule it could not read, a revision
      the checkout does not hold and a delta carrying one buildable path all stay blockers. A bare
      `0` is never produced.
