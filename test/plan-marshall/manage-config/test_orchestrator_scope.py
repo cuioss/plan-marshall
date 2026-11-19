@@ -22,6 +22,9 @@ Covers the sibling ``orchestrator`` block (a peer of ``plan``), added by this pl
 from pathlib import Path
 import json
 from argparse import Namespace
+
+import pytest
+
 from conftest import load_script_module
 
 _cmd_effort_mod = load_script_module(
@@ -807,6 +810,80 @@ def test_orchestrator_get_refuses_a_malformed_block_instead_of_defaulting(plan_c
 
     assert get_result['status'] == 'error'
     assert 'not a dictionary' in get_result['error']
+
+
+# =============================================================================
+# The three block states `get` must tell apart: null, absent and non-dict
+# =============================================================================
+
+
+def test_orchestrator_get_refuses_a_json_null_block_instead_of_defaulting(plan_context):
+    """An explicit JSON `null` is a malformed file, never an unset knob.
+
+    `null` parses to `None`, which is not a dictionary, so it takes the same
+    refusal as any other malformed block. Reading it as "unset" would answer
+    `success` with a value no reader wrote — for the threshold, the seeded `90`
+    instead of the contract's fail-closed `100`.
+    """
+    _write_marshal(plan_context.fixture_dir, {'orchestrator': None})
+
+    get_result = cmd_orchestrator_get(Namespace(field=_THRESHOLD_FIELD))
+
+    assert get_result['status'] == 'error', f'a null block was read as success: {get_result}'
+    assert 'not a dictionary' in get_result['error']
+
+
+def test_orchestrator_get_reads_an_absent_block_as_the_seeded_default(plan_context):
+    """An ABSENT block is the one case that takes the seeded default, with `set: false`.
+
+    The three cases are one rule read three ways: absent falls through to the
+    seed, while a present-but-malformed block (null or a non-dict) is refused.
+    An absent block must never be refused, because a project that has not yet
+    written the block is exactly the un-configured state the seed exists for.
+    """
+    _write_marshal(plan_context.fixture_dir, {})
+
+    for field in ('auto_emit', 'decision_confidence_threshold', 'parallelization_scope'):
+        get_result = cmd_orchestrator_get(Namespace(field=field))
+
+        assert get_result['status'] == 'success', f'{field} was refused on an absent block: {get_result}'
+        assert get_result['value'] == _config_defaults_mod.DEFAULT_ORCHESTRATOR[field]
+        assert get_result['set'] is False
+
+
+def test_orchestrator_get_never_answers_a_malformed_block_from_the_seed(plan_context):
+    """The two malformed shapes and the absent shape stay distinguishable in ONE table.
+
+    Pinned as a table rather than three scattered asserts so a future change that
+    collapses two states into one has to rewrite the table that says they differ.
+    """
+    cases = (
+        ('absent', {}, 'success'),
+        ('null', {'orchestrator': None}, 'error'),
+        ('non-dict', {'orchestrator': []}, 'error'),
+    )
+    observed = {}
+    for name, config, _expected in cases:
+        _write_marshal(plan_context.fixture_dir, config)
+        observed[name] = cmd_orchestrator_get(Namespace(field=_THRESHOLD_FIELD))['status']
+
+    assert observed == {name: expected for name, _config, expected in cases}, (
+        f'the three block states were not told apart: {observed}'
+    )
+
+
+def test_invalid_json_in_the_local_marshal_raises_rather_than_answering_success(plan_context):
+    """An unreadable `marshal.json` is a crash, never a passing read.
+
+    `load_config` raises on invalid JSON, and `main()` catches only
+    `ConcurrentConfigModificationError`, so the failure surfaces as an exception.
+    That is the settled behaviour for the caller's own file: a traceback is not a
+    success, and turning it into a seeded default is the fail-open direction.
+    """
+    (plan_context.fixture_dir / 'marshal.json').write_text('{not json', encoding='utf-8')
+
+    with pytest.raises(ValueError):
+        cmd_orchestrator_get(Namespace(field=_THRESHOLD_FIELD))
 
 
 def test_the_scalar_whitelist_is_derived_from_the_known_keys(plan_context):

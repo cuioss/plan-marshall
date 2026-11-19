@@ -325,3 +325,74 @@ class TestSwitchOffAfterLanding:
             [_LANDED_LEDGER_PATH],
         )
         assert path.read_bytes() == before
+
+
+class TestBlockStates:
+    """``get use_worktree`` tells a malformed block from an absent one, in both files.
+
+    The knob's VALUE is main-anchored, so a caller standing in a plan worktree
+    reads main's file. The block VALIDATION runs on the caller's own file as well,
+    because a malformed ``marshal.json`` is a malformed file whichever field is
+    read: the read refuses rather than answering a value no reader wrote. Both
+    refusals name the file they found malformed, so an operator with two
+    ``marshal.json`` files is told which one to fix.
+    """
+
+    def test_a_json_null_block_in_the_main_checkout_is_refused(self, sandbox, monkeypatch):
+        path = _stand_in(monkeypatch, sandbox.main, {'orchestrator': None})
+
+        read = cmd_orchestrator_get(Namespace(field='use_worktree'))
+
+        assert read['status'] == 'error', f'a null block was read as success: {read}'
+        assert 'not a dictionary' in read['error']
+        assert str(path) in read['error'], f'the refusal does not name the malformed file: {read["error"]!r}'
+
+    def test_a_json_null_block_in_the_callers_worktree_is_refused(self, sandbox, monkeypatch):
+        """The knob is main-anchored, and the caller's own malformed file still refuses.
+
+        The local block is irrelevant to the value, but refusing it is the
+        fail-closed direction and it keeps one rule for every field: exempting
+        ``use_worktree`` would make the same malformed file error for every other
+        knob and pass for this one.
+        """
+        _stand_in(monkeypatch, sandbox.main, {'orchestrator': {'use_worktree': True}})
+        worktree_path = _stand_in(monkeypatch, sandbox.plan_worktree, {'orchestrator': None})
+
+        read = cmd_orchestrator_get(Namespace(field='use_worktree'))
+
+        assert read['status'] == 'error', f"a null block in the caller's file was read as success: {read}"
+        assert str(worktree_path) in read['error'], f'the refusal names the wrong file: {read["error"]!r}'
+
+    def test_a_json_null_block_in_the_main_anchored_file_is_refused_naming_it(self, sandbox, monkeypatch):
+        """The caller's file is valid; the malformed block is in the file the VALUE comes from."""
+        _stand_in(monkeypatch, sandbox.plan_worktree, {'orchestrator': {'use_worktree': True}})
+        main_path = _write_marshal(sandbox.main, {'orchestrator': None})
+
+        read = cmd_orchestrator_get(Namespace(field='use_worktree'))
+
+        assert read['status'] == 'error', f'a null block in the main-anchored file was read as success: {read}'
+        assert str(main_path) in read['error'], f'the refusal names the wrong file: {read["error"]!r}'
+
+    def test_an_absent_block_in_both_files_reads_as_false_with_set_false(self, sandbox, monkeypatch):
+        _stand_in(monkeypatch, sandbox.main, {})
+        _stand_in(monkeypatch, sandbox.plan_worktree, {})
+
+        read = cmd_orchestrator_get(Namespace(field='use_worktree'))
+
+        assert (read['status'], read['value'], read['set']) == ('success', False, False)
+
+    def test_an_unreadable_main_file_falls_through_to_the_store_seams_own_answer(self, sandbox, monkeypatch):
+        """An unreadable main file is not a malformed block: the seam reads it as ``False``.
+
+        ``orchestrator_worktree.orchestrator_use_worktree`` returns ``False`` for
+        an unreadable file exactly as it does for a null block, but for the
+        unreadable case it cannot tell a malformed block from an absent one — and
+        the value it answers is the one the store actually uses. Reporting that
+        answer keeps ``get`` and the seam in step.
+        """
+        _stand_in(monkeypatch, sandbox.plan_worktree, {'orchestrator': {'use_worktree': True}})
+        _write_marshal(sandbox.main, {'orchestrator': {'use_worktree': True}}).write_text('{not json', encoding='utf-8')
+
+        read = cmd_orchestrator_get(Namespace(field='use_worktree'))
+
+        assert (read['status'], read['value'], read['set']) == ('success', False, False), read

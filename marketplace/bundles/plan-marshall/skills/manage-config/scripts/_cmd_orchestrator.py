@@ -32,7 +32,10 @@ Known scalar fields:
 
 ``use_worktree`` is anchored on the MAIN checkout for both directions, so every
 checkout agrees on it. ``get`` reports the main-anchored effective value — the
-value the store seam actually uses — rather than the cwd-relative file. ``set``
+value the store seam actually uses — rather than the cwd-relative file, except
+for a malformed block: an explicit JSON ``null`` or a non-dict value is a
+malformed file, and the read refuses naming it instead of reporting the ``False``
+the seam falls back to. ``set``
 refuses (``use_worktree_requires_main_checkout``) unless the ``marshal.json`` it
 would write is that same main-anchored file, and before persisting a CHANGED
 value it runs the cutover refusal: switching on while the main checkout holds
@@ -263,7 +266,12 @@ def cmd_orchestrator_get(args) -> dict:
     ``use_worktree`` is the exception to the cwd-relative read: it reports the
     main-anchored effective value (:func:`orchestrator_use_worktree`) and whether
     the main-anchored file sets it, so a ``get`` from a plan worktree answers with
-    the value the store seam actually uses.
+    the value the store seam actually uses. A malformed block — an explicit JSON
+    ``null`` or any non-dict value — is a different answer: the read refuses with
+    ``status: error`` naming the file it found malformed, in the caller's own
+    ``marshal.json`` and in the main-anchored one alike, rather than reporting the
+    ``False`` the seam falls back to. A file that cannot be READ at all is not
+    malformed but unknown, and it keeps the seam's own ``False``.
     """
     if not is_initialized():
         return error_exit(f'marshal.json not initialized; run {STEWARD_COMMAND} first')
@@ -286,7 +294,7 @@ def cmd_orchestrator_get(args) -> dict:
     # takes the default path. Validate BEFORE the `use_worktree` special case so
     # a malformed (including null) block is rejected for every field.
     if orch_present and (orch_block is None or not isinstance(orch_block, dict)):
-        return error_exit('orchestrator block in marshal.json is not a dictionary')
+        return error_exit(f'orchestrator block in {_config_core.MARSHAL_PATH} is not a dictionary')
 
     if field == 'use_worktree':
         knob_path = orchestrator_knob_config_path()
@@ -302,7 +310,7 @@ def cmd_orchestrator_get(args) -> dict:
             if isinstance(main_data, dict) and 'orchestrator' in main_data:
                 main_block = main_data.get('orchestrator')
                 if main_block is None or not isinstance(main_block, dict):
-                    return error_exit('orchestrator block in marshal.json is not a dictionary')
+                    return error_exit(f'orchestrator block in {knob_path} is not a dictionary')
         return success_exit(
             {
                 'field': field,
@@ -386,7 +394,7 @@ def cmd_orchestrator_set(args) -> dict:
     config = load_config()
     orch_block = config.setdefault('orchestrator', {})
     if not isinstance(orch_block, dict):
-        return error_exit('orchestrator block in marshal.json is not a dictionary')
+        return error_exit(f'orchestrator block in {_config_core.MARSHAL_PATH} is not a dictionary')
 
     if field == 'use_worktree' and coerced != (orch_block.get('use_worktree') is True):
         cutover_refusal = _cutover_refusal(config, switching_on=coerced is True)
