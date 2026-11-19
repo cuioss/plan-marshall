@@ -1276,11 +1276,11 @@ def cmd_snapshot_criteria(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def cmd_criteria_authorize(args: argparse.Namespace) -> dict[str, Any]:
-    """Log an operator decision authorizing one frozen criterion's change.
+    """Log an operator decision on one frozen criterion.
 
     A frozen criterion that the current outline no longer carries verbatim is a
-    blocking finding at the functional review. This verb is the single way that
-    change is authorized: it records the decision against the snapshot and then
+    blocking finding at the functional review, and only this verb's record clears
+    it. It records the decision against the snapshot and then
     writes the decision-log line. A log that cannot be written withdraws the
     authorization, and the error names what became of it: ``rolled_back`` (the
     edit is gone and the record matches the file), ``tamper_flagged`` (the edit is
@@ -1719,7 +1719,7 @@ def main() -> int:
     # criteria-authorize
     authorize_parser = subparsers.add_parser(
         'criteria-authorize',
-        help='Log an operator decision authorizing one frozen criterion change',
+        help='Log an operator decision on a frozen criterion (rewrite or retirement)',
         allow_abbrev=False,
     )
     add_plan_id_arg(authorize_parser)
@@ -1728,17 +1728,17 @@ def main() -> int:
         type=int,
         required=True,
         dest='deliverable_number',
-        help='Deliverable whose frozen criterion the decision authorizes changing',
+        help='Deliverable whose frozen criterion the decision is recorded against',
     )
     authorize_parser.add_argument(
         '--criterion',
         required=True,
-        help='The frozen criterion text the decision authorizes changing',
+        help='The frozen criterion text the decision is recorded against',
     )
     authorize_parser.add_argument(
         '--decision',
         required=True,
-        help='The operator decision that authorizes the change',
+        help='The operator decision',
     )
     authorize_parser.add_argument(
         '--decision-type',

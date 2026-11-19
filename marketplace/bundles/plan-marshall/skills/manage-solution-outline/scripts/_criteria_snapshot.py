@@ -2209,8 +2209,8 @@ def open_criteria(plan_id: str, verdict_file: Path | None = None) -> dict[str, A
         if superseded and rejection is None:
             continue
         # A RETIRED verdict closes the deliverable only on its own precondition — every
-        # frozen criterion authorized. The check is re-derived here rather than trusted
-        # from the validator, which the gate never runs.
+        # frozen criterion carries the operator's own retirement decision. The check is
+        # re-derived here rather than trusted from the validator, which the gate never runs.
         if retired and retirement_state(snapshot, number)['state'] == RETIREMENT_CLOSED:
             continue
         graded = graded_row.get('criteria') or []
