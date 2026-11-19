@@ -156,6 +156,13 @@ _CAPTURED_CAUTION_1983_BODY = (
     f'<!-- coderabbit-ai-generated:v1 -->  {_CAPTURED_CAUTION_1983}  {_CAPTURED_FILES_SELECTED_TITLE}'
 )
 
+#: The two #1984 review bodies the gate reads, composed from the captured parts above. Both
+#: open with their captured status line, and both close with the captured file list.
+_CAPTURED_1984_BODY_FIRST = (
+    f'{_CAPTURED_ACTIONABLE_LINE_1984_FIRST}  {_CAPTURED_CAUTION_1984}  {_CAPTURED_FILES_SELECTED_TITLE}'
+)
+_CAPTURED_1984_BODY_SECOND = f'{_CAPTURED_ACTIONABLE_LINE_1984_SECOND}  {_CAPTURED_FILES_SELECTED_TITLE}'
+
 #: The reported `Minor comments` shape, HAND-BUILT here (the consumer repository's body is
 #: not readable from this checkout): a `<picture>`-wrapped counted title with one row.
 _PICTURE_MINOR_COMMENTS_BODY = (
@@ -817,8 +824,8 @@ def test_the_captured_1984_bodies_read_seven_inline_and_one_outside_diff() -> No
     shows the `**Actionable comments posted: N**` line stayed a status line and did not
     become a bold-heading section ahead of the CAUTION block.
     """
-    first = f'{_CAPTURED_ACTIONABLE_LINE_1984_FIRST}  {_CAPTURED_CAUTION_1984}  {_CAPTURED_FILES_SELECTED_TITLE}'
-    second = f'{_CAPTURED_ACTIONABLE_LINE_1984_SECOND}  {_CAPTURED_FILES_SELECTED_TITLE}'
+    first = _CAPTURED_1984_BODY_FIRST
+    second = _CAPTURED_1984_BODY_SECOND
     read = _read(_review_body(first), _review_body(second))
 
     verdict = _verdict(read)
@@ -2292,10 +2299,10 @@ def test_a_stray_backtick_earlier_in_the_body_does_not_hide_the_heading() -> Non
 def test_an_unclosed_code_in_a_nested_block_does_not_hide_a_heading_in_the_outer_block() -> None:
     """⛔ D4: an unclosed `<code>` is bounded by its own block at every depth.
 
-    PLAN-LB-168's own input: the prose scan starts at the OUTERMOST open block, so the
-    inner block's unclosed `<code>` keeps the code depth at 1 across the boundary and the
-    CAUTION heading after it is read as prose — one declared finding lost. The scan now
-    ends the inner region with the block that opened it.
+    PLAN-LB-168's own input: the prose scan started at the innermost block still open at the
+    heading — the outer wrapper here — so the inner block's unclosed `<code>` kept the code
+    depth at 1 across the boundary and the CAUTION heading after it was read as prose, losing
+    one declared finding. The scan is now per block, so the inner block's prose ends with it.
     """
     body = (
         '<details><summary>Walkthrough</summary>'
@@ -2309,6 +2316,94 @@ def test_an_unclosed_code_in_a_nested_block_does_not_hide_a_heading_in_the_outer
     assert [row['section'] for row in verdict['undisposed']] == ['nitpick', 'outside-diff'], verdict
 
 
+def test_a_dd_spanning_a_nested_block_keeps_the_heading_inside_it_a_quotation() -> None:
+    """⛔ D4's other edge: a row body (`<dd>`) is prose for the WHOLE block it sits in.
+
+    The `<dd>` opens in the outer block, a nested `<details>` opens and closes inside it, and a
+    heading-shaped bold span sits after that nested block but still inside the `<dd>`. A prose
+    scope that reset at the nested block would read the quote as a heading and mint a finding
+    nobody wrote; the scope is per block, so the quote stays a quotation.
+    """
+    body = (
+        '<details><summary>🧹 Nitpick comments (1)</summary><dd> see '
+        '<details><summary>src/a.py (2)</summary>x</details> '
+        '**Outside diff range comments (1)** </dd></details>'
+    )
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['review_body_findings_total'] == 1, verdict
+    assert [(row['section'], row['id']) for row in verdict['undisposed']] == [('nitpick', 'nitpick-1')]
+
+
+def test_a_blockless_counted_heading_nested_in_a_section_does_not_cut_its_rows() -> None:
+    """⛔ D1's nesting edge: the heading's own interval is blanked, not the section's span.
+
+    The nitpick section carries three marked rows, one of them before a blockless counted
+    CAUTION heading and two after it. Ending the section's span at that heading would lose the
+    two after it while the heading's own declaration counted once — fewer findings than the
+    body states. The heading's interval is blanked out of the section instead, so the rows on
+    both sides are read and the heading adds its own.
+    """
+    body = (
+        '<details><summary>🧹 Nitpick comments</summary><blockquote>'
+        ' first <!-- cr-comment:v1:aaaaaaaaaaaaaaaaaaaaaaaa --> '
+        '**Outside diff range comments (1)** - `src/a.py:12` rename '
+        'second <!-- cr-comment:v1:bbbbbbbbbbbbbbbbbbbbbbbb --> '
+        'third <!-- cr-comment:v1:cccccccccccccccccccccccc --> '
+        '</blockquote></details>'
+    )
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['review_body_findings_total'] == 4, verdict
+    assert [row['section'] for row in verdict['undisposed']] == [
+        'nitpick',
+        'nitpick',
+        'nitpick',
+        'outside-diff',
+    ]
+
+
+def test_a_counted_wrapper_carrying_content_after_its_section_stops_the_gate() -> None:
+    """⛔ D2: the wrapper's own content AFTER the enclosed section is a stop too.
+
+    Reading through drops whatever the wrapper says beside the section it encloses, wherever
+    that text sits. Content between or after the enclosed sections is as unattributable as
+    content before them, so the whole interior is measured, not only the prefix.
+    """
+    body = (
+        '<details><summary>Review (2)</summary>'
+        '<details><summary>🧹 Nitpick comments (1)</summary>a</details>'
+        ' a second concern of its own </details>'
+    )
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['merge_allowed'] is False, verdict
+    assert verdict['reason'] == 'undecidable_read', verdict
+    assert 'wrapper' in verdict['detail'], verdict
+
+
+def test_a_label_between_two_bold_runs_is_not_a_heading() -> None:
+    """⛔ D3's pairing edge: two bold runs with prose between them state no section.
+
+    `**Major** Nitpick comments (2) **Quick win**` is one severity label, some prose and one
+    win. Tiling every adjacent marker pair would read the middle prose as a nitpick heading and
+    mint two findings nobody wrote; pairing an OPENER with the next CLOSING marker reads the
+    two bold runs and nothing else.
+    """
+    body = (
+        '**Major** Nitpick comments (2) **Quick win** '
+        '<details><summary>🧹 Nitpick comments (1)</summary> only one </details>'
+    )
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['review_body_findings_total'] == 1, verdict
+    assert [(row['section'], row['id']) for row in verdict['undisposed']] == [('nitpick', 'nitpick-1')]
+
+
 def test_the_plan_lb_162_controls_still_read_as_they_did() -> None:
     """The controls PLAN-LB-168 D5 requires, all of which held at `main` `46d3308ea`.
 
@@ -2319,18 +2414,19 @@ def test_the_plan_lb_162_controls_still_read_as_they_did() -> None:
     """
     assert _verdict(_read(_review_body(_CAPTURED_CAUTION_1983_BODY)))['review_body_findings_total'] == 1
 
-    first = f'{_CAPTURED_ACTIONABLE_LINE_1984_FIRST}  {_CAPTURED_CAUTION_1984}  {_CAPTURED_FILES_SELECTED_TITLE}'
-    second = f'{_CAPTURED_ACTIONABLE_LINE_1984_SECOND}  {_CAPTURED_FILES_SELECTED_TITLE}'
-    assert _verdict(_read(_review_body(first), _review_body(second)))['review_body_findings_total'] == 8
+    read = _read(_review_body(_CAPTURED_1984_BODY_FIRST), _review_body(_CAPTURED_1984_BODY_SECOND))
+    assert _verdict(read)['review_body_findings_total'] == 8
 
     prose = (
         '**Outside diff range comments (1)** is empty this time. '
         '<details><summary>Major · a.py</summary> fix </details>'
         '<details><summary>🧹 Nitpick comments (2)</summary> a b </details>'
     )
-    assert _verdict(_read(_review_body(prose)))['review_body_findings_total'] == 2
+    prose_verdict = _verdict(_read(_review_body(prose)))
+    assert prose_verdict['review_body_findings_total'] == 2, prose_verdict
 
     uncounted = (
         '**Outside diff range comments** <details><summary>🧹 Nitpick comments (2)</summary> first second </details>'
     )
-    assert _verdict(_read(_review_body(uncounted)))['review_body_findings_total'] == 2
+    uncounted_verdict = _verdict(_read(_review_body(uncounted)))
+    assert uncounted_verdict['review_body_findings_total'] == 2, uncounted_verdict
