@@ -23,8 +23,6 @@ from pathlib import Path
 import json
 from argparse import Namespace
 
-import pytest
-
 from conftest import load_script_module
 
 _cmd_effort_mod = load_script_module(
@@ -872,18 +870,25 @@ def test_orchestrator_get_never_answers_a_malformed_block_from_the_seed(plan_con
     )
 
 
-def test_invalid_json_in_the_local_marshal_raises_rather_than_answering_success(plan_context):
-    """An unreadable `marshal.json` is a crash, never a passing read.
+def test_invalid_json_in_the_local_marshal_never_answers_a_seeded_default(plan_context):
+    """An unreadable `marshal.json` never turns into a passing read.
 
-    `load_config` raises on invalid JSON, and `main()` catches only
-    `ConcurrentConfigModificationError`, so the failure surfaces as an exception.
-    That is the settled behaviour for the caller's own file: a traceback is not a
-    success, and turning it into a seeded default is the fail-open direction.
+    `load_config` raises on invalid JSON and `main()` catches only
+    `ConcurrentConfigModificationError`, so today the failure surfaces as an
+    exception. The pin is the CONTRACT, not the exception type: whatever shape the
+    failure takes — a raise, a process exit, or a later `error_exit` — it must never
+    answer `success` with the seeded figure, which is the fail-open direction. A
+    future conversion to `error_exit` is an improvement and keeps this green.
     """
     (plan_context.fixture_dir / 'marshal.json').write_text('{not json', encoding='utf-8')
 
-    with pytest.raises(ValueError):
-        cmd_orchestrator_get(Namespace(field=_THRESHOLD_FIELD))
+    try:
+        get_result = cmd_orchestrator_get(Namespace(field=_THRESHOLD_FIELD))
+    except (ValueError, SystemExit):
+        return
+
+    assert get_result['status'] != 'success', f'a malformed file answered success: {get_result}'
+    assert get_result.get('value') != _config_defaults_mod.DEFAULT_ORCHESTRATOR[_THRESHOLD_FIELD]
 
 
 def test_the_scalar_whitelist_is_derived_from_the_known_keys(plan_context):

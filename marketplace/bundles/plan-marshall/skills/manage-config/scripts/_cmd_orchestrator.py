@@ -270,8 +270,10 @@ def cmd_orchestrator_get(args) -> dict:
     ``null`` or any non-dict value — is a different answer: the read refuses with
     ``status: error`` naming the file it found malformed, in the caller's own
     ``marshal.json`` and in the main-anchored one alike, rather than reporting the
-    ``False`` the seam falls back to. A file that cannot be READ at all is not
-    malformed but unknown, and it keeps the seam's own ``False``.
+    ``False`` the seam falls back to. A MAIN-ANCHORED file that cannot be READ
+    at all is not a malformed block but an unknown one, and it keeps the seam's
+    own ``False``; the caller's own file is read by :func:`load_config`, which
+    raises on invalid JSON rather than answering a value.
     """
     if not is_initialized():
         return error_exit(f'marshal.json not initialized; run {STEWARD_COMMAND} first')

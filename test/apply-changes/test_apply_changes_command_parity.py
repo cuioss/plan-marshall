@@ -140,6 +140,15 @@ _GAP_CLAUSE = 'no key that withholds'
 #: effect is not shown by reading, and saying so is what keeps the claim honest.
 _UNCONFIRMED_CLAUSE = 'not shown by reading'
 
+#: The target metadata each gap-claiming harness cites, so the claim can be checked
+#: against the data instead of only against its own prose. A rules file that ever
+#: gains the withholding key makes the gap statement false, and this map is what
+#: turns that into a red test rather than a stale paragraph.
+_HARNESS_RULES_FILES: dict[str, str] = {
+    'opencode': 'marketplace/targets/opencode/frontmatter-rules.json',
+    'antigravity': 'marketplace/targets/antigravity/frontmatter-rules.json',
+}
+
 
 def _read(root: Path, relative: str) -> str:
     """``relative`` read from ``root``, failing when the path is absent."""
@@ -306,7 +315,28 @@ def _settings_allow(root: Path = PROJECT_ROOT) -> list[str]:
     return list(payload['permissions']['allow'])
 
 
-def _operator_only_violations(texts: dict[str, str]) -> list[str]:
+def _rules_fields(root: Path, harness: str) -> set[str]:
+    """The frontmatter fields a harness's own target metadata admits."""
+    rules = json.loads((root / _HARNESS_RULES_FILES[harness]).read_text(encoding='utf-8'))
+    return set(rules.get('required_fields', [])) | set(rules.get('optional_fields', []))
+
+
+def _gap_claim_contradicted(root: Path, harness: str) -> bool:
+    """Whether the harness's own metadata now carries the withholding key.
+
+    The entry point says its harness publishes no key that withholds the command
+    from model invocation. Reading the file it cites is what keeps that sentence
+    from outliving the data: the day the key appears, the gap is gone and the
+    entry point must carry the key instead. A ``root`` with no such file (a planted
+    fixture) states nothing to contradict; the shipped tree's own files are pinned
+    present by their own test, so the silence cannot be the whole guard.
+    """
+    if not (root / _HARNESS_RULES_FILES[harness]).is_file():
+        return False
+    return _OPERATOR_ONLY_KEY in _rules_fields(root, harness)
+
+
+def _operator_only_violations(texts: dict[str, str], root: Path = PROJECT_ROOT) -> list[str]:
     """Problems with the operator-only pin, per harness.
 
     The Claude entry point carries the key. A harness that publishes no such key
@@ -335,6 +365,11 @@ def _operator_only_violations(texts: dict[str, str]) -> list[str]:
             )
         if _UNCONFIRMED_CLAUSE not in body:
             problems.append(f'the {harness} entry point should mark the operator-only claim as {_UNCONFIRMED_CLAUSE}')
+        if harness in _HARNESS_RULES_FILES and _gap_claim_contradicted(root, harness):
+            problems.append(
+                f'the {harness} gap statement is now false: {_HARNESS_RULES_FILES[harness]} carries '
+                f'{_OPERATOR_ONLY_KEY}'
+            )
     return problems
 
 
@@ -412,6 +447,15 @@ def test_the_three_entry_points_are_mirrors_and_carry_the_post_run_block():
 def test_the_command_is_operator_only_on_every_harness():
     """The key where the harness publishes one, the recorded gap where it does not."""
     assert _operator_only_violations(_entry_texts()) == []
+
+
+def test_each_gap_claiming_harness_has_its_rules_file_to_check_against():
+    """Non-vacuity: the contradiction guard reads a real file in the shipped tree."""
+    for harness, relative in _HARNESS_RULES_FILES.items():
+        assert (PROJECT_ROOT / relative).is_file(), f'the {harness} gap claim cites a file that does not exist'
+        assert not _gap_claim_contradicted(PROJECT_ROOT, harness), (
+            f'{relative} carries {_OPERATOR_ONLY_KEY}, so the {harness} gap statement is false'
+        )
 
 
 def test_operator_only_controls(tmp_path: Path):
@@ -499,6 +543,29 @@ def test_settings_permission_control(tmp_path: Path):
         'absent entries must be reported'
     )
     assert _settings_violations(_settings_allow()) == [], 'the real settings allow both entries'
+
+
+def test_a_harness_that_gains_the_withholding_key_is_detected(tmp_path: Path):
+    """Matched control: the gap statement is checked against the file it cites.
+
+    A prose-only guard would stay green the day a harness publishes the key. The
+    planted rules file carries it, and the entry point's gap sentence must then be
+    reported as false.
+    """
+    _plant(tmp_path, {})
+    rules_path = tmp_path / _HARNESS_RULES_FILES['opencode']
+    rules_path.parent.mkdir(parents=True, exist_ok=True)
+    rules_path.write_text(
+        json.dumps({'required_fields': ['description'], 'optional_fields': [_OPERATOR_ONLY_KEY]}),
+        encoding='utf-8',
+    )
+
+    assert _gap_claim_contradicted(tmp_path, 'opencode'), 'a rules file carrying the key must be detected'
+    assert not _gap_claim_contradicted(PROJECT_ROOT, 'opencode'), 'the shipped opencode rules carry no such key'
+    reported = _operator_only_violations(_entry_texts(tmp_path), tmp_path)
+    assert any('gap statement is now false' in problem for problem in reported), (
+        f'a gap claim the harness metadata contradicts must be reported, got {reported}'
+    )
 
 
 def test_reordered_step_control(tmp_path: Path):

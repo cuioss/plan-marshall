@@ -21,9 +21,11 @@ fetches the provider's comment data itself, in-process, through
 clause that named that subcommand was stale, and the pin here reads the script
 so the claim cannot drift back into prose nobody re-checks.
 
-Every document assertion has a matched control that plants the violation in a
-temporary tree and shows the same detector firing. A detector with no control
-passes by never being able to fail, which is the shape this file exists against.
+Every DETECTOR below is paired with a matched control that plants its violation in
+a temporary tree and shows the same detector firing; a presence check whose
+detector cannot fire is covered by its absence-shaped control. A detector with no
+control passes by never being able to fail, which is the shape this file exists
+against.
 """
 
 from __future__ import annotations
@@ -69,7 +71,10 @@ _STANDARD_HEAD_MARKER = 'on the head'
 #: the prose beside it.
 _REVIEW_READ_FUNCTION = 'def _read_review_surfaces('
 _IN_PROCESS_FETCH = 'fetch_pr_comments_data('
-_SUBPROCESS_MARKER = 'subprocess'
+#: The precise shape of a shelled-out read: the module import a subprocess call
+#: needs. Absence of the bare word `subprocess` would also fire on an explanatory
+#: docstring sentence, which is a false positive, not a drift.
+_SUBPROCESS_MARKER = 'import subprocess'
 _CI_SUBCOMMAND_LITERAL = "'pr comments'"
 
 
@@ -260,13 +265,14 @@ class TestTheParserClause:
 
     def test_a_planted_subprocess_read_is_detected(self, tmp_path):
         block = _review_read_block(_read(_REVIEW_GATE_SCRIPT))
-        fixture = tmp_path / 'shelled-out.py'
-        fixture.write_text(
-            block.replace(_IN_PROCESS_FETCH, "run_ci('pr comments')"),
+        shelled = tmp_path / 'shelled-out.py'
+        shelled.write_text(block.replace(_IN_PROCESS_FETCH, "run_ci('pr comments')"), encoding='utf-8')
+        subprocess_use = tmp_path / 'subprocess-use.py'
+        subprocess_use.write_text(
+            block.replace('    try:\n', '    import subprocess\n\n    try:\n', 1),
             encoding='utf-8',
         )
 
-        planted = _read(fixture)
-
-        assert not _reads_the_provider_in_process(planted), 'a subprocess read must not read as in-process'
-        assert _shells_out_to_the_comments_subcommand(planted), 'a carved command list must be reported'
+        assert not _reads_the_provider_in_process(_read(shelled)), 'a shelled-out read must not read as in-process'
+        assert _shells_out_to_the_comments_subcommand(_read(shelled)), 'a carved command list must be reported'
+        assert not _reads_the_provider_in_process(_read(subprocess_use)), 'a subprocess import must be reported'
