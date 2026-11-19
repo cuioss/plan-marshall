@@ -1444,9 +1444,10 @@ def retirement_state(snapshot: dict[str, Any] | None, number: Any) -> dict[str, 
       or the plan froze nothing at all.
 
     The validator refuses every state but ``closed``. The completion gate closes only
-    on ``closed`` and leaves every criterion of any other state open — a retired
-    verdict that fails its precondition closes nothing, not even a criterion it
-    happened to grade ``met``, because the gate never runs the validator.
+    on ``closed``; in any other state the retirement closes nothing of its own, so a
+    criterion it graded ``met`` is read as ungraded. An authorization the operator
+    recorded separately is NOT the verdict's to overrule, so that criterion still
+    closes on its own decision.
     """
     if snapshot is None:
         return {'state': RETIREMENT_NO_SNAPSHOT, 'criteria': [], 'unauthorized': []}
@@ -2062,7 +2063,9 @@ def open_criteria(plan_id: str, verdict_file: Path | None = None) -> dict[str, A
     * the deliverable's verdict is ``retired`` AND every frozen criterion of that
       deliverable is authorized (:func:`retirement_state`) — the operator's retirement
       route for a deliverable with no successor. A retirement still missing an
-      authorization closes nothing, not even a criterion it graded ``met``;
+      authorization closes nothing of its own, so a criterion it graded ``met`` is
+      read as ungraded; a criterion the operator authorized separately still closes
+      on that decision;
     * the operator closed the review past its round cap (:func:`_review_closed_reason`);
     * the manifest dropped the functional review (:func:`functional_review_drop_reason`)
       — the completion gate exempts exactly this case, and ``source: review_dropped``
@@ -2142,11 +2145,13 @@ def open_criteria(plan_id: str, verdict_file: Path | None = None) -> dict[str, A
             text = normalize_criterion(raw)
             if _authorization(snapshot, number, text):
                 continue
-            # A REJECTED supersede and an INVALID retirement close nothing: the verdict
-            # itself is invalid, so its criteria stay open even where the reviewer graded
-            # one ``met``. The completion gate reads this answer without running the
-            # validator, so trusting those grades would let a self-citation — or a
-            # retirement missing its authorizations — release ungraded work.
+            # A REJECTED supersede and an INVALID retirement close nothing of their own:
+            # the verdict itself is invalid, so the grades its row carries close nothing
+            # even where the reviewer marked one ``met``. The completion gate reads this
+            # answer without running the validator, so trusting those grades would let a
+            # self-citation — or a retirement missing its authorizations — release
+            # ungraded work. A separately recorded authorization still closes its own
+            # criterion below, because that decision is not the verdict's to overrule.
             status = 'ungraded' if (superseded or retired) else _graded_status(graded, text, index, number)
             if status == 'met':
                 continue

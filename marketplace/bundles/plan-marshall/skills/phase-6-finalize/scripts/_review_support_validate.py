@@ -92,15 +92,14 @@ HEAD_TOKEN_RE = re.compile(r'(?i)\bhead\b')
 EVIDENCE_PATH_RE = re.compile(r'^([^:\s]+\.\w+)(?::\d+(?:-\d+)?)?(?:::(\S+))?$')
 
 #: The facts a valid functional verdict records, before the two shared counts.
+#: The per-verdict counters are DERIVED from :data:`FUNCTIONAL_VERDICTS`, because
+#: ``_grade_row`` builds each name with ``f'deliverables_{verdict}'``: a verdict
+#: added to the tuple alone would otherwise raise a KeyError mid-grading.
 FUNCTIONAL_FACT_KEYS = (
     'deliverables_reviewed',
     'criteria_checked',
     'files_read',
-    'deliverables_met',
-    'deliverables_met_with_residuals',
-    'deliverables_not_met',
-    'deliverables_superseded',
-    'deliverables_retired',
+    *(f'deliverables_{verdict}' for verdict in FUNCTIONAL_VERDICTS),
     'criteria_unevidenced',
     'unrequested_changes',
     'false_self_reports',
