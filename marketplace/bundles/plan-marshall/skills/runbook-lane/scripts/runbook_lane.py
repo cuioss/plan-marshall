@@ -58,6 +58,7 @@ import argparse
 import json
 import os
 import re
+import unicodedata
 from pathlib import Path
 from typing import Any, NamedTuple
 
@@ -2454,6 +2455,18 @@ def _inside_prose(body: str, offset: int) -> bool:
     return any(level > 0 for scope in scopes for level in scope.values())
 
 
+#: The ASCII punctuation CommonMark counts as punctuation for its flanking rule — a class the
+#: Unicode categories do not match (``<`` is a math symbol, not a ``P*`` code point).
+_ASCII_PUNCTUATION = frozenset('!"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~')
+
+
+def _is_punctuation(character: str) -> bool:
+    """Whether ``character`` is punctuation in Markdown's flanking rule."""
+    if not character:
+        return False
+    return character in _ASCII_PUNCTUATION or unicodedata.category(character).startswith('P')
+
+
 def _bold_spans(body: str) -> list[tuple[int, int, str]]:
     """Every ``(start, end, title)`` BOLD span, paired by OPENING and CLOSING markers.
 
@@ -2461,32 +2474,40 @@ def _bold_spans(body: str) -> list[tuple[int, int, str]]:
     ``**`` earlier in the body spends a real heading's opening marker as the closing marker of
     the pair before it and the heading is never read — an under-count.
 
-    A marker is a CLOSING one when text attaches to it on the left and not on the right: it is
-    preceded by a non-space character that is not itself a marker, and followed by the end of
-    the body or by something that is not a letter or a digit. That is Markdown's own flanking
-    rule, and it does both jobs this parser needs — the heading after a stray ``**kwargs`` is
-    still read (two markers that both have text to their right are two openers), and the prose
-    BETWEEN two bold runs is not read as a heading of its own (``**Major** Nitpick comments (2)
-    **Quick win**`` states one severity label and one win). Reading by role rather than tiling
-    every adjacent pair also keeps ``**A****B**`` two spans and a title ending in an emoji or a
-    quotation mark closed.
+    A marker's role is Markdown's own flanking rule: it can OPEN when text does not attach on
+    its left (or punctuation does, while the marker itself is followed by non-punctuation), and
+    it can CLOSE when text attaches on its left and nothing that could start a word sits on its
+    right. A marker that could do both closes only when a heading is already open, so
+    ``text**Heading**`` still reads as one span while ``>**⚠️ Heading**`` (an opener glued to
+    punctuation) does not spend itself as a closer. That single rule does everything this parser
+    needs: the heading after a stray ``**kwargs`` is still read (two markers with words to their
+    right are two openers), the prose BETWEEN two bold runs is not read as a heading of its own
+    (``**Major** Nitpick comments (2) **Quick win**`` states one severity label and one win),
+    ``**A****B**`` is two spans, and a title ending in an emoji or a quotation mark closes.
     """
-    markers = [match.start() for match in _BOLD_MARKER_RE.finditer(body)]
     spans: list[tuple[int, int, str]] = []
     opener: int | None = None
-    for position in markers:
-        preceded = body[position - 1] if position else ''
-        followed = body[position + len('**') : position + len('**') + 1]
-        closes = bool(preceded) and not preceded.isspace() and preceded != '*'
-        closes = closes and (not followed or not followed.isalnum())
-        if closes:
-            if opener is not None:
-                title = body[opener + len('**') : position]
-                if '*' not in title:
-                    spans.append((opener, position + len('**'), title))
-            opener = None
+    for marker in _BOLD_MARKER_RE.finditer(body):
+        before = body[marker.start() - 1] if marker.start() else ''
+        after = body[marker.end() : marker.end() + 1]
+        can_open = (
+            bool(after)
+            and not after.isspace()
+            and (not _is_punctuation(after) or not before or before.isspace() or _is_punctuation(before))
+        )
+        can_close = (
+            bool(before)
+            and not before.isspace()
+            and (not _is_punctuation(before) or not after or after.isspace() or _is_punctuation(after))
+        )
+        if not (can_close and not (can_open and opener is None)):
+            opener = marker.start()
             continue
-        opener = position
+        if opener is not None:
+            title = body[opener + len('**') : marker.start()]
+            if '*' not in title:
+                spans.append((opener, marker.end(), title))
+        opener = None
     return spans
 
 
@@ -2821,8 +2842,10 @@ def _body_findings(
     fresh sha looks like.
 
     An inline count the reviewer states only as its status line (the registry's
-    ``review_body_summary_patterns`` literal) is read as the ``inline`` section
-    when no inline section block is present — one declaration, one reading.
+    ``review_body_summary_patterns`` literal) is read as the ``inline`` section too. The status
+    line and an inline section are two statements about the same findings, so the LARGER of the
+    two is the count — a body whose second statement is bigger never reads fewer findings than
+    it declares, and one whose statements agree mints nothing twice.
 
     A section heading is read in THREE shapes, so no block a reviewer filled goes
     unread: a ``<summary>`` title naming a findings section, a BOLD line that states
@@ -2983,7 +3006,9 @@ def _body_findings(
             return blocks[-1][1]
         # A section's span is bounded by the next SECTION boundary — never by a bold heading
         # nested inside its own block (owning one or not), whose interval is excluded from the
-        # count instead, so the rows on either side of it are both read.
+        # count instead, so the rows on either side of it are both read. Only an OWNING heading
+        # has an interval to blank; a blockless counted heading contributes its declaration and
+        # leaves the rows around it with the section they sit in.
         boundary = next(
             (bound_ for bound_ in boundary_starts if bound_ > start and bound_ not in nested_starts),
             len(body),
@@ -3039,10 +3064,8 @@ def _body_findings(
 
     heading_offsets = frozenset(start for start, _end, _section, _declared in headings)
     findings: list[dict[str, str]] = []
-    seen_inline = False
+    inline_from_sections = 0
     for start, end, section, declared in headings:
-        if section == 'inline':
-            seen_inline = True
         span_end = _span_end(start)
         span = body[end:span_end]
         # A NESTED bold heading's own interval is counted by that heading, so it is blanked
@@ -3066,9 +3089,23 @@ def _body_findings(
                 f'{_MAX_ENUMERATED_FINDINGS} this gate will enumerate'
             )
         findings.extend(_numbered_findings(reviewer, section, count, counters))
+        if section == 'inline':
+            inline_from_sections += count
 
-    if not seen_inline:
-        findings.extend(_inline_status_findings(reviewer, body, bot_kind, counters))
+    # The reviewer's status line and any inline section are two statements about the SAME
+    # inline findings, so the larger one is the count — the same rule the sections themselves
+    # follow. Reading the status line only when no inline section exists let a blockless
+    # ``**Inline comments (2)**`` heading suppress a status line declaring four, which would
+    # read fewer findings than the body states; the shortfall is minted instead, and a body
+    # whose two statements agree mints nothing twice.
+    findings.extend(
+        _numbered_findings(
+            reviewer,
+            'inline',
+            max(0, _inline_status_count(body, bot_kind) - inline_from_sections),
+            counters,
+        )
+    )
     return findings, None
 
 
@@ -3086,13 +3123,8 @@ def _numbered_findings(
     return rows
 
 
-def _inline_status_findings(
-    reviewer: str,
-    body: str,
-    bot_kind: str,
-    counters: dict[str, int],
-) -> list[dict[str, str]]:
-    """Read the reviewer's inline count off its declared status line, if any.
+def _inline_status_count(body: str, bot_kind: str) -> int:
+    """Read the reviewer's inline count off its declared status line, or ``0``.
 
     The literal comes from the registry (``review_body_summary_patterns``), never
     from this module: the bot standard remains the one place the phrase lives.
@@ -3104,7 +3136,7 @@ def _inline_status_findings(
     from the literal is the same read on a flattened and on a structured body.
     """
     if not bot_kind:
-        return []
+        return 0
     import bot_registry
 
     for pattern in bot_registry.review_body_summary_patterns(bot_kind):
@@ -3114,8 +3146,8 @@ def _inline_status_findings(
         declared = re.match(r'\s*(\d+)', body[index + len(pattern) :])
         if declared is None:
             continue
-        return _numbered_findings(reviewer, 'inline', int(declared.group(1)), counters)
-    return []
+        return int(declared.group(1))
+    return 0
 
 
 def _bot_of(comment: dict[str, Any]) -> str:

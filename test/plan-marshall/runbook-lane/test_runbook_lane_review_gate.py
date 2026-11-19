@@ -2386,12 +2386,28 @@ def test_a_counted_wrapper_carrying_content_after_its_section_stops_the_gate() -
     assert 'wrapper' in verdict['detail'], verdict
 
 
-def test_two_bold_runs_glued_together_are_both_read() -> None:
-    """⛔ D3's role rule: `**A****B**` is two bold runs, not one lost span.
+def test_a_heading_glued_to_markup_is_still_read() -> None:
+    """⛔ D3: an opener glued to punctuation (`>**⚠️ …**`) is an opener, not a closer.
 
-    The second run's opening marker has text on its left, so a rule that only looked leftwards
-    would read it as a closer and drop the run. A marker closes only when nothing attaches on
-    its right, which keeps both runs readable.
+    The captured CAUTION shape with the blockquote's space dropped. A rule that only asked
+    "does text attach on the left" would spend this opening marker as a closer, leave no opener
+    for the real one and lose the heading — fewer findings than the body declares. Markdown
+    flanking reads it as an opener because punctuation sits on its left.
+    """
+    body = '>**⚠️ Outside diff range comments (1)** <details><summary>Major · a.py</summary> fix </details>'
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['review_body_findings_total'] == 1, verdict
+    assert [(row['section'], row['id']) for row in verdict['undisposed']] == [('outside-diff', 'outside-diff-1')]
+
+
+def test_two_bold_runs_glued_together_are_both_read() -> None:
+    """⛔ D3: `**A****B**` is two bold runs, not one lost span.
+
+    The second run's opening marker has a marker to its left, so it is never read as a closer;
+    the first run's closer can be, because a non-word character follows it. Both runs stay
+    readable, and the second one heads a section here.
     """
     body = '**Major****⚠️ Outside diff range comments (1)** <details><summary>Major · a.py</summary> fix </details>'
 
@@ -2399,6 +2415,31 @@ def test_two_bold_runs_glued_together_are_both_read() -> None:
 
     assert verdict['review_body_findings_total'] == 1, verdict
     assert [(row['section'], row['id']) for row in verdict['undisposed']] == [('outside-diff', 'outside-diff-1')]
+
+
+def test_an_inline_section_does_not_suppress_a_larger_status_line() -> None:
+    """⛔ D1/D3: two inline statements are read at the LARGER count, never the smaller.
+
+    A blockless `**Inline comments (2)**` heading and an `**Actionable comments posted: 4**`
+    status line both speak about the body's inline findings. Reading only the block would drop
+    two findings the body declares; the shortfall is minted, so the four stand and the nitpick
+    section is added beside them.
+    """
+    body = (
+        '**Actionable comments posted: 4** **Inline comments (2)** '
+        '<details><summary>🧹 Nitpick comments (1)</summary> a </details>'
+    )
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['review_body_findings_total'] == 5, verdict
+    assert [row['id'] for row in verdict['undisposed']] == [
+        'inline-1',
+        'inline-2',
+        'nitpick-1',
+        'inline-3',
+        'inline-4',
+    ]
 
 
 def test_a_counted_wrapper_enclosing_a_blockless_summary_stops_the_gate() -> None:
