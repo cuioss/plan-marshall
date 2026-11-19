@@ -573,15 +573,28 @@ class TestStaleAnalysisLicence:
         assert result['head_revision'] == self._HEAD
 
     def test_a_non_pull_request_read_keeps_its_ce_state_contract(self):
-        """A licence names a pull-request analysis; a branch read has none to name."""
+        """A branch read has no pull-request analysis to compare, so it keeps the CE contract."""
         with (
             patch.object(sonar_mod, '_verify_analysis_revision', _REAL_VERIFY_ANALYSIS_REVISION),
             self._settled(),
             patch.object(sonar_mod, '_fetch_issues', return_value={'status': 'success', 'issues': [], 'total': 0}),
         ):
-            result = cmd_read_open_issues(_args('--analysed-revision', self._STALE))
+            result = cmd_read_open_issues(_args())
 
         assert result['count_status'] == 'confirmed'
         assert result['analysis_revision'] == ''
         assert result['head_revision'] == ''
         assert 'carried_forward' not in result
+
+    def test_a_licence_without_a_pull_request_is_refused(self):
+        """A licence names a PR analysis; honouring it on a branch read would invent one."""
+        with (
+            self._settled(),
+            patch.object(sonar_mod, '_fetch_issues') as fetch,
+        ):
+            result = cmd_read_open_issues(_args('--analysed-revision', self._STALE))
+
+        assert result['count_status'] == 'undecidable'
+        assert result['open_issue_count'] is None
+        assert result['count_status_reason'] == 'analysed_revision_requires_a_pull_request'
+        fetch.assert_not_called()

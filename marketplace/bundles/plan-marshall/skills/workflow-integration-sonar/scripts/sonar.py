@@ -1045,17 +1045,24 @@ def cmd_read_open_issues(args):
 
     Fail-loud: a typed ``unconfigured`` status when no Sonar credential is
     configured (distinct from a read that failed). A CE timeout, a poll failure, a
-    stale or unreported analysis revision (PR-scoped reads), a REST/auth failure,
-    or a page truncated below the server's reported total returns
+    stale analysis revision that no licence covers (PR-scoped reads), a REST/auth
+    failure, or a page truncated below the server's reported total returns
     ``open_issue_count: None`` with ``count_status: undecidable`` and a
     ``count_status_reason`` — NEVER a false ``0`` and never a short count.
     """
     project: str = args.project
     pr: str | None = getattr(args, 'pr', None)
+    licensed_revision = (getattr(args, 'analysed_revision', None) or '').strip()
 
     missing = _sonar_credential_missing()
     if missing:
         return _sonar_unconfigured('read_open_issues', missing)
+
+    if licensed_revision and not pr:
+        # A licence names a pull-request analysis. A branch read has none to name,
+        # so honouring the flag would answer a count the caller believes covers a
+        # revision that was never compared: refuse it by name instead.
+        return _undecidable_read(project, pr, 'analysed_revision_requires_a_pull_request')
 
     # 1. Gate the count on a settled analysis. No manifest exists on this path,
     #    so the budget is the explicit flag or the conservative default.
@@ -1073,7 +1080,6 @@ def cmd_read_open_issues(args):
     revision_result = _verify_analysis_revision(project, pr)
     carried_forward = False
     if revision_result['count_status'] != 'confirmed':
-        licensed_revision = (getattr(args, 'analysed_revision', None) or '').strip()
         if not _licenses_stale_analysis(revision_result, licensed_revision):
             return _undecidable_read(
                 project,

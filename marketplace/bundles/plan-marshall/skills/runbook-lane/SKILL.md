@@ -1112,7 +1112,8 @@ step.sonar-roundtrip.open_issue_rules={rules left open|none|unknown|n/a}
   one of the four keys at which `n/a` is a legal answer). A confirmed count writes the measured
   figure, with the rules it left open on the optional `step.sonar-roundtrip.open_issue_rules` line
   (`none` when that count is `0`). **A carried-forward figure names the head it was measured at:**
-  pass `--analysed-revision {analysis_revision}` and the optional
+  pass `--analysed-revision {analysis_revision}` (a `confirmed` count only — the verb refuses it
+  beside any other status) and the optional
   `step.sonar-roundtrip.analysed_revision` line rides beside the count, so the figure never reads like
   a measurement of the head the pull request points at. Where the only open findings are security
   hotspots — which carry no

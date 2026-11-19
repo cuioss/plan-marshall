@@ -751,10 +751,33 @@ def test_a_missing_worktree_stays_undecidable(tmp_path: Path, monkeypatch) -> No
 def test_a_project_without_sonar_has_nothing_to_carry(monkeypatch) -> None:
     _patch_delta(monkeypatch)
 
-    verdict = lane.cmd_sonar_stale_delta(_stale_args(state='not_configured', count_status=None))
+    verdict = lane.cmd_sonar_stale_delta(
+        _stale_args(state='not_configured', count_status=None, analysis_revision=None, head_revision=None)
+    )
 
     assert verdict['carry_forward'] is False
     assert verdict['reason'] == 'not_configured'
+
+
+def test_a_not_configured_state_refuses_the_revision_pair(monkeypatch) -> None:
+    """A project with no Sonar has no read, so revisions beside it are a contradiction."""
+    _patch_delta(monkeypatch)
+
+    verdict = lane.cmd_sonar_stale_delta(_stale_args(state='not_configured', count_status=None))
+
+    assert verdict['status'] == 'error'
+    assert verdict['error'] == 'state_contradicts_read'
+
+
+def test_an_equal_revision_pair_stays_undecidable(tmp_path: Path, monkeypatch) -> None:
+    """Two equal revisions describe a settled read, so the sentence would be false."""
+    monkeypatch.setattr(lane, '_resolve_commit', lambda worktree, revision: _ANALYSED)
+    monkeypatch.setattr(lane, '_delta_paths', lambda *a: pytest.fail('an equal pair is not a delta'))
+
+    verdict = lane.cmd_sonar_stale_delta(_stale_args(head_revision=_ANALYSED))
+
+    assert verdict['carry_forward'] is False
+    assert verdict['detail'].startswith('revisions_equal')
 
 
 def test_a_settled_read_is_not_the_case_this_decides(monkeypatch) -> None:
@@ -794,6 +817,20 @@ def test_a_carried_forward_pair_with_one_revision_is_refused() -> None:
 
     assert verdict['status'] == 'error'
     assert verdict['error'] == 'carried_forward_incomplete'
+
+
+def test_a_carried_forward_pair_with_equal_revisions_is_refused() -> None:
+    """Two equal revisions assert a difference that does not exist."""
+    verdict = cmd_sonar_gate(
+        _gate_args(
+            open_count='0',
+            carried_forward_analysis_revision=_ANALYSED,
+            carried_forward_head_revision=_ANALYSED,
+        )
+    )
+
+    assert verdict['status'] == 'error'
+    assert verdict['error'] == 'carried_forward_revisions_equal'
 
 
 def test_a_carried_forward_pair_on_a_failed_read_is_refused() -> None:

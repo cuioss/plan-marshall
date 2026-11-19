@@ -1845,6 +1845,13 @@ def _sonar_stale_delta_verdict(
             f'revision_unresolvable: the head revision {head_revision} is not present in the routed checkout'
         )
         return verdict
+    if analysed == head:
+        # The same commit on both sides is not a stale analysis at all, so the
+        # carried-forward sentence would assert a difference that does not exist.
+        verdict['detail'] = (
+            f'revisions_equal: analysed {analysis_revision} and head {head_revision} are the same commit'
+        )
+        return verdict
 
     paths = _delta_paths(worktree, analysed, head)
     if paths is None:
@@ -1909,6 +1916,17 @@ def cmd_sonar_stale_delta(args: argparse.Namespace) -> dict[str, Any]:
             'error': 'state_contradicts_read',
             'message': 'a not_configured state carries no read; drop --count-status',
         }
+    elif getattr(args, 'analysis_revision', None) or getattr(args, 'head_revision', None):
+        # Symmetric with the other two Sonar verbs: a project with no Sonar has no
+        # read, so revisions beside `not_configured` are a contradiction rather
+        # than an input the verb silently ignores.
+        return {
+            'status': 'error',
+            'error': 'state_contradicts_read',
+            'message': (
+                'a not_configured state carries no read; drop --count-status, --analysis-revision and --head-revision'
+            ),
+        }
     worktree = Path(getattr(args, 'worktree', None) or '.').resolve()
     return _sonar_stale_delta_verdict(
         state,
@@ -1972,6 +1990,17 @@ def _carried_forward_revisions(
             'message': (
                 'a carried-forward read names both revisions: '
                 '--carried-forward-analysis-revision and --carried-forward-head-revision'
+            ),
+        }
+    if analysed == head:
+        # Two equal revisions describe a settled read, not a carried-forward one:
+        # the verdict would assert a difference that does not exist.
+        return None, {
+            'status': 'error',
+            'error': 'carried_forward_revisions_equal',
+            'message': (
+                'the carried-forward analysed revision and head revision are the same commit; '
+                'a carried-forward read names the head an earlier analysis is standing in for'
             ),
         }
     if getattr(args, 'count_status', None) != 'confirmed':
