@@ -206,7 +206,7 @@ def test_a_pre_change_authorization_does_not_close_a_retired_deliverable(plan_co
 def test_the_defect_input_is_refused_and_the_gate_stays_open(plan_context, tmp_path) -> None:
     """The spec's own input: frozen ``[a, b]`` rewritten to ``[a', b']``, both rewrites authorized.
 
-    The rewrite approvals keep their drift meaning (no ``criterion_rewritten`` finding),
+    The rewrite approvals keep their drift meaning — ``criteria_drift`` reports nothing —
     and they close NOTHING of the retirement: the validator refuses it and the completion
     gate, which never runs the validator, reads both frozen criteria as open.
     """
@@ -217,9 +217,10 @@ def test_the_defect_input_is_refused_and_the_gate_stays_open(plan_context, tmp_p
 
     payload = review_support.run_validate(PLAN_ID, 'functional', path, None)
     criteria = _snap.open_criteria(PLAN_ID)
+    drift = _snap.criteria_drift(PLAN_ID)
 
     assert payload['valid'] is False, payload
-    assert not any('criterion' in error and 'rewritten' in error for error in payload['errors']), payload
+    assert drift == [], drift
     assert any('retirement decision' in error for error in payload['errors']), payload
     assert criteria['open_count'] == 2, criteria
     assert {row['criterion'] for row in criteria['open']} == set(FROZEN), criteria
