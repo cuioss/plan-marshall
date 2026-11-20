@@ -4,6 +4,7 @@ from _manage_execution_manifest_reconcile_fixtures import (
     GHOST,
     REAL_A,
     REAL_B,
+    _emitted_for,
     _reconcile_ns,
     _seed_manifest,
     _write_marshal,
@@ -102,3 +103,24 @@ class TestBackfillHonoursCommitPushDisabled:
         assert result['backfill'] == ['push', 'pre-push-quality-gate'], result
         assert result['backfill_refused'] == []
         assert 'push' in read_manifest('rec-with-push')['phase_6']['steps']
+
+    def test_a_push_only_step_already_composed_is_not_reported_as_refused(self, plan_context):
+        """The refusal names candidates this run WOULD have backfilled, and no others."""
+        _write_marshal(plan_context.fixture_dir, [REAL_B, 'push'], commit_and_push=False)
+        _seed_manifest('rec-local-composed', [REAL_B], candidate_steps=[REAL_B, 'push'])
+
+        result = cmd_reconcile(_reconcile_ns('rec-local-composed', apply=True))
+
+        assert result['backfill'] == []
+        assert result['backfill_refused'] == [], result
+
+    def test_a_refused_backfill_is_logged_even_when_nothing_changes(self, plan_context):
+        """The refusal audit line does not depend on another change being applied."""
+        _write_marshal(plan_context.fixture_dir, [REAL_B, 'push'], commit_and_push=False)
+        _seed_manifest('rec-local-logged', [REAL_B], candidate_steps=[REAL_B])
+
+        result = cmd_reconcile(_reconcile_ns('rec-local-logged', apply=True))
+
+        assert result['reconciled'] is False, result
+        messages = _emitted_for('rec-local-logged')
+        assert any('refused to backfill push' in message for message in messages), messages

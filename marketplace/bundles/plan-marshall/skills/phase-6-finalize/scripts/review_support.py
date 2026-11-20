@@ -38,8 +38,9 @@ schema is ``status: success`` with ``valid: false``, because that is an answer
 about the verdict, not a failure to look at it. A value that could not be
 computed is OMITTED, never reported as an empty list or a zero:
 ``unrequested_candidates`` is absent when the realized footprint could not be
-derived, and ``facts``, ``findings`` and ``loop_back_target`` are absent when
-the verdict is invalid.
+derived, and ``facts`` and ``loop_back_target`` are absent when the verdict is
+invalid. ``findings`` is PUBLISHED even then: an invalid verdict still graded
+whatever rows it carried, and those findings are what tells the author what to fix.
 
 Verdict file schemas (JSON — the rows nest criteria and evidence lists)::
 

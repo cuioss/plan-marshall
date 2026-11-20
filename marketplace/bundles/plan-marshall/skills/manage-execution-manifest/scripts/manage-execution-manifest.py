@@ -3825,17 +3825,13 @@ def cmd_reconcile(args: argparse.Namespace) -> dict[str, Any] | None:
         }
 
     backfill: list[str] = []
+    backfill_refused: list[str] = []
     # The local-only floor applies here exactly as it does at compose time: a
     # push-only step that entered live config AFTER this manifest was composed is
     # still a push-only step, and ``commit_push_disabled`` says its drop is final.
     # Reading the value from live config is what closes the gap — compose receives
     # it as a parameter, and reconcile had no equivalent read.
-    backfill_pool = list(live_candidates or ())
-    backfill_refused: list[str] = []
     live_commit_and_push = _read_live_commit_and_push()
-    if live_commit_and_push is False:
-        backfill_pool, commit_push_dropped = _apply_commit_push_disabled(backfill_pool, False)
-        backfill_refused = [record['step'] for record in commit_push_dropped]
     # Branch on the narrowing predicate itself rather than on the boolean above:
     # both inputs must be present for the diff to mean anything, and expressing
     # that directly is what makes the two reads below type-safe.
@@ -3848,13 +3844,21 @@ def cmd_reconcile(args: argparse.Namespace) -> dict[str, Any] | None:
         # Resolvability again, for the same reason the partition above uses it: a
         # loadability test would backfill an external candidate that resolves to
         # nothing, ADDING a step finalize is guaranteed to fail on.
-        backfill = [
+        eligible = [
             step
-            for step in backfill_pool
+            for step in live_candidates
             if step not in composed_set
             and step not in frozen_set
             and _check_step_resolvable(step, 'phase_6')['resolvable']
         ]
+        # The refusal list names candidates this run WOULD have backfilled: a
+        # push-only step the matrix already considered, or one the frozen manifest
+        # already carries, is not a refused backfill and must not be reported as one.
+        if live_commit_and_push is False:
+            backfill, commit_push_dropped = _apply_commit_push_disabled(eligible, False)
+            backfill_refused = [record['step'] for record in commit_push_dropped]
+        else:
+            backfill = eligible
 
     reconciled = bool(stale or backfill)
 
@@ -3918,6 +3922,11 @@ def cmd_reconcile(args: argparse.Namespace) -> dict[str, Any] | None:
                 f'added {step} to phase_6.steps: it entered live marshal.json after this '
                 'manifest was composed, so the decision matrix never considered it',
             )
+
+    # A refusal is audit-worthy on its OWN: the run can refuse every candidate and
+    # change nothing, so this loop cannot sit behind `reconciled` — but it stays
+    # under `args.apply`, because a dry run writes no audit record.
+    if args.apply:
         for step in backfill_refused:
             _emit_decision_log(
                 plan_id,

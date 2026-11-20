@@ -169,11 +169,19 @@ def _use_worktree_config_answer(knob_path: Path | None) -> dict:
     """
     field = 'use_worktree'
     anchor = str(knob_path) if knob_path is not None else None
-    if knob_path is None or not knob_path.exists():
+    if knob_path is None:
         return success_exit({'field': field, 'value': False, 'set': False, 'knob_path': anchor})
     display = knob_path.resolve()
+    # The read itself is the failure boundary: `exists()` raises on an inaccessible
+    # parent, and `read_text` raises UnicodeDecodeError (a ValueError, not an OSError)
+    # on invalid UTF-8. An ABSENT file is the only unset answer; every other failure
+    # is refused with its own reason.
     try:
         raw = knob_path.read_text(encoding='utf-8')
+    except FileNotFoundError:
+        return success_exit({'field': field, 'value': False, 'set': False, 'knob_path': anchor})
+    except UnicodeDecodeError as exc:
+        return error_exit(f'{display} is not valid UTF-8: {exc}', reason='unreadable', knob_path=anchor)
     except OSError as exc:
         return error_exit(f'cannot read {display}: {exc}', reason='unreadable', knob_path=anchor)
     try:
@@ -323,6 +331,13 @@ def cmd_orchestrator_get(args) -> dict:
         config = load_config()
     except (OSError, ValueError) as exc:
         caller_file = Path(_config_core.MARSHAL_PATH).resolve()
+        knob_path = orchestrator_knob_config_path()
+        # When the caller's file IS the knob file, the knob helper's classification is
+        # the one the documentation promises (`invalid_json`, `not_object`) — running
+        # it here keeps the reason identical whether the caller stands in main or in a
+        # linked worktree, instead of collapsing both into `unreadable`.
+        if field == 'use_worktree' and knob_path is not None and knob_path.resolve() == caller_file:
+            return _use_worktree_config_answer(knob_path)
         return error_exit(f'cannot read {caller_file}: {exc}', reason='unreadable')
 
     orch_present = 'orchestrator' in config

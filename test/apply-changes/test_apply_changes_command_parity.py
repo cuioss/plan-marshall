@@ -630,36 +630,41 @@ def test_a_harness_that_gains_the_withholding_key_is_detected(tmp_path: Path):
 
 
 def test_a_withholding_field_in_either_gap_config_is_detected(tmp_path: Path):
-    """Either gap-claiming harness's config is checked, whichever key name it uses."""
-    _plant(tmp_path, {})
+    """Either gap-claiming harness's config is checked, and the diagnostic names it."""
     for harness in _HARNESS_RULES_FILES:
-        rules_path = tmp_path / _HARNESS_RULES_FILES[harness]
+        root = tmp_path / harness
+        _plant(root, {})
+        rules_path = root / _HARNESS_RULES_FILES[harness]
         rules_path.parent.mkdir(parents=True, exist_ok=True)
         rules_path.write_text(
             json.dumps({'required_fields': ['description'], 'optional_fields': [_OPERATOR_ONLY_KEY]}),
             encoding='utf-8',
         )
-        assert _gap_claim_contradicted(tmp_path, harness), (
-            f'a {harness} config carrying {_OPERATOR_ONLY_KEY} must be detected'
-        )
-        reported = _operator_only_violations(_entry_texts(tmp_path), tmp_path)
-        assert any('gap statement is now false' in problem for problem in reported), (
-            f'the {harness} gap statement must be reported against its own config, got {reported}'
+
+        contradicted = _gap_claim_contradicted(root, harness)
+        reported = _operator_only_violations(_entry_texts(root), root)
+
+        assert contradicted, f'a {harness} config carrying {_OPERATOR_ONLY_KEY} must be detected'
+        assert any(harness in problem and 'gap statement is now false' in problem for problem in reported), (
+            f'the {harness} diagnostic must name its own harness, got {reported}'
         )
 
     # A field whose name declares withholding under a spelling no other harness uses is
     # still a withholding key: the check reads the name, not one fixed spelling.
-    _plant(tmp_path, {})
-    (tmp_path / _HARNESS_RULES_FILES['antigravity']).write_text(
-        json.dumps({'required_fields': ['description'], 'optional_fields': ['withhold_model_invocation']}),
-        encoding='utf-8',
-    )
-    (tmp_path / _HARNESS_RULES_FILES['opencode']).write_text(
-        json.dumps({'required_fields': ['description'], 'optional_fields': ['model', 'mode']}),
-        encoding='utf-8',
-    )
-    assert _gap_claim_contradicted(tmp_path, 'antigravity'), 'a differently spelled withholding field must be detected'
-    assert not _gap_claim_contradicted(tmp_path, 'opencode'), (
+    spelled = tmp_path / 'spelled'
+    _plant(spelled, {})
+    for harness, fields in (
+        ('antigravity', ['withhold_model_invocation']),
+        ('opencode', ['model', 'mode']),
+    ):
+        target = spelled / _HARNESS_RULES_FILES[harness]
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(
+            json.dumps({'required_fields': ['description'], 'optional_fields': fields}),
+            encoding='utf-8',
+        )
+    assert _gap_claim_contradicted(spelled, 'antigravity'), 'a differently spelled withholding field must be detected'
+    assert not _gap_claim_contradicted(spelled, 'opencode'), (
         'a harness whose config carries no withholding field must stay clean'
     )
 

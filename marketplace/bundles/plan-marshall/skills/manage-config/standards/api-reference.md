@@ -207,7 +207,7 @@ This noun (`orchestrator get`/`set --field`) owns the block's **scalar** knobs (
 | `not_object` | the file's top-level JSON value is not an object |
 | `block_not_object` | its `orchestrator` value is not an object, an explicit `null` included |
 
-The same four refusals apply to the caller's own `marshal.json`, because a malformed file is malformed whichever field is read. An absent file, absent block or absent key is the unset answer (`value: false`, `set: false`). The store seam's own read keeps its fail-soft `false` for the failed cases; `get` refuses them instead, so a failed read is never reported as a configured `false`.
+The same four refusals apply to the caller's own `marshal.json`, because a malformed file is malformed whichever field is read. An absent file, absent block or absent key is the unset answer (`value: false`, `set: false`) — for the CALLER's file that absence is reported as `marshal.json not initialized` rather than as an unset knob, so the unset answer applies to the main-anchored file, read from a caller whose own file exists. The store seam's own read keeps its fail-soft `false` for the failed cases; `get` refuses them instead, so a failed read is never reported as a configured `false`.
 
 ### `use_worktree` refusals
 

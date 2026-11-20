@@ -433,5 +433,16 @@ class TestBlockStates:
 
         read = cmd_orchestrator_get(Namespace(field='use_worktree'))
 
-        assert (read['status'], read.get('reason')) == ('error', 'unreadable'), read
+        assert (read['status'], read.get('reason')) == ('error', 'invalid_json'), read
         assert str(path.resolve()) in read['error'], f'the refusal does not name the file: {read["error"]!r}'
+
+    def test_a_non_utf8_main_file_is_refused_naming_it(self, sandbox, monkeypatch):
+        """Invalid UTF-8 is a failed read, not an exception escaping the helper."""
+        _stand_in(monkeypatch, sandbox.plan_worktree, {'orchestrator': {'use_worktree': True}})
+        main_path = _write_marshal(sandbox.main, {})
+        main_path.write_bytes(b'\xff\xfe not utf-8')
+
+        read = cmd_orchestrator_get(Namespace(field='use_worktree'))
+
+        assert (read['status'], read.get('reason')) == ('error', 'unreadable'), read
+        assert str(main_path.resolve()) in read['error'], f'the refusal does not name the file: {read["error"]!r}'
