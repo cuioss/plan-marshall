@@ -2,10 +2,10 @@
   "id": "PLAN-LB-171",
   "slug": "lb-167-completion-delegating-checkout-gate-binding-body-slot",
   "workstream": "WS-04",
-  "status": "running",
+  "status": "shipped",
   "lane": "runbook",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "plan_marshall_plan_id": "lb-171-lb-167-completion-delegating-checkout-gate-binding-body-slot",
+  "pr": "2033",
+  "landing": "landings/PLAN-LB-171.md",
   "seq": 171
 }
