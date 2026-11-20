@@ -3205,6 +3205,7 @@ _RETRY_CLASS_REFUSALS = (
     'revision_missing',
     'revisions_equal',
     'rule_unreadable',
+    'rule_changed',
     'delta_buildable',
 )
 
@@ -3224,22 +3225,35 @@ def test_section_seven_cites_section_six_retry_classes() -> None:
     assert 'retrying it cannot succeed' not in section
 
 
-def test_the_derived_plan_id_is_a_valid_body_slot() -> None:
-    """The plan id IS the body slot, so a punctuated or over-long name must fold to one."""
+def test_the_derived_plan_id_stays_distinct_and_its_body_slot_is_valid() -> None:
+    """The plan id is NOT folded; the body slot is, and folding never collapses two ids."""
     module = load_script_module('plan-marshall', _SKILL_NAME, 'runbook_lane.py', register=False)
+
+    punctuated = module._plan_id_from_spec(Path('PLAN-42-a_b.c.md'))
+    hyphenated = module._plan_id_from_spec(Path('PLAN-42-a-b-c.md'))
+    assert punctuated != hyphenated, (punctuated, hyphenated)
 
     for name in ('PLAN-42-a_b.c.md', 'PLAN-' + 'x' * 200 + '.md', 'PLAN-42-Ünicode Slug.md', 'PLAN-___.md'):
         plan = module._plan_id_from_spec(Path(name))
-        assert re.fullmatch(r'[a-z0-9][a-z0-9-]{0,63}', plan), (name, plan)
+        slot = module._body_slot_from_plan_id(plan)
+        assert re.fullmatch(r'[a-z0-9][a-z0-9-]{0,63}', slot), (name, plan, slot)
+
+    assert module._body_slot_from_plan_id('42-a_b.c') != module._body_slot_from_plan_id('42-a-b-c'), (
+        'two plan ids that differ only in separators must not share one body slot'
+    )
 
 
 def test_the_lane_text_passes_the_carried_forward_marking_to_the_gate_and_the_facts() -> None:
-    section = _section('## 6. Pull request and reviews')
-    gate_line = next(line for line in section.splitlines() if 'sonar-gate --state configured' in line)
-    facts_line = next(line for line in section.splitlines() if 'sonar-facts' in line)
+    spans = [part for index, part in enumerate(_skill_text().split('`')) if index % 2 == 1]
+    gate_line = next(span for span in spans if span.startswith('sonar-gate --state configured'))
+    facts_line = next(span for span in spans if span.startswith('sonar-facts ') and '--analysed-revision' in span)
 
-    # The marker is a STANDALONE token: `--carried-forward` is a substring of
-    # `--carried-forward-analysis-revision`, so a substring test would pass with the
-    # marker dropped from the command.
+    # Each assertion names ONE command span, not the collapsed section: `_section`
+    # joins every line, so a section-level search would pass while the marker was
+    # dropped from either invocation as long as the other kept it.
     assert '--carried-forward ' in gate_line, gate_line
     assert '--carried-forward ' in facts_line, facts_line
+    # The read's own reason travels beside the marker on both handoffs: the gate's
+    # `carried_forward_unmarked` guard reads it.
+    assert '--count-status-reason' in gate_line, gate_line
+    assert '--count-status-reason' in facts_line, facts_line

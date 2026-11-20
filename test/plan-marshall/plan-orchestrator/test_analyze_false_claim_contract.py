@@ -34,6 +34,7 @@ import importlib.util
 import re
 from pathlib import Path
 
+import ci_base
 import github_re_review
 
 from conftest import MARKETPLACE_ROOT, load_script_module, parse_ns
@@ -182,7 +183,13 @@ def _scratch_module(source_path: Path, tmp_path: Path, replacements: list[tuple[
 
 
 def _provider_fetches(module) -> int:
-    """Run the review gate with the provider read counted, and return the count."""
+    """Run the review gate with the provider read counted, and return the count.
+
+    The gate resolves the CI provider from the process cwd before it fetches anything,
+    so the route is pinned here: a checkout without a readable `.plan/marshal.json`
+    (or a cwd outside the repository) otherwise returns `status: error` before the
+    counted fetch and the count is a vacuous 0.
+    """
     calls: list[int] = []
 
     def _fetch(*args, **kwargs):
@@ -200,7 +207,9 @@ def _provider_fetches(module) -> int:
         }
 
     original = github_re_review.fetch_pr_comments_data
+    original_provider = ci_base.resolve_ci_provider
     github_re_review.fetch_pr_comments_data = _fetch
+    ci_base.resolve_ci_provider = lambda _project_dir='.': 'github'
     try:
         module.cmd_review_gate(
             parse_ns('plan-marshall', 'runbook-lane', 'runbook_lane.py', 'review-gate', '--pr-number', '7')
@@ -209,6 +218,7 @@ def _provider_fetches(module) -> int:
         pass
     finally:
         github_re_review.fetch_pr_comments_data = original
+        ci_base.resolve_ci_provider = original_provider
     return len(calls)
 
 

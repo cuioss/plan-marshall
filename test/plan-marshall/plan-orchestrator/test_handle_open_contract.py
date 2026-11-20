@@ -746,15 +746,22 @@ _NEGATION_RE = re.compile(
 
 
 def _reopen_acts(text: str) -> list[str]:
-    """Every POSITIVE reopen act the text states; a negated mention is a prohibition."""
+    """Every POSITIVE reopen act the text states; a negated mention is a prohibition.
+
+    The negation is scoped to the CLAUSE that holds the act, not to the sentence: a
+    sentence may carry an unrelated prohibition and a real act beside it — "Do not
+    change the item number; reopen the earlier decision." — and reading the sentence's
+    `not` as covering the act would accept exactly that instruction.
+    """
     acts: list[str] = []
     for sentence in re.split(r'(?<=[.!?:])\s+', text):
-        if _NEGATION_RE.search(sentence):
-            continue
-        for pattern in _REOPEN_ACT_PATTERNS:
-            match = pattern.search(sentence)
-            if match is not None:
-                acts.append(match.group(0).casefold())
+        for clause in re.split(r'[;,]', sentence):
+            if _NEGATION_RE.search(clause):
+                continue
+            for pattern in _REOPEN_ACT_PATTERNS:
+                match = pattern.search(clause)
+                if match is not None:
+                    acts.append(match.group(0).casefold())
     return acts
 
 
@@ -794,6 +801,20 @@ class TestNoReopenActAnywhereInTheDocument:
         )
 
         assert _reopen_acts(_read(fixture)), 'an act worded around the stems must be detected'
+
+    def test_a_reopen_act_in_a_mixed_clause_sentence_is_detected(self, tmp_path):
+        """A prohibition in one clause does not licence an act in the next."""
+        text = _read(WORKFLOW_DOC)
+        fixture = tmp_path / 'planted-mixed-clause.md'
+        fixture.write_text(
+            text + '\n- Do not change the item number; reopen the earlier decision.\n',
+            encoding='utf-8',
+        )
+
+        assert _reopen_acts(_read(fixture)), 'an act beside an unrelated prohibition must be detected'
+        assert _reopen_acts('The rule does not reopen a decided item.') == [], (
+            'a negated mention is a prohibition, not an act'
+        )
 
     def test_the_idempotence_rule_carries_no_carve_out(self):
         block = _normalized(_idempotence_block(_read(WORKFLOW_DOC)))

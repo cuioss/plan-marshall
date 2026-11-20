@@ -181,33 +181,44 @@ _DEFAULT_BUILD_TIMEOUT_SECONDS = 1800
 _DEFAULT_BASE_BRANCH = 'main'
 
 #: The longest body slot the CI's own slot pattern accepts on the OLDEST executor this
-#: lane may meet: 64 characters until the executor is regenerated. The plan id doubles as
-#: the slot, so the derivation is bounded by this rather than by the newer 128.
+#: lane may meet: 64 characters until the executor is regenerated.
 _BODY_SLOT_MAX_LENGTH = 64
 
 
 def _plan_id_from_spec(spec: Path) -> str:
-    """Derive the lane plan id — and therefore the body slot — from a spec's basename.
+    """Derive the lane plan id from a spec's basename, unfolded.
 
     ``PLAN-42-example-slug.md`` becomes ``42-example-slug``: the ``PLAN-`` marker is
-    dropped and the rest is lower-cased, which is the same id the orchestrator's row and
-    the inbox sender share. The result is ALSO the body slot the lane passes to every
-    ``ci`` body verb, so it is folded to the slot vocabulary the CI accepts — lowercase
-    letters, digits and hyphens, starting with a letter or digit, at most 64 characters
-    (the live executor's accepted bound until the executor is regenerated). A spec name
-    with ``_``, ``.`` or a long stem would otherwise derive a slot the CI rejects and
-    stall the lane at PR open. The derivation is deterministic: a truncated id carries a
-    digest of the untruncated one, so two long names cannot collide into one slot.
+    dropped and the rest is lower-cased, which is the same id the orchestrator's row
+    and the inbox sender share. It is deliberately NOT folded further: the id names
+    the worktree, the progress file, the sender and the inbox, so two staged plans
+    whose names differ only in separators must keep distinct ids. The body slot is a
+    different value with a different vocabulary — see :func:`_body_slot_from_plan_id`.
     """
     stem = spec.name
     if stem.endswith('.md'):
         stem = stem[:-3]
     if stem.startswith('PLAN-'):
         stem = stem[len('PLAN-') :]
-    folded = re.sub(r'[^a-z0-9]+', '-', stem.lower()).strip('-') or 'plan'
-    if len(folded) <= _BODY_SLOT_MAX_LENGTH:
+    return stem.lower()
+
+
+def _body_slot_from_plan_id(plan_id: str) -> str:
+    """Derive the CI body slot from a plan id.
+
+    The slot vocabulary is lowercase letters, digits and hyphens, starting with a
+    letter or digit, at most 64 characters (the live executor's accepted bound until
+    the executor is regenerated). A spec name with ``_``, ``.`` or a long stem would
+    otherwise derive a slot the CI rejects and stall the lane at PR open.
+
+    Folding is LOSSY, so any id the fold changes — separators, case, punctuation or
+    truncation — carries a digest of the ORIGINAL id. Two plans whose ids differ only
+    in separators therefore keep distinct slots instead of silently sharing one.
+    """
+    folded = re.sub(r'[^a-z0-9]+', '-', plan_id.lower()).strip('-') or 'plan'
+    if folded == plan_id and len(folded) <= _BODY_SLOT_MAX_LENGTH:
         return folded
-    digest = hashlib.sha1(stem.encode('utf-8')).hexdigest()[:8]
+    digest = hashlib.sha1(plan_id.encode('utf-8')).hexdigest()[:8]
     return f'{folded[: _BODY_SLOT_MAX_LENGTH - len(digest) - 1]}-{digest}'
 
 
@@ -1300,26 +1311,45 @@ def _iter_workflow_files(project_dir: Path) -> list[Path]:
     Discovery, not a fixed name: a project's opt-in lives in whichever workflow
     carries it, so the lane never names one.
 
-    A symlink whose target resolves OUTSIDE the checkout is not the checkout's
-    rule: following it would read another tree's workflow and decide this delta by
-    a rule nothing here carries.
+    A SYMLINK is never this checkout's rule. Containment in the checkout proves
+    nothing about the verified commit — a tracked link can point at a file the head
+    does not carry, or at an ignored path — so following it would decide the delta by
+    bytes the graded tree never contained. Every link is skipped; the caller reports
+    a discovery that found only links as an unreadable rule rather than as "no rule".
     """
     directory = project_dir.joinpath(*_CI_WORKFLOW_DIR)
     try:
         entries = sorted(directory.iterdir())
     except OSError:
         return []
-    outside_ok = project_dir.resolve()
     discovered: list[Path] = []
     for entry in entries:
-        if not entry.is_file() or entry.suffix.lower() not in _WORKFLOW_SUFFIXES:
+        if entry.is_symlink():
             continue
-        try:
-            entry.resolve().relative_to(outside_ok)
-        except (OSError, ValueError):
+        if not entry.is_file() or entry.suffix.lower() not in _WORKFLOW_SUFFIXES:
             continue
         discovered.append(entry)
     return discovered
+
+
+def _workflow_discovery_problem(project_dir: Path, discovered: list[Path]) -> str | None:
+    """Why workflow discovery could not read the project's rule, or ``None``.
+
+    A directory that holds workflow-named entries while discovery returned none is a
+    rule the lane could not read — every candidate was a symlink. Reporting it as
+    "no CI rule" would hand the decision to the architecture fallback, which is a
+    different rule from the one the project's CI applies. A project with no workflow
+    at all is ``None``: that genuinely has no CI footprint rule.
+    """
+    directory = project_dir.joinpath(*_CI_WORKFLOW_DIR)
+    try:
+        entries = sorted(entry for entry in directory.iterdir() if entry.suffix.lower() in _WORKFLOW_SUFFIXES)
+    except OSError:
+        return None
+    if discovered or not entries:
+        return None
+    names = ', '.join(entry.name for entry in entries)
+    return f'every workflow in this checkout is a symlink, so its rule cannot be read: {names}'
 
 
 def _footprint_opt_in(lines: list[str]) -> bool:
@@ -1394,7 +1424,11 @@ def _read_footprint_rule(project_dir: Path) -> tuple[list[str] | None, list[str]
     repository does not hold, and the caller falls back to the architecture's
     narrowly-scoped prose class instead of guessing a skip set.
     """
-    for workflow in _iter_workflow_files(project_dir):
+    workflows = _iter_workflow_files(project_dir)
+    problem = _workflow_discovery_problem(project_dir, workflows)
+    if problem is not None:
+        return [], None, problem
+    for workflow in workflows:
         try:
             text = workflow.read_text(encoding='utf-8')
         except (OSError, UnicodeDecodeError) as exc:
@@ -2758,10 +2792,11 @@ def cmd_sonar_facts(args: argparse.Namespace) -> dict[str, Any]:
                 '--carried-forward-head-revision (standing in for)'
             ),
         }
-    if analysed_revision and analysed_revision == carried_forward_head:
+    if analysed_revision and _same_revision(analysed_revision, carried_forward_head):
         # Two equal revisions describe a settled read, not a carried-forward one;
-        # the fact would assert a difference that does not exist. The gate refuses
-        # the same input, so the two verbs cannot disagree about it.
+        # the fact would assert a difference that does not exist. The gate compares the
+        # same way, so a short and a full SHA of one commit cannot pass here and be
+        # refused there.
         return {
             'status': 'error',
             'error': 'carried_forward_revisions_equal',
@@ -3247,18 +3282,23 @@ def _code_span_contents(body: str) -> list[tuple[int, int]]:
     stray single run close on the first character of a doubled fence, after which the
     doubled fence's other character pairs with the heading's own backticks and the heading
     reads as a quotation.
+
+    A run with NO later equal-length partner is literal text and is SKIPPED, never left
+    pending: a pending unmatched run used to suppress every later span, so one stray
+    double-backtick run hid the single-backtick quotation that followed it and the heading
+    inside it was counted as a finding.
     """
+    runs = [(run.start(), run.end() - run.start()) for run in _BACKTICK_RUN_RE.finditer(body)]
     contents: list[tuple[int, int]] = []
-    pending: tuple[int, int] | None = None
-    for run in _BACKTICK_RUN_RE.finditer(body):
-        length = run.end() - run.start()
-        if pending is None:
-            pending = (run.end(), length)
+    index = 0
+    while index < len(runs):
+        start, length = runs[index]
+        closer = next((later for later in range(index + 1, len(runs)) if runs[later][1] == length), None)
+        if closer is None:
+            index += 1
             continue
-        if pending[1] != length:
-            continue
-        contents.append((pending[0], run.start()))
-        pending = None
+        contents.append((start + length, runs[closer][0]))
+        index = closer + 1
     return contents
 
 
@@ -3468,10 +3508,13 @@ def _parse_declared_count(digits: str) -> int:
     it answers the first count above the cap: the caller then stops with the same named
     reason as any other implausible declaration, instead of ``int()`` raising ``ValueError``
     on CPython's integer-string conversion limit and replacing the verdict with a traceback.
+    Leading zeros are stripped first: ``0000000001`` declares ONE finding, and measuring the
+    padded spelling would refuse it as over the cap.
     """
-    if len(digits) > 9:
+    significant = digits.lstrip('0') or '0'
+    if len(significant) > 9:
         return _MAX_ENUMERATED_FINDINGS + 1
-    return int(digits)
+    return int(significant)
 
 
 def _declared_count(title: str) -> int | None:
@@ -3656,11 +3699,24 @@ def _transparent_wrappers(body: str, sources: dict[str, Any]) -> tuple[dict[int,
                     f'closed block of its own, so its findings cannot be read'
                 )
         gap = body[end_of[index] : wrapper_close]
+        masks: list[tuple[int, int]] = []
         for child_open, child_close in _direct_child_blocks(body, end_of[index], wrapper_close):
             if not any(child_open <= offset_of[child] < child_close for child in children):
                 continue
-            first = child_open - end_of[index]
-            last = min(child_close, wrapper_close) - end_of[index]
+            # Mask only the group's own SUMMARY element — its structural title — and the
+            # recognised section's own block. The rest of the group stays visible, so a
+            # prose row written beside the section is content the wrapper must account
+            # for; masking the whole group hid exactly that row and required a
+            # disposition only for the section.
+            summary_match = _SUMMARY_RE.search(body, child_open, child_close)
+            masks.append((child_open, summary_match.end() if summary_match is not None else child_open))
+            for child in children:
+                if child_open <= offset_of[child] < child_close:
+                    section_open, section_close = _enclosing_block_span(body, offset_of[child])
+                    masks.append((section_open, section_close if section_close is not None else wrapper_close))
+        for start_at, end_at in masks:
+            first = max(start_at, end_of[index]) - end_of[index]
+            last = min(end_at, wrapper_close) - end_of[index]
             if first < last:
                 gap = gap[:first] + ' ' * (last - first) + gap[last:]
         # ANY non-whitespace text is the wrapper's own content: a letter-or-digit test would
@@ -3673,8 +3729,17 @@ def _transparent_wrappers(body: str, sources: dict[str, Any]) -> tuple[dict[int,
         declared = _declared_count(starts_by_index[index]) or 0
         enclosed = 0
         for child in children:
-            child_declared = _declared_count(starts_by_index[child])
-            enclosed += child_declared if child_declared is not None else 1
+            # The SAME count the section enumeration will use: an undeclared child's
+            # rows are its findings, so assuming one per undeclared child rejected a
+            # wrapper that declared the two rows its child actually carries.
+            child_open, child_close = _enclosing_block_span(body, offset_of[child])
+            child_span = body[child_open : child_close if child_close is not None else len(body)]
+            enclosed += _count_section_findings(
+                child_span,
+                _declared_count(starts_by_index[child]),
+                frozenset(),
+                child_open,
+            )
         if declared > enclosed:
             return {}, (
                 f'the counted wrapper {starts_by_index[index]!r} declares {declared} findings and '
@@ -3697,9 +3762,15 @@ def _heading_is_a_mention(body: str, start: int, end: int, raw_body: str | None)
         return True
     title = body[start + len('**') : end - len('**')].strip('*')
     needle = '**' + title + '**'
-    index = raw_body.find(needle)
-    if index < 0:
-        return True
+    # Pair the N-th display occurrence with the N-th raw occurrence. `find()` returned
+    # the FIRST one every time, so a title quoted in an earlier sentence swallowed the
+    # real heading that stood over the rows below it and the finding behind it.
+    occurrence = body[:start].count(needle)
+    index = -1
+    for _ in range(occurrence + 1):
+        index = raw_body.find(needle, index + 1)
+        if index < 0:
+            return True
     tail = raw_body[index + len(needle) :].split('\n', 1)[0]
     remainder = _FLATTENED_BREAK_RE.match(tail)
     tail = tail[remainder.end() :] if remainder is not None else tail
@@ -4562,7 +4633,7 @@ def cmd_resolve(args: argparse.Namespace) -> dict[str, Any]:
         'spec_source': choice.source,
         'slug': slug,
         'plan': plan_id,
-        'body_slot': plan_id,
+        'body_slot': _body_slot_from_plan_id(plan_id),
         'worktree': worktree,
         'progress_file': progress_file,
         'landing_file': landing_file,

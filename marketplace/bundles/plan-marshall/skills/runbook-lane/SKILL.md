@@ -890,15 +890,22 @@ whether to continue at the limit. Record every finding and its disposition.
      is refused (`analysed_revision_requires_verified_head`), and a read whose reported head differs
      from it is refused too (`carried_forward_head_mismatch`) — a push landed between the two calls,
      so re-run the decision for the new head.
-     Then pass the gate the read's own marker and both revisions,
-     `sonar-gate --state configured --count-status confirmed --open-count {n} --open-keys {open_keys} --carried-forward --carried-forward-analysis-revision {analysis_revision} --carried-forward-head-revision {head_revision} …`,
+     Then pass the gate the read's own marker, its reason and both revisions,
+     `sonar-gate --state configured --count-status confirmed --open-count {n} --open-keys {open_keys} --count-status-reason "{read_reason}" --carried-forward --carried-forward-analysis-revision {analysis_revision} --carried-forward-head-revision {head_revision} …`,
      and render the landing's figure the same way,
-     `sonar-facts … --carried-forward --analysed-revision {analysis_revision} --carried-forward-head-revision {head_revision}`,
+     `sonar-facts … --count-status-reason "{read_reason}" --carried-forward --analysed-revision {analysis_revision} --carried-forward-head-revision {head_revision}`,
      so the fact names the head it was measured at and the head it stands in for. A carried-forward
-     figure that arrives without that marker is refused by both verbs.
+     figure that arrives without that marker is refused by both verbs. `--count-status-reason` is the
+     read's OWN reason, copied verbatim: the gate's `carried_forward_unmarked` guard checks it, and the
+     verdict's `reason` takes it only when the gate admits the merge (a refused verdict keeps its own
+     refusal text). The decision's `carried_forward_unbuilt_delta` sentence is a SEPARATE value — it is
+     what the delta decision returned, not what the read reported — so it travels in the run report
+     rather than through this flag.
      **Each refusal has ONE retry class, stated here and cited by sections 4 and 7.**
       - **Retryable after the named state changes** — the read can settle on the same head once the
-        cause is removed: `worktree_dirty` (commit or discard the change), `worktree_ignored_inputs`
+        cause is removed: `worktree_dirty` (commit or discard the change; an `assume-unchanged` or
+        `skip-worktree` entry also trips it — inspect the index flag with `git ls-files -v` and clear
+        it, or use a clean full checkout when the checkout is intentionally sparse), `worktree_ignored_inputs`
         (commit or remove the ignored CI file), `worktree_not_at_head` (check the routed checkout out
         at the head) and `revision_unresolvable` (fetch the revisions, then retry).
       - **Retryable as-is** — the read itself may be taken again: `worktree_unreadable` and
@@ -906,9 +913,11 @@ whether to continue at the limit. Record every finding and its disposition.
       - **Not retryable on this head** — a blocker until the input or the operator changes:
         `revision_missing`, `revisions_equal` (the two revisions are one commit), `rule_unreadable`
         (the project's rule cannot be read, including a CI that delegates it to a reusable workflow
-        this checkout does not hold), `delta_buildable` (the delta carries a path the project builds)
-        and a `stale_analysis` the decision refused, which needs a head the CI builds. A bare `0` is
-        never produced.
+        this checkout does not hold), `rule_changed` (the delta carries a change to the CI configuration
+        itself, so the rule that decided it is no longer the head's rule — the head needs a current
+        analysis or the operator, not the same stale read), `delta_buildable` (the delta carries a path
+        the project builds) and a `stale_analysis` the decision refused, which needs a head the CI
+        builds. A bare `0` is never produced.
    - An `undecidable` read (the analysis did not settle, no revision reported for it, its head could not be
      resolved, a page shorter than the provider's own total, or the REST/auth call failed) is a
      **blocker**, never a `0`: retry the read, and if it stays undecidable do not merge. A

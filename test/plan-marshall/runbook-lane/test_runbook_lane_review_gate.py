@@ -2809,3 +2809,55 @@ def test_a_body_declaring_three_never_reads_fewer_than_three_or_stops(shape: str
 
     read_fewer = verdict.get('reason') != 'undecidable_read' and (verdict['review_body_findings_total'] < 3)
     assert not read_fewer, verdict
+
+
+def test_a_prose_row_beside_a_section_in_a_group_is_wrapper_content() -> None:
+    """⛔ Masking the whole group hid the prose row the wrapper had to account for.
+
+    The wrapper declares one finding and encloses a section plus a prose row: masking
+    only the group's title and the section leaves the row visible, so the wrapper stops
+    instead of demanding a disposition only for the section.
+    """
+    body = (
+        '<details><summary>Review (1)</summary>'
+        '<details><summary>Group</summary>'
+        '<details><summary>🧹 Nitpick comments (1)</summary> x </details>'
+        'The retry loop never terminates.'
+        '</details></details>'
+    )
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['merge_allowed'] is False, verdict
+    assert verdict['reason'] == 'undecidable_read', verdict
+    assert 'carries content beside' in verdict['detail'], verdict
+
+
+def test_a_wrapper_counts_the_rows_of_an_undeclared_child_section() -> None:
+    """⛔ The wrapper's validation uses the child's own count, not one-per-child."""
+    body = (
+        '<details><summary>Review (2)</summary>'
+        '<details><summary>Nitpick comments</summary>'
+        '<!-- cr-comment:v1:aaaa --> one <!-- cr-comment:v1:bbbb --> two </details>'
+        '</details>'
+    )
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['reason'] != 'undecidable_read', verdict
+    assert verdict['review_body_findings_total'] >= 2, verdict
+
+
+def test_a_repeated_bold_title_counts_its_real_heading_once() -> None:
+    """⛔ The raw occurrence must pair in order: `find()` always took the first one.
+
+    The title first appears quoted inside a sentence and then heads the rows below it.
+    Pairing the second display occurrence with the second raw occurrence is what makes
+    the heading count; reading the first one as the heading dropped it as a mention.
+    """
+    body = 'The **Nitpick comments (1)** label changed.\n\n**Nitpick comments (1)**\n- `src/a.py:1` fix the timeout\n'
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['review_body_findings_total'] == 1, verdict
+    assert [row['id'] for row in verdict['undisposed']] == ['nitpick-1']
