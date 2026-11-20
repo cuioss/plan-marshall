@@ -282,3 +282,52 @@ def test_journal_gc_ignores_the_in_tree_log(home, tmp_path):
     assert log_path.resolve().is_relative_to(project.resolve())
     assert log_path.exists(), 'journal retention deleted the in-tree log'
     _no_machine_global_job_logs(home)
+
+
+# =============================================================================
+# The log path and its modes follow the daemon's own declarations
+# =============================================================================
+
+
+def test_the_log_directory_follows_the_subdir_constant(home, tmp_path, monkeypatch):
+    """Moving ``_JOB_LOG_SUBDIR`` moves the directory the daemon creates.
+
+    The creation loop once carried its own copy of the component tuple, so the
+    constant and the directory the code created could disagree and every routed job
+    then failed as ``log_file_failed`` at the directory stat.
+    """
+    project = tmp_path / 'proj'
+    canonical = _register_project(project)
+    moved = Path('.plan') / 'local' / 'marshalld' / 'moved-logs'
+    # Both bindings the daemon module itself reads: the constant its creation loop
+    # consumes and the resolver that names the log path.
+    monkeypatch.setattr(marshalld, '_JOB_LOG_SUBDIR', moved)
+    monkeypatch.setattr(marshalld, 'job_log_dir', lambda root: Path(root) / moved)
+
+    result = _run_jobs([_spec(canonical)])[0]
+
+    assert result['status'] == STATUS_SUCCESS, result
+    log_path = Path(result['log_file'])
+    assert log_path.is_relative_to(project / moved)
+    assert log_path.exists()
+
+
+def test_every_created_directory_component_is_private(home, tmp_path):
+    """The parents are tightened too, not only the leaf.
+
+    Under ``run --foreground`` the daemon's umask would otherwise leave
+    ``local/`` and ``local/marshalld/`` world-readable while only ``job-logs``
+    was tightened.
+    """
+    project = tmp_path / 'proj'
+    canonical = _register_project(project)
+    wide = project / '.plan' / 'local'
+    wide.mkdir(mode=0o777)
+    os.chmod(wide, 0o777)
+
+    result = _run_jobs([_spec(canonical)])[0]
+
+    assert result['status'] == STATUS_SUCCESS, result
+    for relative in ('local', 'local/marshalld', 'local/marshalld/job-logs'):
+        mode = (project / '.plan' / relative).stat().st_mode & 0o777
+        assert mode == 0o700, f'{relative} has mode {oct(mode)}, not 0o700'

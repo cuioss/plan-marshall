@@ -506,6 +506,40 @@ def test_daemon_result_failure_maps_to_error():
     assert result['exit_code'] == 2
 
 
+def test_daemon_log_file_fault_reaches_the_caller_with_its_reason():
+    """A daemon-side log fault is not a red build: its class and reason travel.
+
+    The daemon leaves no log to read in this case, so the log-based reading cannot
+    recover the fault; the payload's own ``error``/``reason`` is the only source.
+    """
+    result = factory._daemon_result_to_direct(
+        {
+            'job_status': 'failure',
+            'exit_code': -1,
+            'duration_seconds': 0,
+            'log_file': '',
+            'error': 'log_file_failed',
+            'reason': 'the submitting project tree /x holds no .plan directory',
+        },
+        'cmd',
+    )
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'log_file_failed'
+    assert result['exit_code'] == -1
+    assert 'holds no .plan directory' in result['reason']
+
+
+def test_a_daemon_build_failure_is_still_build_failed():
+    """Matched control: an ordinary failure keeps the build_failed class."""
+    result = factory._daemon_result_to_direct(
+        {'job_status': 'failure', 'exit_code': 2, 'duration_seconds': 3, 'log_file': 'b.log', 'reason': 'exit 2'},
+        'cmd',
+    )
+
+    assert result['error'] == 'build_failed'
+
+
 def test_daemon_result_timeout_maps_to_timeout():
     result = factory._daemon_result_to_direct(
         {'job_status': 'timeout', 'duration_seconds': 9, 'log_file': 'c.log'}, 'cmd'

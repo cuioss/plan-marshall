@@ -77,6 +77,7 @@ from _build_result import (  # noqa: E402
     success_result,
     timeout_result,
 )
+from _build_result import LAUNCH_FAULT_ERRORS as RESULT_LAUNCH_FAULT_ERRORS  # noqa: E402
 from _build_result import STATUS_ERROR as RESULT_STATUS_ERROR  # noqa: E402
 from _build_result import STATUS_KILLED as RESULT_STATUS_KILLED  # noqa: E402
 from _build_result import STATUS_RUNNING as RESULT_STATUS_RUNNING  # noqa: E402
@@ -817,6 +818,21 @@ def _map_daemon_result(waited: dict[str, Any], command_str: str, command_key: st
             result['message'] = str(daemon_message)
         return result  # type: ignore[return-value]
     if job_status == WIRE_STATUS_FAILURE:
+        # A daemon that could not PREPARE or USE the job log reports its own launch
+        # fault in the payload and leaves no log to read, so the log read below sees
+        # nothing. Without this branch the class and its reason are lost and the job
+        # reads as a red build the daemon never ran.
+        daemon_fault = waited.get('error')
+        if isinstance(daemon_fault, str) and daemon_fault in RESULT_LAUNCH_FAULT_ERRORS:
+            daemon_extra = {name: waited[name] for name in ('reason', 'wrapper', 'project_dir') if waited.get(name)}
+            return error_result(  # type: ignore[return-value]
+                daemon_fault,
+                -1,
+                duration,
+                log_file,
+                command_str,
+                **daemon_extra,
+            )
         # The routed-failure leg: the daemon's own exit-0-narrowing already
         # downgraded the wrapper's `error` verdict to `failure`, so the log is read
         # here to carry the per-test rows it recorded. Without them the renderer

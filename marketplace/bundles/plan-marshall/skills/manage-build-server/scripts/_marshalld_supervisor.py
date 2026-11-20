@@ -493,6 +493,27 @@ _JOB_LOG_FILE_MODE = 0o600
 """Mode a job log is created with — build output is the project's own business."""
 
 
+def _open_at(log_file: str, flags: int) -> int:
+    """Open ``log_file`` for writing, relative to its own directory descriptor.
+
+    A descriptor-relative open closes the check-then-use window a path open leaves
+    between the daemon's symlink probe and this call: the leaf is resolved against
+    the directory that was opened, so swapping the name for a symlink after the
+    probe cannot redirect the write. ``O_NOFOLLOW`` on the directory itself refuses
+    a symlinked parent, and the fallback path open (a platform without ``dir_fd``)
+    keeps the existing ``O_NOFOLLOW`` guards.
+    """
+    if os.open in getattr(os, 'supports_dir_fd', set()):
+        directory = os.path.dirname(log_file) or '.'
+        dir_flags = os.O_RDONLY | getattr(os, 'O_DIRECTORY', 0) | getattr(os, 'O_NOFOLLOW', 0)
+        dir_fd = os.open(directory, dir_flags)
+        try:
+            return os.open(os.path.basename(log_file), flags, _JOB_LOG_FILE_MODE, dir_fd=dir_fd)
+        finally:
+            os.close(dir_fd)
+    return os.open(log_file, flags, _JOB_LOG_FILE_MODE)
+
+
 def _open_job_log(log_file: str) -> IO[bytes]:
     """Open (and create) a job log for writing, refusing anything but a regular file.
 
@@ -520,7 +541,7 @@ def _open_job_log(log_file: str) -> IO[bytes]:
     flags |= getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_NONBLOCK', 0)
     if not hasattr(os, 'O_NOFOLLOW') and Path(log_file).is_symlink():
         raise OSError(f'{log_file} is a symlink')
-    fd = os.open(log_file, flags, _JOB_LOG_FILE_MODE)
+    fd = _open_at(log_file, flags)
     try:
         info = os.fstat(fd)
         if not stat.S_ISREG(info.st_mode):
@@ -616,9 +637,11 @@ async def run_job(
             stderr=asyncio.subprocess.PIPE,
             start_new_session=not _IS_WINDOWS,
         )
-    except OSError:
+    except BaseException:
         # The sink exists but no build will write into it; release the handle and
         # remove the empty file, so a job that never started leaves no log behind.
+        # BaseException, not OSError: a cancellation (or any non-OSError from the
+        # spawn) would otherwise leak the descriptor and leave the empty log.
         sink.close()
         with contextlib.suppress(OSError):
             Path(log_file).unlink()
@@ -669,10 +692,12 @@ async def run_job(
                 f'the job log at {log_file} could not be written while the job ran: {logging_failure}',
                 **observed,
             )
-        if status == 'success' and not Path(log_file).exists():
+        if not Path(log_file).exists():
             # The wrapper reports its verdict in the log, so a log removed under a
-            # finished exit-0 job takes that verdict with it. An exit-0 child must
-            # not be reported as a green build when its evidence is gone.
+            # finished job takes that verdict with it. Neither an exit-0 child nor a
+            # failed one is reported on evidence that is gone: a `success` would be a
+            # green build without its log, and a `failure` would name a diagnosis the
+            # consumer cannot open.
             return log_file_failure_payload(
                 log_file,
                 command_str,

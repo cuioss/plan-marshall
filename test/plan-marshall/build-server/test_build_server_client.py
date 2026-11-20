@@ -525,6 +525,31 @@ def test_wait_degraded_when_daemon_unreachable(monkeypatch):
     assert result['reason'] == client.REASON_SOCKET_ABSENT
 
 
+def test_wait_log_file_fault_preserves_its_class_and_reason():
+    """A daemon launch fault's ``error`` survives the render, beside its reason.
+
+    The daemon reports ``log_file_failed`` with where it looked and no log to read.
+    ``reason`` was already passed through, but without ``error`` the routed client
+    saw a bare failure and rendered it as a red build.
+    """
+    rendered = client._render_job_status(
+        {
+            'status': 'failure',
+            'job_id': 'JOB-2',
+            'error': 'log_file_failed',
+            'reason': 'the submitting project tree /x holds no .plan directory',
+            'wrapper': './pw',
+            'project_dir': '/x',
+        }
+    )
+
+    assert rendered['job_status'] == 'failure'
+    assert rendered['error'] == 'log_file_failed'
+    assert rendered['wrapper'] == './pw'
+    assert rendered['project_dir'] == '/x'
+    assert 'holds no .plan' in rendered['reason']
+
+
 # =============================================================================
 # ping — identity handshake
 # =============================================================================

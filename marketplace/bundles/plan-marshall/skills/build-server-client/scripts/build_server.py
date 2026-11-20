@@ -123,6 +123,13 @@ _PASSTHROUGH_STATUS_FIELDS = (
     # detail in `reason`; without it here the wait path silently drops the only
     # field saying WHY the job was refused.
     'reason',
+    # A daemon that could not prepare or use the job log reports a LAUNCH fault
+    # (`error`) with where it looked (`wrapper`, `project_dir`) and no log to read.
+    # Without these the routed client cannot tell a log-file fault from a red build,
+    # and the reason it does receive has no class to travel beside.
+    'error',
+    'wrapper',
+    'project_dir',
     # A job that is admitted-but-not-started is reported as `queued` with what it
     # waits on and for how long. Without these two the client-facing TOON says
     # `queued` and withholds the only facts that make the wait actionable.

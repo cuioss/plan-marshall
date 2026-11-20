@@ -70,6 +70,7 @@ from _marshalld_audit import InteractionAudit
 from _marshalld_journal import Journal
 from _marshalld_scheduler import Scheduler
 from _marshalld_supervisor import (
+    _JOB_LOG_SUBDIR,
     JobLogUnavailable,
     JobProgress,
     job_log_dir,
@@ -806,17 +807,23 @@ class Daemon:
         # Created one component at a time under the EXISTING `.plan`, never with
         # `parents=True`: a tree that vanished under the queue must fail the job, not
         # be recreated from a stale check. An injected directory is created as given.
+        # The component names come from `_JOB_LOG_SUBDIR` rather than a second copy
+        # of the tuple, so moving the constant moves the creation with it. Every
+        # component this loop creates is tightened to `_DIR_MODE` — under
+        # `run --foreground` the daemon's umask would otherwise leave the parents
+        # world-readable while only the leaf was tightened.
         try:
             if self._log_dir is None:
                 anchor = project_root / '.plan'
-                for part in ('local', 'marshalld', 'job-logs'):
+                for part in _JOB_LOG_SUBDIR.parts[1:]:
                     anchor = anchor / part
-                    if not anchor.exists():
-                        anchor.mkdir()
+                    anchor.mkdir(mode=_DIR_MODE, exist_ok=True)
+                    if anchor.stat().st_mode & 0o777 != _DIR_MODE:
+                        os.chmod(anchor, _DIR_MODE)
             else:
                 directory.mkdir(mode=_DIR_MODE, parents=True, exist_ok=True)
-            if directory.stat().st_mode & 0o777 != _DIR_MODE:
-                os.chmod(directory, _DIR_MODE)
+                if directory.stat().st_mode & 0o777 != _DIR_MODE:
+                    os.chmod(directory, _DIR_MODE)
         except OSError as exc:
             raise JobLogUnavailable(log_file, str(exc)) from exc
         if self._log_dir is None:
