@@ -16,7 +16,7 @@ Verb surface::
     runbook_lane build-routing --worktree PATH
     runbook_lane build-classify --paths P1,P2 [--project-dir DIR]
     runbook_lane sonar-stale-delta --state STATE [--count-status STATUS]
-                             [--analysis-revision SHA] [--head-revision SHA] [--pr-number N] [--worktree DIR]
+                             [--analysis-revision SHA] [--head-revision SHA] [--worktree DIR]
     runbook_lane sonar-gate --state STATE [--count-status STATUS] [--open-count N]
                              [--open-keys K1,K2] [--operator-selected-keys K1,K2]
                              [--carried-forward --carried-forward-analysis-revision SHA
@@ -63,7 +63,6 @@ import argparse
 import json
 import os
 import re
-import sys
 import unicodedata
 from pathlib import Path
 from typing import Any, NamedTuple
@@ -1843,463 +1842,8 @@ def _delta_paths(worktree: Path, base: str, head: str) -> list[str] | None:
 
 
 # =============================================================================
-# Delegated footprint rule — a consumer whose CI delegates its build
+# Stale-delta refusals a project's own rule cannot decide are NOT carried
 # =============================================================================
-#
-# A consumer may hold no footprint rule at all: its workflow's only job is a
-# ``uses:`` delegation to a reusable workflow another repository owns, and the
-# ignore list lives in that workflow's own action code. Reading the globs out of
-# somebody else's Python module would be guessing at their internals, so the lane
-# reads the RULE THE CI APPLIED instead — the head's check-runs — and derives
-# which jobs the decision gates from the called workflow's job graph. No job name
-# is guessed and no glob list is invented: both come from the called workflow,
-# which the consumer pins by ref.
-
-#: A job-level ``uses:`` line. The target is ``owner/repo/rest@ref``.
-_USES_LINE_RE = re.compile(r'^\s*uses:\s*(?P<target>[^\s#]+)\s*(?:#.*)?$')
-
-#: A ref that PINS: a full commit SHA. A tag can be moved, so a rule read from one
-#: is not provably the rule the head's run applied.
-_PINNED_REF_RE = re.compile(r'^[0-9a-fA-F]{40}$')
-
-#: A reference to another job's output inside an ``if:`` expression. The job id
-#: names the DECIDER when it gates another job, and the gating job is the one
-#: whose condition carries it.
-_NEEDS_OUTPUT_REF_RE = re.compile(r'needs\.(?P<job>[A-Za-z0-9_-]+)\.outputs\.')
-
-#: A top-level job id under ``jobs:`` (two-space indent, no value).
-_JOB_ID_RE = re.compile(r'^ {2}(?P<job>[A-Za-z0-9_-]+):\s*$')
-
-#: A draft-only condition term: a skip it causes is not the footprint decision's.
-_DRAFT_REF_RE = re.compile(r'github\.event\.pull_request\.draft\b')
-
-#: The shapes the values that reach a CI read may take. The read is a LIST-argv
-#: call with no shell, so these are not a shell-escaping measure: they keep a
-#: malformed or hostile `uses:` target in a project's own workflow from steering
-#: the read at another repository, path or pull request.
-_REPO_SHAPE_RE = re.compile(r'^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$')
-_PR_NUMBER_RE = re.compile(r'^[0-9]+$')
-
-#: The check-run bucket values that mean "this job did not run". ``gh`` reports
-#: ``skipping``; ``skipped`` is accepted because a provider may spell it that way.
-_SKIPPED_CHECK_RESULTS = frozenset({'skipping', 'skipped'})
-
-#: The check-run bucket values that mean "this job ran and passed".
-_PASSED_CHECK_RESULTS = frozenset({'pass', 'success'})
-
-#: The check-run bucket values that FAIL the head's evidence. A failed or cancelled
-#: job is a skip for another reason, never the footprint gate's.
-_FAILED_CHECK_RESULTS = frozenset({'fail', 'failure', 'cancel', 'cancelled'})
-
-_SPLIT_FOOTPRINT_SOURCE = 'delegated-check-runs'
-
-
-def _delegated_workflow_spec(project_dir: Path) -> tuple[dict[str, str] | None, str]:
-    """Return the workflow this checkout delegates its build to, or a refusal.
-
-    ``({'repo', 'path', 'ref'}, '')`` for a readable, PINNED delegation;
-    ``(None, '')`` when no workflow delegates; ``(None, '<reason>')`` when a
-    delegation exists but cannot be read as a pinned reference — the fail-closed
-    answer, because an unpinned target is not the rule this head ran under.
-    """
-    for workflow in _iter_workflow_files(project_dir):
-        try:
-            text = workflow.read_text(encoding='utf-8')
-        except (OSError, UnicodeDecodeError) as exc:
-            return None, f'rule_unreadable: {workflow.name}: {type(exc).__name__}'
-        caller_job = ''
-        in_jobs = False
-        for line in text.splitlines():
-            if len(line) - len(line.lstrip(' ')) == 0:
-                in_jobs = line.strip() == 'jobs:'
-            elif in_jobs:
-                job_match = _JOB_ID_RE.match(line)
-                if job_match:
-                    caller_job = job_match.group('job')
-            match = _USES_LINE_RE.match(line)
-            if not match:
-                continue
-            target = match.group('target').strip().strip('"\'')
-            if target.startswith('./') or '@' not in target:
-                # A local (in-repo) action or workflow is not a delegation to
-                # another repository's rule; it carries no separate ref either.
-                continue
-            path_part, ref = target.rsplit('@', 1)
-            parts = path_part.split('/')
-            workflow_path = '/'.join(parts[2:])
-            if len(parts) < 4 or not workflow_path.endswith(_WORKFLOW_SUFFIXES):
-                # Not a reusable WORKFLOW (an action or a docker reference): its
-                # rule is not a footprint decision, so it is not this branch.
-                continue
-            if not _PINNED_REF_RE.match(ref):
-                return None, (
-                    f'delegated_ref_unpinned: {target} names {ref!r}, which is neither a commit SHA nor a '
-                    'numeric version tag; a moving branch is not the rule this head ran under'
-                )
-            return {'repo': f'{parts[0]}/{parts[1]}', 'path': workflow_path, 'ref': ref, 'caller_job': caller_job}, ''
-    return None, ''
-
-
-def _called_workflow_jobs(lines: list[str]) -> tuple[dict[str, dict[str, Any]], str]:
-    """Return the called workflow's jobs and an unreadable-line reason.
-
-    A line-level reader, because the lane carries no YAML parser and the only
-    questions asked are structural: does this job declare outputs, and does its
-    ``if:`` reference another job's output.
-
-    Everything the reader cannot place is a NAMED refusal, never a skip: a job key
-    it drops, a job-level ``if:`` carried on the next line, or a step-level ``if:``
-    read as the job's would each shrink or corrupt the set the check-run evidence is
-    verified against, and a build that ran would go unseen. Job fields live at one
-    indent (four spaces), so only that indent is read as the job's own.
-    """
-    jobs: dict[str, dict[str, Any]] = {}
-    in_jobs = False
-    current: dict[str, Any] | None = None
-    open_if_job = ''
-    for line in lines:
-        if not line.strip() or line.lstrip().startswith('#'):
-            continue
-        indent = len(line) - len(line.lstrip(' '))
-        if open_if_job and indent > 4:
-            # No legal YAML nests anything under a job's ``if:`` once the block
-            # scalars are refused, so this is a condition folded over lines: its
-            # continuation may carry the ``needs.<job>.outputs.`` reference, and
-            # reading only the first line would silently lose the gate.
-            return jobs, (
-                f'delegated_rule_unreadable: job {open_if_job} carries its condition over more than one '
-                'line, which this reader cannot evaluate'
-            )
-        open_if_job = ''
-        if indent == 0:
-            in_jobs = line.strip() == 'jobs:'
-            current = None
-            continue
-        if not in_jobs:
-            continue
-        job_match = _JOB_ID_RE.match(line)
-        if job_match:
-            current = {'id': job_match.group('job'), 'if': '', 'declares_outputs': False}
-            jobs[current['id']] = current
-            continue
-        if indent == 2 and line.strip():
-            # Inside ``jobs:`` only job ids live at this indent. Anything else — a
-            # quoted key, a trailing comment on the key line — is a job this reader
-            # cannot place.
-            return jobs, (f'delegated_rule_unreadable: the job line {line.strip()!r} is not a job id')
-        if current is None or indent != 4:
-            # A step's own ``if:`` and any deeper field belong to the step, never to
-            # the job; reading one as the job's condition would hide the gate.
-            continue
-        stripped = line.strip()
-        if stripped.startswith('if:'):
-            value = stripped[len('if:') :].strip()
-            if not value or value[0] in '|>':
-                return jobs, (
-                    f"delegated_rule_unreadable: job {current['id']}'s condition is empty or a block "
-                    'scalar this reader cannot evaluate'
-                )
-            if _DRAFT_REF_RE.search(value):
-                # A draft-only condition can suppress a job the footprint decision
-                # allowed, so the skip could not be attributed to the decision.
-                return jobs, (
-                    f'delegated_rule_unreadable: job {current["id"]} is also gated on the draft state, so '
-                    'a skip could not be attributed to the footprint decision'
-                )
-            current['if'] = value
-            open_if_job = current['id']
-        elif stripped.startswith('outputs:'):
-            value = stripped[len('outputs:') :].strip()
-            if value:
-                return jobs, (
-                    f"delegated_rule_unreadable: job {current['id']}'s outputs are not a block mapping "
-                    'this reader can enumerate'
-                )
-            current['declares_outputs'] = True
-        elif stripped.split(':', 1)[0].strip().strip('"\'') in ('if', 'outputs'):
-            # ``if :`` / ``"outputs":`` — the same field, spelled so this reader
-            # would not recognise it. A dropped condition hides a gate.
-            return jobs, (
-                f"delegated_rule_unreadable: job {current['id']}'s {stripped.split(':', 1)[0]!r} is "
-                'spelled so this reader cannot place it'
-            )
-    return jobs, ''
-
-
-def _footprint_job_graph(text: str) -> tuple[list[str], list[str], list[str], str]:
-    """Return ``(deciders, gated, all_jobs, reason)`` for the called workflow's graph.
-
-    The pair is derived from the workflow's PLUMBING, not from every job that
-    happens to publish an output:
-
-    - a LEAF job is one no other job consumes an output of — a job that runs work;
-    - a DECIDER is a job that declares outputs, whose output a LEAF job's ``if:``
-      reads, and which is itself not a leaf;
-    - a GATED job is a leaf whose ``if:`` reads a decider's output.
-
-    That matters on a real reusable workflow, where plumbing jobs also declare
-    outputs: a push-deduplication gate publishes ``run``, a covering-run check
-    publishes ``rescue``, a config job publishes the resolved project settings.
-    Counting those as deciders would demand that every one of them PASSED — and a
-    push-only job is legitimately skipped on a pull request — so the decision would
-    refuse on exactly the normal shape. Counting them as gated would demand that the
-    job that RUNS and passes the footprint decision (`check-changes`) be skipped.
-    They remain inside ``all_jobs``, so a failure there is still refused.
-
-    ALL_JOBS is every job the called workflow declares, and it is the window the
-    check-run evidence is read over: a job that gates nothing can still fail or stay
-    pending, and a red head must never be carried forward. Foreign rows (a review
-    bot, a workflow-level check) are not in this set, so they cannot freeze the
-    verdict either.
-
-    A job line the reader cannot place makes the graph unreadable rather than
-    smaller: a silently dropped job would shrink the set the evidence is checked
-    against, and a build that actually ran would go unseen.
-    """
-    jobs, jobs_reason = _called_workflow_jobs(text.splitlines())
-    if jobs_reason:
-        return [], [], [], jobs_reason
-    if not jobs:
-        return (
-            [],
-            [],
-            [],
-            (
-                'delegated_rule_unreadable: the called workflow declares no readable job, so there is no '
-                'footprint decision to read'
-            ),
-        )
-    gating_refs = {
-        job['id']: {match.group('job') for match in _NEEDS_OUTPUT_REF_RE.finditer(job['if'])} for job in jobs.values()
-    }
-    consumed = {job_id for refs in gating_refs.values() for job_id in refs}
-    leaves = {job_id for job_id in jobs if job_id not in consumed}
-    leaf_refs = [gating_refs[leaf] for leaf in leaves]
-    deciders = sorted(
-        job['id']
-        for job in jobs.values()
-        if job['declares_outputs'] and job['id'] not in leaves and any(job['id'] in refs for refs in leaf_refs)
-    )
-    gated = sorted(leaf for leaf in leaves if set(deciders) & gating_refs[leaf])
-    if not deciders:
-        return (
-            [],
-            [],
-            [],
-            (
-                'delegated_rule_unreadable: the called workflow declares no job whose output gates a '
-                'job that runs work, so there is no footprint decision to read'
-            ),
-        )
-    if not gated:
-        return (
-            [],
-            [],
-            [],
-            (
-                f'delegated_rule_unreadable: the called workflow gates no job on {", ".join(deciders)}, so its '
-                'footprint decision suppresses nothing'
-            ),
-        )
-    return deciders, gated, sorted(jobs), ''
-
-
-def _run_ci(project_dir: Path, argv: list[str]) -> tuple[dict[str, Any] | None, str]:
-    """Run one CI read through the project's executor, and parse its TOON answer.
-
-    The read goes through the CI abstraction, never a provider CLI: the executor
-    the project carries is the only supported entry point, and its absence is a
-    named reason rather than a silent empty answer.
-    """
-    import subprocess
-
-    from toon_parser import parse_toon
-
-    state, absent_reason = _worktree_executor_state(project_dir)
-    if state != 'present':
-        return None, absent_reason or 'executor_absent'
-    executor = project_dir / '.plan' / 'execute-script.py'
-    try:
-        completed = subprocess.run(
-            [sys.executable, str(executor), 'plan-marshall:tools-integration-ci:ci', *argv],
-            cwd=str(project_dir),
-            capture_output=True,
-            text=True,
-            timeout=120,
-            check=False,
-        )
-    except (OSError, subprocess.SubprocessError) as exc:
-        return None, f'the CI read could not be started: {type(exc).__name__}'
-    if completed.returncode != 0:
-        detail = (completed.stderr or '').strip().splitlines()
-        return None, detail[-1] if detail else f'exit {completed.returncode}'
-    try:
-        parsed = parse_toon(completed.stdout)
-    except Exception:
-        return None, 'the CI read answered a body this reader could not parse'
-    if parsed.get('status') != 'success':
-        return None, str(parsed.get('error') or parsed.get('message') or 'the CI read failed')
-    return parsed, ''
-
-
-def _read_delegated_workflow(project_dir: Path, repo: str, path: str, ref: str) -> tuple[str | None, str]:
-    """Read the called reusable workflow at the ref the delegation pins.
-
-    Every value is shape-checked first: the delegation's target comes from the
-    project's own workflow file, and a malformed one must refuse rather than steer
-    the read (list argv, no shell) at another repository, path or revision.
-    """
-    if not _REPO_SHAPE_RE.match(repo):
-        return None, f'repository {repo!r} is not an owner/name reference'
-    if not path.startswith(f'{"/".join(_CI_WORKFLOW_DIR)}/') or '..' in path.split('/'):
-        return None, f'path {path!r} is not a workflow path of this repository'
-    if not path.endswith(_WORKFLOW_SUFFIXES):
-        return None, f'path {path!r} is not a workflow file'
-    if not _PINNED_REF_RE.match(ref):
-        return None, f'ref {ref!r} is not a full commit SHA'
-    result, reason = _run_ci(project_dir, ['repo', 'file', 'read', '--repo', repo, '--path', path, '--ref', ref])
-    if result is None:
-        return None, reason
-    if result.get('state') != 'found':
-        return None, f'state {result.get("state")!r}'
-    content = result.get('content')
-    if not isinstance(content, str) or not content:
-        return None, 'the read carried no content'
-    return content, ''
-
-
-def _read_pr_checks(project_dir: Path, pr_number: str) -> tuple[list[dict[str, Any]] | None, str]:
-    """Read the pull request's check rows for its current head."""
-    if not _PR_NUMBER_RE.match(str(pr_number)):
-        return None, f'pull request {pr_number!r} is not a number'
-    result, reason = _run_ci(project_dir, ['checks', 'status', '--pr-number', str(pr_number)])
-    if result is None:
-        return None, reason
-    rows = result.get('checks')
-    if not isinstance(rows, list):
-        return None, 'the read carried no check list'
-    return rows, ''
-
-
-def _check_row_job_id(name: str) -> str:
-    """Return the called-workflow job id a check-run name belongs to.
-
-    A called workflow's jobs report as ``<caller job> / <called job>``, and a
-    matrix leg appends `` (value)``, so the id is the last ``/``-segment without
-    its leg suffix.
-    """
-    segment = str(name).rsplit('/', 1)[-1].strip()
-    for suffix in (' (', ' ['):
-        position = segment.find(suffix)
-        if position > 0:
-            segment = segment[:position].strip()
-    return segment
-
-
-def _local_path_veto(project_dir: Path, paths: list[str]) -> str:
-    """Return a refusal when the checkout's own architecture PLACES a path as built.
-
-    The delegated decision rests on the CI's own skip, which is authoritative for
-    the head. It is not authoritative for a path the checkout can POSITIVELY place:
-    a changed path inside a module directory the architecture reports is a path this
-    project builds, and the skip cannot then be the footprint decision. A root module
-    (``''``) claims the whole tree, so every path is placeable.
-
-    Placement is positive only. A path belonging to no module directory is not
-    placed — the architecture has said nothing about it — so it is not vetoed; a
-    build file at the repository root is exactly that case, and the CI's own
-    evidence covers it (a changed build file makes the CI build, so a gated job
-    reports a pass and the evidence refuses). Vetoing on the classifier's DEFAULT
-    answer instead would refuse every delta of a project that has a build file at
-    all, which is the consumer this branch exists for.
-
-    ``None`` is the architecture being UNREADABLE, and that fails closed with its own
-    reason (``delegated_architecture_unreadable``): a checkout whose architecture could
-    not be read must not carry a delta forward on evidence alone. No module (``[]``) is
-    a readable architecture that places nothing.
-    """
-    prefixes = _architecture_module_prefixes(project_dir)
-    if prefixes is None:
-        return (
-            'delegated_architecture_unreadable: the project architecture could not be read, so no changed '
-            'path may be placed as not built'
-        )
-    if '' in prefixes:
-        return (
-            f'delegated_paths_buildable: the architecture reports a root module, which claims every '
-            f'changed path ({", ".join(paths[:3])})'
-        )
-    modules = [prefix for prefix in prefixes if prefix]
-    placed = [path for path in paths if any(path.startswith(prefix) for prefix in modules)]
-    if placed:
-        return (
-            f'delegated_paths_buildable: {len(placed)} changed path(s) lie in a module this project '
-            f'builds ({", ".join(placed[:3])}), which contradicts the skipped build'
-        )
-    return ''
-
-
-def _delegated_check_evidence(
-    rows: list[dict[str, Any]], deciders: list[str], gated: list[str], all_jobs: list[str], caller_job: str
-) -> str:
-    """Return the refusal reason the head's check-runs give, or ``''`` to carry.
-
-    The window is the CALLED WORKFLOW's jobs (``all_jobs``), never the whole check
-    list: a review bot's ``pending`` row, or a workflow-level check, says nothing
-    about whether the CI built this head, and reading it as a freeze would leave the
-    delegated decision undecidable in every repository that runs a review bot. Every
-    job of the workflow is inside it — including one that gates nothing — so no row
-    of a job the caller's run executed can fail unseen.
-
-    A row belongs to this run only when it names the CALLER's own job
-    (``<caller job> / <called job>``): a second workflow may call a reusable workflow
-    with a job of the same id, and its row must not stand in for this run's.
-
-    Within that window the reading is the fail-closed one for "the CI skipped the
-    build for the footprint reason": every row settled (nothing failed, was
-    cancelled or is pending), every DECIDER passed (a skipped decider means the
-    opt-in was off or the run decided something else), and every GATED job was
-    skipped (a gated job that ran means the CI built this head).
-    """
-    by_job: dict[str, list[tuple[str, str]]] = {}
-    prefix = f'{caller_job} / '
-    for row in rows:
-        result = str(row.get('result') or '').strip().lower()
-        name = str(row.get('name') or '?')
-        if not name.startswith(prefix):
-            # A bare row, or one from another caller's job, is some other check: it
-            # can neither satisfy a job of this run nor freeze its verdict.
-            continue
-        by_job.setdefault(_check_row_job_id(name), []).append((name, result))
-    for job_id in all_jobs:
-        for name, result in by_job.get(job_id, []):
-            if result in _FAILED_CHECK_RESULTS:
-                return (
-                    f'delegated_check_not_green: {name} is {result}; a failed or cancelled job is not a footprint skip'
-                )
-            if result not in _PASSED_CHECK_RESULTS | _SKIPPED_CHECK_RESULTS:
-                return f'delegated_check_not_green: {name} is {result!r}, which has not settled'
-    for decider in deciders:
-        results = by_job.get(decider)
-        if not results:
-            return f'delegated_check_evidence_incomplete: the decider {decider} reports no check-run'
-        if any(result not in _PASSED_CHECK_RESULTS for _name, result in results):
-            return (
-                f'delegated_decider_not_success: {decider} reports '
-                f'{", ".join(result for _name, result in results)}; a footprint gate that did not '
-                'succeed did not suppress this head'
-            )
-    for job_id in gated:
-        results = by_job.get(job_id)
-        if not results:
-            return f'delegated_check_evidence_incomplete: the gated job {job_id} reports no check-run'
-        if any(result not in _SKIPPED_CHECK_RESULTS for _name, result in results):
-            return (
-                f'delegated_gated_job_ran: the CI ran {job_id} on this head '
-                f'({", ".join(result for _name, result in results)}), so this head is not one the '
-                'footprint decision suppressed'
-            )
-    return ''
 
 
 def _sonar_stale_delta_verdict(
@@ -2308,7 +1852,6 @@ def _sonar_stale_delta_verdict(
     analysis_revision: str,
     head_revision: str,
     worktree: Path,
-    pr_number: str = '',
 ) -> dict[str, Any]:
     """Decide whether a stale analysis is the read for this head.
 
@@ -2317,16 +1860,15 @@ def _sonar_stale_delta_verdict(
     head forever. Retrying that read can never succeed, so the lane decides it
     from the analysed head instead.
 
-    Fail-closed is the whole design, on two independent grounds. The delta must be
-    one the project does not build: the checkout's own readable rule (or its
-    architecture's building modules) may not place ANY changed path as buildable
-    (``_local_path_veto``). And, when the project holds no rule at all because its
-    CI delegates the build, the rule the CI APPLIED to this head is the evidence:
-    the called workflow's deciders must have succeeded and every job it gates must
-    have been skipped (``_delegated_check_evidence``). An unresolvable revision, an
-    unlistable diff, an unreadable rule, a single buildable path and every
-    non-footprint skip all answer ``carry_forward: false`` with the lane's own
-    ``undecidable_read``, which is the state the merge gate already refuses.
+    Fail-closed is the whole design: the delta must be one the project does not
+    build, and the project's own rule is the only thing that can say so. Every
+    changed path is classified with that rule (its CI workflow's skip globs, or its
+    architecture's documentation surfaces), and one ``buildable`` path refuses the
+    carry-forward. A project whose CI delegates its build to a reusable workflow
+    holds no such rule, so the delegated case is not decided here. An unresolvable
+    revision, an unlistable diff, an unreadable rule and a single buildable path all
+    answer ``carry_forward: false`` with the lane's own ``undecidable_read``, which is
+    the state the merge gate already refuses.
     """
     verdict: dict[str, Any] = {
         'status': 'success',
@@ -2419,68 +1961,6 @@ def _sonar_stale_delta_verdict(
         )
         return verdict
 
-    # A consumer whose CI delegates its build holds no footprint rule of its own,
-    # so the rule is read where the CI APPLIED it: the head's check-runs, with the
-    # gated job set derived from the called workflow's own graph.
-    delegated, delegated_reason = _delegated_workflow_spec(worktree)
-    own_rule, own_skip, own_reason = _read_footprint_rule(worktree)
-    # A caller's `with: skip-on-docs-only: true` opts in to a delegated rule; it is
-    # not the project's own path rule. So the delegated branch also serves the
-    # checkout that carries an opt-in but NO skip globs of its own.
-    has_own_paths_rule = own_rule is not None and own_skip is not None and not own_reason
-    if not has_own_paths_rule and (delegated is not None or delegated_reason):
-        if delegated_reason:
-            verdict['detail'] = delegated_reason
-            return verdict
-        assert delegated is not None  # narrowing after the reason guard
-        if not delegated['caller_job']:
-            verdict['detail'] = (
-                'delegated_rule_unreadable: the workflow delegates with no job id this reader can '
-                'attribute, so its check-runs cannot be identified'
-            )
-            return verdict
-        called, read_reason = _read_delegated_workflow(worktree, delegated['repo'], delegated['path'], delegated['ref'])
-        if called is None:
-            verdict['detail'] = (
-                f'delegated_rule_unreachable: {delegated["repo"]} {delegated["path"]}@{delegated["ref"]}: {read_reason}'
-            )
-            return verdict
-        deciders, gated, all_jobs, graph_reason = _footprint_job_graph(called)
-        if graph_reason:
-            verdict['detail'] = graph_reason
-            return verdict
-        veto = _local_path_veto(worktree, paths)
-        if veto:
-            # A path the project's OWN readable rule places as buildable contradicts
-            # the skip: the CI's decision stands only where no local rule can place
-            # the path at all.
-            verdict['detail'] = veto
-            return verdict
-        if not pr_number:
-            verdict['detail'] = (
-                "delegated_check_evidence_missing: this project delegates its footprint rule, so the head's "
-                'check-runs are the evidence and --pr-number is required'
-            )
-            return verdict
-        rows, checks_reason = _read_pr_checks(worktree, pr_number)
-        if rows is None:
-            verdict['detail'] = f'delegated_check_evidence_unreadable: {checks_reason}'
-            return verdict
-        evidence_reason = _delegated_check_evidence(rows, deciders, gated, all_jobs, delegated['caller_job'])
-        if evidence_reason:
-            verdict['detail'] = evidence_reason
-            return verdict
-        verdict['carry_forward'] = True
-        verdict['source'] = _SPLIT_FOOTPRINT_SOURCE
-        verdict['decider_jobs'] = deciders
-        verdict['gated_jobs'] = gated
-        verdict['reason'] = (
-            f'{_CARRY_FORWARD_UNBUILT}: analysed {analysis_revision} != head {head_revision}; '
-            f'the delegating CI gated {", ".join(gated)} on {", ".join(deciders)} and skipped them all '
-            'on this head, so the delta since the analysed head is not built'
-        )
-        return verdict
-
     rows, source, rule_reason = _classify_paths(worktree, paths)
     verdict['source'] = source
     if rule_reason:
@@ -2548,7 +2028,6 @@ def cmd_sonar_stale_delta(args: argparse.Namespace) -> dict[str, Any]:
         (getattr(args, 'analysis_revision', '') or '').strip(),
         (getattr(args, 'head_revision', '') or '').strip(),
         worktree,
-        str(getattr(args, 'pr_number', '') or '').strip(),
     )
 
 
@@ -4795,12 +4274,6 @@ def main() -> int:
         '--worktree',
         default='.',
         help='The routed checkout the analysed revision and the delta are resolved in',
-    )
-    stale_parser.add_argument(
-        '--pr-number',
-        dest='pr_number',
-        default=None,
-        help='The pull request whose head check-runs decide a delegated footprint rule',
     )
 
     gate_parser = subparsers.add_parser(

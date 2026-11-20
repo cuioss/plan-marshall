@@ -839,30 +839,16 @@ whether to continue at the limit. Record every finding and its disposition.
      analysed, the pull-request analysis stays on an older head, and a retry can never succeed.
      When the read answered `undecidable` with the stale-analysis reason and both revisions are
      present, decide it:
-     `python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane sonar-stale-delta --state configured --count-status undecidable --analysis-revision {analysis_revision} --head-revision {head_revision} --pr-number {N} --worktree {worktree}`.
+     `python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane sonar-stale-delta --state configured --count-status undecidable --analysis-revision {analysis_revision} --head-revision {head_revision} --worktree {worktree}`.
      It resolves the analysed revision in the routed checkout, lists the paths changed from it to
      the head, and classifies them with the project's own footprint rule, the same rule the build
      gate reads. `carry_forward: true` means every changed path is one the project does not build,
      and the answer's `reason` is the named `carried_forward_unbuilt_delta` sentence stating both
      revisions.
-     **A consumer whose CI delegates its build** holds no rule of its own: its workflow's only job
-     is a `uses:` delegation to a reusable workflow another repository owns, and the ignore list
-     lives in that workflow's action code. There the decision reads the rule the CI APPLIED — every
-     check of the called workflow on the pull request's CURRENT head, with the gated job set derived
-     from that workflow's own job graph at the ref the `uses:` line pins — and its `source` is
-     `delegated-check-runs`. The carry-forward holds only when every row of that workflow settled
-     green, the deciding job passed and every gated job was SKIPPED. A failed or cancelled job, a
-     skip for another reason (Dependabot), a gated job that ran, an unpinned ref, an unreachable
-     called workflow, a job line or condition the reader cannot place and a graph with no footprint
-     decision all answer `undecidable` under a named reason. A changed path the checkout's own
-     architecture PLACES in a module it builds (`delegated_paths_buildable`), and an architecture that
-     could not be read at all (`delegated_architecture_unreadable`), refuse too; a root build file
-     belongs to no module, so it is decided by the evidence above (the CI builds a changed build file,
-     so a gated job reports a pass).
-     **The residual this carries:** the check-runs are the pull request's current head, which the
-     read cannot pin to `{head_revision}`; a push that landed between the Sonar read and this decision
-     would be read as the decided head's evidence. The `worktree_not_at_head` guard covers the
-     checkout, not the CI read, so a later head that SHRANK the delta is the one case this can miss.
+     **The rule is the project's OWN, and only that.** A project whose CI delegates its build to a
+     reusable workflow holds no path rule of its own, so this verb cannot decide its delta: it
+     answers `undecidable`, and the case is not carried forward. Deciding it needs the rule the CI
+     actually applied (its check-runs, bound to the picked run), which is a separate body of work.
      On `carry_forward: true` re-read with the SAME plan-less read, licensing exactly that revision
      and the head the decision verified:
      `read_open_issues … --analysed-revision {analysis_revision} --carried-forward-head-revision {head_revision}`.
@@ -881,7 +867,7 @@ whether to continue at the limit. Record every finding and its disposition.
      **A refusal is a blocker for that head, not a read to retry.** `revision_missing`,
      `revisions_equal`, `worktree_unreadable`, `worktree_not_at_head`, `worktree_dirty`,
      `worktree_ignored_inputs`, `revision_unresolvable`, `diff_failed`, `rule_unreadable`,
-     `delta_buildable` and every `delegated_*` refusal leave the read `undecidable`, and for a stale
+     `delta_buildable` and `rule_unreadable` leave the read `undecidable`, and for a stale
      read on a head the CI does not build retrying cannot succeed: the analysis will not appear
      there. Record the refusal and stop; what comes next is a head the CI builds (a rebuild) or the
      operator's decision. A bare `0` is never produced.
@@ -982,7 +968,7 @@ Merge only when all of these hold:
   `--carried-forward` and both revisions) admits the merge on exactly those terms, because its
   enumeration is a measurement of the analysed head. The count covers the open issues AND the security hotspots still to review. An
   `undecidable` read is a blocker and is retried — EXCEPT a stale read the carry-forward refused
-  (`delta_buildable`, `rule_unreadable` and every `delegated_*` refusal): that one cannot settle by
+  (`delta_buildable` and `rule_unreadable`): that one cannot settle by
   retrying on the same head and stays a blocker until a head the CI builds exists (a rebuild), or
   the operator decides. An `unconfigured` read is a blocker too; the lane never treats either as `0`.
 - **A question that bears on the merge never offers "merge on the recorded evidence"** while the
