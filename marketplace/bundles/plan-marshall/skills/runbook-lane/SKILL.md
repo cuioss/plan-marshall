@@ -123,12 +123,23 @@ footprint gate, and `source: architecture` otherwise.
 python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane sonar-gate \
   --state {configured|not_configured} [--count-status {confirmed|undecidable|unconfigured}] \
   [--open-count N] [--open-keys "K1,K2"] [--operator-selected-keys "K1,K2"] [--progress-file PATH] \
-  [--hotspot-keys "H1,H2"]
+  [--hotspot-keys "H1,H2"] [--count-status-reason "the read's own reason"] \
+  [--carried-forward --carried-forward-analysis-revision {sha} --carried-forward-head-revision {sha}]
 ```
 
-`--count-status`, `--open-count`, `--open-keys` and `--operator-selected-keys` belong to a
-`configured` state: supplying any of them beside `--state not_configured` is refused as
-`state_contradicts_read`, because a project with no Sonar has no read to report.
+`--count-status`, `--open-count`, `--open-keys`, `--operator-selected-keys`, `--count-status-reason`
+and the carry-forward marking belong to a `configured` state: supplying any of them beside
+`--state not_configured` is refused as `state_contradicts_read`, because a project with no Sonar has
+no read to report.
+
+**The carry-forward marking binds itself to the read.** A `--count-status-reason` that names a
+carry-forward (`carried_forward…`) while the marking is absent is refused as
+`carried_forward_unmarked`, so a figure measured at another head cannot reach the gate as this
+head's measurement. When the marking is present the read's own reason becomes the verdict's
+`reason`, so an empty delta is described as empty rather than as one the project does not build. A
+revision that is not a hexadecimal object name is refused as `revision_format_invalid`, and a short
+SHA and the full object name of one commit are one revision (`carried_forward_revisions_equal`),
+never a pair.
 
 Decides the merge gate's Sonar condition (section 7) from the read taken on the head:
 `merge_allowed: true` for `not_configured`, for a confirmed `0`, and for a confirmed count whose every
@@ -157,6 +168,7 @@ be told from a read that found none.
 python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane sonar-facts \
   --state {configured|not_configured} [--count-status {confirmed|undecidable|unconfigured}] \
   [--open-count N] [--rules "R1,R2"] [--gate-status {ok|error|not_computed|unknown}] \
+  [--count-status-reason "the read's own reason"] \
   [--carried-forward --analysed-revision {sha} --carried-forward-head-revision {sha}]
 ```
 
@@ -173,6 +185,20 @@ OPTIONAL `step.sonar-roundtrip.quality_gate_status` fact: a Sonar quality gate c
 metric that is neither an open finding nor an unreviewed hotspot, so that failure is not a finding for
 the open-findings rule — but it is reported, because a landing silent about a failing gate states half
 its read.
+
+### sonar-stale-delta
+
+```bash
+python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane sonar-stale-delta \
+  --state {configured|not_configured} [--count-status {confirmed|undecidable|unconfigured}] \
+  --analysis-revision {sha} --head-revision {sha} --worktree {worktree}
+```
+
+Decides whether a stale analysis is the read for this head: it resolves the analysed revision in the
+routed checkout, lists the paths changed from it to the head, and classifies them with the project's
+own footprint rule — the rule the build gate reads. `carry_forward: true` means every changed path is
+one the project does not build, and its `reason` is the named `carried_forward_unbuilt_delta`
+sentence stating both revisions. Every refusal class is stated once in section 6.
 
 ### review-gate
 
@@ -193,8 +219,11 @@ section contributes the count its title declares (`(N)` or `: N`); with none dec
 the larger of its per-row `cr-comment` markers and its nested per-file block counts, and a non-empty
 block with neither reads as one finding (an empty block reads as none). A counted title that matches
 neither a section nor a declared non-finding label (a file list, a review-info block) contributes its
-count as `unclassified` findings: never a stop, and each finding a POSITIVE count declares blocks the
-merge until it is disposed of like any other (a declared `0` declares no finding to dispose of). Each
+count as `unclassified` findings, and each finding a POSITIVE count declares blocks the merge until it
+is disposed of like any other (a declared `0` declares no finding to dispose of). A counted title the
+parser cannot read through — a wrapper declaring more findings than the sections it encloses account
+for, one carrying content beside them, or one enclosing a section with no closed block of its own —
+stops the gate as `undecidable_read` instead of being read as fewer. Each
 `--disposition` is one progress-file line, repeated once per finding.
 
 **The `--disposition` value is `{reviewer} {section} {id} — {sha|reason}`**, exactly the tail of the
@@ -212,9 +241,11 @@ the finding's, so a lane or human reply below it never discharges the concern, a
 a lane reply can itself contain the vocabulary);
 a disposition line names no real evidence
 (`disposition_unparsable` — a commit sha or a stated reason; a placeholder such as `TBD`, `-` or
-`n/a` is not evidence); the read is undecidable or truncated, carries a record kind the verb does not
-know, carries a review body with no attributable author, or declares more findings for one section than
-the gate will enumerate (`undecidable_read`). An undecidable read is a stop, never a pass. Otherwise it
+`n/a` is not evidence); or the read is undecidable (`undecidable_read`) — a failed or truncated
+provider read, a record kind the verb does not know, a review body with no attributable author, a
+counted heading whose block never closes, one of the counted-wrapper shapes above, or a count above
+the enumeration cap (per heading, for the inline status line, or for the whole body). An undecidable
+read is a stop, never a pass. Otherwise it
 answers `merge_allowed: true` with `all_handled`, and reports `unresolved_review_threads`,
 `review_body_findings_total` and `review_body_findings_handled` for the landing.
 
@@ -778,8 +809,8 @@ whether to continue at the limit. Record every finding and its disposition.
 ## 6. Pull request and reviews
 
 1. **Open the PR.** The lane is plan-less, so it allocates its body from the shared
-   `NO_PLAN` store under a slot of its OWN — its plan id. Two plan-less callers writing
-   the default slot is what cross-fed PR #2028's body from another plan.
+   `NO_PLAN` store under a slot of its OWN — its plan id. Two callers writing the default
+   slot at once overwrite each other's body, so the slot is per caller and per run.
    - `python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr prepare-body --plan-id NO_PLAN --slot {plan}`
      returns a path.
    - Write the body there: Summary; Changes, grouped per deliverable; Test evidence. The evidence
@@ -848,7 +879,8 @@ whether to continue at the limit. Record every finding and its disposition.
      **The rule is the project's OWN, and only that.** A project whose CI delegates its build to a
      reusable workflow holds no path rule of its own, so this verb cannot decide its delta: it
      answers `undecidable`, and the case is not carried forward. Deciding it needs the rule the CI
-     actually applied (its check-runs, bound to the picked run), which is a separate body of work.
+     actually applied (its check-runs, bound to the picked run), which is therefore not decided here; the architecture's documentation surfaces are not a
+      substitute for a rule the checkout does not hold.
      On `carry_forward: true` re-read with the SAME plan-less read, licensing exactly that revision
      and the head the decision verified:
      `read_open_issues … --analysed-revision {analysis_revision} --carried-forward-head-revision {head_revision}`.
@@ -864,13 +896,19 @@ whether to continue at the limit. Record every finding and its disposition.
      `sonar-facts … --carried-forward --analysed-revision {analysis_revision} --carried-forward-head-revision {head_revision}`,
      so the fact names the head it was measured at and the head it stands in for. A carried-forward
      figure that arrives without that marker is refused by both verbs.
-     **A refusal is a blocker for that head, not a read to retry.** `revision_missing`,
-     `revisions_equal`, `worktree_unreadable`, `worktree_not_at_head`, `worktree_dirty`,
-     `worktree_ignored_inputs`, `revision_unresolvable`, `diff_failed`, `rule_unreadable`,
-     `delta_buildable` and `rule_unreadable` leave the read `undecidable`, and for a stale
-     read on a head the CI does not build retrying cannot succeed: the analysis will not appear
-     there. Record the refusal and stop; what comes next is a head the CI builds (a rebuild) or the
-     operator's decision. A bare `0` is never produced.
+     **Each refusal has ONE retry class, stated here and cited by sections 4 and 7.**
+      - **Retryable after the named state changes** — the read can settle on the same head once the
+        cause is removed: `worktree_dirty` (commit or discard the change), `worktree_ignored_inputs`
+        (commit or remove the ignored CI file), `worktree_not_at_head` (check the routed checkout out
+        at the head) and `revision_unresolvable` (fetch the revisions, then retry).
+      - **Retryable as-is** — the read itself may be taken again: `worktree_unreadable` and
+        `diff_failed`.
+      - **Not retryable on this head** — a blocker until the input or the operator changes:
+        `revision_missing`, `revisions_equal` (the two revisions are one commit), `rule_unreadable`
+        (the project's rule cannot be read, including a CI that delegates it to a reusable workflow
+        this checkout does not hold), `delta_buildable` (the delta carries a path the project builds)
+        and a `stale_analysis` the decision refused, which needs a head the CI builds. A bare `0` is
+        never produced.
    - An `undecidable` read (the analysis did not settle, no revision reported for it, its head could not be
      resolved, a page shorter than the provider's own total, or the REST/auth call failed) is a
      **blocker**, never a `0`: retry the read, and if it stays undecidable do not merge. A
@@ -967,9 +1005,8 @@ Merge only when all of these hold:
   `not_configured`. A carried-forward read (§ 6's `carried_forward_unbuilt_delta`, carrying
   `--carried-forward` and both revisions) admits the merge on exactly those terms, because its
   enumeration is a measurement of the analysed head. The count covers the open issues AND the security hotspots still to review. An
-  `undecidable` read is a blocker and is retried — EXCEPT a stale read the carry-forward refused
-  (`delta_buildable` and `rule_unreadable`): that one cannot settle by
-  retrying on the same head and stays a blocker until a head the CI builds exists (a rebuild), or
+  `undecidable` read is a blocker and is retried according to section 6's retry classes: a refusal
+  that class names NOT retryable on this head stays a blocker until the input changes (a rebuild) or
   the operator decides. An `unconfigured` read is a blocker too; the lane never treats either as `0`.
 - **A question that bears on the merge never offers "merge on the recorded evidence"** while the
   open Sonar count is above `0` or `review-gate` reports `false`. The options it presents are the

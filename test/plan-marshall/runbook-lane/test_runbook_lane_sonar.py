@@ -925,6 +925,35 @@ def test_a_workflow_symlink_out_of_the_checkout_is_not_followed(tmp_path: Path) 
     assert lane._iter_workflow_files(repo) == []
 
 
+def test_a_delegating_consumers_delta_is_not_carried_forward(tmp_path: Path) -> None:
+    """The CI's rule lives in a reusable workflow this checkout does not hold.
+
+    Substituting the architecture's documentation surfaces would decide the delta by
+    a rule the CI never applied, so the delta stays undecidable: the delegation is
+    named instead of a skip being guessed.
+    """
+    repo = tmp_path / 'repo'
+    (repo / '.github' / 'workflows').mkdir(parents=True)
+    (repo / '.github' / 'workflows' / 'ci.yml').write_text(
+        'name: CI\nskip-on-docs-only: true\njobs:\n  verify:\n    uses: example/reusable.yml@0123456789abcdef\n',
+        encoding='utf-8',
+    )
+    (repo / 'doc').mkdir()
+    (repo / 'doc' / 'one.adoc').write_text('one\n', encoding='utf-8')
+    _git_init(repo)
+    analysed = _commit(repo, 'doc/two.adoc')
+    head = _commit(repo, 'doc/three.adoc')
+
+    verdict = lane.cmd_sonar_stale_delta(
+        _stale_args(analysis_revision=analysed, head_revision=head, worktree=str(repo))
+    )
+
+    assert verdict['carry_forward'] is False, verdict
+    assert verdict['reason'] == 'undecidable_read', verdict
+    assert verdict['detail'].startswith('rule_unreadable'), verdict
+    assert 'delegates' in verdict['detail'], verdict
+
+
 def test_a_missing_revision_pair_stays_undecidable(monkeypatch) -> None:
     _patch_delta(monkeypatch)
 
@@ -1151,9 +1180,8 @@ def test_the_lane_text_states_the_carry_forward_rule() -> None:
 
 
 # The delegated branch (a consumer whose CI delegates its build to a reusable
-# workflow) was descoped on the operator's word: a project's own footprint rule is
-# the only rule this verb decides with. The delegating case is re-staged as its own
-# plan, together with the run-identity evidence its review asked for.
+# workflow) is decided here: the rule the CI applied is not in this checkout, so the
+# delta stays undecidable and the delegation is named. No architecture substitute.
 
 
 # =============================================================================

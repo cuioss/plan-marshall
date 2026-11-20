@@ -1596,19 +1596,21 @@ def _classify_path(
 
     Under a READABLE CI rule (``skip`` is a list) that rule IS the non-building
     class, and the architecture is only a hint: a path the rule does not name
-    builds, even when the architecture files a documentation module over it.
-    When the checkout does not hold the rule (``skip`` is ``None``) the narrow
-    architecture fallback applies. A path in NEITHER class is buildable — the
-    gate's own direction, since its opt-in names what to SKIP, not what to
-    build; the architecture fallback keeps the same fail-closed bias, because
-    the module list is not an inventory of everything that can affect a build.
+    builds, even when the architecture files a documentation module over it. A
+    path in NEITHER class is buildable — the gate's own direction, since its
+    opt-in names what to SKIP, not what to build.
+
+    Under a CI that DELEGATES the rule to a reusable workflow (``source`` is
+    ``ci-workflow`` and ``skip`` is ``None``) this function is not reached: the
+    rule the CI applied is not in this checkout, so no architecture-derived
+    substitute may stand in for it, and the caller builds every path with the
+    delegation named. ``module_prefixes`` and the architecture fallback therefore
+    apply only to a project whose CI has no footprint rule at all.
     """
     if any(_matches_glob(path, pattern) for pattern in extra):
         return 'buildable'
     if source == 'ci-workflow':
-        if skip is not None:
-            return 'docs-only' if any(_matches_glob(path, pattern) for pattern in skip) else 'buildable'
-        return 'docs-only' if _is_project_doc(path, doc_surfaces) else 'buildable'
+        return 'docs-only' if any(_matches_glob(path, pattern) for pattern in skip or []) else 'buildable'
     if any(path.startswith(prefix) for prefix in module_prefixes):
         return 'buildable'
     return 'docs-only' if _is_project_doc(path, doc_surfaces) else 'buildable'
@@ -1698,6 +1700,17 @@ def _classify_paths(project_dir: Path, paths: list[str]) -> tuple[list[dict[str,
 
     if reason:
         return [{'path': path, 'kind': 'buildable'} for path in paths], source, reason
+    if source == 'ci-workflow' and skip is None:
+        # The workflow opts in but holds no rule: it DELEGATES the footprint rule to a
+        # reusable workflow this checkout does not hold. Substituting the architecture's
+        # documentation surfaces would decide the delta by a rule the CI never applied,
+        # and a wrong docs-only answer SKIPS a build the CI runs — the one direction this
+        # gate must never take. Every path builds, and the delegation is named.
+        return (
+            [{'path': path, 'kind': 'buildable'} for path in paths],
+            source,
+            'the CI delegates its footprint rule to a reusable workflow this checkout does not hold',
+        )
     try:
         rows = [
             {
