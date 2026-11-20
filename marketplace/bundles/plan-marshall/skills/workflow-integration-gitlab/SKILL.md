@@ -119,7 +119,7 @@ The canonical argparse surface for `gitlab_pr.py`. The plugin-doctor `missing-ca
 
 ### `--plan-id` and the `NO_PLAN` sentinel
 
-`--plan-id` is the ONLY body route on every body-taking verb this provider implements (`pr prepare-body`, `pr prepare-comment`, `pr create`, `pr edit`, `pr reply`, `pr thread-reply`, `issue prepare-body`, `issue prepare-comment`, `issue create`, `issue comment`) and it is required there — a `pr create` that supplies no `--plan-id` is rejected with a structured error naming the sentinel. `NO_PLAN` is an accepted value: a genuinely plan-less caller passes `--plan-id NO_PLAN`, gets the shared plan-less body store, and binds to the main checkout, so no verb needs a second plan-less convention of its own. There is no `--body-file`.
+`--plan-id` is the ONLY body route on every body-taking verb this provider implements (`pr prepare-body`, `pr prepare-comment`, `pr create`, `pr edit`, `pr reply`, `pr thread-reply`, `issue prepare-body`, `issue prepare-comment`, `issue create`, `issue comment`) and it is required there — a `pr create` that supplies no `--plan-id` is rejected with a structured error naming the sentinel. `NO_PLAN` is an accepted value: a genuinely plan-less caller passes `--plan-id NO_PLAN`, gets the shared plan-less body store, and binds to the main checkout; one that reads a body names its own `--slot` on the prepare and the consuming call because that store is shared. There is no `--body-file`.
 
 The `gitlab_pr.py` verbs take `--plan-id` for a different reason — it names the findings ledger the fetched comments are filed into — and a real plan id is the meaningful value there.
 

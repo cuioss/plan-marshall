@@ -113,13 +113,22 @@ def test_resolve_fails_closed_on_an_unreadable_sonar_block(tmp_path: Path, block
 # =============================================================================
 # the gate — an undecidable read never reaches the merge
 # =============================================================================
-def _gate_args(state: str = 'configured', count_status: str | None = 'confirmed', **flags: str) -> object:
-    """Build the namespace through the verb's own parser."""
+def _gate_args(state: str = 'configured', count_status: str | None = 'confirmed', **flags: Any) -> object:
+    """Build the namespace through the verb's own parser.
+
+    A ``True`` value is a bare switch, so a flag the verb declares as
+    ``store_true`` is passed the way the lane passes it.
+    """
     argv = ['sonar-gate', '--state', state]
     if count_status is not None:
         argv += ['--count-status', count_status]
     for name, value in flags.items():
-        argv += [f'--{name.replace("_", "-")}', value]
+        flag = f'--{name.replace("_", "-")}'
+        if isinstance(value, bool):
+            if value:
+                argv.append(flag)
+            continue
+        argv.extend([flag, value])
     return parse_ns('plan-marshall', 'runbook-lane', 'runbook_lane.py', *argv)
 
 
@@ -302,7 +311,7 @@ def _progress_file(tmp_path: Path, *keys: str) -> Path:
     return path
 
 
-def _gate_with_progress(progress: Path, **flags: str) -> Any:
+def _gate_with_progress(progress: Path, **flags: Any) -> Any:
     """Build the namespace, then attach the progress file the flag parser would set."""
     args: Any = _gate_args(**flags)
     args.progress_file = str(progress)
@@ -893,6 +902,7 @@ def test_a_carried_forward_zero_admits_the_merge_under_its_own_reason() -> None:
     verdict = cmd_sonar_gate(
         _gate_args(
             open_count='0',
+            carried_forward=True,
             carried_forward_analysis_revision=_ANALYSED,
             carried_forward_head_revision=_HEAD,
         )
@@ -904,8 +914,37 @@ def test_a_carried_forward_zero_admits_the_merge_under_its_own_reason() -> None:
     assert verdict['carried_forward'] is True
 
 
+def test_a_carried_forward_pair_without_the_marker_is_refused() -> None:
+    """The read's own ``carried_forward`` marker is what makes the pair a claim.
+
+    Without it the pair is a caller's assertion tied to no read, which is the
+    opt-in marking PLAN-LB-167's D3 refused: a carried-forward figure could read
+    like a measurement of the head.
+    """
+    verdict = cmd_sonar_gate(
+        _gate_args(
+            open_count='0',
+            carried_forward_analysis_revision=_ANALYSED,
+            carried_forward_head_revision=_HEAD,
+        )
+    )
+
+    assert verdict['status'] == 'error'
+    assert verdict['error'] == 'carried_forward_unmarked'
+
+
+def test_the_marker_without_the_revision_pair_is_refused() -> None:
+    """A marker with no revisions asserts a carry-forward it cannot name."""
+    verdict = cmd_sonar_gate(_gate_args(open_count='0', carried_forward=True))
+
+    assert verdict['status'] == 'error'
+    assert verdict['error'] == 'carried_forward_incomplete'
+
+
 def test_a_carried_forward_pair_with_one_revision_is_refused() -> None:
-    verdict = cmd_sonar_gate(_gate_args(open_count='0', carried_forward_analysis_revision=_ANALYSED))
+    verdict = cmd_sonar_gate(
+        _gate_args(open_count='0', carried_forward=True, carried_forward_analysis_revision=_ANALYSED)
+    )
 
     assert verdict['status'] == 'error'
     assert verdict['error'] == 'carried_forward_incomplete'
@@ -916,6 +955,7 @@ def test_a_carried_forward_pair_with_equal_revisions_is_refused() -> None:
     verdict = cmd_sonar_gate(
         _gate_args(
             open_count='0',
+            carried_forward=True,
             carried_forward_analysis_revision=_ANALYSED,
             carried_forward_head_revision=_ANALYSED,
         )
@@ -930,6 +970,7 @@ def test_a_carried_forward_pair_on_a_failed_read_is_refused() -> None:
     verdict = cmd_sonar_gate(
         _gate_args(
             count_status='undecidable',
+            carried_forward=True,
             carried_forward_analysis_revision=_ANALYSED,
             carried_forward_head_revision=_HEAD,
         )
@@ -945,6 +986,7 @@ def test_a_carried_forward_read_still_needs_its_findings_disposed(tmp_path: Path
             _progress_file(tmp_path),
             open_count='2',
             open_keys='K1,K2',
+            carried_forward=True,
             carried_forward_analysis_revision=_ANALYSED,
             carried_forward_head_revision=_HEAD,
         )
@@ -961,3 +1003,66 @@ def test_the_lane_text_states_the_carry_forward_rule() -> None:
     assert 'carried_forward_unbuilt_delta' in section, '§ 6 must name the distinct reason'
     assert '--analysed-revision' in section, '§ 6 must name the read licence'
     assert 'retry the read, and if it stays undecidable' in section, '§ 6 must keep the general stop'
+    assert 'NOT in that retry class' in section, '§ 6 must exempt a refused stale read from the retry'
+
+
+# The delegated branch (a consumer whose CI delegates its build to a reusable
+# workflow) was descoped on the operator's word: a project's own footprint rule is
+# the only rule this verb decides with. The delegating case is re-staged as its own
+# plan, together with the run-identity evidence its review asked for.
+
+
+# =============================================================================
+# the real-classifier twins of the two stubbed controls
+# =============================================================================
+
+
+def _git_init(root: Path) -> None:
+    import subprocess
+
+    for args in (
+        ('init', '-b', 'main'),
+        ('config', 'user.email', 'lane@example.com'),
+        ('config', 'user.name', 'lane'),
+        ('add', '.'),
+        ('commit', '-m', 'base'),
+    ):
+        subprocess.run(['git', '-C', str(root), *args], check=True, capture_output=True)
+
+
+def test_an_unreadable_footprint_rule_stays_undecidable_with_the_real_reader(tmp_path: Path) -> None:
+    """The real workflow reader, not a stubbed classifier, answers `rule_unreadable`."""
+    repo = tmp_path / 'repo'
+    workflows = repo / '.github' / 'workflows'
+    workflows.mkdir(parents=True)
+    (workflows / 'broken.yml').write_bytes(b'\xff\xfe this is not utf-8\n')
+    (repo / 'doc').mkdir()
+    (repo / 'doc' / 'one.adoc').write_text('one\n', encoding='utf-8')
+    _git_init(repo)
+    analysed = _commit(repo, 'doc/two.adoc')
+    head = _commit(repo, 'doc/three.adoc')
+
+    verdict = lane.cmd_sonar_stale_delta(
+        _stale_args(analysis_revision=analysed, head_revision=head, worktree=str(repo))
+    )
+
+    assert verdict['carry_forward'] is False
+    assert verdict['reason'] == 'undecidable_read'
+    assert verdict['detail'].startswith('rule_unreadable')
+
+
+def test_an_unplaceable_path_stays_undecidable_with_the_real_classifier(tmp_path: Path) -> None:
+    """The real classifier, not a stubbed row set, answers `buildable` for it."""
+    repo = tmp_path / 'repo'
+    _repo_with_a_footprint_rule(repo)
+    analysed = _commit(repo, 'doc/two.adoc')
+    (repo / 'mystery').mkdir()
+    head = _commit(repo, 'mystery/file.xyz')
+
+    verdict = lane.cmd_sonar_stale_delta(
+        _stale_args(analysis_revision=analysed, head_revision=head, worktree=str(repo))
+    )
+
+    assert verdict['carry_forward'] is False
+    assert verdict['reason'] == 'undecidable_read'
+    assert verdict['buildable_paths'] == ['mystery/file.xyz']

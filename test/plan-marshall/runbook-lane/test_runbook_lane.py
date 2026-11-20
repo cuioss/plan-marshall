@@ -3133,3 +3133,76 @@ def test_the_lane_names_the_thread_reply_prepare_flag_and_forbids_a_hand_written
     rules = _section('## 1. Rules (every one binds; breaking one fails the run)')
     assert '`prepare-*`' in rules, 'the body-slot permission is not tied to a prepare verb'
     assert 'never a path written by hand' in rules, 'a hand-written body slot is still permitted'
+
+
+# =============================================================================
+# PLAN-LB-171 D3 — every plan-less caller names its own PR body slot
+# =============================================================================
+
+_LAND_MD = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-orchestrator' / 'workflow' / 'land.md'
+
+#: The verbs that allocate or consume a body file. Under the `NO_PLAN` sentinel
+#: they share one store, so each caller must name its own slot.
+_BODY_VERBS = ('prepare-body', 'prepare-comment', 'pr create', 'pr reply', 'pr thread-reply', 'pr edit')
+
+
+def _body_commands(section: str) -> list[str]:
+    commands = re.findall(r'`([^`]*ci pr [^`]*)`', section)
+    return [command for command in commands if any(verb in command for verb in _BODY_VERBS)]
+
+
+def test_every_body_command_in_the_lane_names_the_run_own_slot() -> None:
+    """One shared `pr-create-default.md` is what cross-fed PR #2028's body."""
+    section = _section('## 6. Pull request and reviews')
+    planless = [command for command in _body_commands(section) if '--plan-id NO_PLAN' in command]
+
+    assert planless, '§ 6 must name the plan-less body commands'
+    for command in planless:
+        assert '--slot {plan}' in command, f'a plan-less body command names no slot: {command}'
+    for verb in ('prepare-body', 'prepare-comment', 'pr create', 'pr reply', 'pr thread-reply'):
+        assert any(verb in command and '--slot {plan}' in command for command in planless), (
+            f'§ 6 names no slotted {verb} call'
+        )
+
+
+def test_the_land_workflow_names_its_own_body_slot() -> None:
+    text = ' '.join(_LAND_MD.read_text(encoding='utf-8').replace('\\', ' ').split())
+
+    assert 'pr prepare-body --plan-id NO_PLAN --slot land' in text
+    assert 'pr create --plan-id NO_PLAN --slot land' in text
+
+
+# =============================================================================
+# PLAN-LB-171 D4 — the documents say what the code does
+# =============================================================================
+
+
+def test_the_lane_text_says_the_current_head_is_what_the_ci_does_not_build() -> None:
+    section = _section('## 6. Pull request and reviews')
+
+    assert 'the current head is never analysed' in section
+    assert 'the analysis stays on a head the CI does not build' not in section
+
+
+def test_the_lane_text_says_what_a_refused_carry_forward_means() -> None:
+    """A refusal such as `delta_buildable` cannot settle by retrying the read."""
+    section = _section('## 6. Pull request and reviews')
+
+    assert 'A refusal is a blocker for that head, not a read to retry' in section
+    assert 'retrying cannot succeed' in section
+    assert 'rebuild' in section
+
+
+def test_the_merge_gate_does_not_promise_a_retry_for_a_refused_carry_forward() -> None:
+    section = _section('## 7. Merge gate')
+
+    assert 'a stale read the carry-forward refused' in section
+    assert 'rebuild' in section
+
+
+def test_the_lane_text_passes_the_carried_forward_marking_to_the_gate_and_the_facts() -> None:
+    section = _section('## 6. Pull request and reviews')
+
+    assert 'sonar-gate --state configured --count-status confirmed' in section
+    assert '--carried-forward' in section
+    assert 'sonar-facts' in section or '§ 8' in section

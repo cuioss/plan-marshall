@@ -17,6 +17,8 @@ removed from the schema turns this red.
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 from test_runbook_lane import _PYPROJECT_EXEC, _run_resolve, _seed_fixture
 
@@ -37,12 +39,17 @@ _COUNT_FACT = 'sonar_open_new_issues'
 _RULES_FACT = 'step.sonar-roundtrip.open_issue_rules'
 
 
-def _facts_args(state: str = 'configured', count_status: str | None = 'confirmed', **flags: str):
+def _facts_args(state: str = 'configured', count_status: str | None = 'confirmed', **flags: Any):
     argv = ['sonar-facts', '--state', state]
     if count_status is not None:
         argv += ['--count-status', count_status]
     for name, value in flags.items():
-        argv += [f'--{name.replace("_", "-")}', value]
+        flag = f'--{name.replace("_", "-")}'
+        if isinstance(value, bool):
+            if value:
+                argv.append(flag)
+            continue
+        argv.extend([flag, value])
     return parse_ns('plan-marshall', 'runbook-lane', 'runbook_lane.py', *argv)
 
 
@@ -235,19 +242,50 @@ def test_the_gate_status_is_validated_with_a_named_error() -> None:
 
 def test_the_analysed_revision_rides_beside_a_carried_forward_count() -> None:
     """The figure was measured at another head, so the fact names that head."""
-    facts = cmd_sonar_facts(_facts_args(open_count='0', analysed_revision='b' * 40))
+    facts = cmd_sonar_facts(
+        _facts_args(
+            open_count='0',
+            carried_forward=True,
+            analysed_revision='b' * 40,
+            carried_forward_head_revision='a' * 40,
+        )
+    )
 
     assert facts['fact_lines'] == [
         f'{_COUNT_FACT}=0',
         f'{_RULES_FACT}=none',
         f'step.sonar-roundtrip.analysed_revision={"b" * 40}',
+        f'step.sonar-roundtrip.carried_forward_head_revision={"a" * 40}',
+        'step.sonar-roundtrip.carried_forward=true',
     ]
     assert check_landing_completeness(_landing(list(facts['fact_lines']))) == (True, [])
 
 
+def test_a_carried_forward_count_without_its_marking_is_refused() -> None:
+    """A figure measured at another head must say so, or it reads as this head's."""
+    verdict = cmd_sonar_facts(_facts_args(open_count='0', analysed_revision='b' * 40))
+
+    assert verdict['status'] == 'error'
+    assert verdict['error'] == 'carried_forward_unmarked'
+
+
+def test_the_marking_without_the_revisions_is_refused() -> None:
+    verdict = cmd_sonar_facts(_facts_args(open_count='0', carried_forward=True))
+
+    assert verdict['status'] == 'error'
+    assert verdict['error'] == 'carried_forward_incomplete'
+
+
+def test_the_marking_with_one_revision_is_refused() -> None:
+    verdict = cmd_sonar_facts(_facts_args(open_count='0', carried_forward=True, analysed_revision='b' * 40))
+
+    assert verdict['status'] == 'error'
+    assert verdict['error'] == 'carried_forward_incomplete'
+
+
 def test_an_analysed_revision_on_a_failed_read_is_refused() -> None:
     """A revision names a measurement; a failed read made none to name."""
-    verdict = cmd_sonar_facts(_facts_args(count_status='undecidable', analysed_revision='b' * 40))
+    verdict = cmd_sonar_facts(_facts_args(count_status='undecidable', carried_forward=True, analysed_revision='b' * 40))
 
     assert verdict['status'] == 'error'
     assert verdict['error'] == 'analysed_revision_requires_confirmed'

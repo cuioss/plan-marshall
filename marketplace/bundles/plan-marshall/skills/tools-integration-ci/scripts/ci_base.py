@@ -208,16 +208,58 @@ assert set(BODY_PREPARE_COMMANDS) == VALID_BODY_KINDS, (
     f'extra={sorted(set(BODY_PREPARE_COMMANDS) - VALID_BODY_KINDS)}'
 )
 
-_BODY_SLOT_RE = re.compile(r'^[a-z0-9][a-z0-9-]{0,63}$')
+_BODY_SLOT_RE = re.compile(r'^[a-z0-9][a-z0-9-]{0,127}$')
+
+#: The plan-less sentinel and the slot every body verb defaults to. Two plan-less
+#: callers share ONE store (a runbook lane, a ledger land, a steward landing), so
+#: the default slot is a single file: a second caller writing it between the first
+#: caller's `prepare-body` and its `create` makes the first consume the second's
+#: body. That mechanism is what the per-caller slot removes; a pull request whose
+#: body describes another plan is consistent with it.
+_NO_PLAN_SENTINEL = 'NO_PLAN'
+_DEFAULT_BODY_SLOT = 'default'
 
 
 def _resolve_body_slot(slot: str | None) -> str:
-    """Validate an optional slot identifier; default to 'default'."""
+    """Validate an optional slot identifier; default to 'default'.
+
+    The length bound keeps a slot one path segment while letting a caller use its
+    natural name as the slot: a runbook lane's own identifier is its plan id, and
+    an artificial short name would be a second spelling of the same thing.
+    """
     if slot is None or slot == '':
-        return 'default'
+        return _DEFAULT_BODY_SLOT
     if not _BODY_SLOT_RE.match(slot):
-        raise ValueError(f"Invalid slot '{slot}': must match [a-z0-9][a-z0-9-]{{0,63}}")
+        raise ValueError(f"Invalid slot '{slot}': must match [a-z0-9][a-z0-9-]{{0,127}}")
     return slot
+
+
+def _refuse_shared_planless_slot(plan_id: str, slot: str | None) -> dict[str, Any] | None:
+    """Return the refusal for the plan-less shared default slot, or ``None``.
+
+    Under ``NO_PLAN`` the body store is one shared directory, so the default slot
+    is one file every plan-less caller writes. Requiring a named slot is what makes
+    two concurrent callers unable to cross-feed: each names its own, and a caller
+    that forgets one is refused here rather than silently consuming or overwriting
+    a sibling's body.
+    """
+    if plan_id != _NO_PLAN_SENTINEL:
+        return None
+    try:
+        resolved = _resolve_body_slot(slot)
+    except ValueError as exc:
+        return {'status': 'error', 'error': 'invalid_slot', 'message': str(exc)}
+    if resolved != _DEFAULT_BODY_SLOT:
+        return None
+    return {
+        'status': 'error',
+        'error': 'shared_body_slot_refused',
+        'plan_id': plan_id,
+        'message': (
+            'the NO_PLAN body store is shared by every plan-less caller, so the default slot is refused: '
+            'pass --slot {your-own-name} on this call and on every consuming call'
+        ),
+    }
 
 
 def normalize_issue_ref(issue: str) -> str:
@@ -265,6 +307,10 @@ def prepare_body(plan_id: str, kind: str, slot: str | None = None) -> dict[str, 
         resolved_slot = _resolve_body_slot(slot)
     except ValueError as e:
         return {'status': 'error', 'error': 'invalid_slot', 'message': str(e)}
+
+    refusal = _refuse_shared_planless_slot(plan_id, resolved_slot)
+    if refusal is not None:
+        return refusal
 
     # Guard at script side: refuse to materialise a body path under a plan
     # directory that doesn't exist (and was never initialised by phase-1).
@@ -332,10 +378,20 @@ def read_and_consume_body(
             'message': '--plan-id is required to consume a prepared body.',
         }
 
+    refusal = _refuse_shared_planless_slot(plan_id, slot)
     try:
         path = get_body_path(plan_id, kind, slot)
     except ValueError as e:
         return None, {'status': 'error', 'error': 'invalid_kind', 'message': str(e)}
+
+    if refusal is not None:
+        # A plan-less caller that consumes an OPTIONAL body and has none is not
+        # reading a shared file at all (a title-only `pr edit`), so the refusal
+        # applies only where a body would actually be read — including the case
+        # where the shared default file exists and could be somebody else's.
+        if required or path.exists():
+            return None, refusal
+        return '', None
 
     if not path.exists():
         if not required:

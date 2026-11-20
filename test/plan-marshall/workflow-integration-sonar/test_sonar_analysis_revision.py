@@ -92,12 +92,14 @@ def _fetch_args(plan_id, pr='42'):
     )
 
 
-def _read_args(pr='42', analysed=None):
+def _read_args(pr='42', analysed=None, verified_head=_HEAD):
     argv = ['--project', _PROJECT]
     if pr is not None:
         argv += ['--pr', pr]
     if analysed is not None:
         argv += ['--analysed-revision', analysed]
+        if verified_head is not None:
+            argv += ['--carried-forward-head-revision', verified_head]
     return parse_ns(
         'plan-marshall',
         'workflow-integration-sonar',
@@ -467,6 +469,42 @@ class TestLicensedStaleAnalysis:
         assert 'carried_forward' not in result
         assert 'count_status_reason' not in result
 
+    def test_a_licence_without_the_verified_head_is_refused(self, monkeypatch, plan_context):
+        """The analysed revision alone is disclosed by every undecidable read.
+
+        A caller that supplies only it would otherwise get a confirmed carried-forward
+        read for a head whose delta nothing classified, so the licence must name the
+        head the decision verified.
+        """
+        plan_context.plan_dir_for('rev-licensed-nohead-binding')
+        _install_api(monkeypatch, {_PR_LIST: _pr_listing(_STALE)})
+        ce, head = _settled()
+
+        with ce, head, patch.object(sonar_mod, '_fetch_issues') as fetch:
+            result = sonar_mod.cmd_read_open_issues(_read_args(analysed=_STALE, verified_head=None))
+
+        assert result['count_status'] == 'undecidable'
+        assert result['open_issue_count'] is None
+        assert result['count_status_reason'] == 'analysed_revision_requires_verified_head'
+        fetch.assert_not_called()
+
+    def test_a_licence_for_another_head_is_refused(self, monkeypatch, plan_context):
+        """A push between the decision and the read leaves the licence covering no head."""
+        plan_context.plan_dir_for('rev-licensed-head-moved')
+        _install_api(monkeypatch, {_PR_LIST: _pr_listing(_STALE)})
+        ce, head = _settled()
+        moved = 'c' * 40
+
+        with ce, head, patch.object(sonar_mod, '_fetch_issues') as fetch:
+            result = sonar_mod.cmd_read_open_issues(_read_args(analysed=_STALE, verified_head=moved))
+
+        assert result['count_status'] == 'undecidable'
+        assert result['open_issue_count'] is None
+        assert result['count_status_reason'].startswith('carried_forward_head_mismatch')
+        assert moved in result['count_status_reason']
+        assert _HEAD in result['count_status_reason']
+        fetch.assert_not_called()
+
 
 class TestRevisionMovingDuringTheRead:
     """An analysis that completes mid-read makes the enumeration another head's."""
@@ -659,3 +697,22 @@ class TestHeadResolution:
 
         assert sonar_mod._resolve_head_revision(None) == _HEAD
         assert seen == ['HEAD']
+
+
+# =============================================================================
+# PLAN-LB-171 D4 — the skill states the head-bound licence
+# =============================================================================
+
+
+def test_the_skill_contract_states_the_head_bound_licence() -> None:
+    from pathlib import Path
+
+    text = ' '.join((Path(sonar_mod.__file__).parent.parent / 'SKILL.md').read_text(encoding='utf-8').split())
+
+    assert '--carried-forward-head-revision' in text
+    assert 'carried_forward_head_mismatch' in text
+    assert 'analysed_revision_requires_verified_head' in text
+    # The cause, stated the right way round: the CURRENT head is the one the CI
+    # does not build; the analysed head is one it did build.
+    assert 'one the CI did build' in text
+    assert 'keeps the analysis on a commit the CI does not build' not in text

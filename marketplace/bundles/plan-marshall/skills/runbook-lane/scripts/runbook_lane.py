@@ -15,10 +15,15 @@ Verb surface::
     runbook_lane executor-skew [--executor PATH] [--lane-dir DIR]
     runbook_lane build-routing --worktree PATH
     runbook_lane build-classify --paths P1,P2 [--project-dir DIR]
+    runbook_lane sonar-stale-delta --state STATE [--count-status STATUS]
+                             [--analysis-revision SHA] [--head-revision SHA] [--worktree DIR]
     runbook_lane sonar-gate --state STATE [--count-status STATUS] [--open-count N]
                              [--open-keys K1,K2] [--operator-selected-keys K1,K2]
+                             [--carried-forward --carried-forward-analysis-revision SHA
+                              --carried-forward-head-revision SHA]
     runbook_lane sonar-facts --state STATE [--count-status STATUS] [--open-count N] [--rules R1,R2]
                              [--gate-status STATUS]
+                             [--carried-forward --analysed-revision SHA --carried-forward-head-revision SHA]
     runbook_lane review-gate --pr-number N [--project-dir DIR] [--disposition TEXT ...]
 
 ``--spec`` must name a staged spec, i.e. a file below
@@ -1825,12 +1830,20 @@ def _delta_paths(worktree: Path, base: str, head: str) -> list[str] | None:
 
     ``None`` is the load-bearing answer: it says the change could not be listed,
     which is never read as an empty change. Renames are not followed, so a rename
-    reports both its source and its destination.
+    reports both its source and its destination. ``-z`` is what keeps a path Git
+    would otherwise quote (a non-ASCII or control character in it) intact: the
+    quoted form would not match a module prefix, and the veto would then miss a
+    change inside a built module.
     """
-    ok, out = _git_in(worktree, 'diff', '--name-only', '--no-renames', base, head)
+    ok, out = _git_in(worktree, 'diff', '--name-only', '--no-renames', '-z', base, head)
     if not ok:
         return None
-    return [line.strip() for line in out.splitlines() if line.strip()]
+    return [path for path in out.split('\0') if path]
+
+
+# =============================================================================
+# Stale-delta refusals a project's own rule cannot decide are NOT carried
+# =============================================================================
 
 
 def _sonar_stale_delta_verdict(
@@ -1845,14 +1858,17 @@ def _sonar_stale_delta_verdict(
     The case this exists for: a head the project's CI deliberately never analyses
     (``skip-on-docs-only``), where the pull-request analysis stays on an earlier
     head forever. Retrying that read can never succeed, so the lane decides it
-    from the analysed head instead — but only when the change from that head to
-    this one is positively a path set the project does not build.
+    from the analysed head instead.
 
-    Fail-closed is the whole design: ``carry_forward`` is ``True`` only when every
-    changed path was classified as not built by the project's own rule. An
-    unresolvable revision, an unlistable diff, an unreadable rule and a single
-    buildable path all answer ``carry_forward: false`` with the lane's own
-    ``undecidable_read``, which is the state the merge gate already refuses.
+    Fail-closed is the whole design: the delta must be one the project does not
+    build, and the project's own rule is the only thing that can say so. Every
+    changed path is classified with that rule (its CI workflow's skip globs, or its
+    architecture's documentation surfaces), and one ``buildable`` path refuses the
+    carry-forward. A project whose CI delegates its build to a reusable workflow
+    holds no such rule, so the delegated case is not decided here. An unresolvable
+    revision, an unlistable diff, an unreadable rule and a single buildable path all
+    answer ``carry_forward: false`` with the lane's own ``undecidable_read``, which is
+    the state the merge gate already refuses.
     """
     verdict: dict[str, Any] = {
         'status': 'success',
@@ -2049,19 +2065,54 @@ def _operator_selection_records(progress_file: Path) -> set[str] | None:
 def _carried_forward_revisions(
     args: argparse.Namespace,
 ) -> tuple[tuple[str, str] | None, dict[str, Any] | None]:
-    """Read the carried-forward revision pair, or refuse it.
+    """Read the carried-forward marking and its revision pair, or refuse them.
 
-    A carried-forward read is licensed by TWO facts that only make sense together:
-    the analysed revision the enumeration was measured at, and the head it stands
-    in for. One alone describes no read, so it is refused rather than
+    A carried-forward read is licensed by THREE facts that only make sense
+    together: the read's own ``carried_forward`` marker, the analysed revision the
+    enumeration was measured at, and the head it stands in for. The marker is
+    caller-asserted, and what it closes is one direction only: the revision pair
+    ALONE no longer renames a verdict, so a caller following the documented chain
+    cannot pass a carried-forward rename without saying so. It does not prove the
+    read was carried forward — a caller that invents all three still gets the
+    rename — and it does not stop a plain figure being reported plainly. One
+    revision alone describes no read either, so it is refused rather than
     half-recorded, and the pair is refused on any read that is not a confirmed
     enumeration — the carry-forward renames a measured figure, never a failed one.
     """
+    marked = bool(getattr(args, 'carried_forward', False))
     analysed = (getattr(args, 'carried_forward_analysis_revision', None) or '').strip()
     head = (getattr(args, 'carried_forward_head_revision', None) or '').strip()
-    if not analysed and not head:
+    if not marked and not analysed and not head:
         return None, None
-    if not analysed or not head:
+    if not marked:
+        return None, {
+            'status': 'error',
+            'error': 'carried_forward_unmarked',
+            'message': (
+                "a carried-forward figure carries the read's own `carried_forward: true` marker: pass "
+                '--carried-forward beside --carried-forward-analysis-revision and '
+                '--carried-forward-head-revision, never the revision pair alone'
+            ),
+        }
+    if not analysed:
+        return None, {
+            'status': 'error',
+            'error': 'carried_forward_incomplete',
+            'message': (
+                'a carried-forward read names both revisions: '
+                '--carried-forward-analysis-revision and --carried-forward-head-revision'
+            ),
+        }
+    if getattr(args, 'count_status', None) != 'confirmed':
+        return None, {
+            'status': 'error',
+            'error': 'carried_forward_requires_confirmed',
+            'message': (
+                'a carried-forward read is a confirmed enumeration of the analysed head; '
+                f'--count-status is {getattr(args, "count_status", None)!r}'
+            ),
+        }
+    if not head:
         return None, {
             'status': 'error',
             'error': 'carried_forward_incomplete',
@@ -2079,15 +2130,6 @@ def _carried_forward_revisions(
             'message': (
                 'the carried-forward analysed revision and head revision are the same commit; '
                 'a carried-forward read names the head an earlier analysis is standing in for'
-            ),
-        }
-    if getattr(args, 'count_status', None) != 'confirmed':
-        return None, {
-            'status': 'error',
-            'error': 'carried_forward_requires_confirmed',
-            'message': (
-                'a carried-forward read is a confirmed enumeration of the analysed head; '
-                f'--count-status is {getattr(args, "count_status", None)!r}'
             ),
         }
     return (analysed, head), None
@@ -2295,6 +2337,7 @@ def cmd_sonar_gate(args: argparse.Namespace) -> dict[str, Any]:
             or getattr(args, 'open_keys', None) is not None
             or getattr(args, 'operator_selected_keys', None) is not None
             or getattr(args, 'hotspot_keys', None) is not None
+            or getattr(args, 'carried_forward', None)
             or getattr(args, 'carried_forward_analysis_revision', None) is not None
             or getattr(args, 'carried_forward_head_revision', None) is not None
         ):
@@ -2303,7 +2346,7 @@ def cmd_sonar_gate(args: argparse.Namespace) -> dict[str, Any]:
                 'error': 'state_contradicts_read',
                 'message': (
                     'a not_configured state carries no read; drop --count-status, --open-count, '
-                    '--open-keys, --operator-selected-keys, --hotspot-keys and the '
+                    '--open-keys, --operator-selected-keys, --hotspot-keys, --carried-forward and the '
                     '--carried-forward-* revisions'
                 ),
             }
@@ -2413,14 +2456,21 @@ def cmd_sonar_facts(args: argparse.Namespace) -> dict[str, Any]:
         # read one project's issues and reported another project's state.
         if any(
             getattr(args, name, None) is not None
-            for name in ('count_status', 'open_count', 'rules', 'gate_status', 'analysed_revision')
-        ):
+            for name in (
+                'count_status',
+                'open_count',
+                'rules',
+                'gate_status',
+                'analysed_revision',
+                'carried_forward_head_revision',
+            )
+        ) or getattr(args, 'carried_forward', False):
             return {
                 'status': 'error',
                 'error': 'state_contradicts_read',
                 'message': (
                     'a not_configured state carries no read; drop --count-status, --open-count, '
-                    '--rules, --gate-status and --analysed-revision'
+                    '--rules, --gate-status, --carried-forward and the carried-forward revisions'
                 ),
             }
         count, rules = 'n/a', 'n/a'
@@ -2477,21 +2527,65 @@ def cmd_sonar_facts(args: argparse.Namespace) -> dict[str, Any]:
                 }
 
     fact_lines = [f'{_SONAR_OPEN_ISSUES_FACT}={count}', f'step.{_SONAR_FACT_STEP}.open_issue_rules={rules}']
-    # The analysed revision rides beside a CONFIRMED count only. A carried-forward
-    # figure is a figure of that revision, so the fact must name it — otherwise a
-    # reader takes an enumeration of an earlier head for a measurement of this one.
+    # A carried-forward figure is a figure of an EARLIER head, so the fact must say
+    # three things together: that it is carried forward, which head was analysed and
+    # which head it stands in for. The read's own marker is required — a figure
+    # measured elsewhere must never render as this head's measurement.
+    marked = bool(getattr(args, 'carried_forward', False))
     analysed_revision = (getattr(args, 'analysed_revision', None) or '').strip()
+    carried_forward_head = (getattr(args, 'carried_forward_head_revision', None) or '').strip()
+    if not marked and (analysed_revision or carried_forward_head):
+        return {
+            'status': 'error',
+            'error': 'carried_forward_unmarked',
+            'message': (
+                "a carried-forward figure carries the read's own `carried_forward: true` marker: pass "
+                '--carried-forward beside --analysed-revision and --carried-forward-head-revision'
+            ),
+        }
+    if marked and not analysed_revision:
+        return {
+            'status': 'error',
+            'error': 'carried_forward_incomplete',
+            'message': (
+                '--carried-forward names both revisions: --analysed-revision (measured at) and '
+                '--carried-forward-head-revision (standing in for)'
+            ),
+        }
+    if analysed_revision and count_status != 'confirmed':
+        return {
+            'status': 'error',
+            'error': 'analysed_revision_requires_confirmed',
+            'message': (
+                '--analysed-revision names the head a confirmed figure was measured at; '
+                f'--count-status is {count_status!r}, which measured nothing'
+            ),
+        }
+    if marked and not carried_forward_head:
+        return {
+            'status': 'error',
+            'error': 'carried_forward_incomplete',
+            'message': (
+                '--carried-forward names both revisions: --analysed-revision (measured at) and '
+                '--carried-forward-head-revision (standing in for)'
+            ),
+        }
+    if analysed_revision and analysed_revision == carried_forward_head:
+        # Two equal revisions describe a settled read, not a carried-forward one;
+        # the fact would assert a difference that does not exist. The gate refuses
+        # the same input, so the two verbs cannot disagree about it.
+        return {
+            'status': 'error',
+            'error': 'carried_forward_revisions_equal',
+            'message': (
+                'the carried-forward analysed revision and head revision are the same commit; a '
+                'carried-forward figure names the head an older analysis is standing in for'
+            ),
+        }
     if analysed_revision:
-        if count_status != 'confirmed':
-            return {
-                'status': 'error',
-                'error': 'analysed_revision_requires_confirmed',
-                'message': (
-                    '--analysed-revision names the head a confirmed figure was measured at; '
-                    f'--count-status is {count_status!r}, which measured nothing'
-                ),
-            }
         fact_lines.append(f'step.{_SONAR_FACT_STEP}.analysed_revision={analysed_revision}')
+        fact_lines.append(f'step.{_SONAR_FACT_STEP}.carried_forward_head_revision={carried_forward_head}')
+        fact_lines.append(f'step.{_SONAR_FACT_STEP}.carried_forward=true')
     # The quality-gate fact is OPTIONAL and rides only when the caller read one:
     # a line asserting a state nothing observed would be worse than its absence.
     if gate_status is not None:
@@ -4234,6 +4328,12 @@ def main() -> int:
         help='Retired: a lane-recorded dismissal is refused (lane_dismissal_not_accepted)',
     )
     gate_parser.add_argument(
+        '--carried-forward',
+        dest='carried_forward',
+        action='store_true',
+        help="The read's own carried_forward marker; it must accompany the revision pair",
+    )
+    gate_parser.add_argument(
         '--carried-forward-analysis-revision',
         dest='carried_forward_analysis_revision',
         default=None,
@@ -4281,10 +4381,22 @@ def main() -> int:
         help='The new-code quality-gate status read at the merge head: ok, error, not_computed or unknown',
     )
     facts_parser.add_argument(
+        '--carried-forward',
+        dest='carried_forward',
+        action='store_true',
+        help="The read's own carried_forward marker; a carried-forward figure must carry it",
+    )
+    facts_parser.add_argument(
         '--analysed-revision',
         dest='analysed_revision',
         default=None,
         help='The analysed revision a carried-forward confirmed figure was measured at',
+    )
+    facts_parser.add_argument(
+        '--carried-forward-head-revision',
+        dest='carried_forward_head_revision',
+        default=None,
+        help='The head a carried-forward figure stands in for',
     )
 
     review_parser = subparsers.add_parser(
