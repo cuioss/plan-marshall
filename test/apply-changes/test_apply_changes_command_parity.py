@@ -45,7 +45,7 @@ from _harness_entry_point_scan import (
 )
 
 from conftest import PROJECT_ROOT
-from marketplace.targets.sync import SYNC_TARGETS
+from marketplace.targets.sync import CLAUDE_TARGET, SYNC_TARGETS
 
 _COMMAND_NAME = 'apply-changes'
 
@@ -126,6 +126,36 @@ _HARNESS_LOCATION_MARKERS: tuple[str, ...] = ('plugin cache', '~/.claude', '.con
 #: carries the gate literal without one of these runs unconditionally, which is the
 #: defect the gate pin exists to prevent.
 _RESTRICTIVE_MARKERS: tuple[str, ...] = ('only when', 'under the same')
+
+#: The frontmatter key that withholds a command or skill from model invocation. One
+#: harness publishes it; the other two publish no such key, and the gap is recorded
+#: in the entry point beside the sequence rather than in a PR body.
+_OPERATOR_ONLY_KEY = 'disable-model-invocation'
+
+#: What a harness without the key must say instead: that it publishes no key that
+#: withholds the command, and what keeps a model from invoking it there.
+_GAP_CLAUSE = 'no key that withholds'
+
+#: The tag every entry point must carry on the operator-only claim — the key's own
+#: effect is not shown by reading, and saying so is what keeps the claim honest.
+_UNCONFIRMED_CLAUSE = 'not shown by reading'
+
+#: The target metadata each gap-claiming harness cites, so the claim can be checked
+#: against the data instead of only against its own prose. A rules file that ever
+#: gains the withholding key makes the gap statement false, and this map is what
+#: turns that into a red test rather than a stale paragraph.
+#:
+#: The PATH is explicit data: `sync.py` publishes no rules-file path and defines no
+#: directory-naming convention for one, so it cannot be derived from the target
+#: name. The KEY SET is not a second manifest — it is derived from the engine's own
+#: synced harnesses, minus the one harness that publishes the key.
+_RULES_FILE_PATHS: dict[str, str] = {
+    'opencode': 'marketplace/targets/opencode/frontmatter-rules.json',
+    'antigravity': 'marketplace/targets/antigravity/frontmatter-rules.json',
+}
+_GAP_HARNESSES: tuple[str, ...] = tuple(harness for harness in SYNC_TARGETS if harness != CLAUDE_TARGET)
+_HARNESS_RULES_FILES: dict[str, str] = {harness: _RULES_FILE_PATHS[harness] for harness in _GAP_HARNESSES}
+assert _HARNESS_RULES_FILES, 'the engine syncs no non-Claude harness, so the gap-claim checks would be vacuous'
 
 
 def _read(root: Path, relative: str) -> str:
@@ -293,6 +323,67 @@ def _settings_allow(root: Path = PROJECT_ROOT) -> list[str]:
     return list(payload['permissions']['allow'])
 
 
+def _rules_fields(root: Path, harness: str) -> set[str]:
+    """The frontmatter fields a harness's own target metadata admits."""
+    rules = json.loads((root / _HARNESS_RULES_FILES[harness]).read_text(encoding='utf-8'))
+    return set(rules.get('required_fields', [])) | set(rules.get('optional_fields', []))
+
+
+def _gap_claim_contradicted(root: Path, harness: str) -> bool:
+    """Whether the harness's own metadata now carries the withholding key.
+
+    The entry point says its harness publishes no key that withholds the command
+    from model invocation. Reading the file it cites is what keeps that sentence
+    from outliving the data: the day the key appears, the gap is gone and the
+    entry point must carry the key instead. A ``root`` with no such file (a planted
+    fixture) states nothing to contradict; the shipped tree's own files are pinned
+    present by their own test, so the silence cannot be the whole guard.
+    """
+    if not (root / _HARNESS_RULES_FILES[harness]).is_file():
+        return False
+    return _OPERATOR_ONLY_KEY in _rules_fields(root, harness)
+
+
+def _operator_only_violations(texts: dict[str, str], root: Path = PROJECT_ROOT) -> list[str]:
+    """Problems with the operator-only pin, per harness.
+
+    The Claude entry point carries the key. A harness that publishes no such key
+    declares the gap and what keeps a model from invoking the command there. Every
+    entry point tags the claim as unconfirmed, because whether either harness
+    honours its frontmatter is a runtime behaviour this repository only cites.
+    """
+    problems: list[str] = []
+    claude = texts.get('claude')
+    if claude is None:
+        return ['no claude entry point was read, so the operator-only key cannot be pinned']
+    if frontmatter(claude).get(_OPERATOR_ONLY_KEY, '').casefold() != 'true':
+        problems.append(f'the claude entry point should declare {_OPERATOR_ONLY_KEY}: true')
+    if _UNCONFIRMED_CLAUSE not in collapsed(claude).casefold():
+        problems.append(f"the claude entry point should record that the key's effect is {_UNCONFIRMED_CLAUSE}")
+
+    for harness, text in texts.items():
+        if harness == 'claude':
+            continue
+        body = collapsed(text).casefold()
+        # The uncertainty tag is checked BEFORE the key branch: an entry point that
+        # has acquired the key still owes the statement that its effect is unproven,
+        # and a `continue` here would let exactly that case through unmarked.
+        if _UNCONFIRMED_CLAUSE not in body:
+            problems.append(f'the {harness} entry point should mark the operator-only claim as {_UNCONFIRMED_CLAUSE}')
+        if frontmatter(text).get(_OPERATOR_ONLY_KEY, '').casefold() == 'true':
+            continue
+        if _GAP_CLAUSE not in body:
+            problems.append(
+                f'the {harness} entry point should record that its harness publishes {_GAP_CLAUSE} the command'
+            )
+        if harness in _HARNESS_RULES_FILES and _gap_claim_contradicted(root, harness):
+            problems.append(
+                f'the {harness} gap statement is now false: {_HARNESS_RULES_FILES[harness]} carries '
+                f'{_OPERATOR_ONLY_KEY}'
+            )
+    return problems
+
+
 def _plant(root: Path, overrides: dict[str, str]) -> None:
     """Write every entry point under ``root``, replacing the harnesses in ``overrides``."""
     for harness, relative in _ENTRY_POINTS:
@@ -364,6 +455,80 @@ def test_the_three_entry_points_are_mirrors_and_carry_the_post_run_block():
     assert _mirror_violations(_entry_texts()) == []
 
 
+def test_the_command_is_operator_only_on_every_harness():
+    """The key where the harness publishes one, the recorded gap where it does not."""
+    assert _operator_only_violations(_entry_texts()) == []
+
+
+def test_each_gap_claiming_harness_has_its_rules_file_to_check_against():
+    """Non-vacuity: the contradiction guard reads a real file in the shipped tree.
+
+    The map's key set is DERIVED from the engine's synced harnesses, so it cannot
+    fall behind them; what is left to verify is that each cited path exists and that
+    the shipped metadata still contradicts nothing.
+    """
+    for harness, relative in _HARNESS_RULES_FILES.items():
+        assert (PROJECT_ROOT / relative).is_file(), f'the {harness} gap claim cites a file that does not exist'
+        assert not _gap_claim_contradicted(PROJECT_ROOT, harness), (
+            f'{relative} carries {_OPERATOR_ONLY_KEY}, so the {harness} gap statement is false'
+        )
+
+
+def test_operator_only_controls(tmp_path: Path):
+    """Matched control: a missing key, a missing gap clause and a missing tag all fire.
+
+    Each fixture is a STUB entry point rather than a substitution into the real
+    text: a phrase-level replace would silently do nothing (and pass) if the doc
+    re-wrapped the phrase across a line, and a control that cannot fire is the
+    shape this file exists against.
+    """
+    stub = '---\nname: apply-changes\ndescription: A stub entry point.\n---\n\nRuns the sequence.\n'
+
+    _plant(tmp_path, {'claude': stub})
+    reported = _operator_only_violations(_entry_texts(tmp_path))
+    assert any(_OPERATOR_ONLY_KEY in problem for problem in reported), (
+        f'a claude entry point with no operator-only key must be reported, got {reported}'
+    )
+
+    _plant(tmp_path, {})
+    assert _operator_only_violations(_entry_texts(tmp_path)) == [], 'the unmodified entry points must stay clean'
+
+    # The stub carries the uncertainty clause and omits only the gap statement, so
+    # the gap diagnostic is the ONLY OpenCode problem — a regression in the gap
+    # check then reddens this control instead of hiding behind the uncertainty one.
+    _plant(
+        tmp_path,
+        {
+            'opencode': (
+                '---\ndescription: A stub command.\n---\n\nThe effect is **not shown by reading** in this repository.\n'
+            )
+        },
+    )
+    reported = _operator_only_violations(_entry_texts(tmp_path))
+    assert any('opencode' in problem and _GAP_CLAUSE in problem for problem in reported), (
+        f'a harness without the key and without the recorded gap must be reported by its gap diagnostic, got {reported}'
+    )
+
+    keyed_only = (
+        '---\nname: apply-changes\ndescription: A stub entry point.\n'
+        f'{_OPERATOR_ONLY_KEY}: true\n---\n\nRuns the sequence.\n'
+    )
+    _plant(tmp_path, {'claude': keyed_only})
+    reported = _operator_only_violations(_entry_texts(tmp_path))
+    assert any(_UNCONFIRMED_CLAUSE in problem for problem in reported), (
+        f'an unconfirmed claim relabelled as confirmed must be reported, got {reported}'
+    )
+
+    keyed_opencode = (
+        f'---\ndescription: A stub command.\n{_OPERATOR_ONLY_KEY}: true\n---\n\nNothing is recorded here.\n'
+    )
+    _plant(tmp_path, {'opencode': keyed_opencode})
+    reported = _operator_only_violations(_entry_texts(tmp_path))
+    assert any('opencode' in problem and _UNCONFIRMED_CLAUSE in problem for problem in reported), (
+        f'a keyed non-Claude entry point that omits the uncertainty tag must still be reported, got {reported}'
+    )
+
+
 def test_missing_entry_point_control(tmp_path: Path):
     """Matched control: a harness with no entry point is reported, and the real tree is not."""
     claude_only = tmp_path / _ENTRY_POINT_PATHS['claude']
@@ -413,6 +578,29 @@ def test_settings_permission_control(tmp_path: Path):
         'absent entries must be reported'
     )
     assert _settings_violations(_settings_allow()) == [], 'the real settings allow both entries'
+
+
+def test_a_harness_that_gains_the_withholding_key_is_detected(tmp_path: Path):
+    """Matched control: the gap statement is checked against the file it cites.
+
+    A prose-only guard would stay green the day a harness publishes the key. The
+    planted rules file carries it, and the entry point's gap sentence must then be
+    reported as false.
+    """
+    _plant(tmp_path, {})
+    rules_path = tmp_path / _HARNESS_RULES_FILES['opencode']
+    rules_path.parent.mkdir(parents=True, exist_ok=True)
+    rules_path.write_text(
+        json.dumps({'required_fields': ['description'], 'optional_fields': [_OPERATOR_ONLY_KEY]}),
+        encoding='utf-8',
+    )
+
+    assert _gap_claim_contradicted(tmp_path, 'opencode'), 'a rules file carrying the key must be detected'
+    assert not _gap_claim_contradicted(PROJECT_ROOT, 'opencode'), 'the shipped opencode rules carry no such key'
+    reported = _operator_only_violations(_entry_texts(tmp_path), tmp_path)
+    assert any('gap statement is now false' in problem for problem in reported), (
+        f'a gap claim the harness metadata contradicts must be reported, got {reported}'
+    )
 
 
 def test_reordered_step_control(tmp_path: Path):

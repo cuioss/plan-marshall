@@ -22,6 +22,7 @@ Covers the sibling ``orchestrator`` block (a peer of ``plan``), added by this pl
 from pathlib import Path
 import json
 from argparse import Namespace
+
 from conftest import load_script_module
 
 _cmd_effort_mod = load_script_module(
@@ -807,6 +808,92 @@ def test_orchestrator_get_refuses_a_malformed_block_instead_of_defaulting(plan_c
 
     assert get_result['status'] == 'error'
     assert 'not a dictionary' in get_result['error']
+
+
+# =============================================================================
+# The three block states `get` must tell apart: null, absent and non-dict
+# =============================================================================
+
+
+def test_orchestrator_get_refuses_a_json_null_block_instead_of_defaulting(plan_context):
+    """An explicit JSON `null` is a malformed file, never an unset knob.
+
+    `null` parses to `None`, which is not a dictionary, so it takes the same
+    refusal as any other malformed block. Reading it as "unset" would answer
+    `success` with a value no reader wrote — for the threshold, the seeded `90`
+    instead of the contract's fail-closed `100`.
+    """
+    _write_marshal(plan_context.fixture_dir, {'orchestrator': None})
+
+    get_result = cmd_orchestrator_get(Namespace(field=_THRESHOLD_FIELD))
+
+    assert get_result['status'] == 'error', f'a null block was read as success: {get_result}'
+    assert 'not a dictionary' in get_result['error']
+
+
+def test_orchestrator_get_reads_an_absent_block_as_the_seeded_default(plan_context):
+    """An ABSENT block is the one case that takes the seeded default, with `set: false`.
+
+    The three cases are one rule read three ways: absent falls through to the
+    seed, while a present-but-malformed block (null or a non-dict) is refused.
+    An absent block must never be refused, because a project that has not yet
+    written the block is exactly the un-configured state the seed exists for.
+    """
+    _write_marshal(plan_context.fixture_dir, {})
+
+    fields = [field for field in _cmd_orchestrator_mod.ORCHESTRATOR_SCALAR_FIELDS if field != 'use_worktree']
+    assert fields, 'the scalar whitelist resolved no ordinary field — the absent-block check would be vacuous'
+    for field in fields:
+        get_result = cmd_orchestrator_get(Namespace(field=field))
+
+        assert get_result['status'] == 'success', f'{field} was refused on an absent block: {get_result}'
+        assert get_result['value'] == _config_defaults_mod.DEFAULT_ORCHESTRATOR.get(field)
+        assert get_result['set'] is False
+
+
+def test_orchestrator_get_never_answers_a_malformed_block_from_the_seed(plan_context):
+    """The two malformed shapes and the absent shape stay distinguishable in ONE table.
+
+    Pinned as a table rather than three scattered asserts so a future change that
+    collapses two states into one has to rewrite the table that says they differ.
+    """
+    cases = (
+        ('absent', {}, 'success'),
+        ('null', {'orchestrator': None}, 'error'),
+        ('non-dict', {'orchestrator': []}, 'error'),
+    )
+    observed = {}
+    for name, config, _expected in cases:
+        _write_marshal(plan_context.fixture_dir, config)
+        observed[name] = cmd_orchestrator_get(Namespace(field=_THRESHOLD_FIELD))['status']
+
+    assert observed == {name: expected for name, _config, expected in cases}, (
+        f'the three block states were not told apart: {observed}'
+    )
+
+
+def test_invalid_json_in_the_local_marshal_never_answers_a_seeded_default(plan_context):
+    """An unreadable `marshal.json` never turns into a passing read.
+
+    `load_config` raises on invalid JSON and `main()` catches only
+    `ConcurrentConfigModificationError`, so today the failure surfaces as an
+    exception. The pin is the CONTRACT, not the exception type: whatever shape the
+    failure takes — a raise, a process exit, or a later `error_exit` — it must never
+    answer `success` with the seeded figure, which is the fail-open direction. A
+    future conversion to `error_exit` is an improvement and keeps this green.
+    """
+    (plan_context.fixture_dir / 'marshal.json').write_text('{not json', encoding='utf-8')
+
+    try:
+        get_result = cmd_orchestrator_get(Namespace(field=_THRESHOLD_FIELD))
+    except SystemExit as exc:
+        assert exc.code not in (0, None), 'a malformed file exited successfully'
+        return
+    except ValueError:
+        return
+
+    assert get_result['status'] != 'success', f'a malformed file answered success: {get_result}'
+    assert get_result.get('value') != _config_defaults_mod.DEFAULT_ORCHESTRATOR[_THRESHOLD_FIELD]
 
 
 def test_the_scalar_whitelist_is_derived_from_the_known_keys(plan_context):
