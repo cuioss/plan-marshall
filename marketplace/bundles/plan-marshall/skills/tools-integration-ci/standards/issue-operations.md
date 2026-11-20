@@ -17,9 +17,9 @@ The exit-code contract for every `python3 .plan/execute-script.py` call in this 
 `create`, `prepare-comment`, `comment`) and the body store is their only body
 channel. A caller with no plan runs the identical steps with `--plan-id
 NO_PLAN`, the plan-less sentinel: it resolves to the shared plan-less body
-store and binds to the main checkout. Because that store is shared, every
-plan-less caller names its OWN `--slot` on both the prepare and the consuming
-call; the default slot is refused there. Use the sentinel only when the caller
+store and binds to the main checkout. Because that store is shared, a plan-less
+caller that READS a body names its OWN `--slot` on both the prepare and the
+consuming call; the default slot is refused there. Use the sentinel only when the caller
 genuinely has no plan — a `--plan-id` that failed to resolve must be corrected,
 never replaced with the sentinel. The semantics are identical for every verb and
 are stated once in [`tools-integration-ci/SKILL.md`](../SKILL.md) § "The

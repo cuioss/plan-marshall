@@ -847,13 +847,20 @@ whether to continue at the limit. Record every finding and its disposition.
      revisions.
      **A consumer whose CI delegates its build** holds no rule of its own: its workflow's only job
      is a `uses:` delegation to a reusable workflow another repository owns, and the ignore list
-     lives in that workflow's action code. There the decision reads the rule the CI APPLIED — the
-     head's check-runs, with the gated job set derived from the called workflow's own job graph at
-     the ref the `uses:` line pins — and its `source` is `delegated-check-runs`. The carry-forward
-     holds only when every check settled green, the deciding job passed and every gated job was
-     SKIPPED. A failed or cancelled job, a skip for another reason (Dependabot), a gated job that
-     ran, an unpinned ref, an unreachable called workflow and a graph with no footprint decision all
-     answer `undecidable` under a named reason.
+     lives in that workflow's action code. There the decision reads the rule the CI APPLIED — every
+     check of the called workflow on the pull request's CURRENT head, with the gated job set derived
+     from that workflow's own job graph at the ref the `uses:` line pins — and its `source` is
+     `delegated-check-runs`. The carry-forward holds only when every row of that workflow settled
+     green, the deciding job passed and every gated job was SKIPPED. A failed or cancelled job, a
+     skip for another reason (Dependabot), a gated job that ran, an unpinned ref, an unreachable
+     called workflow, a job line or condition the reader cannot place and a graph with no footprint
+     decision all answer `undecidable` under a named reason. A path this checkout's own architecture
+     PLACES as buildable (`delegated_paths_buildable`) refuses too, so a project that can classify is
+     never treated more permissively than one that cannot.
+     **The residual this carries:** the check-runs are the pull request's current head, which the
+     read cannot pin to `{head_revision}`; a push that landed between the Sonar read and this decision
+     would be read as the decided head's evidence. The `worktree_not_at_head` guard covers the
+     checkout, not the CI read, so a later head that SHRANK the delta is the one case this can miss.
      On `carry_forward: true` re-read with the SAME plan-less read, licensing exactly that revision
      and the head the decision verified:
      `read_open_issues … --analysed-revision {analysis_revision} --carried-forward-head-revision {head_revision}`.
@@ -973,10 +980,9 @@ Merge only when all of these hold:
   `--carried-forward` and both revisions) admits the merge on exactly those terms, because its
   enumeration is a measurement of the analysed head. The count covers the open issues AND the security hotspots still to review. An
   `undecidable` read is a blocker and is retried — EXCEPT a stale read the carry-forward refused
-  (`delta_buildable`, `rule_unreadable`, an unpinned or unreachable delegation, a head the CI
-  built): that one cannot settle by retrying on the same head and stays a blocker until a head the
-  CI builds exists (a rebuild), or the operator decides. An `unconfigured` read is a blocker too;
-  the lane never treats either as `0`.
+  (`delta_buildable`, `rule_unreadable` and every `delegated_*` refusal): that one cannot settle by
+  retrying on the same head and stays a blocker until a head the CI builds exists (a rebuild), or
+  the operator decides. An `unconfigured` read is a blocker too; the lane never treats either as `0`.
 - **A question that bears on the merge never offers "merge on the recorded evidence"** while the
   open Sonar count is above `0` or `review-gate` reports `false`. The options it presents are the
   ones the gate's actual verdicts leave open: fix, dismiss on the operator's explicit selection, or

@@ -228,11 +228,12 @@ Semantics, once, for all of them:
 - The prepare/consume pairing is unchanged: `prepare-*` allocates a scratch path,
   the caller writes the body there with its native Write tool, and the consuming
   verb reads it. `--slot` disambiguates concurrent bodies exactly as for a real plan —
-  and under the sentinel it is REQUIRED: because the store is shared, the default slot
-  is one file every plan-less caller would write, so `prepare-body`/`prepare-comment`
-  and their consuming verbs refuse it as `shared_body_slot_refused`. Each caller names
-  its own slot (a runbook lane its plan id, the ledger land `land`) at every call of
-  the pair.
+  and under the sentinel a caller that READS a body must name its own: because the store is
+  shared, the default slot is one file every plan-less caller would write, so
+  `prepare-body`/`prepare-comment` and their consuming verbs refuse it as
+  `shared_body_slot_refused`. Each such caller names its own slot (a runbook lane its plan id,
+  the ledger land `land`) at every call of the pair. A caller that reads no body — a title-only
+  `pr edit` — is not refused, because no shared file is opened.
 - Use it **only** when the caller genuinely has no plan. A `--plan-id` that failed to
   resolve returns `plan_not_found` carrying both a sentinel `hint` and a
   `hint_caveat`: a mistyped real plan id must be corrected, never replaced with the

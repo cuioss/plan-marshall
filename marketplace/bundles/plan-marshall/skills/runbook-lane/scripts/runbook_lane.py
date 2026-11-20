@@ -1923,13 +1923,14 @@ def _called_workflow_jobs(lines: list[str]) -> tuple[dict[str, dict[str, Any]], 
     """Return the called workflow's jobs and an unreadable-line reason.
 
     A line-level reader, because the lane carries no YAML parser and the only
-    questions asked are structural: does this job declare outputs, does its ``if:``
-    reference another job's output, and what does it need.
+    questions asked are structural: does this job declare outputs, and does its
+    ``if:`` reference another job's output.
 
-    A job key the reader cannot place — a trailing comment on the key line, a key
-    indented differently — is a NAMED refusal, never a skip: a dropped job shrinks
-    the set the check-run evidence is verified against, so a build that ran would
-    go unseen.
+    Everything the reader cannot place is a NAMED refusal, never a skip: a job key
+    it drops, a job-level ``if:`` carried on the next line, or a step-level ``if:``
+    read as the job's would each shrink or corrupt the set the check-run evidence is
+    verified against, and a build that ran would go unseen. Job fields live at one
+    indent (four spaces), so only that indent is read as the job's own.
     """
     jobs: dict[str, dict[str, Any]] = {}
     in_jobs = False
@@ -1946,62 +1947,49 @@ def _called_workflow_jobs(lines: list[str]) -> tuple[dict[str, dict[str, Any]], 
             continue
         job_match = _JOB_ID_RE.match(line)
         if job_match:
-            current = {
-                'id': job_match.group('job'),
-                'if': '',
-                'needs': [],
-                'outputs': [],
-                'declares_outputs': False,
-            }
+            current = {'id': job_match.group('job'), 'if': '', 'outputs': [], 'declares_outputs': False}
             jobs[current['id']] = current
             continue
         if indent == 2 and line.strip():
             # Inside ``jobs:`` only job ids live at this indent. Anything else — a
             # quoted key, a trailing comment on the key line — is a job this reader
-            # cannot place, and a dropped job would shrink the set the evidence is
-            # checked against.
+            # cannot place.
             return jobs, (f'delegated_rule_unreadable: the job line {line.strip()!r} is not a job id')
-        if current is None:
+        if current is None or indent != 4:
+            # A step's own ``if:`` and any deeper field belong to the step, never to
+            # the job; reading one as the job's condition would hide the gate.
             continue
         stripped = line.strip()
         if stripped.startswith('if:'):
-            current['if'] = stripped[len('if:') :].strip()
-            if current['if'] in ('>', '|', '>-', '|-', '>+', '|+'):
+            value = stripped[len('if:') :].strip()
+            if not value or value in ('>', '|', '>-', '|-', '>+', '|+'):
                 return jobs, (
-                    f"delegated_rule_unreadable: job {current['id']}'s condition is a block scalar this "
-                    'reader cannot evaluate'
+                    f"delegated_rule_unreadable: job {current['id']}'s condition is empty or a block "
+                    'scalar this reader cannot evaluate'
                 )
-        elif stripped.startswith('needs:'):
-            current['needs'].extend(_needs_tokens(stripped[len('needs:') :].strip()))
-        elif stripped == 'outputs:' and indent == 4:
+            current['if'] = value
+        elif stripped == 'outputs:':
             current['declares_outputs'] = True
         elif current['declares_outputs'] and indent == 6 and stripped.endswith(':'):
             current['outputs'].append(stripped[:-1].strip())
     return jobs, ''
 
 
-def _needs_tokens(value: str) -> list[str]:
-    """Return the job ids a ``needs:`` value names, in either YAML spelling."""
-    if not value:
-        return []
-    if value.startswith('['):
-        value = value.strip('[]')
-    return [token.strip().strip('"\'') for token in value.split(',') if token.strip().strip('"\'')]
-
-
 def _footprint_job_graph(text: str) -> tuple[list[str], list[str], list[str], str]:
-    """Return ``(deciders, gated, related, reason)`` for the called workflow's graph.
+    """Return ``(deciders, gated, all_jobs, reason)`` for the called workflow's graph.
 
     A DECIDER is a job that declares outputs and whose output gates another job's
     ``if:``. A GATED job is one whose condition references a decider's output.
-    RELATED is the decider set plus every job reachable from a decider through
-    ``needs:`` — the jobs whose check-runs belong to this decision, so an unrelated
-    row (a review bot, a workflow-level check) can never freeze the verdict.
+    ALL_JOBS is every job the called workflow declares, and it is the window the
+    check-run evidence is read over: a job that neither gates nor is needed by one —
+    an aggregating ``conclusion`` job, a parallel check — can still fail or stay
+    pending, and a red head must never be carried forward because its row fell
+    outside a narrower window. Foreign rows (a review bot, a workflow-level check)
+    are not in this set, so they cannot freeze the verdict either.
 
-    A job line the reader cannot place, or a gated job's condition that names no
-    decider, makes the graph unreadable rather than smaller: a silently dropped job
-    would shrink the set whose skips the evidence is checked against, and a build
-    that actually ran would go unseen.
+    A job line the reader cannot place makes the graph unreadable rather than
+    smaller: a silently dropped job would shrink the set the evidence is checked
+    against, and a build that actually ran would go unseen.
     """
     jobs, jobs_reason = _called_workflow_jobs(text.splitlines())
     if jobs_reason:
@@ -2042,21 +2030,7 @@ def _footprint_job_graph(text: str) -> tuple[list[str], list[str], list[str], st
                 'footprint decision suppresses nothing'
             ),
         )
-    related = _needs_closure(jobs, deciders, gated)
-    return deciders, gated, related, ''
-
-
-def _needs_closure(jobs: dict[str, dict[str, Any]], deciders: list[str], gated: list[str]) -> list[str]:
-    """Return the deciders, the gated jobs and everything they transitively need."""
-    related = set(deciders) | set(gated)
-    pending = list(related)
-    while pending:
-        job = jobs.get(pending.pop())
-        for needed in (job or {}).get('needs', []):
-            if needed in jobs and needed not in related:
-                related.add(needed)
-                pending.append(needed)
-    return sorted(related)
+    return deciders, gated, sorted(jobs), ''
 
 
 def _run_ci(project_dir: Path, argv: list[str]) -> tuple[dict[str, Any] | None, str]:
@@ -2072,7 +2046,7 @@ def _run_ci(project_dir: Path, argv: list[str]) -> tuple[dict[str, Any] | None, 
 
     state, absent_reason = _worktree_executor_state(project_dir)
     if state != 'present':
-        return None, f'executor_{absent_reason or "absent"}'
+        return None, absent_reason or 'executor_absent'
     executor = project_dir / '.plan' / 'execute-script.py'
     try:
         completed = subprocess.run(
@@ -2136,63 +2110,47 @@ def _check_row_job_id(name: str) -> str:
     return segment
 
 
-def _local_path_veto(
-    project_dir: Path,
-    paths: list[str],
-    own_rule: list[str] | None,
-    own_skip: list[str] | None,
-    own_reason: str,
-) -> str:
-    """Return a refusal when the project's OWN readable rule places a path as buildable.
+def _local_path_veto(project_dir: Path, paths: list[str]) -> str:
+    """Return a refusal when the checkout's own architecture places a path as buildable.
 
     The delegated decision rests on the CI's own skip, which is authoritative for
-    the head. It is not authoritative for a path the checkout can PLACE: when this
-    project carries a readable footprint rule, or an architecture that owns a
-    building module, a changed path inside one of them contradicts the skip, and
-    the read stays undecidable rather than carrying a source change forward. A
-    project with neither can place no path, and there the CI's decision stands
-    alone — which is the delegating consumer this branch exists for.
+    the head. It is not authoritative for a path the checkout can PLACE: this
+    project's architecture is asked the same question the non-delegating lane asks
+    it, and any path it calls ``buildable`` contradicts the skip. So a delegating
+    consumer is never treated more permissively than any other project.
 
-    An unreadable local rule vetoes nothing: it placed no path, so it contradicted
-    nothing.
+    ``_architecture_module_prefixes`` reporting no module means the architecture places
+    nothing — the delegating consumer this branch exists for — and then nothing is
+    vetoed. A root module (``''``) claims the whole tree, so every path is
+    placeable; otherwise the classifier's own answer decides, which also covers a
+    root-level build file (``pom.xml``) that belongs to no module directory.
     """
-    if own_reason:
+    prefixes = _architecture_module_prefixes(project_dir)
+    if not prefixes:
         return ''
-    if own_rule is not None:
-        surfaces = _architecture_documentation_surfaces(project_dir)
-        try:
-            buildable = [
-                path
-                for path in paths
-                if _classify_path(path, own_rule, own_skip, [], surfaces, 'ci-workflow') == 'buildable'
-            ]
-        except _GlobHelperUnavailable:
-            return ''
-        if buildable:
-            return (
-                f"delegated_paths_buildable: {len(buildable)} changed path(s) are paths the project's own "
-                f'rule builds ({", ".join(buildable[:3])}), which contradicts the skipped build'
-            )
-        return ''
-    prefixes = [prefix for prefix in (_architecture_module_prefixes(project_dir) or []) if prefix]
-    inside = [path for path in paths if any(path.startswith(prefix) for prefix in prefixes)]
-    if inside:
+    surfaces = _architecture_documentation_surfaces(project_dir)
+    buildable = [
+        path for path in paths if _classify_path(path, [], None, prefixes, surfaces, 'architecture') == 'buildable'
+    ]
+    if buildable:
         return (
-            f'delegated_paths_buildable: {len(inside)} changed path(s) lie inside a module the project '
-            f'builds ({", ".join(inside[:3])}), which contradicts the skipped build'
+            f'delegated_paths_buildable: {len(buildable)} changed path(s) are paths this project builds '
+            f'({", ".join(buildable[:3])}), which contradicts the skipped build'
         )
     return ''
 
 
 def _delegated_check_evidence(
-    rows: list[dict[str, Any]], deciders: list[str], gated: list[str], related: list[str]
+    rows: list[dict[str, Any]], deciders: list[str], gated: list[str], all_jobs: list[str]
 ) -> str:
     """Return the refusal reason the head's check-runs give, or ``''`` to carry.
 
-    The window is the CALLED WORKFLOW's jobs (``related``), never the whole check
+    The window is the CALLED WORKFLOW's jobs (``all_jobs``), never the whole check
     list: a review bot's ``pending`` row, or a workflow-level check, says nothing
     about whether the CI built this head, and reading it as a freeze would leave the
-    delegated decision undecidable in every repository that runs a review bot.
+    delegated decision undecidable in every repository that runs a review bot. Every
+    job of the workflow is inside it — including one that gates nothing — so no row
+    of a job the caller's run executed can fail unseen.
 
     Within that window the reading is the fail-closed one for "the CI skipped the
     build for the footprint reason": every row settled (nothing failed, was
@@ -2204,10 +2162,13 @@ def _delegated_check_evidence(
     for row in rows:
         result = str(row.get('result') or '').strip().lower()
         name = str(row.get('name') or '?')
+        if ' / ' not in name:
+            # A called workflow's job reports as ``<caller job> / <called job>``. A
+            # bare row is some other check that happens to share a name, and matching
+            # it would let a foreign row stand in for a missing one.
+            continue
         by_job.setdefault(_check_row_job_id(name), []).append((name, result))
-    window = sorted(set(related) | set(deciders) | set(gated))
-    got_any = False
-    for job_id in window:
+    for job_id in all_jobs:
         for name, result in by_job.get(job_id, []):
             if result in _FAILED_CHECK_RESULTS:
                 return (
@@ -2219,7 +2180,6 @@ def _delegated_check_evidence(
         results = by_job.get(decider)
         if not results:
             return f'delegated_check_evidence_incomplete: the decider {decider} reports no check-run'
-        got_any = True
         if any(result not in _PASSED_CHECK_RESULTS for _name, result in results):
             return (
                 f'delegated_decider_not_success: {decider} reports '
@@ -2230,15 +2190,12 @@ def _delegated_check_evidence(
         results = by_job.get(job_id)
         if not results:
             return f'delegated_check_evidence_incomplete: the gated job {job_id} reports no check-run'
-        got_any = True
         if any(result not in _SKIPPED_CHECK_RESULTS for _name, result in results):
             return (
                 f'delegated_gated_job_ran: the CI ran {job_id} on this head '
                 f'({", ".join(result for _name, result in results)}), so this head is not one the '
                 'footprint decision suppressed'
             )
-    if not got_any:
-        return 'delegated_check_evidence_unreadable: the head reported no check-run of the called workflow'
     return ''
 
 
@@ -2363,7 +2320,7 @@ def _sonar_stale_delta_verdict(
     # so the rule is read where the CI APPLIED it: the head's check-runs, with the
     # gated job set derived from the called workflow's own graph.
     delegated, delegated_reason = _delegated_workflow_spec(worktree)
-    own_rule, own_skip, own_reason = _read_footprint_rule(worktree)
+    own_rule, _own_skip, _own_reason = _read_footprint_rule(worktree)
     if own_rule is None and (delegated is not None or delegated_reason):
         if delegated_reason:
             verdict['detail'] = delegated_reason
@@ -2375,11 +2332,11 @@ def _sonar_stale_delta_verdict(
                 f'delegated_rule_unreachable: {delegated["repo"]} {delegated["path"]}@{delegated["ref"]}: {read_reason}'
             )
             return verdict
-        deciders, gated, related, graph_reason = _footprint_job_graph(called)
+        deciders, gated, all_jobs, graph_reason = _footprint_job_graph(called)
         if graph_reason:
             verdict['detail'] = graph_reason
             return verdict
-        veto = _local_path_veto(worktree, paths, own_rule, own_skip, own_reason)
+        veto = _local_path_veto(worktree, paths)
         if veto:
             # A path the project's OWN readable rule places as buildable contradicts
             # the skip: the CI's decision stands only where no local rule can place
@@ -2396,7 +2353,7 @@ def _sonar_stale_delta_verdict(
         if rows is None:
             verdict['detail'] = f'delegated_check_evidence_unreadable: {checks_reason}'
             return verdict
-        evidence_reason = _delegated_check_evidence(rows, deciders, gated, related)
+        evidence_reason = _delegated_check_evidence(rows, deciders, gated, all_jobs)
         if evidence_reason:
             verdict['detail'] = evidence_reason
             return verdict

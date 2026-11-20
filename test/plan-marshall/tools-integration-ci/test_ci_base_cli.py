@@ -770,6 +770,14 @@ def test_read_and_consume_body_refuses_the_shared_default_slot_under_no_plan(pla
     assert error['error'] == 'shared_body_slot_refused'
 
 
+def test_a_plan_less_optional_body_with_no_slot_is_not_refused(plan_base_env):
+    """A title-only `pr edit` reads no body, so no shared file is opened."""
+    content, error = read_and_consume_body('NO_PLAN', BODY_KIND_PR_EDIT, required=False)
+
+    assert error is None
+    assert content == ''
+
+
 def test_read_and_consume_body_reads_the_named_slot_under_no_plan(plan_base_env):
     prepared = prepare_body('NO_PLAN', BODY_KIND_PR_CREATE, slot='land')
     Path(prepared['path']).write_text('the land body', encoding='utf-8')

@@ -1150,17 +1150,36 @@ def test_a_decider_that_did_not_run_stays_undecidable(tmp_path: Path, monkeypatc
     assert verdict['detail'].startswith('delegated_decider_not_success')
 
 
-def test_a_path_the_project_architecture_builds_vetoes_the_skip(tmp_path: Path, monkeypatch) -> None:
-    """A placeable source path contradicts the skip, so the CI's decision does not stand."""
+@pytest.mark.parametrize(
+    ('prefixes', 'path'),
+    [
+        (['src/main/java/'], 'src/main/java/A.java'),
+        ([''], 'pom.xml'),
+    ],
+)
+def test_a_path_the_project_architecture_builds_vetoes_the_skip(tmp_path, monkeypatch, prefixes, path) -> None:
+    """A placeable path contradicts the skip, so the CI's decision does not stand."""
     repo = tmp_path / 'repo'
     _repo_with_a_delegation(repo)
-    _patch_delegated(monkeypatch, rows=_checks(), paths=('src/main/java/A.java',))
-    monkeypatch.setattr(lane, '_architecture_module_prefixes', lambda project_dir: ['src/main/java/'])
+    _patch_delegated(monkeypatch, rows=_checks(), paths=(path,))
+    monkeypatch.setattr(lane, '_architecture_module_prefixes', lambda project_dir: prefixes)
 
     verdict = lane.cmd_sonar_stale_delta(_stale_args(pr_number='7', worktree=str(repo)))
 
     assert verdict['carry_forward'] is False
     assert verdict['detail'].startswith('delegated_paths_buildable')
+
+
+def test_a_checkout_with_no_readable_architecture_vetoes_nothing(tmp_path: Path, monkeypatch) -> None:
+    """The motivating consumer: no module to place anything, so the CI's decision stands."""
+    repo = tmp_path / 'repo'
+    _repo_with_a_delegation(repo)
+    _patch_delegated(monkeypatch, rows=_checks())
+    monkeypatch.setattr(lane, '_architecture_module_prefixes', lambda project_dir: [])
+
+    verdict = lane.cmd_sonar_stale_delta(_stale_args(pr_number='7', worktree=str(repo)))
+
+    assert verdict['carry_forward'] is True
 
 
 def test_an_unrelated_check_row_cannot_freeze_the_delegated_decision(tmp_path: Path, monkeypatch) -> None:
