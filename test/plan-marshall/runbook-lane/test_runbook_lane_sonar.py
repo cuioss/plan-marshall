@@ -42,6 +42,8 @@ lane = load_script_module('plan-marshall', 'runbook-lane', 'runbook_lane.py', 'r
 
 #: The unpatched delegation probe, captured once so a helper that stubs it can be undone.
 _REAL_DELEGATED_SPEC = lane._delegated_workflow_spec
+_REAL_READ_DELEGATED_WORKFLOW = lane._read_delegated_workflow
+_REAL_READ_PR_CHECKS = lane._read_pr_checks
 
 cmd_sonar_gate = lane.cmd_sonar_gate
 
@@ -1002,6 +1004,41 @@ def test_a_carried_forward_read_still_needs_its_findings_disposed(tmp_path: Path
 
     assert verdict['merge_allowed'] is False
     assert verdict['reason'] == 'open_issues_not_operator_selected'
+
+
+def test_a_delegated_read_refuses_a_shape_it_cannot_trust(tmp_path: Path, monkeypatch) -> None:
+    """The read is list-argv; its values are still shape-checked before they steer it."""
+    repo = tmp_path / 'repo'
+    _repo_with_a_delegation(repo)
+    _patch_delegated(monkeypatch, rows=_checks())
+    monkeypatch.setattr(
+        lane,
+        '_read_delegated_workflow',
+        lambda project_dir, repo_ref, path, ref: _REAL_READ_DELEGATED_WORKFLOW(
+            project_dir, 'owner/repo/../evil', path, ref
+        ),
+    )
+
+    verdict = lane.cmd_sonar_stale_delta(_stale_args(pr_number='7', worktree=str(repo)))
+
+    assert verdict['carry_forward'] is False
+    assert verdict['detail'].startswith('delegated_rule_unreachable')
+    assert 'owner/name' in verdict['detail']
+
+
+def test_a_check_read_refuses_a_pull_request_that_is_not_a_number(tmp_path: Path, monkeypatch) -> None:
+    repo = tmp_path / 'repo'
+    _repo_with_a_delegation(repo)
+    _patch_delegated(monkeypatch, rows=_checks())
+    monkeypatch.setattr(
+        lane, '_read_pr_checks', lambda project_dir, pr: _REAL_READ_PR_CHECKS(project_dir, '7; rm -rf /')
+    )
+
+    verdict = lane.cmd_sonar_stale_delta(_stale_args(pr_number='7', worktree=str(repo)))
+
+    assert verdict['carry_forward'] is False
+    assert verdict['detail'].startswith('delegated_check_evidence_unreadable')
+    assert 'not a number' in verdict['detail']
 
 
 def test_the_lane_text_states_the_carry_forward_rule() -> None:

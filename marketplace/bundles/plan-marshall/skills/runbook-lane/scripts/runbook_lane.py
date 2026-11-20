@@ -1873,6 +1873,13 @@ _JOB_ID_RE = re.compile(r'^ {2}(?P<job>[A-Za-z0-9_-]+):\s*$')
 #: A draft-only condition term: a skip it causes is not the footprint decision's.
 _DRAFT_REF_RE = re.compile(r'github\.event\.pull_request\.draft\b')
 
+#: The shapes the values that reach a CI read may take. The read is a LIST-argv
+#: call with no shell, so these are not a shell-escaping measure: they keep a
+#: malformed or hostile `uses:` target in a project's own workflow from steering
+#: the read at another repository, path or pull request.
+_REPO_SHAPE_RE = re.compile(r'^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$')
+_PR_NUMBER_RE = re.compile(r'^[0-9]+$')
+
 #: The check-run bucket values that mean "this job did not run". ``gh`` reports
 #: ``skipping``; ``skipped`` is accepted because a provider may spell it that way.
 _SKIPPED_CHECK_RESULTS = frozenset({'skipping', 'skipped'})
@@ -2136,7 +2143,20 @@ def _run_ci(project_dir: Path, argv: list[str]) -> tuple[dict[str, Any] | None, 
 
 
 def _read_delegated_workflow(project_dir: Path, repo: str, path: str, ref: str) -> tuple[str | None, str]:
-    """Read the called reusable workflow at the ref the delegation pins."""
+    """Read the called reusable workflow at the ref the delegation pins.
+
+    Every value is shape-checked first: the delegation's target comes from the
+    project's own workflow file, and a malformed one must refuse rather than steer
+    the read (list argv, no shell) at another repository, path or revision.
+    """
+    if not _REPO_SHAPE_RE.match(repo):
+        return None, f'repository {repo!r} is not an owner/name reference'
+    if not path.startswith(f'{"/".join(_CI_WORKFLOW_DIR)}/') or '..' in path.split('/'):
+        return None, f'path {path!r} is not a workflow path of this repository'
+    if not path.endswith(_WORKFLOW_SUFFIXES):
+        return None, f'path {path!r} is not a workflow file'
+    if not _PINNED_REF_RE.match(ref):
+        return None, f'ref {ref!r} is not a full commit SHA'
     result, reason = _run_ci(project_dir, ['repo', 'file', 'read', '--repo', repo, '--path', path, '--ref', ref])
     if result is None:
         return None, reason
@@ -2150,6 +2170,8 @@ def _read_delegated_workflow(project_dir: Path, repo: str, path: str, ref: str) 
 
 def _read_pr_checks(project_dir: Path, pr_number: str) -> tuple[list[dict[str, Any]] | None, str]:
     """Read the pull request's check rows for its current head."""
+    if not _PR_NUMBER_RE.match(str(pr_number)):
+        return None, f'pull request {pr_number!r} is not a number'
     result, reason = _run_ci(project_dir, ['checks', 'status', '--pr-number', str(pr_number)])
     if result is None:
         return None, reason
