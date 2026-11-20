@@ -909,7 +909,10 @@ whether to continue at the limit. Record every finding and its disposition.
         `skip-worktree` entry also trips it — inspect the index flag with `git ls-files -v` and clear
         it, or use a clean full checkout when the checkout is intentionally sparse), `worktree_ignored_inputs`
         (commit or remove the ignored CI file), `worktree_not_at_head` (check the routed checkout out
-        at the head) and `revision_unresolvable` (fetch the revisions, then retry).
+        at the head) and `revision_unresolvable` (fetch the revisions, then retry). **Removing the
+        cause keeps the head; committing and pushing it does not**: a retry of the same read is valid
+        only while the revision inputs are unchanged, so a push restarts the read AND the delta
+        decision for the new head instead of reusing this one.
       - **Retryable as-is** — the read itself may be taken again: `worktree_unreadable` and
         `diff_failed`.
       - **Not retryable on this head** — a blocker until the input or the operator changes:

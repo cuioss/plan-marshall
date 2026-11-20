@@ -2942,3 +2942,20 @@ def test_a_wrapper_around_a_closed_but_empty_section_stops() -> None:
     assert verdict['merge_allowed'] is False, verdict
     assert verdict['reason'] == 'undecidable_read', verdict
     assert 'encloses only 0' in verdict['detail'], verdict
+
+
+def test_a_wrapper_counts_a_nested_bold_section_the_way_enumeration_does() -> None:
+    """A counted wrapper does not absorb the nested section its child carries."""
+    body = (
+        '<details><summary>Review (5)</summary>'
+        '<details><summary>Nitpick comments</summary>'
+        '**Outside diff range comments (1)** '
+        '<details><summary>src/a.py:1 (5)</summary>Finding</details>'
+        '</details></details>'
+    )
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['merge_allowed'] is False, verdict
+    assert verdict['reason'] == 'undecidable_read', verdict
+    assert 'encloses only' in verdict['detail'], verdict

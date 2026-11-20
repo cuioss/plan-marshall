@@ -3829,10 +3829,18 @@ def _transparent_wrappers(body: str, sources: dict[str, Any]) -> tuple[dict[int,
             child_summary = _SUMMARY_RE.search(body, child_open, child_end)
             content_start = child_summary.end() if child_summary is not None else child_open
             child_span = body[content_start:child_end]
+            # The SAME exclusions the enumeration applies: a nested summary that is
+            # itself a counted section is masked out of the parent's rows, so counting
+            # it here made a wrapper declaring five pass on two.
+            nested = frozenset(
+                offset_of[other]
+                for other in starts_by_index
+                if content_start <= offset_of[other] < child_end and offset_of[other] != offset_of[child]
+            )
             enclosed += _count_section_findings(
                 child_span,
                 _declared_count(starts_by_index[child]),
-                frozenset(),
+                nested,
                 content_start,
             )
         if declared > enclosed:
