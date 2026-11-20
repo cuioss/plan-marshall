@@ -1831,12 +1831,15 @@ def _delta_paths(worktree: Path, base: str, head: str) -> list[str] | None:
 
     ``None`` is the load-bearing answer: it says the change could not be listed,
     which is never read as an empty change. Renames are not followed, so a rename
-    reports both its source and its destination.
+    reports both its source and its destination. ``-z`` is what keeps a path Git
+    would otherwise quote (a non-ASCII or control character in it) intact: the
+    quoted form would not match a module prefix, and the veto would then miss a
+    change inside a built module.
     """
-    ok, out = _git_in(worktree, 'diff', '--name-only', '--no-renames', base, head)
+    ok, out = _git_in(worktree, 'diff', '--name-only', '--no-renames', '-z', base, head)
     if not ok:
         return None
-    return [line.strip() for line in out.splitlines() if line.strip()]
+    return [path for path in out.split('\0') if path]
 
 
 # =============================================================================
@@ -1855,9 +1858,9 @@ def _delta_paths(worktree: Path, base: str, head: str) -> list[str] | None:
 #: A job-level ``uses:`` line. The target is ``owner/repo/rest@ref``.
 _USES_LINE_RE = re.compile(r'^\s*uses:\s*(?P<target>[^\s#]+)\s*(?:#.*)?$')
 
-#: A ref that PINS: a full commit SHA, or a version tag. A branch name moves, and
-#: a rule read from a moving ref is not the rule the head's run applied.
-_PINNED_REF_RE = re.compile(r'^(?:[0-9a-fA-F]{40}|v?\d+(?:\.\d+)*)$')
+#: A ref that PINS: a full commit SHA. A tag can be moved, so a rule read from one
+#: is not provably the rule the head's run applied.
+_PINNED_REF_RE = re.compile(r'^[0-9a-fA-F]{40}$')
 
 #: A reference to another job's output inside an ``if:`` expression. The job id
 #: names the DECIDER when it gates another job, and the gating job is the one
@@ -1866,6 +1869,9 @@ _NEEDS_OUTPUT_REF_RE = re.compile(r'needs\.(?P<job>[A-Za-z0-9_-]+)\.outputs\.')
 
 #: A top-level job id under ``jobs:`` (two-space indent, no value).
 _JOB_ID_RE = re.compile(r'^ {2}(?P<job>[A-Za-z0-9_-]+):\s*$')
+
+#: A draft-only condition term: a skip it causes is not the footprint decision's.
+_DRAFT_REF_RE = re.compile(r'github\.event\.pull_request\.draft\b')
 
 #: The check-run bucket values that mean "this job did not run". ``gh`` reports
 #: ``skipping``; ``skipped`` is accepted because a provider may spell it that way.
@@ -1985,6 +1991,13 @@ def _called_workflow_jobs(lines: list[str]) -> tuple[dict[str, dict[str, Any]], 
                 return jobs, (
                     f"delegated_rule_unreadable: job {current['id']}'s condition is empty or a block "
                     'scalar this reader cannot evaluate'
+                )
+            if _DRAFT_REF_RE.search(value):
+                # A draft-only condition can suppress a job the footprint decision
+                # allowed, so the skip could not be attributed to the decision.
+                return jobs, (
+                    f"delegated_rule_unreadable: job {current['id']} is also gated on the draft state, so "
+                    'a skip could not be attributed to the footprint decision'
                 )
             current['if'] = value
             open_if_job = current['id']
@@ -2388,8 +2401,12 @@ def _sonar_stale_delta_verdict(
     # so the rule is read where the CI APPLIED it: the head's check-runs, with the
     # gated job set derived from the called workflow's own graph.
     delegated, delegated_reason = _delegated_workflow_spec(worktree)
-    own_rule, _own_skip, _own_reason = _read_footprint_rule(worktree)
-    if own_rule is None and (delegated is not None or delegated_reason):
+    own_rule, own_skip, own_reason = _read_footprint_rule(worktree)
+    # A caller's `with: skip-on-docs-only: true` opts in to a delegated rule; it is
+    # not the project's own path rule. So the delegated branch also serves the
+    # checkout that carries an opt-in but NO skip globs of its own.
+    has_own_paths_rule = own_rule is not None and own_skip is not None and not own_reason
+    if not has_own_paths_rule and (delegated is not None or delegated_reason):
         if delegated_reason:
             verdict['detail'] = delegated_reason
             return verdict

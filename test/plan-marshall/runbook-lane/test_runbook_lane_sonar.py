@@ -40,6 +40,9 @@ from conftest import get_scripts_dir, load_script_module, parse_ns, run_script
 
 lane = load_script_module('plan-marshall', 'runbook-lane', 'runbook_lane.py', 'runbook_lane_sonar_mod')
 
+#: The unpatched delegation probe, captured once so a helper that stubs it can be undone.
+_REAL_DELEGATED_SPEC = lane._delegated_workflow_spec
+
 cmd_sonar_gate = lane.cmd_sonar_gate
 
 _PROJECT_KEY = 'com.example:proj'
@@ -569,7 +572,12 @@ def _patch_delta(
     rows=None,
     reason='',
 ):
-    """Stub the six seams the decision reads, leaving the decision itself real."""
+    """Stub the six seams the decision reads, leaving the decision itself real.
+
+    These are the LOCAL-rule controls: the checkout is declared to carry no
+    delegation, so the branch under test is the project's own rule.
+    """
+    monkeypatch.setattr(lane, '_delegated_workflow_spec', lambda project_dir: (None, ''))
     monkeypatch.setattr(lane, '_resolve_commit', lambda worktree, revision: analysed if revision == _ANALYSED else head)
     monkeypatch.setattr(lane, '_checkout_revision', lambda worktree: head if checkout is None else checkout)
     monkeypatch.setattr(lane, '_worktree_is_clean', lambda worktree: clean)
@@ -1076,6 +1084,7 @@ def _patch_delegated(
 ):
     """Stub the local git seams and the two remote reads, leaving the decision real."""
     _patch_delta(monkeypatch, paths=paths)
+    monkeypatch.setattr(lane, '_delegated_workflow_spec', _REAL_DELEGATED_SPEC)
     monkeypatch.setattr(lane, '_read_delegated_workflow', lambda project_dir, repo, path, ref: (called, read_reason))
     monkeypatch.setattr(lane, '_read_pr_checks', lambda project_dir, pr: (rows, ''))
 
