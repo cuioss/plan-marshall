@@ -607,3 +607,59 @@ class TestStaleAnalysisLicence:
         assert result['open_issue_count'] is None
         assert result['count_status_reason'] == 'analysed_revision_requires_a_pull_request'
         fetch.assert_not_called()
+
+    def test_the_head_mismatch_reason_is_reserved_for_a_stale_analysis(self):
+        """A read that reported no analysed revision must keep ITS reason, not a mismatch."""
+        other_head = 'c' * 40
+        with (
+            patch.object(
+                sonar_mod,
+                '_verify_analysis_revision',
+                return_value={
+                    'count_status': 'undecidable',
+                    'analysis_revision': '',
+                    'head_revision': other_head,
+                    'count_status_reason': 'analysis_revision_unavailable',
+                },
+            ),
+            self._settled(),
+            patch.object(sonar_mod, '_fetch_issues') as fetch,
+        ):
+            result = cmd_read_open_issues(
+                _args(
+                    '--pr',
+                    '42',
+                    '--analysed-revision',
+                    self._STALE,
+                    '--carried-forward-head-revision',
+                    self._HEAD,
+                )
+            )
+
+        assert result['count_status_reason'] == 'analysis_revision_unavailable'
+        fetch.assert_not_called()
+
+    def test_a_short_and_a_full_sha_of_one_commit_satisfy_the_licence(self):
+        """A prefix and its full object name describe one commit, never a head mismatch."""
+        with (
+            self._stale(),
+            self._settled(),
+            patch.object(
+                sonar_mod,
+                '_fetch_issues',
+                return_value={'status': 'success', 'issues': [], 'total': 0},
+            ),
+        ):
+            result = cmd_read_open_issues(
+                _args(
+                    '--pr',
+                    '42',
+                    '--analysed-revision',
+                    self._STALE[:7],
+                    '--carried-forward-head-revision',
+                    self._HEAD[:7],
+                )
+            )
+
+        assert result['count_status'] == 'confirmed', result
+        assert result['carried_forward'] is True

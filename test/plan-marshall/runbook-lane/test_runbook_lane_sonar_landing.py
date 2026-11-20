@@ -304,6 +304,31 @@ def test_no_analysed_revision_line_rides_without_one() -> None:
     assert not any('analysed_revision' in line for line in facts['fact_lines'])
 
 
+def test_a_revision_that_is_not_a_hex_object_name_is_refused() -> None:
+    """A revision is an object name, not a ref expression or a date."""
+    verdict = cmd_sonar_facts(
+        _facts_args(
+            open_count='0',
+            carried_forward=True,
+            analysed_revision='HEAD~1',
+            carried_forward_head_revision='a' * 40,
+        )
+    )
+
+    assert verdict['status'] == 'error'
+    assert verdict['error'] == 'revision_format_invalid'
+
+
+def test_a_carried_forward_read_reason_without_the_marking_is_refused() -> None:
+    """The read's own output names the carry-forward, so a bare figure cannot pass."""
+    verdict = cmd_sonar_facts(
+        _facts_args(open_count='0', count_status_reason='carried_forward_from_analysed_head: analysed b != head a')
+    )
+
+    assert verdict['status'] == 'error'
+    assert verdict['error'] == 'carried_forward_unmarked'
+
+
 def test_the_required_landing_key_set_names_the_review_and_sonar_numbers() -> None:
     assert LANDING_REQUIRED_KEYS == (
         'schema',

@@ -1255,6 +1255,11 @@ def _resolve_runtime_stamp(harness: str) -> tuple[dict[str, str], str | None]:
 #: discovered, so no workflow name appears in this module.
 _CI_WORKFLOW_DIR = ('.github', 'workflows')
 
+#: The whole CI configuration tree. The ignored-input guard reads this, not only the
+#: workflow directory: a reusable workflow, an action definition or a config file
+#: anywhere under it can carry the rule the delta is classified by.
+_CI_CONFIG_DIR = ('.github',)
+
 #: The extensions a workflow file may carry.
 _WORKFLOW_SUFFIXES = ('.yml', '.yaml')
 
@@ -1278,13 +1283,27 @@ def _iter_workflow_files(project_dir: Path) -> list[Path]:
 
     Discovery, not a fixed name: a project's opt-in lives in whichever workflow
     carries it, so the lane never names one.
+
+    A symlink whose target resolves OUTSIDE the checkout is not the checkout's
+    rule: following it would read another tree's workflow and decide this delta by
+    a rule nothing here carries.
     """
     directory = project_dir.joinpath(*_CI_WORKFLOW_DIR)
     try:
         entries = sorted(directory.iterdir())
     except OSError:
         return []
-    return [entry for entry in entries if entry.is_file() and entry.suffix.lower() in _WORKFLOW_SUFFIXES]
+    outside_ok = project_dir.resolve()
+    discovered: list[Path] = []
+    for entry in entries:
+        if not entry.is_file() or entry.suffix.lower() not in _WORKFLOW_SUFFIXES:
+            continue
+        try:
+            entry.resolve().relative_to(outside_ok)
+        except (OSError, ValueError):
+            continue
+        discovered.append(entry)
+    return discovered
 
 
 def _footprint_opt_in(lines: list[str]) -> bool:
@@ -1743,6 +1762,12 @@ def cmd_build_classify(args: argparse.Namespace) -> dict[str, Any]:
 #: measurement of the current head.
 _CARRY_FORWARD_UNBUILT = 'carried_forward_unbuilt_delta'
 
+#: The prefix the READ gives its own ``count_status_reason`` when the figure was carried
+#: forward. It is the token that binds the gate and the facts to the read: a reason with
+#: this prefix and no marking is refused, so a carried-forward figure cannot be reported
+#: as this head's measurement.
+_CARRY_FORWARD_REASON_PREFIX = 'carried_forward'
+
 
 def _git_in(worktree: Path, *args: str) -> tuple[bool, str]:
     """Run one git command against *worktree*; return ``(ok, stdout)``.
@@ -1791,25 +1816,46 @@ def _checkout_revision(worktree: Path) -> str:
 
 
 def _worktree_is_clean(worktree: Path) -> bool | None:
-    """Whether *worktree* has no changed or untracked path; ``None`` if unreadable.
+    """Whether *worktree* carries no change the head does not; ``None`` if unreadable.
 
-    The footprint rule is read from the worktree's FILES, so a modified or
-    untracked file is a rule the head does not carry — a checkout on the right
-    commit with a rewritten workflow would otherwise decide the delta under a rule
-    nothing committed.
+    The footprint rule is read from the worktree's FILES, so a modified or untracked
+    file is a rule the head does not carry — a checkout on the right commit with a
+    rewritten workflow would otherwise decide the delta under a rule nothing
+    committed. Two shapes hide from a bare ``git status``: an ``assume-unchanged`` or
+    ``skip-worktree`` entry (git reports it clean whatever its content), and an
+    untracked file when ``status.showUntrackedFiles`` is ``no``. Both are read
+    explicitly, because either would let a local edit present a rule the head lacks.
     """
-    ok, out = _git_in(worktree, 'status', '--porcelain')
+    ok, out = _git_in(worktree, 'status', '--porcelain', '--untracked-files=normal')
     if not ok:
         return None
-    return not out.strip()
+    if out.strip():
+        return False
+    ok, tags = _git_in(worktree, 'ls-files', '-v')
+    if not ok:
+        return None
+    return not any(_entry_hides_its_change(line) for line in tags.splitlines())
+
+
+def _entry_hides_its_change(line: str) -> bool:
+    """Whether an ``ls-files -v`` line marks an entry git will not report as changed.
+
+    ``ls-files -v`` prefixes each path with a tag: a LOWERCASE tag means
+    assume-unchanged, and ``S`` means skip-worktree. Either makes ``git status``
+    silent about a modified file, so the file can carry a rule the head does not.
+    """
+    tag = line[:1]
+    return bool(tag) and (tag.islower() or tag == 'S')
 
 
 def _ignored_workflow_inputs(worktree: Path) -> list[str] | None:
-    """Return ignored-untracked files under the CI workflow dir, or ``None``.
+    """Return ignored-untracked files under the CI config tree, or ``None``.
 
     ``git status --porcelain`` omits ignored paths, but the footprint rule is read
-    from the DIRECTORY, so an ignored workflow file is a rule the head does not
-    carry. ``None`` says the read itself failed, which is not "none found".
+    from the DIRECTORY, so an ignored CI file is a rule the head does not carry. The
+    guard covers the whole ``.github`` tree, not only ``workflows``: a reusable
+    workflow or an action definition there supplies the same rule. ``None`` says the
+    read itself failed, which is not "none found".
     """
     ok, out = _git_in(
         worktree,
@@ -1818,7 +1864,7 @@ def _ignored_workflow_inputs(worktree: Path) -> list[str] | None:
         '--ignored',
         '--exclude-standard',
         '--',
-        '/'.join(_CI_WORKFLOW_DIR),
+        '/'.join(_CI_CONFIG_DIR),
     )
     if not ok:
         return None
@@ -1844,6 +1890,80 @@ def _delta_paths(worktree: Path, base: str, head: str) -> list[str] | None:
 # =============================================================================
 # Stale-delta refusals a project's own rule cannot decide are NOT carried
 # =============================================================================
+
+
+def _stale_delta_revisions(worktree: Path, analysis_revision: str, head_revision: str) -> tuple[str, str, str | None]:
+    """Resolve both revisions and verify the checkout presents the HEAD's own rule.
+
+    Returns ``(analysed, head, detail)``. ``detail`` names why the decision cannot be
+    made; when it is ``None`` both commits are the resolved OBJECT NAMES, so two
+    spellings of one commit compare equal and a worktree carrying another commit's
+    rule, a dirty tree, or an ignored CI input is refused before any classification.
+    """
+    if not worktree.is_dir():
+        return '', '', f'worktree_unreadable: {worktree} is not a directory'
+    analysed = _resolve_commit(worktree, analysis_revision)
+    if not analysed:
+        return (
+            '',
+            '',
+            (f'revision_unresolvable: the analysed revision {analysis_revision} is not present in the routed checkout'),
+        )
+    head = _resolve_commit(worktree, head_revision)
+    if not head:
+        return (
+            '',
+            '',
+            (f'revision_unresolvable: the head revision {head_revision} is not present in the routed checkout'),
+        )
+    if analysed == head:
+        # The same commit on both sides is not a stale analysis at all, so the
+        # carried-forward sentence would assert a difference that does not exist.
+        return (
+            analysed,
+            head,
+            (f'revisions_equal: analysed {analysis_revision} and head {head_revision} are the same commit'),
+        )
+    checkout = _checkout_revision(worktree)
+    if checkout != head:
+        # The rule that decides this delta is read from the worktree's files, so a
+        # worktree on another commit carries another rule — and a rule from the
+        # wrong commit can call a path unbuilt that the head builds.
+        return (
+            analysed,
+            head,
+            (
+                f'worktree_not_at_head: the checkout is at {checkout or "an unreadable commit"} and the '
+                f"head revision resolves to {head}; the footprint rule it carries is not the head's rule"
+            ),
+        )
+    clean = _worktree_is_clean(worktree)
+    if clean is None:
+        return analysed, head, 'worktree_unreadable: the checkout status could not be read'
+    if not clean:
+        # A modified or untracked workflow file is a rule the head does not carry,
+        # so the same fail-closed answer as a checkout on another commit.
+        return (
+            analysed,
+            head,
+            (
+                'worktree_dirty: the checkout carries changed or untracked paths, so the rule it presents '
+                'is not the rule at the head'
+            ),
+        )
+    ignored = _ignored_workflow_inputs(worktree)
+    if ignored is None:
+        return analysed, head, 'worktree_unreadable: the ignored-path read of the workflow directory failed'
+    if ignored:
+        return (
+            analysed,
+            head,
+            (
+                'worktree_ignored_inputs: the CI configuration carries ignored files the head does not '
+                f'carry ({", ".join(ignored)}), and the rule is read from the directory'
+            ),
+        )
+    return analysed, head, None
 
 
 def _sonar_stale_delta_verdict(
@@ -1891,60 +2011,10 @@ def _sonar_stale_delta_verdict(
     if not analysis_revision or not head_revision:
         verdict['detail'] = 'revision_missing: both revisions must be reported to decide a carried-forward read'
         return verdict
-    if not worktree.is_dir():
-        verdict['detail'] = f'worktree_unreadable: {worktree} is not a directory'
-        return verdict
 
-    analysed = _resolve_commit(worktree, analysis_revision)
-    if not analysed:
-        verdict['detail'] = (
-            f'revision_unresolvable: the analysed revision {analysis_revision} is not present in the routed checkout'
-        )
-        return verdict
-    head = _resolve_commit(worktree, head_revision)
-    if not head:
-        verdict['detail'] = (
-            f'revision_unresolvable: the head revision {head_revision} is not present in the routed checkout'
-        )
-        return verdict
-    if analysed == head:
-        # The same commit on both sides is not a stale analysis at all, so the
-        # carried-forward sentence would assert a difference that does not exist.
-        verdict['detail'] = (
-            f'revisions_equal: analysed {analysis_revision} and head {head_revision} are the same commit'
-        )
-        return verdict
-    checkout = _checkout_revision(worktree)
-    if checkout != head:
-        # The rule that decides this delta is read from the worktree's files, so a
-        # worktree on another commit carries another rule — and a rule from the
-        # wrong commit can call a path unbuilt that the head builds.
-        verdict['detail'] = (
-            f'worktree_not_at_head: the checkout is at {checkout or "an unreadable commit"} and the '
-            f"head revision resolves to {head}; the footprint rule it carries is not the head's rule"
-        )
-        return verdict
-    clean = _worktree_is_clean(worktree)
-    if clean is None:
-        verdict['detail'] = 'worktree_unreadable: the checkout status could not be read'
-        return verdict
-    if not clean:
-        # A modified or untracked workflow file is a rule the head does not carry,
-        # so the same fail-closed answer as a checkout on another commit.
-        verdict['detail'] = (
-            'worktree_dirty: the checkout carries changed or untracked paths, so the rule it presents '
-            'is not the rule at the head'
-        )
-        return verdict
-    ignored = _ignored_workflow_inputs(worktree)
-    if ignored is None:
-        verdict['detail'] = 'worktree_unreadable: the ignored-path read of the workflow directory failed'
-        return verdict
-    if ignored:
-        verdict['detail'] = (
-            'worktree_ignored_inputs: the workflow directory carries ignored files the head does not '
-            f'carry ({", ".join(ignored)}), and the rule is read from the directory'
-        )
+    analysed, head, detail = _stale_delta_revisions(worktree, analysis_revision, head_revision)
+    if detail is not None:
+        verdict['detail'] = detail
         return verdict
 
     paths = _delta_paths(worktree, analysed, head)
@@ -1952,6 +2022,16 @@ def _sonar_stale_delta_verdict(
         verdict['detail'] = f'diff_failed: the change from {analysis_revision} to {head_revision} could not be listed'
         return verdict
     verdict['changed_paths'] = paths
+    rule_paths = [path for path in paths if path == _CI_CONFIG_DIR[0] or path.startswith(f'{_CI_CONFIG_DIR[0]}/')]
+    if rule_paths:
+        # A head that edits the CI rule can widen its own paths-ignore, so the rule read
+        # from THAT head is not the rule that would have judged the source change it
+        # carries — carrying it forward would excuse a change by a rule it wrote itself.
+        verdict['detail'] = (
+            'rule_changed: the delta changes the CI configuration the footprint rule is read from '
+            f'({", ".join(rule_paths)}), so the change cannot be carried forward'
+        )
+        return verdict
     if not paths:
         verdict['carry_forward'] = True
         verdict['source'] = 'none'
@@ -2062,6 +2142,34 @@ def _operator_selection_records(progress_file: Path) -> set[str] | None:
     return recorded
 
 
+#: A revision is a hexadecimal OBJECT NAME — the thing the gate's pair and the facts'
+#: marking stand on. A ref expression (``HEAD~1``), a branch name or a date is not a
+#: revision, so it is refused rather than compared as one.
+_REVISION_RE = re.compile(r'[0-9a-fA-F]{7,64}')
+
+#: The shortest prefix this lane treats as naming a commit on its own.
+_MIN_REVISION_PREFIX = 7
+
+
+def _same_revision(one: str, other: str) -> bool:
+    """Whether two spellings name ONE commit: identical, or one a hex prefix of the other.
+
+    A short SHA and the full object name of the same commit are one revision, so a
+    string comparison would report a carried-forward pair that does not exist.
+    """
+    if not one or not other:
+        return False
+    left, right = one.strip().lower(), other.strip().lower()
+    if left == right:
+        return True
+    shorter, longer = (left, right) if len(left) < len(right) else (right, left)
+    return (
+        len(shorter) >= _MIN_REVISION_PREFIX
+        and longer.startswith(shorter)
+        and re.fullmatch(r'[0-9a-f]+', shorter) is not None
+    )
+
+
 def _carried_forward_revisions(
     args: argparse.Namespace,
 ) -> tuple[tuple[str, str] | None, dict[str, Any] | None]:
@@ -2121,8 +2229,15 @@ def _carried_forward_revisions(
                 '--carried-forward-analysis-revision and --carried-forward-head-revision'
             ),
         }
-    if analysed == head:
-        # Two equal revisions describe a settled read, not a carried-forward one:
+    for value in (analysed, head):
+        if _REVISION_RE.fullmatch(value) is None:
+            return None, {
+                'status': 'error',
+                'error': 'revision_format_invalid',
+                'message': (f'a carried-forward revision is a hexadecimal object name: {value!r} is not one'),
+            }
+    if _same_revision(analysed, head):
+        # Two spellings of ONE commit describe a settled read, not a carried-forward one:
         # the verdict would assert a difference that does not exist.
         return None, {
             'status': 'error',
@@ -2135,18 +2250,24 @@ def _carried_forward_revisions(
     return (analysed, head), None
 
 
-def _carried_forward(verdict: dict[str, Any], carried_forward: tuple[str, str] | None) -> dict[str, Any]:
+def _carried_forward(
+    verdict: dict[str, Any],
+    carried_forward: tuple[str, str] | None,
+    reason: str = '',
+) -> dict[str, Any]:
     """Re-name an ADMITTING verdict as a carried-forward read.
 
     A carried-forward figure is a measured figure of an EARLIER head, so a verdict
     that admitted it on ``no_open_issues`` would read like a measurement of this
     one. The distinct name carries both revisions and the fact that the delta was
-    not built, so the landing and the operator see which head was counted.
+    not built, so the landing and the operator see which head was counted. When the
+    read's OWN ``count_status_reason`` is supplied it is used instead of the default
+    sentence, so an empty delta is not described as one the project does not build.
     """
     if carried_forward is None or not verdict.get('merge_allowed'):
         return verdict
     analysed, head = carried_forward
-    verdict['reason'] = (
+    verdict['reason'] = reason.strip() or (
         f'{_CARRY_FORWARD_UNBUILT}: analysed {analysed} != head {head}; the delta since the analysed head is not built'
     )
     verdict['carried_forward'] = True
@@ -2164,6 +2285,7 @@ def _sonar_gate_verdict(
     recorded_keys: set[str] | None = None,
     hotspot_keys: list[str] | None = None,
     carried_forward: tuple[str, str] | None = None,
+    carried_forward_reason: str = '',
 ) -> dict[str, Any]:
     """Decide whether the Sonar read admits the merge (section 7's condition).
 
@@ -2238,6 +2360,7 @@ def _sonar_gate_verdict(
                 'open_issue_count': 0,
             },
             carried_forward,
+            carried_forward_reason,
         )
     if len(set(open_keys)) < count:
         # Distinct keys, not list length: a repeated key enumerates one issue
@@ -2298,6 +2421,7 @@ def _sonar_gate_verdict(
             'selected_count': len(selected),
         },
         carried_forward,
+        carried_forward_reason,
     )
 
 
@@ -2340,14 +2464,15 @@ def cmd_sonar_gate(args: argparse.Namespace) -> dict[str, Any]:
             or getattr(args, 'carried_forward', None)
             or getattr(args, 'carried_forward_analysis_revision', None) is not None
             or getattr(args, 'carried_forward_head_revision', None) is not None
+            or getattr(args, 'count_status_reason', None) is not None
         ):
             return {
                 'status': 'error',
                 'error': 'state_contradicts_read',
                 'message': (
                     'a not_configured state carries no read; drop --count-status, --open-count, '
-                    '--open-keys, --operator-selected-keys, --hotspot-keys, --carried-forward and the '
-                    '--carried-forward-* revisions'
+                    '--open-keys, --operator-selected-keys, --hotspot-keys, --carried-forward, the '
+                    '--carried-forward-* revisions and --count-status-reason'
                 ),
             }
         return _sonar_gate_verdict(state, None, None, [], [])
@@ -2363,6 +2488,19 @@ def cmd_sonar_gate(args: argparse.Namespace) -> dict[str, Any]:
     carried_forward_revisions, carried_forward_error = _carried_forward_revisions(args)
     if carried_forward_error is not None:
         return carried_forward_error
+    count_status_reason = (getattr(args, 'count_status_reason', None) or '').strip()
+    if count_status_reason.startswith(_CARRY_FORWARD_REASON_PREFIX) and carried_forward_revisions is None:
+        # The read's OWN output says it was carried forward, so a figure reported
+        # without the marking would read as a measurement of this head.
+        return {
+            'status': 'error',
+            'error': 'carried_forward_unmarked',
+            'message': (
+                "the read's count_status_reason names a carry-forward: pass --carried-forward beside "
+                '--carried-forward-analysis-revision and --carried-forward-head-revision, so the '
+                'verdict cannot state a figure of another head as this head'
+            ),
+        }
     if getattr(args, 'operator_selected_keys', None) and not getattr(args, 'progress_file', None):
         # A selection with no record behind it is exactly the self-attested
         # dismissal this gate exists to remove. The flag alone is the lane's word;
@@ -2405,6 +2543,7 @@ def cmd_sonar_gate(args: argparse.Namespace) -> dict[str, Any]:
         _progress_selection(getattr(args, 'progress_file', None)),
         _split_csv(getattr(args, 'hotspot_keys', None)),
         carried_forward_revisions,
+        count_status_reason,
     )
 
 
@@ -2458,6 +2597,7 @@ def cmd_sonar_facts(args: argparse.Namespace) -> dict[str, Any]:
             getattr(args, name, None) is not None
             for name in (
                 'count_status',
+                'count_status_reason',
                 'open_count',
                 'rules',
                 'gate_status',
@@ -2469,8 +2609,8 @@ def cmd_sonar_facts(args: argparse.Namespace) -> dict[str, Any]:
                 'status': 'error',
                 'error': 'state_contradicts_read',
                 'message': (
-                    'a not_configured state carries no read; drop --count-status, --open-count, '
-                    '--rules, --gate-status, --carried-forward and the carried-forward revisions'
+                    'a not_configured state carries no read; drop --count-status, --count-status-reason, '
+                    '--open-count, --rules, --gate-status, --carried-forward and the carried-forward revisions'
                 ),
             }
         count, rules = 'n/a', 'n/a'
@@ -2534,6 +2674,25 @@ def cmd_sonar_facts(args: argparse.Namespace) -> dict[str, Any]:
     marked = bool(getattr(args, 'carried_forward', False))
     analysed_revision = (getattr(args, 'analysed_revision', None) or '').strip()
     carried_forward_head = (getattr(args, 'carried_forward_head_revision', None) or '').strip()
+    count_status_reason = (getattr(args, 'count_status_reason', None) or '').strip()
+    if count_status_reason.startswith(_CARRY_FORWARD_REASON_PREFIX) and not marked:
+        # The read's own output names the carry-forward, so a figure rendered without the
+        # marking would state another head's measurement as this head's.
+        return {
+            'status': 'error',
+            'error': 'carried_forward_unmarked',
+            'message': (
+                "the read's count_status_reason names a carry-forward: pass --carried-forward beside "
+                '--analysed-revision and --carried-forward-head-revision'
+            ),
+        }
+    for value in (analysed_revision, carried_forward_head):
+        if value and _REVISION_RE.fullmatch(value) is None:
+            return {
+                'status': 'error',
+                'error': 'revision_format_invalid',
+                'message': f'a carried-forward revision is a hexadecimal object name: {value!r} is not one',
+            }
     if not marked and (analysed_revision or carried_forward_head):
         return {
             'status': 'error',
@@ -4597,6 +4756,12 @@ def main() -> int:
         default=None,
         help='The head a carried-forward read stands in for (name both this and the analysed revision)',
     )
+    gate_parser.add_argument(
+        '--count-status-reason',
+        dest='count_status_reason',
+        default=None,
+        help="The read's own count_status_reason; a carry-forward reason requires the marking",
+    )
 
     facts_parser = subparsers.add_parser(
         'sonar-facts',
@@ -4645,10 +4810,22 @@ def main() -> int:
         help='The analysed revision a carried-forward confirmed figure was measured at',
     )
     facts_parser.add_argument(
+        '--carried-forward-analysis-revision',
+        dest='analysed_revision',
+        default=None,
+        help=argparse.SUPPRESS,
+    )
+    facts_parser.add_argument(
         '--carried-forward-head-revision',
         dest='carried_forward_head_revision',
         default=None,
         help='The head a carried-forward figure stands in for',
+    )
+    facts_parser.add_argument(
+        '--count-status-reason',
+        dest='count_status_reason',
+        default=None,
+        help="The read's own count_status_reason; a carry-forward reason requires the marking",
     )
 
     review_parser = subparsers.add_parser(

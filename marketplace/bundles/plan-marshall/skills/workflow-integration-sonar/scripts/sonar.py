@@ -997,6 +997,22 @@ def _undecidable_read(
     return result
 
 
+def _same_commit(one: str, other: str) -> bool:
+    """Whether two spellings name ONE commit: identical, or one a hex prefix of the other.
+
+    A short SHA and the full object name of one commit are one revision. A string
+    comparison would report a head mismatch that does not exist and refuse a licence
+    the decision actually verified.
+    """
+    if not one or not other:
+        return False
+    left, right = one.strip().lower(), other.strip().lower()
+    if left == right:
+        return True
+    shorter, longer = (left, right) if len(left) < len(right) else (right, left)
+    return len(shorter) >= 7 and longer.startswith(shorter) and re.fullmatch(r'[0-9a-f]+', shorter) is not None
+
+
 def _licenses_stale_analysis(revision_result: dict[str, Any], licensed_revision: str, licensed_head: str) -> bool:
     """Whether the licence names exactly the stale analysis AND the head it stands in for.
 
@@ -1019,9 +1035,120 @@ def _licenses_stale_analysis(revision_result: dict[str, Any], licensed_revision:
         return False
     if not str(revision_result.get('count_status_reason') or '').startswith(_STALE_ANALYSIS):
         return False
-    if licensed_head != (revision_result.get('head_revision') or ''):
+    if not _same_commit(licensed_head, str(revision_result.get('head_revision') or '')):
         return False
-    return licensed_revision == (revision_result.get('analysis_revision') or '')
+    return _same_commit(licensed_revision, str(revision_result.get('analysis_revision') or ''))
+
+
+def _carry_forward_licence(
+    project: str,
+    pr: str | None,
+    licensed_revision: str,
+    licensed_head: str,
+) -> tuple[dict[str, Any], bool, dict[str, Any] | None]:
+    """Read the analysis-revision truth and decide the caller's licence.
+
+    Returns ``(revision_result, carried_forward, refusal)``. ``refusal`` is the typed
+    undecidable read the caller returns unchanged; it is ``None`` only when the count
+    may proceed — either the analysis is of this head, or the licence names the very
+    stale analysis and head a decision verified.
+    """
+    revision_result = _verify_analysis_revision(project, pr)
+    if revision_result['count_status'] == 'confirmed':
+        return revision_result, False, None
+    reason = str(revision_result.get('count_status_reason') or '')
+    reported_head = str(revision_result.get('head_revision') or '')
+    if (
+        # Only a STALE ANALYSIS has a head to mismatch on: a read that reported no
+        # analysed revision, or no head, has its own reason, and renaming it as a
+        # mismatch hid the fact that the analysis revision was unavailable.
+        reason.startswith(_STALE_ANALYSIS)
+        and licensed_revision
+        and reported_head
+        and not _same_commit(licensed_head, reported_head)
+    ):
+        # The decision verified one head; the pull request now points at another,
+        # so a push landed between the two calls and the licence covers a head
+        # that is no longer the head.
+        return (
+            revision_result,
+            False,
+            _undecidable_read(
+                project,
+                pr,
+                f'carried_forward_head_mismatch: decided {licensed_head} but the head is {reported_head}',
+                analysis_revision=revision_result.get('analysis_revision', ''),
+                head_revision=reported_head,
+            ),
+        )
+    if not _licenses_stale_analysis(revision_result, licensed_revision, licensed_head):
+        return (
+            revision_result,
+            False,
+            _undecidable_read(
+                project,
+                pr,
+                reason or 'analysis does not match the head being read',
+                analysis_revision=revision_result.get('analysis_revision', ''),
+                head_revision=revision_result.get('head_revision', ''),
+            ),
+        )
+    # The caller named the very revision the provider analysed, and its own decision (the
+    # delta since that head is not built) is what licenses the enumeration. The figure is a
+    # measurement of the ANALYSED head, which the result states beside both revisions.
+    return revision_result, True, None
+
+
+def _recheck_read_revision(
+    project: str,
+    pr: str | None,
+    revision_result: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Return a refusal when the analysis or the head moved during the enumeration.
+
+    Neither fetch carries an analysis identifier, so an analysis that completed while
+    they ran can supply these sets while the result names the earlier revision.
+    Re-reading detects a replacement completed before this point; the provider exposes
+    nothing that binds both requests to one analysis, so the window is narrowed rather
+    than closed.
+    """
+    if not pr:
+        return None
+    recheck = _verify_analysis_revision(project, pr)
+    reported = str(recheck.get('analysis_revision') or '').strip()
+    rechecked_head = str(recheck.get('head_revision') or '').strip()
+    if not reported:
+        # A recheck that reports no revision has proved nothing: the sets were
+        # enumerated under the revision read at step 1b, and whether that is still
+        # the analysis is now unknown. Fail closed rather than confirm.
+        return _undecidable_read(
+            project,
+            pr,
+            'analysis_revision_unavailable_on_recheck: the revision could not be re-read after the enumeration',
+            analysis_revision=revision_result.get('analysis_revision', ''),
+            head_revision=revision_result.get('head_revision', ''),
+        )
+    if not _same_commit(reported, str(revision_result['analysis_revision'])):
+        return _undecidable_read(
+            project,
+            pr,
+            f'analysis_revision_changed_during_read: {revision_result["analysis_revision"]} -> {reported}',
+            analysis_revision=revision_result.get('analysis_revision', ''),
+            head_revision=revision_result.get('head_revision', ''),
+        )
+    if not rechecked_head or not _same_commit(rechecked_head, str(revision_result['head_revision'])):
+        # The analysis can stay put while the head moves: a push during the
+        # enumeration leaves the count measured over the same analysis but the
+        # answer naming a head that is no longer the head. Fail closed.
+        return _undecidable_read(
+            project,
+            pr,
+            'head_revision_changed_during_read: '
+            f'{revision_result["head_revision"]} -> {rechecked_head or "unavailable"}',
+            analysis_revision=revision_result.get('analysis_revision', ''),
+            head_revision=revision_result.get('head_revision', ''),
+        )
+    return None
 
 
 def cmd_read_open_issues(args):
@@ -1099,34 +1226,9 @@ def cmd_read_open_issues(args):
     # 1b. Gate the count on the analysis being of THIS revision — the same truth
     #     the producer-side fetch applies, because a clean analysis of an older
     #     head reads exactly like a clean analysis of this one.
-    revision_result = _verify_analysis_revision(project, pr)
-    carried_forward = False
-    if revision_result['count_status'] != 'confirmed':
-        reported_head = str(revision_result.get('head_revision') or '')
-        if licensed_revision and reported_head and licensed_head != reported_head:
-            # The decision verified one head; the pull request now points at another,
-            # so a push landed between the two calls and the licence covers a head
-            # that is no longer the head.
-            return _undecidable_read(
-                project,
-                pr,
-                f'carried_forward_head_mismatch: decided {licensed_head} but the head is {reported_head}',
-                analysis_revision=revision_result.get('analysis_revision', ''),
-                head_revision=reported_head,
-            )
-        if not _licenses_stale_analysis(revision_result, licensed_revision, licensed_head):
-            return _undecidable_read(
-                project,
-                pr,
-                revision_result.get('count_status_reason') or 'analysis does not match the head being read',
-                analysis_revision=revision_result.get('analysis_revision', ''),
-                head_revision=revision_result.get('head_revision', ''),
-            )
-        # The caller named the very revision the provider analysed, and its own
-        # decision (the delta since that head is not built) is what licenses the
-        # enumeration. The figure is a measurement of the ANALYSED head, which the
-        # result states beside both revisions.
-        carried_forward = True
+    revision_result, carried_forward, refusal = _carry_forward_licence(project, pr, licensed_revision, licensed_head)
+    if refusal is not None:
+        return refusal
 
     # 2. Enumerate. The issue ``message`` is untrusted free text and stays out of
     #    this contract — the trusted structured fields are what a caller acts on.
@@ -1180,47 +1282,10 @@ def cmd_read_open_issues(args):
     open_hotspots = [hotspot for hotspot in raw_hotspots if hotspot.get('status', 'TO_REVIEW') == 'TO_REVIEW']
     open_keys = [issue['key'] for issue in issues if issue['key']] + [hotspot['key'] for hotspot in open_hotspots]
 
-    # 4. The revision the enumeration happened under. Neither fetch carries an
-    #    analysis identifier, so an analysis that completed while they ran can
-    #    supply these sets while the result names the earlier revision. Re-reading
-    #    the revision detects a replacement completed before this point; the
-    #    provider exposes nothing that binds both requests to one analysis, so the
-    #    window is narrowed rather than closed.
-    if pr:
-        recheck = _verify_analysis_revision(project, pr)
-        reported = str(recheck.get('analysis_revision') or '').strip()
-        rechecked_head = str(recheck.get('head_revision') or '').strip()
-        if not reported:
-            # A recheck that reports no revision has proved nothing: the sets were
-            # enumerated under the revision read at step 1b, and whether that is
-            # still the analysis is now unknown. Fail closed rather than confirm.
-            return _undecidable_read(
-                project,
-                pr,
-                'analysis_revision_unavailable_on_recheck: the revision could not be re-read after the enumeration',
-                analysis_revision=revision_result.get('analysis_revision', ''),
-                head_revision=revision_result.get('head_revision', ''),
-            )
-        if reported != revision_result['analysis_revision']:
-            return _undecidable_read(
-                project,
-                pr,
-                f'analysis_revision_changed_during_read: {revision_result["analysis_revision"]} -> {reported}',
-                analysis_revision=revision_result.get('analysis_revision', ''),
-                head_revision=revision_result.get('head_revision', ''),
-            )
-        if not rechecked_head or rechecked_head != revision_result['head_revision']:
-            # The analysis can stay put while the head moves: a push during the
-            # enumeration leaves the count measured over the same analysis but the
-            # answer naming a head that is no longer the head. Fail closed.
-            return _undecidable_read(
-                project,
-                pr,
-                'head_revision_changed_during_read: '
-                f'{revision_result["head_revision"]} -> {rechecked_head or "unavailable"}',
-                analysis_revision=revision_result.get('analysis_revision', ''),
-                head_revision=revision_result.get('head_revision', ''),
-            )
+    # 4. The revision the enumeration happened under.
+    refusal = _recheck_read_revision(project, pr, revision_result)
+    if refusal is not None:
+        return refusal
 
     result: dict[str, Any] = {
         'status': 'success',
