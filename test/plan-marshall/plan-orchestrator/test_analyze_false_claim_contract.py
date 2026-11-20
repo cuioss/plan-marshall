@@ -121,14 +121,32 @@ def _carries_stale_parser_clause(text: str) -> bool:
 
 
 #: Every metric the false-claim paragraph compares, with the semantics its own
-#: standard row must state. Per metric, never one combined substring: a single
-#: head-bound row would otherwise satisfy the check for all four.
+#: standard row must state. The POPULATION is not mirrored here: the test derives it
+#: from the paragraph, intersected with the standard's own row keys, and asserts the
+#: two sets agree — so a metric added to the paragraph fails here until its
+#: expectation is added, and one removed fails too.
 _STANDARD_METRICS: tuple[tuple[str, str], ...] = (
     ('unresolved_review_threads', 'on the head'),
     ('review_body_findings_total', 'on the head'),
     ('review_body_findings_handled', 'carry a disposition'),
     ('sonar_open_new_issues', 'merge head'),
 )
+
+#: A standard table row's own key, from the row's leading cell.
+_SPEC_ROW_KEY_RE = re.compile(r'^\| `([a-z_]+)`', re.MULTILINE)
+
+
+def _paragraph_metric_population(paragraph: str, spec: str) -> set[str]:
+    """The metrics the paragraph names that the standard also defines.
+
+    Intersecting the paragraph's backticked tokens with the standard's row keys is
+    what makes the population derivable without a second hardcoded list: the
+    paragraph's prose tokens (`n/a`, `unknown`, `finding:`) are not row keys, and a
+    metric the standard defines but the paragraph ignores is not a population
+    member either.
+    """
+    spec_keys = set(_SPEC_ROW_KEY_RE.findall(spec))
+    return set(re.findall(r'`([a-z_]+)`', paragraph)) & spec_keys
 
 
 def _standard_rows(text: str, metric: str) -> list[str]:
@@ -222,6 +240,17 @@ class TestFalseClaimIsHeadBound:
 
 
 class TestTheStandardAgrees:
+    def test_the_paragraph_and_the_standard_name_the_same_metric_population(self):
+        paragraph = _false_claim_paragraph(_read(_ANALYZE_MD))
+        population = _paragraph_metric_population(paragraph, _read(_LANDING_SPEC))
+
+        assert population, 'the paragraph names no metric the standard defines — the check would be vacuous'
+        assert population == {metric for metric, _phrase in _STANDARD_METRICS}, (
+            f'the metrics this test grades {sorted(metric for metric, _ in _STANDARD_METRICS)} do not match '
+            f'the ones the paragraph compares {sorted(population)} — a metric added to either side needs its '
+            'expectation here'
+        )
+
     def test_the_standard_defines_the_numbers_as_the_merge_gates_read_on_the_head(self):
         spec = _read(_LANDING_SPEC)
 

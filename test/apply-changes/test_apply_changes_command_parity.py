@@ -493,10 +493,20 @@ def test_operator_only_controls(tmp_path: Path):
     _plant(tmp_path, {})
     assert _operator_only_violations(_entry_texts(tmp_path)) == [], 'the unmodified entry points must stay clean'
 
-    _plant(tmp_path, {'opencode': '---\ndescription: A stub command.\n---\n\nNothing is recorded here.\n'})
+    # The stub carries the uncertainty clause and omits only the gap statement, so
+    # the gap diagnostic is the ONLY OpenCode problem — a regression in the gap
+    # check then reddens this control instead of hiding behind the uncertainty one.
+    _plant(
+        tmp_path,
+        {
+            'opencode': (
+                '---\ndescription: A stub command.\n---\n\nThe effect is **not shown by reading** in this repository.\n'
+            )
+        },
+    )
     reported = _operator_only_violations(_entry_texts(tmp_path))
-    assert any('opencode' in problem for problem in reported), (
-        f'a harness without the key and without the recorded gap must be reported, got {reported}'
+    assert any('opencode' in problem and _GAP_CLAUSE in problem for problem in reported), (
+        f'a harness without the key and without the recorded gap must be reported by its gap diagnostic, got {reported}'
     )
 
     keyed_only = (
