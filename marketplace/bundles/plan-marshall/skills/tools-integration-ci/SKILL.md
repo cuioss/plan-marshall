@@ -233,7 +233,8 @@ Semantics, once, for all of them:
   `prepare-body`/`prepare-comment` and their consuming verbs refuse it as
   `shared_body_slot_refused`. Each such caller names its own slot (a runbook lane its plan id,
   the ledger land `land`) at every call of the pair. A caller that reads no body — a title-only
-  `pr edit` — is not refused, because no shared file is opened.
+  `pr edit` with no prepared file — is not refused while the shared default file does not exist;
+  a leftover one refuses, because it could be another caller's.
 - Use it **only** when the caller genuinely has no plan. A `--plan-id` that failed to
   resolve returns `plan_not_found` carrying both a sentinel `hint` and a
   `hint_caveat`: a mistyped real plan id must be corrected, never replaced with the

@@ -1894,7 +1894,11 @@ def _delegated_workflow_spec(project_dir: Path) -> tuple[dict[str, str] | None, 
             text = workflow.read_text(encoding='utf-8')
         except (OSError, UnicodeDecodeError) as exc:
             return None, f'rule_unreadable: {workflow.name}: {type(exc).__name__}'
+        caller_job = ''
         for line in text.splitlines():
+            job_match = _JOB_ID_RE.match(line)
+            if job_match:
+                caller_job = job_match.group('job')
             match = _USES_LINE_RE.match(line)
             if not match:
                 continue
@@ -1915,7 +1919,7 @@ def _delegated_workflow_spec(project_dir: Path) -> tuple[dict[str, str] | None, 
                     f'delegated_ref_unpinned: {target} names {ref!r}, which is neither a commit SHA nor a '
                     'numeric version tag; a moving branch is not the rule this head ran under'
                 )
-            return {'repo': f'{parts[0]}/{parts[1]}', 'path': workflow_path, 'ref': ref}, ''
+            return {'repo': f'{parts[0]}/{parts[1]}', 'path': workflow_path, 'ref': ref, 'caller_job': caller_job}, ''
     return None, ''
 
 
@@ -1947,7 +1951,7 @@ def _called_workflow_jobs(lines: list[str]) -> tuple[dict[str, dict[str, Any]], 
             continue
         job_match = _JOB_ID_RE.match(line)
         if job_match:
-            current = {'id': job_match.group('job'), 'if': '', 'outputs': [], 'declares_outputs': False}
+            current = {'id': job_match.group('job'), 'if': '', 'declares_outputs': False}
             jobs[current['id']] = current
             continue
         if indent == 2 and line.strip():
@@ -1962,16 +1966,20 @@ def _called_workflow_jobs(lines: list[str]) -> tuple[dict[str, dict[str, Any]], 
         stripped = line.strip()
         if stripped.startswith('if:'):
             value = stripped[len('if:') :].strip()
-            if not value or value in ('>', '|', '>-', '|-', '>+', '|+'):
+            if not value or value[0] in '|>':
                 return jobs, (
                     f"delegated_rule_unreadable: job {current['id']}'s condition is empty or a block "
                     'scalar this reader cannot evaluate'
                 )
             current['if'] = value
-        elif stripped == 'outputs:':
+        elif stripped.startswith('outputs:'):
+            value = stripped[len('outputs:') :].strip()
+            if value:
+                return jobs, (
+                    f"delegated_rule_unreadable: job {current['id']}'s outputs are not a block mapping "
+                    'this reader can enumerate'
+                )
             current['declares_outputs'] = True
-        elif current['declares_outputs'] and indent == 6 and stripped.endswith(':'):
-            current['outputs'].append(stripped[:-1].strip())
     return jobs, ''
 
 
@@ -2111,37 +2119,49 @@ def _check_row_job_id(name: str) -> str:
 
 
 def _local_path_veto(project_dir: Path, paths: list[str]) -> str:
-    """Return a refusal when the checkout's own architecture places a path as buildable.
+    """Return a refusal when the checkout's own architecture PLACES a path as built.
 
     The delegated decision rests on the CI's own skip, which is authoritative for
-    the head. It is not authoritative for a path the checkout can PLACE: this
-    project's architecture is asked the same question the non-delegating lane asks
-    it, and any path it calls ``buildable`` contradicts the skip. So a delegating
-    consumer is never treated more permissively than any other project.
+    the head. It is not authoritative for a path the checkout can POSITIVELY place:
+    a changed path inside a module directory the architecture reports is a path this
+    project builds, and the skip cannot then be the footprint decision. A root module
+    (``''``) claims the whole tree, so every path is placeable.
 
-    ``_architecture_module_prefixes`` reporting no module means the architecture places
-    nothing — the delegating consumer this branch exists for — and then nothing is
-    vetoed. A root module (``''``) claims the whole tree, so every path is
-    placeable; otherwise the classifier's own answer decides, which also covers a
-    root-level build file (``pom.xml``) that belongs to no module directory.
+    Placement is positive only. A path belonging to no module directory is not
+    placed — the architecture has said nothing about it — so it is not vetoed; a
+    build file at the repository root is exactly that case, and the CI's own
+    evidence covers it (a changed build file makes the CI build, so a gated job
+    reports a pass and the evidence refuses). Vetoing on the classifier's DEFAULT
+    answer instead would refuse every delta of a project that has a build file at
+    all, which is the consumer this branch exists for.
+
+    ``None`` is the architecture being UNREADABLE, and that fails closed: a checkout
+    whose architecture could not be read must not carry a delta forward on evidence
+    alone. No module (``[]``) is a readable architecture that places nothing.
     """
     prefixes = _architecture_module_prefixes(project_dir)
-    if not prefixes:
-        return ''
-    surfaces = _architecture_documentation_surfaces(project_dir)
-    buildable = [
-        path for path in paths if _classify_path(path, [], None, prefixes, surfaces, 'architecture') == 'buildable'
-    ]
-    if buildable:
+    if prefixes is None:
         return (
-            f'delegated_paths_buildable: {len(buildable)} changed path(s) are paths this project builds '
-            f'({", ".join(buildable[:3])}), which contradicts the skipped build'
+            'delegated_paths_buildable: the project architecture could not be read, so no changed path '
+            'may be placed as not built'
+        )
+    if '' in prefixes:
+        return (
+            f'delegated_paths_buildable: the architecture reports a root module, which claims every '
+            f'changed path ({", ".join(paths[:3])})'
+        )
+    modules = [prefix for prefix in prefixes if prefix]
+    placed = [path for path in paths if any(path.startswith(prefix) for prefix in modules)]
+    if placed:
+        return (
+            f'delegated_paths_buildable: {len(placed)} changed path(s) lie in a module this project '
+            f'builds ({", ".join(placed[:3])}), which contradicts the skipped build'
         )
     return ''
 
 
 def _delegated_check_evidence(
-    rows: list[dict[str, Any]], deciders: list[str], gated: list[str], all_jobs: list[str]
+    rows: list[dict[str, Any]], deciders: list[str], gated: list[str], all_jobs: list[str], caller_job: str
 ) -> str:
     """Return the refusal reason the head's check-runs give, or ``''`` to carry.
 
@@ -2152,6 +2172,10 @@ def _delegated_check_evidence(
     job of the workflow is inside it — including one that gates nothing — so no row
     of a job the caller's run executed can fail unseen.
 
+    A row belongs to this run only when it names the CALLER's own job
+    (``<caller job> / <called job>``): a second workflow may call a reusable workflow
+    with a job of the same id, and its row must not stand in for this run's.
+
     Within that window the reading is the fail-closed one for "the CI skipped the
     build for the footprint reason": every row settled (nothing failed, was
     cancelled or is pending), every DECIDER passed (a skipped decider means the
@@ -2159,13 +2183,13 @@ def _delegated_check_evidence(
     skipped (a gated job that ran means the CI built this head).
     """
     by_job: dict[str, list[tuple[str, str]]] = {}
+    prefix = f'{caller_job} / '
     for row in rows:
         result = str(row.get('result') or '').strip().lower()
         name = str(row.get('name') or '?')
-        if ' / ' not in name:
-            # A called workflow's job reports as ``<caller job> / <called job>``. A
-            # bare row is some other check that happens to share a name, and matching
-            # it would let a foreign row stand in for a missing one.
+        if not name.startswith(prefix):
+            # A bare row, or one from another caller's job, is some other check: it
+            # can neither satisfy a job of this run nor freeze its verdict.
             continue
         by_job.setdefault(_check_row_job_id(name), []).append((name, result))
     for job_id in all_jobs:
@@ -2326,6 +2350,12 @@ def _sonar_stale_delta_verdict(
             verdict['detail'] = delegated_reason
             return verdict
         assert delegated is not None  # narrowing after the reason guard
+        if not delegated['caller_job']:
+            verdict['detail'] = (
+                'delegated_rule_unreadable: the workflow delegates with no job id this reader can '
+                'attribute, so its check-runs cannot be identified'
+            )
+            return verdict
         called, read_reason = _read_delegated_workflow(worktree, delegated['repo'], delegated['path'], delegated['ref'])
         if called is None:
             verdict['detail'] = (
@@ -2353,7 +2383,7 @@ def _sonar_stale_delta_verdict(
         if rows is None:
             verdict['detail'] = f'delegated_check_evidence_unreadable: {checks_reason}'
             return verdict
-        evidence_reason = _delegated_check_evidence(rows, deciders, gated, all_jobs)
+        evidence_reason = _delegated_check_evidence(rows, deciders, gated, all_jobs, delegated['caller_job'])
         if evidence_reason:
             verdict['detail'] = evidence_reason
             return verdict

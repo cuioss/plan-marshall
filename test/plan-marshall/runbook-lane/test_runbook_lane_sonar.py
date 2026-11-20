@@ -1158,7 +1158,7 @@ def test_a_decider_that_did_not_run_stays_undecidable(tmp_path: Path, monkeypatc
     ],
 )
 def test_a_path_the_project_architecture_builds_vetoes_the_skip(tmp_path, monkeypatch, prefixes, path) -> None:
-    """A placeable path contradicts the skip, so the CI's decision does not stand."""
+    """A PLACED path contradicts the skip, so the CI's decision does not stand."""
     repo = tmp_path / 'repo'
     _repo_with_a_delegation(repo)
     _patch_delegated(monkeypatch, rows=_checks(), paths=(path,))
@@ -1170,8 +1170,21 @@ def test_a_path_the_project_architecture_builds_vetoes_the_skip(tmp_path, monkey
     assert verdict['detail'].startswith('delegated_paths_buildable')
 
 
-def test_a_checkout_with_no_readable_architecture_vetoes_nothing(tmp_path: Path, monkeypatch) -> None:
-    """The motivating consumer: no module to place anything, so the CI's decision stands."""
+def test_an_unreadable_architecture_vetoes_the_skip(tmp_path: Path, monkeypatch) -> None:
+    """A checkout whose architecture could not be read carries no delta forward."""
+    repo = tmp_path / 'repo'
+    _repo_with_a_delegation(repo)
+    _patch_delegated(monkeypatch, rows=_checks())
+    monkeypatch.setattr(lane, '_architecture_module_prefixes', lambda project_dir: None)
+
+    verdict = lane.cmd_sonar_stale_delta(_stale_args(pr_number='7', worktree=str(repo)))
+
+    assert verdict['carry_forward'] is False
+    assert 'architecture could not be read' in verdict['detail']
+
+
+def test_a_checkout_with_no_module_vetoes_nothing(tmp_path: Path, monkeypatch) -> None:
+    """The motivating consumer: no module places anything, so the CI's decision stands."""
     repo = tmp_path / 'repo'
     _repo_with_a_delegation(repo)
     _patch_delegated(monkeypatch, rows=_checks())
@@ -1180,6 +1193,39 @@ def test_a_checkout_with_no_readable_architecture_vetoes_nothing(tmp_path: Path,
     verdict = lane.cmd_sonar_stale_delta(_stale_args(pr_number='7', worktree=str(repo)))
 
     assert verdict['carry_forward'] is True
+
+
+def test_a_root_level_build_file_is_decided_by_the_evidence(tmp_path: Path, monkeypatch) -> None:
+    """No module places a root build file; the CI's own skip/ran evidence decides it."""
+    repo = tmp_path / 'repo'
+    _repo_with_a_delegation(repo)
+    _patch_delegated(monkeypatch, rows=_checks(), paths=('pom.xml',))
+    monkeypatch.setattr(lane, '_architecture_module_prefixes', lambda project_dir: ['client/'])
+
+    carried = lane.cmd_sonar_stale_delta(_stale_args(pr_number='7', worktree=str(repo)))
+
+    assert carried['carry_forward'] is True
+
+    _patch_delegated(monkeypatch, rows=_checks(build='pass'), paths=('pom.xml',))
+
+    refused = lane.cmd_sonar_stale_delta(_stale_args(pr_number='7', worktree=str(repo)))
+
+    assert refused['carry_forward'] is False
+    assert refused['detail'].startswith('delegated_gated_job_ran')
+
+
+def test_another_callers_row_does_not_satisfy_a_job(tmp_path: Path, monkeypatch) -> None:
+    """A second workflow may call the same reusable workflow with a job of the same id."""
+    repo = tmp_path / 'repo'
+    _repo_with_a_delegation(repo)
+    rows = [row for row in _checks() if not row['name'].startswith('build / build')]
+    rows.append({'name': 'other / build', 'result': 'skipping'})
+    _patch_delegated(monkeypatch, rows=rows)
+
+    verdict = lane.cmd_sonar_stale_delta(_stale_args(pr_number='7', worktree=str(repo)))
+
+    assert verdict['carry_forward'] is False
+    assert verdict['detail'].startswith('delegated_check_evidence_incomplete')
 
 
 def test_an_unrelated_check_row_cannot_freeze_the_delegated_decision(tmp_path: Path, monkeypatch) -> None:
