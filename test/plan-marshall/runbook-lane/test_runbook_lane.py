@@ -3167,9 +3167,9 @@ def test_every_body_command_in_the_lane_names_the_run_own_slot() -> None:
 
     assert planless, '§ 6 must name the plan-less body commands'
     for command in planless:
-        assert '--slot {plan}' in command, f'a plan-less body command names no slot: {command}'
+        assert '--slot {body_slot}' in command, f'a plan-less body command names no slot: {command}'
     for verb in ('prepare-body', 'prepare-comment', 'pr create', 'pr reply', 'pr thread-reply'):
-        assert any(verb in command and '--slot {plan}' in command for command in planless), (
+        assert any(verb in command and '--slot {body_slot}' in command for command in planless), (
             f'§ 6 names no slotted {verb} call'
         )
 

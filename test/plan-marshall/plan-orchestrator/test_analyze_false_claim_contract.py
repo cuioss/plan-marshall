@@ -96,11 +96,6 @@ def _normalized(text: str) -> str:
     return re.sub(r'\s+', ' ', text.replace('**', '').replace('`', '')).strip()
 
 
-def _exemption_markers(text: str) -> list[str]:
-    """Kept as a no-op detector remnant is avoided: the exemption rule is gone."""
-    return []
-
-
 def _live_state_markers(text: str) -> list[str]:
     """Every live-PR-state marker the paragraph carries."""
     normalized = _normalized(text)
@@ -269,6 +264,7 @@ class TestTheDifferenceIsClassifiedByTime:
         assert 'post-merge change, NOT as a false claim' in template
 
     def test_a_paragraph_that_only_says_false_claim_is_detected(self, tmp_path):
+        """The planted paragraph loses BOTH required properties, and the detector sees it."""
         paragraph = _false_claim_paragraph(_read(_ANALYZE_MD))
         fixture = tmp_path / 'head-bound.md'
         fixture.write_text(
@@ -278,8 +274,11 @@ class TestTheDifferenceIsClassifiedByTime:
         )
 
         offending = _normalized(_read(fixture))
-        assert not _live_state_markers(offending) or 'time of the re-read' not in offending
-        assert paragraph  # the real paragraph is the control
+        assert not _live_state_markers(offending), 'the planted paragraph must fail the live-state check'
+        assert 'time of the re-read' not in offending, 'the planted paragraph must fail the time check'
+        # CONTROL: the shipped paragraph carries both, so the detector is not vacuous.
+        assert _live_state_markers(paragraph), 'the shipped paragraph must name the live read'
+        assert 'time of the re-read' in _normalized(paragraph), 'the shipped paragraph must carry the time rule'
 
 
 # =============================================================================

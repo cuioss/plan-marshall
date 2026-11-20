@@ -74,9 +74,9 @@ def _read_live_commit_and_push() -> bool | None:
     """Read the plan-level ``commit_and_push`` from live marshal.json.
 
     The documented default applies when the key is absent (``True``) and when the
-    stored value is not bool-shaped; ``None`` means the file could not be read at
-    all, which the caller treats as "no filter" — a reconcile never drops a step on
-    configuration it could not read.
+    stored value is not bool-shaped; ``None`` means the file could not be read at all,
+    which is a FAILED read rather than the documented default — the caller applies the
+    conservative push-only floor and names the failed read in the refusal.
     """
     marshal_path = get_marshal_path()
     if not marshal_path.exists():

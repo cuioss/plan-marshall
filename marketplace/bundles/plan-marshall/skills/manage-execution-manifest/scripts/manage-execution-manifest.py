@@ -3832,6 +3832,17 @@ def cmd_reconcile(args: argparse.Namespace) -> dict[str, Any] | None:
     # Reading the value from live config is what closes the gap — compose receives
     # it as a parameter, and reconcile had no equivalent read.
     live_commit_and_push = _read_live_commit_and_push()
+    # The local-only floor applies here exactly as it does at compose time: a push-only
+    # step that entered live config AFTER this manifest was composed is still a push-only
+    # step, and ``commit_push_disabled`` says its drop is final. A value that could not be
+    # read is NOT the documented default — the conservative floor applies and the refusal
+    # names the failed read, so a local-only plan is never handed a push-only step by an
+    # unreadable configuration.
+    refusal_reason = ''
+    if live_commit_and_push is False:
+        refusal_reason = 'commit_and_push is disabled — no downstream push exists'
+    elif live_commit_and_push is None:
+        refusal_reason = 'commit_and_push could not be read from live configuration, so the push-only floor applies'
     # Branch on the narrowing predicate itself rather than on the boolean above:
     # both inputs must be present for the diff to mean anything, and expressing
     # that directly is what makes the two reads below type-safe.
@@ -3854,7 +3865,7 @@ def cmd_reconcile(args: argparse.Namespace) -> dict[str, Any] | None:
         # The refusal list names candidates this run WOULD have backfilled: a
         # push-only step the matrix already considered, or one the frozen manifest
         # already carries, is not a refused backfill and must not be reported as one.
-        if live_commit_and_push is False:
+        if live_commit_and_push is not True:
             backfill, commit_push_dropped = _apply_commit_push_disabled(eligible, False)
             backfill_refused = [record['step'] for record in commit_push_dropped]
         else:
@@ -3930,8 +3941,7 @@ def cmd_reconcile(args: argparse.Namespace) -> dict[str, Any] | None:
         for step in backfill_refused:
             _emit_decision_log(
                 plan_id,
-                f'{RECONCILE_CALLER} commit_push_disabled — refused to backfill {step}: '
-                'commit_and_push is disabled — no downstream push exists',
+                f'{RECONCILE_CALLER} commit_push_disabled — refused to backfill {step}: {refusal_reason}',
             )
 
     return {
@@ -3944,6 +3954,7 @@ def cmd_reconcile(args: argparse.Namespace) -> dict[str, Any] | None:
         'broken': [],
         'backfill': backfill,
         'backfill_refused': backfill_refused,
+        'backfill_refused_reason': refusal_reason,
         'commit_and_push': live_commit_and_push,
         'backfill_determinable': backfill_determinable,
         'candidate_source': candidate_source,

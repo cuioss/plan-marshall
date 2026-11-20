@@ -2908,3 +2908,13 @@ def test_a_bold_title_split_across_raw_lines_still_counts_its_rows() -> None:
 
     assert verdict['review_body_findings_total'] == 1, verdict
     assert [row['id'] for row in verdict['undisposed']] == ['nitpick-1']
+
+
+def test_a_quoted_copy_inside_a_fence_does_not_hide_the_heading_below_it() -> None:
+    """The occurrence index is built from the MASKED body, so the fenced copy is skipped."""
+    body = '```html\n**Nitpick comments (1)**\n```\n\n**Nitpick comments (1)**\n- `src/a.py:1` fix the timeout\n'
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['review_body_findings_total'] == 1, verdict
+    assert [row['id'] for row in verdict['undisposed']] == ['nitpick-1']

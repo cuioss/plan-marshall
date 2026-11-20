@@ -2978,7 +2978,29 @@ _BACKTICK_RUN_RE = re.compile(r'`+')
 #: and those bytes are prose about the change, never structure of the review. The
 #: marker is matched anywhere rather than at a line start: the gate parses the
 #: FLATTENED display form, where the newlines a fence opens on are already gone.
-_FENCE_LINE_RE = re.compile(r'```+|~~~+')
+_FENCE_MARKER_RE = re.compile(r'(`{3,}|~{3,})')
+
+
+def _fence_spans(text: str) -> list[tuple[int, int]]:
+    """The ``(start, end)`` spans of fenced code blocks, paired by marker char and length.
+
+    A closer must carry the SAME character and at least the opener's length; pairing by
+    position alone lets a `~~~` line inside a ``` block close it, masking real structure
+    and dropping the findings under it.
+    """
+    spans: list[tuple[int, int]] = []
+    opening: tuple[int, str, int] | None = None
+    for marker in _FENCE_MARKER_RE.finditer(text):
+        run = marker.group(0)
+        if opening is None:
+            opening = (marker.start(), run[0], len(run))
+            continue
+        start, character, length = opening
+        if run[0] != character or len(run) < length:
+            continue
+        spans.append((start, marker.end()))
+        opening = None
+    return spans
 
 
 def _mask_fenced_code(body: str) -> str:
@@ -2991,15 +3013,10 @@ def _mask_fenced_code(body: str) -> str:
     callers compute — valid.
     """
     characters = list(body)
-    open_at: int | None = None
-    for fence in _FENCE_LINE_RE.finditer(body):
-        if open_at is None:
-            open_at = fence.start()
-            continue
-        for index in range(open_at, fence.end()):
+    for start, end in _fence_spans(body):
+        for index in range(start, end):
             if characters[index] != '\n':
                 characters[index] = ' '
-        open_at = None
     return ''.join(characters)
 
 
@@ -3808,8 +3825,15 @@ def _heading_is_a_mention(body: str, start: int, end: int, raw_body: str | None)
     # NOT called a mention — dropping a heading because its spelling could not be
     # re-found is the under-count this gate must never take.
     needle_re = re.compile(r'\s+'.join(re.escape(token) for token in needle.split()))
-    occurrence = max(len(needle_re.findall(body[:start])), 0)
-    matches = list(needle_re.finditer(raw_body))
+    fenced = _fence_spans(raw_body)
+    matches = [match for match in needle_re.finditer(raw_body) if not any(a <= match.start() < b for a, b in fenced)]
+    # The display body was fence-masked before this call, so the two counts differ when a
+    # QUOTED copy sits inside a fence. An index built from one list and applied to the
+    # other then names the wrong occurrence, so an unreliable pair is treated as
+    # unlocatable — which counts the heading rather than dropping it.
+    if len(matches) != len(needle_re.findall(body)):
+        return False
+    occurrence = len(needle_re.findall(body[:start]))
     if occurrence >= len(matches):
         return False
     tail = raw_body[matches[occurrence].end() :].split('\n', 1)[0]

@@ -310,6 +310,7 @@ The result supplies, and nothing below is spelled from anywhere else:
 | spec copy read, and whether the other copy differs | `spec_source` (`ledger_worktree` \| `main_checkout`), plus `spec_differ: true` when both copies exist and differ |
 | epic slug | `slug` |
 | `{plan}` | `plan` |
+| `{body_slot}` — the CI body slot | `body_slot`: the plan id folded to the slot vocabulary (`[a-z0-9-]{1,64}`, digest-suffixed when the fold would change it). It is a DIFFERENT value from `{plan}`: the plan id names the worktree, progress file, sender and inbox and is never folded, while every `ci` body call uses `{body_slot}` |
 | worktree | `worktree` |
 | branch | `{branch} = {prefix}{plan}`; one closed set supplies the prefix — the canonical `feature/` (a new capability), `fix/` (a bug fix) and `chore/` (docs or maintenance), plus a prefix the project's configured `working_prefixes` declares. The two sources are one set with no precedence between them |
 | base branch | `base_branch` (the project's own base branch, never a spelling of it) |
@@ -809,19 +810,20 @@ whether to continue at the limit. Record every finding and its disposition.
 ## 6. Pull request and reviews
 
 1. **Open the PR.** The lane is plan-less, so it allocates its body from the shared
-   `NO_PLAN` store under a slot of its OWN — its plan id. Two callers writing the default
+   `NO_PLAN` store under a slot of its OWN — `{body_slot}`, the plan id folded to the CI's
+   slot vocabulary. Two callers writing the default
    slot at once overwrite each other's body, so the slot is per caller and per run.
-   - `python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr prepare-body --plan-id NO_PLAN --slot {plan}`
+   - `python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr prepare-body --plan-id NO_PLAN --slot {body_slot}`
      returns a path.
    - Write the body there: Summary; Changes, grouped per deliverable; Test evidence. The evidence
      carries, per Done-when, the `order` and verdict §1 defines, the test name, and the failing
      run's commit and output identifier only where the order is not `none`. No footer.
-   - Then: `python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr create --plan-id NO_PLAN --slot {plan} --head {branch} --base {base_branch} --title "{conventional title}"`
-   - Every later body call of this run names the same slot: `pr prepare-comment … --slot {plan}`
-     and its consuming `pr reply` / `pr thread-reply` / `pr edit` `--slot {plan}`.
+   - Then: `python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr create --plan-id NO_PLAN --slot {body_slot} --head {branch} --base {base_branch} --title "{conventional title}"`
+   - Every later body call of this run names the same slot: `pr prepare-comment … --slot {body_slot}`
+     and its consuming `pr reply` / `pr thread-reply` / `pr edit` `--slot {body_slot}`.
 2. **Trigger each reviewer** with a PR comment
-   (`ci pr prepare-comment --for reply --plan-id NO_PLAN --slot {plan}` then
-   `ci pr reply --pr-number {N} --plan-id NO_PLAN --slot {plan}`), posting its resolved
+   (`ci pr prepare-comment --for reply --plan-id NO_PLAN --slot {body_slot}` then
+   `ci pr reply --pr-number {N} --plan-id NO_PLAN --slot {body_slot}`), posting its resolved
    `trigger_comment`.
 3. **Wait for CI:** `python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci checks wait --pr-number {N} --timeout 540`.
 4. **Read the pull request's open Sonar findings** — after CI is green on the head and before the
@@ -932,9 +934,9 @@ whether to continue at the limit. Record every finding and its disposition.
    or load-bearing, real or false-positive drift, and severity — before deciding whether it applies.
    Handle every comment:
    - fix it, commit and push; or
-   - answer it with `ci pr prepare-comment --for thread-reply --plan-id NO_PLAN --slot {plan}`, write the
+   - answer it with `ci pr prepare-comment --for thread-reply --plan-id NO_PLAN --slot {body_slot}`, write the
      reason into the returned path, and post it with
-     `ci pr thread-reply --pr-number {N} --thread-id {thread_id} --plan-id NO_PLAN --slot {plan}`; then
+     `ci pr thread-reply --pr-number {N} --thread-id {thread_id} --plan-id NO_PLAN --slot {body_slot}`; then
      close it with `ci pr resolve-thread`.
 
    **A thread is resolved only after a reply that names a commit or a stated reason** — never to
