@@ -2,10 +2,10 @@
   "id": "PLAN-LB-170",
   "slug": "lb-165-completion-document-rules-and-missing-tests",
   "workstream": "WS-03",
-  "status": "running",
+  "status": "shipped",
   "lane": "runbook",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "plan_marshall_plan_id": "rb-lb-170-lb-165-completion-document-rules-and-missing-tests",
+  "pr": "2031",
+  "landing": "landings/PLAN-LB-170.md",
   "seq": 170
 }

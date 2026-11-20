@@ -2,10 +2,10 @@
   "id": "PLAN-LB-169",
   "slug": "retired-verdict-needs-its-own-operator-decision",
   "workstream": "WS-01",
-  "status": "running",
+  "status": "shipped",
   "lane": "runbook",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "plan_marshall_plan_id": "rb-lb-169-retired-verdict-needs-its-own-operator-decision",
+  "pr": "2029",
+  "landing": "landings/PLAN-LB-169.md",
   "seq": 169
 }
