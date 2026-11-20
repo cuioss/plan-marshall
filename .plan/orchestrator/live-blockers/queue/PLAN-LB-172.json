@@ -2,10 +2,10 @@
   "id": "PLAN-LB-172",
   "slug": "consolidated-leftover-fixes",
   "workstream": "WS-04",
-  "status": "staged",
+  "status": "running",
   "lane": "runbook",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "plan_marshall_plan_id": "rb-lb-172-consolidated-leftover-fixes",
+  "pr": "2036",
+  "landing": "landings/PLAN-LB-172.md",
   "seq": 172
 }
