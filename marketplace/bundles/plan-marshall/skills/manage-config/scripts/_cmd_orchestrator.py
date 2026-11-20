@@ -68,7 +68,6 @@ from orchestrator_worktree import (
     detect_ledger_drift,
     fetch_base_branch,
     orchestrator_knob_config_path,
-    orchestrator_use_worktree,
     orchestrator_worktree_path,
 )
 
@@ -155,21 +154,55 @@ def _coerce_bool(raw_value: object) -> bool | None:
     return None
 
 
-def _main_anchored_use_worktree_is_set(knob_path: Path | None) -> bool:
-    """Return whether the main-anchored ``marshal.json`` carries ``orchestrator.use_worktree``.
+def _use_worktree_config_answer(knob_path: Path | None) -> dict:
+    """Answer ``use_worktree`` from ONE read of the main-anchored ``marshal.json``.
 
-    An absent path, an unreadable or malformed file, and a missing block all read
-    as unset — the same fall-through :func:`orchestrator_use_worktree` applies to
-    the value itself.
+    An unresolved anchor, an absent file, an absent ``orchestrator`` block and a
+    block without the key are the store seam's own unset fall-through — ``value``
+    ``False`` and ``set`` ``False``. Every FAILED read is refused instead, naming
+    the file it could not use: a file that cannot be read, that is not valid JSON,
+    that is not a JSON object, or whose ``orchestrator`` block is not a JSON
+    object. Answering ``False`` for any of those would be indistinguishable from a
+    main file that says false, which is the fail-open direction this verb exists to
+    avoid. The store seam's own read (``orchestrator_worktree.orchestrator_use_worktree``)
+    keeps its fail-soft ``False``; that difference is deliberate and documented.
     """
-    if knob_path is None:
-        return False
+    field = 'use_worktree'
+    anchor = str(knob_path) if knob_path is not None else None
+    if knob_path is None or not knob_path.exists():
+        return success_exit({'field': field, 'value': False, 'set': False, 'knob_path': anchor})
+    display = knob_path.resolve()
     try:
-        data = json.loads(knob_path.read_text(encoding='utf-8'))
-    except (OSError, ValueError):
-        return False
-    block = data.get('orchestrator') if isinstance(data, dict) else None
-    return isinstance(block, dict) and 'use_worktree' in block
+        raw = knob_path.read_text(encoding='utf-8')
+    except OSError as exc:
+        return error_exit(f'cannot read {display}: {exc}', reason='unreadable', knob_path=anchor)
+    try:
+        data = json.loads(raw)
+    except ValueError as exc:
+        return error_exit(f'{display} is not valid JSON: {exc}', reason='invalid_json', knob_path=anchor)
+    if not isinstance(data, dict):
+        return error_exit(
+            f'marshal.json at {display} is not a JSON object (got {type(data).__name__})',
+            reason='not_object',
+            knob_path=anchor,
+        )
+    block = data.get('orchestrator')
+    if 'orchestrator' in data and not isinstance(block, dict):
+        return error_exit(
+            f'orchestrator block in {display} is not a dictionary',
+            reason='block_not_object',
+            knob_path=anchor,
+        )
+    if not isinstance(block, dict):
+        return success_exit({'field': field, 'value': False, 'set': False, 'knob_path': anchor})
+    return success_exit(
+        {
+            'field': field,
+            'value': block.get('use_worktree') is True,
+            'set': 'use_worktree' in block,
+            'knob_path': anchor,
+        }
+    )
 
 
 def _use_worktree_anchor_refusal() -> dict | None:
@@ -264,16 +297,16 @@ def cmd_orchestrator_get(args) -> dict:
     apply their own default.
 
     ``use_worktree`` is the exception to the cwd-relative read: it reports the
-    main-anchored effective value (:func:`orchestrator_use_worktree`) and whether
-    the main-anchored file sets it, so a ``get`` from a plan worktree answers with
-    the value the store seam actually uses. A malformed block — an explicit JSON
-    ``null`` or any non-dict value — is a different answer: the read refuses with
-    ``status: error`` naming the file it found malformed, in the caller's own
-    ``marshal.json`` and in the main-anchored one alike, rather than reporting the
-    ``False`` the seam falls back to. A MAIN-ANCHORED file that cannot be READ
-    at all is not a malformed block but an unknown one, and it keeps the seam's
-    own ``False``; the caller's own file is read by :func:`load_config`, which
-    raises on invalid JSON rather than answering a value.
+    main-anchored effective value together with whether the main-anchored file sets
+    it, so a ``get`` from a plan worktree answers with the value the store seam
+    actually uses. The knob is read ONCE, and every failed read is refused with
+    ``status: error`` naming the file — a file that cannot be read, that is not
+    valid JSON, that is not a JSON object, or whose ``orchestrator`` block is not a
+    JSON object, in the caller's own ``marshal.json`` and in the main-anchored one
+    alike. An ABSENT file, block or key stays the unset answer (``false`` with
+    ``set: false``), which is the one case the store seam's own ``False`` really
+    means. The seam keeps its fail-soft ``False`` for the failed reads; this verb
+    refuses them, so a failed read is never reported as a configured ``false``.
     """
     if not is_initialized():
         return error_exit(f'marshal.json not initialized; run {STEWARD_COMMAND} first')
@@ -286,7 +319,12 @@ def cmd_orchestrator_get(args) -> dict:
     if rejection is not None:
         return rejection
 
-    config = load_config()
+    try:
+        config = load_config()
+    except (OSError, ValueError) as exc:
+        caller_file = Path(_config_core.MARSHAL_PATH).resolve()
+        return error_exit(f'cannot read {caller_file}: {exc}', reason='unreadable')
+
     orch_present = 'orchestrator' in config
     orch_block = config.get('orchestrator') if orch_present else None
     # A PRESENT block of the wrong type, or an explicit JSON `null`, is a
@@ -296,31 +334,15 @@ def cmd_orchestrator_get(args) -> dict:
     # takes the default path. Validate BEFORE the `use_worktree` special case so
     # a malformed (including null) block is rejected for every field.
     if orch_present and (orch_block is None or not isinstance(orch_block, dict)):
-        return error_exit(f'orchestrator block in {_config_core.MARSHAL_PATH} is not a dictionary')
+        caller_file = Path(_config_core.MARSHAL_PATH).resolve()
+        return error_exit(
+            f'orchestrator block in {caller_file} is not a dictionary',
+            reason='block_not_object',
+            knob_path=str(caller_file),
+        )
 
     if field == 'use_worktree':
-        knob_path = orchestrator_knob_config_path()
-        # Fail closed on a malformed (including explicit null) main-anchored
-        # orchestrator block, mirroring the local check above: the use_worktree
-        # read returns False for such a block, which would otherwise answer
-        # `success` for a setting no reader wrote.
-        if knob_path is not None:
-            try:
-                main_data = json.loads(knob_path.read_text(encoding='utf-8'))
-            except (OSError, ValueError):
-                main_data = None
-            if isinstance(main_data, dict) and 'orchestrator' in main_data:
-                main_block = main_data.get('orchestrator')
-                if main_block is None or not isinstance(main_block, dict):
-                    return error_exit(f'orchestrator block in {knob_path} is not a dictionary')
-        return success_exit(
-            {
-                'field': field,
-                'value': orchestrator_use_worktree(),
-                'set': _main_anchored_use_worktree_is_set(knob_path),
-                'knob_path': str(knob_path) if knob_path is not None else None,
-            }
-        )
+        return _use_worktree_config_answer(orchestrator_knob_config_path())
     # When the field is unset in the live block, fall back to the canonical
     # default from DEFAULT_ORCHESTRATOR (so `auto_emit` reads its seeded `False`
     # and `parallelization_scope` its seeded `1`). The value is advisory on an
