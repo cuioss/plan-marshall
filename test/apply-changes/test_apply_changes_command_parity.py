@@ -132,18 +132,32 @@ _RESTRICTIVE_MARKERS: tuple[str, ...] = ('only when', 'under the same')
 #: in the entry point beside the sequence rather than in a PR body.
 _OPERATOR_ONLY_KEY = 'disable-model-invocation'
 
-#: What a harness without the key must say instead: that it publishes no key that
-#: withholds the command, and what keeps a model from invoking it there.
-_GAP_CLAUSE = 'no key that withholds'
+#: What a harness without the key must say instead: that the generator's own field
+#: set for that harness lists no field that withholds the command. The statement is
+#: about configuration this repository holds — never about the harness, whose own
+#: key inventory is a runtime fact nothing here shows.
+_GAP_CLAUSE = 'lists no field that withholds'
+
+#: Tokens that mark a frontmatter field NAME as a withholding key. A field naming
+#: one of these is evidence that the harness publishes such a key, so a gap
+#: statement beside it is false and the entry point must carry the key instead.
+_WITHHOLDING_FIELD_TOKENS: tuple[str, ...] = ('disable', 'withhold')
+
+#: Phrases that state the absence of a withholding key as a fact about the harness,
+#: or cite support no repository file carries. Neither may appear in an entry point.
+_ABSENCE_AS_HARNESS_FACT_PHRASES: tuple[str, ...] = (
+    'publishes no key',
+    'is the authoritative field set',
+    'third-party documentation',
+)
 
 #: The tag every entry point must carry on the operator-only claim — the key's own
 #: effect is not shown by reading, and saying so is what keeps the claim honest.
 _UNCONFIRMED_CLAUSE = 'not shown by reading'
 
-#: The target metadata each gap-claiming harness cites, so the claim can be checked
-#: against the data instead of only against its own prose. A rules file that ever
-#: gains the withholding key makes the gap statement false, and this map is what
-#: turns that into a red test rather than a stale paragraph.
+#: The generator's source-validation config for each gap-claiming harness, as the
+#: entry point cites it. A config that ever lists a withholding field makes the gap
+#: statement false, and this map is what turns that prose claim into a red test.
 #:
 #: The PATH is explicit data: `sync.py` publishes no rules-file path and defines no
 #: directory-naming convention for one, so it cannot be derived from the target
@@ -329,19 +343,31 @@ def _rules_fields(root: Path, harness: str) -> set[str]:
     return set(rules.get('required_fields', [])) | set(rules.get('optional_fields', []))
 
 
-def _gap_claim_contradicted(root: Path, harness: str) -> bool:
-    """Whether the harness's own metadata now carries the withholding key.
+def _withholding_fields(root: Path, harness: str) -> list[str]:
+    """The fields a harness's own generator config names as withholding invocation."""
+    return sorted(field for field in _rules_fields(root, harness) if _withholds_invocation(field))
 
-    The entry point says its harness publishes no key that withholds the command
-    from model invocation. Reading the file it cites is what keeps that sentence
-    from outliving the data: the day the key appears, the gap is gone and the
-    entry point must carry the key instead. A ``root`` with no such file (a planted
-    fixture) states nothing to contradict; the shipped tree's own files are pinned
-    present by their own test, so the silence cannot be the whole guard.
+
+def _withholds_invocation(field: str) -> bool:
+    """Whether a frontmatter field's own name declares that invocation is withheld."""
+    normalised = field.casefold()
+    return any(token in normalised for token in _WITHHOLDING_FIELD_TOKENS)
+
+
+def _gap_claim_contradicted(root: Path, harness: str) -> bool:
+    """Whether the harness's own generator config now carries a withholding field.
+
+    The entry point says the generator's field set for this harness lists no field
+    that withholds the command from model invocation. Reading the file it cites is
+    what keeps that sentence from outliving the data: the day such a field appears,
+    the gap is gone and the entry point must carry the key instead. A ``root`` with
+    no such file (a planted fixture) states nothing to contradict; the shipped
+    tree's own files are pinned present by their own test, so the silence cannot be
+    the whole guard.
     """
     if not (root / _HARNESS_RULES_FILES[harness]).is_file():
         return False
-    return _OPERATOR_ONLY_KEY in _rules_fields(root, harness)
+    return bool(_withholding_fields(root, harness))
 
 
 def _operator_only_violations(texts: dict[str, str], root: Path = PROJECT_ROOT) -> list[str]:
@@ -379,7 +405,7 @@ def _operator_only_violations(texts: dict[str, str], root: Path = PROJECT_ROOT) 
         if harness in _HARNESS_RULES_FILES and _gap_claim_contradicted(root, harness):
             problems.append(
                 f'the {harness} gap statement is now false: {_HARNESS_RULES_FILES[harness]} carries '
-                f'{_OPERATOR_ONLY_KEY}'
+                f'{_withholding_fields(root, harness)}'
             )
     return problems
 
@@ -600,6 +626,66 @@ def test_a_harness_that_gains_the_withholding_key_is_detected(tmp_path: Path):
     reported = _operator_only_violations(_entry_texts(tmp_path), tmp_path)
     assert any('gap statement is now false' in problem for problem in reported), (
         f'a gap claim the harness metadata contradicts must be reported, got {reported}'
+    )
+
+
+def test_a_withholding_field_in_either_gap_config_is_detected(tmp_path: Path):
+    """Either gap-claiming harness's config is checked, whichever key name it uses."""
+    _plant(tmp_path, {})
+    for harness in _HARNESS_RULES_FILES:
+        rules_path = tmp_path / _HARNESS_RULES_FILES[harness]
+        rules_path.parent.mkdir(parents=True, exist_ok=True)
+        rules_path.write_text(
+            json.dumps({'required_fields': ['description'], 'optional_fields': [_OPERATOR_ONLY_KEY]}),
+            encoding='utf-8',
+        )
+        assert _gap_claim_contradicted(tmp_path, harness), (
+            f'a {harness} config carrying {_OPERATOR_ONLY_KEY} must be detected'
+        )
+        reported = _operator_only_violations(_entry_texts(tmp_path), tmp_path)
+        assert any('gap statement is now false' in problem for problem in reported), (
+            f'the {harness} gap statement must be reported against its own config, got {reported}'
+        )
+
+    # A field whose name declares withholding under a spelling no other harness uses is
+    # still a withholding key: the check reads the name, not one fixed spelling.
+    _plant(tmp_path, {})
+    (tmp_path / _HARNESS_RULES_FILES['antigravity']).write_text(
+        json.dumps({'required_fields': ['description'], 'optional_fields': ['withhold_model_invocation']}),
+        encoding='utf-8',
+    )
+    (tmp_path / _HARNESS_RULES_FILES['opencode']).write_text(
+        json.dumps({'required_fields': ['description'], 'optional_fields': ['model', 'mode']}),
+        encoding='utf-8',
+    )
+    assert _gap_claim_contradicted(tmp_path, 'antigravity'), 'a differently spelled withholding field must be detected'
+    assert not _gap_claim_contradicted(tmp_path, 'opencode'), (
+        'a harness whose config carries no withholding field must stay clean'
+    )
+
+
+def test_no_entry_point_states_the_absence_of_a_key_as_a_fact_about_the_harness(tmp_path: Path):
+    """The gap is a statement about the generator's config, never about the harness."""
+    texts = _entry_texts()
+
+    assert [
+        f'the {harness} entry point states {phrase!r}'
+        for harness, text in texts.items()
+        for phrase in _ABSENCE_AS_HARNESS_FACT_PHRASES
+        if phrase in collapsed(text).casefold()
+    ] == []
+    for harness in _HARNESS_RULES_FILES:
+        assert _GAP_CLAUSE in collapsed(texts[harness]).casefold(), (
+            f'the {harness} entry point should scope its gap to the generator config'
+        )
+
+    _plant(
+        tmp_path,
+        {'opencode': '---\ndescription: A stub command.\n---\n\nThis harness publishes no key that withholds it.\n'},
+    )
+    stubbed = collapsed(_entry_texts(tmp_path)['opencode']).casefold()
+    assert any(phrase in stubbed for phrase in _ABSENCE_AS_HARNESS_FACT_PHRASES), (
+        'the detector must fire on an absence claim stated as a fact about the harness'
     )
 
 

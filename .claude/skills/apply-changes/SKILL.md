@@ -24,9 +24,9 @@ order, with the same commands.
 **Operator-only.** This harness's key is `disable-model-invocation: true` in the
 frontmatter above, so the command is meant to be typed by the operator and never
 picked up by a model on its own. Whether Claude Code honours that key is
-**not shown by reading** in this repository — the only support is a citation of
-third-party documentation, and no other `.claude` skill uses it — so the key is
-recorded as the claim this entry point relies on, not as a verified guarantee.
+**not shown by reading** in this repository: no other `.claude` skill declares it
+and no repository document establishes its effect, so the key is recorded as the
+claim this entry point relies on, not as a verified guarantee.
 
 It runs on the **main checkout of this repository only** and it is
 **meta-project-only**, like `/sync-harnesses`: a consumer project that installs

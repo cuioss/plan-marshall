@@ -12,14 +12,13 @@ meta-project-only, like `/sync-harnesses`.
 executor regeneration and the registry write to the operator. This command adds
 those two follow-ups and ends by naming the restart it cannot perform.
 
-**Operator-only, by convention.** This harness publishes no key that withholds a
-command from model invocation: its target metadata,
-`marketplace/targets/opencode/frontmatter-rules.json`, is the authoritative field
-set, and none of it restricts who may invoke the command. What keeps a model from
-invoking it here is **not shown by reading** — the entry point is a command file
-the operator selects, and whether the harness ever offers it to a model is a
-runtime behaviour this repository records as unconfirmed rather than as a
-guarantee.
+**Operator-only, by convention.** The generator's field set for this harness,
+`marketplace/targets/opencode/frontmatter-rules.json`, lists no field that
+withholds a command from model invocation. Whether the harness itself offers such
+a key is a runtime fact nothing in this repository shows, so what keeps a model
+from invoking the command here is **not shown by reading**: the entry point is a
+command file the operator selects, and the repository records that as
+unestablished rather than as a guarantee.
 
 Run every command with the `bash` tool, one command per call.
 
