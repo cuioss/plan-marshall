@@ -2986,7 +2986,7 @@ def _mask_fenced_code(body: str) -> str:
 
     A `<details><summary>…</summary>` quoted inside a fence is an EXAMPLE: reading it
     as a real block minted phantom findings, and after the wrapper content check was
-    narrowed it stopped the gate on CodeRabbit's own quoted snippet. Masking with
+    narrowed it stopped the gate on a reviewer's own quoted snippet. Masking with
     spaces (never deleting) keeps every other offset — and therefore every span the
     callers compute — valid.
     """
