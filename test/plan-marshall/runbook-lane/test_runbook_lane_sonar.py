@@ -856,8 +856,8 @@ def _real_repo(tmp_path: Path) -> Path:
     ):
         subprocess.run(['git', '-C', str(repo), *args], check=True, capture_output=True)
     (repo / 'a.txt').write_text('a\n', encoding='utf-8')
-    for args in (('add', '.'), ('commit', '-m', 'base')):
-        subprocess.run(['git', '-C', str(repo), *args], check=True, capture_output=True)
+    for step_args in (('add', '.'), ('commit', '-m', 'base')):
+        subprocess.run(['git', '-C', str(repo), *step_args], check=True, capture_output=True)
     return repo
 
 
