@@ -1996,7 +1996,7 @@ def _called_workflow_jobs(lines: list[str]) -> tuple[dict[str, dict[str, Any]], 
                 # A draft-only condition can suppress a job the footprint decision
                 # allowed, so the skip could not be attributed to the decision.
                 return jobs, (
-                    f"delegated_rule_unreadable: job {current['id']} is also gated on the draft state, so "
+                    f'delegated_rule_unreadable: job {current["id"]} is also gated on the draft state, so '
                     'a skip could not be attributed to the footprint decision'
                 )
             current['if'] = value
