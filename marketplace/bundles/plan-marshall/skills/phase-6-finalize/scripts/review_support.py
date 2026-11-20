@@ -418,6 +418,11 @@ def run_validate(plan_id: str, kind: str, verdict_file: str, verifier_file: str 
     not covered by the freeze, and its own document writes and validates it. A
     plan without a snapshot is the legacy shape: there is nothing frozen to
     compare against, so only the verdict's own rules apply.
+
+    An INVALID verdict still publishes the ``findings`` its graded rows produced —
+    a refused row's own grading is what tells the author what to fix — while
+    ``facts`` and ``loop_back_target`` stay withheld, because they describe a
+    verdict that cannot close anything.
     """
     verdict, problem = read_json_object(verdict_file)
     if verdict is None:
@@ -503,6 +508,11 @@ def run_validate(plan_id: str, kind: str, verdict_file: str, verifier_file: str 
         payload['criteria_by_deliverable'] = criteria_by_deliverable
     if kind == KIND_CODE:
         payload['rejected_findings'] = grading.rejected
+    # The grading findings are published on an INVALID verdict too. A refused row's
+    # grading — the unevidenced criterion, the unrequested change — is what tells the
+    # author what to fix; dropping it left the refusal as a bare shape error.
+    payload['findings'] = grading.findings
+    payload['accepted_removals'] = accepted_removals
     if not grading.valid:
         return payload
 
@@ -510,8 +520,6 @@ def run_validate(plan_id: str, kind: str, verdict_file: str, verifier_file: str 
     facts['advisory_count'] = len(grading.findings) - blocking_count
     payload['may_close'] = blocking_count == 0 and verifier == VERIFIER_ACCEPTED
     payload['loop_back_target'] = loop_back_target(grading.findings)
-    payload['findings'] = grading.findings
-    payload['accepted_removals'] = accepted_removals
     payload['facts'] = facts
     return payload
 

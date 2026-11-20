@@ -28,8 +28,18 @@ from pathlib import Path
 from typing import Any
 
 import _criteria_snapshot as _snap
+import _review_support_validate as _validate
 import pytest
 import review_support
+
+from conftest import load_script_module, parse_ns
+
+_cli = load_script_module(
+    'plan-marshall',
+    'manage-solution-outline',
+    'manage-solution-outline.py',
+    module_name='_manage_solution_outline_for_retirement_test',
+)
 
 PLAN_ID = 'lb169-retirement-decision-d4'
 
@@ -460,3 +470,167 @@ def test_a_retired_row_with_no_criteria_to_authorize_is_still_refused(plan_conte
 
     assert payload['valid'] is False, payload
     assert any('retired' in error and 'nothing to authorize' in error for error in payload['errors']), payload
+
+
+# --- D3: the edges the PLAN-LB-169 and PLAN-LB-163 landings recorded -----------------------
+
+
+def test_an_absent_verdict_closes_nothing_on_a_rewrite_authorization(plan_context) -> None:
+    """No verdict grades anything, so no decision exemption may close a criterion.
+
+    An unsealed verdict already refused the exemption; a DELETED verdict took the more
+    permissive path because its state was not read as untrusted.
+    """
+    _plan(plan_context)
+    _authorize(1, 'parser accepts input', 'rewrite')
+    _authorize(1, 'parser rejects garbage', 'rewrite')
+
+    criteria = _snap.open_criteria(PLAN_ID)
+
+    assert criteria['verdict_state'] == 'absent', criteria
+    assert criteria['open_count'] == 3, criteria
+
+
+def test_the_decision_type_invalid_branch_is_refused_before_the_guard(plan_context) -> None:
+    """An unknown decision type is refused rather than recorded as an untyped entry."""
+    _plan(plan_context)
+
+    payload = _snap.authorize_change(PLAN_ID, 1, 'parser accepts input', 'operator: bogus', decision_type='bogus')
+
+    assert (payload['status'], payload['error']) == ('error', 'decision_type_invalid'), payload
+
+
+def test_the_decision_type_flag_reaches_the_commit_through_the_parser(plan_context) -> None:
+    """``--decision-type`` is parsed by the real CLI, echoed, and recorded on the entry."""
+    _plan(plan_context)
+    namespace = parse_ns(
+        'plan-marshall',
+        'manage-solution-outline',
+        'manage-solution-outline.py',
+        'criteria-authorize',
+        '--plan-id',
+        PLAN_ID,
+        '--deliverable-number',
+        '1',
+        '--criterion',
+        'parser accepts input',
+        '--decision',
+        'operator: retire the deliverable',
+        '--decision-type',
+        'retirement',
+        register=False,
+    )
+
+    assert namespace.decision_type == 'retirement'
+    payload = _cli.cmd_criteria_authorize(namespace)
+
+    assert (payload['status'], payload['decision_type']) == ('success', 'retirement'), payload
+    snapshot = _snap.read_snapshot(PLAN_ID)
+    assert snapshot is not None
+    entries = [entry for entry in snapshot['authorized_changes'] if entry['criterion'] == 'parser accepts input']
+    assert entries and entries[-1]['decision_type'] == 'retirement', snapshot['authorized_changes']
+
+
+def test_a_rewrite_never_downgrades_a_retirement_decision(plan_context) -> None:
+    """A later rewrite would replace the operator's retirement and is refused."""
+    _plan(plan_context)
+    _authorize(1, 'parser accepts input', 'retirement')
+
+    payload = _snap.authorize_change(
+        PLAN_ID, 1, 'parser accepts input', 'operator: rewrite it again', decision_type='rewrite'
+    )
+
+    assert (payload['status'], payload['error']) == ('error', 'retirement_decision_downgraded'), payload
+    snapshot = _snap.read_snapshot(PLAN_ID)
+    assert snapshot is not None
+    assert [entry['decision_type'] for entry in snapshot['authorized_changes']] == ['retirement']
+
+
+def test_a_retirement_supersedes_an_earlier_rewrite_decision(plan_context) -> None:
+    """Matched control: the opposite direction is an update, and it is recorded."""
+    _plan(plan_context)
+    _authorize(1, 'parser accepts input', 'rewrite')
+
+    payload = _snap.authorize_change(
+        PLAN_ID, 1, 'parser accepts input', 'operator: retire instead', decision_type='retirement'
+    )
+
+    assert payload['status'] == 'success', payload
+    snapshot = _snap.read_snapshot(PLAN_ID)
+    assert snapshot is not None
+    assert [entry['decision_type'] for entry in snapshot['authorized_changes']] == ['retirement']
+
+
+def test_a_non_list_criteria_on_a_refused_retired_row_keeps_its_shape_error(plan_context, tmp_path) -> None:
+    """A malformed ``criteria`` is named as malformed, not coerced into the vague refusal."""
+    plan_dir = _plan(plan_context)
+    _authorize(1, 'parser accepts input', 'rewrite')
+    _authorize(1, 'parser rejects garbage', 'rewrite')
+    document = _retired_verdict()
+    document['deliverables'][0]['criteria'] = {'criterion': 'parser accepts input'}
+    path = _write_verdict(plan_dir, tmp_path, document)
+
+    payload = review_support.run_validate(PLAN_ID, 'functional', path, None)
+
+    assert payload['valid'] is False, payload
+    assert any('criteria must be a list' in error for error in payload['errors']), payload
+
+
+def test_a_refused_retirement_publishes_the_rows_grading_findings(plan_context, tmp_path) -> None:
+    """An invalid verdict still publishes the findings its graded rows produced."""
+    plan_dir = _plan(plan_context)
+    _authorize(1, 'parser accepts input', 'rewrite')
+    _authorize(1, 'parser rejects garbage', 'rewrite')
+    document = _retired_verdict([{'criterion': 'parser accepts input', 'status': 'met', 'evidence': []}])
+    document['unrequested_changes'] = [
+        {'path': 'src/extra.py', 'reason': 'unasked', 'consequential': True, 'fix_kind': 'implementation'}
+    ]
+    path = _write_verdict(plan_dir, tmp_path, document)
+
+    payload = review_support.run_validate(PLAN_ID, 'functional', path, None)
+
+    assert payload['valid'] is False, payload
+    assert any(finding['kind'] == 'unrequested_change' for finding in payload['findings']), payload
+
+
+def test_the_unrecordable_retirement_states_carry_their_own_code(plan_context) -> None:
+    """``no_snapshot`` and ``no_deliverable`` name themselves instead of reusing no_criteria."""
+    _plan(plan_context)
+    snapshot = _snap.read_snapshot(PLAN_ID)
+    assert snapshot is not None
+
+    assert _snap.retirement_state(None, 1)['state'] == _snap.RETIREMENT_NO_SNAPSHOT
+    assert _snap.retirement_state(snapshot, 99)['state'] == _snap.RETIREMENT_NO_DELIVERABLE
+    for state, code in (
+        (_snap.RETIREMENT_NO_SNAPSHOT, 'no_snapshot'),
+        (_snap.RETIREMENT_NO_DELIVERABLE, 'no_deliverable'),
+        (_snap.RETIREMENT_NO_CRITERIA, 'nothing to authorize'),
+    ):
+        assert code in _validate._retirement_refusal('deliverable 1', state, 1), state
+
+
+def test_a_retired_deliverables_criteria_no_longer_cover_a_spec_clause() -> None:
+    """A retirement must not silently retire the spec clause those criteria stood in for."""
+    snapshot = {'spec': {'deliverables': [{'spec_deliverable': 'D1', 'done_when': 'parser accepts input'}]}}
+    by_number = {
+        1: {'number': 1, 'success_criteria': ['parser accepts input']},
+        2: {'number': 2, 'success_criteria': ['usage is documented']},
+    }
+
+    assert _snap._spec_clause_drift(snapshot, by_number) == []
+    rows = _snap._spec_clause_drift(snapshot, by_number, frozenset({1}))
+
+    assert [row['kind'] for row in rows] == [_snap.SPEC_MISSING], rows
+
+
+def test_a_snapshot_with_no_recorded_freeze_is_present_not_frozen(plan_context) -> None:
+    """The legacy ``present`` state is reported as itself and documented as unverified."""
+    plan_dir = _plan(plan_context)
+    status = json.loads((plan_dir / 'status.json').read_text(encoding='utf-8'))
+    metadata = status.get('metadata')
+    assert isinstance(metadata, dict)
+    metadata.pop(_snap.INTEGRITY_KEY, None)
+    (plan_dir / 'status.json').write_text(json.dumps(status), encoding='utf-8')
+
+    assert _snap.snapshot_state(PLAN_ID) == 'present'
+    assert 'no digest to compare' in (_snap.snapshot_state.__doc__ or '')

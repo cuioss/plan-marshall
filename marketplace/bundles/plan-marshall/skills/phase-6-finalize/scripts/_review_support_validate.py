@@ -32,6 +32,9 @@ from _criteria_snapshot import (
     REQUEST_MISSING,
     RETIRED,
     RETIREMENT_CLOSED,
+    RETIREMENT_NO_CRITERIA,
+    RETIREMENT_NO_DELIVERABLE,
+    RETIREMENT_NO_SNAPSHOT,
     RETIREMENT_UNAUTHORIZED,
     SPEC_MISSING,
     SUCCESSOR_SUPERSEDED,
@@ -460,6 +463,31 @@ def _superseded_rejection_message(reason: str, cited: str, number: int) -> str:
     return f'superseded_by {cited!r} names a deliverable whose verdict is not met or met_with_residuals'
 
 
+def _retirement_refusal(where: str, state: str, number: Any) -> str:
+    """The refusal sentence for a retirement the snapshot cannot authorize.
+
+    Each state names itself with its own code, because the three reach a reader the
+    same way and a shared sentence could not say which record is missing: a plan with
+    no freeze must run one, a freeze without the deliverable must be re-frozen, and a
+    deliverable with no criterion has nothing to authorize at all.
+    """
+    if state == RETIREMENT_NO_SNAPSHOT:
+        return (
+            f'{where}: retired with no criteria snapshot ({RETIREMENT_NO_SNAPSHOT}); a retirement is '
+            'authorized against the frozen criteria, so run snapshot-criteria before recording it'
+        )
+    if state == RETIREMENT_NO_DELIVERABLE:
+        return (
+            f'{where}: retired with no frozen deliverable {number} ({RETIREMENT_NO_DELIVERABLE}); the '
+            'snapshot carries no such deliverable, so re-freeze before recording the retirement'
+        )
+    return (
+        f'{where}: retired with nothing to authorize ({RETIREMENT_NO_CRITERIA}); a retired deliverable must carry at '
+        "least one frozen criterion, and every one of them must carry the operator's own "
+        'retirement decision recorded through criteria-authorize --decision-type retirement'
+    )
+
+
 def _grade_row(
     grading: Grading,
     row: dict[str, Any],
@@ -499,17 +527,18 @@ def _grade_row(
                 'recorded through criteria-authorize --decision-type retirement, before it can be retired'
             )
         else:
-            grading.errors.append(
-                f'{where}: retired with nothing to authorize; a retired deliverable must carry at '
-                "least one frozen criterion, and every one of them must carry the operator's own "
-                'retirement decision recorded through criteria-authorize --decision-type retirement'
-            )
+            grading.errors.append(_retirement_refusal(where, state['state'], number))
         # A refused retirement closes nothing of its own, so its CURRENT criteria stay
         # open in the completion gate. The grades the row does carry are still checked,
         # and a row that carries none is graded as evaluating no criterion at all:
         # returning before ``_grade_criteria`` is what let a rewritten deliverable pass
         # ungraded.
         carried = row.get('criteria')
+        if carried is not None and not isinstance(carried, list):
+            # The precise shape error, which coercing to an empty list would replace
+            # with the vaguer "carries no criterion grades" below.
+            grading.errors.append(f'{where}: criteria must be a list')
+            carried = []
         graded_rows = carried if isinstance(carried, list) else []
         if not graded_rows:
             # Independent of the outline's criterion count: a refusal is graded on the
