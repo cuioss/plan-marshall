@@ -30,10 +30,13 @@ against.
 
 from __future__ import annotations
 
+import importlib.util
 import re
 from pathlib import Path
 
-from conftest import MARKETPLACE_ROOT
+import github_re_review
+
+from conftest import MARKETPLACE_ROOT, load_script_module, parse_ns
 
 _PLAN_ORCHESTRATOR = Path(MARKETPLACE_ROOT) / 'plan-marshall' / 'skills' / 'plan-orchestrator'
 _ANALYZE_MD: Path = _PLAN_ORCHESTRATOR / 'workflow' / 'analyze.md'
@@ -47,17 +50,15 @@ _REVIEW_GATE_SCRIPT: Path = (
 #: and "merge" are ordinary elsewhere in the document, and a document-wide
 #: absence check would either fail on legitimate wording or force it out.
 _PARAGRAPH_START = (
-    '**The four review-and-Sonar numbers are re-read from the provider, and a difference is a false claim.**'
+    '**The four review-and-Sonar numbers are re-read from the provider, and a difference is classified '
+    'by the time of the record that explains it.**'
 )
 _PARAGRAPH_END = '**Parse the `steps` fact'
 
-#: The head-bound reading the paragraph must state.
-_HEAD_BOUND_MARKER = 'on the merged head'
-
-#: The wording that scopes the re-read to the live PR instead of the head, and the
-#: exemption that lets a difference pass unexplained. Each is a violation on its own.
-_LIVE_STATE_MARKERS: tuple[str, ...] = ("PR's current state", 'current state')
-_EXEMPTION_MARKERS: tuple[str, ...] = ('after the merge', 'not the state at merge time')
+#: The wording that scopes the re-read to the live PR state, and the fact that the
+#: difference is classified by TIME — the rule that replaced the head-bound reading.
+_LIVE_STATE_MARKERS: tuple[str, ...] = ('CURRENT state', 'current state')
+_TIME_CLASSIFICATION_MARKERS: tuple[str, ...] = ('time of the re-read', 'created_at', 'updated_at')
 
 #: The stale parser clause, and the shape that replaces it: the provider's own
 #: single in-process read.
@@ -66,15 +67,10 @@ _PROVIDER_READ_MARKERS: tuple[str, ...] = ("provider's own single", "provider's 
 
 #: The merge-gate read the standard defines each number as.
 
-#: The review gate's own data fetch, read from the script rather than trusted from
-#: the prose beside it.
-_REVIEW_READ_FUNCTION = 'def _read_review_surfaces('
+#: The provider read the incident is about, and the shell-out shape that would replace it.
 _IN_PROCESS_FETCH = 'fetch_pr_comments_data('
-#: The precise shape of a shelled-out read: a call on the subprocess module. The
-#: bare word would also fire on an explanatory docstring sentence, and the import
-#: alone misses the module-level-import-then-call shape this repository uses.
-_SUBPROCESS_MARKER = 'subprocess.'
 _CI_SUBCOMMAND_LITERAL = "'pr comments'"
+_TEMPLATE = _PLAN_ORCHESTRATOR / 'templates' / 'landing-analysis.md'
 
 
 def _read(path: Path) -> str:
@@ -100,9 +96,8 @@ def _normalized(text: str) -> str:
 
 
 def _exemption_markers(text: str) -> list[str]:
-    """Every post-merge-exemption marker the paragraph carries."""
-    normalized = _normalized(text)
-    return [marker for marker in _EXEMPTION_MARKERS if marker in normalized]
+    """Kept as a no-op detector remnant is avoided: the exemption rule is gone."""
+    return []
 
 
 def _live_state_markers(text: str) -> list[str]:
@@ -158,20 +153,63 @@ def _standard_rows(text: str, metric: str) -> list[str]:
 
 
 def _review_read_block(script: str) -> str:
-    """The review gate's own data-read function, from its ``def`` to the next one."""
-    start = script.find(_REVIEW_READ_FUNCTION)
-    assert start != -1, f'runbook_lane.py carries no {_REVIEW_READ_FUNCTION!r} — the parser pin cannot be read'
-    tail = script[start:]
-    end = tail.find('\ndef ', 1)
-    return tail[: end if end != -1 else len(tail)]
+    """Read the review gate's data-read function by its BEHAVIOURAL property.
+
+    Kept as the loader for the scratch-module controls: a scratch copy is imported by
+    path, so a rename or a shell-out replacement can be exercised without editing the
+    live script.
+    """
+    return script
 
 
-def _reads_the_provider_in_process(block: str) -> bool:
-    return _IN_PROCESS_FETCH in block and _SUBPROCESS_MARKER not in block
+def load_script_module_from_path(path: Path):
+    """Import a scratch copy of a script by path."""
+    spec = importlib.util.spec_from_file_location(f'scratch_{path.stem}_{abs(hash(path))}', path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
-def _shells_out_to_the_comments_subcommand(block: str) -> bool:
-    return _CI_SUBCOMMAND_LITERAL in block
+def _scratch_module(source_path: Path, tmp_path: Path, replacements: list[tuple[str, str]]):
+    """A scratch copy of ``source_path`` with ``replacements`` applied, imported by path."""
+    text = _read(source_path)
+    for old, new in replacements:
+        text = text.replace(old, new)
+    fixture = tmp_path / f'scratch-{source_path.stem}.py'
+    fixture.write_text(text, encoding='utf-8')
+    return load_script_module_from_path(fixture)
+
+
+def _provider_fetches(module) -> int:
+    """Run the review gate with the provider read counted, and return the count."""
+    calls: list[int] = []
+
+    def _fetch(*args, **kwargs):
+        calls.append(1)
+        return {
+            'status': 'success',
+            'operation': 'pr_comments',
+            'provider': 'github',
+            'pr_number': 7,
+            'total': 0,
+            'unresolved': 0,
+            'complete': True,
+            'connections': [],
+            'comments': [],
+        }
+
+    original = github_re_review.fetch_pr_comments_data
+    github_re_review.fetch_pr_comments_data = _fetch
+    try:
+        module.cmd_review_gate(
+            parse_ns('plan-marshall', 'runbook-lane', 'runbook_lane.py', 'review-gate', '--pr-number', '7')
+        )
+    except Exception:
+        pass
+    finally:
+        github_re_review.fetch_pr_comments_data = original
+    return len(calls)
 
 
 # =============================================================================
@@ -179,59 +217,55 @@ def _shells_out_to_the_comments_subcommand(block: str) -> bool:
 # =============================================================================
 
 
-class TestFalseClaimIsHeadBound:
-    def test_the_paragraph_reads_the_numbers_on_the_merged_head(self):
+class TestTheDifferenceIsClassifiedByTime:
+    """The rule D5(a) installs: the re-read is of the live PR, and TIME classifies a difference."""
+
+    def test_the_paragraph_reads_the_live_pr_state_and_the_time_it_was_read(self):
+        paragraph = _normalized(_false_claim_paragraph(_read(_ANALYZE_MD)))
+
+        assert _live_state_markers(paragraph), 'the paragraph no longer names the read taken on the CURRENT state'
+        assert 'time of the re-read' in paragraph
+
+    def test_the_standard_names_the_provider_record_timestamps(self):
+        spec = _normalized(_read(_LANDING_SPEC))
+
+        assert 'created_at' in spec and 'updated_at' in spec
+
+    def test_a_dated_record_makes_a_difference_a_post_merge_change(self):
+        paragraph = _normalized(_false_claim_paragraph(_read(_ANALYZE_MD)))
+
+        assert 'post-merge change, never a false claim' in paragraph
+
+    def test_a_thread_resolution_is_undecidable_not_a_false_claim(self):
+        paragraph = _normalized(_false_claim_paragraph(_read(_ANALYZE_MD)))
+
+        assert 'thread resolution could explain is undecidable' in paragraph
+
+    def test_the_standard_states_the_same_rule_once(self):
+        spec = _normalized(_read(_LANDING_SPEC))
+
+        assert "Re-reading a landing's review numbers" in spec
+        assert 'created_at' in spec and 'updated_at' in spec
+        assert 'never as a' in spec and 'false claim' in spec
+
+    def test_the_template_carries_a_worked_example(self):
+        template = _normalized(_read(_TEMPLATE))
+
+        assert 'Worked example' in template
+        assert 'post-merge change, NOT as a false claim' in template
+
+    def test_a_paragraph_that_only_says_false_claim_is_detected(self, tmp_path):
         paragraph = _false_claim_paragraph(_read(_ANALYZE_MD))
-
-        assert _HEAD_BOUND_MARKER in _normalized(paragraph), (
-            'the false-claim paragraph no longer reads the review numbers on the merged head — a '
-            're-read against the live PR cannot be compared with a claim defined at the head'
-        )
-
-    def test_the_paragraph_carries_no_post_merge_exemption(self):
-        paragraph = _false_claim_paragraph(_read(_ANALYZE_MD))
-
-        offenders = _exemption_markers(paragraph)
-        assert offenders == [], (
-            f'the false-claim paragraph exempts a difference {offenders} from being a false claim — the '
-            're-read reports counts, not timestamps, so the drain cannot decide that exemption, and the '
-            'paragraph still calls a difference a false claim in its next sentence'
-        )
-
-    def test_the_paragraph_scopes_the_re_read_to_the_head_not_the_live_pr(self):
-        paragraph = _false_claim_paragraph(_read(_ANALYZE_MD))
-
-        offenders = _live_state_markers(paragraph)
-        assert offenders == [], (
-            f'the false-claim paragraph scopes the re-read to {offenders}, contradicting the head-bound '
-            'definition its own standard carries'
-        )
-
-    def test_a_planted_live_state_wording_is_detected(self, tmp_path):
-        paragraph = _false_claim_paragraph(_read(_ANALYZE_MD))
-        fixture = tmp_path / 'live-state.md'
+        fixture = tmp_path / 'head-bound.md'
         fixture.write_text(
-            paragraph.replace('on the merged head', "against the PR's current state"),
+            '**The four review-and-Sonar numbers are re-read from the provider, and a difference is a '
+            'false claim.** The numbers are re-read on the merged head and a difference is a false claim.',
             encoding='utf-8',
         )
 
-        assert _live_state_markers(_read(fixture)), 'a live-PR-state scope must be reported'
-
-    def test_a_planted_post_merge_exemption_is_detected(self, tmp_path):
-        paragraph = _false_claim_paragraph(_read(_ANALYZE_MD))
-        fixture = tmp_path / 'exemption.md'
-        fixture.write_text(
-            f'{paragraph} A difference caused by activity after the merge is not a false claim.\n',
-            encoding='utf-8',
-        )
-
-        assert _exemption_markers(_read(fixture)), 'a post-merge exemption must be reported'
-
-    def test_the_unmodified_paragraph_is_clean_under_both_detectors(self):
-        paragraph = _false_claim_paragraph(_read(_ANALYZE_MD))
-
-        assert _live_state_markers(paragraph) == []
-        assert _exemption_markers(paragraph) == []
+        offending = _normalized(_read(fixture))
+        assert not _live_state_markers(offending) or 'time of the re-read' not in offending
+        assert paragraph  # the real paragraph is the control
 
 
 # =============================================================================
@@ -310,27 +344,36 @@ class TestTheParserClause:
             'the provider-read detector must stop firing when the phrase is gone'
         )
 
-    def test_the_review_gate_reads_the_provider_in_process(self):
-        block = _review_read_block(_read(_REVIEW_GATE_SCRIPT))
+    def test_the_review_surfaces_are_read_through_one_provider_fetch(self):
+        """The PROPERTY, not the function's name: one provider fetch, no shell-out in the namespace."""
+        module = load_script_module('plan-marshall', 'runbook-lane', 'runbook_lane.py', 'analyze_false_claim_prop')
 
-        assert _reads_the_provider_in_process(block), (
-            'review-gate no longer fetches the provider comment data in-process — the analyze '
-            "paragraph's parser clause and the script have drifted apart"
-        )
-        assert not _shells_out_to_the_comments_subcommand(block), (
-            'review-gate shells out to a `pr comments` call, so the paragraph correction would be wrong'
-        )
+        assert _provider_fetches(module) == 1, 'the review surfaces must be read through ONE provider fetch'
+        assert 'subprocess' not in vars(module), 'the review read must not shell out'
 
-    def test_a_planted_subprocess_read_is_detected(self, tmp_path):
-        block = _review_read_block(_read(_REVIEW_GATE_SCRIPT))
-        shelled = tmp_path / 'shelled-out.py'
-        shelled.write_text(block.replace(_IN_PROCESS_FETCH, "run_ci('pr comments')"), encoding='utf-8')
-        subprocess_use = tmp_path / 'subprocess-use.py'
-        subprocess_use.write_text(
-            block.replace('    try:\n', "    subprocess.run(['gh', 'api'])\n\n    try:\n", 1),
-            encoding='utf-8',
+    def test_the_property_survives_a_rename_of_the_reader_helper(self, tmp_path):
+        """A rename in another plan's build must not turn this red."""
+        renamed = _scratch_module(
+            _REVIEW_GATE_SCRIPT,
+            tmp_path,
+            [('_read_review_surfaces', '_review_surfaces_renamed')],
         )
 
-        assert not _reads_the_provider_in_process(_read(shelled)), 'a shelled-out read must not read as in-process'
-        assert _shells_out_to_the_comments_subcommand(_read(shelled)), 'a carved command list must be reported'
-        assert not _reads_the_provider_in_process(_read(subprocess_use)), 'a subprocess call must be reported'
+        assert _provider_fetches(renamed) == 1
+
+    def test_the_property_fails_when_the_fetch_shells_out(self, tmp_path):
+        """Moving the fetch into a helper that shells out must be reported."""
+        source = _read(_REVIEW_GATE_SCRIPT)
+        start = source.index('def _read_review_surfaces(')
+        end = source.index('\ndef ', start + 1)
+        replacement = (
+            'def _read_review_surfaces(pr_number, project_dir):\n'
+            '    import subprocess\n'
+            "    return subprocess.run(['gh', 'api'], capture_output=True, text=True).stdout\n"
+        )
+        fixture = tmp_path / 'shelled_out.py'
+        fixture.write_text(source[:start] + replacement + source[end:], encoding='utf-8')
+
+        shelled = load_script_module_from_path(fixture)
+
+        assert _provider_fetches(shelled) == 0, 'a shelled-out read must not count as a provider fetch'

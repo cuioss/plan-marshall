@@ -101,11 +101,17 @@ collisions observed here feed the next pairing decision.}
 - Review: {bots, actionable findings, dispositions}. Read the landing's three review numbers back
   against the provider: `unresolved_review_threads` (the head's open review threads) and
   `review_body_findings_total` (what the reviewers' bodies declared) are reproduced by
-  `runbook_lane review-gate --pr-number {N}` on the merged head; `review_body_findings_handled`
+  `runbook_lane review-gate --pr-number {N}`; `review_body_findings_handled`
   counts findings that carry a disposition, so re-read it from the run's own `finding:` lines where
   those are still available and record it as **not re-verified** where they are not — never as a
   difference, because a missing disposition record is not evidence that the landing lied. A number the
-  re-read contradicts is recorded here as a **false claim**, not as a rounding difference.
+  re-read contradicts is classified by the time of the record that explains it, under
+  [`../standards/landing-payload-spec.md`](../standards/landing-payload-spec.md) § "Re-reading a
+  landing's review numbers". Worked example: the landing says 4 unresolved threads and the re-read at
+  `2026-11-20T10:00Z` shows 5, and the fifth thread's `created_at` is `2026-11-20T11:00Z` (after the
+  merge) — recorded as a post-merge change, NOT as a false claim. Had the re-read shown 3 with only a
+  thread resolved after the merge, the difference would be `undecidable` (a resolution carries no
+  timestamp). A difference no post-merge record explains is a **false claim**.
 - CI/merge: {outcome, path, conflicts}
 - Sonar: the landing's required `sonar_open_new_issues` against what this analysis can see of the
   merge head — the measured figure, or `unknown` for a failed read (never `0`), or `n/a` for a

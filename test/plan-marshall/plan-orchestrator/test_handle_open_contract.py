@@ -663,7 +663,7 @@ class TestStepSixDecisionSemantics:
     def test_step_six_states_no_reopen_or_supersede_act(self):
         block = _decision_semantics_block(_read(WORKFLOW_DOC))
 
-        offenders = _reopen_vocabulary(block)
+        offenders = _reopen_acts(block)
         assert offenders == [], (
             f'Step 6 states a reopen/supersede act ({offenders}) that the contract does not carry: no '
             'decision act, no Idempotence carve-out and no Output row admit it'
@@ -717,4 +717,88 @@ class TestStepSixDecisionSemantics:
 
         assert not _names_reworded_sentence(_decision_semantics_block(_read(fixture))), (
             'a removed reworded sentence must be reported'
+        )
+
+
+#: A POSITIVE reopen/supersede act, in the shapes the contract forbids. `supersed` and
+#: `reopen` are the stems the old pin looked for; the rest are acts worded around them,
+#: which the same rule forbids.
+_REOPEN_ACT_PATTERNS: tuple[re.Pattern[str], ...] = tuple(
+    re.compile(pattern, re.IGNORECASE)
+    for pattern in (
+        r'\bsupersed\w*',
+        r'\breopen\w*',
+        r'\bre-?decid\w*',
+        r'\bdecided\s+afresh\b',
+        r'\bdecided\s+again\b',
+        r'\ba\s+fresh\s+decision\b',
+        r'\bnew\s+decision\s+(?:entry\s+)?replaces\b',
+        r'\b(?:void|undo)\w*\s+(?:the|that)\s+decision\b',
+    )
+)
+
+#: A negation, which turns a mention of the vocabulary into a prohibition rather than an
+#: act. The lane's own text says a later decision "does not reopen" an earlier one.
+_NEGATION_RE = re.compile(
+    r'\b(?:not|never|no|cannot|without|refuses?|forb(?:id|ids|idden))\b',
+    re.IGNORECASE,
+)
+
+
+def _reopen_acts(text: str) -> list[str]:
+    """Every POSITIVE reopen act the text states; a negated mention is a prohibition."""
+    acts: list[str] = []
+    for sentence in re.split(r'(?<=[.!?:])\s+', text):
+        if _NEGATION_RE.search(sentence):
+            continue
+        for pattern in _REOPEN_ACT_PATTERNS:
+            match = pattern.search(sentence)
+            if match is not None:
+                acts.append(match.group(0).casefold())
+    return acts
+
+
+class TestNoReopenActAnywhereInTheDocument:
+    """The no-reopen rule is a property of the WHOLE document, not of Step 6.
+
+    A reopen act worded around the old stems, a `Reopen` bullet outside Step 6, and an
+    Idempotence carve-out all passed the narrower pin. Each shape is planted and shown
+    to be detected.
+    """
+
+    def test_the_whole_document_states_no_reopen_act(self):
+        assert _reopen_acts(_read(WORKFLOW_DOC)) == [], (
+            'handle-open.md states a reopen act; the contract has no reopen act, so no workflow '
+            'section may describe one'
+        )
+
+    def test_a_reopen_act_outside_step_six_is_detected(self, tmp_path):
+        text = _read(WORKFLOW_DOC)
+        fixture = tmp_path / 'planted-outside-step-six.md'
+        fixture.write_text(
+            text + '\n- **Reopen** — a decided item can be decided again when a later analysis changes.\n',
+            encoding='utf-8',
+        )
+
+        assert _reopen_acts(_read(fixture)), 'a Reopen bullet outside Step 6 must be detected'
+
+    def test_a_reopen_act_worded_without_the_stems_is_detected(self, tmp_path):
+        text = _read(WORKFLOW_DOC)
+        fixture = tmp_path / 'planted-worded-around.md'
+        fixture.write_text(
+            text.replace(
+                _ORDERING_SENTENCE,
+                f'{_ORDERING_SENTENCE} An item decided earlier is decided afresh when a later decision invalidates it.',
+            ),
+            encoding='utf-8',
+        )
+
+        assert _reopen_acts(_read(fixture)), 'an act worded around the stems must be detected'
+
+    def test_the_idempotence_rule_carries_no_carve_out(self):
+        block = _normalized(_idempotence_block(_read(WORKFLOW_DOC)))
+
+        assert 'is not decided again' in block
+        assert not re.search(r'\b(?:except|unless|however|other than)\b', block), (
+            'the Idempotence rule now carves out an exception: a second decision would then be legal'
         )
