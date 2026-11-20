@@ -121,7 +121,12 @@ landing's re-read therefore describes the moment it was taken, not the merge, so
 by itself a false claim. Record the difference WITH THE TIME OF THE RE-READ and classify it by the
 time of the record that differs, where the provider supplies one (`created_at`, `updated_at`): a
 review, a comment or a thread created after the merge explains the difference, and it is recorded as
-a post-merge change, never as a false claim. `updated_at` is weaker evidence: it explains the
+a post-merge change, never as a false claim. Three cases are distinguished by WHEN the differing
+record was created relative to the gate's read: a record created BEFORE the gate read that the gate
+did not count is a false claim (the gate saw it and the landing did not report it); a record created
+AFTER the gate read and before the merge is a **post-read change**, not a false claim (the gate value
+was accurate when it was read); and when the gate-read time was not retained, the difference is
+`undecidable`. `updated_at` is weaker evidence than `created_at`: it explains the
 difference only when the edit it records IS the difference (that record carried the other value
 before); an `updated_at` that merely moved — a spelling correction on a record whose count is
 unchanged — explains nothing, and the difference is then `undecidable`: never a false claim, and

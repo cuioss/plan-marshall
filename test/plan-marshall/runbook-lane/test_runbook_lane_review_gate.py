@@ -2918,3 +2918,27 @@ def test_a_quoted_copy_inside_a_fence_does_not_hide_the_heading_below_it() -> No
 
     assert verdict['review_body_findings_total'] == 1, verdict
     assert [row['id'] for row in verdict['undisposed']] == ['nitpick-1']
+
+
+def test_prose_markers_are_not_a_fence_and_do_not_hide_the_section_between_them() -> None:
+    """Only a line-anchored marker is a fence; a run inside a sentence is prose."""
+    body = (
+        'Use the ``` fence opener in prose.\n'
+        '<details><summary>Nitpick comments (1)</summary> x </details>\n'
+        'and the ``` closer in prose.\n'
+    )
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['review_body_findings_total'] == 1, verdict
+
+
+def test_a_wrapper_around_a_closed_but_empty_section_stops() -> None:
+    """The child's summary is its title, not content: an empty child accounts for zero."""
+    body = '<details><summary>Review (1)</summary><details><summary>Nitpick comments</summary> </details></details>'
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['merge_allowed'] is False, verdict
+    assert verdict['reason'] == 'undecidable_read', verdict
+    assert 'encloses only 0' in verdict['detail'], verdict

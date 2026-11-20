@@ -81,11 +81,16 @@ def _read_live_commit_and_push() -> bool | None:
     marshal_path = get_marshal_path()
     if not marshal_path.exists():
         return None
+    # `read_json(..., default={})` would turn a CORRUPT file into an empty dict, which
+    # then reads as "key absent" -> True. A sentinel keeps a failed read a failed read.
+    sentinel = object()
     try:
-        data = read_json(marshal_path, default={})
+        data = read_json(marshal_path, default=sentinel)
     except (OSError, ValueError):
         return None
-    plan = data.get('plan') if isinstance(data, dict) else None
+    if data is sentinel or not isinstance(data, dict):
+        return None
+    plan = data.get('plan')
     phase = plan.get('phase-5-execute') if isinstance(plan, dict) else None
     if not isinstance(phase, dict):
         return True

@@ -3003,7 +3003,33 @@ def _fence_spans(text: str) -> list[tuple[int, int]]:
     return spans
 
 
-def _mask_fenced_code(body: str) -> str:
+def _raw_fence_markers(raw_body: str) -> int:
+    """Count the LINE-ANCHORED fence markers in a raw body (openers and closers).
+
+    An opener may carry an info string; a closer must have nothing but whitespace after
+    its run, carry the opener's character and be at least as long (CommonMark). A run
+    printed inside a sentence is not a marker, which is what separates prose about
+    fences from a fence.
+    """
+    count = 0
+    opening: tuple[str, int] | None = None
+    for line in raw_body.splitlines():
+        match = re.match(r'[ \t]*(`{3,}|~{3,})(.*)$', line)
+        if match is None:
+            continue
+        run, rest = match.group(1), match.group(2)
+        if opening is None:
+            opening = (run[0], len(run))
+            count += 1
+            continue
+        character, length = opening
+        if run[0] == character and len(run) >= length and not rest.strip():
+            opening = None
+            count += 1
+    return count
+
+
+def _mask_fenced_code(body: str, raw_body: str | None = None) -> str:
     """Blank out fenced code blocks, keeping every offset in place.
 
     A `<details><summary>…</summary>` quoted inside a fence is an EXAMPLE: reading it
@@ -3011,7 +3037,16 @@ def _mask_fenced_code(body: str) -> str:
     narrowed it stopped the gate on a reviewer's own quoted snippet. Masking with
     spaces (never deleting) keeps every other offset — and therefore every span the
     callers compute — valid.
+
+    The RAW body decides whether the display's marker runs are fences at all: only a
+    line-anchored opener and its whitespace-terminated closer count (CommonMark). When
+    the display's marker count does not match the raw line-anchored count, nothing is
+    masked — two prose lines that each carry a run would otherwise mask a real section
+    between them, and counting an example errs toward MORE findings, the permitted
+    direction.
     """
+    if raw_body is not None and _raw_fence_markers(raw_body) != len(_FENCE_MARKER_RE.findall(body)):
+        return body
     characters = list(body)
     for start, end in _fence_spans(body):
         for index in range(start, end):
@@ -3786,16 +3821,19 @@ def _transparent_wrappers(body: str, sources: dict[str, Any]) -> tuple[dict[int,
         declared = _declared_count(starts_by_index[index]) or 0
         enclosed = 0
         for child in children:
-            # The SAME count the section enumeration will use: an undeclared child's
-            # rows are its findings, so assuming one per undeclared child rejected a
-            # wrapper that declared the two rows its child actually carries.
+            # The SAME count the section enumeration will use, over the SAME bounds:
+            # the child's opening summary is its TITLE, not content, so counting it as
+            # one made an empty child satisfy a wrapper that declares a finding.
             child_open, child_close = _enclosing_block_span(body, offset_of[child])
-            child_span = body[child_open : child_close if child_close is not None else len(body)]
+            child_end = child_close if child_close is not None else len(body)
+            child_summary = _SUMMARY_RE.search(body, child_open, child_end)
+            content_start = child_summary.end() if child_summary is not None else child_open
+            child_span = body[content_start:child_end]
             enclosed += _count_section_findings(
                 child_span,
                 _declared_count(starts_by_index[child]),
                 frozenset(),
-                child_open,
+                content_start,
             )
         if declared > enclosed:
             return {}, (
@@ -4127,7 +4165,7 @@ def _body_findings(
     counters = counters if counters is not None else {}
     # Quoted markup inside a fence is prose (see `_mask_fenced_code`): mask it before
     # any structural read, so an example can neither mint findings nor stop the gate.
-    body = _mask_fenced_code(body)
+    body = _mask_fenced_code(body, raw_body)
     sources = _body_sources(body)
     transparent, stop = _transparent_wrappers(body, sources)
     if stop is not None:

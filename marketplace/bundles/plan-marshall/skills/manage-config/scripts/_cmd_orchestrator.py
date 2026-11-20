@@ -312,9 +312,11 @@ def cmd_orchestrator_get(args) -> dict:
     valid JSON, that is not a JSON object, or whose ``orchestrator`` block is not a
     JSON object, in the caller's own ``marshal.json`` and in the main-anchored one
     alike. An ABSENT file, block or key stays the unset answer (``false`` with
-    ``set: false``), which is the one case the store seam's own ``False`` really
-    means. The seam keeps its fail-soft ``False`` for the failed reads; this verb
-    refuses them, so a failed read is never reported as a configured ``false``.
+    ``set: false``), and so does an UNRESOLVED main anchor (``knob_path: null``):
+    the first is the one case the store seam's own ``False`` really means, and the
+    second has no file to read. The seam keeps its fail-soft ``False`` for the
+    failed reads; this verb refuses them, so a failed read is never reported as a
+    configured ``false``.
     """
     if not is_initialized():
         return error_exit(f'marshal.json not initialized; run {STEWARD_COMMAND} first')
