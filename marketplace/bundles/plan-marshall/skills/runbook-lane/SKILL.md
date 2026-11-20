@@ -856,8 +856,9 @@ whether to continue at the limit. Record every finding and its disposition.
      called workflow, a job line or condition the reader cannot place and a graph with no footprint
      decision all answer `undecidable` under a named reason. A changed path the checkout's own
      architecture PLACES in a module it builds (`delegated_paths_buildable`), and an architecture that
-     could not be read at all, refuse too; a root build file belongs to no module, so it is decided by
-     the evidence above (the CI builds a changed build file, so a gated job reports a pass).
+     could not be read at all (`delegated_architecture_unreadable`), refuse too; a root build file
+     belongs to no module, so it is decided by the evidence above (the CI builds a changed build file,
+     so a gated job reports a pass).
      **The residual this carries:** the check-runs are the pull request's current head, which the
      read cannot pin to `{head_revision}`; a push that landed between the Sonar read and this decision
      would be read as the decided head's evidence. The `worktree_not_at_head` guard covers the

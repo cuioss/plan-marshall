@@ -1895,10 +1895,14 @@ def _delegated_workflow_spec(project_dir: Path) -> tuple[dict[str, str] | None, 
         except (OSError, UnicodeDecodeError) as exc:
             return None, f'rule_unreadable: {workflow.name}: {type(exc).__name__}'
         caller_job = ''
+        in_jobs = False
         for line in text.splitlines():
-            job_match = _JOB_ID_RE.match(line)
-            if job_match:
-                caller_job = job_match.group('job')
+            if len(line) - len(line.lstrip(' ')) == 0:
+                in_jobs = line.strip() == 'jobs:'
+            elif in_jobs:
+                job_match = _JOB_ID_RE.match(line)
+                if job_match:
+                    caller_job = job_match.group('job')
             match = _USES_LINE_RE.match(line)
             if not match:
                 continue
@@ -1939,10 +1943,21 @@ def _called_workflow_jobs(lines: list[str]) -> tuple[dict[str, dict[str, Any]], 
     jobs: dict[str, dict[str, Any]] = {}
     in_jobs = False
     current: dict[str, Any] | None = None
+    open_if_job = ''
     for line in lines:
         if not line.strip() or line.lstrip().startswith('#'):
             continue
         indent = len(line) - len(line.lstrip(' '))
+        if open_if_job and indent > 4:
+            # No legal YAML nests anything under a job's ``if:`` once the block
+            # scalars are refused, so this is a condition folded over lines: its
+            # continuation may carry the ``needs.<job>.outputs.`` reference, and
+            # reading only the first line would silently lose the gate.
+            return jobs, (
+                f'delegated_rule_unreadable: job {open_if_job} carries its condition over more than one '
+                'line, which this reader cannot evaluate'
+            )
+        open_if_job = ''
         if indent == 0:
             in_jobs = line.strip() == 'jobs:'
             current = None
@@ -1972,6 +1987,7 @@ def _called_workflow_jobs(lines: list[str]) -> tuple[dict[str, dict[str, Any]], 
                     'scalar this reader cannot evaluate'
                 )
             current['if'] = value
+            open_if_job = current['id']
         elif stripped.startswith('outputs:'):
             value = stripped[len('outputs:') :].strip()
             if value:
@@ -1980,20 +1996,41 @@ def _called_workflow_jobs(lines: list[str]) -> tuple[dict[str, dict[str, Any]], 
                     'this reader can enumerate'
                 )
             current['declares_outputs'] = True
+        elif stripped.split(':', 1)[0].strip().strip('"\'') in ('if', 'outputs'):
+            # ``if :`` / ``"outputs":`` — the same field, spelled so this reader
+            # would not recognise it. A dropped condition hides a gate.
+            return jobs, (
+                f"delegated_rule_unreadable: job {current['id']}'s {stripped.split(':', 1)[0]!r} is "
+                'spelled so this reader cannot place it'
+            )
     return jobs, ''
 
 
 def _footprint_job_graph(text: str) -> tuple[list[str], list[str], list[str], str]:
     """Return ``(deciders, gated, all_jobs, reason)`` for the called workflow's graph.
 
-    A DECIDER is a job that declares outputs and whose output gates another job's
-    ``if:``. A GATED job is one whose condition references a decider's output.
+    The pair is derived from the workflow's PLUMBING, not from every job that
+    happens to publish an output:
+
+    - a LEAF job is one no other job consumes an output of — a job that runs work;
+    - a DECIDER is a job that declares outputs, whose output a LEAF job's ``if:``
+      reads, and which is itself not a leaf;
+    - a GATED job is a leaf whose ``if:`` reads a decider's output.
+
+    That matters on a real reusable workflow, where plumbing jobs also declare
+    outputs: a push-deduplication gate publishes ``run``, a covering-run check
+    publishes ``rescue``, a config job publishes the resolved project settings.
+    Counting those as deciders would demand that every one of them PASSED — and a
+    push-only job is legitimately skipped on a pull request — so the decision would
+    refuse on exactly the normal shape. Counting them as gated would demand that the
+    job that RUNS and passes the footprint decision (`check-changes`) be skipped.
+    They remain inside ``all_jobs``, so a failure there is still refused.
+
     ALL_JOBS is every job the called workflow declares, and it is the window the
-    check-run evidence is read over: a job that neither gates nor is needed by one —
-    an aggregating ``conclusion`` job, a parallel check — can still fail or stay
-    pending, and a red head must never be carried forward because its row fell
-    outside a narrower window. Foreign rows (a review bot, a workflow-level check)
-    are not in this set, so they cannot freeze the verdict either.
+    check-run evidence is read over: a job that gates nothing can still fail or stay
+    pending, and a red head must never be carried forward. Foreign rows (a review
+    bot, a workflow-level check) are not in this set, so they cannot freeze the
+    verdict either.
 
     A job line the reader cannot place makes the graph unreadable rather than
     smaller: a silently dropped job would shrink the set the evidence is checked
@@ -2015,17 +2052,23 @@ def _footprint_job_graph(text: str) -> tuple[list[str], list[str], list[str], st
     gating_refs = {
         job['id']: {match.group('job') for match in _NEEDS_OUTPUT_REF_RE.finditer(job['if'])} for job in jobs.values()
     }
-    referenced = {job_id for refs in gating_refs.values() for job_id in refs}
-    deciders = sorted(job['id'] for job in jobs.values() if job['declares_outputs'] and job['id'] in referenced)
-    gated = sorted(job_id for job_id, refs in gating_refs.items() if set(deciders) & refs)
+    consumed = {job_id for refs in gating_refs.values() for job_id in refs}
+    leaves = {job_id for job_id in jobs if job_id not in consumed}
+    leaf_refs = [gating_refs[leaf] for leaf in leaves]
+    deciders = sorted(
+        job['id']
+        for job in jobs.values()
+        if job['declares_outputs'] and job['id'] not in leaves and any(job['id'] in refs for refs in leaf_refs)
+    )
+    gated = sorted(leaf for leaf in leaves if set(deciders) & gating_refs[leaf])
     if not deciders:
         return (
             [],
             [],
             [],
             (
-                'delegated_rule_unreadable: the called workflow declares no job whose output gates another '
-                'job, so there is no footprint decision to read'
+                'delegated_rule_unreadable: the called workflow declares no job whose output gates a '
+                'job that runs work, so there is no footprint decision to read'
             ),
         )
     if not gated:
@@ -2135,15 +2178,16 @@ def _local_path_veto(project_dir: Path, paths: list[str]) -> str:
     answer instead would refuse every delta of a project that has a build file at
     all, which is the consumer this branch exists for.
 
-    ``None`` is the architecture being UNREADABLE, and that fails closed: a checkout
-    whose architecture could not be read must not carry a delta forward on evidence
-    alone. No module (``[]``) is a readable architecture that places nothing.
+    ``None`` is the architecture being UNREADABLE, and that fails closed with its own
+    reason (``delegated_architecture_unreadable``): a checkout whose architecture could
+    not be read must not carry a delta forward on evidence alone. No module (``[]``) is
+    a readable architecture that places nothing.
     """
     prefixes = _architecture_module_prefixes(project_dir)
     if prefixes is None:
         return (
-            'delegated_paths_buildable: the project architecture could not be read, so no changed path '
-            'may be placed as not built'
+            'delegated_architecture_unreadable: the project architecture could not be read, so no changed '
+            'path may be placed as not built'
         )
     if '' in prefixes:
         return (

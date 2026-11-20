@@ -1180,7 +1180,7 @@ def test_an_unreadable_architecture_vetoes_the_skip(tmp_path: Path, monkeypatch)
     verdict = lane.cmd_sonar_stale_delta(_stale_args(pr_number='7', worktree=str(repo)))
 
     assert verdict['carry_forward'] is False
-    assert 'architecture could not be read' in verdict['detail']
+    assert verdict['detail'].startswith('delegated_architecture_unreadable')
 
 
 def test_a_checkout_with_no_module_vetoes_nothing(tmp_path: Path, monkeypatch) -> None:
@@ -1226,6 +1226,138 @@ def test_another_callers_row_does_not_satisfy_a_job(tmp_path: Path, monkeypatch)
 
     assert verdict['carry_forward'] is False
     assert verdict['detail'].startswith('delegated_check_evidence_incomplete')
+
+
+#: The shape the consumer in the plan's objective actually pins (cuioss-organization
+#: ``reusable-maven-build.yml``): a push-deduplication ``gate``, a
+#: ``covering-run-check`` (skipped on pull requests), a ``config`` job publishing the
+#: resolved settings, the ``check-changes`` footprint decision, and the jobs it gates.
+_REAL_CALLED_WORKFLOW = (
+    'name: Maven Build (Reusable)\n'
+    'on:\n'
+    '  workflow_call:\n'
+    '    inputs:\n'
+    '      skip-on-docs-only:\n'
+    '        default: true\n'
+    'jobs:\n'
+    '  gate:\n'
+    '    runs-on: ubuntu-latest\n'
+    '    outputs:\n'
+    '      run: ${{ steps.decide.outputs.run }}\n'
+    '  covering-run-check:\n'
+    '    needs: gate\n'
+    "    if: github.event_name == 'push' && needs.gate.outputs.run == 'false'\n"
+    '    runs-on: ubuntu-latest\n'
+    '    outputs:\n'
+    '      rescue: ${{ steps.check.outputs.rescue }}\n'
+    '  config:\n'
+    '    needs: [gate, covering-run-check]\n'
+    "    if: always() && (needs.gate.outputs.run == 'true' || needs.covering-run-check.outputs.rescue == 'true')\n"
+    '    runs-on: ubuntu-latest\n'
+    '    outputs:\n'
+    '      skip-on-docs-only: ${{ steps.config.outputs.skip-on-docs-only }}\n'
+    '  check-changes:\n'
+    '    needs: config\n'
+    "    if: always() && needs.config.outputs.skip-on-docs-only == 'true'\n"
+    '    runs-on: ubuntu-latest\n'
+    '    outputs:\n'
+    '      should-build: ${{ steps.decide.outputs.should-build }}\n'
+    '  build:\n'
+    '    needs: [config, check-changes]\n'
+    "    if: always() && needs.check-changes.outputs.should-build != 'false' && needs.config.result == 'success'\n"
+    '    runs-on: ubuntu-latest\n'
+    '  sonar-build:\n'
+    '    needs: [config, check-changes]\n'
+    "    if: always() && needs.check-changes.outputs.should-build != 'false' && needs.config.outputs.sonar-enabled == 'true'\n"
+    '    runs-on: ubuntu-latest\n'
+    '  conclusion:\n'
+    '    if: always()\n'
+    '    needs: [gate, config, check-changes, build, sonar-build]\n'
+    '    runs-on: ubuntu-latest\n'
+)
+
+
+def _real_checks(**overrides: str) -> list[dict[str, str]]:
+    results = {
+        'build / gate': 'pass',
+        'build / covering-run-check': 'skipping',
+        'build / config': 'pass',
+        'build / check-changes': 'pass',
+        'build / build (21)': 'skipping',
+        'build / build (25)': 'skipping',
+        'build / sonar-build': 'skipping',
+        'build / conclusion': 'pass',
+    }
+    for name, result in overrides.items():
+        results[name.replace('__', ' / ').replace('_', '-')] = result
+    return [{'name': name, 'result': result} for name, result in results.items()]
+
+
+def test_the_real_reusable_workflow_shape_decides_a_docs_only_head(tmp_path: Path, monkeypatch) -> None:
+    """The plumbing jobs publish outputs and skip on a PR; they must not refuse the decision.
+
+    ``gate``/``covering-run-check``/``config`` declare outputs and are read by other
+    jobs; ``config`` and ``check-changes`` also RUN on a docs-only head because the
+    decision itself depends on them. Only the leaf jobs the footprint decision gates
+    must be skipped.
+    """
+    repo = tmp_path / 'repo'
+    _repo_with_a_delegation(repo)
+    _patch_delegated(monkeypatch, called=_REAL_CALLED_WORKFLOW, rows=_real_checks())
+
+    verdict = lane.cmd_sonar_stale_delta(_stale_args(pr_number='7', worktree=str(repo)))
+
+    assert verdict['carry_forward'] is True
+    assert verdict['decider_jobs'] == ['check-changes', 'config']
+    assert verdict['gated_jobs'] == ['build', 'sonar-build']
+
+
+def test_the_real_reusable_workflow_refuses_a_head_it_built(tmp_path: Path, monkeypatch) -> None:
+    repo = tmp_path / 'repo'
+    _repo_with_a_delegation(repo)
+    rows = _real_checks()
+    for row in rows:
+        if row['name'].startswith('build / build'):
+            row['result'] = 'pass'
+    _patch_delegated(monkeypatch, called=_REAL_CALLED_WORKFLOW, rows=rows)
+
+    verdict = lane.cmd_sonar_stale_delta(_stale_args(pr_number='7', worktree=str(repo)))
+
+    assert verdict['carry_forward'] is False
+    assert verdict['detail'].startswith('delegated_gated_job_ran')
+
+
+def test_a_condition_folded_over_lines_stays_undecidable(tmp_path: Path, monkeypatch) -> None:
+    """The continuation may carry the gate's reference, so it is refused, not truncated."""
+    called = _CALLED_WORKFLOW.replace(
+        "    if: always() && needs.check-changes.outputs.should-build != 'false'\n",
+        "    if: always() &&\n      needs.check-changes.outputs.should-build != 'false'\n",
+    )
+    repo = tmp_path / 'repo'
+    _repo_with_a_delegation(repo)
+    _patch_delegated(monkeypatch, called=called, rows=_checks())
+
+    verdict = lane.cmd_sonar_stale_delta(_stale_args(pr_number='7', worktree=str(repo)))
+
+    assert verdict['carry_forward'] is False
+    assert verdict['detail'].startswith('delegated_rule_unreadable')
+    assert 'more than one line' in verdict['detail']
+
+
+def test_a_delegation_with_no_readable_caller_job_stays_undecidable(tmp_path: Path, monkeypatch) -> None:
+    """A quoted job key is a job id this reader cannot place."""
+    repo = tmp_path / 'repo'
+    _repo_with_a_delegation(
+        repo,
+        'name: Maven Build\non:\n  pull_request:\njobs:\n  "build":\n'
+        f'    uses: cuioss/cuioss-organization/.github/workflows/reusable-maven-build.yml@{_DELEGATED_REF}\n',
+    )
+    _patch_delegated(monkeypatch, rows=_checks())
+
+    verdict = lane.cmd_sonar_stale_delta(_stale_args(pr_number='7', worktree=str(repo)))
+
+    assert verdict['carry_forward'] is False
+    assert verdict['detail'].startswith('delegated_rule_unreadable')
 
 
 def test_an_unrelated_check_row_cannot_freeze_the_delegated_decision(tmp_path: Path, monkeypatch) -> None:
