@@ -1177,15 +1177,16 @@ def test_a_counted_group_nested_deep_inside_a_bold_block_is_not_counted_twice() 
     assert [row['section'] for row in verdict['undisposed']] == ['outside-diff', 'outside-diff']
 
 
-def test_a_bold_heading_with_no_block_of_its_own_owns_nothing() -> None:
-    """⛔ A bold heading MENTIONED in prose mints nothing — the mention rule, not the drop rule.
+def test_a_bold_heading_mentioned_in_a_sentence_mints_nothing_but_one_over_a_row_counts() -> None:
+    """⛔ The mention rule is scoped to the SENTENCE, not to a prose row on its own line.
 
     Until PLAN-LB-168 this fixture pinned a broader rule: a bold label with no `<details>`
     after it always minted nothing. That rule was the under-count path D1 closes, so the
-    reason is now the mention: prose continues the heading's own sentence
-    (`**…(1)** > nothing to expand`), which makes it a quotation of a heading rather than a
-    heading over what follows. A counted heading with no block and no prose attached is
-    counted instead (see the PLAN-LB-168 tests).
+    reason is now the mention: prose on the SAME line as the closing marker continues the
+    heading's own sentence (`**…(1)** > nothing to expand`), which makes it a quotation of
+    a heading rather than a heading over what follows. A counted heading on its own line
+    above a prose row is counted instead — the second fixture below, which the old rule
+    read as zero.
 
     The summary below is at the TOP level: the mention must not swallow it, and it does not
     — the summary is counted and nothing else is.
@@ -1199,6 +1200,18 @@ def test_a_bold_heading_with_no_block_of_its_own_owns_nothing() -> None:
 
     assert verdict['review_body_findings_total'] == 2, verdict
     assert [row['id'] for row in verdict['undisposed']] == ['nitpick-1', 'nitpick-2']
+
+    row_body = (
+        '> [!CAUTION]\n'
+        '> **⚠️ Outside diff range comments (1)**\n'
+        '> nothing to expand\n'
+        '<summary>🧹 Nitpick comments (2)</summary> rename the helper'
+    )
+
+    row_verdict = _verdict(_read(_review_body(row_body)))
+
+    assert row_verdict['review_body_findings_total'] == 3, row_verdict
+    assert [row['section'] for row in row_verdict['undisposed']] == ['outside-diff', 'nitpick', 'nitpick']
 
 
 def test_a_bold_label_closing_its_block_owns_no_following_section() -> None:
@@ -2576,3 +2589,373 @@ def test_the_plan_lb_162_controls_still_read_as_they_did() -> None:
     )
     uncounted_verdict = _verdict(_read(_review_body(uncounted)))
     assert uncounted_verdict['review_body_findings_total'] == 2, uncounted_verdict
+
+
+# ---------------------------------------------------------------------------
+# PLAN-LB-172 D1 — the parser never reads fewer findings than a body declares,
+# and where it cannot decide it stops. Each assertion below is red against the
+# tree at ``c22d103fb``.
+# ---------------------------------------------------------------------------
+
+
+def test_a_top_level_code_sample_does_not_hide_a_heading_after_a_closed_block() -> None:
+    """⛔ An unclosed top-level `<code>` ends with the closed block that follows it.
+
+    The prose scope of the top-level text must not run past a top-level block that has
+    closed: the CAUTION heading after the nitpick block is its own heading, and reading
+    it as prose drops its finding with no stop.
+    """
+    body = (
+        'Wrap it in <code> tags. '
+        '<details><summary>🧹 Nitpick comments (1)</summary> a </details> '
+        '**⚠️ Outside diff range comments (1)** <details><summary>Major · b.py</summary> fix </details>'
+    )
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert [row['section'] for row in verdict['undisposed']] == ['nitpick', 'outside-diff'], verdict
+
+
+def test_a_counted_heading_over_a_prose_row_on_its_own_line_counts_its_findings() -> None:
+    """⛔ A counted heading on its own line is a heading, whatever the row below looks like.
+
+    A prose row that starts with a letter is a row, not a continuation of the heading's
+    sentence: only text on the SAME line as the closing marker makes it a mention. The
+    raw body the gate holds carries the line break the display form has flattened.
+    """
+    body = '> [!CAUTION]\n> **⚠️ Outside diff range comments (1)**\n> Line 12: the guard coerces UNKNOWN\n'
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['review_body_findings_total'] == 1, verdict
+    assert [(row['section'], row['id']) for row in verdict['undisposed']] == [('outside-diff', 'outside-diff-1')]
+
+
+def test_a_counted_wrapper_declaring_more_than_it_encloses_stops_the_gate() -> None:
+    """⛔ `Review (5)` around one nitpick declares five findings and reads one.
+
+    A wrapper that declares no more than the sections it encloses is a grouping and reads
+    through; one that declares MORE than they account for leaves findings nobody can
+    enumerate, so the body stops with a named reason instead of reading fewer.
+    """
+    body = (
+        '<details><summary>Review (5)</summary>'
+        '<details><summary>🧹 Nitpick comments (1)</summary> x </details></details>'
+    )
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['merge_allowed'] is False, verdict
+    assert verdict['reason'] == 'undecidable_read', verdict
+    assert "'Review (5)'" in verdict['detail'], verdict
+
+
+def test_a_digit_run_too_long_to_be_read_stops_the_gate() -> None:
+    """⛔ `int()` on a digit run of thousands of characters must not raise a traceback.
+
+    A count the parser cannot read is either read or a named stop — never a crash that
+    states no verdict at all.
+    """
+    body = '<details><summary>🔎 Potential issues (' + '9' * 5000 + ')</summary> one row </details>'
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['merge_allowed'] is False, verdict
+    assert verdict['reason'] == 'undecidable_read', verdict
+    assert 'this gate will enumerate' in verdict['detail'], verdict
+
+
+def test_a_heading_whose_closer_is_followed_by_an_emoji_is_read() -> None:
+    """⛔ A decoration right after the closing marker must not turn the closer into an opener.
+
+    `**…(1)**🎯` loses the heading when the marker is read as an opener because the emoji
+    is neither whitespace nor punctuation: the pending span IS a heading, so the marker
+    closes it.
+    """
+    body = '**⚠️ Outside diff range comments (1)**🎯 <details><summary>Major · b.py</summary> fix </details>'
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['review_body_findings_total'] == 1, verdict
+    assert [row['id'] for row in verdict['undisposed']] == ['outside-diff-1']
+
+
+def test_a_heading_glued_to_a_letter_beside_an_unpaired_opener_is_read() -> None:
+    """⛔ A stale `**` earlier in the body must not spend the heading's own opener.
+
+    `**stray text**Outside diff range comments (1)**` is a stray run, then a heading glued
+    to a letter. Pairing the stray run with the heading's opener drops the heading; the
+    second marker's pending span is the heading, so that marker opens rather than closing
+    the stray run.
+    """
+    body = '**stray text**Outside diff range comments (1)** <details><summary>Major · b.py</summary> fix </details>'
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['review_body_findings_total'] == 1, verdict
+    assert [row['id'] for row in verdict['undisposed']] == ['outside-diff-1']
+
+
+def test_a_mis_paired_single_backtick_cannot_quote_a_heading() -> None:
+    """⛔ Backticks pair by RUN LENGTH, so a stray single cannot open a quotation.
+
+    A single backtick left open, then a doubled fence, then a single again: pairing every
+    second backtick pairs the doubled fence's second character with the heading's
+    surrounding single backticks and drops the heading as a quotation.
+    """
+    body = (
+        'x ` y `` z `` **Outside diff range comments (1)** ` w <details><summary>Major · b.py</summary> fix </details>'
+    )
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['review_body_findings_total'] == 1, verdict
+    assert [row['id'] for row in verdict['undisposed']] == ['outside-diff-1']
+
+
+def test_a_non_finding_summary_nested_below_a_heading_does_not_silence_it() -> None:
+    """⛔ Only a block's OWN opening summary titles the block.
+
+    A summary-less block holding a counted heading and a nested `Files selected…` block is
+    not a non-finding block: reading the first `<summary>` anywhere inside it silenced the
+    heading.
+    """
+    body = (
+        '<details> **Outside diff range comments (1)** '
+        '<details><summary>Files selected for processing: 15</summary> * `a.py` </details>'
+        '</details>'
+    )
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['review_body_findings_total'] == 1, verdict
+    assert [row['id'] for row in verdict['undisposed']] == ['outside-diff-1']
+
+
+def test_a_counted_wrapper_around_an_uncounted_group_does_not_stop() -> None:
+    """⛔ An uncounted group between a wrapper and its section is not the wrapper's content.
+
+    The group's own `<summary>` text used to stay in the gap and stop the gate; a wrapper
+    that says nothing beside the section it encloses reads through.
+    """
+    body = (
+        '<details><summary>Review (1)</summary>'
+        '<details><summary>Group</summary>'
+        '<details><summary>🧹 Nitpick comments (1)</summary> x </details>'
+        '</details></details>'
+    )
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['review_body_findings_total'] == 1, verdict
+    assert [row['id'] for row in verdict['undisposed']] == ['nitpick-1']
+
+
+def test_the_enumeration_cap_binds_the_total_not_only_each_heading() -> None:
+    """⛔ Many headings each just under the cap still enumerate more than the gate allows."""
+    body = (
+        '<details><summary>🔎 Potential issues (999)</summary> one </details>'
+        '<details><summary>🔎 Potential issues (999)</summary> two </details>'
+    )
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['merge_allowed'] is False, verdict
+    assert verdict['reason'] == 'undecidable_read', verdict
+    assert 'this gate will enumerate' in verdict['detail'], verdict
+
+
+def test_an_unclosed_second_sibling_block_stops_the_gate() -> None:
+    """⛔ A heading's second sibling that never closes must not be dropped silently."""
+    body = (
+        '**Outside diff range comments (1)** '
+        '<details><summary>Major · a.py</summary> fix </details> '
+        '<details><summary>Major · b.py</summary> second'
+    )
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['merge_allowed'] is False, verdict
+    assert verdict['reason'] == 'undecidable_read', verdict
+    assert 'never closed' in verdict['detail'], verdict
+
+
+_DECLARING_THREE = {
+    'summary-counted': ('<details><summary>🧹 Nitpick comments (3)</summary> one two three </details>'),
+    'colon-counted': ('<details><summary>🧹 Nitpick comments: 3</summary> one two three </details>'),
+    'bold-over-block': ('**Outside diff range comments (3)** <details><summary>Major · a.py</summary> one </details>'),
+    'bold-over-prose-row': ('> **⚠️ Outside diff range comments (3)**\n> Line 12: one two three\n'),
+    'unclassified-counted-title': ('<details><summary>🔎 Potential issues (3)</summary> one two three </details>'),
+    'bold-over-markdown-rows': (
+        '**Outside diff range comments (3)**\n- `src/a.py:1` one\n- `src/a.py:2` two\n- `src/a.py:3` three\n'
+    ),
+    'wrapper-declaring-three': (
+        '<details><summary>Review (3)</summary>'
+        '<details><summary>🧹 Nitpick comments (3)</summary> one two three </details>'
+        '</details>'
+    ),
+    'one-outer-block': (
+        '<details><summary>Walkthrough</summary>'
+        '<details><summary>🧹 Nitpick comments (3)</summary> one two three </details>'
+        '</details>'
+    ),
+}
+
+
+@pytest.mark.parametrize('shape', sorted(_DECLARING_THREE))
+def test_a_body_declaring_three_never_reads_fewer_than_three_or_stops(shape: str) -> None:
+    """A body declaring N findings is counted in full or stops — never read as fewer."""
+    verdict = _verdict(_read(_review_body(_DECLARING_THREE[shape])))
+
+    read_fewer = verdict.get('reason') != 'undecidable_read' and (verdict['review_body_findings_total'] < 3)
+    assert not read_fewer, verdict
+
+
+def test_a_prose_row_beside_a_section_in_a_group_is_wrapper_content() -> None:
+    """⛔ Masking the whole group hid the prose row the wrapper had to account for.
+
+    The wrapper declares one finding and encloses a section plus a prose row: masking
+    only the group's title and the section leaves the row visible, so the wrapper stops
+    instead of demanding a disposition only for the section.
+    """
+    body = (
+        '<details><summary>Review (1)</summary>'
+        '<details><summary>Group</summary>'
+        '<details><summary>🧹 Nitpick comments (1)</summary> x </details>'
+        'The retry loop never terminates.'
+        '</details></details>'
+    )
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['merge_allowed'] is False, verdict
+    assert verdict['reason'] == 'undecidable_read', verdict
+    assert 'carries content beside' in verdict['detail'], verdict
+
+
+def test_a_wrapper_counts_the_rows_of_an_undeclared_child_section() -> None:
+    """⛔ The wrapper's validation uses the child's own count, not one-per-child."""
+    body = (
+        '<details><summary>Review (2)</summary>'
+        '<details><summary>Nitpick comments</summary>'
+        '<!-- cr-comment:v1:aaaa --> one <!-- cr-comment:v1:bbbb --> two </details>'
+        '</details>'
+    )
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['reason'] != 'undecidable_read', verdict
+    assert verdict['review_body_findings_total'] >= 2, verdict
+
+
+def test_a_repeated_bold_title_counts_its_real_heading_once() -> None:
+    """⛔ The raw occurrence must pair in order: `find()` always took the first one.
+
+    The title first appears quoted inside a sentence and then heads the rows below it.
+    Pairing the second display occurrence with the second raw occurrence is what makes
+    the heading count; reading the first one as the heading dropped it as a mention.
+    """
+    body = 'The **Nitpick comments (1)** label changed.\n\n**Nitpick comments (1)**\n- `src/a.py:1` fix the timeout\n'
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['review_body_findings_total'] == 1, verdict
+    assert [row['id'] for row in verdict['undisposed']] == ['nitpick-1']
+
+
+def test_a_prose_row_above_the_section_in_a_summary_less_group_is_not_masked() -> None:
+    """⛔ The group's own summary is masked, never the nested section's.
+
+    An unbounded summary search found the nested section's summary when the group
+    carries none, and the mask then removed the prose finding written above it.
+    """
+    body = (
+        '<details><summary>Review (1)</summary>'
+        '<details> A separate finding. '
+        '<details><summary>Nitpick comments (1)</summary> Another finding. </details>'
+        '</details></details>'
+    )
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['merge_allowed'] is False, verdict
+    assert verdict['reason'] == 'undecidable_read', verdict
+    assert 'carries content beside' in verdict['detail'], verdict
+
+
+def test_markup_quoted_inside_a_fence_is_prose_not_structure() -> None:
+    """A reviewer's quoted snippet is an EXAMPLE: it neither mints findings nor stops."""
+    body = (
+        'Analysis:\n'
+        '```html\n'
+        '<details><summary>Review (1)</summary>\n'
+        '<details><summary>Nitpick comments (1)</summary> x </details>\n'
+        '</details>\n'
+        '```\n'
+    )
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['reason'] != 'undecidable_read', verdict
+    assert verdict['review_body_findings_total'] == 0, verdict
+
+
+def test_a_bold_title_split_across_raw_lines_still_counts_its_rows() -> None:
+    """The display form joins the raw lines, so the raw match allows a whitespace run."""
+    body = '**Nitpick\ncomments (1)**\n- `src/a.py:1` fix the timeout\n'
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['review_body_findings_total'] == 1, verdict
+    assert [row['id'] for row in verdict['undisposed']] == ['nitpick-1']
+
+
+def test_a_quoted_copy_inside_a_fence_does_not_hide_the_heading_below_it() -> None:
+    """The occurrence index is built from the MASKED body, so the fenced copy is skipped."""
+    body = '```html\n**Nitpick comments (1)**\n```\n\n**Nitpick comments (1)**\n- `src/a.py:1` fix the timeout\n'
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['review_body_findings_total'] == 1, verdict
+    assert [row['id'] for row in verdict['undisposed']] == ['nitpick-1']
+
+
+def test_prose_markers_are_not_a_fence_and_do_not_hide_the_section_between_them() -> None:
+    """Only a line-anchored marker is a fence; a run inside a sentence is prose."""
+    body = (
+        'Use the ``` fence opener in prose.\n'
+        '<details><summary>Nitpick comments (1)</summary> x </details>\n'
+        'and the ``` closer in prose.\n'
+    )
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['review_body_findings_total'] == 1, verdict
+
+
+def test_a_wrapper_around_a_closed_but_empty_section_stops() -> None:
+    """The child's summary is its title, not content: an empty child accounts for zero."""
+    body = '<details><summary>Review (1)</summary><details><summary>Nitpick comments</summary> </details></details>'
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['merge_allowed'] is False, verdict
+    assert verdict['reason'] == 'undecidable_read', verdict
+    assert 'encloses only 0' in verdict['detail'], verdict
+
+
+def test_a_wrapper_counts_a_nested_bold_section_the_way_enumeration_does() -> None:
+    """A counted wrapper does not absorb the nested section its child carries."""
+    body = (
+        '<details><summary>Review (5)</summary>'
+        '<details><summary>Nitpick comments</summary>'
+        '**Outside diff range comments (1)** '
+        '<details><summary>src/a.py:1 (5)</summary>Finding</details>'
+        '</details></details>'
+    )
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['merge_allowed'] is False, verdict
+    assert verdict['reason'] == 'undecidable_read', verdict
+    assert 'encloses only' in verdict['detail'], verdict

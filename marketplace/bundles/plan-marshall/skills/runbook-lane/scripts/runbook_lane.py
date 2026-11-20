@@ -60,6 +60,7 @@ run over work nobody checked.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -179,13 +180,20 @@ _DEFAULT_BUILD_TIMEOUT_SECONDS = 1800
 #: fallback, not the lane's answer: the lane always uses the resolved value.
 _DEFAULT_BASE_BRANCH = 'main'
 
+#: The longest body slot the CI's own slot pattern accepts on the OLDEST executor this
+#: lane may meet: 64 characters until the executor is regenerated.
+_BODY_SLOT_MAX_LENGTH = 64
+
 
 def _plan_id_from_spec(spec: Path) -> str:
-    """Derive the lane plan id from a spec's basename.
+    """Derive the lane plan id from a spec's basename, unfolded.
 
-    ``PLAN-42-example-slug.md`` becomes ``42-example-slug``: the ``PLAN-``
-    marker is dropped and the rest is lower-cased, which is the same id the
-    orchestrator's row and the inbox sender share.
+    ``PLAN-42-example-slug.md`` becomes ``42-example-slug``: the ``PLAN-`` marker is
+    dropped and the rest is lower-cased, which is the same id the orchestrator's row
+    and the inbox sender share. It is deliberately NOT folded further: the id names
+    the worktree, the progress file, the sender and the inbox, so two staged plans
+    whose names differ only in separators must keep distinct ids. The body slot is a
+    different value with a different vocabulary — see :func:`_body_slot_from_plan_id`.
     """
     stem = spec.name
     if stem.endswith('.md'):
@@ -193,6 +201,25 @@ def _plan_id_from_spec(spec: Path) -> str:
     if stem.startswith('PLAN-'):
         stem = stem[len('PLAN-') :]
     return stem.lower()
+
+
+def _body_slot_from_plan_id(plan_id: str) -> str:
+    """Derive the CI body slot from a plan id.
+
+    The slot vocabulary is lowercase letters, digits and hyphens, starting with a
+    letter or digit, at most 64 characters (the live executor's accepted bound until
+    the executor is regenerated). A spec name with ``_``, ``.`` or a long stem would
+    otherwise derive a slot the CI rejects and stall the lane at PR open.
+
+    Folding is LOSSY, so any id the fold changes — separators, case, punctuation or
+    truncation — carries a digest of the ORIGINAL id. Two plans whose ids differ only
+    in separators therefore keep distinct slots instead of silently sharing one.
+    """
+    folded = re.sub(r'[^a-z0-9]+', '-', plan_id.lower()).strip('-') or 'plan'
+    if folded == plan_id and len(folded) <= _BODY_SLOT_MAX_LENGTH:
+        return folded
+    digest = hashlib.sha1(plan_id.encode('utf-8')).hexdigest()[:8]
+    return f'{folded[: _BODY_SLOT_MAX_LENGTH - len(digest) - 1]}-{digest}'
 
 
 class _SpecChoice(NamedTuple):
@@ -1255,6 +1282,11 @@ def _resolve_runtime_stamp(harness: str) -> tuple[dict[str, str], str | None]:
 #: discovered, so no workflow name appears in this module.
 _CI_WORKFLOW_DIR = ('.github', 'workflows')
 
+#: The whole CI configuration tree. The ignored-input guard reads this, not only the
+#: workflow directory: a reusable workflow, an action definition or a config file
+#: anywhere under it can carry the rule the delta is classified by.
+_CI_CONFIG_DIR = ('.github',)
+
 #: The extensions a workflow file may carry.
 _WORKFLOW_SUFFIXES = ('.yml', '.yaml')
 
@@ -1278,13 +1310,46 @@ def _iter_workflow_files(project_dir: Path) -> list[Path]:
 
     Discovery, not a fixed name: a project's opt-in lives in whichever workflow
     carries it, so the lane never names one.
+
+    A SYMLINK is never this checkout's rule. Containment in the checkout proves
+    nothing about the verified commit — a tracked link can point at a file the head
+    does not carry, or at an ignored path — so following it would decide the delta by
+    bytes the graded tree never contained. Every link is skipped; the caller reports
+    a discovery that found only links as an unreadable rule rather than as "no rule".
     """
     directory = project_dir.joinpath(*_CI_WORKFLOW_DIR)
     try:
         entries = sorted(directory.iterdir())
     except OSError:
         return []
-    return [entry for entry in entries if entry.is_file() and entry.suffix.lower() in _WORKFLOW_SUFFIXES]
+    discovered: list[Path] = []
+    for entry in entries:
+        if entry.is_symlink():
+            continue
+        if not entry.is_file() or entry.suffix.lower() not in _WORKFLOW_SUFFIXES:
+            continue
+        discovered.append(entry)
+    return discovered
+
+
+def _workflow_discovery_problem(project_dir: Path, discovered: list[Path]) -> str | None:
+    """Why workflow discovery could not read the project's rule, or ``None``.
+
+    A directory that holds workflow-named entries while discovery returned none is a
+    rule the lane could not read — every candidate was a symlink. Reporting it as
+    "no CI rule" would hand the decision to the architecture fallback, which is a
+    different rule from the one the project's CI applies. A project with no workflow
+    at all is ``None``: that genuinely has no CI footprint rule.
+    """
+    directory = project_dir.joinpath(*_CI_WORKFLOW_DIR)
+    try:
+        entries = sorted(entry for entry in directory.iterdir() if entry.suffix.lower() in _WORKFLOW_SUFFIXES)
+    except OSError:
+        return None
+    if discovered or not entries:
+        return None
+    names = ', '.join(entry.name for entry in entries)
+    return f'every workflow in this checkout is a symlink, so its rule cannot be read: {names}'
 
 
 def _footprint_opt_in(lines: list[str]) -> bool:
@@ -1359,7 +1424,11 @@ def _read_footprint_rule(project_dir: Path) -> tuple[list[str] | None, list[str]
     repository does not hold, and the caller falls back to the architecture's
     narrowly-scoped prose class instead of guessing a skip set.
     """
-    for workflow in _iter_workflow_files(project_dir):
+    workflows = _iter_workflow_files(project_dir)
+    problem = _workflow_discovery_problem(project_dir, workflows)
+    if problem is not None:
+        return [], None, problem
+    for workflow in workflows:
         try:
             text = workflow.read_text(encoding='utf-8')
         except (OSError, UnicodeDecodeError) as exc:
@@ -1577,19 +1646,21 @@ def _classify_path(
 
     Under a READABLE CI rule (``skip`` is a list) that rule IS the non-building
     class, and the architecture is only a hint: a path the rule does not name
-    builds, even when the architecture files a documentation module over it.
-    When the checkout does not hold the rule (``skip`` is ``None``) the narrow
-    architecture fallback applies. A path in NEITHER class is buildable — the
-    gate's own direction, since its opt-in names what to SKIP, not what to
-    build; the architecture fallback keeps the same fail-closed bias, because
-    the module list is not an inventory of everything that can affect a build.
+    builds, even when the architecture files a documentation module over it. A
+    path in NEITHER class is buildable — the gate's own direction, since its
+    opt-in names what to SKIP, not what to build.
+
+    Under a CI that DELEGATES the rule to a reusable workflow (``source`` is
+    ``ci-workflow`` and ``skip`` is ``None``) this function is not reached: the
+    rule the CI applied is not in this checkout, so no architecture-derived
+    substitute may stand in for it, and the caller builds every path with the
+    delegation named. ``module_prefixes`` and the architecture fallback therefore
+    apply only to a project whose CI has no footprint rule at all.
     """
     if any(_matches_glob(path, pattern) for pattern in extra):
         return 'buildable'
     if source == 'ci-workflow':
-        if skip is not None:
-            return 'docs-only' if any(_matches_glob(path, pattern) for pattern in skip) else 'buildable'
-        return 'docs-only' if _is_project_doc(path, doc_surfaces) else 'buildable'
+        return 'docs-only' if any(_matches_glob(path, pattern) for pattern in skip or []) else 'buildable'
     if any(path.startswith(prefix) for prefix in module_prefixes):
         return 'buildable'
     return 'docs-only' if _is_project_doc(path, doc_surfaces) else 'buildable'
@@ -1679,6 +1750,17 @@ def _classify_paths(project_dir: Path, paths: list[str]) -> tuple[list[dict[str,
 
     if reason:
         return [{'path': path, 'kind': 'buildable'} for path in paths], source, reason
+    if source == 'ci-workflow' and skip is None:
+        # The workflow opts in but holds no rule: it DELEGATES the footprint rule to a
+        # reusable workflow this checkout does not hold. Substituting the architecture's
+        # documentation surfaces would decide the delta by a rule the CI never applied,
+        # and a wrong docs-only answer SKIPS a build the CI runs — the one direction this
+        # gate must never take. Every path builds, and the delegation is named.
+        return (
+            [{'path': path, 'kind': 'buildable'} for path in paths],
+            source,
+            'the CI delegates its footprint rule to a reusable workflow this checkout does not hold',
+        )
     try:
         rows = [
             {
@@ -1743,6 +1825,12 @@ def cmd_build_classify(args: argparse.Namespace) -> dict[str, Any]:
 #: measurement of the current head.
 _CARRY_FORWARD_UNBUILT = 'carried_forward_unbuilt_delta'
 
+#: The prefix the READ gives its own ``count_status_reason`` when the figure was carried
+#: forward. It is the token that binds the gate and the facts to the read: a reason with
+#: this prefix and no marking is refused, so a carried-forward figure cannot be reported
+#: as this head's measurement.
+_CARRY_FORWARD_REASON_PREFIX = 'carried_forward'
+
 
 def _git_in(worktree: Path, *args: str) -> tuple[bool, str]:
     """Run one git command against *worktree*; return ``(ok, stdout)``.
@@ -1791,25 +1879,46 @@ def _checkout_revision(worktree: Path) -> str:
 
 
 def _worktree_is_clean(worktree: Path) -> bool | None:
-    """Whether *worktree* has no changed or untracked path; ``None`` if unreadable.
+    """Whether *worktree* carries no change the head does not; ``None`` if unreadable.
 
-    The footprint rule is read from the worktree's FILES, so a modified or
-    untracked file is a rule the head does not carry — a checkout on the right
-    commit with a rewritten workflow would otherwise decide the delta under a rule
-    nothing committed.
+    The footprint rule is read from the worktree's FILES, so a modified or untracked
+    file is a rule the head does not carry — a checkout on the right commit with a
+    rewritten workflow would otherwise decide the delta under a rule nothing
+    committed. Two shapes hide from a bare ``git status``: an ``assume-unchanged`` or
+    ``skip-worktree`` entry (git reports it clean whatever its content), and an
+    untracked file when ``status.showUntrackedFiles`` is ``no``. Both are read
+    explicitly, because either would let a local edit present a rule the head lacks.
     """
-    ok, out = _git_in(worktree, 'status', '--porcelain')
+    ok, out = _git_in(worktree, 'status', '--porcelain', '--untracked-files=normal')
     if not ok:
         return None
-    return not out.strip()
+    if out.strip():
+        return False
+    ok, tags = _git_in(worktree, 'ls-files', '-v')
+    if not ok:
+        return None
+    return not any(_entry_hides_its_change(line) for line in tags.splitlines())
+
+
+def _entry_hides_its_change(line: str) -> bool:
+    """Whether an ``ls-files -v`` line marks an entry git will not report as changed.
+
+    ``ls-files -v`` prefixes each path with a tag: a LOWERCASE tag means
+    assume-unchanged, and ``S`` means skip-worktree. Either makes ``git status``
+    silent about a modified file, so the file can carry a rule the head does not.
+    """
+    tag = line[:1]
+    return bool(tag) and (tag.islower() or tag == 'S')
 
 
 def _ignored_workflow_inputs(worktree: Path) -> list[str] | None:
-    """Return ignored-untracked files under the CI workflow dir, or ``None``.
+    """Return ignored-untracked files under the CI config tree, or ``None``.
 
     ``git status --porcelain`` omits ignored paths, but the footprint rule is read
-    from the DIRECTORY, so an ignored workflow file is a rule the head does not
-    carry. ``None`` says the read itself failed, which is not "none found".
+    from the DIRECTORY, so an ignored CI file is a rule the head does not carry. The
+    guard covers the whole ``.github`` tree, not only ``workflows``: a reusable
+    workflow or an action definition there supplies the same rule. ``None`` says the
+    read itself failed, which is not "none found".
     """
     ok, out = _git_in(
         worktree,
@@ -1818,7 +1927,7 @@ def _ignored_workflow_inputs(worktree: Path) -> list[str] | None:
         '--ignored',
         '--exclude-standard',
         '--',
-        '/'.join(_CI_WORKFLOW_DIR),
+        '/'.join(_CI_CONFIG_DIR),
     )
     if not ok:
         return None
@@ -1844,6 +1953,80 @@ def _delta_paths(worktree: Path, base: str, head: str) -> list[str] | None:
 # =============================================================================
 # Stale-delta refusals a project's own rule cannot decide are NOT carried
 # =============================================================================
+
+
+def _stale_delta_revisions(worktree: Path, analysis_revision: str, head_revision: str) -> tuple[str, str, str | None]:
+    """Resolve both revisions and verify the checkout presents the HEAD's own rule.
+
+    Returns ``(analysed, head, detail)``. ``detail`` names why the decision cannot be
+    made; when it is ``None`` both commits are the resolved OBJECT NAMES, so two
+    spellings of one commit compare equal and a worktree carrying another commit's
+    rule, a dirty tree, or an ignored CI input is refused before any classification.
+    """
+    if not worktree.is_dir():
+        return '', '', f'worktree_unreadable: {worktree} is not a directory'
+    analysed = _resolve_commit(worktree, analysis_revision)
+    if not analysed:
+        return (
+            '',
+            '',
+            (f'revision_unresolvable: the analysed revision {analysis_revision} is not present in the routed checkout'),
+        )
+    head = _resolve_commit(worktree, head_revision)
+    if not head:
+        return (
+            '',
+            '',
+            (f'revision_unresolvable: the head revision {head_revision} is not present in the routed checkout'),
+        )
+    if analysed == head:
+        # The same commit on both sides is not a stale analysis at all, so the
+        # carried-forward sentence would assert a difference that does not exist.
+        return (
+            analysed,
+            head,
+            (f'revisions_equal: analysed {analysis_revision} and head {head_revision} are the same commit'),
+        )
+    checkout = _checkout_revision(worktree)
+    if checkout != head:
+        # The rule that decides this delta is read from the worktree's files, so a
+        # worktree on another commit carries another rule — and a rule from the
+        # wrong commit can call a path unbuilt that the head builds.
+        return (
+            analysed,
+            head,
+            (
+                f'worktree_not_at_head: the checkout is at {checkout or "an unreadable commit"} and the '
+                f"head revision resolves to {head}; the footprint rule it carries is not the head's rule"
+            ),
+        )
+    clean = _worktree_is_clean(worktree)
+    if clean is None:
+        return analysed, head, 'worktree_unreadable: the checkout status could not be read'
+    if not clean:
+        # A modified or untracked workflow file is a rule the head does not carry,
+        # so the same fail-closed answer as a checkout on another commit.
+        return (
+            analysed,
+            head,
+            (
+                'worktree_dirty: the checkout carries changed or untracked paths, so the rule it presents '
+                'is not the rule at the head'
+            ),
+        )
+    ignored = _ignored_workflow_inputs(worktree)
+    if ignored is None:
+        return analysed, head, 'worktree_unreadable: the ignored-path read of the workflow directory failed'
+    if ignored:
+        return (
+            analysed,
+            head,
+            (
+                'worktree_ignored_inputs: the CI configuration carries ignored files the head does not '
+                f'carry ({", ".join(ignored)}), and the rule is read from the directory'
+            ),
+        )
+    return analysed, head, None
 
 
 def _sonar_stale_delta_verdict(
@@ -1891,60 +2074,10 @@ def _sonar_stale_delta_verdict(
     if not analysis_revision or not head_revision:
         verdict['detail'] = 'revision_missing: both revisions must be reported to decide a carried-forward read'
         return verdict
-    if not worktree.is_dir():
-        verdict['detail'] = f'worktree_unreadable: {worktree} is not a directory'
-        return verdict
 
-    analysed = _resolve_commit(worktree, analysis_revision)
-    if not analysed:
-        verdict['detail'] = (
-            f'revision_unresolvable: the analysed revision {analysis_revision} is not present in the routed checkout'
-        )
-        return verdict
-    head = _resolve_commit(worktree, head_revision)
-    if not head:
-        verdict['detail'] = (
-            f'revision_unresolvable: the head revision {head_revision} is not present in the routed checkout'
-        )
-        return verdict
-    if analysed == head:
-        # The same commit on both sides is not a stale analysis at all, so the
-        # carried-forward sentence would assert a difference that does not exist.
-        verdict['detail'] = (
-            f'revisions_equal: analysed {analysis_revision} and head {head_revision} are the same commit'
-        )
-        return verdict
-    checkout = _checkout_revision(worktree)
-    if checkout != head:
-        # The rule that decides this delta is read from the worktree's files, so a
-        # worktree on another commit carries another rule — and a rule from the
-        # wrong commit can call a path unbuilt that the head builds.
-        verdict['detail'] = (
-            f'worktree_not_at_head: the checkout is at {checkout or "an unreadable commit"} and the '
-            f"head revision resolves to {head}; the footprint rule it carries is not the head's rule"
-        )
-        return verdict
-    clean = _worktree_is_clean(worktree)
-    if clean is None:
-        verdict['detail'] = 'worktree_unreadable: the checkout status could not be read'
-        return verdict
-    if not clean:
-        # A modified or untracked workflow file is a rule the head does not carry,
-        # so the same fail-closed answer as a checkout on another commit.
-        verdict['detail'] = (
-            'worktree_dirty: the checkout carries changed or untracked paths, so the rule it presents '
-            'is not the rule at the head'
-        )
-        return verdict
-    ignored = _ignored_workflow_inputs(worktree)
-    if ignored is None:
-        verdict['detail'] = 'worktree_unreadable: the ignored-path read of the workflow directory failed'
-        return verdict
-    if ignored:
-        verdict['detail'] = (
-            'worktree_ignored_inputs: the workflow directory carries ignored files the head does not '
-            f'carry ({", ".join(ignored)}), and the rule is read from the directory'
-        )
+    analysed, head, detail = _stale_delta_revisions(worktree, analysis_revision, head_revision)
+    if detail is not None:
+        verdict['detail'] = detail
         return verdict
 
     paths = _delta_paths(worktree, analysed, head)
@@ -1952,6 +2085,16 @@ def _sonar_stale_delta_verdict(
         verdict['detail'] = f'diff_failed: the change from {analysis_revision} to {head_revision} could not be listed'
         return verdict
     verdict['changed_paths'] = paths
+    rule_paths = [path for path in paths if path == _CI_CONFIG_DIR[0] or path.startswith(f'{_CI_CONFIG_DIR[0]}/')]
+    if rule_paths:
+        # A head that edits the CI rule can widen its own paths-ignore, so the rule read
+        # from THAT head is not the rule that would have judged the source change it
+        # carries — carrying it forward would excuse a change by a rule it wrote itself.
+        verdict['detail'] = (
+            'rule_changed: the delta changes the CI configuration the footprint rule is read from '
+            f'({", ".join(rule_paths)}), so the change cannot be carried forward'
+        )
+        return verdict
     if not paths:
         verdict['carry_forward'] = True
         verdict['source'] = 'none'
@@ -2062,6 +2205,34 @@ def _operator_selection_records(progress_file: Path) -> set[str] | None:
     return recorded
 
 
+#: A revision is a hexadecimal OBJECT NAME — the thing the gate's pair and the facts'
+#: marking stand on. A ref expression (``HEAD~1``), a branch name or a date is not a
+#: revision, so it is refused rather than compared as one.
+_REVISION_RE = re.compile(r'[0-9a-fA-F]{7,64}')
+
+#: The shortest prefix this lane treats as naming a commit on its own.
+_MIN_REVISION_PREFIX = 7
+
+
+def _same_revision(one: str, other: str) -> bool:
+    """Whether two spellings name ONE commit: identical, or one a hex prefix of the other.
+
+    A short SHA and the full object name of the same commit are one revision, so a
+    string comparison would report a carried-forward pair that does not exist.
+    """
+    if not one or not other:
+        return False
+    left, right = one.strip().lower(), other.strip().lower()
+    if left == right:
+        return True
+    shorter, longer = (left, right) if len(left) < len(right) else (right, left)
+    return (
+        len(shorter) >= _MIN_REVISION_PREFIX
+        and longer.startswith(shorter)
+        and re.fullmatch(r'[0-9a-f]+', shorter) is not None
+    )
+
+
 def _carried_forward_revisions(
     args: argparse.Namespace,
 ) -> tuple[tuple[str, str] | None, dict[str, Any] | None]:
@@ -2121,8 +2292,15 @@ def _carried_forward_revisions(
                 '--carried-forward-analysis-revision and --carried-forward-head-revision'
             ),
         }
-    if analysed == head:
-        # Two equal revisions describe a settled read, not a carried-forward one:
+    for value in (analysed, head):
+        if _REVISION_RE.fullmatch(value) is None:
+            return None, {
+                'status': 'error',
+                'error': 'revision_format_invalid',
+                'message': (f'a carried-forward revision is a hexadecimal object name: {value!r} is not one'),
+            }
+    if _same_revision(analysed, head):
+        # Two spellings of ONE commit describe a settled read, not a carried-forward one:
         # the verdict would assert a difference that does not exist.
         return None, {
             'status': 'error',
@@ -2135,18 +2313,24 @@ def _carried_forward_revisions(
     return (analysed, head), None
 
 
-def _carried_forward(verdict: dict[str, Any], carried_forward: tuple[str, str] | None) -> dict[str, Any]:
+def _carried_forward(
+    verdict: dict[str, Any],
+    carried_forward: tuple[str, str] | None,
+    reason: str = '',
+) -> dict[str, Any]:
     """Re-name an ADMITTING verdict as a carried-forward read.
 
     A carried-forward figure is a measured figure of an EARLIER head, so a verdict
     that admitted it on ``no_open_issues`` would read like a measurement of this
     one. The distinct name carries both revisions and the fact that the delta was
-    not built, so the landing and the operator see which head was counted.
+    not built, so the landing and the operator see which head was counted. When the
+    read's OWN ``count_status_reason`` is supplied it is used instead of the default
+    sentence, so an empty delta is not described as one the project does not build.
     """
     if carried_forward is None or not verdict.get('merge_allowed'):
         return verdict
     analysed, head = carried_forward
-    verdict['reason'] = (
+    verdict['reason'] = reason.strip() or (
         f'{_CARRY_FORWARD_UNBUILT}: analysed {analysed} != head {head}; the delta since the analysed head is not built'
     )
     verdict['carried_forward'] = True
@@ -2164,6 +2348,7 @@ def _sonar_gate_verdict(
     recorded_keys: set[str] | None = None,
     hotspot_keys: list[str] | None = None,
     carried_forward: tuple[str, str] | None = None,
+    carried_forward_reason: str = '',
 ) -> dict[str, Any]:
     """Decide whether the Sonar read admits the merge (section 7's condition).
 
@@ -2238,6 +2423,7 @@ def _sonar_gate_verdict(
                 'open_issue_count': 0,
             },
             carried_forward,
+            carried_forward_reason,
         )
     if len(set(open_keys)) < count:
         # Distinct keys, not list length: a repeated key enumerates one issue
@@ -2298,6 +2484,7 @@ def _sonar_gate_verdict(
             'selected_count': len(selected),
         },
         carried_forward,
+        carried_forward_reason,
     )
 
 
@@ -2340,14 +2527,15 @@ def cmd_sonar_gate(args: argparse.Namespace) -> dict[str, Any]:
             or getattr(args, 'carried_forward', None)
             or getattr(args, 'carried_forward_analysis_revision', None) is not None
             or getattr(args, 'carried_forward_head_revision', None) is not None
+            or getattr(args, 'count_status_reason', None) is not None
         ):
             return {
                 'status': 'error',
                 'error': 'state_contradicts_read',
                 'message': (
                     'a not_configured state carries no read; drop --count-status, --open-count, '
-                    '--open-keys, --operator-selected-keys, --hotspot-keys, --carried-forward and the '
-                    '--carried-forward-* revisions'
+                    '--open-keys, --operator-selected-keys, --hotspot-keys, --carried-forward, the '
+                    '--carried-forward-* revisions and --count-status-reason'
                 ),
             }
         return _sonar_gate_verdict(state, None, None, [], [])
@@ -2363,6 +2551,19 @@ def cmd_sonar_gate(args: argparse.Namespace) -> dict[str, Any]:
     carried_forward_revisions, carried_forward_error = _carried_forward_revisions(args)
     if carried_forward_error is not None:
         return carried_forward_error
+    count_status_reason = (getattr(args, 'count_status_reason', None) or '').strip()
+    if count_status_reason.startswith(_CARRY_FORWARD_REASON_PREFIX) and carried_forward_revisions is None:
+        # The read's OWN output says it was carried forward, so a figure reported
+        # without the marking would read as a measurement of this head.
+        return {
+            'status': 'error',
+            'error': 'carried_forward_unmarked',
+            'message': (
+                "the read's count_status_reason names a carry-forward: pass --carried-forward beside "
+                '--carried-forward-analysis-revision and --carried-forward-head-revision, so the '
+                'verdict cannot state a figure of another head as this head'
+            ),
+        }
     if getattr(args, 'operator_selected_keys', None) and not getattr(args, 'progress_file', None):
         # A selection with no record behind it is exactly the self-attested
         # dismissal this gate exists to remove. The flag alone is the lane's word;
@@ -2405,6 +2606,7 @@ def cmd_sonar_gate(args: argparse.Namespace) -> dict[str, Any]:
         _progress_selection(getattr(args, 'progress_file', None)),
         _split_csv(getattr(args, 'hotspot_keys', None)),
         carried_forward_revisions,
+        count_status_reason,
     )
 
 
@@ -2458,6 +2660,7 @@ def cmd_sonar_facts(args: argparse.Namespace) -> dict[str, Any]:
             getattr(args, name, None) is not None
             for name in (
                 'count_status',
+                'count_status_reason',
                 'open_count',
                 'rules',
                 'gate_status',
@@ -2469,8 +2672,8 @@ def cmd_sonar_facts(args: argparse.Namespace) -> dict[str, Any]:
                 'status': 'error',
                 'error': 'state_contradicts_read',
                 'message': (
-                    'a not_configured state carries no read; drop --count-status, --open-count, '
-                    '--rules, --gate-status, --carried-forward and the carried-forward revisions'
+                    'a not_configured state carries no read; drop --count-status, --count-status-reason, '
+                    '--open-count, --rules, --gate-status, --carried-forward and the carried-forward revisions'
                 ),
             }
         count, rules = 'n/a', 'n/a'
@@ -2534,6 +2737,25 @@ def cmd_sonar_facts(args: argparse.Namespace) -> dict[str, Any]:
     marked = bool(getattr(args, 'carried_forward', False))
     analysed_revision = (getattr(args, 'analysed_revision', None) or '').strip()
     carried_forward_head = (getattr(args, 'carried_forward_head_revision', None) or '').strip()
+    count_status_reason = (getattr(args, 'count_status_reason', None) or '').strip()
+    if count_status_reason.startswith(_CARRY_FORWARD_REASON_PREFIX) and not marked:
+        # The read's own output names the carry-forward, so a figure rendered without the
+        # marking would state another head's measurement as this head's.
+        return {
+            'status': 'error',
+            'error': 'carried_forward_unmarked',
+            'message': (
+                "the read's count_status_reason names a carry-forward: pass --carried-forward beside "
+                '--analysed-revision and --carried-forward-head-revision'
+            ),
+        }
+    for value in (analysed_revision, carried_forward_head):
+        if value and _REVISION_RE.fullmatch(value) is None:
+            return {
+                'status': 'error',
+                'error': 'revision_format_invalid',
+                'message': f'a carried-forward revision is a hexadecimal object name: {value!r} is not one',
+            }
     if not marked and (analysed_revision or carried_forward_head):
         return {
             'status': 'error',
@@ -2570,10 +2792,11 @@ def cmd_sonar_facts(args: argparse.Namespace) -> dict[str, Any]:
                 '--carried-forward-head-revision (standing in for)'
             ),
         }
-    if analysed_revision and analysed_revision == carried_forward_head:
+    if analysed_revision and _same_revision(analysed_revision, carried_forward_head):
         # Two equal revisions describe a settled read, not a carried-forward one;
-        # the fact would assert a difference that does not exist. The gate refuses
-        # the same input, so the two verbs cannot disagree about it.
+        # the fact would assert a difference that does not exist. The gate compares the
+        # same way, so a short and a full SHA of one commit cannot pass here and be
+        # refused there.
         return {
             'status': 'error',
             'error': 'carried_forward_revisions_equal',
@@ -2744,10 +2967,93 @@ _HEADING_TRAILING_COUNT_RE = re.compile(r'\s*(?:\(\d+\)|\d+)\s*$')
 
 #: A BOLD span inside a Markdown code span is a QUOTE of the heading, not a heading: a
 #: reviewer writes `` `**Outside diff range comments (1)**` `` when it discusses the rule.
-#: Only a code span holding the heading and nothing else is read as that quotation — a
-#: stray backtick earlier in the body pairs with a later one and spans the prose between
-#: them, so a wider match would hide a real heading (see ``_quoted_in_a_code_span``).
-_BACKTICK_SPAN_RE = re.compile(r'`[^`]*`')
+#: Only a code span holding the heading and nothing else is read as that quotation, and the
+#: spans are paired by RUN LENGTH (CommonMark's rule): a stray single backtick cannot close
+#: on the first character of a doubled fence and leave the heading's own backticks paired
+#: around it, which would hide a real heading (see ``_code_span_contents``).
+_BACKTICK_RUN_RE = re.compile(r'`+')
+
+#: A fenced code block's fence marker (``` or ~~~, three or more). A reviewer QUOTES
+#: markup inside these fences — a suggested fix, a shell script, an HTML example —
+#: and those bytes are prose about the change, never structure of the review. The
+#: marker is matched anywhere rather than at a line start: the gate parses the
+#: FLATTENED display form, where the newlines a fence opens on are already gone.
+_FENCE_MARKER_RE = re.compile(r'(`{3,}|~{3,})')
+
+
+def _fence_spans(text: str) -> list[tuple[int, int]]:
+    """The ``(start, end)`` spans of fenced code blocks, paired by marker char and length.
+
+    A closer must carry the SAME character and at least the opener's length; pairing by
+    position alone lets a `~~~` line inside a ``` block close it, masking real structure
+    and dropping the findings under it.
+    """
+    spans: list[tuple[int, int]] = []
+    opening: tuple[int, str, int] | None = None
+    for marker in _FENCE_MARKER_RE.finditer(text):
+        run = marker.group(0)
+        if opening is None:
+            opening = (marker.start(), run[0], len(run))
+            continue
+        start, character, length = opening
+        if run[0] != character or len(run) < length:
+            continue
+        spans.append((start, marker.end()))
+        opening = None
+    return spans
+
+
+def _raw_fence_markers(raw_body: str) -> int:
+    """Count the LINE-ANCHORED fence markers in a raw body (openers and closers).
+
+    An opener may carry an info string; a closer must have nothing but whitespace after
+    its run, carry the opener's character and be at least as long (CommonMark). A run
+    printed inside a sentence is not a marker, which is what separates prose about
+    fences from a fence.
+    """
+    count = 0
+    opening: tuple[str, int] | None = None
+    for line in raw_body.splitlines():
+        match = re.match(r'[ \t]*(`{3,}|~{3,})(.*)$', line)
+        if match is None:
+            continue
+        run, rest = match.group(1), match.group(2)
+        if opening is None:
+            opening = (run[0], len(run))
+            count += 1
+            continue
+        character, length = opening
+        if run[0] == character and len(run) >= length and not rest.strip():
+            opening = None
+            count += 1
+    return count
+
+
+def _mask_fenced_code(body: str, raw_body: str | None = None) -> str:
+    """Blank out fenced code blocks, keeping every offset in place.
+
+    A `<details><summary>…</summary>` quoted inside a fence is an EXAMPLE: reading it
+    as a real block minted phantom findings, and after the wrapper content check was
+    narrowed it stopped the gate on a reviewer's own quoted snippet. Masking with
+    spaces (never deleting) keeps every other offset — and therefore every span the
+    callers compute — valid.
+
+    The RAW body decides whether the display's marker runs are fences at all: only a
+    line-anchored opener and its whitespace-terminated closer count (CommonMark). When
+    the display's marker count does not match the raw line-anchored count, nothing is
+    masked — two prose lines that each carry a run would otherwise mask a real section
+    between them, and counting an example errs toward MORE findings, the permitted
+    direction.
+    """
+    if raw_body is not None and _raw_fence_markers(raw_body) != len(_FENCE_MARKER_RE.findall(body)):
+        return body
+    characters = list(body)
+    for start, end in _fence_spans(body):
+        for index in range(start, end):
+            if characters[index] != '\n':
+                characters[index] = ' '
+    return ''.join(characters)
+
 
 #: The severity words a review ROW opens with, and the location marker it carries. A block
 #: whose summary is a counted title continues a bold heading's ownership only when it looks
@@ -2864,10 +3170,21 @@ def _block_opens_a_section_or_a_bare_counted_title(body: str, opener: int) -> bo
 
 
 def _block_summary_title(body: str, opener: int) -> str | None:
-    """Return the title of the ``<summary>`` that opens the block at ``opener``, or ``None``."""
+    """Return the title of the ``<summary>`` that OPENS the block at ``opener``, or ``None``.
+
+    Only the summary before the block's first NESTED ``<details>`` opens this block. A
+    summary further inside belongs to a block the reviewer nested here — reading it as this
+    block's title let a nested ``Files selected for processing: 15`` list title a
+    summary-less block and silence the counted heading it held.
+    """
     closing = _block_close(body, opener)
-    inner = body[opener : closing if closing is not None else len(body)]
-    summary = _SUMMARY_RE.search(inner)
+    boundary = closing if closing is not None else len(body)
+    opening = _DETAILS_TOKEN_RE.match(body, opener)
+    if opening is None:
+        return None
+    nested = _DETAILS_TOKEN_RE.search(body, opening.end(), boundary)
+    limit = nested.start() if nested is not None else boundary
+    summary = _SUMMARY_RE.search(body, opening.end(), limit)
     return None if summary is None else summary.group('title')
 
 
@@ -2946,6 +3263,12 @@ def _inside_prose(body: str, offset: int) -> bool:
             if closing:
                 if len(scopes) > 1:
                     scopes.pop()
+                    if len(scopes) == 1:
+                        # A prose tag opened in the TOP-LEVEL text ends with the top-level
+                        # block that follows it. The block is the region such a tag runs
+                        # into; letting it survive the block keeps a heading BELOW the
+                        # closed block in a prose scope, which drops its findings.
+                        scopes[0] = {}
             else:
                 scopes.append({})
             continue
@@ -2960,10 +3283,18 @@ _ASCII_PUNCTUATION = frozenset('!"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~')
 
 
 def _is_punctuation(character: str) -> bool:
-    """Whether ``character`` is punctuation in Markdown's flanking rule."""
+    """Whether ``character`` is punctuation in Markdown's flanking rule.
+
+    Markdown's rule names Unicode punctuation; a SYMBOL is punctuation too as far as this
+    parser is concerned, because a reviewer decorates a heading with it: reading ``**…(1)**🎯``
+    as "the closer is followed by something that could open a word" turned the closing marker
+    into an opener and lost the heading.
+    """
     if not character:
         return False
-    return character in _ASCII_PUNCTUATION or unicodedata.category(character).startswith('P')
+    if character in _ASCII_PUNCTUATION:
+        return True
+    return unicodedata.category(character).startswith(('P', 'S'))
 
 
 def _bold_spans(body: str) -> list[tuple[int, int, str]]:
@@ -3002,6 +3333,17 @@ def _bold_spans(body: str) -> list[tuple[int, int, str]]:
         if not (can_close and not (can_open and opener is None)):
             opener = marker.start()
             continue
+        if can_open and opener is not None:
+            pending = body[opener + len('**') : marker.start()].strip('*')
+            if _bold_heading_section(pending)[0] is None:
+                # The span from the pending opener to here is not a heading, and this marker
+                # could OPEN one: a stray ``**`` earlier in the body must not spend the
+                # opening marker of a counted heading glued to a letter
+                # (``**stray x**Outside diff range comments (1)**``). A pending span that IS
+                # a heading is never spent this way, so a closer followed by an emoji
+                # (``**…(1)**🎯``) still closes.
+                opener = marker.start()
+                continue
         if opener is not None:
             # A delimiter RUN can carry three markers (`***Heading***`), so the run's inner
             # asterisks belong to the delimiter, not to the title: stripping them keeps a
@@ -3014,20 +3356,48 @@ def _bold_spans(body: str) -> list[tuple[int, int, str]]:
     return spans
 
 
+def _code_span_contents(body: str) -> list[tuple[int, int]]:
+    """Return the ``(content_start, content_end)`` of every code span, paired by run length.
+
+    A backtick run of N opens a span that only a later run of EXACTLY N closes; a run of
+    another length is literal text inside it. Pairing every second backtick instead lets a
+    stray single run close on the first character of a doubled fence, after which the
+    doubled fence's other character pairs with the heading's own backticks and the heading
+    reads as a quotation.
+
+    A run with NO later equal-length partner is literal text and is SKIPPED, never left
+    pending: a pending unmatched run used to suppress every later span, so one stray
+    double-backtick run hid the single-backtick quotation that followed it and the heading
+    inside it was counted as a finding.
+    """
+    runs = [(run.start(), run.end() - run.start()) for run in _BACKTICK_RUN_RE.finditer(body)]
+    contents: list[tuple[int, int]] = []
+    index = 0
+    while index < len(runs):
+        start, length = runs[index]
+        closer = next((later for later in range(index + 1, len(runs)) if runs[later][1] == length), None)
+        if closer is None:
+            index += 1
+            continue
+        contents.append((start + length, runs[closer][0]))
+        index = closer + 1
+    return contents
+
+
 def _quoted_in_a_code_span(body: str, start: int, end: int) -> bool:
     """Whether the bold span at ``start``–``end`` is the WHOLE content of a code span.
 
     A reviewer quotes a heading as a code span (`` `**Outside diff range comments (1)**` ``).
-    A code span that holds the heading plus other text is not that quotation: a stray backtick
-    earlier in the body pairs with a later one and spans prose on both sides of a real heading,
-    and reading it as a quotation would drop the heading's findings — the direction this gate
-    must never take.
+    A code span that holds the heading plus other text is not that quotation: a stray run
+    earlier in the body pairs with a later one and spans prose on both sides of a real
+    heading, and reading it as a quotation would drop the heading's findings — the
+    direction this gate must never take.
     """
     heading = body[start:end].strip()
-    for span in _BACKTICK_SPAN_RE.finditer(body):
-        if span.start() <= start and end <= span.end():
-            return body[span.start() + 1 : span.end() - 1].strip() == heading
-    return False
+    return any(
+        content_start <= start and end <= content_end and body[content_start:content_end].strip() == heading
+        for content_start, content_end in _code_span_contents(body)
+    )
 
 
 #: What separates a bold heading from the text after it in the flattened display form a
@@ -3213,6 +3583,22 @@ def _normalise_section_title(title: str) -> str:
     return ' '.join(re.sub(r'[^a-z0-9\- ()]+', ' ', text.lower()).split())
 
 
+def _parse_declared_count(digits: str) -> int:
+    """Read a declared count, never raising on a digit run no ``int()`` can take.
+
+    A run longer than nine digits is already far above :data:`_MAX_ENUMERATED_FINDINGS`, so
+    it answers the first count above the cap: the caller then stops with the same named
+    reason as any other implausible declaration, instead of ``int()`` raising ``ValueError``
+    on CPython's integer-string conversion limit and replacing the verdict with a traceback.
+    Leading zeros are stripped first: ``0000000001`` declares ONE finding, and measuring the
+    padded spelling would refuse it as over the cap.
+    """
+    significant = digits.lstrip('0') or '0'
+    if len(significant) > 9:
+        return _MAX_ENUMERATED_FINDINGS + 1
+    return int(significant)
+
+
 def _declared_count(title: str) -> int | None:
     """Return the count a ``<summary>`` title declares, or ``None``.
 
@@ -3227,7 +3613,7 @@ def _declared_count(title: str) -> int | None:
     declared = _COUNT_SUFFIX_RE.search(plain)
     if declared is None:
         return None
-    return int(declared.group('paren') or declared.group('colon'))
+    return _parse_declared_count(declared.group('paren') or declared.group('colon'))
 
 
 def _is_non_finding_title(title: str) -> bool:
@@ -3329,11 +3715,417 @@ def _count_section_findings(
     return 1 if re.sub(r'<[^>]+>', ' ', span).strip() else 0
 
 
+def _body_sources(body: str) -> dict[str, Any]:
+    """Return the ``<summary>`` headings of one review body and how they nest."""
+    matches = list(_SUMMARY_RE.finditer(body))
+    starts = list(enumerate(matches))
+    heading_at = {index: _heading_section(match.group('title'))[0] for index, match in starts}
+    return {
+        'matches': matches,
+        'starts': starts,
+        'heading_at': heading_at,
+        'offset_of': {index: match.start() for index, match in starts},
+        'end_of': {index: match.end() for index, match in starts},
+        'containers': _enclosing_sections(body, matches, heading_at),
+        'starts_by_index': {index: match.group('title') for index, match in starts},
+    }
+
+
+def _direct_child_blocks(body: str, start: int, end: int) -> list[tuple[int, int]]:
+    """Return the spans of the blocks opened DIRECTLY inside ``body[start:end]``."""
+    spans: list[tuple[int, int]] = []
+    depth = 0
+    for token in _DETAILS_TOKEN_RE.finditer(body, start, end):
+        if token.group(0).startswith('</'):
+            depth -= 1
+            continue
+        if depth == 0:
+            close = _block_close(body, token.start())
+            spans.append((token.start(), close if close is not None else end))
+        depth += 1
+    return spans
+
+
+def _transparent_wrappers(body: str, sources: dict[str, Any]) -> tuple[dict[int, list[int]], str | None]:
+    """Map each counted WRAPPER to the recognised sections it encloses, or name a stop.
+
+    A counted title this parser does not know can be a wrapper: a group whose content is a
+    recognised section (``<summary>Review (1)</summary><details><summary>Nitpick comments
+    (10)</summary>…``). Reading the wrapper's own count as its findings made the outer 1 win
+    over the inner 10 — the under-count this rule closes — so such a wrapper is read THROUGH
+    and the section inside it is a section of its own. Three shapes stop instead, because
+    reading through would drop something the body states: an enclosed section that owns no
+    CLOSED block (nothing beside it can be attributed), content of the wrapper's own beside
+    that section, and a wrapper declaring MORE findings than the sections it encloses
+    account for.
+    """
+    starts_by_index = sources['starts_by_index']
+    containers = sources['containers']
+    heading_at = sources['heading_at']
+    offset_of = sources['offset_of']
+    end_of = sources['end_of']
+    transparent: dict[int, list[int]] = {}
+    for index, title in starts_by_index.items():
+        holder = containers.get(index)
+        if holder is None or heading_at.get(holder) != _UNCLASSIFIED_SECTION:
+            continue
+        if _section_for_title(title)[0] is not None:
+            transparent.setdefault(holder, []).append(index)
+    for index, children in transparent.items():
+        _open, wrapper_close = _enclosing_block_span(body, offset_of[index])
+        for child in children:
+            child_open, _child_close = _enclosing_block_span(body, offset_of[child])
+            if child_open < end_of[index] or _block_close(body, child_open) is None:
+                return {}, (
+                    f'the counted wrapper {starts_by_index[index]!r} encloses a section without a '
+                    f'closed block of its own, so its findings cannot be read'
+                )
+        gap = body[end_of[index] : wrapper_close]
+        masks: list[tuple[int, int]] = []
+        for child_open, child_close in _direct_child_blocks(body, end_of[index], wrapper_close):
+            if not any(child_open <= offset_of[child] < child_close for child in children):
+                continue
+            # Mask only the group's own SUMMARY element — its structural title — and the
+            # recognised section's own block. The rest of the group stays visible, so a
+            # prose row written beside the section is content the wrapper must account
+            # for; masking the whole group hid exactly that row and required a
+            # disposition only for the section. The summary search is bounded to the
+            # group's OWN head: an unbounded search found the nested section's summary
+            # when the group carries none, and that removed a finding written above it.
+            first_nested = next(
+                (
+                    token.start()
+                    for token in _DETAILS_TOKEN_RE.finditer(body, child_open + 1, child_close)
+                    if not token.group(0).startswith('</')
+                ),
+                child_close,
+            )
+            summary_match = _SUMMARY_RE.search(body, child_open, first_nested)
+            masks.append((child_open, summary_match.end() if summary_match is not None else child_open))
+            for child in children:
+                if child_open <= offset_of[child] < child_close:
+                    section_open, section_close = _enclosing_block_span(body, offset_of[child])
+                    masks.append((section_open, section_close if section_close is not None else wrapper_close))
+        for start_at, end_at in masks:
+            first = max(start_at, end_of[index]) - end_of[index]
+            last = min(end_at, wrapper_close) - end_of[index]
+            if first < last:
+                gap = gap[:first] + ' ' * (last - first) + gap[last:]
+        # ANY non-whitespace text is the wrapper's own content: a letter-or-digit test would
+        # pass a non-ASCII sentence and a symbol-only note, and reading through would drop both.
+        if re.sub(r'<[^>]+>', ' ', gap).strip():
+            return {}, (
+                f'the counted wrapper {starts_by_index[index]!r} carries content beside the '
+                f'section it encloses, so its findings cannot be read'
+            )
+        declared = _declared_count(starts_by_index[index]) or 0
+        enclosed = 0
+        for child in children:
+            # The SAME count the section enumeration will use, over the SAME bounds:
+            # the child's opening summary is its TITLE, not content, so counting it as
+            # one made an empty child satisfy a wrapper that declares a finding.
+            child_open, child_close = _enclosing_block_span(body, offset_of[child])
+            child_end = child_close if child_close is not None else len(body)
+            child_summary = _SUMMARY_RE.search(body, child_open, child_end)
+            content_start = child_summary.end() if child_summary is not None else child_open
+            child_span = body[content_start:child_end]
+            # The SAME exclusions the enumeration applies: a nested summary that is
+            # itself a counted section is masked out of the parent's rows, so counting
+            # it here made a wrapper declaring five pass on two.
+            nested = frozenset(
+                offset_of[other]
+                for other in starts_by_index
+                if content_start <= offset_of[other] < child_end and offset_of[other] != offset_of[child]
+            )
+            enclosed += _count_section_findings(
+                child_span,
+                _declared_count(starts_by_index[child]),
+                nested,
+                content_start,
+            )
+        if declared > enclosed:
+            return {}, (
+                f'the counted wrapper {starts_by_index[index]!r} declares {declared} findings and '
+                f'encloses only {enclosed}, so its findings cannot be read'
+            )
+    return transparent, None
+
+
+def _heading_is_a_mention(body: str, start: int, end: int, raw_body: str | None) -> bool:
+    """Whether a bold heading is quoted in a sentence, not one over the rows below it.
+
+    The flattened display form cannot tell a heading over a prose ROW from one inside a
+    sentence: both carry a letter after the closing marker. The RAW body can — a row sits on
+    its own line — so a continuation only makes a mention when it shares the heading's line.
+    Without the raw text the flattened rule stands.
+    """
+    if not _heading_is_mentioned_in_prose(body, end):
+        return False
+    if raw_body is None:
+        return True
+    title = body[start + len('**') : end - len('**')].strip('*')
+    needle = '**' + title + '**'
+    # The display form has NEWLINES replaced by spaces, so a title split across two raw
+    # lines appears as one line here. Matching token-by-token with a whitespace run
+    # between them finds that raw occurrence; and a title the raw body cannot locate is
+    # NOT called a mention — dropping a heading because its spelling could not be
+    # re-found is the under-count this gate must never take.
+    needle_re = re.compile(r'\s+'.join(re.escape(token) for token in needle.split()))
+    fenced = _fence_spans(raw_body)
+    matches = [match for match in needle_re.finditer(raw_body) if not any(a <= match.start() < b for a, b in fenced)]
+    # The display body was fence-masked before this call, so the two counts differ when a
+    # QUOTED copy sits inside a fence. An index built from one list and applied to the
+    # other then names the wrong occurrence, so an unreliable pair is treated as
+    # unlocatable — which counts the heading rather than dropping it.
+    if len(matches) != len(needle_re.findall(body)):
+        return False
+    occurrence = len(needle_re.findall(body[:start]))
+    if occurrence >= len(matches):
+        return False
+    tail = raw_body[matches[occurrence].end() :].split('\n', 1)[0]
+    remainder = _FLATTENED_BREAK_RE.match(tail)
+    tail = tail[remainder.end() :] if remainder is not None else tail
+    return bool(tail) and tail[0].isalpha()
+
+
+def _body_bold_headings(
+    body: str,
+    summary_spans: list[tuple[int, int]],
+    raw_body: str | None,
+) -> tuple[
+    list[tuple[int, int, str, int | None]],
+    list[tuple[int, int, str, int | None]],
+    dict[int, list[tuple[int, int]]],
+    list[tuple[int, int, int]],
+    frozenset[int],
+    str | None,
+]:
+    """Return the BOLD-line headings of one review body, and what each owns.
+
+    They are boundaries and sections at once: a bold heading ends the span of the summary
+    section above it and owns the span below. A bold span inside a ``<summary>`` is that
+    summary's own decoration, one inside a finding's row body or a code sample is a QUOTE of
+    a heading, and one a sentence runs on from is a heading MENTIONED in prose — none of
+    those mints a finding.
+    """
+
+    def _lies_within(offset: int, spans: list[tuple[int, int]]) -> bool:
+        return any(start <= offset < end for start, end in spans)
+
+    bold_candidates = [
+        (start, end, section, declared)
+        for start, end, title in _bold_spans(body)
+        if not _lies_within(start, summary_spans) and not _inside_prose(body, start)
+        if not _quoted_in_a_code_span(body, start, end)
+        for section, declared in (_bold_heading_section(title),)
+        if section is not None
+    ]
+    # A heading that names a section, sits beside a row block, and cannot see that block's end
+    # is a body whose findings cannot be enumerated: stop rather than drop them silently.
+    for candidate in bold_candidates:
+        if not _owned_blocks(body, candidate[1]) and _adjacent_unclosed_block(body, candidate[1]):
+            return (
+                [],
+                [],
+                {},
+                [],
+                frozenset(),
+                (f'the block under {candidate[2]!r} is never closed, so its findings cannot be read'),
+            )
+    # The blocks each bold heading OWNS, and the span it therefore covers. Ownership is that
+    # identity, never mere precedence — a section summary inside any other block is a section
+    # of its own, and treating it as the bold heading's row would drop its findings.
+    owned_blocks = {
+        start: _owned_blocks(body, heading_end) for start, heading_end, _section, _declared in bold_candidates
+    }
+    # An unclosed SECOND sibling is the same stop as an unclosed first one: the heading owns the
+    # blocks before it, and the remaining rows of the broken one would be silently unread.
+    for start, _heading_end, section, _declared in bold_candidates:
+        spans = owned_blocks.get(start) or []
+        if not spans:
+            continue
+        closing_token = _DETAILS_TOKEN_RE.match(body, spans[-1][1])
+        boundary = closing_token.end() if closing_token is not None else spans[-1][1]
+        if _adjacent_unclosed_block(body, boundary):
+            return (
+                [],
+                [],
+                {},
+                [],
+                frozenset(),
+                (f'the block under {section!r} is never closed, so its findings cannot be read'),
+            )
+    bold_headings = [candidate for candidate in bold_candidates if owned_blocks.get(candidate[0])]
+    # A counted heading that owns no `<details>` block is still a heading: the reviewer DECLARED
+    # the findings, and dropping the declaration is the under-count this rule closes. Two
+    # shapes are not that heading — a bold span a SENTENCE runs on from (a heading mentioned in
+    # prose), and a label inside a declared NON-FINDING block (boilerplate's own title).
+    declared_headings = [
+        candidate
+        for candidate in bold_candidates
+        if not owned_blocks.get(candidate[0])
+        and candidate[3]
+        and not _heading_is_a_mention(body, candidate[0], candidate[1], raw_body)
+        and not _inside_non_finding_block(body, candidate[0])
+    ]
+    owned_spans = [
+        (open_offset, close_offset, start)
+        for start, _end, _section, _declared in bold_headings
+        for open_offset, close_offset in owned_blocks.get(start, [])
+    ]
+    # A bold heading nested in another heading's span does not END that span: its own interval
+    # is blanked out of the count instead, so the rows on both sides of it are read by their
+    # own section. That is as true of a counted heading with no block as of one that owns one.
+    nested_starts = frozenset(
+        [start for start, _end, _section, _declared in bold_headings]
+        + [start for start, _end, _section, _declared in declared_headings]
+    )
+    return bold_headings, declared_headings, owned_blocks, owned_spans, nested_starts, None
+
+
+def _body_summary_headings(
+    body: str,
+    sources: dict[str, Any],
+    transparent: dict[int, list[int]],
+    owned_spans: list[tuple[int, int, int]],
+) -> tuple[list[tuple[int, int, str, int | None]], list[int]]:
+    """Return the ``<summary>`` findings sections, and the offsets that end a span."""
+    starts = sources['starts']
+    heading_at = sources['heading_at']
+    offset_of = sources['offset_of']
+    end_of = sources['end_of']
+    containers = sources['containers']
+    starts_by_index = sources['starts_by_index']
+    transparent_children = frozenset(child for children in transparent.values() for child in children)
+
+    def _is_content(index: int) -> bool:
+        """Whether this summary sits inside a HEADING — a per-file grouping, not a heading."""
+        return index not in transparent_children and containers.get(index) is not None
+
+    def _is_section(index: int) -> bool:
+        """Whether this summary is a section heading."""
+        return not _is_content(index) and heading_at[index] is not None
+
+    def _is_span_boundary(index: int) -> bool:
+        """Whether this summary ENDS the span of the section before it.
+
+        A finding section's content runs to the next section heading — and also to a DECLARED
+        NON-FINDING block, which is a boundary even though it contributes no findings: a
+        counted ``Files selected for processing: 1`` list copied inside a section's span would
+        be counted as one more finding of that section. An ``unclassified`` heading is a
+        heading like any other, so it is a boundary too.
+        """
+        if _is_content(index):
+            return False
+        if heading_at[index] is not None:
+            return True
+        title = starts_by_index[index]
+        return _declared_count(title) is not None and _is_non_finding_title(title)
+
+    headings: list[tuple[int, int, str, int | None]] = []
+    for index, _match in starts:
+        if index in transparent:
+            continue
+        if not _is_section(index):
+            continue
+        title = starts_by_index[index]
+        owned = any(open_offset < offset_of[index] < close_offset for open_offset, close_offset, _owner in owned_spans)
+        if owned and _section_for_title(title)[0] is None:
+            # A summary inside a block a bold heading owns is that block's row. A summary that
+            # NAMES a findings section is not: it is a section of its own, and the outer count
+            # leaves its span out, so neither reading loses it nor counts it twice.
+            continue
+        section, declared = _heading_section(title)
+        if section is None:
+            continue
+        headings.append((offset_of[index], end_of[index], section, declared))
+    boundaries = [match.start() for index, match in starts if _is_span_boundary(index)]
+    return headings, boundaries
+
+
+def _heading_span_end(
+    body: str,
+    start: int,
+    owned_blocks: dict[int, list[tuple[int, int]]],
+    boundary_starts: list[int],
+    nested_starts: frozenset[int],
+) -> int:
+    """The offset at which the heading at ``start`` stops owning the body."""
+    blocks = owned_blocks.get(start) or []
+    if blocks:
+        # A bold heading's span is the blocks it owns. The summary that OPENS such a block is
+        # a boundary for every other heading, but cutting the block's own span at it would
+        # leave an undeclared bold heading counting an empty span.
+        return blocks[-1][1]
+    # A section's span is bounded by the next SECTION boundary — never by a bold heading nested
+    # inside its own block (owning one or not), whose interval is excluded from the count
+    # instead, so the rows on either side of it are both read.
+    boundary = next(
+        (bound_ for bound_ in boundary_starts if bound_ > start and bound_ not in nested_starts),
+        len(body),
+    )
+    enclosing = _enclosing_block_close(body, start)
+    return boundary if enclosing is None else min(boundary, enclosing)
+
+
+def _count_body_headings(
+    body: str,
+    headings: list[tuple[int, int, str, int | None]],
+    owned_blocks: dict[int, list[tuple[int, int]]],
+    owned_spans: list[tuple[int, int, int]],
+    boundary_starts: list[int],
+    nested_starts: frozenset[int],
+    heading_offsets: frozenset[int],
+    reviewer: str,
+    counters: dict[str, int],
+) -> tuple[list[dict[str, str]], int, str | None]:
+    """Count every heading's findings, naming a stop when one asks for too many."""
+    findings: list[dict[str, str]] = []
+    inline_from_sections = 0
+    for start, end, section, declared in headings:
+        span_end = _heading_span_end(body, start, owned_blocks, boundary_starts, nested_starts)
+        span = body[end:span_end]
+        # A NESTED bold heading's own interval is counted by that heading, so it is blanked here
+        # — same length, so every offset stays where it was. This heading's own blocks are left
+        # intact: they are the span it counts. ONLY owning headings blank an interval.
+        for open_offset, close_offset, owner_start in owned_spans:
+            if owner_start != start and end < open_offset and close_offset < span_end:
+                span = span[: open_offset - end] + ' ' * (close_offset - open_offset) + span[close_offset - end :]
+        count = _count_section_findings(
+            span,
+            declared,
+            excluded_offsets=heading_offsets,
+            span_start=end,
+        )
+        if count > _MAX_ENUMERATED_FINDINGS:
+            return (
+                [],
+                0,
+                (
+                    f'{count} findings declared for section {section!r}, above the '
+                    f'{_MAX_ENUMERATED_FINDINGS} this gate will enumerate'
+                ),
+            )
+        findings.extend(_numbered_findings(reviewer, section, count, counters))
+        if section == 'inline':
+            inline_from_sections += count
+    if len(findings) > _MAX_ENUMERATED_FINDINGS:
+        # The per-heading cap is not a cap on the BODY: many headings each just under it would
+        # still enumerate more rows than the gate will materialize.
+        return (
+            [],
+            0,
+            (f'{len(findings)} findings in one body, above the {_MAX_ENUMERATED_FINDINGS} this gate will enumerate'),
+        )
+    return findings, inline_from_sections, None
+
+
 def _body_findings(
     reviewer: str,
     body: str,
     bot_kind: str,
     counters: dict[str, int] | None = None,
+    raw_body: str | None = None,
 ) -> tuple[list[dict[str, str]], str | None]:
     """Parse one review body into its findings, or name what makes it unreadable.
 
@@ -3362,244 +4154,64 @@ def _body_findings(
 
     A counted BOLD heading is read even when it owns no ``<details>`` block: its declared
     count is a statement about the rows below it, and dropping it is the under-count this
-    gate forbids. Only a heading a sentence runs on from (a mention in prose) or a label
-    inside a declared non-finding block mints nothing — and that mention rule is the one place
-    two shapes cannot be told apart: in the flattened display form a heading over a prose ROW
-    and a heading quoted in a sentence are the same text, so the standing rule that a mention
-    mints nothing wins, and a prose row that reads as a continuation is the one residual
-    under-count this parser accepts. Row shapes with a marker of their own — a bullet, a
-    table, a tag, a block — are read.
+    gate forbids. Only a heading a SENTENCE runs on from (a mention in prose) or a label
+    inside a declared non-finding block mints nothing. The raw body separates the two
+    shapes the flattened form merges: a heading over a prose ROW ends its line, while a
+    mention continues on the same line as the closing marker.
 
     A counted title this parser does not know that ENCLOSES a recognised section is a
     wrapper, not a section: it reads through, so the section inside it keeps its own
-    findings instead of the wrapper's count replacing them. Its own count is NOT reconciled
-    with the sections it encloses — ``Review (5)`` around one nitpick section reads that
-    section's findings, which errs toward fewer than the body states and is the one residual
-    :func:`_body_findings` accepts here, because the alternative (a stop) refused every body
-    this shape appears in and a counted wrapper is a grouping, not a second finding. A wrapper
-    that says anything of its own beside that section stops with a named cause. Only a
-    ``<summary>`` child makes a wrapper transparent; a wrapper holding a BOLD heading counts
-    both, which errs toward more findings — the direction this gate permits.
+    findings. A wrapper stops with a named cause when it encloses a section with no closed
+    block of its own, says anything of its own beside that section, or declares MORE
+    findings than the sections it encloses account for. A wrapper holding a BOLD heading
+    counts both, which errs toward more findings — the direction this gate permits.
 
-    A count larger than :data:`_MAX_ENUMERATED_FINDINGS` is the one remaining stop: a body
-    that declares it would enumerate that many rows, so the gate names it rather than
-    allocating them.
+    A count larger than :data:`_MAX_ENUMERATED_FINDINGS` — per heading, for the inline
+    supplement, or for the body's total — is a stop: a body that declares it would
+    enumerate that many rows, so the gate names it rather than allocating them.
     """
     counters = counters if counters is not None else {}
-    matches = list(_SUMMARY_RE.finditer(body))
-    starts = list(enumerate(matches))
-    heading_at = {index: _heading_section(match.group('title'))[0] for index, match in starts}
-    offset_of = {index: match.start() for index, match in starts}
-    end_of = {index: match.end() for index, match in starts}
-    containers = _enclosing_sections(body, matches, heading_at)
-    starts_by_index = {index: match.group('title') for index, match in starts}
-    # A counted title this parser does not know can be a WRAPPER: a group whose content is a
-    # recognised section (`<summary>Review (1)</summary><details><summary>Nitpick comments
-    # (10)</summary>…`). Reading the wrapper's own count as its findings made the outer 1 win
-    # over the inner 10 — the under-count this rule closes. Such a wrapper is read
-    # THROUGH, so it mints nothing and the section inside it is a section of its own.
-    transparent: dict[int, list[int]] = {}
-    for index, title in starts_by_index.items():
-        holder = containers.get(index)
-        if holder is None or heading_at.get(holder) != _UNCLASSIFIED_SECTION:
-            continue
-        if _section_for_title(title)[0] is not None:
-            transparent.setdefault(holder, []).append(index)
-    transparent_children = frozenset(child for children in transparent.values() for child in children)
+    # Quoted markup inside a fence is prose (see `_mask_fenced_code`): mask it before
+    # any structural read, so an example can neither mint findings nor stop the gate.
+    body = _mask_fenced_code(body, raw_body)
+    sources = _body_sources(body)
+    transparent, stop = _transparent_wrappers(body, sources)
+    if stop is not None:
+        return [], stop
 
-    def _is_content(index: int) -> bool:
-        """Whether this summary sits inside a HEADING — a per-file grouping, not a heading.
-
-        A recognised section inside a counted wrapper is NOT content: the wrapper reads through
-        it, so the section keeps its own findings.
-        """
-        return index not in transparent_children and containers.get(index) is not None
-
-    def _is_section(index: int) -> bool:
-        """Whether this summary is a section heading."""
-        return not _is_content(index) and heading_at[index] is not None
-
-    def _is_span_boundary(index: int) -> bool:
-        """Whether this summary ENDS the span of the section before it.
-
-        A finding section's content runs to the next section heading — and also to a
-        DECLARED NON-FINDING block, which is a boundary even though it contributes no
-        findings: a counted ``Files selected for processing: 1`` list copied inside a
-        section's span would be counted as one more finding of that section, so a single
-        nitpick would arrive as two and the gate would block after the real one was
-        disposed. An ``unclassified`` heading is a heading like any other, so it is a
-        boundary too.
-        """
-        if _is_content(index):
-            return False
-        if heading_at[index] is not None:
-            return True
-        title = starts_by_index[index]
-        return _declared_count(title) is not None and _is_non_finding_title(title)
-
-    # The BOLD-line headings, in body order. They are boundaries and sections at once: a
-    # bold heading ends the span of the summary section above it, and owns the span below.
-    # A bold span inside a `<summary>` is that summary's own decoration (`<summary>**Nitpick
-    # comments (3)**</summary>`), never a second heading over the same block; one inside a
-    # finding's row body or a code sample is a QUOTE of a heading; and one a sentence runs on
-    # from ("**Outside diff range comments (1)** is empty this time") is a heading MENTIONED
-    # in prose, which must not mint a finding of its own.
-    summary_spans = [(match.start(), match.end()) for _index, match in starts]
-
-    def _lies_within(offset: int, spans: list[tuple[int, int]]) -> bool:
-        return any(start <= offset < end for start, end in spans)
-
-    bold_candidates = [
-        (start, end, section, declared)
-        for start, end, title in _bold_spans(body)
-        if not _lies_within(start, summary_spans) and not _inside_prose(body, start)
-        if not _quoted_in_a_code_span(body, start, end)
-        for section, declared in (_bold_heading_section(title),)
-        if section is not None
-    ]
-    # A heading that names a section, sits beside a row block, and cannot see that block's end
-    # is a body whose findings cannot be enumerated: stop rather than drop them silently.
-    for candidate in bold_candidates:
-        if not _owned_blocks(body, candidate[1]) and _adjacent_unclosed_block(body, candidate[1]):
-            return [], f'the block under {candidate[2]!r} is never closed, so its findings cannot be read'
-    # The blocks each bold heading OWNS, and the span it therefore covers. Ownership is that
-    # identity, never mere precedence — a section summary inside any other block is a
-    # section of its own, and treating it as the bold heading's row would drop its findings.
-    owned_blocks = {
-        start: _owned_blocks(body, heading_end) for start, heading_end, _section, _declared in bold_candidates
-    }
-    bold_headings = [candidate for candidate in bold_candidates if owned_blocks.get(candidate[0])]
-    # A counted heading that owns no `<details>` block is still a heading: the reviewer DECLARED
-    # the findings, and dropping the declaration is the under-count this rule closes. Two
-    # shapes are not that heading — a bold span a SENTENCE runs on from (a heading mentioned in
-    # prose), and a label inside a declared NON-FINDING block (boilerplate's own title).
-    declared_headings = [
-        candidate
-        for candidate in bold_candidates
-        if not owned_blocks.get(candidate[0])
-        and candidate[3]
-        and not _heading_is_mentioned_in_prose(body, candidate[1])
-        and not _inside_non_finding_block(body, candidate[0])
-    ]
-    owned_spans = [
-        (open_offset, close_offset, start)
-        for start, _end, _section, _declared in bold_headings
-        for open_offset, close_offset in owned_blocks.get(start, [])
-    ]
+    # The BOLD-line headings, in body order: a bold heading ends the span of the summary
+    # section above it and owns the span below it.
+    summary_spans = [(match.start(), match.end()) for _index, match in sources['starts']]
+    bold_headings, declared_headings, owned_blocks, owned_spans, nested_starts, stop = _body_bold_headings(
+        body, summary_spans, raw_body
+    )
+    if stop is not None:
+        return [], stop
+    summary_headings, boundary_starts = _body_summary_headings(body, sources, transparent, owned_spans)
     boundary_starts = sorted(
-        [match.start() for index, match in starts if _is_span_boundary(index)]
+        boundary_starts
         + [start for start, _end, _section, _declared in bold_headings]
         + [start for start, _end, _section, _declared in declared_headings]
     )
-    # A bold heading nested in another heading's span does not END that span: its own interval
-    # is blanked out of the count instead, so the rows on both sides of it are read by their
-    # own section. That is as true of a counted heading with no block as of one that owns one.
-    nested_starts = frozenset(
-        [start for start, _end, _section, _declared in bold_headings]
-        + [start for start, _end, _section, _declared in declared_headings]
+    headings = sorted(
+        summary_headings + bold_headings + declared_headings,
+        key=lambda heading: heading[0],
     )
 
-    def _span_end(start: int) -> int:
-        """The offset at which the heading at ``start`` stops owning the body."""
-        blocks = owned_blocks.get(start) or []
-        if blocks:
-            # A bold heading's span is the blocks it owns. The summary that OPENS such a
-            # block is a boundary for every other heading, but cutting the block's own span
-            # at it would leave an undeclared bold heading counting an empty span.
-            return blocks[-1][1]
-        # A section's span is bounded by the next SECTION boundary — never by a bold heading
-        # nested inside its own block (owning one or not), whose interval is excluded from the
-        # count instead, so the rows on either side of it are both read. Only an OWNING heading
-        # has an interval to blank; a blockless counted heading contributes its declaration and
-        # leaves the rows around it with the section they sit in.
-        boundary = next(
-            (bound_ for bound_ in boundary_starts if bound_ > start and bound_ not in nested_starts),
-            len(body),
-        )
-        enclosing = _enclosing_block_close(body, start)
-        return boundary if enclosing is None else min(boundary, enclosing)
-
-    headings: list[tuple[int, int, str, int | None]] = []
-    for index, _match in starts:
-        if index in transparent:
-            # The wrapper reads through the section it encloses, so it mints nothing — unless it
-            # says something of its own BESIDE that section (before, between or after it), which
-            # nobody could then attribute: a stop with a named cause, never a count that drops it.
-            # The check runs BEFORE the section filter: a wrapper nested inside another counted
-            # wrapper is that wrapper's content, and validating only the sections that are emitted
-            # would leave the nested one's prose unread.
-            _open, wrapper_close = _enclosing_block_span(body, offset_of[index])
-            gap = body[end_of[index] : wrapper_close]
-            for child in transparent[index]:
-                child_open, child_close = _enclosing_block_span(body, offset_of[child])
-                if child_open < end_of[index] or _block_close(body, child_open) is None:
-                    # A section the wrapper encloses that owns no CLOSED block of its own:
-                    # nothing beside it can be attributed, so the body stops rather than
-                    # dropping whatever the wrapper says around it.
-                    return [], (
-                        f'the counted wrapper {starts_by_index[index]!r} encloses a section without a '
-                        f'closed block of its own, so its findings cannot be read'
-                    )
-                first = child_open - end_of[index]
-                last = min(child_close, wrapper_close) - end_of[index]
-                if first < last:
-                    gap = gap[:first] + ' ' * (last - first) + gap[last:]
-            # ANY non-whitespace text is the wrapper's own content: a letter-or-digit test would
-            # pass a non-ASCII sentence and a symbol-only note, and reading through would drop
-            # both.
-            if re.sub(r'<[^>]+>', ' ', gap).strip():
-                return [], (
-                    f'the counted wrapper {starts_by_index[index]!r} carries content beside the '
-                    f'section it encloses, so its findings cannot be read'
-                )
-            continue
-        if not _is_section(index):
-            continue
-        title = starts_by_index[index]
-        owned = any(open_offset < offset_of[index] < close_offset for open_offset, close_offset, _owner in owned_spans)
-        if owned and _section_for_title(title)[0] is None:
-            # A summary inside a block a bold heading owns is that block's row. A summary
-            # that NAMES a findings section is not: it is a section of its own, and the outer
-            # count leaves its span out (see `_count_section_findings`), so neither reading
-            # loses it nor counts it twice.
-            continue
-        section, declared = _heading_section(title)
-        if section is None:
-            continue
-        headings.append((offset_of[index], end_of[index], section, declared))
-    headings.extend(bold_headings)
-    headings.extend(declared_headings)
-    headings.sort(key=lambda heading: heading[0])
-
     heading_offsets = frozenset(start for start, _end, _section, _declared in headings)
-    findings: list[dict[str, str]] = []
-    inline_from_sections = 0
-    for start, end, section, declared in headings:
-        span_end = _span_end(start)
-        span = body[end:span_end]
-        # A NESTED bold heading's own interval is counted by that heading, so it is blanked
-        # here — same length, so every offset below stays where it was. This heading's own
-        # blocks are left intact: they are the span it counts. ONLY owning headings blank an
-        # interval: a blockless counted heading owns no rows of its own, so its declaration is
-        # added and the rows around it stay with the section they sit in — blanking its region
-        # would subtract rows nobody counted.
-        for open_offset, close_offset, owner_start in owned_spans:
-            if owner_start != start and end < open_offset and close_offset < span_end:
-                span = span[: open_offset - end] + ' ' * (close_offset - open_offset) + span[close_offset - end :]
-        count = _count_section_findings(
-            span,
-            declared,
-            excluded_offsets=heading_offsets,
-            span_start=end,
-        )
-        if count > _MAX_ENUMERATED_FINDINGS:
-            return [], (
-                f'{count} findings declared for section {section!r}, above the '
-                f'{_MAX_ENUMERATED_FINDINGS} this gate will enumerate'
-            )
-        findings.extend(_numbered_findings(reviewer, section, count, counters))
-        if section == 'inline':
-            inline_from_sections += count
+    findings, inline_from_sections, stop = _count_body_headings(
+        body,
+        headings,
+        owned_blocks,
+        owned_spans,
+        boundary_starts,
+        nested_starts,
+        heading_offsets,
+        reviewer,
+        counters,
+    )
+    if stop is not None:
+        return [], stop
 
     # The reviewer's status line and any inline section are two statements about the SAME
     # inline findings, so the larger one is the count — the same rule the sections themselves
@@ -3615,6 +4227,10 @@ def _body_findings(
             f'{_MAX_ENUMERATED_FINDINGS} this gate will enumerate'
         )
     findings.extend(_numbered_findings(reviewer, 'inline', supplement, counters))
+    if len(findings) > _MAX_ENUMERATED_FINDINGS:
+        return [], (
+            f'{len(findings)} findings in one body, above the {_MAX_ENUMERATED_FINDINGS} this gate will enumerate'
+        )
     return findings, None
 
 
@@ -3655,7 +4271,7 @@ def _inline_status_count(body: str, bot_kind: str) -> int:
         declared = re.match(r'\s*(\d+)', body[index + len(pattern) :])
         if declared is None:
             continue
-        return int(declared.group(1))
+        return _parse_declared_count(declared.group(1))
     return 0
 
 
@@ -3953,6 +4569,14 @@ def _review_gate_verdict(
 
     findings: list[dict[str, str]] = []
     counters: dict[str, dict[str, int]] = {}
+    # The parser reads the DISPLAY form for its structure, and the RAW body for the one fact
+    # the flatten destroys: whether text continues on the heading's own LINE. Both views come
+    # from the same snapshot, keyed by the record id.
+    raw_bodies = {
+        str(entry.get('id')): str(entry.get('body') or '')
+        for entry in read.get('comments') or []
+        if isinstance(entry, dict)
+    }
     for comment in comments:
         if comment.get('kind') != 'review_body':
             continue
@@ -3971,6 +4595,7 @@ def _review_gate_verdict(
             str(comment.get('body') or ''),
             _bot_of(comment),
             counters.setdefault(reviewer, {}),
+            raw_body=raw_bodies.get(str(comment.get('id')), str(comment.get('body') or '')),
         )
         if undecidable is not None:
             return {**base, 'merge_allowed': False, 'reason': 'undecidable_read', 'detail': undecidable}
@@ -4122,6 +4747,7 @@ def cmd_resolve(args: argparse.Namespace) -> dict[str, Any]:
         'spec_source': choice.source,
         'slug': slug,
         'plan': plan_id,
+        'body_slot': _body_slot_from_plan_id(plan_id),
         'worktree': worktree,
         'progress_file': progress_file,
         'landing_file': landing_file,
@@ -4345,6 +4971,12 @@ def main() -> int:
         default=None,
         help='The head a carried-forward read stands in for (name both this and the analysed revision)',
     )
+    gate_parser.add_argument(
+        '--count-status-reason',
+        dest='count_status_reason',
+        default=None,
+        help="The read's own count_status_reason; a carry-forward reason requires the marking",
+    )
 
     facts_parser = subparsers.add_parser(
         'sonar-facts',
@@ -4393,10 +5025,22 @@ def main() -> int:
         help='The analysed revision a carried-forward confirmed figure was measured at',
     )
     facts_parser.add_argument(
+        '--carried-forward-analysis-revision',
+        dest='analysed_revision',
+        default=None,
+        help=argparse.SUPPRESS,
+    )
+    facts_parser.add_argument(
         '--carried-forward-head-revision',
         dest='carried_forward_head_revision',
         default=None,
         help='The head a carried-forward figure stands in for',
+    )
+    facts_parser.add_argument(
+        '--count-status-reason',
+        dest='count_status_reason',
+        default=None,
+        help="The read's own count_status_reason; a carry-forward reason requires the marking",
     )
 
     review_parser = subparsers.add_parser(

@@ -70,6 +70,38 @@ def _read_marshal_phase_step_map(phase_key: str) -> dict[str, dict] | None:
     return None
 
 
+def _read_live_commit_and_push() -> bool | None:
+    """Read the plan-level ``commit_and_push`` from live marshal.json.
+
+    The documented default applies when the key is absent (``True``) and when the
+    stored value is not bool-shaped; ``None`` means the file could not be read at all,
+    which is a FAILED read rather than the documented default — the caller applies the
+    conservative push-only floor and names the failed read in the refusal.
+    """
+    marshal_path = get_marshal_path()
+    if not marshal_path.exists():
+        return None
+    # `read_json(..., default={})` would turn a CORRUPT file into an empty dict, which
+    # then reads as "key absent" -> True. A sentinel keeps a failed read a failed read.
+    sentinel = object()
+    try:
+        data = read_json(marshal_path, default=sentinel)
+    except (OSError, ValueError):
+        return None
+    if data is sentinel or not isinstance(data, dict):
+        return None
+    plan = data.get('plan')
+    phase = plan.get('phase-5-execute') if isinstance(plan, dict) else None
+    if not isinstance(phase, dict):
+        return True
+    value = phase.get('commit_and_push')
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str) and value.strip().lower() in ('true', 'false'):
+        return value.strip().lower() == 'true'
+    return True
+
+
 def _read_marshal_phase_5_gates() -> tuple[list[str], list[str]]:
     """Read the phase-5 request/project gate declarations from marshal.json.
 
@@ -786,7 +818,7 @@ def _apply_ceremony_finalize_selection(
     gates: dict[str, str],
     *,
     commit_and_push: bool = True,
-) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
+) -> tuple[list[dict[str, str]], list[dict[str, str]], list[dict[str, str]]]:
     """Force ceremony finalize gates in (``always``) / out (``never``) in-place.
 
     For each finalize ceremony gate in :data:`_CEREMONY_FINALIZE_GATES`:
@@ -813,12 +845,17 @@ def _apply_ceremony_finalize_selection(
     ceremony finalize steps, so the bot-review invariant is structurally
     preserved.
 
-    Mutates ``phase_6_steps`` in place. Returns ``(forced_in, forced_out)`` —
-    two lists of ``{'gate': ..., 'step': ...}`` dicts naming each gate that
-    actually changed the list, for per-change decision-log emission.
+    Mutates ``phase_6_steps`` in place. Returns
+    ``(forced_in, forced_out, refused)`` — two lists of ``{'gate': ..., 'step': ...}``
+    dicts naming each gate that actually changed the list, plus one record per
+    ``always`` the transform REFUSED (``gate``, ``step``, ``requested``, ``applied``,
+    ``reason``) for per-change decision-log emission. A refusal is a gate the
+    operator asked for and the transform did not apply, so it is reported rather
+    than left as a silent difference between the configured gate and the manifest.
     """
     forced_in: list[dict[str, str]] = []
     forced_out: list[dict[str, str]] = []
+    refused: list[dict[str, str]] = []
 
     for gate in _CEREMONY_FINALIZE_GATES:
         value = gates.get(gate, _CEREMONY_FINALIZE_DEFAULT)
@@ -832,7 +869,18 @@ def _apply_ceremony_finalize_selection(
         elif value == 'always':
             if not commit_and_push and canonical in _COMMIT_PUSH_DROP_STEPS:
                 # "No push" always wins: the commit_push_disabled pre-filter dropped
-                # this push-only step, and a gate value may not put it back.
+                # this push-only step, and a gate value may not put it back. Record
+                # the refusal so the configured gate and the applied one do not
+                # silently differ.
+                refused.append(
+                    {
+                        'gate': gate,
+                        'step': canonical,
+                        'requested': 'always',
+                        'applied': 'never',
+                        'reason': _COMMIT_PUSH_DROP_REASON,
+                    }
+                )
                 continue
             if not any(s in match_set for s in phase_6_steps):
                 insert_index = _ceremony_finalize_insert_index(phase_6_steps)
@@ -840,7 +888,7 @@ def _apply_ceremony_finalize_selection(
                 forced_in.append({'gate': gate, 'step': canonical})
         # else: defer (auto / malformed) — no-op.
 
-    return forced_in, forced_out
+    return forced_in, forced_out, refused
 
 
 def _read_ci_provider() -> str | None:

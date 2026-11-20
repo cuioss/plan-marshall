@@ -234,7 +234,10 @@ def test_delivered_verdict_without_any_criterion_row_is_invalid_when_the_outline
 
     assert payload['valid'] is False
     assert f'deliverable 2: a {verdict} deliverable evaluates no success criterion' in payload['errors']
-    assert not {'findings', 'facts', 'loop_back_target'} & set(payload)
+    assert [finding['kind'] for finding in payload['findings']] == (
+        ['residual'] if verdict == 'met_with_residuals' else []
+    )
+    assert not {'facts', 'loop_back_target'} & set(payload)
 
 
 def test_evidenced_criterion_row_satisfies_a_criteria_less_deliverable(env: Env) -> None:
@@ -435,7 +438,8 @@ def test_uncited_code_finding_is_rejected_and_the_verdict_is_invalid(env: Env) -
 
     assert payload['valid'] is False
     assert payload['rejected_findings'] == [{'finding': 1, 'missing': 'rule'}]
-    assert not {'findings', 'facts', 'loop_back_target'} & set(payload)
+    assert payload['findings'] == []
+    assert not {'facts', 'loop_back_target'} & set(payload)
 
 
 def test_cited_code_finding_is_accepted_and_graded(env: Env) -> None:

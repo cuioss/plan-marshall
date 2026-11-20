@@ -781,6 +781,179 @@ def test_an_unplaceable_path_stays_undecidable(monkeypatch) -> None:
     assert verdict['buildable_paths'] == ['mystery/file.xyz']
 
 
+# =============================================================================
+# PLAN-LB-172 D2 — the carry-forward binds itself, and the decision verb's edges
+# =============================================================================
+_CARRIED_REASON = (
+    'carried_forward_unbuilt_delta: analysed bbbb != head aaaa; the delta since the analysed head is empty'
+)
+
+
+def test_a_carried_forward_read_reason_without_the_marker_is_refused() -> None:
+    """The read's own output names the carry-forward; a bare figure must not pass."""
+    verdict = cmd_sonar_gate(_gate_args(open_count='0', count_status_reason=_CARRIED_REASON))
+
+    assert verdict['status'] == 'error', verdict
+    assert verdict['error'] == 'carried_forward_unmarked', verdict
+
+
+def test_a_carried_forward_gate_keeps_the_read_own_delta_reason() -> None:
+    verdict = cmd_sonar_gate(
+        _gate_args(
+            open_count='0',
+            carried_forward=True,
+            carried_forward_analysis_revision=_ANALYSED,
+            carried_forward_head_revision=_HEAD,
+            count_status_reason=_CARRIED_REASON,
+        )
+    )
+
+    assert verdict['merge_allowed'] is True, verdict
+    assert 'empty' in verdict['reason'], verdict
+
+
+def test_a_short_and_a_full_sha_of_one_commit_are_one_revision() -> None:
+    """A prefix and its full object name describe one commit, never a carry-forward pair."""
+    full = 'abcdef1' + '0' * 33
+
+    verdict = cmd_sonar_gate(
+        _gate_args(
+            open_count='0',
+            carried_forward=True,
+            carried_forward_analysis_revision='abcdef1',
+            carried_forward_head_revision=full,
+        )
+    )
+
+    assert verdict['status'] == 'error', verdict
+    assert verdict['error'] == 'carried_forward_revisions_equal', verdict
+
+
+def test_a_revision_that_is_not_a_hex_object_name_is_refused() -> None:
+    verdict = cmd_sonar_gate(
+        _gate_args(
+            open_count='0',
+            carried_forward=True,
+            carried_forward_analysis_revision='HEAD~1',
+            carried_forward_head_revision=_HEAD,
+        )
+    )
+
+    assert verdict['status'] == 'error', verdict
+    assert verdict['error'] == 'revision_format_invalid', verdict
+
+
+def _real_repo(tmp_path: Path) -> Path:
+    """A one-commit repository, so the git-backed guards read real state."""
+    import subprocess
+
+    repo = tmp_path / 'repo'
+    repo.mkdir()
+    for args in (
+        ('init', '-b', 'main'),
+        ('config', 'user.email', 'lane@example.com'),
+        ('config', 'user.name', 'lane'),
+    ):
+        subprocess.run(['git', '-C', str(repo), *args], check=True, capture_output=True)
+    (repo / 'a.txt').write_text('a\n', encoding='utf-8')
+    for step_args in (('add', '.'), ('commit', '-m', 'base')):
+        subprocess.run(['git', '-C', str(repo), *step_args], check=True, capture_output=True)
+    return repo
+
+
+def test_the_dirty_guard_sees_an_assume_unchanged_edit(tmp_path: Path) -> None:
+    """`git status` hides an assume-unchanged edit, and the rule it would supply is not the head's."""
+    import subprocess
+
+    repo = _real_repo(tmp_path)
+    subprocess.run(
+        ['git', '-C', str(repo), 'update-index', '--assume-unchanged', 'a.txt'], check=True, capture_output=True
+    )
+    (repo / 'a.txt').write_text('changed\n', encoding='utf-8')
+
+    assert lane._worktree_is_clean(repo) is False
+
+
+def test_the_dirty_guard_sees_an_untracked_file_hidden_by_config(tmp_path: Path) -> None:
+    """`status.showUntrackedFiles=no` must not make an untracked rule file invisible."""
+    import subprocess
+
+    repo = _real_repo(tmp_path)
+    subprocess.run(
+        ['git', '-C', str(repo), 'config', 'status.showUntrackedFiles', 'no'], check=True, capture_output=True
+    )
+    (repo / 'new.yml').write_text('x\n', encoding='utf-8')
+
+    assert lane._worktree_is_clean(repo) is False
+
+
+def test_the_ignored_input_guard_covers_the_whole_ci_tree(tmp_path: Path) -> None:
+    """An ignored file under `.github/` can carry the rule as surely as one under workflows."""
+    repo = _real_repo(tmp_path)
+    (repo / '.gitignore').write_text('.github/secret.yml\n', encoding='utf-8')
+    (repo / '.github').mkdir()
+    (repo / '.github' / 'secret.yml').write_text('skip-on-docs-only: true\n', encoding='utf-8')
+
+    assert lane._ignored_workflow_inputs(repo)
+
+
+def test_a_head_that_widens_its_own_paths_ignore_is_not_carried_forward(monkeypatch) -> None:
+    """A delta carrying the CI rule itself is never a delta the rule can excuse."""
+    _patch_delta(
+        monkeypatch,
+        paths=('.github/workflows/ci.yml', 'doc/one.adoc'),
+        rows=[
+            {'path': '.github/workflows/ci.yml', 'kind': 'docs-only'},
+            {'path': 'doc/one.adoc', 'kind': 'docs-only'},
+        ],
+    )
+
+    verdict = lane.cmd_sonar_stale_delta(_stale_args())
+
+    assert verdict['carry_forward'] is False, verdict
+    assert verdict['detail'].startswith('rule_changed'), verdict
+
+
+def test_a_workflow_symlink_out_of_the_checkout_is_not_followed(tmp_path: Path) -> None:
+    """A tracked symlink is not the checkout's own rule."""
+    outside = tmp_path / 'outside.yml'
+    outside.write_text('skip-on-docs-only: true\n', encoding='utf-8')
+    repo = tmp_path / 'repo'
+    (repo / '.github' / 'workflows').mkdir(parents=True)
+    (repo / '.github' / 'workflows' / 'ci.yml').symlink_to(outside)
+
+    assert lane._iter_workflow_files(repo) == []
+
+
+def test_a_delegating_consumers_delta_is_not_carried_forward(tmp_path: Path) -> None:
+    """The CI's rule lives in a reusable workflow this checkout does not hold.
+
+    Substituting the architecture's documentation surfaces would decide the delta by
+    a rule the CI never applied, so the delta stays undecidable: the delegation is
+    named instead of a skip being guessed.
+    """
+    repo = tmp_path / 'repo'
+    (repo / '.github' / 'workflows').mkdir(parents=True)
+    (repo / '.github' / 'workflows' / 'ci.yml').write_text(
+        'name: CI\nskip-on-docs-only: true\njobs:\n  verify:\n    uses: example/reusable.yml@0123456789abcdef\n',
+        encoding='utf-8',
+    )
+    (repo / 'doc').mkdir()
+    (repo / 'doc' / 'one.adoc').write_text('one\n', encoding='utf-8')
+    _git_init(repo)
+    analysed = _commit(repo, 'doc/two.adoc')
+    head = _commit(repo, 'doc/three.adoc')
+
+    verdict = lane.cmd_sonar_stale_delta(
+        _stale_args(analysis_revision=analysed, head_revision=head, worktree=str(repo))
+    )
+
+    assert verdict['carry_forward'] is False, verdict
+    assert verdict['reason'] == 'undecidable_read', verdict
+    assert verdict['detail'].startswith('rule_unreadable'), verdict
+    assert 'delegates' in verdict['detail'], verdict
+
+
 def test_a_missing_revision_pair_stays_undecidable(monkeypatch) -> None:
     _patch_delta(monkeypatch)
 
@@ -1007,9 +1180,8 @@ def test_the_lane_text_states_the_carry_forward_rule() -> None:
 
 
 # The delegated branch (a consumer whose CI delegates its build to a reusable
-# workflow) was descoped on the operator's word: a project's own footprint rule is
-# the only rule this verb decides with. The delegating case is re-staged as its own
-# plan, together with the run-identity evidence its review asked for.
+# workflow) is decided here: the rule the CI applied is not in this checkout, so the
+# delta stays undecidable and the delegation is named. No architecture substitute.
 
 
 # =============================================================================

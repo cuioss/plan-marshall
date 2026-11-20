@@ -200,9 +200,9 @@ the shell boundary, so the host platform's shell-heading heuristic never fires.
 is the **only** body channel. A caller with no plan is not an exception to the
 three steps — it runs the identical sequence with `--plan-id NO_PLAN`, the
 plan-less sentinel, which resolves to the shared plan-less body store and binds
-to the main checkout. Because that store is shared, a plan-less caller that
-READS a body names its OWN `--slot` on both calls; the default slot is refused
-there. Use the
+to the main checkout. A plan-less caller that READS a body names its OWN `--slot`
+on both calls; the shared-store rule behind that requirement is stated once in the xref
+below. Use the
 sentinel only when the caller genuinely has no
 plan; a `--plan-id` that failed to resolve must be corrected, not replaced with
 the sentinel. See [`tools-integration-ci/SKILL.md`](../SKILL.md) § "The

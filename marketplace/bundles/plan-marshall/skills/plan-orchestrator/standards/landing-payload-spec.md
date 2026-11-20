@@ -111,8 +111,30 @@ It is the machine-readable payload the drain consumes. These keys are **required
 | `sonar_open_new_issues` | The open new-code finding count the Sonar read returned on the merge head — issues plus security hotspots still to review — or `n/a`, or `unknown`. `n/a` is a project that does not analyse with Sonar, a real end state; `unknown` is a read that failed, and asserts only that nothing was observed. Neither collapses into the other, and neither is `0` | `sonar-gate` / `sonar-facts` |
 
 Optional keys a landing MAY carry (not required, so their absence is not incompleteness): `epic`,
-`total_wall_seconds`, `executor_version`, and any per-step typed fact transcribed as
-`step.{name}.{fact_key}={value}`. The functional review's verdict facts and the code review's counts
+`deliverables_retired`, `total_wall_seconds`, `executor_version`, and any per-step typed fact transcribed as
+`step.{name}.{fact_key}={value}`.
+
+### Re-reading a landing's review numbers
+
+`review-gate` reads the pull request's CURRENT state: it takes no head, sha or time argument. A
+landing's re-read therefore describes the moment it was taken, not the merge, so a difference is not
+by itself a false claim. Record the difference WITH THE TIME OF THE RE-READ and classify it by the
+time of the record that differs, where the provider supplies one (`created_at`, `updated_at`): a
+review, a comment or a thread created after the merge explains the difference, and it is recorded as
+a post-merge change, never as a false claim. Three cases are distinguished by WHEN the differing
+record was created relative to the gate's read: a record created BEFORE the gate read that the gate
+did not count is a false claim (the gate saw it and the landing did not report it); a record created
+AFTER the gate read and before the merge is a **post-read change**, not a false claim (the gate value
+was accurate when it was read); and when the gate-read time was not retained, the difference is
+`undecidable`. `updated_at` is weaker evidence than `created_at`: it explains the
+difference only when the edit it records IS the difference (that record carried the other value
+before); an `updated_at` that merely moved — a spelling correction on a record whose count is
+unchanged — explains nothing, and the difference is then `undecidable`: never a false claim, and
+never a post-merge change. A difference that only a later thread RESOLUTION could
+explain is `undecidable` — a resolution carries no timestamp — and is recorded as such, never as a
+false claim. A difference no post-merge record explains remains a false claim. The workflow step that
+applies this rule is [`../workflow/analyze.md`](../workflow/analyze.md), and
+[`../templates/landing-analysis.md`](../templates/landing-analysis.md) carries the worked example. The functional review's verdict facts and the code review's counts
 are the named instances of the last kind — see § "Functional verdict facts" and § "Code-review
 counts" below.
 

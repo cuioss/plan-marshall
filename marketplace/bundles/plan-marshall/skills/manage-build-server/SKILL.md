@@ -121,7 +121,14 @@ inside the submitting project's own tree, at
 already ignores, so the log is removed with the worktree it belongs to and a
 consumer that may read only the project can open the `log_file` a build result
 names. A tree that cannot hold the log fails the job as `log_file_failed`; there
-is no fall-back to this directory.
+is no fall-back to this directory. The directory and every component the daemon
+creates under it are `0700`; the file is `0600`.
+
+The daemon **never sweeps** these logs and applies no size cap. A plan worktree's
+logs die with the worktree, and the only place they accumulate is a main checkout
+that routes builds itself; a sweep there could delete a log another session is
+still streaming into, and a cap would truncate the evidence a failed result
+points at. Removing old logs is the operator's call, per project.
 
 The **interaction audit** is a central append-only log — the natural third
 sibling of `registry-audit.log` and `lifecycle-audit.log` — which answers "who

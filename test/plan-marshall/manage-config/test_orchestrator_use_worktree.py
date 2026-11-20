@@ -345,7 +345,7 @@ class TestBlockStates:
 
         assert read['status'] == 'error', f'a null block was read as success: {read}'
         assert 'not a dictionary' in read['error']
-        assert str(path) in read['error'], f'the refusal does not name the malformed file: {read["error"]!r}'
+        assert str(path.resolve()) in read['error'], f'the refusal does not name the malformed file: {read["error"]!r}'
 
     def test_a_json_null_block_in_the_callers_worktree_is_refused(self, sandbox, monkeypatch):
         """The knob is main-anchored, and the caller's own malformed file still refuses.
@@ -361,7 +361,7 @@ class TestBlockStates:
         read = cmd_orchestrator_get(Namespace(field='use_worktree'))
 
         assert read['status'] == 'error', f"a null block in the caller's file was read as success: {read}"
-        assert str(worktree_path) in read['error'], f'the refusal names the wrong file: {read["error"]!r}'
+        assert str(worktree_path.resolve()) in read['error'], f'the refusal names the wrong file: {read["error"]!r}'
 
     def test_a_json_null_block_in_the_main_anchored_file_is_refused_naming_it(self, sandbox, monkeypatch):
         """The caller's file is valid; the malformed block is in the file the VALUE comes from."""
@@ -371,7 +371,7 @@ class TestBlockStates:
         read = cmd_orchestrator_get(Namespace(field='use_worktree'))
 
         assert read['status'] == 'error', f'a null block in the main-anchored file was read as success: {read}'
-        assert str(main_path) in read['error'], f'the refusal names the wrong file: {read["error"]!r}'
+        assert str(main_path.resolve()) in read['error'], f'the refusal names the wrong file: {read["error"]!r}'
 
     def test_an_absent_block_in_both_files_reads_as_false_with_set_false(self, sandbox, monkeypatch):
         _stand_in(monkeypatch, sandbox.main, {})
@@ -381,18 +381,68 @@ class TestBlockStates:
 
         assert (read['status'], read['value'], read['set']) == ('success', False, False)
 
-    def test_an_unreadable_main_file_falls_through_to_the_store_seams_own_answer(self, sandbox, monkeypatch):
-        """An unreadable main file is not a malformed block: the seam reads it as ``False``.
-
-        ``orchestrator_worktree.orchestrator_use_worktree`` returns ``False`` for
-        an unreadable file exactly as it does for a null block, but for the
-        unreadable case it cannot tell a malformed block from an absent one — and
-        the value it answers is the one the store actually uses. Reporting that
-        answer keeps ``get`` and the seam in step.
-        """
+    def test_an_absent_main_file_reads_as_false_with_set_false(self, sandbox, monkeypatch):
+        """Matched control for the refusals below: absence is the seam's own unset answer."""
         _stand_in(monkeypatch, sandbox.plan_worktree, {'orchestrator': {'use_worktree': True}})
-        _write_marshal(sandbox.main, {'orchestrator': {'use_worktree': True}}).write_text('{not json', encoding='utf-8')
 
         read = cmd_orchestrator_get(Namespace(field='use_worktree'))
 
         assert (read['status'], read['value'], read['set']) == ('success', False, False), read
+
+    def test_an_unreadable_main_file_is_refused_naming_it(self, sandbox, monkeypatch):
+        """A main file that cannot be read is a failed read, never a ``false`` value."""
+        _stand_in(monkeypatch, sandbox.plan_worktree, {'orchestrator': {'use_worktree': True}})
+        main_path = sandbox.main / '.plan' / 'marshal.json'
+        main_path.parent.mkdir(parents=True, exist_ok=True)
+        main_path.mkdir()
+
+        read = cmd_orchestrator_get(Namespace(field='use_worktree'))
+
+        assert (read['status'], read.get('reason')) == ('error', 'unreadable'), read
+        assert str(main_path.resolve()) in read['error'], f'the refusal does not name the file: {read["error"]!r}'
+        assert Path(read['knob_path']).resolve() == main_path.resolve()
+
+    def test_a_non_object_main_file_is_refused_naming_it(self, sandbox, monkeypatch):
+        """A main file holding a JSON array is an unknown file, not a configured ``false``."""
+        _stand_in(monkeypatch, sandbox.plan_worktree, {'orchestrator': {'use_worktree': True}})
+        main_path = _write_marshal(sandbox.main, {})
+        main_path.write_text('["not", "an", "object"]', encoding='utf-8')
+
+        read = cmd_orchestrator_get(Namespace(field='use_worktree'))
+
+        assert (read['status'], read.get('reason')) == ('error', 'not_object'), read
+        assert str(main_path.resolve()) in read['error'], f'the refusal does not name the file: {read["error"]!r}'
+        assert Path(read['knob_path']).resolve() == main_path.resolve()
+
+    def test_an_invalid_json_main_file_is_refused_naming_it(self, sandbox, monkeypatch):
+        """Invalid JSON in the main-anchored file is refused, never read as ``false``."""
+        _stand_in(monkeypatch, sandbox.plan_worktree, {'orchestrator': {'use_worktree': True}})
+        main_path = _write_marshal(sandbox.main, {})
+        main_path.write_text('{not json', encoding='utf-8')
+
+        read = cmd_orchestrator_get(Namespace(field='use_worktree'))
+
+        assert (read['status'], read.get('reason')) == ('error', 'invalid_json'), read
+        assert str(main_path.resolve()) in read['error'], f'the refusal does not name the file: {read["error"]!r}'
+        assert Path(read['knob_path']).resolve() == main_path.resolve()
+
+    def test_an_invalid_json_callers_file_refuses_instead_of_crashing(self, sandbox, monkeypatch):
+        """The caller's own invalid JSON is a structured refusal, not a ``safe_main`` crash."""
+        path = _stand_in(monkeypatch, sandbox.main, {'orchestrator': {'use_worktree': True}})
+        path.write_text('{not json', encoding='utf-8')
+
+        read = cmd_orchestrator_get(Namespace(field='use_worktree'))
+
+        assert (read['status'], read.get('reason')) == ('error', 'invalid_json'), read
+        assert str(path.resolve()) in read['error'], f'the refusal does not name the file: {read["error"]!r}'
+
+    def test_a_non_utf8_main_file_is_refused_naming_it(self, sandbox, monkeypatch):
+        """Invalid UTF-8 is a failed read, not an exception escaping the helper."""
+        _stand_in(monkeypatch, sandbox.plan_worktree, {'orchestrator': {'use_worktree': True}})
+        main_path = _write_marshal(sandbox.main, {})
+        main_path.write_bytes(b'\xff\xfe not utf-8')
+
+        read = cmd_orchestrator_get(Namespace(field='use_worktree'))
+
+        assert (read['status'], read.get('reason')) == ('error', 'unreadable'), read
+        assert str(main_path.resolve()) in read['error'], f'the refusal does not name the file: {read["error"]!r}'

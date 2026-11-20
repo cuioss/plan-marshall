@@ -5,6 +5,7 @@ from _manage_execution_manifest_ceremony_finalize_selection_fixtures import (
     _bare,
     _compose_ns,
     _manifest_phase_6_steps,
+    _mem,
     _phase_6_with_ceremony_steps,
     _restore_footprint_resolver,
     _seed_marshal,
@@ -144,3 +145,48 @@ class TestCeremonyFinalizePlanLocalChannel:
 
         assert result is not None
         assert result['ceremony_finalize_gates']['functional_review'] == 'never'
+
+
+class TestRefusedAlwaysIsReported:
+    """An ``always`` the local-only floor refuses is logged and reported, not silent."""
+
+    def _compose(self, plan_id: str, candidates: list[str], commit_and_push: str | None):
+        return cmd_compose(
+            _compose_ns(
+                plan_id=plan_id,
+                change_type='feature',
+                scope_estimate='multi_module',
+                affected_files_count=5,
+                phase_6_steps=','.join(candidates),
+                commit_and_push=commit_and_push,
+            )
+        )
+
+    def test_a_refused_always_is_logged_and_reports_the_applied_gate(self, plan_context, monkeypatch):
+        candidates = _phase_6_with_ceremony_steps().split(',')
+        _seed_marshal(finalize_gates={'functional_review': 'minimal'}, candidates=candidates)
+        _stub_footprint(_FOOTPRINT)
+        emitted: list[str] = []
+        monkeypatch.setattr(_mem, '_emit_decision_log', lambda plan_id, message, *a, **kw: emitted.append(message))
+
+        result = self._compose('ceremony-refused-always', candidates, 'false')
+
+        assert result is not None and result['status'] == 'success'
+        refusals = result['ceremony_finalize_refusals']
+        refusal = next(record for record in refusals if record['gate'] == 'functional_review')
+        assert (refusal['requested'], refusal['applied']) == ('always', 'never'), refusals
+        assert any('ceremony_finalize refused' in message for message in emitted), emitted
+        assert 'functional-review' not in _bare(_manifest_phase_6_steps(result))
+
+    def test_the_same_gate_is_applied_when_pushing(self, plan_context, monkeypatch):
+        """Matched control: the gate forces in when the plan does push."""
+        candidates = _phase_6_with_ceremony_steps().split(',')
+        _seed_marshal(finalize_gates={'functional_review': 'minimal'}, candidates=candidates)
+        _stub_footprint(_FOOTPRINT)
+        monkeypatch.setattr(_mem, '_emit_decision_log', lambda *a, **kw: None)
+
+        result = self._compose('ceremony-applied-always', candidates, 'true')
+
+        assert result is not None
+        assert result['ceremony_finalize_refusals'] == []
+        assert 'functional-review' in _bare(_manifest_phase_6_steps(result))

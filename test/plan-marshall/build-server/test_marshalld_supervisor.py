@@ -747,3 +747,101 @@ class TestRunJobNamesTheBoundItMeasuredAgainst:
 
         assert 'timeout_used_seconds' not in payload
         assert 'timeout_source' not in payload
+
+
+class TestJobLogOpenIsDescriptorRelative:
+    """The log open must not be steerable between the probe and the write."""
+
+    def test_a_symlinked_parent_directory_is_refused(self, tmp_path):
+        """A parent swapped for a symlink after the daemon's probe is still refused."""
+        real = tmp_path / 'real'
+        real.mkdir()
+        link = tmp_path / 'link'
+        link.symlink_to(real, target_is_directory=True)
+
+        with pytest.raises(OSError):
+            supervisor._open_job_log(str(link / 'job.log'))
+
+    def test_a_regular_parent_still_accepts_the_log(self, tmp_path):
+        """Matched control: the descriptor-relative open is not a blanket refusal."""
+        (tmp_path / 'logs').mkdir()
+
+        sink = supervisor._open_job_log(str(tmp_path / 'logs' / 'job.log'))
+        with sink:
+            sink.write(b'output\n')
+
+        assert (tmp_path / 'logs' / 'job.log').read_text() == 'output\n'
+
+
+class TestSpawnFailureReleasesTheLog:
+    """A spawn that never started leaves no empty log and no open descriptor."""
+
+    @staticmethod
+    def _failing_spawn(exception: BaseException):
+        async def _spawn(*args, **kwargs):
+            raise exception
+
+        return _spawn
+
+    @pytest.mark.parametrize(
+        'exception',
+        [asyncio.CancelledError(), RuntimeError('spawn blew up')],
+        ids=['cancelled', 'non-oserror'],
+    )
+    def test_a_spawn_failure_releases_the_sink_and_removes_the_log(self, tmp_path, monkeypatch, exception):
+        log_file = tmp_path / 'job.log'
+        monkeypatch.setattr(asyncio, 'create_subprocess_exec', self._failing_spawn(exception))
+
+        with pytest.raises(type(exception)):
+            asyncio.run(
+                supervisor.run_job(
+                    [sys.executable, '-c', 'pass'],
+                    str(tmp_path),
+                    timeout=5,
+                    log_file=str(log_file),
+                )
+            )
+
+        assert not log_file.exists(), 'a spawn that never started must leave no empty log behind'
+
+
+class TestAVanishedLogIsALoggingFailureAtAnyTerminalStatus:
+    """The log is the result's evidence, so its absence fails the logging leg."""
+
+    @staticmethod
+    def _vanishing_proc(log_file: Path, returncode: int):
+        class _Stream:
+            async def read(self, _size: int) -> bytes:
+                return b''
+
+        class _Proc:
+            def __init__(self) -> None:
+                self.stdout = _Stream()
+                self.stderr = _Stream()
+                self.returncode = returncode
+
+            async def wait(self) -> int:
+                log_file.unlink(missing_ok=True)
+                return returncode
+
+        return _Proc()
+
+    @pytest.mark.parametrize('returncode', [0, 1], ids=['success', 'failure'])
+    def test_a_log_that_vanishes_under_the_job_is_reported_as_a_logging_failure(
+        self, tmp_path, monkeypatch, returncode
+    ):
+        log_file = tmp_path / 'job.log'
+        proc = self._vanishing_proc(log_file, returncode)
+
+        async def _spawn(*args, **kwargs):
+            return proc
+
+        monkeypatch.setattr(asyncio, 'create_subprocess_exec', _spawn)
+
+        payload = asyncio.run(
+            supervisor.run_job([sys.executable, '-c', 'pass'], str(tmp_path), timeout=5, log_file=str(log_file))
+        )
+
+        assert payload['status'] == 'failure', payload
+        assert payload['error'] == 'log_file_failed', payload
+        assert 'disappeared' in payload['reason'], payload

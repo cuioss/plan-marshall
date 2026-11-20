@@ -62,12 +62,17 @@ _mem._emit_decision_log = lambda plan_id, message, *a, **kw: _EMITTED.append((pl
 # =============================================================================
 
 
-def _write_marshal(fixture_dir: Path, phase_6_steps: list[str]) -> None:
-    """Seed marshal.json with ``phase_6_steps`` as the LIVE candidate set."""
-    data: dict = {
-        'plan': {'phase-6-finalize': {'steps': {step: {} for step in phase_6_steps}}},
-        'build': {},
-    }
+def _write_marshal(fixture_dir: Path, phase_6_steps: list[str], commit_and_push: bool | None = None) -> None:
+    """Seed marshal.json with ``phase_6_steps`` as the LIVE candidate set.
+
+    ``commit_and_push`` seeds the plan-level value reconcile now consults before a
+    backfill; ``None`` leaves the key absent, which the documented default reads as
+    ``True``.
+    """
+    plan: dict = {'phase-6-finalize': {'steps': {step: {} for step in phase_6_steps}}}
+    if commit_and_push is not None:
+        plan['phase-5-execute'] = {'commit_and_push': commit_and_push}
+    data: dict = {'plan': plan, 'build': {}}
     (fixture_dir / 'marshal.json').write_text(json.dumps(data), encoding='utf-8')
 
 

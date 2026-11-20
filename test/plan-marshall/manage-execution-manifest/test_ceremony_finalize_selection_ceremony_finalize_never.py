@@ -50,9 +50,9 @@ class TestCeremonyFinalizeNever:
         candidates = [s for s in _phase_6_with_ceremony_steps().split(',') if s != 'code-review']
         steps = list(candidates)
 
-        forced_in, forced_out = _apply_ceremony_finalize_selection(steps, {'code_review': 'never'})
+        forced_in, forced_out, refused = _apply_ceremony_finalize_selection(steps, {'code_review': 'never'})
 
-        assert (forced_in, forced_out) == ([], [])
+        assert (forced_in, forced_out, refused) == ([], [], [])
         assert steps == candidates
 
     def test_never_drops_the_step_when_present(self):
@@ -61,7 +61,7 @@ class TestCeremonyFinalizeNever:
         assert 'code-review' in candidates, 'control: the candidate set must carry the code review'
         steps = list(candidates)
 
-        _, forced_out = _apply_ceremony_finalize_selection(steps, {'code_review': 'never'})
+        _, forced_out, _ = _apply_ceremony_finalize_selection(steps, {'code_review': 'never'})
 
         assert forced_out == [{'gate': 'code_review', 'step': 'code-review'}]
         assert 'code-review' not in steps

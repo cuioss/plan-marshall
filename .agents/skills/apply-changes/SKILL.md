@@ -16,14 +16,14 @@ meta-project-only, like `/sync-harnesses`.
 executor regeneration and the registry write to the operator. This command adds
 those two follow-ups and ends by naming the restart it cannot perform.
 
-**Operator-only, by convention.** This harness publishes no key that withholds a
-skill from model invocation: its target metadata,
-`marketplace/targets/antigravity/frontmatter-rules.json`, is the authoritative
-field set, and none of it restricts model invocation. The entry point is a skill
+**Operator-only, by convention.** The generator's field set for this harness,
+`marketplace/targets/antigravity/frontmatter-rules.json`, lists no field that
+withholds a skill from model invocation. Whether the harness itself offers such a
+key is a runtime fact nothing in this repository shows. The entry point is a skill
 whose description carries an invocation trigger, so "user-invoked by construction"
 is not assumed for it: what keeps a model from invoking it here is **not shown by
-reading** in this repository, and the claim is recorded as unconfirmed rather than
-as a guarantee.
+reading**, and the repository records that as unestablished rather than as a
+guarantee.
 
 ## Instructions
 

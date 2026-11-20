@@ -70,6 +70,7 @@ from _marshalld_audit import InteractionAudit
 from _marshalld_journal import Journal
 from _marshalld_scheduler import Scheduler
 from _marshalld_supervisor import (
+    _JOB_LOG_SUBDIR,
     JobLogUnavailable,
     JobProgress,
     job_log_dir,
@@ -107,6 +108,32 @@ _POLL_INTERVAL_SECONDS = 0.5
 _LOG_MAX_BYTES = 8 * 1024 * 1024
 _DIR_MODE = 0o700
 _SOCKET_MODE = 0o600
+
+
+def _ensure_private_directory(path: Path) -> None:
+    """Create ``path`` (no parents) and tighten it to :data:`_DIR_MODE`, never following a link.
+
+    ``mkdir(exist_ok=True)`` accepts an existing symlink to a directory, and the
+    ``chmod`` that followed resolved it — so a component swapped for a link after the
+    daemon's probe could redirect the mode change. The directory is opened with
+    ``O_DIRECTORY | O_NOFOLLOW`` and ``fchmod``-ed through that descriptor instead:
+    a symlink at the name fails the open (``ELOOP``), which is the fail-closed answer
+    the caller turns into a ``log_file_failed`` job result.
+    """
+    try:
+        path.mkdir(mode=_DIR_MODE, exist_ok=True)
+    except FileExistsError:
+        pass
+    flags = os.O_RDONLY | getattr(os, 'O_DIRECTORY', 0) | getattr(os, 'O_NOFOLLOW', 0)
+    fd = os.open(path, flags)
+    try:
+        if os.fstat(fd).st_mode & 0o777 != _DIR_MODE:
+            if hasattr(os, 'fchmod'):
+                os.fchmod(fd, _DIR_MODE)
+            else:  # pragma: no cover - every supported platform has fchmod
+                os.chmod(path, _DIR_MODE)
+    finally:
+        os.close(fd)
 
 
 # =============================================================================
@@ -806,17 +833,21 @@ class Daemon:
         # Created one component at a time under the EXISTING `.plan`, never with
         # `parents=True`: a tree that vanished under the queue must fail the job, not
         # be recreated from a stale check. An injected directory is created as given.
+        # The component names come from `_JOB_LOG_SUBDIR` rather than a second copy
+        # of the tuple, so moving the constant moves the creation with it. Each
+        # component is created AND tightened through `_ensure_private_directory`, which
+        # refuses to follow a symlink: `mkdir(exist_ok=True)` accepts one and the
+        # `chmod` that followed resolved it, so a component swapped after the probe
+        # could have redirected the mode change.
         try:
             if self._log_dir is None:
                 anchor = project_root / '.plan'
-                for part in ('local', 'marshalld', 'job-logs'):
+                for part in _JOB_LOG_SUBDIR.parts[1:]:
                     anchor = anchor / part
-                    if not anchor.exists():
-                        anchor.mkdir()
+                    _ensure_private_directory(anchor)
             else:
                 directory.mkdir(mode=_DIR_MODE, parents=True, exist_ok=True)
-            if directory.stat().st_mode & 0o777 != _DIR_MODE:
-                os.chmod(directory, _DIR_MODE)
+                _ensure_private_directory(directory)
         except OSError as exc:
             raise JobLogUnavailable(log_file, str(exc)) from exc
         if self._log_dir is None:

@@ -193,6 +193,8 @@ One line per step, not one for the gate: the gate drops several steps, and a sin
 
 When `commit_and_push == true` (or absent — the default is `true`), the pre-filter is a no-op and emits no log entry.
 
+**The same drop binds `reconcile --apply`'s backfill.** `reconcile` reads the plan-level `commit_and_push` from live config before it adds a candidate the frozen manifest lacks; on a local-only plan a push-only candidate is refused, the refusal is logged (`commit_push_disabled — refused to backfill {step}`), and the result reports it in `backfill_refused` beside the `commit_and_push` value it read. A candidate that entered live config after compose is still a push-only step, so "no push" wins there for the same reason it wins at compose time.
+
 ### Pre-Filter: `pre_push_quality_gate_inactive`
 
 **Condition**: the `build-decision` verdict is exactly `not_necessary`. The pre-filter is a **verdict consumer** — it does not compute build necessity. It asks the command-free build-necessity question through the single authority (`extension_base.should_execute_build`, exposed as the `manage-config build-decision` verb) and branches on the returned `decision`. The predicate behind that verdict, its reasons, and the matcher it uses are owned by the authority, not restated here; see [ADR-004](../../../../../../doc/adr/004-The_file-to-build_contract_is_owned_by_build-system_extensions_not_languagecontent_domains.adoc) § "Amendment: `build-decision` is the sole build/no-build authority".

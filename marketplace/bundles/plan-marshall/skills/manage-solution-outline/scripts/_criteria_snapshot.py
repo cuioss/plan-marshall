@@ -579,7 +579,10 @@ def path_digest(path: Path) -> str:
 def snapshot_state(plan_id: str) -> str:
     """Classify the frozen snapshot's binding outside itself.
 
-    * ``present`` — a snapshot file exists with no recorded freeze (legacy).
+    * ``present`` — a snapshot file exists with no recorded freeze (legacy). Its
+      criteria are the plan's own record; there is no digest to compare, so nothing
+      is verified and nothing is refused: the state is reported as itself rather
+      than as ``frozen``, and a later freeze records the digest that binds it.
     * ``frozen`` — a snapshot file exists and its recorded digest matches.
     * ``tampered`` — the status record froze a snapshot whose bytes no longer
       match the recorded digest (edited in place).
@@ -1600,8 +1603,9 @@ def criteria_drift(plan_id: str, current: list[dict[str, Any]] | None = None) ->
                     'current': live[index] if index < len(live) else '',
                 }
             )
-    drift.extend(_spec_clause_drift(snapshot, by_number))
-    drift.extend(_request_clause_drift(snapshot, by_number))
+    retired_numbers = _retired_deliverable_numbers(plan_id)
+    drift.extend(_spec_clause_drift(snapshot, by_number, retired_numbers))
+    drift.extend(_request_clause_drift(snapshot, by_number, retired_numbers))
     drift.extend(_unparsed_clause_drift(by_number))
     return drift
 
@@ -1628,11 +1632,34 @@ def _covered_by_outline(clause: str, outline: list[str]) -> bool:
     return any(clause in candidate or candidate in clause for candidate in outline if candidate)
 
 
-def _outline_text(by_number: dict[Any, dict[str, Any]]) -> list[str]:
-    return [normalize_criterion(text) for row in by_number.values() for text in (row.get('success_criteria') or [])]
+def _outline_text(by_number: dict[Any, dict[str, Any]], excluded: frozenset[Any] = frozenset()) -> list[str]:
+    """Every current outline criterion except those of the ``excluded`` deliverables."""
+    return [
+        normalize_criterion(text)
+        for number, row in by_number.items()
+        if number not in excluded
+        for text in (row.get('success_criteria') or [])
+    ]
 
 
-def _request_clause_drift(snapshot: dict[str, Any], by_number: dict[Any, dict[str, Any]]) -> list[dict[str, Any]]:
+def _retired_deliverable_numbers(plan_id: str) -> frozenset[Any]:
+    """The deliverables whose SEALED functional verdict is ``retired``.
+
+    Spec and request clause coverage is computed against the criteria the plan still
+    delivers; a retired deliverable delivers none of its own, so its outline criteria
+    stop covering a clause the moment the retirement is on record. Only a sealed
+    verdict counts — an edited or absent verdict retires nothing, which leaves every
+    clause covered exactly as before.
+    """
+    verdict, state = _checked_verdict(base_path('plans', plan_id, FUNCTIONAL_VERDICT_FILE), plan_id)
+    if state != 'sealed':
+        return frozenset()
+    return frozenset(number for number, row in verdict.items() if str((row or {}).get('verdict') or '') == RETIRED)
+
+
+def _request_clause_drift(
+    snapshot: dict[str, Any], by_number: dict[Any, dict[str, Any]], retired: frozenset[Any] = frozenset()
+) -> list[dict[str, Any]]:
     """One row per request Done-when clause no current outline criterion covers.
 
     The request's Done-when is frozen for the same reason the spec's clauses are:
@@ -1642,7 +1669,7 @@ def _request_clause_drift(snapshot: dict[str, Any], by_number: dict[Any, dict[st
     clauses = (snapshot.get('request') or {}).get('done_when') or []
     if not clauses:
         return []
-    outline = _outline_text(by_number)
+    outline = _outline_text(by_number, retired)
     return [
         {
             'deliverable': None,
@@ -1656,18 +1683,22 @@ def _request_clause_drift(snapshot: dict[str, Any], by_number: dict[Any, dict[st
     ]
 
 
-def _spec_clause_drift(snapshot: dict[str, Any], by_number: dict[Any, dict[str, Any]]) -> list[dict[str, Any]]:
+def _spec_clause_drift(
+    snapshot: dict[str, Any], by_number: dict[Any, dict[str, Any]], retired: frozenset[Any] = frozenset()
+) -> list[dict[str, Any]]:
     """One row per spec deliverable Done-when no current outline criterion covers.
 
     Coverage is deliberately loose — either the clause contains the criterion or
     the criterion contains the clause, on normalized text — because the outline
     is expected to state the clause in its own words rather than to quote it. A
-    clause nothing covers is not covered.
+    clause nothing covers is not covered. A retired deliverable's criteria are not
+    coverage: a retirement must not silently retire the spec clause they used to
+    stand in for.
     """
     spec_rows = (snapshot.get('spec') or {}).get('deliverables') or []
     if not spec_rows:
         return []
-    outline = _outline_text(by_number)
+    outline = _outline_text(by_number, retired)
     rows: list[dict[str, Any]] = []
     for index, row in enumerate(spec_rows, start=1):
         if not isinstance(row, dict):
@@ -1830,6 +1861,31 @@ def _commit_authorization(
             and normalize_criterion(entry.get('criterion')) == wanted
         )
     ]
+    prior = [
+        entry
+        for entry in snapshot.get('authorized_changes') or []
+        if isinstance(entry, dict)
+        and entry.get('deliverable') == number
+        and normalize_criterion(entry.get('criterion')) == wanted
+    ]
+    prior_types = {str(entry.get('decision_type') or DECISION_REWRITE) for entry in prior}
+    # A later decision of the same criterion replaces the earlier one, with ONE
+    # direction refused: a rewrite never downgrades a retirement. A retirement
+    # supersedes an earlier rewrite approval (the operator withdrew the change by
+    # retiring the deliverable), and re-recording the same type is an ordinary
+    # update; the reverse would silently drop the operator's retirement decision
+    # and reopen a deliverable the operator closed.
+    if decision_type == DECISION_REWRITE and DECISION_RETIREMENT in prior_types:
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'retirement_decision_downgraded',
+            'message': (
+                f'D{number} criterion {criterion!r} already carries a retirement decision; a rewrite '
+                'authorization would replace it and reopen the deliverable. Re-freeze the criteria under '
+                'criteria-refreeze-authorize instead of re-authorizing the change.'
+            ),
+        }
     entries.append(
         {
             'deliverable': number,
@@ -1912,6 +1968,7 @@ def _commit_authorization(
         'file': SNAPSHOT_FILE,
         'deliverable': number,
         'criterion': criterion,
+        'decision_type': decision_type,
         'authorized_count': len(entries),
     }
 
@@ -2118,7 +2175,9 @@ def open_criteria(plan_id: str, verdict_file: Path | None = None) -> dict[str, A
     the completion gate never runs the validator:
 
     * the verdict carries the review's authorship seal and its digest matches, so
-      a file rewritten in place does not release the plan;
+      a file rewritten in place does not release the plan; an ABSENT verdict is
+      untrusted on the same terms as an unsealed one — with no verdict at all,
+      nothing grades a criterion and no decision exemption may close one;
     * the row's status is ``met`` AND it carries non-empty evidence;
     * the row is matched by an explicit ``criterion_id`` or by EXACT normalised
       text. Position alone is never a match: a paraphrased row without its id
@@ -2145,6 +2204,12 @@ def open_criteria(plan_id: str, verdict_file: Path | None = None) -> dict[str, A
       — the completion gate exempts exactly this case, and ``source: review_dropped``
       says so to the triage source.
 
+    A decision exemption is NOT one of the closing states while the verdict is
+    untrusted — unsealed, unreadable or absent. The exemption is type-blind for every
+    verdict but ``retired``, so an edited (or missing) document could otherwise
+    re-open the permissive rewrite path and release work the retirement rule leaves
+    open. Only ``sealed`` is trusted.
+
     One further state is NOT a closing: ``state`` reports a snapshot the status
     record froze but which is now deleted or edited — the snapshot's own absence is
     the open criterion, and every check refuses rather than falling back to the
@@ -2153,107 +2218,16 @@ def open_criteria(plan_id: str, verdict_file: Path | None = None) -> dict[str, A
     """
     state = snapshot_state(plan_id)
     if state in ('deleted', 'tampered'):
-        return {
-            'source': f'frozen_{state}',
-            'verdict_state': 'absent',
-            'open_count': 1,
-            'open': [
-                {
-                    'deliverable': None,
-                    'criterion': f'<the frozen criteria snapshot is {state}>',
-                    'criterion_index': 1,
-                    'status': 'ungraded',
-                }
-            ],
-        }
+        return _frozen_state_answer(state)
     snapshot = read_snapshot(plan_id)
     if snapshot is None:
         return {'source': 'none', 'open_count': 0, 'open': []}
-    # A dropped functional review has no verdict to grade the criteria, so its
-    # frozen rows are not outstanding work. The SAME reader decides it for the
-    # completion gate, and a deleted/tampered snapshot was already refused above —
-    # turning this absence into "not applicable" would let deleting the snapshot
-    # disable the check the freeze exists for.
-    drop_reason = functional_review_drop_reason(plan_id)
-    if drop_reason is not None:
-        return {'source': 'review_dropped', 'drop_reason': drop_reason, 'open_count': 0, 'open': []}
-    # The operator's round-cap override closes the review FOR THE COMPLETION GATE:
-    # its criteria are not outstanding work. Head-specificity (rubric § 8) governs
-    # the REVIEW LOOP, which re-fires a delta round on a later head; the gate's job
-    # is only to stop reading an operator-closed review as open work.
-    closed_reason = _review_closed_reason(plan_id)
-    if closed_reason is not None:
-        return {'source': 'review_closed', 'closed_reason': closed_reason, 'open_count': 0, 'open': []}
+    not_applicable = _review_not_applicable_answer(plan_id)
+    if not_applicable is not None:
+        return not_applicable
     path = verdict_file if verdict_file is not None else base_path('plans', plan_id, FUNCTIONAL_VERDICT_FILE)
     verdict, verdict_state = _checked_verdict(path, plan_id)
-    # A verdict that exists but no longer matches its seal was edited after it was filed,
-    # so nothing it says can be trusted — including that a deliverable is NOT retired.
-    # Fail closed: no decision exemption closes a criterion while the verdict is untrusted,
-    # because the row that would say which deliverable was retired is exactly what changed.
-    untrusted_verdict = verdict_state in ('unsealed', 'unreadable')
-    snapshot_numbers = {row.get('number') for row in snapshot.get('deliverables') or [] if isinstance(row, dict)}
-    rows: list[dict[str, Any]] = []
-    for row in snapshot.get('deliverables') or []:
-        if not isinstance(row, dict):
-            continue
-        number = row.get('number')
-        graded_row = verdict.get(number) or {}
-        verdict_value = str(graded_row.get('verdict') or '')
-        superseded = verdict_value == SUPERSEDED
-        retired = verdict_value == RETIRED
-        rejection = (
-            deliverable_reference_rejection(
-                graded_row.get('superseded_by'),
-                snapshot_numbers,
-                own_number=number,
-                verdicts=verdict,
-            )
-            if superseded
-            else None
-        )
-        if superseded and rejection is None:
-            continue
-        # A RETIRED verdict closes the deliverable only on its own precondition — every
-        # frozen criterion carries the operator's own retirement decision. The check is
-        # re-derived here rather than trusted from the validator, which the gate never runs.
-        if retired and retirement_state(snapshot, number)['state'] == RETIREMENT_CLOSED:
-            continue
-        graded = graded_row.get('criteria') or []
-        for index, criterion in enumerate(row.get('criteria') or [], start=1):
-            raw = criterion.get('text') if isinstance(criterion, dict) else criterion
-            text = normalize_criterion(raw)
-            # What closes a criterion is the operator's decision about IT: for a retired
-            # row that is a RETIREMENT decision only — a decision recorded to approve the
-            # criterion's rewrite authorizes the change and closes nothing of a retirement —
-            # while under every other verdict any recorded decision is the drift exemption.
-            # An untrusted verdict closes nothing on a decision: see ``untrusted_verdict``.
-            decided = (
-                False
-                if untrusted_verdict
-                else (
-                    _retirement_decision(snapshot, number, text) if retired else _authorization(snapshot, number, text)
-                )
-            )
-            if decided:
-                continue
-            # A REJECTED supersede and an INVALID retirement close nothing of their own:
-            # the verdict itself is invalid, so the grades its row carries close nothing
-            # even where the reviewer marked one ``met``. The completion gate reads this
-            # answer without running the validator, so trusting those grades would let a
-            # self-citation — or a retirement missing its retirement decisions — release
-            # ungraded work. A retirement decision recorded for one criterion still closes
-            # that criterion, because that decision is not the verdict's to overrule.
-            status = 'ungraded' if (superseded or retired) else _graded_status(graded, text, index, number)
-            if status == 'met':
-                continue
-            rows.append(
-                {
-                    'deliverable': number,
-                    'criterion': text,
-                    'criterion_index': index,
-                    'status': status,
-                }
-            )
+    rows = _open_rows(snapshot, verdict, verdict_state)
     return {
         'source': 'snapshot',
         'verdict_state': verdict_state,
@@ -2261,6 +2235,109 @@ def open_criteria(plan_id: str, verdict_file: Path | None = None) -> dict[str, A
         'open_count': len(rows),
         'open': rows,
     }
+
+
+def _frozen_state_answer(state: str) -> dict[str, Any]:
+    """The single open criterion a deleted or edited snapshot reports."""
+    return {
+        'source': f'frozen_{state}',
+        'verdict_state': 'absent',
+        'open_count': 1,
+        'open': [
+            {
+                'deliverable': None,
+                'criterion': f'<the frozen criteria snapshot is {state}>',
+                'criterion_index': 1,
+                'status': 'ungraded',
+            }
+        ],
+    }
+
+
+def _review_not_applicable_answer(plan_id: str) -> dict[str, Any] | None:
+    """The answer for a review the manifest dropped or the operator closed, else ``None``."""
+    drop_reason = functional_review_drop_reason(plan_id)
+    if drop_reason is not None:
+        return {'source': 'review_dropped', 'drop_reason': drop_reason, 'open_count': 0, 'open': []}
+    closed_reason = _review_closed_reason(plan_id)
+    if closed_reason is not None:
+        return {'source': 'review_closed', 'closed_reason': closed_reason, 'open_count': 0, 'open': []}
+    return None
+
+
+def _open_rows(
+    snapshot: dict[str, Any], verdict: dict[Any, dict[str, Any]], verdict_state: str
+) -> list[dict[str, Any]]:
+    """Every frozen criterion a trusted verdict leaves open, in snapshot order."""
+    untrusted = verdict_state != 'sealed'
+    snapshot_numbers = {row.get('number') for row in snapshot.get('deliverables') or [] if isinstance(row, dict)}
+    rows: list[dict[str, Any]] = []
+    for row in snapshot.get('deliverables') or []:
+        if not isinstance(row, dict):
+            continue
+        rows.extend(_open_rows_for_deliverable(snapshot, row, verdict, snapshot_numbers, untrusted))
+    return rows
+
+
+def _open_rows_for_deliverable(
+    snapshot: dict[str, Any],
+    row: dict[str, Any],
+    verdict: dict[Any, dict[str, Any]],
+    snapshot_numbers: set[Any],
+    untrusted: bool,
+) -> list[dict[str, Any]]:
+    """The frozen criteria of ONE deliverable that its verdict leaves open.
+
+    A RETIRED verdict closes the deliverable only on its own precondition — every
+    frozen criterion carries the operator's own retirement decision; the check is
+    re-derived here rather than trusted from the validator, which the gate never
+    runs. A REJECTED supersede and an INVALID retirement close nothing of their own,
+    so their rows' grades close nothing either — the gate reads this answer without
+    running the validator, and trusting those grades would release ungraded work.
+    """
+    number = row.get('number')
+    graded_row = verdict.get(number) or {}
+    verdict_value = str(graded_row.get('verdict') or '')
+    superseded = verdict_value == SUPERSEDED
+    retired = verdict_value == RETIRED
+    rejection = (
+        deliverable_reference_rejection(
+            graded_row.get('superseded_by'),
+            snapshot_numbers,
+            own_number=number,
+            verdicts=verdict,
+        )
+        if superseded
+        else None
+    )
+    if superseded and rejection is None:
+        return []
+    if retired and retirement_state(snapshot, number)['state'] == RETIREMENT_CLOSED:
+        return []
+    graded = graded_row.get('criteria') or []
+    rows: list[dict[str, Any]] = []
+    for index, criterion in enumerate(row.get('criteria') or [], start=1):
+        raw = criterion.get('text') if isinstance(criterion, dict) else criterion
+        text = normalize_criterion(raw)
+        decided = (
+            False
+            if untrusted
+            else (_retirement_decision(snapshot, number, text) if retired else _authorization(snapshot, number, text))
+        )
+        if decided:
+            continue
+        status = 'ungraded' if (superseded or retired) else _graded_status(graded, text, index, number)
+        if status == 'met':
+            continue
+        rows.append(
+            {
+                'deliverable': number,
+                'criterion': text,
+                'criterion_index': index,
+                'status': status,
+            }
+        )
+    return rows
 
 
 def _checked_verdict(path: Path, plan_id: str | None = None) -> tuple[dict[Any, dict[str, Any]], str]:

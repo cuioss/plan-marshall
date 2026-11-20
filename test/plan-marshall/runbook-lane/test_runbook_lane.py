@@ -1434,9 +1434,18 @@ def _build_classify(project_dir: Path, paths: str) -> dict:
 
 
 def test_build_classify_treats_a_docs_only_diff_as_docs_only(tmp_path: Path) -> None:
-    data = _build_classify(_seed_footprint(tmp_path), 'doc/developer/build.adoc')
+    data = _build_classify(_seed_footprint(tmp_path, opt_in=False, module_path='core'), 'doc/developer/build.adoc')
     assert data['kind'] == 'docs-only'
+    assert data['source'] == 'architecture'
+
+
+def test_build_classify_builds_a_delegating_consumers_document(tmp_path: Path) -> None:
+    """The rule the CI applied is not in this checkout, so no substitute may skip a build."""
+    data = _build_classify(_seed_footprint(tmp_path), 'doc/developer/build.adoc')
+
+    assert data['kind'] == 'buildable', data
     assert data['source'] == 'ci-workflow'
+    assert 'delegates' in data['reason'], data
 
 
 def test_build_classify_treats_a_bundle_markdown_change_as_buildable(tmp_path: Path) -> None:
@@ -1863,9 +1872,9 @@ def test_build_classify_globstar_matches_a_marketplace_root_markdown(tmp_path: P
 
 
 def test_build_classify_keeps_a_doc_as_docs_only(tmp_path: Path) -> None:
-    data = _build_classify(_seed_footprint(tmp_path), 'doc/developer/build.adoc')
+    data = _build_classify(_seed_footprint(tmp_path, opt_in=False, module_path='core'), 'doc/developer/build.adoc')
     assert data['kind'] == 'docs-only'
-    assert data['source'] == 'ci-workflow'
+    assert data['source'] == 'architecture'
 
 
 def test_build_classify_treats_an_unreadable_rule_as_buildable(tmp_path: Path) -> None:
@@ -1897,7 +1906,7 @@ def _classify_with_a_failing_glob_import(tmp_path: Path, monkeypatch, error: Bas
     where the real helper is imported rather than by replacing the lane's own
     wrapper with a stub.
     """
-    project = _seed_footprint(tmp_path)
+    project = _seed_local_ci_rule(_seed_footprint(tmp_path), ['doc/**'])
     module = load_script_module('plan-marshall', _SKILL_NAME, 'runbook_lane.py', register=False)
     real_import = builtins.__import__
 
@@ -3152,15 +3161,15 @@ def _body_commands(section: str) -> list[str]:
 
 
 def test_every_body_command_in_the_lane_names_the_run_own_slot() -> None:
-    """One shared `pr-create-default.md` is what cross-fed PR #2028's body."""
+    """One shared body slot would let two callers overwrite each other's body."""
     section = _section('## 6. Pull request and reviews')
     planless = [command for command in _body_commands(section) if '--plan-id NO_PLAN' in command]
 
     assert planless, '§ 6 must name the plan-less body commands'
     for command in planless:
-        assert '--slot {plan}' in command, f'a plan-less body command names no slot: {command}'
+        assert '--slot {body_slot}' in command, f'a plan-less body command names no slot: {command}'
     for verb in ('prepare-body', 'prepare-comment', 'pr create', 'pr reply', 'pr thread-reply'):
-        assert any(verb in command and '--slot {plan}' in command for command in planless), (
+        assert any(verb in command and '--slot {body_slot}' in command for command in planless), (
             f'§ 6 names no slotted {verb} call'
         )
 
@@ -3178,31 +3187,73 @@ def test_the_land_workflow_names_its_own_body_slot() -> None:
 
 
 def test_the_lane_text_says_the_current_head_is_what_the_ci_does_not_build() -> None:
-    section = _section('## 6. Pull request and reviews')
+    section = ' '.join(_section('## 6. Pull request and reviews').split())
 
     assert 'the current head is never analysed' in section
+    # The absence is asserted with the line structure removed, so a claim broken across a
+    # line break cannot slip past it.
     assert 'the analysis stays on a head the CI does not build' not in section
 
 
-def test_the_lane_text_says_what_a_refused_carry_forward_means() -> None:
-    """A refusal such as `delta_buildable` cannot settle by retrying the read."""
-    section = _section('## 6. Pull request and reviews')
+_RETRY_CLASS_REFUSALS = (
+    'worktree_dirty',
+    'worktree_ignored_inputs',
+    'worktree_not_at_head',
+    'revision_unresolvable',
+    'worktree_unreadable',
+    'diff_failed',
+    'revision_missing',
+    'revisions_equal',
+    'rule_unreadable',
+    'rule_changed',
+    'delta_buildable',
+)
 
-    assert 'A refusal is a blocker for that head, not a read to retry' in section
-    assert 'retrying cannot succeed' in section
-    assert 'rebuild' in section
+
+def test_section_six_states_every_refusal_retry_class_once() -> None:
+    """ONE list owns each refusal's retry class, and no refusal is named twice."""
+    section = ' '.join(_section('## 6. Pull request and reviews').split())
+
+    for refusal in _RETRY_CLASS_REFUSALS:
+        assert section.count(f'`{refusal}`') == 1, f'{refusal} is named {section.count(f"`{refusal}`")} times'
 
 
-def test_the_merge_gate_does_not_promise_a_retry_for_a_refused_carry_forward() -> None:
-    section = _section('## 7. Merge gate')
+def test_section_seven_cites_section_six_retry_classes() -> None:
+    section = ' '.join(_section('## 7. Merge gate').split())
 
-    assert 'a stale read the carry-forward refused' in section
-    assert 'rebuild' in section
+    assert "section 6's retry classes" in section
+    assert 'retrying it cannot succeed' not in section
+
+
+def test_the_derived_plan_id_stays_distinct_and_its_body_slot_is_valid() -> None:
+    """The plan id is NOT folded; the body slot is, and folding never collapses two ids."""
+    module = load_script_module('plan-marshall', _SKILL_NAME, 'runbook_lane.py', register=False)
+
+    punctuated = module._plan_id_from_spec(Path('PLAN-42-a_b.c.md'))
+    hyphenated = module._plan_id_from_spec(Path('PLAN-42-a-b-c.md'))
+    assert punctuated != hyphenated, (punctuated, hyphenated)
+
+    for name in ('PLAN-42-a_b.c.md', 'PLAN-' + 'x' * 200 + '.md', 'PLAN-42-Ünicode Slug.md', 'PLAN-___.md'):
+        plan = module._plan_id_from_spec(Path(name))
+        slot = module._body_slot_from_plan_id(plan)
+        assert re.fullmatch(r'[a-z0-9][a-z0-9-]{0,63}', slot), (name, plan, slot)
+
+    assert module._body_slot_from_plan_id('42-a_b.c') != module._body_slot_from_plan_id('42-a-b-c'), (
+        'two plan ids that differ only in separators must not share one body slot'
+    )
 
 
 def test_the_lane_text_passes_the_carried_forward_marking_to_the_gate_and_the_facts() -> None:
-    section = _section('## 6. Pull request and reviews')
+    spans = [part for index, part in enumerate(_skill_text().split('`')) if index % 2 == 1]
+    gate_line = next(span for span in spans if span.startswith('sonar-gate --state configured'))
+    facts_line = next(span for span in spans if span.startswith('sonar-facts ') and '--analysed-revision' in span)
 
-    assert 'sonar-gate --state configured --count-status confirmed' in section
-    assert '--carried-forward' in section
-    assert 'sonar-facts' in section or '§ 8' in section
+    # Each assertion names ONE command span, not the collapsed section: `_section`
+    # joins every line, so a section-level search would pass while the marker was
+    # dropped from either invocation as long as the other kept it.
+    assert '--carried-forward ' in gate_line, gate_line
+    assert '--carried-forward ' in facts_line, facts_line
+    # The read's own reason travels beside the marker on both handoffs: the gate's
+    # `carried_forward_unmarked` guard reads it.
+    assert '--count-status-reason' in gate_line, gate_line
+    assert '--count-status-reason' in facts_line, facts_line
