@@ -208,8 +208,12 @@ def _provider_fetches(module) -> int:
 
     original = github_re_review.fetch_pr_comments_data
     original_provider = ci_base.resolve_ci_provider
+
+    def _resolve_github(project_dir: Path | str | None = None) -> str | None:
+        return 'github'
+
     github_re_review.fetch_pr_comments_data = _fetch
-    ci_base.resolve_ci_provider = lambda _project_dir='.': 'github'
+    ci_base.resolve_ci_provider = _resolve_github
     try:
         module.cmd_review_gate(
             parse_ns('plan-marshall', 'runbook-lane', 'runbook_lane.py', 'review-gate', '--pr-number', '7')
