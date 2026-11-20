@@ -66,3 +66,39 @@ class TestBackfillIsNarrow:
         result = cmd_reconcile(_reconcile_ns('rec-legacy-drop', apply=True))
         assert result['stale'] == [GHOST]
         assert GHOST not in read_manifest('rec-legacy-drop')['phase_6']['steps']
+
+
+class TestBackfillHonoursCommitPushDisabled:
+    """A push-only step added after compose never reaches a local-only plan."""
+
+    def test_push_only_candidates_are_refused_on_a_local_only_plan(self, plan_context):
+        """The live value is consulted, exactly as compose's parameter is."""
+        _write_marshal(
+            plan_context.fixture_dir,
+            [REAL_B, 'push', 'pre-push-quality-gate'],
+            commit_and_push=False,
+        )
+        _seed_manifest('rec-local-only', [REAL_B], candidate_steps=[REAL_B])
+
+        result = cmd_reconcile(_reconcile_ns('rec-local-only', apply=True))
+
+        assert result['backfill'] == []
+        assert result['backfill_refused'] == ['push', 'pre-push-quality-gate'], result
+        assert result['commit_and_push'] is False, result
+        steps = read_manifest('rec-local-only')['phase_6']['steps']
+        assert 'push' not in steps and 'pre-push-quality-gate' not in steps
+
+    def test_the_same_candidates_are_backfilled_when_pushing(self, plan_context):
+        """Matched control: only the value differs from the refusal above."""
+        _write_marshal(
+            plan_context.fixture_dir,
+            [REAL_B, 'push', 'pre-push-quality-gate'],
+            commit_and_push=True,
+        )
+        _seed_manifest('rec-with-push', [REAL_B], candidate_steps=[REAL_B])
+
+        result = cmd_reconcile(_reconcile_ns('rec-with-push', apply=True))
+
+        assert result['backfill'] == ['push', 'pre-push-quality-gate'], result
+        assert result['backfill_refused'] == []
+        assert 'push' in read_manifest('rec-with-push')['phase_6']['steps']

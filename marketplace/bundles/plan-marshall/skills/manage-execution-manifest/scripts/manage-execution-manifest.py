@@ -120,6 +120,7 @@ from _manifest_rules import (
     _parse_verification_command,
     _read_ci_provider,
     _read_finalize_gates,
+    _read_live_commit_and_push,
     _read_marshal_phase_5_gates,
     _read_marshal_phase_step_map,
     _read_merged_phase_6_step_map,
@@ -2883,7 +2884,7 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     # plan-local declaration must not reach one reader and be invisible to the
     # other. See standards/decision-rules.md § plan.phase-6-finalize Selection.
     ceremony_finalize_gates = _read_finalize_gates(plan_id)
-    ceremony_forced_in, ceremony_forced_out = _apply_ceremony_finalize_selection(
+    ceremony_forced_in, ceremony_forced_out, ceremony_refused = _apply_ceremony_finalize_selection(
         body['phase_6']['steps'], ceremony_finalize_gates, commit_and_push=commit_and_push
     )
 
@@ -3171,6 +3172,13 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
         _log_ceremony_finalize_selection(plan_id, change['gate'], 'always', change['step'])
     for change in ceremony_forced_out:
         _log_ceremony_finalize_selection(plan_id, change['gate'], 'never', change['step'])
+    for change in ceremony_refused:
+        _emit_decision_log(
+            plan_id,
+            '(plan-marshall:manage-execution-manifest:compose) ceremony_finalize refused — '
+            f'finalize.{change["gate"]}={change["requested"]}, applied {change["applied"]} for '
+            f'{change["step"]}: {change["reason"]}',
+        )
     _log_dropped_records(plan_id, 'decision_matrix', decide_dropped)
     # One line per dropped element, replacing the single aggregate line that named
     # the whole list at once — an aggregate is not a per-drop record, so no
@@ -3231,6 +3239,7 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
         'ceremony_finalize_gates': ceremony_finalize_gates,
         'ceremony_finalize_forced_in': [c['step'] for c in ceremony_forced_in],
         'ceremony_finalize_forced_out': [c['step'] for c in ceremony_forced_out],
+        'ceremony_finalize_refusals': ceremony_refused,
         'execution_profile': execution_profile,
         'lane_dropped': lane_dropped,
         'lane_warnings': [{'step': s, 'warning': w} for s, w in lane_warnings],
@@ -3816,6 +3825,17 @@ def cmd_reconcile(args: argparse.Namespace) -> dict[str, Any] | None:
         }
 
     backfill: list[str] = []
+    # The local-only floor applies here exactly as it does at compose time: a
+    # push-only step that entered live config AFTER this manifest was composed is
+    # still a push-only step, and ``commit_push_disabled`` says its drop is final.
+    # Reading the value from live config is what closes the gap — compose receives
+    # it as a parameter, and reconcile had no equivalent read.
+    backfill_pool = list(live_candidates or ())
+    backfill_refused: list[str] = []
+    live_commit_and_push = _read_live_commit_and_push()
+    if live_commit_and_push is False:
+        backfill_pool, commit_push_dropped = _apply_commit_push_disabled(backfill_pool, False)
+        backfill_refused = [record['step'] for record in commit_push_dropped]
     # Branch on the narrowing predicate itself rather than on the boolean above:
     # both inputs must be present for the diff to mean anything, and expressing
     # that directly is what makes the two reads below type-safe.
@@ -3830,7 +3850,7 @@ def cmd_reconcile(args: argparse.Namespace) -> dict[str, Any] | None:
         # nothing, ADDING a step finalize is guaranteed to fail on.
         backfill = [
             step
-            for step in live_candidates
+            for step in backfill_pool
             if step not in composed_set
             and step not in frozen_set
             and _check_step_resolvable(step, 'phase_6')['resolvable']
@@ -3898,6 +3918,12 @@ def cmd_reconcile(args: argparse.Namespace) -> dict[str, Any] | None:
                 f'added {step} to phase_6.steps: it entered live marshal.json after this '
                 'manifest was composed, so the decision matrix never considered it',
             )
+        for step in backfill_refused:
+            _emit_decision_log(
+                plan_id,
+                f'{RECONCILE_CALLER} commit_push_disabled — refused to backfill {step}: '
+                'commit_and_push is disabled — no downstream push exists',
+            )
 
     return {
         'status': 'success',
@@ -3908,6 +3934,8 @@ def cmd_reconcile(args: argparse.Namespace) -> dict[str, Any] | None:
         'stale': stale,
         'broken': [],
         'backfill': backfill,
+        'backfill_refused': backfill_refused,
+        'commit_and_push': live_commit_and_push,
         'backfill_determinable': backfill_determinable,
         'candidate_source': candidate_source,
         'steps_count': len(phase_6.get('steps', [])),

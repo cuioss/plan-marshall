@@ -241,7 +241,7 @@ def _run_unresolved_ask_provider_drop(monkeypatch) -> SiteRun:
 def _run_ceremony_finalize_selection(monkeypatch) -> SiteRun:
     before = ['functional-review', 'code-review', 'archive-plan']
     steps = list(before)
-    _forced_in, forced_out = _mem._apply_ceremony_finalize_selection(
+    _forced_in, forced_out, _refused = _mem._apply_ceremony_finalize_selection(
         steps,
         {
             'functional_review': 'never',
