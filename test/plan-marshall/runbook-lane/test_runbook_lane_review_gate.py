@@ -2861,3 +2861,50 @@ def test_a_repeated_bold_title_counts_its_real_heading_once() -> None:
 
     assert verdict['review_body_findings_total'] == 1, verdict
     assert [row['id'] for row in verdict['undisposed']] == ['nitpick-1']
+
+
+def test_a_prose_row_above_the_section_in_a_summary_less_group_is_not_masked() -> None:
+    """⛔ The group's own summary is masked, never the nested section's.
+
+    An unbounded summary search found the nested section's summary when the group
+    carries none, and the mask then removed the prose finding written above it.
+    """
+    body = (
+        '<details><summary>Review (1)</summary>'
+        '<details> A separate finding. '
+        '<details><summary>Nitpick comments (1)</summary> Another finding. </details>'
+        '</details></details>'
+    )
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['merge_allowed'] is False, verdict
+    assert verdict['reason'] == 'undecidable_read', verdict
+    assert 'carries content beside' in verdict['detail'], verdict
+
+
+def test_markup_quoted_inside_a_fence_is_prose_not_structure() -> None:
+    """A reviewer's quoted snippet is an EXAMPLE: it neither mints findings nor stops."""
+    body = (
+        'Analysis:\n'
+        '```html\n'
+        '<details><summary>Review (1)</summary>\n'
+        '<details><summary>Nitpick comments (1)</summary> x </details>\n'
+        '</details>\n'
+        '```\n'
+    )
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['reason'] != 'undecidable_read', verdict
+    assert verdict['review_body_findings_total'] == 0, verdict
+
+
+def test_a_bold_title_split_across_raw_lines_still_counts_its_rows() -> None:
+    """The display form joins the raw lines, so the raw match allows a whitespace run."""
+    body = '**Nitpick\ncomments (1)**\n- `src/a.py:1` fix the timeout\n'
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['review_body_findings_total'] == 1, verdict
+    assert [row['id'] for row in verdict['undisposed']] == ['nitpick-1']

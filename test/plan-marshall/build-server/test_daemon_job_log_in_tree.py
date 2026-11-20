@@ -328,6 +328,27 @@ def test_every_created_directory_component_is_private(home, tmp_path):
     result = _run_jobs([_spec(canonical)])[0]
 
     assert result['status'] == STATUS_SUCCESS, result
-    for relative in ('local', 'local/marshalld', 'local/marshalld/job-logs'):
+    # Derive every checked component from the daemon's own constant, so a component
+    # added there is checked here; the expected mode stays independent.
+    parts = marshalld._JOB_LOG_SUBDIR.parts[1:]
+    for end in range(1, len(parts) + 1):
+        relative = Path(*parts[:end])
         mode = (project / '.plan' / relative).stat().st_mode & 0o777
         assert mode == 0o700, f'{relative} has mode {oct(mode)}, not 0o700'
+
+
+def test_a_symlinked_component_is_refused_and_not_tightened(home, tmp_path):
+    """A component swapped for a symlink fails the job instead of chmod-ing the target."""
+    project = tmp_path / 'proj'
+    canonical = _register_project(project)
+    outside = tmp_path / 'outside'
+    outside.mkdir(mode=0o755)
+    os.chmod(outside, 0o755)
+    (project / '.plan' / 'local').mkdir()
+    (project / '.plan' / 'local' / 'marshalld').symlink_to(outside, target_is_directory=True)
+
+    result = _run_jobs([_spec(canonical)])[0]
+
+    assert result['status'] == STATUS_FAILURE, result
+    assert result['error'] == 'log_file_failed', result
+    assert outside.stat().st_mode & 0o777 == 0o755, 'the symlink target was tightened'

@@ -2973,6 +2973,36 @@ _HEADING_TRAILING_COUNT_RE = re.compile(r'\s*(?:\(\d+\)|\d+)\s*$')
 #: around it, which would hide a real heading (see ``_code_span_contents``).
 _BACKTICK_RUN_RE = re.compile(r'`+')
 
+#: A fenced code block's fence marker (``` or ~~~, three or more). A reviewer QUOTES
+#: markup inside these fences — a suggested fix, a shell script, an HTML example —
+#: and those bytes are prose about the change, never structure of the review. The
+#: marker is matched anywhere rather than at a line start: the gate parses the
+#: FLATTENED display form, where the newlines a fence opens on are already gone.
+_FENCE_LINE_RE = re.compile(r'```+|~~~+')
+
+
+def _mask_fenced_code(body: str) -> str:
+    """Blank out fenced code blocks, keeping every offset in place.
+
+    A `<details><summary>…</summary>` quoted inside a fence is an EXAMPLE: reading it
+    as a real block minted phantom findings, and after the wrapper content check was
+    narrowed it stopped the gate on CodeRabbit's own quoted snippet. Masking with
+    spaces (never deleting) keeps every other offset — and therefore every span the
+    callers compute — valid.
+    """
+    characters = list(body)
+    open_at: int | None = None
+    for fence in _FENCE_LINE_RE.finditer(body):
+        if open_at is None:
+            open_at = fence.start()
+            continue
+        for index in range(open_at, fence.end()):
+            if characters[index] != '\n':
+                characters[index] = ' '
+        open_at = None
+    return ''.join(characters)
+
+
 #: The severity words a review ROW opens with, and the location marker it carries. A block
 #: whose summary is a counted title continues a bold heading's ownership only when it looks
 #: like a ROW; a bare counted title (`Potential issues (2)`) is a section of its own.
@@ -3707,8 +3737,18 @@ def _transparent_wrappers(body: str, sources: dict[str, Any]) -> tuple[dict[int,
             # recognised section's own block. The rest of the group stays visible, so a
             # prose row written beside the section is content the wrapper must account
             # for; masking the whole group hid exactly that row and required a
-            # disposition only for the section.
-            summary_match = _SUMMARY_RE.search(body, child_open, child_close)
+            # disposition only for the section. The summary search is bounded to the
+            # group's OWN head: an unbounded search found the nested section's summary
+            # when the group carries none, and that removed a finding written above it.
+            first_nested = next(
+                (
+                    token.start()
+                    for token in _DETAILS_TOKEN_RE.finditer(body, child_open + 1, child_close)
+                    if not token.group(0).startswith('</')
+                ),
+                child_close,
+            )
+            summary_match = _SUMMARY_RE.search(body, child_open, first_nested)
             masks.append((child_open, summary_match.end() if summary_match is not None else child_open))
             for child in children:
                 if child_open <= offset_of[child] < child_close:
@@ -3762,16 +3802,17 @@ def _heading_is_a_mention(body: str, start: int, end: int, raw_body: str | None)
         return True
     title = body[start + len('**') : end - len('**')].strip('*')
     needle = '**' + title + '**'
-    # Pair the N-th display occurrence with the N-th raw occurrence. `find()` returned
-    # the FIRST one every time, so a title quoted in an earlier sentence swallowed the
-    # real heading that stood over the rows below it and the finding behind it.
-    occurrence = body[:start].count(needle)
-    index = -1
-    for _ in range(occurrence + 1):
-        index = raw_body.find(needle, index + 1)
-        if index < 0:
-            return True
-    tail = raw_body[index + len(needle) :].split('\n', 1)[0]
+    # The display form has NEWLINES replaced by spaces, so a title split across two raw
+    # lines appears as one line here. Matching token-by-token with a whitespace run
+    # between them finds that raw occurrence; and a title the raw body cannot locate is
+    # NOT called a mention — dropping a heading because its spelling could not be
+    # re-found is the under-count this gate must never take.
+    needle_re = re.compile(r'\s+'.join(re.escape(token) for token in needle.split()))
+    occurrence = max(len(needle_re.findall(body[:start])), 0)
+    matches = list(needle_re.finditer(raw_body))
+    if occurrence >= len(matches):
+        return False
+    tail = raw_body[matches[occurrence].end() :].split('\n', 1)[0]
     remainder = _FLATTENED_BREAK_RE.match(tail)
     tail = tail[remainder.end() :] if remainder is not None else tail
     return bool(tail) and tail[0].isalpha()
@@ -4060,6 +4101,9 @@ def _body_findings(
     enumerate that many rows, so the gate names it rather than allocating them.
     """
     counters = counters if counters is not None else {}
+    # Quoted markup inside a fence is prose (see `_mask_fenced_code`): mask it before
+    # any structural read, so an example can neither mint findings nor stop the gate.
+    body = _mask_fenced_code(body)
     sources = _body_sources(body)
     transparent, stop = _transparent_wrappers(body, sources)
     if stop is not None:

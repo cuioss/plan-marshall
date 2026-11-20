@@ -825,9 +825,14 @@ def _map_daemon_result(waited: dict[str, Any], command_str: str, command_key: st
         daemon_fault = waited.get('error')
         if isinstance(daemon_fault, str) and daemon_fault in RESULT_LAUNCH_FAULT_ERRORS:
             daemon_extra = {name: waited[name] for name in ('reason', 'wrapper', 'project_dir') if waited.get(name)}
+            # A post-run log fault carries the child's own exit code; only a PRE-SPAWN
+            # fault has none. Overwriting an observed code with -1 made a completed
+            # child look like a launch that never happened.
+            observed = waited.get('exit_code')
+            daemon_exit = observed if isinstance(observed, int) and not isinstance(observed, bool) else -1
             return error_result(  # type: ignore[return-value]
                 daemon_fault,
-                -1,
+                daemon_exit,
                 duration,
                 log_file,
                 command_str,

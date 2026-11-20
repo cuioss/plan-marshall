@@ -121,9 +121,11 @@ landing's re-read therefore describes the moment it was taken, not the merge, so
 by itself a false claim. Record the difference WITH THE TIME OF THE RE-READ and classify it by the
 time of the record that differs, where the provider supplies one (`created_at`, `updated_at`): a
 review, a comment or a thread created after the merge explains the difference, and it is recorded as
-a post-merge change, never as a false claim. An `updated_at` after the merge counts as that same
-explanation for a record that existed before it: what changed happened after the merge, which is the
-fact the classification is about. A difference that only a later thread RESOLUTION could
+a post-merge change, never as a false claim. `updated_at` is weaker evidence: it explains the
+difference only when the edit it records IS the difference (that record carried the other value
+before); an `updated_at` that merely moved — a spelling correction on a record whose count is
+unchanged — explains nothing, and the difference is then `undecidable`: never a false claim, and
+never a post-merge change. A difference that only a later thread RESOLUTION could
 explain is `undecidable` — a resolution carries no timestamp — and is recorded as such, never as a
 false claim. A difference no post-merge record explains remains a false claim. The workflow step that
 applies this rule is [`../workflow/analyze.md`](../workflow/analyze.md), and
