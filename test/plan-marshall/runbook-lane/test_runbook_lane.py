@@ -3224,6 +3224,15 @@ def test_section_seven_cites_section_six_retry_classes() -> None:
     assert 'retrying it cannot succeed' not in section
 
 
+def test_the_derived_plan_id_is_a_valid_body_slot() -> None:
+    """The plan id IS the body slot, so a punctuated or over-long name must fold to one."""
+    module = load_script_module('plan-marshall', _SKILL_NAME, 'runbook_lane.py', register=False)
+
+    for name in ('PLAN-42-a_b.c.md', 'PLAN-' + 'x' * 200 + '.md', 'PLAN-42-Ünicode Slug.md', 'PLAN-___.md'):
+        plan = module._plan_id_from_spec(Path(name))
+        assert re.fullmatch(r'[a-z0-9][a-z0-9-]{0,63}', plan), (name, plan)
+
+
 def test_the_lane_text_passes_the_carried_forward_marking_to_the_gate_and_the_facts() -> None:
     section = _section('## 6. Pull request and reviews')
     gate_line = next(line for line in section.splitlines() if 'sonar-gate --state configured' in line)

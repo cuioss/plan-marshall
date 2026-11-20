@@ -208,7 +208,7 @@ assert set(BODY_PREPARE_COMMANDS) == VALID_BODY_KINDS, (
     f'extra={sorted(set(BODY_PREPARE_COMMANDS) - VALID_BODY_KINDS)}'
 )
 
-_BODY_SLOT_RE = re.compile(r'^[a-z0-9][a-z0-9-]{0,127}$')
+_BODY_SLOT_RE = re.compile(r'\A[a-z0-9][a-z0-9-]{0,127}\Z')
 
 #: The plan-less sentinel and the slot every body verb defaults to. Two plan-less
 #: callers share ONE store (a runbook lane, a ledger land, a steward landing), so
@@ -229,7 +229,7 @@ def _resolve_body_slot(slot: str | None) -> str:
     """
     if slot is None or slot == '':
         return _DEFAULT_BODY_SLOT
-    if not _BODY_SLOT_RE.match(slot):
+    if not _BODY_SLOT_RE.fullmatch(slot):
         raise ValueError(f"Invalid slot '{slot}': must match [a-z0-9][a-z0-9-]{{0,127}}")
     return slot
 
@@ -380,7 +380,14 @@ def read_and_consume_body(
 
     refusal = _refuse_shared_planless_slot(plan_id, slot)
     try:
-        path = get_body_path(plan_id, kind, slot)
+        # The SLOT is validated here, before the kind, so an invalid slot answers
+        # `invalid_slot` (the error the shared-slot check computed) rather than being
+        # reported as `invalid_kind` by the path builder.
+        resolved_slot = _resolve_body_slot(slot)
+    except ValueError as exc:
+        return None, {'status': 'error', 'error': 'invalid_slot', 'message': str(exc)}
+    try:
+        path = get_body_path(plan_id, kind, resolved_slot)
     except ValueError as e:
         return None, {'status': 'error', 'error': 'invalid_kind', 'message': str(e)}
 

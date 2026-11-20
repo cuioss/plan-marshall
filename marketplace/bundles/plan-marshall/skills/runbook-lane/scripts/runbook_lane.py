@@ -60,6 +60,7 @@ run over work nobody checked.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -179,20 +180,35 @@ _DEFAULT_BUILD_TIMEOUT_SECONDS = 1800
 #: fallback, not the lane's answer: the lane always uses the resolved value.
 _DEFAULT_BASE_BRANCH = 'main'
 
+#: The longest body slot the CI's own slot pattern accepts on the OLDEST executor this
+#: lane may meet: 64 characters until the executor is regenerated. The plan id doubles as
+#: the slot, so the derivation is bounded by this rather than by the newer 128.
+_BODY_SLOT_MAX_LENGTH = 64
+
 
 def _plan_id_from_spec(spec: Path) -> str:
-    """Derive the lane plan id from a spec's basename.
+    """Derive the lane plan id — and therefore the body slot — from a spec's basename.
 
-    ``PLAN-42-example-slug.md`` becomes ``42-example-slug``: the ``PLAN-``
-    marker is dropped and the rest is lower-cased, which is the same id the
-    orchestrator's row and the inbox sender share.
+    ``PLAN-42-example-slug.md`` becomes ``42-example-slug``: the ``PLAN-`` marker is
+    dropped and the rest is lower-cased, which is the same id the orchestrator's row and
+    the inbox sender share. The result is ALSO the body slot the lane passes to every
+    ``ci`` body verb, so it is folded to the slot vocabulary the CI accepts — lowercase
+    letters, digits and hyphens, starting with a letter or digit, at most 64 characters
+    (the live executor's accepted bound until the executor is regenerated). A spec name
+    with ``_``, ``.`` or a long stem would otherwise derive a slot the CI rejects and
+    stall the lane at PR open. The derivation is deterministic: a truncated id carries a
+    digest of the untruncated one, so two long names cannot collide into one slot.
     """
     stem = spec.name
     if stem.endswith('.md'):
         stem = stem[:-3]
     if stem.startswith('PLAN-'):
         stem = stem[len('PLAN-') :]
-    return stem.lower()
+    folded = re.sub(r'[^a-z0-9]+', '-', stem.lower()).strip('-') or 'plan'
+    if len(folded) <= _BODY_SLOT_MAX_LENGTH:
+        return folded
+    digest = hashlib.sha1(stem.encode('utf-8')).hexdigest()[:8]
+    return f'{folded[: _BODY_SLOT_MAX_LENGTH - len(digest) - 1]}-{digest}'
 
 
 class _SpecChoice(NamedTuple):
@@ -4546,6 +4562,7 @@ def cmd_resolve(args: argparse.Namespace) -> dict[str, Any]:
         'spec_source': choice.source,
         'slug': slug,
         'plan': plan_id,
+        'body_slot': plan_id,
         'worktree': worktree,
         'progress_file': progress_file,
         'landing_file': landing_file,

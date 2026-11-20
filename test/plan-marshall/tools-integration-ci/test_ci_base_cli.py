@@ -788,6 +788,48 @@ def test_read_and_consume_body_reads_the_named_slot_under_no_plan(plan_base_env)
     assert content == 'the land body'
 
 
+def test_a_slot_with_a_trailing_newline_is_refused(plan_base_env):
+    """`$` accepts one trailing newline, so an anchored pattern must not."""
+    with pytest.raises(ValueError):
+        ci_base._resolve_body_slot('default\n')
+
+    result = prepare_body('NO_PLAN', BODY_KIND_PR_CREATE, slot='default\n')
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'invalid_slot'
+
+
+def test_read_and_consume_body_answers_invalid_slot_for_a_punctuated_slot(plan_base_env):
+    """The computed slot error must win over the path builder's kind error."""
+    content, error = read_and_consume_body('my-plan', BODY_KIND_PR_CREATE, slot='Bad_Slot!')
+
+    assert content is None
+    assert error is not None
+    assert error['error'] == 'invalid_slot'
+
+
+_SLOT_RULE_DOCS = (
+    'marketplace/bundles/plan-marshall/skills/tools-integration-ci/SKILL.md',
+    'marketplace/bundles/plan-marshall/skills/tools-integration-ci/standards/api-contract.md',
+    'marketplace/bundles/plan-marshall/skills/tools-integration-ci/standards/issue-operations.md',
+    'marketplace/bundles/plan-marshall/skills/tools-integration-ci/standards/pr-operations.md',
+    'marketplace/bundles/plan-marshall/skills/workflow-integration-gitlab/SKILL.md',
+)
+
+
+def test_the_shared_slot_rule_is_stated_in_one_document():
+    """The rule has one home; every other carrier cross-references it."""
+    texts = {doc: ' '.join((PROJECT_ROOT / doc).read_text(encoding='utf-8').split()) for doc in _SLOT_RULE_DOCS}
+
+    owners = [
+        doc for doc, text in texts.items() if 'the default slot is one file every plan-less caller would write' in text
+    ]
+
+    assert owners == [_SLOT_RULE_DOCS[0]], owners
+    for doc in _SLOT_RULE_DOCS[1:]:
+        assert 'SKILL.md' in texts[doc], f'{doc} carries no cross-reference to the owner'
+
+
 # ---------------------------------------------------------------------------
 # Script-side require_plan_exists guard
 #
