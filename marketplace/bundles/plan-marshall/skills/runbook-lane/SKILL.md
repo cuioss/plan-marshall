@@ -117,6 +117,13 @@ Classifies changed paths as `docs-only` or `buildable` for the build gate (secti
 project's own footprint rule. It answers `source: ci-workflow` when the project's CI opts in to the
 footprint gate, and `source: architecture` otherwise.
 
+A rule the lane cannot read is never another rule. A symlinked workflow that carries the opt-in (or
+one whose target lies outside the checkout) is a discovery problem: `reason` names the file and every
+path builds. A workflow that opts in but declares no `paths-ignore` delegates the rule to a reusable
+workflow this checkout does not hold: every path builds too, and the delegation is the `reason`.
+Reading either as "no CI rule" and falling back to the architecture's module surfaces would decide the
+delta by a rule the CI never applied — and a wrong `docs-only` skips a build the CI runs.
+
 ### sonar-gate
 
 ```bash

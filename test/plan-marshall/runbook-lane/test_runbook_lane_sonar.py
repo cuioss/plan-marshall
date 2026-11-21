@@ -955,6 +955,29 @@ def test_a_workflow_symlink_out_of_the_checkout_is_not_followed(tmp_path: Path) 
     assert lane._iter_workflow_files(repo) == []
 
 
+def test_a_symlinked_workflow_beside_a_regular_one_stops_the_read(tmp_path: Path) -> None:
+    """A symlinked opt-in beside a regular workflow is a rule nobody read.
+
+    Discovery never follows a link, so the opt-in it carries was skipped in silence:
+    the regular workflow read as "no CI rule" and the decision reached the
+    architecture fallback, a rule the CI never applied. Every path builds and the
+    reason names the file, which is the fail-closed direction.
+    """
+    repo = tmp_path / 'repo'
+    workflows = repo / '.github' / 'workflows'
+    workflows.mkdir(parents=True)
+    (workflows / 'ci.yml').write_text('name: CI\non: pull_request\n', encoding='utf-8')
+    carried = tmp_path / 'carried.yml'
+    carried.write_text('skip-on-docs-only: true\n', encoding='utf-8')
+    (workflows / 'linked.yml').symlink_to(carried)
+
+    rows, _source, reason = lane._classify_paths(repo, ['doc/one.adoc'])
+
+    assert rows == [{'path': 'doc/one.adoc', 'kind': 'buildable'}], rows
+    assert reason, 'a rule nobody read must be named, never read as "no CI rule"'
+    assert 'linked.yml' in reason, reason
+
+
 def test_a_delegating_consumers_delta_is_not_carried_forward(tmp_path: Path) -> None:
     """The CI's rule lives in a reusable workflow this checkout does not hold.
 

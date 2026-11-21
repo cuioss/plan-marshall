@@ -19,6 +19,8 @@ Verb surface::
                              [--analysis-revision SHA] [--head-revision SHA] [--worktree DIR]
     runbook_lane sonar-gate --state STATE [--count-status STATUS] [--open-count N]
                              [--open-keys K1,K2] [--operator-selected-keys K1,K2]
+                             [--progress-file PATH] [--hotspot-keys H1,H2]
+                             [--count-status-reason REASON]
                              [--carried-forward --carried-forward-analysis-revision SHA
                               --carried-forward-head-revision SHA]
     runbook_lane sonar-facts --state STATE [--count-status STATUS] [--open-count N] [--rules R1,R2]
@@ -1335,21 +1337,73 @@ def _iter_workflow_files(project_dir: Path) -> list[Path]:
 def _workflow_discovery_problem(project_dir: Path, discovered: list[Path]) -> str | None:
     """Why workflow discovery could not read the project's rule, or ``None``.
 
-    A directory that holds workflow-named entries while discovery returned none is a
-    rule the lane could not read — every candidate was a symlink. Reporting it as
-    "no CI rule" would hand the decision to the architecture fallback, which is a
-    different rule from the one the project's CI applies. A project with no workflow
-    at all is ``None``: that genuinely has no CI footprint rule.
+    A symlinked workflow is never read by discovery (see
+    :func:`_iter_workflow_files`), so it is a discovery problem in two shapes, and
+    each is named with the file:
+
+    * its target cannot be read inside the checkout, so nobody can say whether it
+      carries the opt-in;
+    * it can be read and it DOES carry the opt-in — the rule the project's CI
+      applies sits in a file discovery skips, and reading the remaining regular
+      workflows as "no CI rule" would hand the decision to the architecture
+      fallback, a rule the CI never applied.
+
+    A readable in-checkout link that does not carry the opt-in is therefore not a
+    problem: the lane has established what it holds. A directory whose every
+    workflow-named entry is a symlink is likewise a problem — reporting it as "no CI
+    rule" would decide the delta by a rule the project does not use. A checkout with
+    no workflow at all is ``None``: it genuinely has no CI footprint rule.
     """
     directory = project_dir.joinpath(*_CI_WORKFLOW_DIR)
     try:
         entries = sorted(entry for entry in directory.iterdir() if entry.suffix.lower() in _WORKFLOW_SUFFIXES)
     except OSError:
         return None
+    problems: list[str] = []
+    for entry in entries:
+        if not entry.is_symlink():
+            continue
+        target = _in_checkout_symlink_target(entry, project_dir)
+        if target is None:
+            problems.append(f'{entry.name} is a symlink whose target cannot be read inside the checkout')
+            continue
+        try:
+            lines = target.read_text(encoding='utf-8').splitlines()
+        except (OSError, UnicodeDecodeError):
+            problems.append(f'{entry.name} is a symlink whose target cannot be read')
+            continue
+        if _footprint_opt_in(lines):
+            problems.append(
+                f'{entry.name} is a symlink carrying the footprint opt-in, and discovery never follows a link'
+            )
+    if problems:
+        return f'the CI footprint rule cannot be read: {"; ".join(problems)}'
     if discovered or not entries:
         return None
     names = ', '.join(entry.name for entry in entries)
     return f'every workflow in this checkout is a symlink, so its rule cannot be read: {names}'
+
+
+def _in_checkout_symlink_target(entry: Path, project_dir: Path) -> Path | None:
+    """The file an in-checkout symlink points at, or ``None`` when it points elsewhere.
+
+    Containment is what makes the target legible to a reader confined to this
+    checkout. Following a link whose target lies outside would decide the delta by
+    bytes the graded tree never contained, so that case answers ``None`` and the
+    caller reports it rather than guessing.
+    """
+    try:
+        target = entry.resolve(strict=True)
+    except OSError:
+        return None
+    if not target.is_file():
+        return None
+    try:
+        if not target.is_relative_to(project_dir.resolve()):
+            return None
+    except OSError:
+        return None
+    return target
 
 
 def _footprint_opt_in(lines: list[str]) -> bool:
@@ -1419,10 +1473,11 @@ def _read_footprint_rule(project_dir: Path) -> tuple[list[str] | None, list[str]
     a skipped build.
 
     ``ci_skip_globs`` is the project's own non-building class when the checkout
-    HOLDS it (a ``paths-ignore`` declaration in the opting-in workflow), and
-    ``None`` when it does not — the rule then lives in a reusable workflow the
-    repository does not hold, and the caller falls back to the architecture's
-    narrowly-scoped prose class instead of guessing a skip set.
+    HOLDS it (a ``paths-ignore`` declaration in the opting-in workflow). ``None``
+    means the opting-in workflow declares none — the usual cause being a ``uses:``
+    delegation to a reusable workflow the checkout does not hold. It is never a
+    fall-back to a second rule: ``_classify_paths`` builds every path and names the
+    delegation, because a docs-only answer there would skip a build the CI runs.
     """
     workflows = _iter_workflow_files(project_dir)
     problem = _workflow_discovery_problem(project_dir, workflows)
@@ -1452,10 +1507,10 @@ def _paths_ignore_globs(lines: list[str]) -> list[str] | None:
 
     ``None`` is the load-bearing answer: it says the project's CI rule is NOT in
     this file — the usual cause being a ``uses:`` delegation to a reusable
-    workflow the checkout does not hold — so the caller must fall back to the
-    architecture's narrowly-scoped prose class rather than read "no globs here"
-    as "nothing is skipped". An EMPTY list is a readable rule that names
-    nothing, which correctly skips nothing.
+    workflow the checkout does not hold. It never sends the caller to another
+    rule: ``_classify_paths`` builds every path and names the delegation, because
+    a docs-only answer there would skip a build the CI runs. An EMPTY list is a
+    readable rule that names nothing, which correctly skips nothing.
 
     Only the block form (``paths-ignore:`` followed by ``- glob`` items) and a plain inline scalar
     are read. A YAML flow sequence is tokenized rather than parsed, so it degrades to tokens that

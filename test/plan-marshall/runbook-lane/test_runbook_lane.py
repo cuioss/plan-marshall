@@ -32,6 +32,7 @@ from __future__ import annotations
 import argparse
 import ast
 import builtins
+import inspect
 import json
 import re
 import shutil
@@ -1897,6 +1898,34 @@ def test_build_classify_architecture_fallback_treats_a_doc_module_as_prose(tmp_p
 
     assert data['source'] == 'architecture'
     assert data['kind'] == 'docs-only'
+
+
+def _lane_module():
+    return load_script_module('plan-marshall', _SKILL_NAME, 'runbook_lane.py', register=False)
+
+
+def test_the_footprint_rule_docstring_states_what_the_code_does() -> None:
+    """The docstring claimed an architecture fall-back the code never takes."""
+    doc = inspect.getdoc(_lane_module()._read_footprint_rule) or ''
+
+    assert 'falls back to the architecture' not in doc, doc
+    assert 'builds every path' in doc, doc
+
+
+def test_the_paths_ignore_docstring_states_what_the_code_does() -> None:
+    """The same stale claim, one function down: a ``None`` never reaches a second rule."""
+    doc = inspect.getdoc(_lane_module()._paths_ignore_globs) or ''
+
+    assert 'fall back to the architecture' not in doc, doc
+    assert 'builds every path' in doc, doc
+
+
+def test_the_module_verb_list_names_the_count_status_reason_flag() -> None:
+    """The verb surface is documentation: a flag it omits is a flag a reader does not find."""
+    doc = _lane_module().__doc__ or ''
+    gate = doc.split('sonar-gate', 1)[1].split('sonar-facts', 1)[0]
+
+    assert '--count-status-reason' in gate, gate
 
 
 def _classify_with_a_failing_glob_import(tmp_path: Path, monkeypatch, error: BaseException) -> dict:
