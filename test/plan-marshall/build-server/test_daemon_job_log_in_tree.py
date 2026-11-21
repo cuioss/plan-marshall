@@ -34,7 +34,6 @@ from pathlib import Path
 
 # PLAIN import, deliberately: the build-server suites annotate against
 # ``marshalld.Daemon``, which only a plain import gives mypy.
-import _marshalld_supervisor
 import marshalld
 import pytest
 from _build_server_protocol import STATUS_FAILURE, STATUS_SUCCESS, make_job_spec
@@ -350,9 +349,10 @@ def test_every_created_directory_component_is_private(home, tmp_path):
     result = _run_jobs([_spec(canonical)])[0]
 
     assert result['status'] == STATUS_SUCCESS, result
-    # Derive every checked component from the daemon's own constant, so a component
-    # added there is checked here; the expected mode stays independent.
-    parts = _marshalld_supervisor._JOB_LOG_SUBDIR.parts[1:]
+    # Derive every checked component from the resolver the daemon now reads — the
+    # single source of the log path — so a component added there is checked here;
+    # the expected mode stays independent.
+    parts = marshalld.job_log_dir(Path('/probe')).relative_to('/probe').parts[1:]
     for end in range(1, len(parts) + 1):
         relative = Path(*parts[:end])
         mode = (project / '.plan' / relative).stat().st_mode & 0o777
