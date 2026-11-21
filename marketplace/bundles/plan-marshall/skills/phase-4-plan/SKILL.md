@@ -693,7 +693,7 @@ This step runs after Step 7 (execution order) and before Step 8 (Q-Gate). It MUS
 - `affected_files_count` — `manage-references get --field affected_files`, count entries. The key is **derived** from the outline's structured per-deliverable declarations by `manage-references sync-affected-files`, which reads all three declaration headings — so a survey-scope deliverable's `Files expected to mutate:` paths ARE carried. The read below is ordered immediately after a refresh of that derivation, so this figure is the declared surface as of now rather than the phase-3 snapshot. Step 8b § B2 still defines the cardinality its own predicate needs and says how to derive it; do not assume the two are the same number.
 - `phase-5-steps` CSV (`{p5_csv}`) — read via the bash call below, comma-join the returned `verification_steps` list (the phase-5 block stores its verification step list under `verification_steps`, not `steps`). **Validation/fallback-only on `compose`**: in any inited project the composer sources its candidate list authoritatively from `marshal.json` (`plan.phase-5-execute.verification_steps`) and ignores the CSV, so forwarding a CSV to `compose` cannot inject a plan-scoped candidate. The CSV's live consumer is `validate` (below), where it is `validate`'s own caller-supplied allow-list — a separate surface from compose's candidate source.
 - `phase-6-steps` CSV (`{p6_csv}`) — read via the bash call below, comma-join the returned `steps` list. Same contract as `{p5_csv}`: marshal-authoritative on `compose` (`plan.phase-6-finalize.steps`; CSV is fallback-only), allow-list input on `validate`.
-- `commit_and_push` — read via the bash call below, from the `commit_and_push` field; omit `--commit-and-push` on `compose` when the field is absent (defaults to `true`).
+- `commit_and_push` — read via the bash call below; omit `--commit-and-push` on `compose` ONLY when the read reports `set: false` (the key is absent, and `true` is the documented default). A present value that is not a boolean — a JSON `null` included — is forwarded as it stands, so `compose` refuses it instead of composing on a default nobody wrote.
 
 **Read manifest inputs** (run before compose; do NOT skip or improvise alternative reads):
 
@@ -749,7 +749,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-5-execute get --field commit_and_push
 ```
 
-Parse `value` as `{commit_and_push}` — omit `--commit-and-push` on `compose` when the field is absent.
+Parse `set` and `value`. Omit `--commit-and-push` ONLY when `set` is `false`: the key is absent and `true` is the documented default. When `set` is `true`, forward `value` as read — including a JSON `null` or any other non-boolean: `compose` refuses it (`invalid_commit_and_push`), and omitting the flag would hand the plan the default `true` over a setting nobody could read.
 
 **Compose**:
 

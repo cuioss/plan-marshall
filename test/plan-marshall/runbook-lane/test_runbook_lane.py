@@ -1904,6 +1904,25 @@ def _lane_module():
     return load_script_module('plan-marshall', _SKILL_NAME, 'runbook_lane.py', register=False)
 
 
+def test_an_opt_in_in_a_later_job_still_counts(tmp_path: Path) -> None:
+    """ONE literal `true` opts the workflow in, wherever it appears.
+
+    The shared helper returned on the FIRST occurrence of the key, so a workflow that
+    names the input in several jobs (false in one, true in another) read as opted out
+    and the decision fell through to the architecture rule the CI does not apply.
+    """
+    project = _seed_footprint(tmp_path, opt_in=False)
+    _write(
+        project / '.github' / 'workflows' / 'ci.yml',
+        'name: CI\non: pull_request\njobs:\n  a:\n    with:\n      skip-on-docs-only: false\n'
+        '  b:\n    with:\n      skip-on-docs-only: true\n',
+    )
+
+    data = _build_classify(project, 'doc/developer/build.adoc')
+
+    assert data['source'] == 'ci-workflow', data
+
+
 def test_the_footprint_rule_docstring_states_what_the_code_does() -> None:
     """The docstring claimed an architecture fall-back the code never takes."""
     doc = inspect.getdoc(_lane_module()._read_footprint_rule) or ''

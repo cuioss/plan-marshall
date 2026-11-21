@@ -230,11 +230,15 @@ def _provider_fetches(module) -> int:
     finally:
         github_re_review.fetch_pr_comments_data = original
         ci_base.resolve_ci_provider = original_provider
-    if failure is not None and not calls:
-        # A swallow-all here made the "no shell-out" control pass for ANY failure before
-        # the fetch: the count was 0 whether the provider was never reached or the gate
-        # crashed. A read that did not happen is not a zero count.
-        raise AssertionError(f'the review gate raised before the provider fetch: {failure!r}') from failure
+    if failure is not None:
+        if not calls:
+            # A swallow-all here made the "no shell-out" control pass for ANY failure
+            # before the fetch: the count was 0 whether the provider was never reached or
+            # the gate crashed. A read that did not happen is not a zero count.
+            raise AssertionError(f'the review gate raised before the provider fetch: {failure!r}') from failure
+        # A fetch DID happen, so the exception is gate processing after it. Propagating it
+        # keeps a control from passing on a failure the count cannot see.
+        raise failure
     return len(calls)
 
 

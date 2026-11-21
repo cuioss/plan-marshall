@@ -1017,6 +1017,19 @@ def test_a_readable_in_checkout_symlink_without_the_opt_in_is_not_a_problem(tmp_
     assert reason == '', reason
 
 
+def test_a_symlink_loop_is_a_discovery_problem_not_a_crash(tmp_path: Path) -> None:
+    """A self-referencing workflow link is a target nobody can read, not an exception."""
+    repo = tmp_path / 'repo'
+    workflows = repo / '.github' / 'workflows'
+    workflows.mkdir(parents=True)
+    (workflows / 'ci.yml').write_text('name: CI\non: pull_request\n', encoding='utf-8')
+    (workflows / 'loop.yml').symlink_to(workflows / 'loop.yml')
+
+    _rows, _source, reason = lane._classify_paths(repo, ['doc/one.adoc'])
+
+    assert 'loop.yml' in reason, reason
+
+
 def test_a_delegating_consumers_delta_is_not_carried_forward(tmp_path: Path) -> None:
     """The CI's rule lives in a reusable workflow this checkout does not hold.
 

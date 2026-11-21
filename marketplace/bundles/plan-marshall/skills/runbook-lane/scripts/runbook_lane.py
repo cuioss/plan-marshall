@@ -1394,7 +1394,9 @@ def _in_checkout_symlink_target(entry: Path, project_dir: Path) -> Path | None:
     """
     try:
         target = entry.resolve(strict=True)
-    except OSError:
+    except (OSError, RuntimeError):
+        # ``RuntimeError`` is Python 3.12's answer for a symlink LOOP, which is a
+        # target nobody can read rather than a crash to propagate.
         return None
     if not target.is_file():
         return None
@@ -1409,16 +1411,20 @@ def _in_checkout_symlink_target(entry: Path, project_dir: Path) -> Path | None:
 def _footprint_opt_in(lines: list[str]) -> bool:
     """Whether *lines* opt in to the footprint gate.
 
-    Only a literal ``true`` opts in. A definition that merely NAMES the input
-    (a reusable workflow's ``skip-on-docs-only:`` header, or a caller passing an
-    expression) is not an opt-in and is skipped, so a project that hosts the
-    reusable workflow is not mistaken for one that uses it.
+    Only a literal ``true`` opts in, and ONE such occurrence is an opt-in: a workflow
+    that names the input in several jobs (``skip-on-docs-only: false`` in one,
+    ``true`` in another) applies the gate, so stopping at the first occurrence would
+    read the file as opted out. A definition that merely NAMES the input (a reusable
+    workflow's ``skip-on-docs-only:`` header, or a caller passing an expression) is
+    not an opt-in and is skipped, so a project that hosts the reusable workflow is not
+    mistaken for one that uses it.
     """
     for line in lines:
         stripped = line.strip()
         if stripped.startswith(f'{_FOOTPRINT_OPT_IN_KEY}:'):
             value = stripped.split(':', 1)[1].strip().strip('"\'').lower()
-            return value == 'true'
+            if value == 'true':
+                return True
     return False
 
 
@@ -3931,14 +3937,20 @@ def _transparent_wrappers(
                 if child_open <= offset_of[child] < child_close:
                     section_open, section_close = _enclosing_block_span(body, offset_of[child])
                     masks.append((section_open, section_close if section_close is not None else wrapper_close))
+        source_gap = source_body[end_of[index] : wrapper_close]
         for start_at, end_at in masks:
             first = max(start_at, end_of[index]) - end_of[index]
             last = min(end_at, wrapper_close) - end_of[index]
             if first < last:
                 gap = gap[:first] + ' ' * (last - first) + gap[last:]
-        # ANY non-whitespace text is the wrapper's own content: a letter-or-digit test would
-        # pass a non-ASCII sentence and a symbol-only note, and reading through would drop both.
-        if re.sub(r'<[^>]+>', ' ', gap).strip():
+                source_gap = source_gap[:first] + ' ' * (last - first) + source_gap[last:]
+        # ANY non-whitespace text is the wrapper's own content — in the masked body OR in
+        # the unmasked source. A fenced suggestion the wrapper wrote ITSELF is blanked by
+        # the mask, so checking only the masked gap let such a wrapper read as transparent
+        # and a disposition for its child clear the review without handling that content.
+        # The structural masks are applied to both spans, so a wrapper holding only the
+        # recognised child still passes.
+        if re.sub(r'<[^>]+>', ' ', gap).strip() or re.sub(r'<[^>]+>', ' ', source_gap).strip():
             return {}, (
                 f'the counted wrapper {starts_by_index[index]!r} carries content beside the '
                 f'section it encloses, so its findings cannot be read'

@@ -1144,9 +1144,7 @@ def test_the_body_cap_is_checked_before_any_row_beyond_it_is_built(monkeypatch) 
     verdict = _verdict(_read(_review_body(body)))
 
     assert verdict['reason'] == 'undecidable_read', verdict
-    assert len(built) <= lane._MAX_ENUMERATED_FINDINGS, (
-        f'{len(built)} rows were built for a body the gate then refused at the cap'
-    )
+    assert built == [], f'{len(built)} rows were built for a body the gate then refused at the cap'
 
 
 def test_a_bold_heading_does_not_swallow_a_nested_findings_section() -> None:
