@@ -384,7 +384,7 @@ class TestLicensedStaleAnalysis:
         ):
             result = sonar_mod.cmd_read_open_issues(_read_args(analysed=_STALE))
 
-        assert result['count_status'] == 'confirmed'
+        assert result['count_status'] == 'carried_forward'
         assert result['carried_forward'] is True
         assert result['open_issue_count'] == 0
         assert result['analysis_revision'] == _STALE
