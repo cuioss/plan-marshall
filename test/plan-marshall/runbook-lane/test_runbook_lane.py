@@ -1923,6 +1923,25 @@ def test_an_opt_in_in_a_later_job_still_counts(tmp_path: Path) -> None:
     assert data['source'] == 'ci-workflow', data
 
 
+def test_an_extra_buildable_in_a_later_job_still_builds(tmp_path: Path) -> None:
+    """Every opted-in job's `extra-buildable` applies, not only the first declared.
+
+    The reader stopped at the first `extra-buildable:` key, so an override a later
+    job declares was dropped and the path it forces to build matched the skip rule.
+    """
+    project = _seed_footprint(tmp_path, opt_in=False)
+    _write(
+        project / '.github' / 'workflows' / 'ci.yml',
+        'name: CI\non:\n  pull_request:\n    paths-ignore:\n      - "doc/**"\n'
+        'jobs:\n  a:\n    with:\n      skip-on-docs-only: true\n      extra-buildable: "gen/**"\n'
+        '  b:\n    with:\n      skip-on-docs-only: true\n      extra-buildable: "doc/api/**"\n',
+    )
+
+    data = _build_classify(project, 'doc/api/openapi.md')
+
+    assert data['kind'] == 'buildable', data
+
+
 def test_the_footprint_rule_docstring_states_what_the_code_does() -> None:
     """The docstring claimed an architecture fall-back the code never takes."""
     doc = inspect.getdoc(_lane_module()._read_footprint_rule) or ''

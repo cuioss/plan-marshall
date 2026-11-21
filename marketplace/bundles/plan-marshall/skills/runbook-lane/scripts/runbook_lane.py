@@ -1446,10 +1446,12 @@ def _scalar_tokens(text: str) -> list[str]:
 def _extra_buildable_globs(lines: list[str]) -> list[str]:
     """Return the ``extra-buildable`` globs from a workflow body, in declared order.
 
-    Handles both scalar styles a workflow may use: an inline value (optionally
-    quoted), and a block scalar whose indicator is ``>`` (folded) or ``|``
-    (literal). A block-scalar indicator is not a glob, so neither style is read
-    as one.
+    EVERY declaration contributes: a workflow names the input once per job, and a
+    later job's override forces a path to build exactly as the first one's does —
+    stopping at the first key dropped every later declaration. Handles both scalar
+    styles a workflow may use: an inline value (optionally quoted), and a block
+    scalar whose indicator is ``>`` (folded) or ``|`` (literal). A block-scalar
+    indicator is not a glob, so neither style is read as one.
     """
     extra: list[str] = []
     for index, line in enumerate(lines):
@@ -1465,7 +1467,6 @@ def _extra_buildable_globs(lines: list[str]) -> list[str]:
             if len(candidate) - len(candidate.lstrip(' ')) <= base_indent:
                 break
             extra.extend(_scalar_tokens(candidate))
-        break
     return extra
 
 
