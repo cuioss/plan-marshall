@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import importlib.util
 import re
+import subprocess
 from pathlib import Path
 
 import ci_base
@@ -90,6 +91,16 @@ def _between(text: str, start_marker: str, end_marker: str, source: str) -> str:
 
 def _false_claim_paragraph(text: str) -> str:
     return _between(text, _PARAGRAPH_START, _PARAGRAPH_END, 'analyze.md Step 4')
+
+
+def _template_reread_block(text: str) -> str:
+    """The template's review-numbers bullet, from its first sentence to the CI bullet."""
+    return _between(
+        text,
+        "Read the landing's three review numbers back",
+        '- CI/merge:',
+        'templates/landing-analysis.md',
+    )
 
 
 def _normalized(text: str) -> str:
@@ -209,15 +220,25 @@ def _provider_fetches(module) -> int:
 
     github_re_review.fetch_pr_comments_data = _fetch
     ci_base.resolve_ci_provider = _resolve_github
+    failure: BaseException | None = None
     try:
         module.cmd_review_gate(
             parse_ns('plan-marshall', 'runbook-lane', 'runbook_lane.py', 'review-gate', '--pr-number', '7')
         )
-    except Exception:
-        pass
+    except Exception as exc:  # recorded, never swallowed: the count must be evidence
+        failure = exc
     finally:
         github_re_review.fetch_pr_comments_data = original
         ci_base.resolve_ci_provider = original_provider
+    if failure is not None:
+        if not calls:
+            # A swallow-all here made the "no shell-out" control pass for ANY failure
+            # before the fetch: the count was 0 whether the provider was never reached or
+            # the gate crashed. A read that did not happen is not a zero count.
+            raise AssertionError(f'the review gate raised before the provider fetch: {failure!r}') from failure
+        # A fetch DID happen, so the exception is gate processing after it. Propagating it
+        # keeps a control from passing on a failure the count cannot see.
+        raise failure
     return len(calls)
 
 
@@ -241,14 +262,16 @@ class TestTheDifferenceIsClassifiedByTime:
         assert 'created_at' in spec and 'updated_at' in spec
 
     def test_a_dated_record_makes_a_difference_a_post_merge_change(self):
-        paragraph = _normalized(_false_claim_paragraph(_read(_ANALYZE_MD)))
+        """The OWNER section holds the answer; the workflow step points at it."""
+        spec = _normalized(_read(_LANDING_SPEC))
 
-        assert 'post-merge change, never a false claim' in paragraph
+        assert 'post-merge change, never as a false claim' in spec
+        assert 'Re-reading a landing' in _normalized(_false_claim_paragraph(_read(_ANALYZE_MD)))
 
     def test_a_thread_resolution_is_undecidable_not_a_false_claim(self):
-        paragraph = _normalized(_false_claim_paragraph(_read(_ANALYZE_MD)))
+        spec = _normalized(_read(_LANDING_SPEC))
 
-        assert 'thread resolution could explain is undecidable' in paragraph
+        assert 'thread RESOLUTION could explain is' in spec and 'undecidable' in spec
 
     def test_the_standard_states_the_same_rule_once(self):
         spec = _normalized(_read(_LANDING_SPEC))
@@ -284,6 +307,34 @@ class TestTheDifferenceIsClassifiedByTime:
 # =============================================================================
 # (D1) The paragraph and the landing standard define the values the same way
 # =============================================================================
+
+
+class TestTheRereadClassificationHasOneOwner:
+    """The re-read classification is stated ONCE, and every document points at it."""
+
+    def test_the_other_two_documents_point_at_the_owner(self):
+        analyze = _normalized(_false_claim_paragraph(_read(_ANALYZE_MD)))
+        template = _normalized(_template_reread_block(_read(_TEMPLATE)))
+
+        for name, text in (('analyze.md', analyze), ('landing-analysis.md', template)):
+            assert "Re-reading a landing's review numbers" in text, f'{name} does not name the owner section'
+
+    def test_no_document_states_a_second_answer_for_the_unexplained_difference(self):
+        texts = (
+            ('analyze.md', _normalized(_false_claim_paragraph(_read(_ANALYZE_MD)))),
+            ('landing-payload-spec.md', _normalized(_read(_LANDING_SPEC))),
+            ('landing-analysis.md', _normalized(_template_reread_block(_read(_TEMPLATE)))),
+        )
+
+        for name, text in texts:
+            assert 'remains a false claim' not in text, f'{name} still calls an unexplained difference a false claim'
+            assert 'is a false claim' not in text, f'{name} still calls an unexplained difference a false claim'
+
+    def test_the_owner_gives_one_answer_for_the_pre_merge_record(self):
+        spec = _normalized(_read(_LANDING_SPEC))
+
+        assert 'the gate-read time was not retained' in spec
+        assert 'undecidable' in spec
 
 
 class TestTheStandardAgrees:
@@ -374,7 +425,28 @@ class TestTheParserClause:
 
         assert _provider_fetches(renamed) == 1
 
-    def test_the_property_fails_when_the_fetch_shells_out(self, tmp_path):
+    def test_the_property_fails_when_the_gate_raises_before_the_fetch(self, tmp_path):
+        """The swallow-all control: a crash before the fetch is not a zero count."""
+        renamed = _scratch_module(
+            _REVIEW_GATE_SCRIPT,
+            tmp_path,
+            [
+                (
+                    'def cmd_review_gate(args: argparse.Namespace) -> dict[str, Any]:',
+                    'def cmd_review_gate(args):\n    raise RuntimeError("boom")',
+                )
+            ],
+        )
+
+        raised = False
+        try:
+            _provider_fetches(renamed)
+        except AssertionError:
+            raised = True
+
+        assert raised, 'a gate that raised before the fetch must not be reported as "no provider fetch"'
+
+    def test_the_property_fails_when_the_fetch_shells_out(self, tmp_path, monkeypatch):
         """Moving the fetch into a helper that shells out must be reported."""
         source = _read(_REVIEW_GATE_SCRIPT)
         start = source.index('def _read_review_surfaces(')
@@ -387,6 +459,16 @@ class TestTheParserClause:
         fixture = tmp_path / 'shelled_out.py'
         fixture.write_text(source[:start] + replacement + source[end:], encoding='utf-8')
 
+        def _no_cli(*args, **kwargs):
+            raise AssertionError('the control must never run a real CI CLI')
+
+        monkeypatch.setattr(subprocess, 'run', _no_cli)
         shelled = load_script_module_from_path(fixture)
 
-        assert _provider_fetches(shelled) == 0, 'a shelled-out read must not count as a provider fetch'
+        raised = False
+        try:
+            _provider_fetches(shelled)
+        except AssertionError as exc:
+            raised = 'raised before the provider fetch' in str(exc)
+
+        assert raised, 'a shelled-out read must be reported, never silently counted as a provider fetch'

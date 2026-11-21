@@ -70,36 +70,50 @@ def _read_marshal_phase_step_map(phase_key: str) -> dict[str, dict] | None:
     return None
 
 
-def _read_live_commit_and_push() -> bool | None:
+def _read_live_commit_and_push() -> tuple[bool | None, str]:
     """Read the plan-level ``commit_and_push`` from live marshal.json.
 
-    The documented default applies when the key is absent (``True``) and when the
-    stored value is not bool-shaped; ``None`` means the file could not be read at all,
-    which is a FAILED read rather than the documented default — the caller applies the
-    conservative push-only floor and names the failed read in the refusal.
+    Returns ``(state, unreadable_value)``. The documented default (``True``) applies
+    only when the key is ABSENT; ``None`` means the value could not be read — the file
+    is unreadable, a parent block is not an object, or the value is neither a bool nor
+    a ``true``/``false`` string. A malformed value is a FAILED read, not the documented
+    default: reading it as ``True`` let reconcile backfill push-only steps into a plan
+    whose configuration nobody could read, which is the direction the local-only floor
+    exists to block. ``unreadable_value`` names what failed — the ``repr`` of the value
+    or a sentence describing the unreadable block — so the caller's refusal can say it.
     """
     marshal_path = get_marshal_path()
     if not marshal_path.exists():
-        return None
+        return None, 'marshal.json is absent'
     # `read_json(..., default={})` would turn a CORRUPT file into an empty dict, which
     # then reads as "key absent" -> True. A sentinel keeps a failed read a failed read.
     sentinel = object()
     try:
         data = read_json(marshal_path, default=sentinel)
-    except (OSError, ValueError):
-        return None
+    except (OSError, ValueError) as exc:
+        return None, f'marshal.json could not be read: {exc}'
     if data is sentinel or not isinstance(data, dict):
-        return None
+        return None, 'marshal.json is not a JSON object'
     plan = data.get('plan')
+    if 'plan' in data and not isinstance(plan, dict):
+        # A present block of the wrong type is a FAILED read, not "key absent": the
+        # value it would have carried is unreadable, so the caller applies the floor.
+        return None, f'plan is not a JSON object: {plan!r}'
     phase = plan.get('phase-5-execute') if isinstance(plan, dict) else None
+    if not isinstance(plan, dict):
+        return True, ''
+    if 'phase-5-execute' in plan and not isinstance(phase, dict):
+        return None, f'phase-5-execute is not a JSON object: {phase!r}'
     if not isinstance(phase, dict):
-        return True
-    value = phase.get('commit_and_push')
+        return True, ''
+    if 'commit_and_push' not in phase:
+        return True, ''
+    value = phase['commit_and_push']
     if isinstance(value, bool):
-        return value
+        return value, ''
     if isinstance(value, str) and value.strip().lower() in ('true', 'false'):
-        return value.strip().lower() == 'true'
-    return True
+        return value.strip().lower() == 'true', ''
+    return None, repr(value)
 
 
 def _read_marshal_phase_5_gates() -> tuple[list[str], list[str]]:

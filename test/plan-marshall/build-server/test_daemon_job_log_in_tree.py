@@ -294,15 +294,36 @@ def test_the_log_directory_follows_the_subdir_constant(home, tmp_path, monkeypat
 
     The creation loop once carried its own copy of the component tuple, so the
     constant and the directory the code created could disagree and every routed job
-    then failed as ``log_file_failed`` at the directory stat.
+    then failed as ``log_file_failed`` at the directory stat. The constant is patched
+    through the module global the resolver reads, so BOTH the named log path and the
+    created directory must follow it.
     """
     project = tmp_path / 'proj'
     canonical = _register_project(project)
     moved = Path('.plan') / 'local' / 'marshalld' / 'moved-logs'
-    # Both bindings the daemon module itself reads: the constant its creation loop
-    # consumes and the resolver that names the log path.
-    monkeypatch.setattr(marshalld, '_JOB_LOG_SUBDIR', moved)
-    monkeypatch.setattr(marshalld, 'job_log_dir', lambda root: Path(root) / moved)
+    monkeypatch.setitem(marshalld.job_log_dir.__globals__, '_JOB_LOG_SUBDIR', moved)
+
+    result = _run_jobs([_spec(canonical)])[0]
+
+    assert result['status'] == STATUS_SUCCESS, result
+    log_path = Path(result['log_file'])
+    assert log_path.is_relative_to(project / moved)
+    assert log_path.exists()
+
+
+def test_a_subdir_constant_whose_first_part_is_not_dot_plan_still_creates_its_directory(home, tmp_path, monkeypatch):
+    """The creation loop follows the constant, whatever its first component is.
+
+    The loop anchored the walk at ``project_root / '.plan'`` and skipped the
+    constant's first part, so "moving the constant moves the creation" held only
+    while that first part was `.plan`: with any other anchor the daemon created a
+    directory the log path never names, and every routed job failed as
+    ``log_file_failed``.
+    """
+    project = tmp_path / 'proj'
+    canonical = _register_project(project)
+    moved = Path('var') / 'marshalld' / 'job-logs'
+    monkeypatch.setitem(marshalld.job_log_dir.__globals__, '_JOB_LOG_SUBDIR', moved)
 
     result = _run_jobs([_spec(canonical)])[0]
 
@@ -328,9 +349,10 @@ def test_every_created_directory_component_is_private(home, tmp_path):
     result = _run_jobs([_spec(canonical)])[0]
 
     assert result['status'] == STATUS_SUCCESS, result
-    # Derive every checked component from the daemon's own constant, so a component
-    # added there is checked here; the expected mode stays independent.
-    parts = marshalld._JOB_LOG_SUBDIR.parts[1:]
+    # Derive every checked component from the resolver the daemon now reads — the
+    # single source of the log path — so a component added there is checked here;
+    # the expected mode stays independent.
+    parts = marshalld.job_log_dir(Path('/probe')).relative_to('/probe').parts[1:]
     for end in range(1, len(parts) + 1):
         relative = Path(*parts[:end])
         mode = (project / '.plan' / relative).stat().st_mode & 0o777

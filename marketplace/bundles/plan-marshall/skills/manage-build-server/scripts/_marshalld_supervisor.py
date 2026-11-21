@@ -502,6 +502,18 @@ def _open_at(log_file: str, flags: int) -> int:
     probe cannot redirect the write. ``O_NOFOLLOW`` on the directory itself refuses
     a symlinked parent, and the fallback path open (a platform without ``dir_fd``)
     keeps the existing ``O_NOFOLLOW`` guards.
+
+    **The trust bound is the leaf, and it is stated here rather than widened.** Only
+    the leaf directory is opened with ``O_NOFOLLOW``; an ANCESTOR of it — anything
+    between the submitting tree's root and that directory — can still be replaced by
+    a symlink between the daemon's probe and this open, and such a swap would
+    redirect the write. The bound is accepted because every component of the path
+    lies inside a tree the submitting user owns and the daemon runs as that same
+    user: a writer able to swap an ancestor could equally replace the log's own
+    producer, so walking the ancestors with descriptors would harden a boundary the
+    same-user model does not draw. It is stated, not assumed silently, so a future
+    deployment that runs the daemon as a DIFFERENT user re-opens this decision
+    instead of inheriting it.
     """
     if os.open in getattr(os, 'supports_dir_fd', set()):
         directory = os.path.dirname(log_file) or '.'

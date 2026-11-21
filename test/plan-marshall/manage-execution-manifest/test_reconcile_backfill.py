@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 
+import json
+
 from _manage_execution_manifest_reconcile_fixtures import (
     GHOST,
     REAL_A,
@@ -124,3 +126,65 @@ class TestBackfillHonoursCommitPushDisabled:
         assert result['reconciled'] is False, result
         messages = _emitted_for('rec-local-logged')
         assert any('refused to backfill push' in message for message in messages), messages
+
+    def test_a_malformed_phase_block_applies_the_floor(self, plan_context):
+        """A present phase block that is not an object is a failed read too.
+
+        The value-shaped defect is pinned above; its PARENT can be malformed in
+        exactly the same way, and reading that as the default would backfill
+        push-only steps into a plan whose configuration nobody can read.
+        """
+        (plan_context.fixture_dir / 'marshal.json').write_text(
+            json.dumps(
+                {
+                    'plan': {
+                        'phase-6-finalize': {'steps': {REAL_B: {}, 'push': {}}},
+                        'phase-5-execute': 'not-an-object',
+                    },
+                    'build': {},
+                }
+            ),
+            encoding='utf-8',
+        )
+        _seed_manifest('rec-malformed-block', [REAL_B], candidate_steps=[REAL_B])
+
+        result = cmd_reconcile(_reconcile_ns('rec-malformed-block', apply=True))
+
+        assert result['backfill'] == [], result
+        assert result['backfill_refused'] == ['push'], result
+        assert 'not-an-object' in result['backfill_refused_reason'], result
+        assert 'push' not in read_manifest('rec-malformed-block')['phase_6']['steps']
+
+    def test_a_non_object_plan_block_is_a_failed_read(self, plan_context):
+        """The `plan` block itself can be malformed; that is not "no commit_and_push".
+
+        The `phase-5-execute` shape is pinned above. The parent is the same kind of
+        failed read, and its answer is observable in the result's own
+        `commit_and_push` field: a default there would report a readable configuration.
+        """
+        (plan_context.fixture_dir / 'marshal.json').write_text(
+            json.dumps({'plan': 'not-an-object', 'build': {}}), encoding='utf-8'
+        )
+        _seed_manifest('rec-malformed-plan', [REAL_B], candidate_steps=[REAL_B])
+
+        result = cmd_reconcile(_reconcile_ns('rec-malformed-plan', apply=True))
+
+        assert result['commit_and_push'] is None, result
+
+    def test_a_malformed_commit_and_push_applies_the_floor(self, plan_context):
+        """A present value that is not bool-shaped is a FAILED read, not the default.
+
+        ``_read_live_commit_and_push`` once answered ``True`` for it, so reconcile
+        backfilled push-only steps into a plan whose configuration nobody could read —
+        the direction the local-only floor exists to block. The refusal names the
+        value it could not read.
+        """
+        _write_marshal(plan_context.fixture_dir, [REAL_B, 'push'], commit_and_push='sometimes')
+        _seed_manifest('rec-malformed', [REAL_B], candidate_steps=[REAL_B])
+
+        result = cmd_reconcile(_reconcile_ns('rec-malformed', apply=True))
+
+        assert result['backfill'] == [], result
+        assert result['backfill_refused'] == ['push'], result
+        assert 'sometimes' in result['backfill_refused_reason'], result
+        assert 'push' not in read_manifest('rec-malformed')['phase_6']['steps']

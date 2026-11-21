@@ -32,6 +32,7 @@ from __future__ import annotations
 import argparse
 import ast
 import builtins
+import inspect
 import json
 import re
 import shutil
@@ -1897,6 +1898,72 @@ def test_build_classify_architecture_fallback_treats_a_doc_module_as_prose(tmp_p
 
     assert data['source'] == 'architecture'
     assert data['kind'] == 'docs-only'
+
+
+def _lane_module():
+    return load_script_module('plan-marshall', _SKILL_NAME, 'runbook_lane.py', register=False)
+
+
+def test_an_opt_in_in_a_later_job_still_counts(tmp_path: Path) -> None:
+    """ONE literal `true` opts the workflow in, wherever it appears.
+
+    The shared helper returned on the FIRST occurrence of the key, so a workflow that
+    names the input in several jobs (false in one, true in another) read as opted out
+    and the decision fell through to the architecture rule the CI does not apply.
+    """
+    project = _seed_footprint(tmp_path, opt_in=False)
+    _write(
+        project / '.github' / 'workflows' / 'ci.yml',
+        'name: CI\non: pull_request\njobs:\n  a:\n    with:\n      skip-on-docs-only: false\n'
+        '  b:\n    with:\n      skip-on-docs-only: true\n',
+    )
+
+    data = _build_classify(project, 'doc/developer/build.adoc')
+
+    assert data['source'] == 'ci-workflow', data
+
+
+def test_an_extra_buildable_in_a_later_job_still_builds(tmp_path: Path) -> None:
+    """Every opted-in job's `extra-buildable` applies, not only the first declared.
+
+    The reader stopped at the first `extra-buildable:` key, so an override a later
+    job declares was dropped and the path it forces to build matched the skip rule.
+    """
+    project = _seed_footprint(tmp_path, opt_in=False)
+    _write(
+        project / '.github' / 'workflows' / 'ci.yml',
+        'name: CI\non:\n  pull_request:\n    paths-ignore:\n      - "doc/**"\n'
+        'jobs:\n  a:\n    with:\n      skip-on-docs-only: true\n      extra-buildable: "gen/**"\n'
+        '  b:\n    with:\n      skip-on-docs-only: true\n      extra-buildable: "doc/api/**"\n',
+    )
+
+    data = _build_classify(project, 'doc/api/openapi.md')
+
+    assert data['kind'] == 'buildable', data
+
+
+def test_the_footprint_rule_docstring_states_what_the_code_does() -> None:
+    """The docstring claimed an architecture fall-back the code never takes."""
+    doc = inspect.getdoc(_lane_module()._read_footprint_rule) or ''
+
+    assert 'falls back to the architecture' not in doc, doc
+    assert 'builds every path' in doc, doc
+
+
+def test_the_paths_ignore_docstring_states_what_the_code_does() -> None:
+    """The same stale claim, one function down: a ``None`` never reaches a second rule."""
+    doc = inspect.getdoc(_lane_module()._paths_ignore_globs) or ''
+
+    assert 'fall back to the architecture' not in doc, doc
+    assert 'builds every path' in doc, doc
+
+
+def test_the_module_verb_list_names_the_count_status_reason_flag() -> None:
+    """The verb surface is documentation: a flag it omits is a flag a reader does not find."""
+    doc = _lane_module().__doc__ or ''
+    gate = doc.split('sonar-gate', 1)[1].split('sonar-facts', 1)[0]
+
+    assert '--count-status-reason' in gate, gate
 
 
 def _classify_with_a_failing_glob_import(tmp_path: Path, monkeypatch, error: BaseException) -> dict:

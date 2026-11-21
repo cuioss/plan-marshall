@@ -154,6 +154,29 @@ def _coerce_bool(raw_value: object) -> bool | None:
     return None
 
 
+def _classify_caller_read_failure(caller_file: Path) -> str:
+    """Classify why the CALLER's own ``marshal.json`` could not be loaded.
+
+    ``load_config`` collapses every failure into one exception, but an unparseable
+    document and a document whose top level is not an object are two different
+    defects, and the documentation promises the specific reason for the caller's own
+    file as well as for the main-anchored one. The file is re-read here only to name
+    which defect it is; a second failure keeps ``unreadable``, so the classification
+    never invents a reason it could not establish.
+    """
+    try:
+        raw = caller_file.read_text(encoding='utf-8')
+    except (OSError, UnicodeDecodeError):
+        return 'unreadable'
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        return 'invalid_json'
+    if not isinstance(data, dict):
+        return 'not_object'
+    return 'unreadable'
+
+
 def _use_worktree_config_answer(knob_path: Path | None) -> dict:
     """Answer ``use_worktree`` from ONE read of the main-anchored ``marshal.json``.
 
@@ -337,10 +360,12 @@ def cmd_orchestrator_get(args) -> dict:
         # When the caller's file IS the knob file, the knob helper's classification is
         # the one the documentation promises (`invalid_json`, `not_object`) — running
         # it here keeps the reason identical whether the caller stands in main or in a
-        # linked worktree, instead of collapsing both into `unreadable`.
+        # linked worktree. For every other field the caller's own file is classified
+        # here, so the documented reason is answered for it too instead of collapsing
+        # both defects into `unreadable`.
         if field == 'use_worktree' and knob_path is not None and knob_path.resolve() == caller_file:
             return _use_worktree_config_answer(knob_path)
-        return error_exit(f'cannot read {caller_file}: {exc}', reason='unreadable')
+        return error_exit(f'cannot read {caller_file}: {exc}', reason=_classify_caller_read_failure(caller_file))
 
     orch_present = 'orchestrator' in config
     orch_block = config.get('orchestrator') if orch_present else None

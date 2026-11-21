@@ -138,10 +138,17 @@ _OPERATOR_ONLY_KEY = 'disable-model-invocation'
 #: key inventory is a runtime fact nothing here shows.
 _GAP_CLAUSE = 'lists no field that withholds'
 
-#: Tokens that mark a frontmatter field NAME as a withholding key. A field naming
-#: one of these is evidence that the harness publishes such a key, so a gap
-#: statement beside it is false and the entry point must carry the key instead.
-_WITHHOLDING_FIELD_TOKENS: tuple[str, ...] = ('disable', 'withhold')
+#: The frontmatter fields the generator's own per-harness configs admit and that do
+#: NOT withhold invocation. Pinned here as an explicit CLOSED list from the shipped
+#: ``marketplace/targets/{opencode,antigravity}/frontmatter-rules.json`` — the union of
+#: their ``required_fields`` and ``optional_fields`` — because the guard's question is
+#: "is this field known to be benign?", and a name it cannot place must read as a
+#: possible withholding key. A token heuristic (``disable`` / ``withhold``) cleared
+#: every other spelling, which is the fail-open direction for a sentence that claims
+#: the harness publishes no such key.
+_BENIGN_FRONTMATTER_FIELDS: frozenset[str] = frozenset(
+    {'description', 'model', 'mode', 'permissions', 'effort', 'tools', 'user-invocable'}
+)
 
 #: Phrases that state the absence of a withholding key as a fact about the harness,
 #: or cite support no repository file carries. Neither may appear in an entry point.
@@ -349,9 +356,14 @@ def _withholding_fields(root: Path, harness: str) -> list[str]:
 
 
 def _withholds_invocation(field: str) -> bool:
-    """Whether a frontmatter field's own name declares that invocation is withheld."""
-    normalised = field.casefold()
-    return any(token in normalised for token in _WITHHOLDING_FIELD_TOKENS)
+    """Whether a frontmatter field is one the guard cannot clear as benign.
+
+    Only a name on the closed benign list is cleared: a field the guard cannot place
+    is a possible withholding key, so the gap statement beside it is treated as false
+    until the entry point is updated. Any other direction would let a harness that
+    gained a key under an unexpected spelling keep a false claim.
+    """
+    return field.casefold() not in _BENIGN_FRONTMATTER_FIELDS
 
 
 def _gap_claim_contradicted(root: Path, harness: str) -> bool:
@@ -667,6 +679,27 @@ def test_a_withholding_field_in_either_gap_config_is_detected(tmp_path: Path):
     assert not _gap_claim_contradicted(spelled, 'opencode'), (
         'a harness whose config carries no withholding field must stay clean'
     )
+
+
+def test_a_withholding_field_spelled_outside_the_two_tokens_is_detected(tmp_path: Path):
+    """A name the guard cannot place is a possible withholding key, not a cleared one.
+
+    The token heuristic (``disable`` / ``withhold``) cleared every other spelling, so a
+    harness whose config gained ``exclude-from-model`` kept a gap statement that was
+    false. The cleared set is now a CLOSED list of the benign fields the shipped configs
+    admit — their own ``required_fields`` plus ``optional_fields``, union — so a name
+    outside it fails closed and the entry point must be updated.
+    """
+    root = tmp_path / 'planted'
+    _plant(root, {})
+    target = root / _HARNESS_RULES_FILES['opencode']
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(
+        json.dumps({'required_fields': ['description'], 'optional_fields': ['exclude-from-model']}),
+        encoding='utf-8',
+    )
+
+    assert _gap_claim_contradicted(root, 'opencode'), 'a field outside the benign list must not be cleared'
 
 
 def test_no_entry_point_states_the_absence_of_a_key_as_a_fact_about_the_harness(tmp_path: Path):

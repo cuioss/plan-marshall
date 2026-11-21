@@ -117,11 +117,18 @@ Classifies changed paths as `docs-only` or `buildable` for the build gate (secti
 project's own footprint rule. It answers `source: ci-workflow` when the project's CI opts in to the
 footprint gate, and `source: architecture` otherwise.
 
+A rule the lane cannot read is never another rule. A symlinked workflow that carries the opt-in (or
+one whose target lies outside the checkout) is a discovery problem: `reason` names the file and every
+path builds. A workflow that opts in but declares no `paths-ignore` delegates the rule to a reusable
+workflow this checkout does not hold: every path builds too, and the delegation is the `reason`.
+Reading either as "no CI rule" and falling back to the architecture's module surfaces would decide the
+delta by a rule the CI never applied — and a wrong `docs-only` skips a build the CI runs.
+
 ### sonar-gate
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane sonar-gate \
-  --state {configured|not_configured} [--count-status {confirmed|undecidable|unconfigured}] \
+  --state {configured|not_configured} [--count-status {confirmed|carried_forward|undecidable|unconfigured}] \
   [--open-count N] [--open-keys "K1,K2"] [--operator-selected-keys "K1,K2"] [--progress-file PATH] \
   [--hotspot-keys "H1,H2"] [--count-status-reason "the read's own reason"] \
   [--carried-forward --carried-forward-analysis-revision {sha} --carried-forward-head-revision {sha}]
@@ -132,20 +139,25 @@ and the carry-forward marking belong to a `configured` state: supplying any of t
 `--state not_configured` is refused as `state_contradicts_read`, because a project with no Sonar has
 no read to report.
 
-**The carry-forward marking binds itself to the read.** A `--count-status-reason` that names a
-carry-forward (`carried_forward…`) while the marking is absent is refused as
-`carried_forward_unmarked`, so a figure measured at another head cannot reach the gate as this
-head's measurement. When the marking is present the read's own reason becomes the verdict's
-`reason`, so an empty delta is described as empty rather than as one the project does not build. A
+**The carry-forward marking binds itself to the read.** A carried-forward read answers
+`count_status: carried_forward` — never `confirmed` — so a caller that copies only the status and the
+count is refused as `carried_forward_unmarked` unless the marking and both revisions accompany it.
+That status is a REQUIRED input here, which is what keeps the binding from resting on the optional
+reason. A `--count-status-reason` that names a carry-forward (`carried_forward…`) is refused the same
+way when the marking is absent. When the marking is present the read's own reason becomes the
+verdict's `reason`; with no reason supplied the fallback names the two heads and says nothing about the
+delta, so an empty delta is never described as one the project does not build. A
 revision that is not a hexadecimal object name is refused as `revision_format_invalid`, and a short
 SHA and the full object name of one commit are one revision (`carried_forward_revisions_equal`),
 never a pair.
 
 Decides the merge gate's Sonar condition (section 7) from the read taken on the head:
-`merge_allowed: true` for `not_configured`, for a confirmed `0`, and for a confirmed count whose every
+`merge_allowed: true` for `not_configured`, for a measured `0`, and for a measured count whose every
 enumerated key is one the OPERATOR selected for dismissal. `undecidable` and `unconfigured` reads, a
 key the operator did not select and a count with no enumerated keys all answer `merge_allowed: false`
-with their `reason`. The retired `--dismissed-keys` flag is refused as
+with their `reason`. The `confirmed_*` reason identifiers name a MEASURED read — `carried_forward`
+included — because the figure is a measurement wherever it was taken. The retired `--dismissed-keys`
+flag is refused as
 `lane_dismissal_not_accepted`: the lane never records a dismissal of its own.
 
 `--progress-file` is the MECHANISM behind the operator rule, not a second opinion: it is REQUIRED
@@ -166,21 +178,28 @@ be told from a read that found none.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane sonar-facts \
-  --state {configured|not_configured} [--count-status {confirmed|undecidable|unconfigured}] \
+  --state {configured|not_configured} [--count-status {confirmed|carried_forward|undecidable|unconfigured}] \
   [--open-count N] [--rules "R1,R2"] [--gate-status {ok|error|not_computed|unknown}] \
   [--count-status-reason "the read's own reason"] \
   [--carried-forward --analysed-revision {sha} --carried-forward-head-revision {sha}]
 ```
 
+A `carried_forward` status is rendered exactly as a confirmed one is, with the marking lines beside it,
+and is refused as `carried_forward_unmarked` without them. `--analysed-revision` and the legacy
+`--carried-forward-analysis-revision` spelling name ONE value: passing both with different values is
+refused as `conflicting_revision_spellings`, never resolved last-wins, and the legacy spelling alone is
+still honoured.
+
 Renders the landing's Sonar facts (section 8) from the read taken at the merge head:
 `sonar_open_new_issues` — the landing's REQUIRED count key, one spelling for one measurement — and
-`step.sonar-roundtrip.open_issue_rules` in `fact_lines`. A confirmed count carries the measured figure
+`step.sonar-roundtrip.open_issue_rules` in `fact_lines`. A measured count (`confirmed`, or
+`carried_forward`) carries the measured figure
 and the rules it left open (`--rules` is required above zero, and `none` at a measured `0`);
 `undecidable` and `unconfigured` both carry `unknown`, and a project without Sonar carries `n/a` at
 both — the answered absence, which is a legal value for the required count. A carried-forward figure
-carries `--carried-forward` (a `confirmed` count only) with both heads; section 8 states the three
-fact lines it renders beside the count, and the verb refuses the marker without them and them
-without it. `--gate-status` adds the
+carries `--carried-forward` (status `carried_forward`, never `confirmed`) with both heads; section 8
+states the three fact lines it renders beside the count, and the verb refuses the marker without them
+and them without it. `--gate-status` adds the
 OPTIONAL `step.sonar-roundtrip.quality_gate_status` fact: a Sonar quality gate can fail on a new-code
 metric that is neither an open finding nor an unreviewed hotspot, so that failure is not a finding for
 the open-findings rule — but it is reported, because a landing silent about a failing gate states half
@@ -388,7 +407,7 @@ D{n} hypothesis: {claim} — confirmed|refuted, {file:line}
 D{n} test: {test name} — order {test-first|mutation-after|none}; failing run {commit} {output identifier}; passed at {sha}
 D{n} done: commit {sha}
 finding: {reviewer} {section} {id} — {sha|reason}
-sonar: {configured (project key)}|{not_configured}; read at {sha}: {count} confirmed|{undecidable, retried}|{not_configured}; operator-selected: {issue-key: reason, … or none}
+sonar: {configured (project key)}|{not_configured}; read at {sha}: {count} {confirmed|carried_forward}|{undecidable, retried}|{not_configured}; operator-selected: {issue-key: reason, … or none}
 gate: {quality-gate|module-tests|verify} at {sha} — {result}
 self-review round {k}: {findings and disposition}; open: {list or none}
 pr: #{N} created at {sha}
@@ -840,11 +859,12 @@ whether to continue at the limit. Record every finding and its disposition.
      `paging.total` exceeds the page it carries, or carries none, comes back `undecidable`: a count
      the read cannot show to be complete is never a number.
      Fix each finding in a pushed commit, or have the OPERATOR dismiss it (see the dismissal rule
-     below). Re-read after every push until the count is `0` confirmed, or every remaining finding's
+     below). Re-read after every push until the count is `0` on a measured read, or every remaining
+     finding's
      key is one the operator selected. The gate's `--open-keys` is the read's own `open_keys` field —
      it enumerates the issue keys AND the hotspot keys, so a hotspot is never lost by reading `issues`
      alone. Then decide the gate:
-     `python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane sonar-gate --state configured --count-status {confirmed|undecidable|unconfigured} --open-count {n} --open-keys {open_keys} --operator-selected-keys {k1,k2} --progress-file {progress_file} --hotspot-keys {hotspot_keys}`.
+     `python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane sonar-gate --state configured --count-status {confirmed|carried_forward|undecidable|unconfigured} --open-count {n} --open-keys {open_keys} --operator-selected-keys {k1,k2} --progress-file {progress_file} --hotspot-keys {hotspot_keys}`.
    - **A dismissal is the operator's act, never the lane's.** When a finding should not be fixed, ask
      the operator with the question tool, naming each finding key and what dismissing it would mean,
      and transmit a key only on the option the operator SELECTED. The progress file records the
@@ -887,13 +907,14 @@ whether to continue at the limit. Record every finding and its disposition.
      and the head the decision verified:
      `read_open_issues … --analysed-revision {analysis_revision} --carried-forward-head-revision {head_revision}`.
      That makes the count, the key set and the rules a MEASUREMENT of the analysed head, so a
-     carried-forward `0` is a confirmed zero of that head. The licence is HEAD-BOUND: the analysed
+     carried-forward `0` is a measured zero of that head — reported as `count_status: carried_forward`,
+     never as `confirmed`. The licence is HEAD-BOUND: the analysed
      revision alone is disclosed by every undecidable read, so a licence without the verified head
      is refused (`analysed_revision_requires_verified_head`), and a read whose reported head differs
      from it is refused too (`carried_forward_head_mismatch`) — a push landed between the two calls,
      so re-run the decision for the new head.
      Then pass the gate the read's own marker, its reason and both revisions,
-     `sonar-gate --state configured --count-status confirmed --open-count {n} --open-keys {open_keys} --count-status-reason "{read_reason}" --carried-forward --carried-forward-analysis-revision {analysis_revision} --carried-forward-head-revision {head_revision} …`,
+     `sonar-gate --state configured --count-status carried_forward --open-count {n} --open-keys {open_keys} --count-status-reason "{read_reason}" --carried-forward --carried-forward-analysis-revision {analysis_revision} --carried-forward-head-revision {head_revision} …`,
      and render the landing's figure the same way,
      `sonar-facts … --count-status-reason "{read_reason}" --carried-forward --analysed-revision {analysis_revision} --carried-forward-head-revision {head_revision}`,
      so the fact names the head it was measured at and the head it stands in for. A carried-forward
@@ -1014,11 +1035,13 @@ Merge only when all of these hold:
   form's parts are the run that must be green.
 - CI is green on the current head.
 - The Sonar state of the current head admits the merge: `sonar-gate` reports `merge_allowed: true`
-  on a read taken after the last push — its open new-code finding count is `0` confirmed, or every
+  on a read taken after the last push — its open new-code finding count is `0` measured (a
+  `confirmed` or `carried_forward` status), or every
   remaining finding is one the OPERATOR selected for dismissal, or `resolve` reported
-  `not_configured`. A carried-forward read (§ 6's `carried_forward_unbuilt_delta`, carrying
+  `not_configured`. A carried-forward read (status `carried_forward`, carrying
   `--carried-forward` and both revisions) admits the merge on exactly those terms, because its
-  enumeration is a measurement of the analysed head. The count covers the open issues AND the security hotspots still to review. An
+  enumeration is a measurement of the analysed head; the decision's own delta sentence is a separate
+  value and does not travel through the gate. The count covers the open issues AND the security hotspots still to review. An
   `undecidable` read is a blocker and is retried according to section 6's retry classes: a refusal
   that class names NOT retryable on this head stays a blocker until the input changes (a rebuild) or
   the operator decides. An `unconfigured` read is a blocker too; the lane never treats either as `0`.
@@ -1187,14 +1210,15 @@ step.sonar-roundtrip.open_issue_rules={rules left open|none|unknown|n/a}
   them is rejected by `inbox landing-check`, so a "all handled" claim has its numbers behind it.
 - **Sonar (the count is required):** `sonar_open_new_issues` is a required field. When `sonar` is
   `configured`, render it with
-  `python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane sonar-facts --state configured --count-status {confirmed|undecidable|unconfigured} [--open-count {n}] [--rules "{r1,r2}"] [--gate-status {ok|error|not_computed|unknown}] [--carried-forward --analysed-revision {sha} --carried-forward-head-revision {sha}]`
+  `python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane sonar-facts --state configured --count-status {confirmed|carried_forward|undecidable|unconfigured} [--open-count {n}] [--rules "{r1,r2}"] [--gate-status {ok|error|not_computed|unknown}] [--carried-forward --analysed-revision {sha} --carried-forward-head-revision {sha}]`
   and write its `fact_lines` verbatim; when it is `not_configured`, render with
   `--state not_configured` and write `n/a` at the count (a project with no Sonar has no such number —
   one of the four keys at which `n/a` is a legal answer). A confirmed count writes the measured
   figure, with the rules it left open on the optional `step.sonar-roundtrip.open_issue_rules` line
   (`none` when that count is `0`). **A carried-forward figure carries its marking and names both
-  heads:** pass `--carried-forward --analysed-revision {analysis_revision} --carried-forward-head-revision {head_revision}`
-  (a `confirmed` count only — the verb refuses it beside any other status), and the
+  heads:** pass `--carried-forward` with `--count-status carried_forward` and
+  `--analysed-revision {analysis_revision} --carried-forward-head-revision {head_revision}`
+  (the verb refuses the marking beside an `undecidable` or `unconfigured` read), and the
   `step.sonar-roundtrip.analysed_revision`, `step.sonar-roundtrip.carried_forward_head_revision` and
   `step.sonar-roundtrip.carried_forward=true` lines ride beside the count, so the figure never reads
   like a measurement of the head the pull request points at. A carried-forward figure without that

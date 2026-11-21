@@ -19,6 +19,8 @@ Verb surface::
                              [--analysis-revision SHA] [--head-revision SHA] [--worktree DIR]
     runbook_lane sonar-gate --state STATE [--count-status STATUS] [--open-count N]
                              [--open-keys K1,K2] [--operator-selected-keys K1,K2]
+                             [--progress-file PATH] [--hotspot-keys H1,H2]
+                             [--count-status-reason REASON]
                              [--carried-forward --carried-forward-analysis-revision SHA
                               --carried-forward-head-revision SHA]
     runbook_lane sonar-facts --state STATE [--count-status STATUS] [--open-count N] [--rules R1,R2]
@@ -87,7 +89,7 @@ _SONAR_CONFIG_KEY = 'workflow-integration-sonar'
 #: time), never a resolve state: a project that carries a project key but cannot
 #: authenticate must block, not silently skip a check resolve said it needed.
 _SONAR_STATES = ('configured', 'not_configured')
-_SONAR_COUNT_STATUSES = ('confirmed', 'undecidable', 'unconfigured')
+_SONAR_COUNT_STATUSES = ('confirmed', 'carried_forward', 'undecidable', 'unconfigured')
 
 #: The landing's required Sonar count key. One spelling for one measurement: the
 #: schema, the gate's read and this renderer all name the same field, so a
@@ -1335,36 +1337,94 @@ def _iter_workflow_files(project_dir: Path) -> list[Path]:
 def _workflow_discovery_problem(project_dir: Path, discovered: list[Path]) -> str | None:
     """Why workflow discovery could not read the project's rule, or ``None``.
 
-    A directory that holds workflow-named entries while discovery returned none is a
-    rule the lane could not read — every candidate was a symlink. Reporting it as
-    "no CI rule" would hand the decision to the architecture fallback, which is a
-    different rule from the one the project's CI applies. A project with no workflow
-    at all is ``None``: that genuinely has no CI footprint rule.
+    A symlinked workflow is never read by discovery (see
+    :func:`_iter_workflow_files`), so it is a discovery problem in two shapes, and
+    each is named with the file:
+
+    * its target is not a readable regular file inside the checkout, so nobody can
+      say whether it carries the opt-in;
+    * it can be read and it DOES carry the opt-in — the rule the project's CI
+      applies sits in a file discovery skips, and reading the remaining regular
+      workflows as "no CI rule" would hand the decision to the architecture
+      fallback, a rule the CI never applied.
+
+    A readable in-checkout link that does not carry the opt-in is therefore not a
+    problem: the lane has established what it holds. A directory whose every
+    workflow-named entry is a symlink is likewise a problem — reporting it as "no CI
+    rule" would decide the delta by a rule the project does not use. A checkout with
+    no workflow at all is ``None``: it genuinely has no CI footprint rule.
     """
     directory = project_dir.joinpath(*_CI_WORKFLOW_DIR)
     try:
         entries = sorted(entry for entry in directory.iterdir() if entry.suffix.lower() in _WORKFLOW_SUFFIXES)
     except OSError:
         return None
+    problems: list[str] = []
+    for entry in entries:
+        if not entry.is_symlink():
+            continue
+        target = _in_checkout_symlink_target(entry, project_dir)
+        if target is None:
+            problems.append(f'{entry.name} is a symlink whose target is not a readable file inside the checkout')
+            continue
+        try:
+            lines = target.read_text(encoding='utf-8').splitlines()
+        except (OSError, UnicodeDecodeError):
+            problems.append(f'{entry.name} is a symlink whose target cannot be read')
+            continue
+        if _footprint_opt_in(lines):
+            problems.append(
+                f'{entry.name} is a symlink carrying the footprint opt-in, and discovery never follows a link'
+            )
+    if problems:
+        return f'the CI footprint rule cannot be read: {"; ".join(problems)}'
     if discovered or not entries:
         return None
     names = ', '.join(entry.name for entry in entries)
     return f'every workflow in this checkout is a symlink, so its rule cannot be read: {names}'
 
 
+def _in_checkout_symlink_target(entry: Path, project_dir: Path) -> Path | None:
+    """The file an in-checkout symlink points at, or ``None`` when it points elsewhere.
+
+    Containment is what makes the target legible to a reader confined to this
+    checkout. Following a link whose target lies outside would decide the delta by
+    bytes the graded tree never contained, so that case answers ``None`` and the
+    caller reports it rather than guessing.
+    """
+    try:
+        target = entry.resolve(strict=True)
+    except (OSError, RuntimeError):
+        # ``RuntimeError`` is Python 3.12's answer for a symlink LOOP, which is a
+        # target nobody can read rather than a crash to propagate.
+        return None
+    if not target.is_file():
+        return None
+    try:
+        if not target.is_relative_to(project_dir.resolve()):
+            return None
+    except OSError:
+        return None
+    return target
+
+
 def _footprint_opt_in(lines: list[str]) -> bool:
     """Whether *lines* opt in to the footprint gate.
 
-    Only a literal ``true`` opts in. A definition that merely NAMES the input
-    (a reusable workflow's ``skip-on-docs-only:`` header, or a caller passing an
-    expression) is not an opt-in and is skipped, so a project that hosts the
-    reusable workflow is not mistaken for one that uses it.
+    Only a literal ``true`` opts in, and ONE such occurrence is an opt-in: a workflow
+    that names the input in several jobs (``skip-on-docs-only: false`` in one,
+    ``true`` in another) applies the gate, so stopping at the first occurrence would
+    read the file as opted out. A definition that merely NAMES the input (a reusable
+    workflow's ``skip-on-docs-only:`` header, or a caller passing an expression) is
+    not an opt-in and is skipped, so a project that hosts the reusable workflow is not
+    mistaken for one that uses it.
     """
     for line in lines:
         stripped = line.strip()
         if stripped.startswith(f'{_FOOTPRINT_OPT_IN_KEY}:'):
             value = stripped.split(':', 1)[1].strip().strip('"\'').lower()
-            return value == 'true'
+            if value == 'true':
+                return True
     return False
 
 
@@ -1386,10 +1446,12 @@ def _scalar_tokens(text: str) -> list[str]:
 def _extra_buildable_globs(lines: list[str]) -> list[str]:
     """Return the ``extra-buildable`` globs from a workflow body, in declared order.
 
-    Handles both scalar styles a workflow may use: an inline value (optionally
-    quoted), and a block scalar whose indicator is ``>`` (folded) or ``|``
-    (literal). A block-scalar indicator is not a glob, so neither style is read
-    as one.
+    EVERY declaration contributes: a workflow names the input once per job, and a
+    later job's override forces a path to build exactly as the first one's does —
+    stopping at the first key dropped every later declaration. Handles both scalar
+    styles a workflow may use: an inline value (optionally quoted), and a block
+    scalar whose indicator is ``>`` (folded) or ``|`` (literal). A block-scalar
+    indicator is not a glob, so neither style is read as one.
     """
     extra: list[str] = []
     for index, line in enumerate(lines):
@@ -1405,7 +1467,6 @@ def _extra_buildable_globs(lines: list[str]) -> list[str]:
             if len(candidate) - len(candidate.lstrip(' ')) <= base_indent:
                 break
             extra.extend(_scalar_tokens(candidate))
-        break
     return extra
 
 
@@ -1419,10 +1480,11 @@ def _read_footprint_rule(project_dir: Path) -> tuple[list[str] | None, list[str]
     a skipped build.
 
     ``ci_skip_globs`` is the project's own non-building class when the checkout
-    HOLDS it (a ``paths-ignore`` declaration in the opting-in workflow), and
-    ``None`` when it does not — the rule then lives in a reusable workflow the
-    repository does not hold, and the caller falls back to the architecture's
-    narrowly-scoped prose class instead of guessing a skip set.
+    HOLDS it (a ``paths-ignore`` declaration in the opting-in workflow). ``None``
+    means the opting-in workflow declares none — the usual cause being a ``uses:``
+    delegation to a reusable workflow the checkout does not hold. It is never a
+    fall-back to a second rule: ``_classify_paths`` builds every path and names the
+    delegation, because a docs-only answer there would skip a build the CI runs.
     """
     workflows = _iter_workflow_files(project_dir)
     problem = _workflow_discovery_problem(project_dir, workflows)
@@ -1452,10 +1514,10 @@ def _paths_ignore_globs(lines: list[str]) -> list[str] | None:
 
     ``None`` is the load-bearing answer: it says the project's CI rule is NOT in
     this file — the usual cause being a ``uses:`` delegation to a reusable
-    workflow the checkout does not hold — so the caller must fall back to the
-    architecture's narrowly-scoped prose class rather than read "no globs here"
-    as "nothing is skipped". An EMPTY list is a readable rule that names
-    nothing, which correctly skips nothing.
+    workflow the checkout does not hold. It never sends the caller to another
+    rule: ``_classify_paths`` builds every path and names the delegation, because
+    a docs-only answer there would skip a build the CI runs. An EMPTY list is a
+    readable rule that names nothing, which correctly skips nothing.
 
     Only the block form (``paths-ignore:`` followed by ``- glob`` items) and a plain inline scalar
     are read. A YAML flow sequence is tokenized rather than parsed, so it degrades to tokens that
@@ -2219,6 +2281,12 @@ def _same_revision(one: str, other: str) -> bool:
 
     A short SHA and the full object name of the same commit are one revision, so a
     string comparison would report a carried-forward pair that does not exist.
+
+    The comparison is a HEX PREFIX of at least :data:`_MIN_REVISION_PREFIX` (seven)
+    characters, matched in one direction — it does not resolve object names. Seven is
+    git's own abbreviation floor: it is the shortest prefix this lane treats as naming
+    a commit, and the same bound guards ``sonar._same_commit``, because the licence and
+    the gate must answer one pair the same way.
     """
     if not one or not other:
         return False
@@ -2247,13 +2315,26 @@ def _carried_forward_revisions(
     read was carried forward — a caller that invents all three still gets the
     rename — and it does not stop a plain figure being reported plainly. One
     revision alone describes no read either, so it is refused rather than
-    half-recorded, and the pair is refused on any read that is not a confirmed
+    half-recorded, and the pair is refused on any read that is not a measured
     enumeration — the carry-forward renames a measured figure, never a failed one.
     """
     marked = bool(getattr(args, 'carried_forward', False))
     analysed = (getattr(args, 'carried_forward_analysis_revision', None) or '').strip()
     head = (getattr(args, 'carried_forward_head_revision', None) or '').strip()
     if not marked and not analysed and not head:
+        if getattr(args, 'count_status', None) == 'carried_forward':
+            # The status IS the marking's annunciation: the read answered that its
+            # figure stands in for another head, so a verdict that re-renders it as
+            # this head's measurement would contradict the read it came from.
+            return None, {
+                'status': 'error',
+                'error': 'carried_forward_unmarked',
+                'message': (
+                    'the read answered count_status carried_forward: pass --carried-forward beside '
+                    '--carried-forward-analysis-revision and --carried-forward-head-revision, so the '
+                    'figure cannot be reported as a measurement of this head'
+                ),
+            }
         return None, None
     if not marked:
         return None, {
@@ -2274,12 +2355,12 @@ def _carried_forward_revisions(
                 '--carried-forward-analysis-revision and --carried-forward-head-revision'
             ),
         }
-    if getattr(args, 'count_status', None) != 'confirmed':
+    if getattr(args, 'count_status', None) not in ('confirmed', 'carried_forward'):
         return None, {
             'status': 'error',
             'error': 'carried_forward_requires_confirmed',
             'message': (
-                'a carried-forward read is a confirmed enumeration of the analysed head; '
+                'a carried-forward read is a measured enumeration of the analysed head; '
                 f'--count-status is {getattr(args, "count_status", None)!r}'
             ),
         }
@@ -2322,16 +2403,21 @@ def _carried_forward(
 
     A carried-forward figure is a measured figure of an EARLIER head, so a verdict
     that admitted it on ``no_open_issues`` would read like a measurement of this
-    one. The distinct name carries both revisions and the fact that the delta was
-    not built, so the landing and the operator see which head was counted. When the
-    read's OWN ``count_status_reason`` is supplied it is used instead of the default
-    sentence, so an empty delta is not described as one the project does not build.
+    one. The distinct name carries both revisions and the read's own reason (or a
+    fallback naming the two heads when the read supplied none), and it says nothing
+    about the delta: an empty delta is a legal carry-forward, so only the read's
+    statement describes it.
     """
     if carried_forward is None or not verdict.get('merge_allowed'):
         return verdict
     analysed, head = carried_forward
+    # The fallback names the two heads and NOTHING about the delta: an empty-delta
+    # carry (a docs-only change since the analysed head) is legal, so a sentence
+    # asserting "not built" would state a property the read never claimed. Only the
+    # read's own reason describes the delta, and it is used when supplied.
     verdict['reason'] = reason.strip() or (
-        f'{_CARRY_FORWARD_UNBUILT}: analysed {analysed} != head {head}; the delta since the analysed head is not built'
+        f'carried_forward_read: analysed {analysed} != head {head}; the read was carried forward '
+        'and its own reason was not supplied'
     )
     verdict['carried_forward'] = True
     verdict['analysis_revision'] = analysed
@@ -2370,6 +2456,11 @@ def _sonar_gate_verdict(
       run dismiss its own findings. A count with no enumerated key set cannot be
       verified key by key, so it is refused rather than passed on the count
       alone.
+    - ``carried_forward`` — the same conditions, over a figure the read measured at
+      the ANALYSED head. The status is the read's own annunciation, so it reaches
+      this function only through the required ``--count-status``; ``cmd_sonar_gate``
+      refuses it unless the marking and both revisions accompany it, and
+      ``_carried_forward`` then names the two heads in the verdict.
     """
     if state == 'not_configured':
         return {
@@ -2579,7 +2670,7 @@ def cmd_sonar_gate(args: argparse.Namespace) -> dict[str, Any]:
             ),
         }
     if (
-        count_status == 'confirmed'
+        count_status in ('confirmed', 'carried_forward')
         and isinstance(open_count, int)
         and open_count > 0
         and _split_csv(getattr(args, 'operator_selected_keys', None))
@@ -2665,6 +2756,7 @@ def cmd_sonar_facts(args: argparse.Namespace) -> dict[str, Any]:
                 'rules',
                 'gate_status',
                 'analysed_revision',
+                'carried_forward_analysis_revision',
                 'carried_forward_head_revision',
             )
         ) or getattr(args, 'carried_forward', False):
@@ -2736,6 +2828,21 @@ def cmd_sonar_facts(args: argparse.Namespace) -> dict[str, Any]:
     # measured elsewhere must never render as this head's measurement.
     marked = bool(getattr(args, 'carried_forward', False))
     analysed_revision = (getattr(args, 'analysed_revision', None) or '').strip()
+    alias_revision = (getattr(args, 'carried_forward_analysis_revision', None) or '').strip()
+    if alias_revision and analysed_revision and alias_revision != analysed_revision:
+        # One value has one spelling. The retired flag still parses, but two
+        # disagreeing spellings of the analysed revision resolve to nothing: a
+        # last-wins pick would silently render one of them as the measured head.
+        return {
+            'status': 'error',
+            'error': 'conflicting_revision_spellings',
+            'message': (
+                '--analysed-revision and --carried-forward-analysis-revision disagree; '
+                'pass one spelling of the analysed revision'
+            ),
+        }
+    if alias_revision and not analysed_revision:
+        analysed_revision = alias_revision
     carried_forward_head = (getattr(args, 'carried_forward_head_revision', None) or '').strip()
     count_status_reason = (getattr(args, 'count_status_reason', None) or '').strip()
     if count_status_reason.startswith(_CARRY_FORWARD_REASON_PREFIX) and not marked:
@@ -2746,6 +2853,18 @@ def cmd_sonar_facts(args: argparse.Namespace) -> dict[str, Any]:
             'error': 'carried_forward_unmarked',
             'message': (
                 "the read's count_status_reason names a carry-forward: pass --carried-forward beside "
+                '--analysed-revision and --carried-forward-head-revision'
+            ),
+        }
+    if count_status == 'carried_forward' and not marked:
+        # The status is the read's own annunciation, so the marking is required even
+        # when the caller dropped the reason: a figure measured at another head must
+        # never render as this head's measurement.
+        return {
+            'status': 'error',
+            'error': 'carried_forward_unmarked',
+            'message': (
+                'the read answered count_status carried_forward: pass --carried-forward beside '
                 '--analysed-revision and --carried-forward-head-revision'
             ),
         }
@@ -2774,12 +2893,12 @@ def cmd_sonar_facts(args: argparse.Namespace) -> dict[str, Any]:
                 '--carried-forward-head-revision (standing in for)'
             ),
         }
-    if analysed_revision and count_status != 'confirmed':
+    if analysed_revision and count_status not in ('confirmed', 'carried_forward'):
         return {
             'status': 'error',
             'error': 'analysed_revision_requires_confirmed',
             'message': (
-                '--analysed-revision names the head a confirmed figure was measured at; '
+                '--analysed-revision names the head a measured figure was taken at; '
                 f'--count-status is {count_status!r}, which measured nothing'
             ),
         }
@@ -3682,8 +3801,9 @@ def _bold_heading_section(title: str) -> tuple[str | None, int | None]:
 def _count_section_findings(
     span: str,
     declared: int | None,
-    excluded_offsets: frozenset[int] = frozenset(),
-    span_start: int = 0,
+    excluded_offsets: frozenset[int],
+    span_start: int,
+    source_span: str,
 ) -> int:
     """Return the number of findings the reviewer declares inside one section.
 
@@ -3695,6 +3815,12 @@ def _count_section_findings(
     block that under-states its findings, and an under-count clears several with one
     disposition. A block carrying neither, but prose of its own, states one finding; an
     empty block states none.
+
+    ``source_span`` is the same interval read from the UNMASKED body. A section whose
+    only content is a fenced suggestion is an empty span after :func:`_mask_fenced_code`
+    blanks the fence, and reading that as zero let the gate answer ``all_handled`` over
+    a finding the reviewer posted. Content that was masked away is still content the
+    reviewer wrote, so it counts as at least one — never as an empty block.
 
     A nested summary that is ITSELF a section heading (its absolute offset is in
     ``excluded_offsets``) contributes nothing here: it is counted as a section of its own,
@@ -3712,7 +3838,11 @@ def _count_section_findings(
             nested += counted
     if rows or nested:
         return max(rows, nested)
-    return 1 if re.sub(r'<[^>]+>', ' ', span).strip() else 0
+    if re.sub(r'<[^>]+>', ' ', span).strip():
+        return 1
+    if re.sub(r'<[^>]+>', ' ', source_span).strip():
+        return 1
+    return 0
 
 
 def _body_sources(body: str) -> dict[str, Any]:
@@ -3746,7 +3876,9 @@ def _direct_child_blocks(body: str, start: int, end: int) -> list[tuple[int, int
     return spans
 
 
-def _transparent_wrappers(body: str, sources: dict[str, Any]) -> tuple[dict[int, list[int]], str | None]:
+def _transparent_wrappers(
+    body: str, sources: dict[str, Any], source_body: str
+) -> tuple[dict[int, list[int]], str | None]:
     """Map each counted WRAPPER to the recognised sections it encloses, or name a stop.
 
     A counted title this parser does not know can be a wrapper: a group whose content is a
@@ -3806,14 +3938,20 @@ def _transparent_wrappers(body: str, sources: dict[str, Any]) -> tuple[dict[int,
                 if child_open <= offset_of[child] < child_close:
                     section_open, section_close = _enclosing_block_span(body, offset_of[child])
                     masks.append((section_open, section_close if section_close is not None else wrapper_close))
+        source_gap = source_body[end_of[index] : wrapper_close]
         for start_at, end_at in masks:
             first = max(start_at, end_of[index]) - end_of[index]
             last = min(end_at, wrapper_close) - end_of[index]
             if first < last:
                 gap = gap[:first] + ' ' * (last - first) + gap[last:]
-        # ANY non-whitespace text is the wrapper's own content: a letter-or-digit test would
-        # pass a non-ASCII sentence and a symbol-only note, and reading through would drop both.
-        if re.sub(r'<[^>]+>', ' ', gap).strip():
+                source_gap = source_gap[:first] + ' ' * (last - first) + source_gap[last:]
+        # ANY non-whitespace text is the wrapper's own content — in the masked body OR in
+        # the unmasked source. A fenced suggestion the wrapper wrote ITSELF is blanked by
+        # the mask, so checking only the masked gap let such a wrapper read as transparent
+        # and a disposition for its child clear the review without handling that content.
+        # The structural masks are applied to both spans, so a wrapper holding only the
+        # recognised child still passes.
+        if re.sub(r'<[^>]+>', ' ', gap).strip() or re.sub(r'<[^>]+>', ' ', source_gap).strip():
             return {}, (
                 f'the counted wrapper {starts_by_index[index]!r} carries content beside the '
                 f'section it encloses, so its findings cannot be read'
@@ -3842,6 +3980,7 @@ def _transparent_wrappers(body: str, sources: dict[str, Any]) -> tuple[dict[int,
                 _declared_count(starts_by_index[child]),
                 nested,
                 content_start,
+                source_body[content_start:child_end],
             )
         if declared > enclosed:
             return {}, (
@@ -4078,10 +4217,20 @@ def _count_body_headings(
     heading_offsets: frozenset[int],
     reviewer: str,
     counters: dict[str, int],
+    source_body: str,
 ) -> tuple[list[dict[str, str]], int, str | None]:
-    """Count every heading's findings, naming a stop when one asks for too many."""
-    findings: list[dict[str, str]] = []
+    """Count every heading's findings, naming a stop when one asks for too many.
+
+    The counts are SUMMED and the body total checked BEFORE any row is materialized:
+    a body of many headings each just under the per-heading cap would otherwise build
+    every row — about a million for a body the gate then refuses — which is the
+    allocation the cap exists to prevent. ``source_body`` is the unmasked body, passed
+    through so a fence-only section is read as content (see
+    :func:`_count_section_findings`).
+    """
+    planned: list[tuple[str, int]] = []
     inline_from_sections = 0
+    total = 0
     for start, end, section, declared in headings:
         span_end = _heading_span_end(body, start, owned_blocks, boundary_starts, nested_starts)
         span = body[end:span_end]
@@ -4096,6 +4245,7 @@ def _count_body_headings(
             declared,
             excluded_offsets=heading_offsets,
             span_start=end,
+            source_span=source_body[end:span_end],
         )
         if count > _MAX_ENUMERATED_FINDINGS:
             return (
@@ -4106,17 +4256,26 @@ def _count_body_headings(
                     f'{_MAX_ENUMERATED_FINDINGS} this gate will enumerate'
                 ),
             )
-        findings.extend(_numbered_findings(reviewer, section, count, counters))
+        total += count
+        if total > _MAX_ENUMERATED_FINDINGS:
+            # The per-heading cap is not a cap on the BODY: many headings each just under it
+            # would still enumerate more rows than the gate will materialize — so the total is
+            # decided here, before a single row is built. The figure names the point at which
+            # the running sum crossed the cap, not a total it stopped counting.
+            return (
+                [],
+                0,
+                (
+                    f'more than {_MAX_ENUMERATED_FINDINGS} findings in one body '
+                    f'(the running total passed the cap at {total}), above what this gate will enumerate'
+                ),
+            )
+        planned.append((section, count))
         if section == 'inline':
             inline_from_sections += count
-    if len(findings) > _MAX_ENUMERATED_FINDINGS:
-        # The per-heading cap is not a cap on the BODY: many headings each just under it would
-        # still enumerate more rows than the gate will materialize.
-        return (
-            [],
-            0,
-            (f'{len(findings)} findings in one body, above the {_MAX_ENUMERATED_FINDINGS} this gate will enumerate'),
-        )
+    findings: list[dict[str, str]] = []
+    for section, count in planned:
+        findings.extend(_numbered_findings(reviewer, section, count, counters))
     return findings, inline_from_sections, None
 
 
@@ -4173,9 +4332,12 @@ def _body_findings(
     counters = counters if counters is not None else {}
     # Quoted markup inside a fence is prose (see `_mask_fenced_code`): mask it before
     # any structural read, so an example can neither mint findings nor stop the gate.
+    # The UNMASKED body is kept: a section whose only content was masked is content,
+    # and reading it as an empty block is the under-count this gate forbids.
+    source_body = body
     body = _mask_fenced_code(body, raw_body)
     sources = _body_sources(body)
-    transparent, stop = _transparent_wrappers(body, sources)
+    transparent, stop = _transparent_wrappers(body, sources, source_body)
     if stop is not None:
         return [], stop
 
@@ -4209,6 +4371,7 @@ def _body_findings(
         heading_offsets,
         reviewer,
         counters,
+        source_body,
     )
     if stop is not None:
         return [], stop
@@ -4914,7 +5077,10 @@ def main() -> int:
         '--count-status',
         dest='count_status',
         default=None,
-        help="The read's count_status: confirmed, undecidable, or unconfigured (required when configured)",
+        help=(
+            "The read's count_status: confirmed, carried_forward, undecidable, or unconfigured "
+            '(required when configured)'
+        ),
     )
     gate_parser.add_argument(
         '--open-count',
@@ -4992,7 +5158,10 @@ def main() -> int:
         '--count-status',
         dest='count_status',
         default=None,
-        help="The read's count_status: confirmed, undecidable, or unconfigured (required when configured)",
+        help=(
+            "The read's count_status: confirmed, carried_forward, undecidable, or unconfigured "
+            '(required when configured)'
+        ),
     )
     facts_parser.add_argument(
         '--open-count',
@@ -5026,7 +5195,7 @@ def main() -> int:
     )
     facts_parser.add_argument(
         '--carried-forward-analysis-revision',
-        dest='analysed_revision',
+        dest='carried_forward_analysis_revision',
         default=None,
         help=argparse.SUPPRESS,
     )

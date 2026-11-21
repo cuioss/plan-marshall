@@ -53,7 +53,7 @@ All build command invocations must return these fields.
 | Field | Type | Description |
 |-------|------|-------------|
 | `status` | string | Execution outcome: `success`, `error`, `timeout`, `killed`, or `indeterminate` |
-| `exit_code` | int | Process exit code (0=success, positive=error, -1=timeout/execution failure/indeterminate, negative `-N`=`killed`, signal N) |
+| `exit_code` | int | Process exit code (0=success, positive=error, -1=timeout/indeterminate or a launch fault that never spawned a child, negative `-N`=`killed`, signal N). A launch fault detected AFTER the child ran carries that child's observed code instead of `-1` |
 | `duration_seconds` | int | Actual execution time in seconds |
 | `log_file` | string | Path to captured output file |
 | `command` | string | Full command that was executed |
@@ -95,7 +95,7 @@ Present when `status` is `error`, `timeout`, `killed`, or `indeterminate`.
 |-------|------|-------------|
 | `error` | string | Error type identifier (e.g., `build_failed`, `timeout`, `killed`, `indeterminate`, `execution_failed`) |
 | `message` | string | Operator-facing detail. On `killed` it carries the no-blind-retry sentence; on `indeterminate` it is the **only** actionable content the result has, naming why nothing could be concluded |
-| `reason` | string | Why a launch fault could not run the build: the wrapper-not-found leg's `python wrapper not found: pwx`, or the `log_file_failed` leg's own reason (the tree that cannot hold the log, the directory that could not be created, the log that vanished). A routed result carries the daemon's stated reason on the same key. The same key also appears on a `daemon_required` envelope, where it names why routing was unavailable — that is a routing refusal, not a launch fault |
+| `reason` | string | Why a launch fault could not run the build: the wrapper-not-found leg's `python wrapper not found: pwx`, or the `log_file_failed` leg's own reason (the tree that cannot hold the log, the directory that could not be created, the log that vanished). A routed result carries the daemon's stated reason on the same key. The launch-fault leg is keyed on the `error` CLASS (`LAUNCH_FAULT_ERRORS`), not on `exit_code == -1`, because a log fault detected after the child ran carries the child's observed code: such a result is still a launch fault, never a `build_failed`. The same key also appears on a `daemon_required` envelope, where it names why routing was unavailable — that is a routing refusal, not a launch fault |
 | `project_dir` | string | On a wrapper-not-found fault: the absolute project directory the wrapper was looked for in. Paired with `wrapper` and `reason`, it is what separates a missing wrapper from a daemon fault. (Other error envelopes reuse the key for the caller's raw `--project-dir` value) |
 
 #### Parsed Issues and Test Evidence
@@ -470,7 +470,7 @@ All `execute_direct()` implementations return `DirectCommandResult` (TypedDict f
 | Field | Type | Description |
 |-------|------|-------------|
 | `status` | `Literal["success", "error", "timeout", "killed", "indeterminate"]` | Execution outcome |
-| `exit_code` | int | Process exit code (-1 for timeout / execution failure / indeterminate; the negative `-N` signal code for `killed`) |
+| `exit_code` | int | Process exit code (-1 for timeout / indeterminate, and for a launch fault that never spawned a child; a launch fault detected after the child ran carries that child's code; the negative `-N` signal code for `killed`) |
 | `duration_seconds` | int | Actual execution time. On `killed` this is a **truncation**, not a measurement of the command — which is why it is never fed to the adaptive-timeout learner |
 | `log_file` | string | Path to captured output (R1 requirement) |
 | `command` | string | Full command executed — the argv the **auto-detected project wrapper** produced (R2), never a literal this contract fixes. Its shape varies per build system, so read it as a record of what ran, not as the form a caller should reproduce; a caller that needs the command resolves it through `plan-marshall:manage-architecture:architecture resolve --command {canonical}` and runs the returned `executable`. Resolution is scoped: a canonical may be exposed only at MODULE scope, so a caller asks the default scope first and, on a `Command not found` answer there, re-resolves with `--module {module}` rather than concluding the command is unavailable. See [`manage-architecture/standards/resolve-command.md`](../../manage-architecture/standards/resolve-command.md) for the resolve contract and how a scope's command set is derived. |
@@ -642,7 +642,7 @@ Timeout case carrying the test evidence the run produced before the kill:
 |-----------|--------|---------|
 | 0 | `success` | Build completed successfully |
 | 1+ | `error` | Build failed (compilation error, test failure, etc.) |
-| -1 | `error` | Execution failed (wrapper not found, log creation failed) |
+| -1 | `error` | Execution failed before any child ran (wrapper not found, log creation failed), or the outcome is a launch fault with no observed child code |
 | -1 | `timeout` | Build exceeded timeout |
 | -1 | `indeterminate` | The outcome could not be established at all |
 | `-N` | `killed` | Build stopped by POSIX signal N |

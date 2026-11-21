@@ -329,6 +329,49 @@ def test_a_carried_forward_read_reason_without_the_marking_is_refused() -> None:
     assert verdict['error'] == 'carried_forward_unmarked'
 
 
+def test_a_carried_forward_status_without_its_marking_is_refused() -> None:
+    """The read answers `carried_forward`; the status alone names the marking it needs."""
+    verdict = cmd_sonar_facts(_facts_args(count_status='carried_forward', open_count='0'))
+
+    assert verdict['status'] == 'error'
+    assert verdict['error'] == 'carried_forward_unmarked'
+
+
+def test_two_spellings_of_the_analysed_revision_that_disagree_are_refused() -> None:
+    """One value has one spelling: a conflicting alias is refused, never last-wins."""
+    verdict = cmd_sonar_facts(
+        _facts_args(
+            open_count='0',
+            carried_forward=True,
+            analysed_revision='b' * 40,
+            carried_forward_analysis_revision='c' * 40,
+            carried_forward_head_revision='a' * 40,
+        )
+    )
+
+    assert verdict['status'] == 'error'
+    assert verdict['error'] == 'conflicting_revision_spellings'
+
+
+def test_a_read_flag_beside_not_configured_is_refused() -> None:
+    """Every read flag is refused beside `not_configured`, the retired spelling too.
+
+    The alias used to share the primary flag's `dest`, so the guard caught it by
+    accident; once it had its own destination, a supplied revision it did not name
+    would have been swallowed and `n/a` rendered over it.
+    """
+    verdict = cmd_sonar_facts(
+        _facts_args(
+            state='not_configured',
+            count_status=None,
+            carried_forward_analysis_revision='b' * 40,
+        )
+    )
+
+    assert verdict['status'] == 'error', verdict
+    assert verdict['error'] == 'state_contradicts_read', verdict
+
+
 def test_the_required_landing_key_set_names_the_review_and_sonar_numbers() -> None:
     assert LANDING_REQUIRED_KEYS == (
         'schema',

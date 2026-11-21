@@ -784,9 +784,7 @@ def test_an_unplaceable_path_stays_undecidable(monkeypatch) -> None:
 # =============================================================================
 # PLAN-LB-172 D2 — the carry-forward binds itself, and the decision verb's edges
 # =============================================================================
-_CARRIED_REASON = (
-    'carried_forward_unbuilt_delta: analysed bbbb != head aaaa; the delta since the analysed head is empty'
-)
+_CARRIED_REASON = 'carried_forward_from_analysed_head: analysed bbbb != head aaaa'
 
 
 def test_a_carried_forward_read_reason_without_the_marker_is_refused() -> None:
@@ -797,7 +795,7 @@ def test_a_carried_forward_read_reason_without_the_marker_is_refused() -> None:
     assert verdict['error'] == 'carried_forward_unmarked', verdict
 
 
-def test_a_carried_forward_gate_keeps_the_read_own_delta_reason() -> None:
+def test_a_carried_forward_gate_keeps_the_read_own_reason() -> None:
     verdict = cmd_sonar_gate(
         _gate_args(
             open_count='0',
@@ -809,7 +807,39 @@ def test_a_carried_forward_gate_keeps_the_read_own_delta_reason() -> None:
     )
 
     assert verdict['merge_allowed'] is True, verdict
-    assert 'empty' in verdict['reason'], verdict
+    assert verdict['reason'] == _CARRIED_REASON, verdict
+
+
+def test_a_carried_forward_status_without_its_marking_is_refused() -> None:
+    """The read answers `carried_forward`, so a caller that copies only the status is refused.
+
+    The binding must not rest on ``--count-status-reason``: a caller that copies
+    ``count_status`` and ``open_count`` and drops the reason and the marking once got
+    a plain ``merge_allowed`` over a figure measured at another head.
+    """
+    verdict = cmd_sonar_gate(_gate_args(count_status='carried_forward', open_count='0'))
+
+    assert verdict['status'] == 'error', verdict
+    assert verdict['error'] == 'carried_forward_unmarked', verdict
+
+
+def test_the_fallback_sentence_never_claims_an_unbuilt_delta() -> None:
+    """Without the read's own reason the verdict must not assert what the delta was.
+
+    An empty-delta carry (a docs-only change since the analysed head) is a legal
+    carry-forward, so the fallback sentence may not say the delta "is not built".
+    """
+    verdict = cmd_sonar_gate(
+        _gate_args(
+            open_count='0',
+            carried_forward=True,
+            carried_forward_analysis_revision=_ANALYSED,
+            carried_forward_head_revision=_HEAD,
+        )
+    )
+
+    assert verdict['merge_allowed'] is True, verdict
+    assert 'not built' not in verdict['reason'], verdict['reason']
 
 
 def test_a_short_and_a_full_sha_of_one_commit_are_one_revision() -> None:
@@ -923,6 +953,81 @@ def test_a_workflow_symlink_out_of_the_checkout_is_not_followed(tmp_path: Path) 
     (repo / '.github' / 'workflows' / 'ci.yml').symlink_to(outside)
 
     assert lane._iter_workflow_files(repo) == []
+
+
+def test_a_symlinked_workflow_beside_a_regular_one_stops_the_read(tmp_path: Path) -> None:
+    """A symlinked opt-in beside a regular workflow is a rule nobody read.
+
+    Discovery never follows a link, so the opt-in it carries was skipped in silence:
+    the regular workflow read as "no CI rule" and the decision reached the
+    architecture fallback, a rule the CI never applied. Every path builds and the
+    reason names the file, which is the fail-closed direction.
+    """
+    repo = tmp_path / 'repo'
+    workflows = repo / '.github' / 'workflows'
+    workflows.mkdir(parents=True)
+    (workflows / 'ci.yml').write_text('name: CI\non: pull_request\n', encoding='utf-8')
+    carried = tmp_path / 'carried.yml'
+    carried.write_text('skip-on-docs-only: true\n', encoding='utf-8')
+    (workflows / 'linked.yml').symlink_to(carried)
+
+    rows, _source, reason = lane._classify_paths(repo, ['doc/one.adoc'])
+
+    assert rows == [{'path': 'doc/one.adoc', 'kind': 'buildable'}], rows
+    assert reason, 'a rule nobody read must be named, never read as "no CI rule"'
+    assert 'linked.yml' in reason, reason
+
+
+def test_a_readable_in_checkout_symlink_carrying_the_opt_in_stops_the_read(tmp_path: Path) -> None:
+    """An in-checkout link that carries the opt-in is still a rule nobody applies.
+
+    Discovery never follows a link, so the opt-in it holds is skipped; reading the
+    regular workflow beside it as "no CI rule" is the defect this answer prevents.
+    """
+    repo = tmp_path / 'repo'
+    workflows = repo / '.github' / 'workflows'
+    workflows.mkdir(parents=True)
+    (workflows / 'ci.yml').write_text('name: CI\non: pull_request\n', encoding='utf-8')
+    target = repo / 'shared.yml'
+    target.write_text('skip-on-docs-only: true\n', encoding='utf-8')
+    (workflows / 'linked.yml').symlink_to(target)
+
+    rows, _source, reason = lane._classify_paths(repo, ['doc/one.adoc'])
+
+    assert rows == [{'path': 'doc/one.adoc', 'kind': 'buildable'}], rows
+    assert 'linked.yml' in reason and 'opt-in' in reason, reason
+
+
+def test_a_readable_in_checkout_symlink_without_the_opt_in_is_not_a_problem(tmp_path: Path) -> None:
+    """Matched control: the guard clears a link whose target it CAN read and clear.
+
+    Reading the target is what keeps the failure above from firing on every link: a
+    link that holds no opt-in is a workflow the lane has established, not an unknown.
+    """
+    repo = tmp_path / 'repo'
+    workflows = repo / '.github' / 'workflows'
+    workflows.mkdir(parents=True)
+    (workflows / 'ci.yml').write_text('name: CI\non: pull_request\n', encoding='utf-8')
+    target = repo / 'shared.yml'
+    target.write_text('name: Shared\non: workflow_call\n', encoding='utf-8')
+    (workflows / 'linked.yml').symlink_to(target)
+
+    _rows, _source, reason = lane._classify_paths(repo, ['doc/one.adoc'])
+
+    assert reason == '', reason
+
+
+def test_a_symlink_loop_is_a_discovery_problem_not_a_crash(tmp_path: Path) -> None:
+    """A self-referencing workflow link is a target nobody can read, not an exception."""
+    repo = tmp_path / 'repo'
+    workflows = repo / '.github' / 'workflows'
+    workflows.mkdir(parents=True)
+    (workflows / 'ci.yml').write_text('name: CI\non: pull_request\n', encoding='utf-8')
+    (workflows / 'loop.yml').symlink_to(workflows / 'loop.yml')
+
+    _rows, _source, reason = lane._classify_paths(repo, ['doc/one.adoc'])
+
+    assert 'loop.yml' in reason, reason
 
 
 def test_a_delegating_consumers_delta_is_not_carried_forward(tmp_path: Path) -> None:
@@ -1082,7 +1187,8 @@ def test_a_carried_forward_zero_admits_the_merge_under_its_own_reason() -> None:
     )
 
     assert verdict['merge_allowed'] is True
-    assert verdict['reason'].startswith('carried_forward_unbuilt_delta')
+    assert verdict['reason'].startswith('carried_forward_read')
+    assert 'not built' not in verdict['reason'], 'the fallback may not assert what the delta was'
     assert _ANALYSED in verdict['reason'] and _HEAD in verdict['reason']
     assert verdict['carried_forward'] is True
 

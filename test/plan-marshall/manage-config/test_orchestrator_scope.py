@@ -872,6 +872,21 @@ def test_orchestrator_get_never_answers_a_malformed_block_from_the_seed(plan_con
     )
 
 
+def test_a_malformed_callers_file_answers_the_documented_reason(plan_context):
+    """The caller's OWN file answers the specific reason the documentation promises.
+
+    `unreadable` collapsed "not valid JSON" and "not a JSON object" into one answer
+    for every field but `use_worktree`, whose knob-file path already told them apart.
+    """
+    cases = (('{not json', 'invalid_json'), ('["not", "an", "object"]', 'not_object'))
+    observed = {}
+    for content, _reason in cases:
+        (plan_context.fixture_dir / 'marshal.json').write_text(content, encoding='utf-8')
+        observed[content] = cmd_orchestrator_get(Namespace(field=_THRESHOLD_FIELD)).get('reason')
+
+    assert observed == dict(cases), observed
+
+
 def test_invalid_json_in_the_local_marshal_never_answers_a_seeded_default(plan_context):
     """An unreadable `marshal.json` never turns into a passing read.
 
