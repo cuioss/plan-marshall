@@ -407,7 +407,7 @@ D{n} hypothesis: {claim} — confirmed|refuted, {file:line}
 D{n} test: {test name} — order {test-first|mutation-after|none}; failing run {commit} {output identifier}; passed at {sha}
 D{n} done: commit {sha}
 finding: {reviewer} {section} {id} — {sha|reason}
-sonar: {configured (project key)}|{not_configured}; read at {sha}: {count} confirmed|{undecidable, retried}|{not_configured}; operator-selected: {issue-key: reason, … or none}
+sonar: {configured (project key)}|{not_configured}; read at {sha}: {count} {confirmed|carried_forward}|{undecidable, retried}|{not_configured}; operator-selected: {issue-key: reason, … or none}
 gate: {quality-gate|module-tests|verify} at {sha} — {result}
 self-review round {k}: {findings and disposition}; open: {list or none}
 pr: #{N} created at {sha}
@@ -859,7 +859,8 @@ whether to continue at the limit. Record every finding and its disposition.
      `paging.total` exceeds the page it carries, or carries none, comes back `undecidable`: a count
      the read cannot show to be complete is never a number.
      Fix each finding in a pushed commit, or have the OPERATOR dismiss it (see the dismissal rule
-     below). Re-read after every push until the count is `0` confirmed, or every remaining finding's
+     below). Re-read after every push until the count is `0` on a measured read, or every remaining
+     finding's
      key is one the operator selected. The gate's `--open-keys` is the read's own `open_keys` field —
      it enumerates the issue keys AND the hotspot keys, so a hotspot is never lost by reading `issues`
      alone. Then decide the gate:
@@ -1215,8 +1216,9 @@ step.sonar-roundtrip.open_issue_rules={rules left open|none|unknown|n/a}
   one of the four keys at which `n/a` is a legal answer). A confirmed count writes the measured
   figure, with the rules it left open on the optional `step.sonar-roundtrip.open_issue_rules` line
   (`none` when that count is `0`). **A carried-forward figure carries its marking and names both
-  heads:** pass `--carried-forward --analysed-revision {analysis_revision} --carried-forward-head-revision {head_revision}`
-  (a `confirmed` count only — the verb refuses it beside any other status), and the
+  heads:** pass `--carried-forward` with `--count-status carried_forward` and
+  `--analysed-revision {analysis_revision} --carried-forward-head-revision {head_revision}`
+  (the verb refuses the marking beside an `undecidable` or `unconfigured` read), and the
   `step.sonar-roundtrip.analysed_revision`, `step.sonar-roundtrip.carried_forward_head_revision` and
   `step.sonar-roundtrip.carried_forward=true` lines ride beside the count, so the figure never reads
   like a measurement of the head the pull request points at. A carried-forward figure without that
