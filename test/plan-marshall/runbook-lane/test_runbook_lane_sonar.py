@@ -978,6 +978,45 @@ def test_a_symlinked_workflow_beside_a_regular_one_stops_the_read(tmp_path: Path
     assert 'linked.yml' in reason, reason
 
 
+def test_a_readable_in_checkout_symlink_carrying_the_opt_in_stops_the_read(tmp_path: Path) -> None:
+    """An in-checkout link that carries the opt-in is still a rule nobody applies.
+
+    Discovery never follows a link, so the opt-in it holds is skipped; reading the
+    regular workflow beside it as "no CI rule" is the defect this answer prevents.
+    """
+    repo = tmp_path / 'repo'
+    workflows = repo / '.github' / 'workflows'
+    workflows.mkdir(parents=True)
+    (workflows / 'ci.yml').write_text('name: CI\non: pull_request\n', encoding='utf-8')
+    target = repo / 'shared.yml'
+    target.write_text('skip-on-docs-only: true\n', encoding='utf-8')
+    (workflows / 'linked.yml').symlink_to(target)
+
+    rows, _source, reason = lane._classify_paths(repo, ['doc/one.adoc'])
+
+    assert rows == [{'path': 'doc/one.adoc', 'kind': 'buildable'}], rows
+    assert 'linked.yml' in reason and 'opt-in' in reason, reason
+
+
+def test_a_readable_in_checkout_symlink_without_the_opt_in_is_not_a_problem(tmp_path: Path) -> None:
+    """Matched control: the guard clears a link whose target it CAN read and clear.
+
+    Reading the target is what keeps the failure above from firing on every link: a
+    link that holds no opt-in is a workflow the lane has established, not an unknown.
+    """
+    repo = tmp_path / 'repo'
+    workflows = repo / '.github' / 'workflows'
+    workflows.mkdir(parents=True)
+    (workflows / 'ci.yml').write_text('name: CI\non: pull_request\n', encoding='utf-8')
+    target = repo / 'shared.yml'
+    target.write_text('name: Shared\non: workflow_call\n', encoding='utf-8')
+    (workflows / 'linked.yml').symlink_to(target)
+
+    _rows, _source, reason = lane._classify_paths(repo, ['doc/one.adoc'])
+
+    assert reason == '', reason
+
+
 def test_a_delegating_consumers_delta_is_not_carried_forward(tmp_path: Path) -> None:
     """The CI's rule lives in a reusable workflow this checkout does not hold.
 

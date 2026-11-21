@@ -470,7 +470,7 @@ All `execute_direct()` implementations return `DirectCommandResult` (TypedDict f
 | Field | Type | Description |
 |-------|------|-------------|
 | `status` | `Literal["success", "error", "timeout", "killed", "indeterminate"]` | Execution outcome |
-| `exit_code` | int | Process exit code (-1 for timeout / execution failure / indeterminate; the negative `-N` signal code for `killed`) |
+| `exit_code` | int | Process exit code (-1 for timeout / indeterminate, and for a launch fault that never spawned a child; a launch fault detected after the child ran carries that child's code; the negative `-N` signal code for `killed`) |
 | `duration_seconds` | int | Actual execution time. On `killed` this is a **truncation**, not a measurement of the command — which is why it is never fed to the adaptive-timeout learner |
 | `log_file` | string | Path to captured output (R1 requirement) |
 | `command` | string | Full command executed — the argv the **auto-detected project wrapper** produced (R2), never a literal this contract fixes. Its shape varies per build system, so read it as a record of what ran, not as the form a caller should reproduce; a caller that needs the command resolves it through `plan-marshall:manage-architecture:architecture resolve --command {canonical}` and runs the returned `executable`. Resolution is scoped: a canonical may be exposed only at MODULE scope, so a caller asks the default scope first and, on a `Command not found` answer there, re-resolves with `--module {module}` rather than concluding the command is unavailable. See [`manage-architecture/standards/resolve-command.md`](../../manage-architecture/standards/resolve-command.md) for the resolve contract and how a scope's command set is derived. |
@@ -642,7 +642,7 @@ Timeout case carrying the test evidence the run produced before the kill:
 |-----------|--------|---------|
 | 0 | `success` | Build completed successfully |
 | 1+ | `error` | Build failed (compilation error, test failure, etc.) |
-| -1 | `error` | Execution failed (wrapper not found, log creation failed) |
+| -1 | `error` | Execution failed before any child ran (wrapper not found, log creation failed), or the outcome is a launch fault with no observed child code |
 | -1 | `timeout` | Build exceeded timeout |
 | -1 | `indeterminate` | The outcome could not be established at all |
 | `-N` | `killed` | Build stopped by POSIX signal N |

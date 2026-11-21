@@ -294,14 +294,14 @@ def test_the_log_directory_follows_the_subdir_constant(home, tmp_path, monkeypat
 
     The creation loop once carried its own copy of the component tuple, so the
     constant and the directory the code created could disagree and every routed job
-    then failed as ``log_file_failed`` at the directory stat.
+    then failed as ``log_file_failed`` at the directory stat. The constant is patched
+    through the module global the resolver reads, so BOTH the named log path and the
+    created directory must follow it.
     """
     project = tmp_path / 'proj'
     canonical = _register_project(project)
     moved = Path('.plan') / 'local' / 'marshalld' / 'moved-logs'
-    # The resolver the daemon reads to name the log path: the directory is created
-    # from that resolved path itself, so the two can no longer disagree.
-    monkeypatch.setattr(marshalld, 'job_log_dir', lambda root: Path(root) / moved)
+    monkeypatch.setitem(marshalld.job_log_dir.__globals__, '_JOB_LOG_SUBDIR', moved)
 
     result = _run_jobs([_spec(canonical)])[0]
 
@@ -323,7 +323,7 @@ def test_a_subdir_constant_whose_first_part_is_not_dot_plan_still_creates_its_di
     project = tmp_path / 'proj'
     canonical = _register_project(project)
     moved = Path('var') / 'marshalld' / 'job-logs'
-    monkeypatch.setattr(marshalld, 'job_log_dir', lambda root: Path(root) / moved)
+    monkeypatch.setitem(marshalld.job_log_dir.__globals__, '_JOB_LOG_SUBDIR', moved)
 
     result = _run_jobs([_spec(canonical)])[0]
 

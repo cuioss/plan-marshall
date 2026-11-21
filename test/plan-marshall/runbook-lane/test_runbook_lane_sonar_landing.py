@@ -353,6 +353,25 @@ def test_two_spellings_of_the_analysed_revision_that_disagree_are_refused() -> N
     assert verdict['error'] == 'conflicting_revision_spellings'
 
 
+def test_a_read_flag_beside_not_configured_is_refused() -> None:
+    """Every read flag is refused beside `not_configured`, the retired spelling too.
+
+    The alias used to share the primary flag's `dest`, so the guard caught it by
+    accident; once it had its own destination, a supplied revision it did not name
+    would have been swallowed and `n/a` rendered over it.
+    """
+    verdict = cmd_sonar_facts(
+        _facts_args(
+            state='not_configured',
+            count_status=None,
+            carried_forward_analysis_revision='b' * 40,
+        )
+    )
+
+    assert verdict['status'] == 'error', verdict
+    assert verdict['error'] == 'state_contradicts_read', verdict
+
+
 def test_the_required_landing_key_set_names_the_review_and_sonar_numbers() -> None:
     assert LANDING_REQUIRED_KEYS == (
         'schema',

@@ -75,12 +75,12 @@ def _read_live_commit_and_push() -> tuple[bool | None, str]:
 
     Returns ``(state, unreadable_value)``. The documented default (``True``) applies
     only when the key is ABSENT; ``None`` means the value could not be read — the file
-    is unreadable, or it holds a value that is neither a bool nor a ``true``/``false``
-    string. A malformed value is a FAILED read, not the documented default: reading it
-    as ``True`` let reconcile backfill push-only steps into a plan whose configuration
-    nobody could read, which is the direction the local-only floor exists to block.
-    ``unreadable_value`` is the ``repr`` of the value that failed (empty for a failed
-    file read), so the caller's refusal can name it.
+    is unreadable, a parent block is not an object, or the value is neither a bool nor
+    a ``true``/``false`` string. A malformed value is a FAILED read, not the documented
+    default: reading it as ``True`` let reconcile backfill push-only steps into a plan
+    whose configuration nobody could read, which is the direction the local-only floor
+    exists to block. ``unreadable_value`` names what failed — the ``repr`` of the value
+    or a sentence describing the unreadable block — so the caller's refusal can say it.
     """
     marshal_path = get_marshal_path()
     if not marshal_path.exists():
@@ -95,7 +95,15 @@ def _read_live_commit_and_push() -> tuple[bool | None, str]:
     if data is sentinel or not isinstance(data, dict):
         return None, 'marshal.json is not a JSON object'
     plan = data.get('plan')
+    if 'plan' in data and not isinstance(plan, dict):
+        # A present block of the wrong type is a FAILED read, not "key absent": the
+        # value it would have carried is unreadable, so the caller applies the floor.
+        return None, f'plan is not a JSON object: {plan!r}'
     phase = plan.get('phase-5-execute') if isinstance(plan, dict) else None
+    if not isinstance(plan, dict):
+        return True, ''
+    if 'phase-5-execute' in plan and not isinstance(phase, dict):
+        return None, f'phase-5-execute is not a JSON object: {phase!r}'
     if not isinstance(phase, dict):
         return True, ''
     if 'commit_and_push' not in phase:

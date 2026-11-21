@@ -1341,8 +1341,8 @@ def _workflow_discovery_problem(project_dir: Path, discovered: list[Path]) -> st
     :func:`_iter_workflow_files`), so it is a discovery problem in two shapes, and
     each is named with the file:
 
-    * its target cannot be read inside the checkout, so nobody can say whether it
-      carries the opt-in;
+    * its target is not a readable regular file inside the checkout, so nobody can
+      say whether it carries the opt-in;
     * it can be read and it DOES carry the opt-in — the rule the project's CI
       applies sits in a file discovery skips, and reading the remaining regular
       workflows as "no CI rule" would hand the decision to the architecture
@@ -1365,7 +1365,7 @@ def _workflow_discovery_problem(project_dir: Path, discovered: list[Path]) -> st
             continue
         target = _in_checkout_symlink_target(entry, project_dir)
         if target is None:
-            problems.append(f'{entry.name} is a symlink whose target cannot be read inside the checkout')
+            problems.append(f'{entry.name} is a symlink whose target is not a readable file inside the checkout')
             continue
         try:
             lines = target.read_text(encoding='utf-8').splitlines()
@@ -2396,10 +2396,9 @@ def _carried_forward(
 
     A carried-forward figure is a measured figure of an EARLIER head, so a verdict
     that admitted it on ``no_open_issues`` would read like a measurement of this
-    one. The distinct name carries both revisions and the fact that the delta was
-    not built, so the landing and the operator see which head was counted. When the
-    read's OWN ``count_status_reason`` is supplied it is used instead of the default
-    sentence, so an empty delta is not described as one the project does not build.
+    one. The distinct name carries both revisions and the read's own reason, and it
+    says nothing about the delta: an empty delta is a legal carry-forward, so only
+    the read's statement describes it.
     """
     if carried_forward is None or not verdict.get('merge_allowed'):
         return verdict
@@ -2749,6 +2748,7 @@ def cmd_sonar_facts(args: argparse.Namespace) -> dict[str, Any]:
                 'rules',
                 'gate_status',
                 'analysed_revision',
+                'carried_forward_analysis_revision',
                 'carried_forward_head_revision',
             )
         ) or getattr(args, 'carried_forward', False):
@@ -3868,7 +3868,9 @@ def _direct_child_blocks(body: str, start: int, end: int) -> list[tuple[int, int
     return spans
 
 
-def _transparent_wrappers(body: str, sources: dict[str, Any]) -> tuple[dict[int, list[int]], str | None]:
+def _transparent_wrappers(
+    body: str, sources: dict[str, Any], source_body: str
+) -> tuple[dict[int, list[int]], str | None]:
     """Map each counted WRAPPER to the recognised sections it encloses, or name a stop.
 
     A counted title this parser does not know can be a wrapper: a group whose content is a
@@ -3964,6 +3966,7 @@ def _transparent_wrappers(body: str, sources: dict[str, Any]) -> tuple[dict[int,
                 _declared_count(starts_by_index[child]),
                 nested,
                 content_start,
+                source_body[content_start:child_end],
             )
         if declared > enclosed:
             return {}, (
@@ -4200,7 +4203,7 @@ def _count_body_headings(
     heading_offsets: frozenset[int],
     reviewer: str,
     counters: dict[str, int],
-    source_body: str | None = None,
+    source_body: str,
 ) -> tuple[list[dict[str, str]], int, str | None]:
     """Count every heading's findings, naming a stop when one asks for too many.
 
@@ -4228,7 +4231,7 @@ def _count_body_headings(
             declared,
             excluded_offsets=heading_offsets,
             span_start=end,
-            source_span=None if source_body is None else source_body[end:span_end],
+            source_span=source_body[end:span_end],
         )
         if count > _MAX_ENUMERATED_FINDINGS:
             return (
@@ -4243,11 +4246,15 @@ def _count_body_headings(
         if total > _MAX_ENUMERATED_FINDINGS:
             # The per-heading cap is not a cap on the BODY: many headings each just under it
             # would still enumerate more rows than the gate will materialize — so the total is
-            # decided here, before a single row is built.
+            # decided here, before a single row is built. The figure names the point at which
+            # the running sum crossed the cap, not a total it stopped counting.
             return (
                 [],
                 0,
-                (f'{total} findings in one body, above the {_MAX_ENUMERATED_FINDINGS} this gate will enumerate'),
+                (
+                    f'more than {_MAX_ENUMERATED_FINDINGS} findings in one body '
+                    f'(the running total passed the cap at {total}), above what this gate will enumerate'
+                ),
             )
         planned.append((section, count))
         if section == 'inline':
@@ -4316,7 +4323,7 @@ def _body_findings(
     source_body = body
     body = _mask_fenced_code(body, raw_body)
     sources = _body_sources(body)
-    transparent, stop = _transparent_wrappers(body, sources)
+    transparent, stop = _transparent_wrappers(body, sources, source_body)
     if stop is not None:
         return [], stop
 

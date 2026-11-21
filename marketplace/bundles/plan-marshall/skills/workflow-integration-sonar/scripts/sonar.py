@@ -40,14 +40,19 @@ Both PERSISTING verbs FAIL LOUD when Sonar is not configured: a typed
 same typed status for the same reason.
 
 The returned contract carries a verified ``new_code_issue_count`` and a
-``count_status`` discriminator (``confirmed`` | ``undecidable``). On a
+``count_status`` discriminator (``confirmed`` | ``carried_forward`` |
+``undecidable``). On a
 PR-scoped run (``--pr``) a confirmed count requires BOTH a settled Compute
 Engine AND an analysis of the counted revision, because a clean analysis of an
 older head reads exactly like a clean analysis of this one: a stale analysis
 (``stale_analysis``, with both SHAs), an unreported revision, a CE-still-
 processing-at-timeout or an auth/REST failure reports
 ``new_code_issue_count: null`` with ``count_status: undecidable`` and a
-``count_status_reason`` — NEVER a false ``0``. A fetch with NO ``--pr`` is
+``count_status_reason`` — NEVER a false ``0``. A stale analysis LICENSED by the
+caller's carry-forward decision is the one exception: it enumerates the analysed
+head and reports ``count_status: carried_forward`` (never ``confirmed``) beside
+its revisions and reason, so a caller that copies only the status cannot pass it
+off as this head's measurement. A fetch with NO ``--pr`` is
 outside the revision comparison (the branch-analysis endpoint describes a
 branch's history, not the head being counted), so it is confirmed on the CE
 state alone and leaves both revisions blank. Every fetch also writes one attestation row to

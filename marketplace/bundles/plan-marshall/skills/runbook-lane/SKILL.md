@@ -902,7 +902,8 @@ whether to continue at the limit. Record every finding and its disposition.
      and the head the decision verified:
      `read_open_issues … --analysed-revision {analysis_revision} --carried-forward-head-revision {head_revision}`.
      That makes the count, the key set and the rules a MEASUREMENT of the analysed head, so a
-     carried-forward `0` is a confirmed zero of that head. The licence is HEAD-BOUND: the analysed
+     carried-forward `0` is a measured zero of that head — reported as `count_status: carried_forward`,
+     never as `confirmed`. The licence is HEAD-BOUND: the analysed
      revision alone is disclosed by every undecidable read, so a licence without the verified head
      is refused (`analysed_revision_requires_verified_head`), and a read whose reported head differs
      from it is refused too (`carried_forward_head_mismatch`) — a push landed between the two calls,
@@ -1029,11 +1030,13 @@ Merge only when all of these hold:
   form's parts are the run that must be green.
 - CI is green on the current head.
 - The Sonar state of the current head admits the merge: `sonar-gate` reports `merge_allowed: true`
-  on a read taken after the last push — its open new-code finding count is `0` confirmed, or every
+  on a read taken after the last push — its open new-code finding count is `0` measured (a
+  `confirmed` or `carried_forward` status), or every
   remaining finding is one the OPERATOR selected for dismissal, or `resolve` reported
-  `not_configured`. A carried-forward read (§ 6's `carried_forward_unbuilt_delta`, carrying
+  `not_configured`. A carried-forward read (status `carried_forward`, carrying
   `--carried-forward` and both revisions) admits the merge on exactly those terms, because its
-  enumeration is a measurement of the analysed head. The count covers the open issues AND the security hotspots still to review. An
+  enumeration is a measurement of the analysed head; the decision's own delta sentence is a separate
+  value and does not travel through the gate. The count covers the open issues AND the security hotspots still to review. An
   `undecidable` read is a blocker and is retried according to section 6's retry classes: a refusal
   that class names NOT retryable on this head stays a blocker until the input changes (a rebuild) or
   the operator decides. An `unconfigured` read is a blocker too; the lane never treats either as `0`.

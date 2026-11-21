@@ -136,11 +136,11 @@ one:
   well: **the gate-read time was not retained**, so nothing can show that a record predates the
   gate's read. It is never reported as a false claim on record times alone.
 
-`updated_at` is weaker evidence than `created_at`: it explains the
-difference only when the edit it records IS the difference (that record carried the other value
-before); an `updated_at` that merely moved — a spelling correction on a record whose count is
-unchanged — explains nothing, and the difference is then `undecidable`: never a false claim, and
-never a post-merge change. The workflow step that applies this rule is
+`updated_at` alone never explains a difference: a record created before the merge stays a record
+created before the merge however its text is edited, and an `updated_at` that merely moved — a
+spelling correction on a record whose count is unchanged — explains nothing at all. A difference
+resting on such a record is `undecidable`, never a false claim and never a post-merge change; only a
+record CREATED after the merge takes the first answer above. The workflow step that applies this rule is
 [`../workflow/analyze.md`](../workflow/analyze.md), and
 [`../templates/landing-analysis.md`](../templates/landing-analysis.md) carries the worked example.
 
