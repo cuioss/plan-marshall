@@ -53,7 +53,7 @@ All build command invocations must return these fields.
 | Field | Type | Description |
 |-------|------|-------------|
 | `status` | string | Execution outcome: `success`, `error`, `timeout`, `killed`, or `indeterminate` |
-| `exit_code` | int | Process exit code (0=success, positive=error, -1=timeout/execution failure/indeterminate, negative `-N`=`killed`, signal N) |
+| `exit_code` | int | Process exit code (0=success, positive=error, -1=timeout/indeterminate or a launch fault that never spawned a child, negative `-N`=`killed`, signal N). A launch fault detected AFTER the child ran carries that child's observed code instead of `-1` |
 | `duration_seconds` | int | Actual execution time in seconds |
 | `log_file` | string | Path to captured output file |
 | `command` | string | Full command that was executed |
@@ -95,7 +95,7 @@ Present when `status` is `error`, `timeout`, `killed`, or `indeterminate`.
 |-------|------|-------------|
 | `error` | string | Error type identifier (e.g., `build_failed`, `timeout`, `killed`, `indeterminate`, `execution_failed`) |
 | `message` | string | Operator-facing detail. On `killed` it carries the no-blind-retry sentence; on `indeterminate` it is the **only** actionable content the result has, naming why nothing could be concluded |
-| `reason` | string | Why a launch fault could not run the build: the wrapper-not-found leg's `python wrapper not found: pwx`, or the `log_file_failed` leg's own reason (the tree that cannot hold the log, the directory that could not be created, the log that vanished). A routed result carries the daemon's stated reason on the same key. The same key also appears on a `daemon_required` envelope, where it names why routing was unavailable — that is a routing refusal, not a launch fault |
+| `reason` | string | Why a launch fault could not run the build: the wrapper-not-found leg's `python wrapper not found: pwx`, or the `log_file_failed` leg's own reason (the tree that cannot hold the log, the directory that could not be created, the log that vanished). A routed result carries the daemon's stated reason on the same key. The launch-fault leg is keyed on the `error` CLASS (`LAUNCH_FAULT_ERRORS`), not on `exit_code == -1`, because a log fault detected after the child ran carries the child's observed code: such a result is still a launch fault, never a `build_failed`. The same key also appears on a `daemon_required` envelope, where it names why routing was unavailable — that is a routing refusal, not a launch fault |
 | `project_dir` | string | On a wrapper-not-found fault: the absolute project directory the wrapper was looked for in. Paired with `wrapper` and `reason`, it is what separates a missing wrapper from a daemon fault. (Other error envelopes reuse the key for the caller's raw `--project-dir` value) |
 
 #### Parsed Issues and Test Evidence

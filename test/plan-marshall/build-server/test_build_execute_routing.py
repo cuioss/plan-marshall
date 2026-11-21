@@ -530,6 +530,45 @@ def test_daemon_log_file_fault_reaches_the_caller_with_its_reason():
     assert 'holds no .plan directory' in result['reason']
 
 
+@pytest.mark.parametrize('child_exit', [0, 1])
+def test_a_post_run_log_fault_keeps_its_class_reason_and_code(child_exit, tmp_path, capsys):
+    """A log fault detected AFTER the child ran stays a launch fault at the caller.
+
+    The daemon passes the child's observed exit code with a post-run
+    ``log_file_failed`` (a code of 0 or 1, never ``-1``), so a renderer leg keyed on
+    ``exit_code == -1`` lets the result fall through to the build-failure path: the
+    caller then reads a red ``build_failed`` with a synthetic "see full log" row for
+    a log that does not exist, and both the class and the reason are lost.
+    """
+    from _build_shared import cmd_run_common
+
+    reason = 'the job log at /x/gone.log disappeared before its verdict could be read'
+    result = factory._daemon_result_to_direct(
+        {
+            'job_status': 'failure',
+            'exit_code': child_exit,
+            'duration_seconds': 4,
+            'log_file': str(tmp_path / 'gone.log'),
+            'error': 'log_file_failed',
+            'reason': reason,
+        },
+        'cmd',
+    )
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'log_file_failed'
+    assert result['exit_code'] == child_exit, 'the observed code is carried, never replaced by -1'
+
+    rc = cmd_run_common(result, lambda _log: ([], None, 'FAILURE'), 'python')
+    emitted = capsys.readouterr().out
+    assert rc == 1
+    assert 'error: log_file_failed' in emitted
+    assert reason in emitted, "the producer's own reason travels to the caller"
+    assert f'exit_code: {child_exit}' in emitted
+    assert 'build_failed' not in emitted, 'a fault that produced no build verdict is not a red build'
+    assert 'see full log' not in emitted, 'no synthetic row may be published for a log that does not exist'
+
+
 def test_a_daemon_build_failure_is_still_build_failed():
     """Matched control: an ordinary failure keeps the build_failed class."""
     result = factory._daemon_result_to_direct(

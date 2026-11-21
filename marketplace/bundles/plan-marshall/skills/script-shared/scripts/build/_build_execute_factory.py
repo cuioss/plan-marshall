@@ -761,7 +761,8 @@ def _map_daemon_result(waited: dict[str, Any], command_str: str, command_key: st
         verdict wherever the child stated one. A ``success`` stays ``success``; a
         ``timeout`` or ``killed`` stays a non-finish carrying the bound that fired;
         a PRE-TOOL fault is reported under its own name with its own exit code; a
-        LAUNCH fault keeps its own class and reason with exit ``-1``; a child that
+        LAUNCH fault keeps its own class and reason with the code the producer
+        observed (``-1`` only when no child ran); a child that
         ran and failed is ``error`` / ``build_failed`` with the rows it parsed; and
         an undetermined or unrecognised verdict is ``indeterminate`` carrying the
         producer's own message. ``build_failed`` is produced only for a build that

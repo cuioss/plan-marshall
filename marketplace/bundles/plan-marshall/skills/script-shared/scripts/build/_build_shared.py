@@ -787,12 +787,20 @@ def cmd_run_common(
     command_str = result['command']
     print(f'[EXEC] {command_str}', file=sys.stderr)
 
-    # Handle execution errors (wrapper not found, log file creation failed)
-    if result['status'] == 'error' and result['exit_code'] == -1:
+    # Handle launch faults (wrapper not found, the job log could not be written)
+    #
+    # The leg is keyed on the CLASS — a member of ``LAUNCH_FAULT_ERRORS`` — not on
+    # ``exit_code == -1``. A log fault the daemon detects AFTER the child ran
+    # carries the child's observed code (0 or 1, never -1); keying on -1 let exactly
+    # that result fall through to the build-failure path below, where it read as a
+    # red ``build_failed`` with a synthetic "see full log" row for a log that no
+    # longer exists, and both the class and its reason were lost. The PRE-SPAWN
+    # shape is unchanged: no child ran, so the code it emits is still -1.
+    raw_error = str(result.get('error') or '')
+    if result['status'] == 'error' and (result['exit_code'] == -1 or raw_error in LAUNCH_FAULT_ERRORS):
         # A carried identifier wins when the producer stated one: a routed result
         # already names the INNER fault class, and re-deriving it from the message
         # text would re-classify a log-file fault as an execution fault.
-        raw_error = str(result.get('error') or '')
         error_type = ERROR_EXECUTION_FAILED
         if raw_error in LAUNCH_FAULT_ERRORS:
             error_type = raw_error
@@ -805,8 +813,11 @@ def cmd_run_common(
         fault_extra = {name: result[name] for name in ('reason', 'wrapper', 'project_dir') if result.get(name)}
         err_output = error_result(
             error=error_type,
-            exit_code=-1,
-            duration_seconds=0,
+            # The observed code travels too: a fault detected after the child ran
+            # carries that child's code, and replacing it with -1 would claim a
+            # launch that never happened. A PRE-SPAWN fault has none, so it keeps -1.
+            exit_code=int(result['exit_code']),
+            duration_seconds=int(result.get('duration_seconds', 0) or 0),
             log_file=log_file,
             command=command_str,
             **fault_extra,

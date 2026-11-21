@@ -70,7 +70,6 @@ from _marshalld_audit import InteractionAudit
 from _marshalld_journal import Journal
 from _marshalld_scheduler import Scheduler
 from _marshalld_supervisor import (
-    _JOB_LOG_SUBDIR,
     JobLogUnavailable,
     JobProgress,
     job_log_dir,
@@ -830,20 +829,27 @@ class Daemon:
                         )
             except OSError as exc:
                 raise JobLogUnavailable(log_file, f'the log directory {directory} cannot be inspected: {exc}') from exc
-        # Created one component at a time under the EXISTING `.plan`, never with
-        # `parents=True`: a tree that vanished under the queue must fail the job, not
-        # be recreated from a stale check. An injected directory is created as given.
-        # The component names come from `_JOB_LOG_SUBDIR` rather than a second copy
-        # of the tuple, so moving the constant moves the creation with it. Each
-        # component is created AND tightened through `_ensure_private_directory`, which
-        # refuses to follow a symlink: `mkdir(exist_ok=True)` accepts one and the
-        # `chmod` that followed resolved it, so a component swapped after the probe
-        # could have redirected the mode change.
+        # Created one component at a time from the path the log actually lives at,
+        # never with `parents=True`: a tree that vanished under the queue must fail
+        # the job, not be recreated from a stale check. An injected directory is
+        # created as given. The parts come from the resolved directory rather than a
+        # second copy of the tuple, so moving the constant moves the creation with it
+        # — and a constant whose FIRST part is not `.plan` still creates the directory
+        # its logs are written to, instead of creating a shadow under `.plan`. The
+        # `.plan` component is the pre-existing anchor: it is required above and is
+        # never created or re-moded here. Each other component is created AND
+        # tightened through `_ensure_private_directory`, which refuses to follow a
+        # symlink: `mkdir(exist_ok=True)` accepts one and the `chmod` that followed
+        # resolved it, so a component swapped after the probe could have redirected
+        # the mode change.
         try:
             if self._log_dir is None:
-                anchor = project_root / '.plan'
-                for part in _JOB_LOG_SUBDIR.parts[1:]:
+                relative = directory.relative_to(project_root)
+                anchor = project_root
+                for index, part in enumerate(relative.parts):
                     anchor = anchor / part
+                    if index == 0 and part == '.plan':
+                        continue
                     _ensure_private_directory(anchor)
             else:
                 directory.mkdir(mode=_DIR_MODE, parents=True, exist_ok=True)
