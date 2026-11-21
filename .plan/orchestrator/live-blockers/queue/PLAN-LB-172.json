@@ -2,7 +2,7 @@
   "id": "PLAN-LB-172",
   "slug": "consolidated-leftover-fixes",
   "workstream": "WS-04",
-  "status": "running",
+  "status": "shipped",
   "lane": "runbook",
   "plan_marshall_plan_id": "rb-lb-172-consolidated-leftover-fixes",
   "pr": "2036",
