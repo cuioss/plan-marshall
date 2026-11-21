@@ -152,10 +152,12 @@ SHA and the full object name of one commit are one revision (`carried_forward_re
 never a pair.
 
 Decides the merge gate's Sonar condition (section 7) from the read taken on the head:
-`merge_allowed: true` for `not_configured`, for a confirmed `0`, and for a confirmed count whose every
+`merge_allowed: true` for `not_configured`, for a measured `0`, and for a measured count whose every
 enumerated key is one the OPERATOR selected for dismissal. `undecidable` and `unconfigured` reads, a
 key the operator did not select and a count with no enumerated keys all answer `merge_allowed: false`
-with their `reason`. The retired `--dismissed-keys` flag is refused as
+with their `reason`. The `confirmed_*` reason identifiers name a MEASURED read — `carried_forward`
+included — because the figure is a measurement wherever it was taken. The retired `--dismissed-keys`
+flag is refused as
 `lane_dismissal_not_accepted`: the lane never records a dismissal of its own.
 
 `--progress-file` is the MECHANISM behind the operator rule, not a second opinion: it is REQUIRED
@@ -183,19 +185,21 @@ python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane sonar-fa
 ```
 
 A `carried_forward` status is rendered exactly as a confirmed one is, with the marking lines beside it,
-and is refused as `carried_forward_unmarked` without them. `--analysed-revision` and the retired
-`--carried-forward-analysis-revision` are two spellings of ONE value: passing both with different
-values is refused as `conflicting_revision_spellings`, never resolved last-wins.
+and is refused as `carried_forward_unmarked` without them. `--analysed-revision` and the legacy
+`--carried-forward-analysis-revision` spelling name ONE value: passing both with different values is
+refused as `conflicting_revision_spellings`, never resolved last-wins, and the legacy spelling alone is
+still honoured.
 
 Renders the landing's Sonar facts (section 8) from the read taken at the merge head:
 `sonar_open_new_issues` — the landing's REQUIRED count key, one spelling for one measurement — and
-`step.sonar-roundtrip.open_issue_rules` in `fact_lines`. A confirmed count carries the measured figure
+`step.sonar-roundtrip.open_issue_rules` in `fact_lines`. A measured count (`confirmed`, or
+`carried_forward`) carries the measured figure
 and the rules it left open (`--rules` is required above zero, and `none` at a measured `0`);
 `undecidable` and `unconfigured` both carry `unknown`, and a project without Sonar carries `n/a` at
 both — the answered absence, which is a legal value for the required count. A carried-forward figure
-carries `--carried-forward` (a `confirmed` count only) with both heads; section 8 states the three
-fact lines it renders beside the count, and the verb refuses the marker without them and them
-without it. `--gate-status` adds the
+carries `--carried-forward` (status `carried_forward`, never `confirmed`) with both heads; section 8
+states the three fact lines it renders beside the count, and the verb refuses the marker without them
+and them without it. `--gate-status` adds the
 OPTIONAL `step.sonar-roundtrip.quality_gate_status` fact: a Sonar quality gate can fail on a new-code
 metric that is neither an open finding nor an unreviewed hotspot, so that failure is not a finding for
 the open-findings rule — but it is reported, because a landing silent about a failing gate states half

@@ -3837,7 +3837,9 @@ def cmd_reconcile(args: argparse.Namespace) -> dict[str, Any] | None:
     if live_commit_and_push is False:
         refusal_reason = 'commit_and_push is disabled — no downstream push exists'
     elif live_commit_and_push is None:
-        detail = f' (stored value {unreadable_value})' if unreadable_value else ''
+        # ``unreadable_value`` is either a value's repr or a sentence describing an
+        # unreadable block, so it is appended verbatim rather than wrapped as a value.
+        detail = f' ({unreadable_value})' if unreadable_value else ''
         refusal_reason = (
             f'commit_and_push could not be read from live configuration{detail}, so the push-only floor applies'
         )

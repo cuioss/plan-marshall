@@ -2396,9 +2396,10 @@ def _carried_forward(
 
     A carried-forward figure is a measured figure of an EARLIER head, so a verdict
     that admitted it on ``no_open_issues`` would read like a measurement of this
-    one. The distinct name carries both revisions and the read's own reason, and it
-    says nothing about the delta: an empty delta is a legal carry-forward, so only
-    the read's statement describes it.
+    one. The distinct name carries both revisions and the read's own reason (or a
+    fallback naming the two heads when the read supplied none), and it says nothing
+    about the delta: an empty delta is a legal carry-forward, so only the read's
+    statement describes it.
     """
     if carried_forward is None or not verdict.get('merge_allowed'):
         return verdict
@@ -3793,9 +3794,9 @@ def _bold_heading_section(title: str) -> tuple[str | None, int | None]:
 def _count_section_findings(
     span: str,
     declared: int | None,
-    excluded_offsets: frozenset[int] = frozenset(),
-    span_start: int = 0,
-    source_span: str | None = None,
+    excluded_offsets: frozenset[int],
+    span_start: int,
+    source_span: str,
 ) -> int:
     """Return the number of findings the reviewer declares inside one section.
 
@@ -3832,7 +3833,7 @@ def _count_section_findings(
         return max(rows, nested)
     if re.sub(r'<[^>]+>', ' ', span).strip():
         return 1
-    if source_span is not None and re.sub(r'<[^>]+>', ' ', source_span).strip():
+    if re.sub(r'<[^>]+>', ' ', source_span).strip():
         return 1
     return 0
 

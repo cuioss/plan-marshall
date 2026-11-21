@@ -155,6 +155,22 @@ class TestBackfillHonoursCommitPushDisabled:
         assert 'not-an-object' in result['backfill_refused_reason'], result
         assert 'push' not in read_manifest('rec-malformed-block')['phase_6']['steps']
 
+    def test_a_non_object_plan_block_is_a_failed_read(self, plan_context):
+        """The `plan` block itself can be malformed; that is not "no commit_and_push".
+
+        The `phase-5-execute` shape is pinned above. The parent is the same kind of
+        failed read, and its answer is observable in the result's own
+        `commit_and_push` field: a default there would report a readable configuration.
+        """
+        (plan_context.fixture_dir / 'marshal.json').write_text(
+            json.dumps({'plan': 'not-an-object', 'build': {}}), encoding='utf-8'
+        )
+        _seed_manifest('rec-malformed-plan', [REAL_B], candidate_steps=[REAL_B])
+
+        result = cmd_reconcile(_reconcile_ns('rec-malformed-plan', apply=True))
+
+        assert result['commit_and_push'] is None, result
+
     def test_a_malformed_commit_and_push_applies_the_floor(self, plan_context):
         """A present value that is not bool-shaped is a FAILED read, not the default.
 
