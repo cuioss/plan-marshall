@@ -3826,23 +3826,21 @@ def cmd_reconcile(args: argparse.Namespace) -> dict[str, Any] | None:
 
     backfill: list[str] = []
     backfill_refused: list[str] = []
-    # The local-only floor applies here exactly as it does at compose time: a
-    # push-only step that entered live config AFTER this manifest was composed is
-    # still a push-only step, and ``commit_push_disabled`` says its drop is final.
-    # Reading the value from live config is what closes the gap — compose receives
-    # it as a parameter, and reconcile had no equivalent read.
-    live_commit_and_push = _read_live_commit_and_push()
     # The local-only floor applies here exactly as it does at compose time: a push-only
     # step that entered live config AFTER this manifest was composed is still a push-only
     # step, and ``commit_push_disabled`` says its drop is final. A value that could not be
     # read is NOT the documented default — the conservative floor applies and the refusal
     # names the failed read, so a local-only plan is never handed a push-only step by an
     # unreadable configuration.
+    live_commit_and_push, unreadable_value = _read_live_commit_and_push()
     refusal_reason = ''
     if live_commit_and_push is False:
         refusal_reason = 'commit_and_push is disabled — no downstream push exists'
     elif live_commit_and_push is None:
-        refusal_reason = 'commit_and_push could not be read from live configuration, so the push-only floor applies'
+        detail = f' (stored value {unreadable_value})' if unreadable_value else ''
+        refusal_reason = (
+            f'commit_and_push could not be read from live configuration{detail}, so the push-only floor applies'
+        )
     # Branch on the narrowing predicate itself rather than on the boolean above:
     # both inputs must be present for the diff to mean anything, and expressing
     # that directly is what makes the two reads below type-safe.

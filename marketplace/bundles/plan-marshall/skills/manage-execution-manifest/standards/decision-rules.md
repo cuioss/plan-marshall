@@ -177,6 +177,8 @@ The sort is asserted by the [`phase_6_order_violation`](#post-compose-assertion-
 
 **Condition**: `commit_and_push == false`.
 
+**A value that cannot be read applies the same drop.** The documented default (`true`) is the answer for an ABSENT key only. A present `commit_and_push` that is neither a bool nor a `true`/`false` string is a FAILED read: compose refuses it as an invalid input, and `reconcile --apply` applies this pre-filter's floor, refusing to backfill any of the four steps and naming the stored value in its refusal. Reading a malformed value as the default would hand a local-only plan a push-only step, which is the direction the floor exists to block.
+
 **Effect**: `push`, `pre-push-quality-gate`, `functional-review` AND `code-review` are all removed from `phase_6_candidates` before the rows are evaluated. The pre-filter removes the pre-push gating steps because they are meaningless without a downstream push — they exist solely to gate code that will be sent to remote CI. **This drop is final**: the later `ceremony_finalize_selection` transform takes `commit_and_push` and refuses to re-insert any of the four however a gate is forced ("no push" always wins), so no gate value can hand a local-only plan a push-only step.
 
 **Why a pre-filter (not an eighth row)**: `commit_and_push` is configuration known at outline time and is orthogonal to the row matrix's change-type / scope / recipe inputs. A row would have to either short-circuit (and re-implement the six rows' Phase 5 logic) or duplicate the filter into every row. Modeling it as a pre-filter keeps the six-row matrix unchanged and lets the composer emit one extra `decision.log` entry naming the omission.

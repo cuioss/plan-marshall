@@ -124,3 +124,21 @@ class TestBackfillHonoursCommitPushDisabled:
         assert result['reconciled'] is False, result
         messages = _emitted_for('rec-local-logged')
         assert any('refused to backfill push' in message for message in messages), messages
+
+    def test_a_malformed_commit_and_push_applies_the_floor(self, plan_context):
+        """A present value that is not bool-shaped is a FAILED read, not the default.
+
+        ``_read_live_commit_and_push`` once answered ``True`` for it, so reconcile
+        backfilled push-only steps into a plan whose configuration nobody could read —
+        the direction the local-only floor exists to block. The refusal names the
+        value it could not read.
+        """
+        _write_marshal(plan_context.fixture_dir, [REAL_B, 'push'], commit_and_push='sometimes')
+        _seed_manifest('rec-malformed', [REAL_B], candidate_steps=[REAL_B])
+
+        result = cmd_reconcile(_reconcile_ns('rec-malformed', apply=True))
+
+        assert result['backfill'] == [], result
+        assert result['backfill_refused'] == ['push'], result
+        assert 'sometimes' in result['backfill_refused_reason'], result
+        assert 'push' not in read_manifest('rec-malformed')['phase_6']['steps']
