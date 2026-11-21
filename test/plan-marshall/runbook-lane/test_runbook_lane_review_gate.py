@@ -1121,6 +1121,34 @@ def test_an_implausible_declared_count_stops_the_gate() -> None:
     assert 'this gate will enumerate' in verdict['detail']
 
 
+def test_the_body_cap_is_checked_before_any_row_beyond_it_is_built(monkeypatch) -> None:
+    """⛔ The body total is summed and checked BEFORE the rows are materialized.
+
+    Many headings each declaring just under the per-heading cap allocate their rows one
+    heading at a time, so a body declaring 1200 across three headings used to build every
+    row before the total was checked. The gate must decide on the sum, never on an
+    allocation it then discards.
+    """
+    built: list[dict[str, str]] = []
+    real = lane._numbered_findings
+
+    def counting(reviewer, section, count, counters):
+        rows = real(reviewer, section, count, counters)
+        built.extend(rows)
+        return rows
+
+    monkeypatch.setattr(lane, '_numbered_findings', counting)
+    section = '<details><summary>🧹 Nitpick comments (400)</summary> ' + ('row ' * 400) + '</details>'
+    body = section * 3
+
+    verdict = _verdict(_read(_review_body(body)))
+
+    assert verdict['reason'] == 'undecidable_read', verdict
+    assert len(built) <= lane._MAX_ENUMERATED_FINDINGS, (
+        f'{len(built)} rows were built for a body the gate then refused at the cap'
+    )
+
+
 def test_a_bold_heading_does_not_swallow_a_nested_findings_section() -> None:
     """A declared bold heading beside a nested findings section counts BOTH.
 
@@ -2809,6 +2837,30 @@ def test_a_body_declaring_three_never_reads_fewer_than_three_or_stops(shape: str
 
     read_fewer = verdict.get('reason') != 'undecidable_read' and (verdict['review_body_findings_total'] < 3)
     assert not read_fewer, verdict
+
+
+_FENCE_ONLY_SHAPES = {
+    'summary-fence-only': ('<details><summary>🧹 Nitpick comments</summary>\n```diff\n- old\n+ new\n```\n</details>'),
+    'summary-fence-inside-wrapper': (
+        '<details><summary>Walkthrough</summary>'
+        '<details><summary>🧹 Nitpick comments</summary>\n```diff\n- old\n+ new\n```\n</details>'
+        '</details>'
+    ),
+}
+
+
+@pytest.mark.parametrize('shape', sorted(_FENCE_ONLY_SHAPES))
+def test_a_section_whose_only_content_is_a_fence_reads_a_finding_or_stops(shape: str) -> None:
+    """⛔ A fence-only section is content the reviewer wrote, never an empty block.
+
+    Masking blanks a fence so a quoted example mints nothing. A section whose ONLY content
+    is a fence then read as zero, and the gate answered `all_handled` over a suggestion the
+    reviewer posted — the one direction this gate never takes.
+    """
+    verdict = _verdict(_read(_review_body(_FENCE_ONLY_SHAPES[shape])))
+
+    stopped = verdict.get('reason') == 'undecidable_read'
+    assert stopped or verdict['review_body_findings_total'] >= 1, verdict
 
 
 def test_a_prose_row_beside_a_section_in_a_group_is_wrapper_content() -> None:

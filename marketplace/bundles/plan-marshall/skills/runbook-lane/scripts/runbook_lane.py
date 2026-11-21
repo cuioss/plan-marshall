@@ -3740,6 +3740,7 @@ def _count_section_findings(
     declared: int | None,
     excluded_offsets: frozenset[int] = frozenset(),
     span_start: int = 0,
+    source_span: str | None = None,
 ) -> int:
     """Return the number of findings the reviewer declares inside one section.
 
@@ -3751,6 +3752,12 @@ def _count_section_findings(
     block that under-states its findings, and an under-count clears several with one
     disposition. A block carrying neither, but prose of its own, states one finding; an
     empty block states none.
+
+    ``source_span`` is the same interval read from the UNMASKED body. A section whose
+    only content is a fenced suggestion is an empty span after :func:`_mask_fenced_code`
+    blanks the fence, and reading that as zero let the gate answer ``all_handled`` over
+    a finding the reviewer posted. Content that was masked away is still content the
+    reviewer wrote, so it counts as at least one — never as an empty block.
 
     A nested summary that is ITSELF a section heading (its absolute offset is in
     ``excluded_offsets``) contributes nothing here: it is counted as a section of its own,
@@ -3768,7 +3775,11 @@ def _count_section_findings(
             nested += counted
     if rows or nested:
         return max(rows, nested)
-    return 1 if re.sub(r'<[^>]+>', ' ', span).strip() else 0
+    if re.sub(r'<[^>]+>', ' ', span).strip():
+        return 1
+    if source_span is not None and re.sub(r'<[^>]+>', ' ', source_span).strip():
+        return 1
+    return 0
 
 
 def _body_sources(body: str) -> dict[str, Any]:
@@ -4134,10 +4145,20 @@ def _count_body_headings(
     heading_offsets: frozenset[int],
     reviewer: str,
     counters: dict[str, int],
+    source_body: str | None = None,
 ) -> tuple[list[dict[str, str]], int, str | None]:
-    """Count every heading's findings, naming a stop when one asks for too many."""
-    findings: list[dict[str, str]] = []
+    """Count every heading's findings, naming a stop when one asks for too many.
+
+    The counts are SUMMED and the body total checked BEFORE any row is materialized:
+    a body of many headings each just under the per-heading cap would otherwise build
+    every row — about a million for a body the gate then refuses — which is the
+    allocation the cap exists to prevent. ``source_body`` is the unmasked body, passed
+    through so a fence-only section is read as content (see
+    :func:`_count_section_findings`).
+    """
+    planned: list[tuple[str, int]] = []
     inline_from_sections = 0
+    total = 0
     for start, end, section, declared in headings:
         span_end = _heading_span_end(body, start, owned_blocks, boundary_starts, nested_starts)
         span = body[end:span_end]
@@ -4152,6 +4173,7 @@ def _count_body_headings(
             declared,
             excluded_offsets=heading_offsets,
             span_start=end,
+            source_span=None if source_body is None else source_body[end:span_end],
         )
         if count > _MAX_ENUMERATED_FINDINGS:
             return (
@@ -4162,17 +4184,22 @@ def _count_body_headings(
                     f'{_MAX_ENUMERATED_FINDINGS} this gate will enumerate'
                 ),
             )
-        findings.extend(_numbered_findings(reviewer, section, count, counters))
+        total += count
+        if total > _MAX_ENUMERATED_FINDINGS:
+            # The per-heading cap is not a cap on the BODY: many headings each just under it
+            # would still enumerate more rows than the gate will materialize — so the total is
+            # decided here, before a single row is built.
+            return (
+                [],
+                0,
+                (f'{total} findings in one body, above the {_MAX_ENUMERATED_FINDINGS} this gate will enumerate'),
+            )
+        planned.append((section, count))
         if section == 'inline':
             inline_from_sections += count
-    if len(findings) > _MAX_ENUMERATED_FINDINGS:
-        # The per-heading cap is not a cap on the BODY: many headings each just under it would
-        # still enumerate more rows than the gate will materialize.
-        return (
-            [],
-            0,
-            (f'{len(findings)} findings in one body, above the {_MAX_ENUMERATED_FINDINGS} this gate will enumerate'),
-        )
+    findings: list[dict[str, str]] = []
+    for section, count in planned:
+        findings.extend(_numbered_findings(reviewer, section, count, counters))
     return findings, inline_from_sections, None
 
 
@@ -4229,6 +4256,9 @@ def _body_findings(
     counters = counters if counters is not None else {}
     # Quoted markup inside a fence is prose (see `_mask_fenced_code`): mask it before
     # any structural read, so an example can neither mint findings nor stop the gate.
+    # The UNMASKED body is kept: a section whose only content was masked is content,
+    # and reading it as an empty block is the under-count this gate forbids.
+    source_body = body
     body = _mask_fenced_code(body, raw_body)
     sources = _body_sources(body)
     transparent, stop = _transparent_wrappers(body, sources)
@@ -4265,6 +4295,7 @@ def _body_findings(
         heading_offsets,
         reviewer,
         counters,
+        source_body,
     )
     if stop is not None:
         return [], stop
