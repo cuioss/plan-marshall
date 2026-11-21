@@ -1,0 +1,181 @@
+# PLAN-NN: {Plan Title}
+
+epic: {slug}
+workstream: WS-NN
+
+> Staged plan spec — one shippable unit of work, ready for `/plan-marshall` hand-off.
+> Lives at `plans/PLAN-NN-{plan_slug}.md` and is queued as one row file, `queue/PLAN-NN.json`,
+> in the epic ledger. The orchestrator EMITS the command below; it never launches the plan inline.
+> This spec is SELF-SUFFICIENT: the emitted command is a one-line pointer and carries no
+> brief, so every per-plan carry is authored here and nowhere else.
+> See `persona-plan-orchestrator/standards/orchestration-model.md` for the tier and
+> hand-off contract.
+
+## Objective
+
+{2-4 sentences: what this plan ships and why, phrased so it can be pasted as the
+/plan-marshall request narrative.}
+
+## Deliverables
+
+{Enumerate the expected deliverables. A spec approaching ~6 deliverables is
+presumptively split before its command is emitted — record the split-or-proceed
+rationale as an epic decision.}
+
+⛔ **A deliverable that serves an existing consumer unchanged** ("keep the consumer as is")
+enumerates that consumer's consumer-visible field and edge set in the deliverable, with one
+verification criterion per element: the fields a reader or a downstream verb sees, and the edges
+each can carry (empty, single, duplicate, boundary, stale). A deliverable that cannot enumerate the
+set says so — that is the signal that the consumer boundary is not yet understood, and it is a
+finding about the spec rather than a licence to write prose.
+
+⛔ **Where the project analyses its pull requests with Sonar** — `runbook_lane resolve` reports
+`sonar: configured` — the spec's Done-when lists the open-finding read at the head (the pull request's
+open new-code findings — issues plus the security hotspots still to review — and the rules left open,
+with `unknown` for a failed read and never `0`), and the Standing Constraints below say how a dismissal
+is obtained.
+
+⛔ **Every Done-when is authored against the sha it names.** A Done-when may say "fails at
+`{sha}`" only for behaviour that is NEW at that sha — behaviour this plan's own change introduces.
+A preservation or coverage clause says "holds at `{sha}`" instead, because nothing about it is
+expected to fail before the change. And a Done-when is never labelled "holds at" while a claim it
+rests on is still a `HYPOTHESIS` in this spec's Claim Labels: an unsettled claim is not something a
+Done-when may assume. `plan-marshall:plan-orchestrator:orchestrator corpus lint-done-whens` is the
+script that flags both contradictions in `cleanup` Step 5.
+
+⛔ **Every deliverable declares its `Skills:` and `Persona:` lines, and they are FILLED from the
+project, not guessed.** The two lines are child lines of the deliverable, in exactly the shape the
+runbook lane reads (`Skills:` / `Persona:` optionally after a bullet marker, both optional). Fill them
+with `plan-marshall:plan-orchestrator:orchestrator corpus spec-skills --slug {slug} --plan PLAN-NN`:
+its `suggested_skills` are the domain skills the project configures for the declared surface's files
+(an `unmapped` path is named, never guessed — then name the skills explicitly or record `none`), and
+its `suggested_persona` follows the path kind (source → `implementer`, test → `module-tester`,
+document → `documenter`). `Persona:` names one of `implementer`, `module-tester`,
+`integration-tester`, `security-expert`, `documenter`. A project that configures no domain skills for
+the module records `Skills: none`; the line is present, so the declaration is the author's answered
+absence rather than a missing line.
+
+1. {deliverable}
+   - Skills: {bundle:skill, …}
+   - Persona: {implementer|module-tester|integration-tester|security-expert|documenter}
+2. {deliverable}
+   - Skills: {bundle:skill, …}
+   - Persona: {implementer|module-tester|integration-tester|security-expert|documenter}
+
+## Standing Constraints
+
+{The constraints that bind every deliverable of this plan, stated once here instead of repeated per
+deliverable: the rules the implementation must not break, the mechanisms it must use, and the record
+it must leave.}
+
+- {constraint}
+- Where the project analyses its pull requests with Sonar (`resolve` reports `sonar: configured`): an
+  open Sonar finding is fixed in a pushed commit, or DISMISSED ONLY ON THE OPERATOR'S SELECTION — the
+  question tool names each finding key, the progress record records the selection as
+  `operator-selected: {issue-key}: {reason}`, and the chosen key is transmitted through the plan-less
+  transition verb, `plan-marshall:workflow-integration-sonar:sonar_rest transition --issue-key {key}
+  --transition {falsepositive|wontfix}`. The lane never records a dismissal of its own, and
+  `sonar-gate --dismissed-keys` is refused. A dismissal the run cannot transmit is a blocker, never a
+  silent pass. The merge gate reads the open-finding count at the head — `0` confirmed, or every
+  remaining finding's key selected by the operator — and an `undecidable` read blocks.
+
+## Claim Labels
+
+{Every claim this spec serializes is labelled `OBSERVED` or `HYPOTHESIS` per
+`persona-plan-orchestrator/standards/orchestration-model.md` § Verify-First Contract for
+Inferred Claims. Label all three classes: the inferred mechanism, the Expected Surface below,
+and every derived count or sharpened finding. A HYPOTHESIS names the file plus symbol that
+confirms or refutes it and is marked verify-at-outline. An asserted absence is labelled and
+verified exactly like an asserted presence. A claim whose verify-first clause has since been
+settled carries at most one nested child bullet recording that settlement — stamped through the
+`corpus set-verdict` seam, never hand-typed — whose shape is defined once at
+`persona-plan-orchestrator/standards/orchestration-model.md` § Re-Grounding Verdict Field
+and is not restated here. Claims are read as TOP-LEVEL `-` bullets of this section, so a
+section authored as a table or as prose alone carries no claim the parser can address; such
+a section is settled as a whole through the section-scoped stamp instead, and is never
+required to be re-authored into bullets.}
+
+- OBSERVED: {claim} — read at `{file}` § `{symbol}`
+- HYPOTHESIS: {claim} — confirm/refute at `{file}` § `{symbol}` (verify-at-outline)
+- Verify-first clause: {anything the consuming phase must settle against the implementing
+  source before it may scope — refutation loops back to re-scope}
+
+## Expected Surface
+
+{Files/modules this plan is expected to touch — the input to the surface-disjointness
+check before this plan may run concurrently with another. Label each entry per Claim Labels
+above, and re-verify the whole surface against HEAD at outline before scoping on it.
+
+This section is READ BY A PARSER, not by a human alone: `plan-marshall:script-shared`'s
+`epic_spec_parser` is the marketplace's single reader of it, and `corpus surfaces` publishes
+what it resolved. Four entry shapes resolve — a named file, a directory (`test/x/`), a
+recursive glob (`marketplace/bundles/**`), and a filename glob (`test_*.py`) — plus entries
+written relative to a rooted path named earlier in the same bullet, and exclusions introduced
+by `excluding`. An entry whose first segment is not a real top-level repository entry cannot
+be anchored and is reported as unresolved rather than silently claimed.
+
+⛔ **The section's derivation status is DERIVED by that reader, never hand-declared.** Do not
+write a status into this section: `declarative` / `derived` / `prose` is the reader's verdict
+about what the entries resolved to, and a hand-written one would be a second, unchecked
+opinion. A section that resolves to no path at all is `prose`, and a spec with no such section
+is `absent`; both are `indeterminate` at the gate, which SEQUENCES the candidate rather than
+passing it — see `persona-plan-orchestrator/standards/orchestration-model.md` § The gate's
+reading contract.
+
+⛔ **A `HYPOTHESIS` entry is swept against the tree BEFORE the spec is staged — and nothing but
+the author enforces that.** An unswept guess here is not a neutral placeholder: it is either
+over-declaration, which raises overlap questions over files the plan never touches, or
+under-declaration, which admits a plan that genuinely collides. Sweep it, then label what the
+sweep found.
+
+This obligation is an AUTHORING rule with no machine backstop, and stating that is part of the
+rule. The reader strips the `OBSERVED:` and `HYPOTHESIS:` prefixes alike, but it KEEPS which
+label it matched and publishes an entry SHAPE derived from it: a `HYPOTHESIS` entry resolves to
+a lead. That shape changes no membership — a `HYPOTHESIS` path is still classified as declared
+surface exactly like an `OBSERVED` one, and `corpus surfaces` and `corpus cross-check` still
+consume it with no sweep record to require. No step the disjointness gate consults can tell a
+swept guess from an unswept one: the consumer that reads the shape is the epic-surface
+PARTITION, and no admission decision consults it. An unswept entry therefore still reaches the
+gate silently rather than being refused there.}
+
+- {OBSERVED|HYPOTHESIS}: `{path}`:{line} — `{symbol}` (verify-at-outline when HYPOTHESIS)
+
+⛔ **An entry is a FULL repo-relative path.** A bare FILE NAME whose suffix a repository file carries
+(`b.py`) is reported as unresolved by the reader rather than resolved against a sibling: write
+`marketplace/bundles/x/b.py`, never `b.py`. The reader's bare-name test is a stated suffix vocabulary,
+so an out-of-vocabulary or extensionless bare name is still dropped in silence — which is why the
+authoring rule is the full path, not the reader's report.
+
+## Dependencies and Sequencing
+
+{Plans that must land first, known overlaps that force sequencing, and adjacency notes —
+surfaces this plan sits next to without touching, which a reader needs to avoid re-deriving.}
+
+- Depends on: {PLAN-NN or none}
+- Overlaps with: {PLAN-NN surfaces or none}
+- Adjacent to: {nearby surface and why it stays untouched, or none}
+
+## Hand-Off Command
+
+{The ready-to-run command the orchestrator emits when this plan reaches the queue head. The
+command is a ONE-LINE POINTER to this spec path — the spec body is the brief, so nothing is
+transcribed into the command. Which form it takes follows the plan's queue-row `lane`: the
+`plan-marshall` lane (the default) runs the plan lifecycle, and the `runbook` lane runs the
+runbook-lane skill. Show the form the plan's lane uses.}
+
+```text
+/plan-marshall task="implement .plan/orchestrator/{slug}/plans/PLAN-NN-{plan_slug}.md"
+```
+
+```text
+/plan-marshall-runbook-lane plan=.plan/orchestrator/{slug}/plans/PLAN-NN-{plan_slug}.md
+```
+
+## Write-Boundary
+
+The plan implementing this spec touches only its own repository source and tests. It creates
+and edits NO file under `.plan/orchestrator/` other than its own
+`inbox/{sender}-{seq}` message — the orchestrator owns every other ledger write — and reports
+its outcome through its PR and its inbox message. The inbox exception's qualifiers and the
+sole sanctioned write mechanism are stated in
+`persona-plan-orchestrator/standards/orchestration-model.md` § Ledger Write-Boundary.
