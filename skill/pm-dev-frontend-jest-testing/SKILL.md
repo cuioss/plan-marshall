@@ -1,0 +1,67 @@
+---
+name: pm-dev-frontend-jest-testing
+description: JavaScript unit testing standards covering Jest framework, DOM and web component testing, mocking patterns, async testing, and coverage configuration, plus the JavaScript test-code review rules a code review cites
+mode: knowledge
+compatibility: Adapted from plan-marshall marketplace (Claude Code native)
+metadata:
+  bundle: pm-dev-frontend
+  skill: jest-testing
+---
+
+# JavaScript Testing Standards
+
+Unit testing standards for JavaScript projects using Jest, covering test structure, DOM interaction, web component testing, mocking, async patterns, and coverage.
+
+## Enforcement
+
+- **Prohibited actions**: Do not generate tests that depend on implementation internals; do not use arbitrary `setTimeout` waits in tests
+- **Constraints**: Tests must follow AAA (Arrange-Act-Assert) pattern; each test verifies one behavior
+
+## Prerequisites
+
+- Jest 29+
+- jsdom test environment (for DOM/component testing)
+- @testing-library/jest-dom (recommended for DOM assertions)
+
+## Workflow
+
+### Step 1: Load Test Fundamentals
+
+Load this standard for any JavaScript test work.
+
+```text
+Call the `read` tool with `{ filePath: "standards/test-fundamentals.md" }` before continuing.
+```
+
+Covers framework setup, test structure, naming, AAA pattern, parameterized tests, coverage configuration, and ESLint integration for tests.
+
+### Step 2: Load Additional Standards (As Needed)
+
+**DOM and Component Testing** (load for UI/component tests):
+```text
+Call the `read` tool with `{ filePath: "standards/dom-component-testing.md" }` before continuing.
+```
+
+Use when: Testing DOM manipulation, web components (Lit/custom elements), Testing Library queries, container-based component testing, or accessibility assertions.
+
+**Mocking and Async Patterns** (load for mocking or async code):
+```text
+Call the `read` tool with `{ filePath: "standards/mocking-async.md" }` before continuing.
+```
+
+Use when: Mocking modules or APIs, working with fetch mocks, testing async/await code, controlling timers, or managing test isolation.
+
+## Related Skills
+
+- `plan-marshall:persona-module-tester` — Language-agnostic testing methodology (AAA, coverage, reliability)
+- `pm-dev-frontend:javascript` — Core JavaScript development standards
+- `pm-dev-frontend:lint-config` — ESLint configuration including Jest plugin
+
+## Review Rules
+
+The review rules of the javascript domain for test code — what a code review looks for in a changed Jest test. The block follows the harvestable block contract — see [`review-rubric.md` § 10 "Harvestable review-rule blocks"](../../../plan-marshall/skills/phase-6-finalize/standards/review-rubric.md) for its rules, which are not restated here.
+
+- An async test that neither awaits nor returns the promise under test, including an un-awaited `expect(...).resolves` or `.rejects`, so the test finishes before the assertion runs and passes whatever the result.
+- A test whose assertions sit inside a callback or a `catch` with no `expect.assertions(n)`, so the test passes when the callback never runs or nothing is thrown.
+- A module mock, `jest.spyOn` or fake-timer switch with no restore in `afterEach` (`restoreAllMocks`, `useRealTimers`), so the mock leaks into later tests and they pass or fail by execution order.
+- A test that waits with a fixed `setTimeout` instead of fake timers or `waitFor`, so it fails intermittently whenever the awaited update arrives later than the fixed delay.
