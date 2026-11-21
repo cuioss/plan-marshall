@@ -575,11 +575,40 @@ class TestStaleAnalysisLicence:
                 )
             )
 
-        assert result['count_status'] == 'confirmed'
+        assert result['count_status'] == 'carried_forward'
         assert result['carried_forward'] is True
         assert result['open_keys'] == ['K1']
         assert result['analysis_revision'] == self._STALE
         assert result['head_revision'] == self._HEAD
+
+    def test_a_carried_forward_read_never_answers_confirmed(self):
+        """The status itself carries the carry-forward, so a caller that copies it is bound.
+
+        ``confirmed`` was a claim about this head; a carried-forward enumeration is a
+        measurement of the ANALYSED head, and the caller may drop the optional reason.
+        """
+        with (
+            self._stale(),
+            self._settled(),
+            patch.object(
+                sonar_mod,
+                '_fetch_issues',
+                return_value={'status': 'success', 'issues': [_issue(key='K1')], 'total': 1},
+            ),
+        ):
+            result = cmd_read_open_issues(
+                _args(
+                    '--pr',
+                    '42',
+                    '--analysed-revision',
+                    self._STALE,
+                    '--carried-forward-head-revision',
+                    self._HEAD,
+                )
+            )
+
+        assert result['count_status'] == 'carried_forward', result
+        assert result['count_status'] != 'confirmed'
 
     def test_a_non_pull_request_read_keeps_its_ce_state_contract(self):
         """A branch read has no pull-request analysis to compare, so it keeps the CE contract."""
@@ -661,5 +690,5 @@ class TestStaleAnalysisLicence:
                 )
             )
 
-        assert result['count_status'] == 'confirmed', result
+        assert result['count_status'] == 'carried_forward', result
         assert result['carried_forward'] is True

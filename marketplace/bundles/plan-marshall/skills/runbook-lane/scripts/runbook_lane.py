@@ -87,7 +87,7 @@ _SONAR_CONFIG_KEY = 'workflow-integration-sonar'
 #: time), never a resolve state: a project that carries a project key but cannot
 #: authenticate must block, not silently skip a check resolve said it needed.
 _SONAR_STATES = ('configured', 'not_configured')
-_SONAR_COUNT_STATUSES = ('confirmed', 'undecidable', 'unconfigured')
+_SONAR_COUNT_STATUSES = ('confirmed', 'carried_forward', 'undecidable', 'unconfigured')
 
 #: The landing's required Sonar count key. One spelling for one measurement: the
 #: schema, the gate's read and this renderer all name the same field, so a
@@ -2219,6 +2219,12 @@ def _same_revision(one: str, other: str) -> bool:
 
     A short SHA and the full object name of the same commit are one revision, so a
     string comparison would report a carried-forward pair that does not exist.
+
+    The comparison is a HEX PREFIX of at least :data:`_MIN_REVISION_PREFIX` (seven)
+    characters, matched in one direction — it does not resolve object names. Seven is
+    git's own abbreviation floor: it is the shortest prefix this lane treats as naming
+    a commit, and the same bound guards ``sonar._same_commit``, because the licence and
+    the gate must answer one pair the same way.
     """
     if not one or not other:
         return False
@@ -2247,13 +2253,26 @@ def _carried_forward_revisions(
     read was carried forward — a caller that invents all three still gets the
     rename — and it does not stop a plain figure being reported plainly. One
     revision alone describes no read either, so it is refused rather than
-    half-recorded, and the pair is refused on any read that is not a confirmed
+    half-recorded, and the pair is refused on any read that is not a measured
     enumeration — the carry-forward renames a measured figure, never a failed one.
     """
     marked = bool(getattr(args, 'carried_forward', False))
     analysed = (getattr(args, 'carried_forward_analysis_revision', None) or '').strip()
     head = (getattr(args, 'carried_forward_head_revision', None) or '').strip()
     if not marked and not analysed and not head:
+        if getattr(args, 'count_status', None) == 'carried_forward':
+            # The status IS the marking's annunciation: the read answered that its
+            # figure stands in for another head, so a verdict that re-renders it as
+            # this head's measurement would contradict the read it came from.
+            return None, {
+                'status': 'error',
+                'error': 'carried_forward_unmarked',
+                'message': (
+                    'the read answered count_status carried_forward: pass --carried-forward beside '
+                    '--carried-forward-analysis-revision and --carried-forward-head-revision, so the '
+                    'figure cannot be reported as a measurement of this head'
+                ),
+            }
         return None, None
     if not marked:
         return None, {
@@ -2274,12 +2293,12 @@ def _carried_forward_revisions(
                 '--carried-forward-analysis-revision and --carried-forward-head-revision'
             ),
         }
-    if getattr(args, 'count_status', None) != 'confirmed':
+    if getattr(args, 'count_status', None) not in ('confirmed', 'carried_forward'):
         return None, {
             'status': 'error',
             'error': 'carried_forward_requires_confirmed',
             'message': (
-                'a carried-forward read is a confirmed enumeration of the analysed head; '
+                'a carried-forward read is a measured enumeration of the analysed head; '
                 f'--count-status is {getattr(args, "count_status", None)!r}'
             ),
         }
@@ -2330,8 +2349,13 @@ def _carried_forward(
     if carried_forward is None or not verdict.get('merge_allowed'):
         return verdict
     analysed, head = carried_forward
+    # The fallback names the two heads and NOTHING about the delta: an empty-delta
+    # carry (a docs-only change since the analysed head) is legal, so a sentence
+    # asserting "not built" would state a property the read never claimed. Only the
+    # read's own reason describes the delta, and it is used when supplied.
     verdict['reason'] = reason.strip() or (
-        f'{_CARRY_FORWARD_UNBUILT}: analysed {analysed} != head {head}; the delta since the analysed head is not built'
+        f'carried_forward_read: analysed {analysed} != head {head}; the read was carried forward '
+        'and its own reason was not supplied'
     )
     verdict['carried_forward'] = True
     verdict['analysis_revision'] = analysed
@@ -2370,6 +2394,11 @@ def _sonar_gate_verdict(
       run dismiss its own findings. A count with no enumerated key set cannot be
       verified key by key, so it is refused rather than passed on the count
       alone.
+    - ``carried_forward`` — the same conditions, over a figure the read measured at
+      the ANALYSED head. The status is the read's own annunciation, so it reaches
+      this function only through the required ``--count-status``; ``cmd_sonar_gate``
+      refuses it unless the marking and both revisions accompany it, and
+      ``_carried_forward`` then names the two heads in the verdict.
     """
     if state == 'not_configured':
         return {
@@ -2579,7 +2608,7 @@ def cmd_sonar_gate(args: argparse.Namespace) -> dict[str, Any]:
             ),
         }
     if (
-        count_status == 'confirmed'
+        count_status in ('confirmed', 'carried_forward')
         and isinstance(open_count, int)
         and open_count > 0
         and _split_csv(getattr(args, 'operator_selected_keys', None))
@@ -2736,6 +2765,21 @@ def cmd_sonar_facts(args: argparse.Namespace) -> dict[str, Any]:
     # measured elsewhere must never render as this head's measurement.
     marked = bool(getattr(args, 'carried_forward', False))
     analysed_revision = (getattr(args, 'analysed_revision', None) or '').strip()
+    alias_revision = (getattr(args, 'carried_forward_analysis_revision', None) or '').strip()
+    if alias_revision and analysed_revision and alias_revision != analysed_revision:
+        # One value has one spelling. The retired flag still parses, but two
+        # disagreeing spellings of the analysed revision resolve to nothing: a
+        # last-wins pick would silently render one of them as the measured head.
+        return {
+            'status': 'error',
+            'error': 'conflicting_revision_spellings',
+            'message': (
+                '--analysed-revision and --carried-forward-analysis-revision disagree; '
+                'pass one spelling of the analysed revision'
+            ),
+        }
+    if alias_revision and not analysed_revision:
+        analysed_revision = alias_revision
     carried_forward_head = (getattr(args, 'carried_forward_head_revision', None) or '').strip()
     count_status_reason = (getattr(args, 'count_status_reason', None) or '').strip()
     if count_status_reason.startswith(_CARRY_FORWARD_REASON_PREFIX) and not marked:
@@ -2746,6 +2790,18 @@ def cmd_sonar_facts(args: argparse.Namespace) -> dict[str, Any]:
             'error': 'carried_forward_unmarked',
             'message': (
                 "the read's count_status_reason names a carry-forward: pass --carried-forward beside "
+                '--analysed-revision and --carried-forward-head-revision'
+            ),
+        }
+    if count_status == 'carried_forward' and not marked:
+        # The status is the read's own annunciation, so the marking is required even
+        # when the caller dropped the reason: a figure measured at another head must
+        # never render as this head's measurement.
+        return {
+            'status': 'error',
+            'error': 'carried_forward_unmarked',
+            'message': (
+                'the read answered count_status carried_forward: pass --carried-forward beside '
                 '--analysed-revision and --carried-forward-head-revision'
             ),
         }
@@ -2774,12 +2830,12 @@ def cmd_sonar_facts(args: argparse.Namespace) -> dict[str, Any]:
                 '--carried-forward-head-revision (standing in for)'
             ),
         }
-    if analysed_revision and count_status != 'confirmed':
+    if analysed_revision and count_status not in ('confirmed', 'carried_forward'):
         return {
             'status': 'error',
             'error': 'analysed_revision_requires_confirmed',
             'message': (
-                '--analysed-revision names the head a confirmed figure was measured at; '
+                '--analysed-revision names the head a measured figure was taken at; '
                 f'--count-status is {count_status!r}, which measured nothing'
             ),
         }
@@ -4914,7 +4970,10 @@ def main() -> int:
         '--count-status',
         dest='count_status',
         default=None,
-        help="The read's count_status: confirmed, undecidable, or unconfigured (required when configured)",
+        help=(
+            "The read's count_status: confirmed, carried_forward, undecidable, or unconfigured "
+            '(required when configured)'
+        ),
     )
     gate_parser.add_argument(
         '--open-count',
@@ -4992,7 +5051,10 @@ def main() -> int:
         '--count-status',
         dest='count_status',
         default=None,
-        help="The read's count_status: confirmed, undecidable, or unconfigured (required when configured)",
+        help=(
+            "The read's count_status: confirmed, carried_forward, undecidable, or unconfigured "
+            '(required when configured)'
+        ),
     )
     facts_parser.add_argument(
         '--open-count',
@@ -5026,7 +5088,7 @@ def main() -> int:
     )
     facts_parser.add_argument(
         '--carried-forward-analysis-revision',
-        dest='analysed_revision',
+        dest='carried_forward_analysis_revision',
         default=None,
         help=argparse.SUPPRESS,
     )

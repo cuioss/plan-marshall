@@ -1003,6 +1003,14 @@ def _same_commit(one: str, other: str) -> bool:
     A short SHA and the full object name of one commit are one revision. A string
     comparison would report a head mismatch that does not exist and refuse a licence
     the decision actually verified.
+
+    The comparison is a HEX PREFIX of at least seven characters, matched in one
+    direction — it does not resolve object names. Seven is git's own abbreviation
+    floor, the shortest length at which this comparison carries the licence's
+    meaning; below it a coincidence would be reported as one commit. Raising the
+    floor would refuse a legitimate short SHA that git itself calls unambiguous, so
+    the bound is stated here rather than tightened in one place only: the lane's
+    ``_same_revision`` applies the same floor to the same pair.
     """
     if not one or not other:
         return False
@@ -1304,9 +1312,13 @@ def cmd_read_open_issues(args):
         'hotspots': open_hotspots,
     }
     if carried_forward:
-        # The confirmation is of the ANALYSED head, not of this one. The reason
-        # travels beside the count so no caller can read it as a measurement of
-        # the head the pull request now points at.
+        # The confirmation is of the ANALYSED head, not of this one, so the STATUS
+        # itself says so. Replying ``confirmed`` made the binding rest on the
+        # optional reason: a caller that copied ``count_status`` and ``open_count``
+        # and dropped the reason and the marking still got a plain passing verdict.
+        # ``carried_forward`` is a REQUIRED input of both lane verbs, so no caller can
+        # reproduce this figure as a plain one.
+        result['count_status'] = 'carried_forward'
         result['carried_forward'] = True
         result['count_status_reason'] = (
             f'carried_forward_from_analysed_head: analysed {revision_result["analysis_revision"]} '

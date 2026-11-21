@@ -121,7 +121,7 @@ footprint gate, and `source: architecture` otherwise.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane sonar-gate \
-  --state {configured|not_configured} [--count-status {confirmed|undecidable|unconfigured}] \
+  --state {configured|not_configured} [--count-status {confirmed|carried_forward|undecidable|unconfigured}] \
   [--open-count N] [--open-keys "K1,K2"] [--operator-selected-keys "K1,K2"] [--progress-file PATH] \
   [--hotspot-keys "H1,H2"] [--count-status-reason "the read's own reason"] \
   [--carried-forward --carried-forward-analysis-revision {sha} --carried-forward-head-revision {sha}]
@@ -132,11 +132,14 @@ and the carry-forward marking belong to a `configured` state: supplying any of t
 `--state not_configured` is refused as `state_contradicts_read`, because a project with no Sonar has
 no read to report.
 
-**The carry-forward marking binds itself to the read.** A `--count-status-reason` that names a
-carry-forward (`carried_forward…`) while the marking is absent is refused as
-`carried_forward_unmarked`, so a figure measured at another head cannot reach the gate as this
-head's measurement. When the marking is present the read's own reason becomes the verdict's
-`reason`, so an empty delta is described as empty rather than as one the project does not build. A
+**The carry-forward marking binds itself to the read.** A carried-forward read answers
+`count_status: carried_forward` — never `confirmed` — so a caller that copies only the status and the
+count is refused as `carried_forward_unmarked` unless the marking and both revisions accompany it.
+That status is a REQUIRED input here, which is what keeps the binding from resting on the optional
+reason. A `--count-status-reason` that names a carry-forward (`carried_forward…`) is refused the same
+way when the marking is absent. When the marking is present the read's own reason becomes the
+verdict's `reason`; with no reason supplied the fallback names the two heads and says nothing about the
+delta, so an empty delta is never described as one the project does not build. A
 revision that is not a hexadecimal object name is refused as `revision_format_invalid`, and a short
 SHA and the full object name of one commit are one revision (`carried_forward_revisions_equal`),
 never a pair.
@@ -166,11 +169,16 @@ be told from a read that found none.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane sonar-facts \
-  --state {configured|not_configured} [--count-status {confirmed|undecidable|unconfigured}] \
+  --state {configured|not_configured} [--count-status {confirmed|carried_forward|undecidable|unconfigured}] \
   [--open-count N] [--rules "R1,R2"] [--gate-status {ok|error|not_computed|unknown}] \
   [--count-status-reason "the read's own reason"] \
   [--carried-forward --analysed-revision {sha} --carried-forward-head-revision {sha}]
 ```
+
+A `carried_forward` status is rendered exactly as a confirmed one is, with the marking lines beside it,
+and is refused as `carried_forward_unmarked` without them. `--analysed-revision` and the retired
+`--carried-forward-analysis-revision` are two spellings of ONE value: passing both with different
+values is refused as `conflicting_revision_spellings`, never resolved last-wins.
 
 Renders the landing's Sonar facts (section 8) from the read taken at the merge head:
 `sonar_open_new_issues` — the landing's REQUIRED count key, one spelling for one measurement — and
@@ -844,7 +852,7 @@ whether to continue at the limit. Record every finding and its disposition.
      key is one the operator selected. The gate's `--open-keys` is the read's own `open_keys` field —
      it enumerates the issue keys AND the hotspot keys, so a hotspot is never lost by reading `issues`
      alone. Then decide the gate:
-     `python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane sonar-gate --state configured --count-status {confirmed|undecidable|unconfigured} --open-count {n} --open-keys {open_keys} --operator-selected-keys {k1,k2} --progress-file {progress_file} --hotspot-keys {hotspot_keys}`.
+     `python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane sonar-gate --state configured --count-status {confirmed|carried_forward|undecidable|unconfigured} --open-count {n} --open-keys {open_keys} --operator-selected-keys {k1,k2} --progress-file {progress_file} --hotspot-keys {hotspot_keys}`.
    - **A dismissal is the operator's act, never the lane's.** When a finding should not be fixed, ask
      the operator with the question tool, naming each finding key and what dismissing it would mean,
      and transmit a key only on the option the operator SELECTED. The progress file records the
@@ -893,7 +901,7 @@ whether to continue at the limit. Record every finding and its disposition.
      from it is refused too (`carried_forward_head_mismatch`) — a push landed between the two calls,
      so re-run the decision for the new head.
      Then pass the gate the read's own marker, its reason and both revisions,
-     `sonar-gate --state configured --count-status confirmed --open-count {n} --open-keys {open_keys} --count-status-reason "{read_reason}" --carried-forward --carried-forward-analysis-revision {analysis_revision} --carried-forward-head-revision {head_revision} …`,
+     `sonar-gate --state configured --count-status carried_forward --open-count {n} --open-keys {open_keys} --count-status-reason "{read_reason}" --carried-forward --carried-forward-analysis-revision {analysis_revision} --carried-forward-head-revision {head_revision} …`,
      and render the landing's figure the same way,
      `sonar-facts … --count-status-reason "{read_reason}" --carried-forward --analysed-revision {analysis_revision} --carried-forward-head-revision {head_revision}`,
      so the fact names the head it was measured at and the head it stands in for. A carried-forward
@@ -1187,7 +1195,7 @@ step.sonar-roundtrip.open_issue_rules={rules left open|none|unknown|n/a}
   them is rejected by `inbox landing-check`, so a "all handled" claim has its numbers behind it.
 - **Sonar (the count is required):** `sonar_open_new_issues` is a required field. When `sonar` is
   `configured`, render it with
-  `python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane sonar-facts --state configured --count-status {confirmed|undecidable|unconfigured} [--open-count {n}] [--rules "{r1,r2}"] [--gate-status {ok|error|not_computed|unknown}] [--carried-forward --analysed-revision {sha} --carried-forward-head-revision {sha}]`
+  `python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane sonar-facts --state configured --count-status {confirmed|carried_forward|undecidable|unconfigured} [--open-count {n}] [--rules "{r1,r2}"] [--gate-status {ok|error|not_computed|unknown}] [--carried-forward --analysed-revision {sha} --carried-forward-head-revision {sha}]`
   and write its `fact_lines` verbatim; when it is `not_configured`, render with
   `--state not_configured` and write `n/a` at the count (a project with no Sonar has no such number —
   one of the four keys at which `n/a` is a legal answer). A confirmed count writes the measured
