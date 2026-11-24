@@ -681,6 +681,24 @@ Operator rulings: the three borderlines above were graded **high** (the marker g
 
 Lessons were moved with `mv -n`; all 31 destinations and the 28 remaining sources were verified, and no source-repo commit was made. ⚠ Not run: Maven, for `-093`. The consumers' installed plugin versions are unknown, and several "fixed" verdicts predate the lessons. This run also reconciles the 2026-11-02 and 2026-11-10 "unreconciled" notes for these two stores: every id the 2026-11-01 run recorded as left in place is still at its path, so they were not lost.
 
+### 2026-11-24 — inbox drain (123 messages, the `drain` action)
+
+Machine: Linux (`/home/oliver/git`). The ledger worktree was rebased onto `origin/main` first (44 behind, 0 ahead, nothing pending), and `inbox list` was read on that tree, per Multi-Machine Operation rules 3 and 4. Input: 123 live, valid messages, none a landing: `api-sheriff-kidicap-gateway-requirements` 9 (`finding`), `client-framework-aspects` 12, `libraries-initial-implementation` 79 (76 `candidate-lesson`, 3 `finding`) and `pm-mcp-core-m2-m4-v2` 23. The resume summary had shown 23 queued; the other 100 are the `client-framework-aspects` and `libraries-initial-implementation` messages, written on 2026-11-24 by project epics that forward their plan-marshall lessons here by hand. One read-only drafting leaf proposed a disposition per message against `3da9e1f44`; the orchestrator adjudicated every row. Per-message record: `lessons-archive/INDEX.md` § Sweep 2026-11-24.
+
+| Disposition | Messages | Where |
+|---|---|---|
+| high (operator), filed to `live-blockers` | 16 in 4 filings: `lessons-routing-096` (finalize commit sanction), `-097` (merge gate against an optional bot), `-098` (`pre-push-quality-gate` done on a red build), `-100` (script-surface drift, recurrence of `-044`) | `live-blockers/inbox/` |
+| domain content, filed | 2 in `lessons-routing-099` (`pm-dev-java` S1130, S4144, S6539) | same |
+| staged as plans (operator) | 2: `PLAN-LR-08` (forward framework-owned lessons), `PLAN-LR-09` (route landing leftovers by a standing rule) | `plans/`, queue rows `staged` |
+| medium, archived | 25 | `inbox/archive/{sender}/` |
+| low, archived | 18 | same |
+| stale, archived | 4 | same |
+| already covered, archived | 56 | same |
+
+Operator rulings this run: the commit-sanction cluster, the merge-gate cluster and `libraries-initial-implementation-054` were graded **high** from borderline; `libraries-initial-implementation-048` was offered and not lifted, so it stays **medium**; `-078` and `-079` were **staged** where the drafting leaf had advised recording them as evidence and archiving. The `-096` grade of the commit gate overrides the 2026-11-12 low grade of TokenSheriff `2026-11-12-18-003`, which rested on the guard being deliberate: the guard is, and the new evidence is that the dispatches never obtain a sanction.
+
+Open points this drain leaves: `PLAN-LR-09` carries an Inbound Routing check owed at outline (the request is mainly `plan-orchestrator` analyze behaviour), and both new specs declare `Skills: none` because `corpus spec-skills` was not run on them; run it before either is emitted. `PLAN-LR-08` overlaps the parked `PLAN-LR-02` / `PLAN-LR-03` and `PLAN-LR-09` on `analyze.md` and `orchestrator.py`. `pm-mcp-core-m2-m4-v2-034` and `libraries-initial-implementation-075` report the same `review-gate` picture-heading read on 0.1.2184 although the fixtures shipped in it; reproduce against `-089`. Two new low leads sit in the INDEX (`api-sheriff-kidicap-gateway-requirements-023`), and a manage-logging empty-output lead (`libraries-initial-implementation-075` item 5) was not verified because running it writes. Not landed by this run.
+
 ## START HERE
 
 ### Annotations
