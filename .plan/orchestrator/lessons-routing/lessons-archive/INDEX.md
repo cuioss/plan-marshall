@@ -1303,3 +1303,145 @@ TokenSheriff (19): `2026-10-31-12-004`, `2026-10-31-12-005` (formatter and impor
 | already-covered or low (stored in `low/`) | 14 |
 | not applicable (left in source) | 28 |
 | **total** | **59** |
+
+## Sweep 2026-11-24 (inbox drain, 123 messages)
+
+Machine: Linux, ledger worktree rebased onto `origin/main` before the drain (0 ahead, 0 behind). Input: this epic's own inbox, 123 live, valid messages from four senders: `api-sheriff-kidicap-gateway-requirements` (9, `finding`), `client-framework-aspects` (12, `candidate-lesson`), `libraries-initial-implementation` (79: 76 `candidate-lesson`, 3 `finding`), `pm-mcp-core-m2-m4-v2` (23, `candidate-lesson`). RULING 2026-10-09 grading applied to the messages in place of a corpus scan. A read-only drafting leaf proposed a disposition per message at `3da9e1f44`; the orchestrator adjudicated every row, and the operator graded the borderlines. Message bodies stay verbatim in `inbox/archive/{sender}/`; nothing is copied a second time. Filings were numbered above the highest `lessons-routing-NNN` in `live-blockers/inbox/archive/lessons-routing/` (`-095`).
+
+Operator rulings this run: the finalize commit-sanction cluster, the merge gate against an optional bot, and `pre-push-quality-gate` done on a red build were all graded **high**; `libraries-initial-implementation-048` (Sonar pre-filter) was not selected for high and stays **medium**; `libraries-initial-implementation-078` and `-079` were both **staged** as new plans.
+
+Not verified by the drain: only the points the filings name as re-read were re-read (`git-workflow.py:533-581`, `phase-3-outline/SKILL.md:785`); every other `checked` item rests on the drafting leaf's reading at `3da9e1f44`, and the medium/low grades rest on the message text.
+
+### Filed to `live-blockers` (5 filings, 18 messages) and staged (2 plans, 2 messages)
+
+| Target | Level | Messages | Subject |
+|---|---|---|---|
+| `lessons-routing-096` | high (operator) | `libraries-initial-implementation-010`, `-063`; `client-framework-aspects-007`, `-012`; `pm-mcp-core-m2-m4-v2-035`, `-046` | The finalize commit gate refuses an inline-fix commit with `no_sanction`: exact `step in manifest_steps` match (`git-workflow.py:533`), no bundle-prefix normalisation, and the triage and correction dispatches carry no step id |
+| `lessons-routing-097` | high (operator) | `libraries-initial-implementation-052` | `pre_merge_gate` counts an optional bot's structural refusal as `merge_participation_unproven` while `review_completeness` passes; reproduce first (LB-132 touched both) |
+| `lessons-routing-098` | high (operator) | `libraries-initial-implementation-054` | `pre-push-quality-gate` marked done in the same second a red build finished; nothing ties `mark-step-done` to the build verdict; code not traced |
+| `lessons-routing-099` | medium, domain content | `libraries-initial-implementation-076`, `-077` | `pm-dev-java` guidance gaps: `S1130`, `S4144` in `junit-core`, `S6539` in `ext-triage-java` |
+| `lessons-routing-100` | high, recurrence of `-044` | `libraries-initial-implementation-003`, `-004`, `-011`, `-022`, `-023`, `-061`, `-066`; `client-framework-aspects-011` | Script-surface drift with live residue: `qgate add/query/resolve` in `phase-3-outline/SKILL.md:785` (and two sibling docs), `manage-findings list --limit`, `get-deliverable --number`, bare bot flags |
+| `PLAN-LR-08` (staged) | operator | `libraries-initial-implementation-078` | Forward framework-owned lessons and findings to the framework home's `lessons-routing` inbox |
+| `PLAN-LR-09` (staged) | operator | `libraries-initial-implementation-079` | Route landing leftovers by a standing fold-by-content rule; Inbound Routing check owed at outline |
+
+### Archived (103 messages, not filed)
+
+Levels: `stale` fixed or refuted by ground truth; `medium` and `low` as graded; `covered` already owned by the named item, no new filing. A `covered` message is evidence of recurrence for that item.
+
+| Message | Level | Reason |
+|---|---|---|
+| `api-sheriff-kidicap-gateway-requirements-018` | stale | Refuted: `ci_verify.py:185-259` uses a closed policy list and routes unrecognised job names to the build-failure producer; lesson `2026-09-22-18-004` already archived stale |
+| `-019` | low | 0.1.2184 incident on the `source_id` channel; not shown by reading; owned by `truthful-signals` per Inbound Routing |
+| `-020` | covered | `2026-09-24-05-001` (archived medium) |
+| `-021` | covered | `2026-09-23-05-003`, `-054`, `-084` (archived low) |
+| `-022` | covered | `-089` (landing review counts disagree with the provider) |
+| `-023` | covered | `-089`, `pm-mcp-core-m2-m4-v2-007`; two new low leads recorded here: review-body rows with an empty thread id never resolve, and maven module attribution |
+| `-024` | covered | `-091` row 4: `ci checks` has no branch/commit run-list verb (help re-read by the leaf) |
+| `-025` | low | Doc tweak to `three-layer-analysis.md`: scope the recursive search |
+| `-026` | low | Four low leads: grouping, a knob found reverted, verdicts payload size; at-or-below threshold is documented |
+| `client-framework-aspects-001` | covered | `-049` (declared-footprint closure; Q-Gate caught it) |
+| `-002` | covered | `-049` (ADR citation closure) |
+| `-003` | covered | `client-framework-aspects-002` |
+| `-004` | low | `manage-adr` parses Status as a single token; condensation broke the listing; unowned format rule |
+| `-005` | covered | `-067` (review-body ingest cap), `-062` (doc-claim drift); the rest is project follow-up |
+| `-006` | stale | Refuted: `--changed-paths-file` is declared on `manage-change-ledger append` at `main` and in 0.1.2184 (#2012); the rejection was consumer executor skew (`-045`) |
+| `-008` | covered | `-062`, `-057`, `-077` (doc-claim accuracy; domain content already filed) |
+| `-009` | covered | `-050`, PLAN-LB-132 (a PR-body edit reopens the walkthrough finding) |
+| `-010` | medium | Advisory-only findings policy is a cost question; the closing round is mandatory by design (`code-review.md:372`); live-blockers FOCUS RULE |
+| `libraries-initial-implementation-001` | covered | `-049` (SPI test-implementer sweep) |
+| `-002` | covered | `-049` (old-state wording sweep, five recurrences all caught by the Q-Gate) |
+| `-005` | medium | Criteria frozen before the outline's own questions are answered; extra refreeze prompts in three plans |
+| `-006` | medium | An owed but uncomposed coverage build has no structured hand-back slot |
+| `-007` | covered | Keyless boundary rows (accounting medium cluster; measurement) |
+| `-008` | covered | Loop-back re-fire cost (`-047` withdrawn, `verdict_inputs` medium); six levers, one root cause |
+| `-009` | covered | Non-converging review rounds; archived triage-scope medium (`pm 165`, `pm-mcp-core-m2-m4-v2-031`) |
+| `-012` | stale | Refuted: `--changed-paths-file` exists (#2012). Residual leads: `signal-scan` does not count plain `[ERROR] ... failed` lines; `append` should reject a non-hex `commit_sha` |
+| `-013` | covered | `-050`, `-030`, PLAN-LB-101 (quota waits and close-and-reopen churn); account-scoped quota residue noted for `-050` |
+| `-014` | covered | `-051` (leaves without Grep use Bash grep) |
+| `-015` | covered | Chain-tail commit predicate, archived medium `2026-10-12-029` |
+| `-016` | low | `trigger-bot` needs the newest finding SHA; no narrow query exists |
+| `-017` | covered | Accounting medium cluster: `rate_window_await` is not in the `manage-metrics` enum (leaf re-read); measurement |
+| `-018` | covered | `-040`, review-rubric section 1.19 (outline self-check gaps the Q-Gate catches as designed) |
+| `-019` | covered | `pm 317` medium (handshake drift after the plan's own Q-Gate resolution) |
+| `-020` | covered | `2026-10-12-007/-019/-063`, `-052` (unmeasured module build pinned to the orchestrator tier) |
+| `-021` | low | Disabled build server WARNING spam; archived low four times |
+| `-024` | low | Transient Maven Central failure; feature request already recorded project-only in TokenSheriff `2026-11-15-18-003` |
+| `-025` | low | Completion count line counts envelope tasks; archived low, recurrence |
+| `-026` | covered | Maven runs write no build row; archived medium cluster (`pm 155/187/209/211/241`) |
+| `-027` | covered | `libraries-initial-implementation-015` (same chain-tail predicate defect) |
+| `-028` | medium | No scripted fails-at-base check; manual restore is risky and leaves scratch files |
+| `-029` | medium | Test-identifier diff helper reads only pytest output and silently degrades on Maven |
+| `-030` | covered | `libraries-initial-implementation-007` (enum paraphrase on `record-dispatch-boundary`; measurement) |
+| `-031` | covered | Hand-typed token delta cannot be corrected; measurement, FOCUS RULE |
+| `-032` | covered | `2026-10-23` footprint-amendment medium (`taken_into_account` leaves Affected files unsynced) |
+| `-033` | medium | Triage fix task created with empty skills and no verification |
+| `-034` | medium | Rejected outline recommendations force a refreeze; same cost as `-005` |
+| `-035` | medium | `git-workflow commit` reports an empty or unstaged index as FETCH_FAILURE; no `nothing_staged` token in any script (seventh source: `v12-001`, `v46-003`, `v86-003`, pm-mcp-core `2026-11-06-16-003`, `a02-081`, this and `-073`); history grade medium, operator may lift |
+| `-036` | medium | A leaf recorded its own criteria-integrity refreeze authorisation; same root as `-005` |
+| `-037` | covered | `module_mapping` low cluster (deliverable spans modules; the validator caught it) |
+| `-038` | covered | `libraries-initial-implementation-018` (pointer to an unrecorded question) |
+| `-039` | medium | `which-module` returns null for resource-only paths, weakening module mapping; related `pm 261` |
+| `-040` | covered | `2026-10-23` footprint-amendment medium (de-scoping a deliverable leaves the outline live) |
+| `-041` | low | Non-canonical verification goal in the outline; the Q-Gate caught it; project rule |
+| `-042` | low | Negative clauses of a spec section; generic authoring practice; the Q-Gate caught it |
+| `-043` | covered | `2026-10-13-198` medium (realized footprint drops rename sources) |
+| `-044` | medium | Squash message is the PR body with the CodeRabbit release-notes block (live at `c35f23c12`); four or more sources, unowned |
+| `-045` | medium | Each leaf resolves the commit trailer itself; mixed model trailers reach main |
+| `-046` | medium | Fix tasks edit read-only modules (public API) without a prompt; two plans |
+| `-047` | medium | No `sys.version_info` guard in any script or template (leaf re-read); a 3.10 interpreter yields opaque failures |
+| `-048` | medium | `sonar-rules.json:29` lists `java:S1135` as suppressable while the gate counts it (leaf re-read); the operator did not lift it to high |
+| `-049` | medium | Refine owner gates should be asked before the outline; same refreeze root as `-005` |
+| `-050` | low | `session_ids` not appended on resume |
+| `-051` | covered | `-022`, `-032`, `-058` (deep-lane empty assessment store, filed high) |
+| `-053` | covered | `-050`, `2026-10-12-016/-084/-115` (summary edits reopen findings) |
+| `-055` | low | Symmetric-pair round-trip bound is project design practice; the review bot caught it |
+| `-056` | medium | Leaves back-grounded builds; the host moves builds over 180 s; same cause as `pm-mcp-core-m2-m4-v2-054` |
+| `-057` | covered | Re-entered phase reported idle; measurement, FOCUS RULE |
+| `-058` | covered | `a02-082` item 3 and the build-timeout medium cluster |
+| `-059` | covered | `pm 286`, `2026-09-25-06-002` (whole-tree per-task gate cost) |
+| `-060` | covered | `pm-mcp-core-m2-m4-v2-027/-033` medium (no hand-back frame recognised in any script, leaf re-read) |
+| `-062` | covered | `libraries-initial-implementation-019` (handshake drift) |
+| `-064` | stale | Refuted: same `--changed-paths-file` drift as `-012` |
+| `-065` | covered | `libraries-initial-implementation-008` (Sonar rule families fixed serially) |
+| `-067` | covered | `libraries-initial-implementation-002` (standing cross-document constraint not applied per deliverable) |
+| `-068` | covered | `-049` ("every file of kind X" left unenumerated) |
+| `-069` | covered | `libraries-initial-implementation-037` (helper and consumers in different modules) |
+| `-070` | covered | Base-drift medium, `pm-mcp-core-m2-m4-v2-019` (a late rebase re-fires head-bound reviews) |
+| `-071` | covered | `-038` (phase self-transition before the orchestrator Q-Gate) |
+| `-072` | low | `pre_merge_gate.py:220-226` assumes the queue route never rebases; archived low TokenSheriff `2026-11-13-06-009` |
+| `-073` | medium | Commit verb assumes a staged index after a rewriting gate; unconfirmed; same as `-035` |
+| `-074` | low | `compose --envelope-count` defaults to 1; archived low `2026-10-13-200` |
+| `-075` | medium | Six-item bundle, item by item: (1) `-089`; (2) `sonar read_open_issues` `head_revision_unavailable` unchanged since #1866, medium; (3) covered by `pm-mcp-core-m2-m4-v2-007` and `-089`; (4) token figures disagree 2.5 to 3.2 times, measurement; (5) `manage-logging decision --store orchestrator` printed nothing on later calls, not verified because running it writes, medium lead; (6) stale consumer architecture inventory, project-only |
+| `pm-mcp-core-m2-m4-v2-034` | covered | `-089`. The `<picture>` heading fixtures shipped in 0.1.2184 (#1947, #2019) yet `libraries-initial-implementation-075` reports the same read on 0.1.2184; reproduce against `-089` |
+| `-036` | medium | PR body path built by hand; two plan directories under a worktree |
+| `-037` | low | Project doc-review `trace.py` assumes the main-checkout layout; not a plan-marshall bundle |
+| `-038` | covered | `-051` (leaves without Grep fall back to Bash grep) |
+| `-039` | medium | `sonar-roundtrip` ignores the docs-only skip and asks the operator twice |
+| `-040` | low | Condensation review is a pm-mcp-core project skill |
+| `-041` | covered | Accounting cluster: an API-limit kill leaves no boundary row; measurement |
+| `-042` | medium | `pull_request_cut` is recorded but never consumed; the operator was asked twice |
+| `-043` | medium | Realized footprint keyed to one PR; a multi-PR plan fails recall |
+| `-044` | covered | `2026-10-23` criteria-evidence medium; the `trace.py` half is project |
+| `-045` | covered | `verdict_inputs` medium (review verdicts bound to HEAD only; cost) |
+| `-047` | covered | `-050`, `v89-005`, `pm 404` (await-off quota refusal loops back) |
+| `-048` | low | Same `trace.py` worktree issue as `-037` |
+| `-049` | low | pm-mcp-core ADR 026 baselines; project-specific |
+| `-050` | medium | Pre-fill review authors from `rule_sources` / reconcile-scope; mechanisable |
+| `-051` | covered | `2026-10-23` criteria-evidence medium (criterion needs post-merge evidence) |
+| `-052` | covered | Staged-spec claims medium ("owned by" not checked against the named spec) |
+| `-053` | covered | `pm-mcp-core-m2-m4-v2-047` (stale-notice recovery gap) |
+| `-054` | medium | `per_task` tier ignores the host's 180 s auto-background; five verification hand-backs; new mechanism |
+| `-055` | covered | `libraries-initial-implementation-007` (keyless boundary rows) |
+| `-056` | covered | `pm-mcp-core-m2-m4-v2-007` medium and `-089` (landing facts left `unknown`) |
+
+### Dispositions
+
+| Disposition | Count |
+|---|---|
+| filed (5 filings) | 18 |
+| staged (`PLAN-LR-08`, `PLAN-LR-09`) | 2 |
+| medium | 25 |
+| low | 18 |
+| stale | 4 |
+| covered | 56 |
+| **total** | **123** |
