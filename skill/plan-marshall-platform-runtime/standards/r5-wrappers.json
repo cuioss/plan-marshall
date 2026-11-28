@@ -1,0 +1,441 @@
+{
+  "schema": "r5-wrappers/1",
+  "description": "The ONE wrapper table the R5 interpreter check strips before it looks for the program. Read by the OpenCode guard plugin (.opencode/plugin/guard.js), the Claude PreToolUse hook (claude_pretooluse_hook.py), and the enforcement pin tests; no implementation carries a second literal list. A wrapper is a prefix program whose own invocation runs the command that follows it, so `env python3 -c x` still runs the interpreter. Each entry declares the options that consume a FOLLOWING value ('values' for the full token, 'value_letters' for a letter inside a short cluster such as `-iu FOO`), the options whose value is a DIRECTORY the wrapper changes to ('dir_options', e.g. `env -C`, `sudo -D`), how many leading positional arguments the wrapper consumes before the command ('leading_positionals', e.g. timeout's DURATION, flock's lock file, chrt's priority), and the options whose value is itself a COMMAND STRING that must be re-lexed and walked ('splice', e.g. `env -S`, a shell's `-c`, `script -c`). Every wrapper is matched by BASENAME, so a path-qualified `/usr/bin/env` strips exactly like `env`. 'shells' is the shell population: it is the R2 shell-spawn set (plus the `source` builtin) and the set a command string / stdin / script file is read through. 'shell_constructs' is the C-like shell grammar a spliced command string may use; it is DATA so the tests generate their cross-product from it rather than hand-picking rows. 'build_wrapper_admission' is the R4 verdict for `./pw`, decided once here instead of in each implementation.",
+  "shells": [
+    "bash",
+    "sh",
+    "dash",
+    "zsh",
+    "ksh",
+    "fish",
+    "csh",
+    "tcsh",
+    "$SHELL"
+  ],
+  "shell_constructs": [
+    "if true; then {CMD}; fi",
+    "if true; then {CMD}; elif false; then {CMD}; else {CMD}; fi",
+    "while true; do {CMD}; done",
+    "until false; do {CMD}; done",
+    "for i in 1; do {CMD}; done",
+    "case x in x) {CMD};; esac",
+    "({CMD})",
+    "{ {CMD}; }",
+    "! {CMD}",
+    "time {CMD}"
+  ],
+  "build_wrapper_admission": {
+    "pw_admitted_verbs": [
+      "generate"
+    ],
+    "pw_admitted_prefixes": [
+      "--"
+    ]
+  },
+  "wrappers": {
+    "command": {
+      "values": [],
+      "value_letters": [],
+      "leading_positionals": 0,
+      "splice": []
+    },
+    "env": {
+      "values": [
+        "-u",
+        "--unset",
+        "-C",
+        "--chdir"
+      ],
+      "value_letters": [
+        "u",
+        "C"
+      ],
+      "dir_options": [
+        "-C",
+        "--chdir"
+      ],
+      "leading_positionals": 0,
+      "splice": [
+        "-S",
+        "--split-string"
+      ]
+    },
+    "sudo": {
+      "values": [
+        "-u",
+        "--user",
+        "-g",
+        "--group",
+        "-U",
+        "--other-user",
+        "-C",
+        "--chdir",
+        "-D",
+        "--directory",
+        "-p",
+        "--prompt",
+        "-R",
+        "--chroot",
+        "-T",
+        "--command-timeout",
+        "-r",
+        "--role",
+        "-t",
+        "--type",
+        "-h",
+        "--host",
+        "--close-from"
+      ],
+      "value_letters": [
+        "u",
+        "g",
+        "U",
+        "C",
+        "D",
+        "p",
+        "R",
+        "T",
+        "r",
+        "t",
+        "h"
+      ],
+      "dir_options": [
+        "-D",
+        "--chdir",
+        "--directory"
+      ],
+      "leading_positionals": 0,
+      "splice": []
+    },
+    "timeout": {
+      "values": [
+        "-s",
+        "--signal",
+        "-k",
+        "--kill-after"
+      ],
+      "value_letters": [
+        "s",
+        "k"
+      ],
+      "leading_positionals": 1,
+      "splice": []
+    },
+    "nice": {
+      "values": [
+        "-n",
+        "--adjustment"
+      ],
+      "value_letters": [
+        "n"
+      ],
+      "leading_positionals": 0,
+      "splice": []
+    },
+    "ionice": {
+      "values": [
+        "-c",
+        "--class",
+        "-n",
+        "--classdata",
+        "-p",
+        "--pid",
+        "-P",
+        "--pgid",
+        "-u",
+        "--uid"
+      ],
+      "value_letters": [
+        "c",
+        "n",
+        "p",
+        "P",
+        "u"
+      ],
+      "leading_positionals": 0,
+      "splice": []
+    },
+    "chrt": {
+      "values": [
+        "--sched-runtime",
+        "--sched-deadline",
+        "--sched-period"
+      ],
+      "value_letters": [],
+      "leading_positionals": 1,
+      "splice": []
+    },
+    "taskset": {
+      "values": [
+        "-p",
+        "--pid"
+      ],
+      "value_letters": [
+        "p"
+      ],
+      "leading_positionals": 1,
+      "splice": []
+    },
+    "flock": {
+      "values": [
+        "-w",
+        "--timeout",
+        "-E",
+        "--conflict-exit-code"
+      ],
+      "value_letters": [
+        "w",
+        "E"
+      ],
+      "leading_positionals": 1,
+      "splice": [
+        "-c",
+        "--command"
+      ]
+    },
+    "script": {
+      "values": [
+        "-t",
+        "--timing",
+        "-T",
+        "--log-timing",
+        "-I",
+        "--log-in",
+        "-O",
+        "--log-out",
+        "-B",
+        "--log-io",
+        "-E",
+        "--echo"
+      ],
+      "value_letters": [
+        "t",
+        "T",
+        "I",
+        "O",
+        "B",
+        "E"
+      ],
+      "leading_positionals": 0,
+      "splice": [
+        "-c",
+        "--command"
+      ]
+    },
+    "watch": {
+      "values": [
+        "-n",
+        "--interval"
+      ],
+      "value_letters": [
+        "n"
+      ],
+      "leading_positionals": 0,
+      "splice": [],
+      "splice_positional": true
+    },
+    "parallel": {
+      "values": [
+        "-j",
+        "--jobs",
+        "-a",
+        "--arg-file",
+        "-S",
+        "--sshlogin",
+        "--sshloginfile",
+        "-I",
+        "--replace",
+        "-N",
+        "--block",
+        "-L",
+        "--max-lines",
+        "-n",
+        "--max-args",
+        "-P",
+        "--max-procs",
+        "--timeout"
+      ],
+      "value_letters": [
+        "j",
+        "a",
+        "S",
+        "I",
+        "N",
+        "L",
+        "n",
+        "P"
+      ],
+      "leading_positionals": 0,
+      "splice": [],
+      "splice_positional": true
+    },
+    "busybox": {
+      "values": [],
+      "value_letters": [],
+      "leading_positionals": 0,
+      "splice": []
+    },
+    "nohup": {
+      "values": [],
+      "value_letters": [],
+      "leading_positionals": 0,
+      "splice": []
+    },
+    "time": {
+      "values": [],
+      "value_letters": [],
+      "leading_positionals": 0,
+      "splice": []
+    },
+    "xargs": {
+      "values": [
+        "-I",
+        "-n",
+        "-P",
+        "-s",
+        "-d",
+        "-a",
+        "-E",
+        "-L",
+        "-o",
+        "-R",
+        "-S",
+        "--max-args",
+        "--max-lines",
+        "--max-chars",
+        "--delimiter",
+        "--arg-file",
+        "--replace",
+        "--max-procs",
+        "--eof",
+        "--arg-separator"
+      ],
+      "value_letters": [
+        "I",
+        "n",
+        "P",
+        "s",
+        "d",
+        "a",
+        "E",
+        "L",
+        "o",
+        "R",
+        "S"
+      ],
+      "leading_positionals": 0,
+      "splice": []
+    },
+    "exec": {
+      "values": [
+        "-a"
+      ],
+      "value_letters": [
+        "a"
+      ],
+      "leading_positionals": 0,
+      "splice": []
+    },
+    "stdbuf": {
+      "values": [
+        "-i",
+        "-o",
+        "-e",
+        "--input",
+        "--output",
+        "--error"
+      ],
+      "value_letters": [
+        "i",
+        "o",
+        "e"
+      ],
+      "leading_positionals": 0,
+      "splice": []
+    },
+    "setsid": {
+      "values": [],
+      "value_letters": [],
+      "leading_positionals": 0,
+      "splice": []
+    },
+    "bash": {
+      "values": [],
+      "value_letters": [],
+      "leading_positionals": 0,
+      "splice": [
+        "-c"
+      ]
+    },
+    "sh": {
+      "values": [],
+      "value_letters": [],
+      "leading_positionals": 0,
+      "splice": [
+        "-c"
+      ]
+    },
+    "dash": {
+      "values": [],
+      "value_letters": [],
+      "leading_positionals": 0,
+      "splice": [
+        "-c"
+      ]
+    },
+    "zsh": {
+      "values": [],
+      "value_letters": [],
+      "leading_positionals": 0,
+      "splice": [
+        "-c"
+      ]
+    },
+    "ksh": {
+      "values": [],
+      "value_letters": [],
+      "leading_positionals": 0,
+      "splice": [
+        "-c"
+      ]
+    },
+    "fish": {
+      "values": [],
+      "value_letters": [],
+      "leading_positionals": 0,
+      "splice": [
+        "-c"
+      ]
+    },
+    "csh": {
+      "values": [],
+      "value_letters": [],
+      "leading_positionals": 0,
+      "splice": [
+        "-c"
+      ]
+    },
+    "tcsh": {
+      "values": [],
+      "value_letters": [],
+      "leading_positionals": 0,
+      "splice": [
+        "-c"
+      ]
+    },
+    "$SHELL": {
+      "values": [],
+      "value_letters": [],
+      "leading_positionals": 0,
+      "splice": [
+        "-c"
+      ]
+    }
+  },
+  "find_exec_options": [
+    "-exec",
+    "-execdir",
+    "-ok",
+    "-okdir"
+  ]
+}
