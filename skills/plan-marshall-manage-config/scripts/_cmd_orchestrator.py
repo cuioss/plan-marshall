@@ -1,0 +1,473 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
+"""
+Orchestrator scalar-knob command handler for manage-config.
+
+Handles the non-effort scalar knobs of the top-level ``orchestrator`` block::
+
+    orchestrator get --field parallelization_scope
+    orchestrator set --field parallelization_scope --value N
+
+The effort knobs (``orchestrator.effort.*``) are NOT handled here — they live in
+the effort resolver (``_cmd_effort.py``: ``effort read``/``resolve-target --role
+orchestrator.{surface}`` and ``effort set --scope orchestrator[.{surface}|.max]``).
+This handler owns only the scalar provisioning fields.
+
+Every scalar write routes through
+:func:`_config_core.reject_unknown_provisioning_field` against the orchestrator
+block's known-field whitelist (:data:`ORCHESTRATOR_SCALAR_FIELDS`), so a typo'd
+or retired field fails closed (``status: error``) instead of persisting silently
+to ``marshal.json`` where no reader would consult it.
+
+Known scalar fields:
+    ``parallelization_scope``  int >= 1  — project default that pre-fills the
+        per-epic parallelization-scope ask in ``plan-orchestrator`` init.
+    ``auto_emit``  bool  — the orchestrator-tier autonomy knob (default False);
+        when true the epic orchestrator auto-fills the emit queue on landing.
+    ``use_worktree``  bool  — the repository-wide switch (default False) that
+        routes the orchestrator ledger store through the shared ledger worktree.
+    ``decision_confidence_threshold``  int 0..100 — the confidence an open item
+        must STRICTLY exceed before the ``handle-open`` verb decides it; ``100``
+        means nothing is decided without the operator. Unset reads carry the
+        seeded default from ``DEFAULT_ORCHESTRATOR`` with ``set: false``.
+
+``use_worktree`` is anchored on the MAIN checkout for both directions, so every
+checkout agrees on it. ``get`` reports the main-anchored effective value — the
+value the store seam actually uses — rather than the cwd-relative file, except
+for a malformed block: an explicit JSON ``null`` or a non-dict value is a
+malformed file, and the read refuses naming it instead of reporting the ``False``
+the seam falls back to. ``set``
+refuses (``use_worktree_requires_main_checkout``) unless the ``marshal.json`` it
+would write is that same main-anchored file, and before persisting a CHANGED
+value it runs the cutover refusal: switching on while the main checkout holds
+uncommitted or unlanded ledger paths, or switching off while the shared ledger
+worktree does, is refused (``ledger_cutover_refused``, naming every path); a
+drift check git cannot answer refuses with ``ledger_drift_unevaluable``. On any
+refusal nothing is written.
+
+All scalar knobs read/write through this same verb against the shared
+whitelist — no schema rework as the block grows.
+"""
+
+import json
+from pathlib import Path
+
+import _config_core
+from _config_core import (
+    error_exit,
+    is_initialized,
+    load_config,
+    reject_unknown_provisioning_field,
+    save_config,
+    success_exit,
+)
+from _config_defaults import DEFAULT_ORCHESTRATOR, DEFAULT_PROJECT, ORCHESTRATOR_KNOWN_KEYS
+from command_forms import STEWARD_COMMAND
+from marketplace_paths import main_checkout_root
+from orchestrator_worktree import (
+    OrchestratorStoreUnavailable,
+    detect_ledger_drift,
+    fetch_base_branch,
+    orchestrator_knob_config_path,
+    orchestrator_worktree_path,
+)
+
+# The orchestrator block's known scalar (non-effort) fields — the fail-closed
+# whitelist consulted by every scalar read/write. DERIVED from the authoritative
+# key set rather than mirrored, so a key added to `ORCHESTRATOR_KNOWN_KEYS` is
+# settable through this verb without a second edit; `effort` is the one key with
+# its own noun and is excluded explicitly.
+ORCHESTRATOR_SCALAR_FIELDS: tuple[str, ...] = tuple(sorted(ORCHESTRATOR_KNOWN_KEYS - {'effort'}))
+
+# The base branch the cutover drift check compares against when the project
+# configures none — the same seeded default ``project.default_base_branch`` carries.
+DEFAULT_PROJECT_BASE_BRANCH: str = str(DEFAULT_PROJECT['default_base_branch'])
+
+
+def _validate_parallelization_scope(value: object) -> tuple[bool, str | None]:
+    """Validate ``parallelization_scope`` as an int >= 1.
+
+    ``bool`` is explicitly rejected even though ``bool`` is an ``int`` subclass —
+    ``True``/``False`` are never a valid scope count.
+    """
+    if isinstance(value, bool) or not isinstance(value, int):
+        return False, 'parallelization_scope must be an integer >= 1'
+    if value < 1:
+        return False, 'parallelization_scope must be an integer >= 1'
+    return True, None
+
+
+def _coerce_decision_confidence_threshold(raw_value: object) -> tuple[bool, int | None, str | None]:
+    """Coerce and validate ``decision_confidence_threshold``, an int in ``0..100``.
+
+    ``bool`` is rejected explicitly even though it is an ``int`` subclass, and a
+    ``float`` (either a real one or the string form ``'90.5'``) is rejected rather
+    than truncated: a confidence threshold silently rounded from ``90.5`` to ``90``
+    would read as a deliberate setting, which it is not. A string must parse as a
+    whole integer.
+
+    Returns ``(ok, value, error)`` — ``error`` is ``None`` exactly when ``ok``.
+    """
+    if isinstance(raw_value, bool):
+        return False, None, 'decision_confidence_threshold must be an integer 0 to 100'
+    if isinstance(raw_value, int):
+        value = raw_value
+    elif isinstance(raw_value, str):
+        try:
+            value = int(raw_value.strip())
+        except ValueError:
+            return False, None, 'decision_confidence_threshold must be an integer 0 to 100'
+    else:
+        return False, None, 'decision_confidence_threshold must be an integer 0 to 100'
+    if value < 0 or value > 100:
+        return False, None, 'decision_confidence_threshold must be an integer 0 to 100'
+    return True, value, None
+
+
+def _is_stored_threshold_valid(value: object) -> bool:
+    """Whether a value READ FROM ``marshal.json`` is a well-formed threshold.
+
+    Stricter than :func:`_coerce_decision_confidence_threshold`, which also
+    accepts the CLI's string form. A stored value must be a real ``int`` in
+    ``0..100``: a stored ``"42"`` or ``90.5`` is a hand-edited or migrated file,
+    not a value this tool ever wrote, and returning it would hand the consumer a
+    threshold it cannot compare against.
+    """
+    return not isinstance(value, bool) and isinstance(value, int) and 0 <= value <= 100
+
+
+def _coerce_bool(raw_value: object) -> bool | None:
+    """Coerce a CLI value into a bool, or ``None`` when it is not boolean-shaped.
+
+    Accepts an actual ``bool`` and the case-insensitive strings ``true``/``false``
+    (and their ``1``/``0`` synonyms), mirroring how the plan-tier autonomy knobs
+    round-trip ``true``/``false`` from the CLI. Any other value yields ``None`` so
+    the caller can fail closed.
+    """
+    if isinstance(raw_value, bool):
+        return raw_value
+    if isinstance(raw_value, str):
+        lowered = raw_value.strip().lower()
+        if lowered in ('true', '1', 'yes'):
+            return True
+        if lowered in ('false', '0', 'no'):
+            return False
+    return None
+
+
+def _classify_caller_read_failure(caller_file: Path) -> str:
+    """Classify why the CALLER's own ``marshal.json`` could not be loaded.
+
+    ``load_config`` collapses every failure into one exception, but an unparseable
+    document and a document whose top level is not an object are two different
+    defects, and the documentation promises the specific reason for the caller's own
+    file as well as for the main-anchored one. The file is re-read here only to name
+    which defect it is; a second failure keeps ``unreadable``, so the classification
+    never invents a reason it could not establish.
+    """
+    try:
+        raw = caller_file.read_text(encoding='utf-8')
+    except (OSError, UnicodeDecodeError):
+        return 'unreadable'
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        return 'invalid_json'
+    if not isinstance(data, dict):
+        return 'not_object'
+    return 'unreadable'
+
+
+def _use_worktree_config_answer(knob_path: Path | None) -> dict:
+    """Answer ``use_worktree`` from ONE read of the main-anchored ``marshal.json``.
+
+    An unresolved anchor, an absent file, an absent ``orchestrator`` block and a
+    block without the key are the store seam's own unset fall-through — ``value``
+    ``False`` and ``set`` ``False``. Every FAILED read is refused instead, naming
+    the file it could not use: a file that cannot be read, that is not valid JSON,
+    that is not a JSON object, or whose ``orchestrator`` block is not a JSON
+    object. Answering ``False`` for any of those would be indistinguishable from a
+    main file that says false, which is the fail-open direction this verb exists to
+    avoid. The store seam's own read (``orchestrator_worktree.orchestrator_use_worktree``)
+    keeps its fail-soft ``False``; that difference is deliberate and documented.
+    """
+    field = 'use_worktree'
+    anchor = str(knob_path) if knob_path is not None else None
+    if knob_path is None:
+        return success_exit({'field': field, 'value': False, 'set': False, 'knob_path': anchor})
+    display = knob_path.resolve()
+    # The read itself is the failure boundary: `exists()` raises on an inaccessible
+    # parent, and `read_text` raises UnicodeDecodeError (a ValueError, not an OSError)
+    # on invalid UTF-8. An ABSENT file is the only unset answer; every other failure
+    # is refused with its own reason.
+    try:
+        raw = knob_path.read_text(encoding='utf-8')
+    except FileNotFoundError:
+        return success_exit({'field': field, 'value': False, 'set': False, 'knob_path': anchor})
+    except UnicodeDecodeError as exc:
+        return error_exit(f'{display} is not valid UTF-8: {exc}', reason='unreadable', knob_path=anchor)
+    except OSError as exc:
+        return error_exit(f'cannot read {display}: {exc}', reason='unreadable', knob_path=anchor)
+    try:
+        data = json.loads(raw)
+    except ValueError as exc:
+        return error_exit(f'{display} is not valid JSON: {exc}', reason='invalid_json', knob_path=anchor)
+    if not isinstance(data, dict):
+        return error_exit(
+            f'marshal.json at {display} is not a JSON object (got {type(data).__name__})',
+            reason='not_object',
+            knob_path=anchor,
+        )
+    block = data.get('orchestrator')
+    if 'orchestrator' in data and not isinstance(block, dict):
+        return error_exit(
+            f'orchestrator block in {display} is not a dictionary',
+            reason='block_not_object',
+            knob_path=anchor,
+        )
+    if not isinstance(block, dict):
+        return success_exit({'field': field, 'value': False, 'set': False, 'knob_path': anchor})
+    return success_exit(
+        {
+            'field': field,
+            'value': block.get('use_worktree') is True,
+            'set': 'use_worktree' in block,
+            'knob_path': anchor,
+        }
+    )
+
+
+def _use_worktree_anchor_refusal() -> dict | None:
+    """Refuse a ``use_worktree`` write whose target is not the main-anchored ``marshal.json``.
+
+    The knob is READ from the main checkout's ``marshal.json`` only, so a write
+    to any other file would land where no reader looks — while the cutover guard
+    had been evaluated against main. Returns the refusal dict, or ``None`` when
+    the write targets the file the reader reads.
+    """
+    write_path = Path(_config_core.MARSHAL_PATH)
+    knob_path = orchestrator_knob_config_path()
+    if knob_path is not None and write_path.resolve() == knob_path.resolve():
+        return None
+    return error_exit(
+        'use_worktree_requires_main_checkout',
+        detail=(
+            'orchestrator.use_worktree is read from the main checkout marshal.json only; '
+            'run this set from the main checkout'
+        ),
+        write_path=str(write_path),
+        knob_path=str(knob_path) if knob_path is not None else None,
+    )
+
+
+def _cutover_refusal(config: dict, switching_on: bool) -> dict | None:
+    """Run the cutover drift check for a ``use_worktree`` flip.
+
+    Switching ON inspects the main checkout; switching OFF inspects the shared
+    ledger worktree when it exists (no worktree means no ledger state to strand).
+    Either side fetches ``origin/{project.default_base_branch}`` first and
+    compares against it; a failed fetch refuses with ``ledger_drift_unevaluable``.
+
+    Returns:
+        The refusal dict when ledger state would be stranded or the check could
+        not be evaluated, else ``None``.
+    """
+    project = config.get('project')
+    configured = project.get('default_base_branch') if isinstance(project, dict) else None
+    base = (configured.strip() if isinstance(configured, str) else '') or DEFAULT_PROJECT_BASE_BRANCH
+    base_ref = f'origin/{base}'
+
+    try:
+        if switching_on:
+            checkout = main_checkout_root()
+        else:
+            checkout = orchestrator_worktree_path()
+            if not checkout.is_dir():
+                return None
+        fetch = fetch_base_branch(checkout, base)
+        if fetch.returncode != 0:
+            return error_exit(
+                'ledger_drift_unevaluable',
+                detail=f'cannot fetch {base_ref} for the cutover drift check: {fetch.stderr.strip()}',
+                checkout=str(checkout),
+                base_ref=base_ref,
+                stderr=fetch.stderr.strip(),
+            )
+        dirty_paths = detect_ledger_drift(checkout, base_ref)
+    except RuntimeError as exc:
+        return error_exit(
+            'ledger_drift_unevaluable',
+            detail=f'cannot resolve the checkout the cutover drift check must inspect: {exc}',
+            base_ref=base_ref,
+        )
+    except OrchestratorStoreUnavailable as exc:
+        return error_exit(exc.code, detail=exc.message, **exc.fields)
+
+    if not dirty_paths:
+        return None
+    side = 'main checkout' if switching_on else 'shared ledger worktree'
+    return error_exit(
+        'ledger_cutover_refused',
+        detail=(
+            f'the {side} holds {len(dirty_paths)} uncommitted or unlanded ledger path(s); '
+            'land or discard them before switching orchestrator.use_worktree'
+        ),
+        checkout=str(checkout),
+        base_ref=base_ref,
+        dirty_paths=dirty_paths,
+    )
+
+
+def cmd_orchestrator_get(args) -> dict:
+    """Handle ``orchestrator get --field <field>``.
+
+    Returns the stored value when the field is set; when it is unset, returns the
+    field's canonical default from :data:`DEFAULT_ORCHESTRATOR` (``None`` only for
+    a field that carries no seeded default). The accompanying ``set`` flag
+    distinguishes a configured value from an unset one, so callers (e.g. the
+    per-epic ask pre-fill) key off ``set`` — not the value — to decide whether to
+    apply their own default.
+
+    ``use_worktree`` is the exception to the cwd-relative read: it reports the
+    main-anchored effective value together with whether the main-anchored file sets
+    it, so a ``get`` from a plan worktree answers with the value the store seam
+    actually uses. The knob is read ONCE, and every failed read is refused with
+    ``status: error`` naming the file — a file that cannot be read, that is not
+    valid JSON, that is not a JSON object, or whose ``orchestrator`` block is not a
+    JSON object, in the caller's own ``marshal.json`` and in the main-anchored one
+    alike. An ABSENT file, block or key stays the unset answer (``false`` with
+    ``set: false``), and so does an UNRESOLVED main anchor (``knob_path: null``):
+    the first is the one case the store seam's own ``False`` really means, and the
+    second has no file to read. The seam keeps its fail-soft ``False`` for the
+    failed reads; this verb refuses them, so a failed read is never reported as a
+    configured ``false``.
+    """
+    if not is_initialized():
+        return error_exit(f'marshal.json not initialized; run {STEWARD_COMMAND} first')
+
+    field = getattr(args, 'field', None)
+    if not field:
+        return error_exit('--field is required')
+
+    rejection = reject_unknown_provisioning_field(field, ORCHESTRATOR_SCALAR_FIELDS, 'orchestrator')
+    if rejection is not None:
+        return rejection
+
+    try:
+        config = load_config()
+    except (OSError, ValueError) as exc:
+        caller_file = Path(_config_core.MARSHAL_PATH).resolve()
+        knob_path = orchestrator_knob_config_path()
+        # When the caller's file IS the knob file, the knob helper's classification is
+        # the one the documentation promises (`invalid_json`, `not_object`) — running
+        # it here keeps the reason identical whether the caller stands in main or in a
+        # linked worktree. For every other field the caller's own file is classified
+        # here, so the documented reason is answered for it too instead of collapsing
+        # both defects into `unreadable`.
+        if field == 'use_worktree' and knob_path is not None and knob_path.resolve() == caller_file:
+            return _use_worktree_config_answer(knob_path)
+        return error_exit(f'cannot read {caller_file}: {exc}', reason=_classify_caller_read_failure(caller_file))
+
+    orch_present = 'orchestrator' in config
+    orch_block = config.get('orchestrator') if orch_present else None
+    # A PRESENT block of the wrong type, or an explicit JSON `null`, is a
+    # malformed file, not an unset knob: falling through to the seeded default
+    # here would answer `success` with a value no reader wrote, which is the
+    # fail-OPEN direction the whole verb exists to avoid. Only an ABSENT block
+    # takes the default path. Validate BEFORE the `use_worktree` special case so
+    # a malformed (including null) block is rejected for every field.
+    if orch_present and (orch_block is None or not isinstance(orch_block, dict)):
+        caller_file = Path(_config_core.MARSHAL_PATH).resolve()
+        return error_exit(
+            f'orchestrator block in {caller_file} is not a dictionary',
+            reason='block_not_object',
+            knob_path=str(caller_file),
+        )
+
+    if field == 'use_worktree':
+        return _use_worktree_config_answer(orchestrator_knob_config_path())
+    # When the field is unset in the live block, fall back to the canonical
+    # default from DEFAULT_ORCHESTRATOR (so `auto_emit` reads its seeded `False`
+    # and `parallelization_scope` its seeded `1`). The value is advisory on an
+    # unset read: `set` is `False`, and callers key off `set` — not the value —
+    # to apply their own default. A field with no seeded default falls back to
+    # `None`.
+    if isinstance(orch_block, dict) and field in orch_block:
+        is_set = True
+        value = orch_block[field]
+        # A stored threshold is re-validated STRICTLY on the read path: the
+        # consumer treats an unreadable threshold as `100` (nothing decided) and
+        # cannot tell a well-typed value from a hand-edited one.
+        if field == 'decision_confidence_threshold' and not _is_stored_threshold_valid(value):
+            return error_exit('decision_confidence_threshold in marshal.json must be an integer 0 to 100')
+    else:
+        is_set = False
+        value = DEFAULT_ORCHESTRATOR.get(field)
+
+    return success_exit({'field': field, 'value': value, 'set': is_set})
+
+
+def cmd_orchestrator_set(args) -> dict:
+    """Handle ``orchestrator set --field <field> --value <value>``.
+
+    Rejects an unknown field against the whitelist, then coerces/validates the
+    value per-field before persisting it into ``config['orchestrator']``. A
+    ``use_worktree`` write additionally passes the main-checkout anchor check and,
+    when the value changes, the cutover refusal before anything is persisted.
+    """
+    if not is_initialized():
+        return error_exit(f'marshal.json not initialized; run {STEWARD_COMMAND} first')
+
+    field = getattr(args, 'field', None)
+    if not field:
+        return error_exit('--field is required')
+    raw_value = getattr(args, 'value', None)
+    if raw_value is None:
+        return error_exit('--value is required')
+
+    rejection = reject_unknown_provisioning_field(field, ORCHESTRATOR_SCALAR_FIELDS, 'orchestrator')
+    if rejection is not None:
+        return rejection
+
+    # Field-specific coercion + validation.
+    coerced: object
+    if field == 'parallelization_scope':
+        try:
+            coerced = int(raw_value)
+        except (TypeError, ValueError):
+            return error_exit('parallelization_scope must be an integer >= 1')
+        ok, err = _validate_parallelization_scope(coerced)
+        if not ok:
+            return error_exit(err or 'invalid parallelization_scope')
+    elif field in ('auto_emit', 'use_worktree'):
+        coerced = _coerce_bool(raw_value)
+        if coerced is None:
+            return error_exit(f'{field} must be a boolean (true/false)')
+    elif field == 'decision_confidence_threshold':
+        ok, threshold, err = _coerce_decision_confidence_threshold(raw_value)
+        if not ok:
+            return error_exit(err or 'invalid decision_confidence_threshold')
+        coerced = threshold
+    else:
+        # Unreachable while the whitelist is fully enumerated above; the branch
+        # keeps the coercion contract explicit as further fields are added.
+        coerced = raw_value
+
+    if field == 'use_worktree':
+        anchor_refusal = _use_worktree_anchor_refusal()
+        if anchor_refusal is not None:
+            return anchor_refusal
+
+    config = load_config()
+    orch_block = config.setdefault('orchestrator', {})
+    if not isinstance(orch_block, dict):
+        return error_exit(f'orchestrator block in {_config_core.MARSHAL_PATH} is not a dictionary')
+
+    if field == 'use_worktree' and coerced != (orch_block.get('use_worktree') is True):
+        cutover_refusal = _cutover_refusal(config, switching_on=coerced is True)
+        if cutover_refusal is not None:
+            return cutover_refusal
+
+    orch_block[field] = coerced
+    save_config(config)
+
+    return success_exit({'field': field, 'value': coerced, 'target': f'orchestrator.{field}'})
