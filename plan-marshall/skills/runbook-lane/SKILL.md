@@ -1,0 +1,1305 @@
+---
+name: runbook-lane
+description: The runbook lane - implementation contract for ONE staged orchestrator plan spec on a cheap model, without the /plan-marshall lifecycle. Resolves every project-specific value (epic slug, derived names, build commands, reviewers with their trigger comments, commit trailer, inbox command) through the runbook_lane resolve verb, then runs the lane - progress file and resume, hard rules, evidence orders (test-first, mutation-after, none), build gate, self-review rounds, PR and review cycle, merge gate, cleanup, and a landing message to the epic inbox - from any project that has plan-marshall installed
+user-invocable: true
+mode: workflow
+---
+
+# Runbook Lane Skill
+
+The complete working contract for implementing ONE staged orchestrator plan, on a cheap model,
+without the `/plan-marshall` lifecycle. Read it fully before doing anything else. Nothing else
+governs a runbook-lane run: do not load the cloud plan lane, do not run `/plan-marshall`,
+`/plan-orchestrator` or any `phase-*` workflow.
+
+Every project-specific value named below as `{field}` is a field of the step 0 resolve result. The
+lane carries no project literal of its own, so the same contract runs in any project that has
+plan-marshall installed and one orchestrator epic holding the spec.
+
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY
+notation, not only `manage-*` — is stated once in
+[`tools-script-executor/standards/exit-code-convention.md`](../tools-script-executor/standards/exit-code-convention.md);
+it is not restated here. The resolve verb above and every `ci` invocation below are subject to it.
+
+## Canonical invocations
+
+The canonical argparse surface for `runbook_lane.py`.
+
+### resolve
+
+```bash
+python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane resolve \
+  --spec .plan/orchestrator/{slug}/plans/PLAN-NN-{slug}.md \
+  [--project-dir DIR]
+```
+
+Resolves the epic slug, the derived names, the build commands, the required and optional reviewers
+with their trigger comments, the commit trailer, the harness and guard state, the build server's
+preflight state (`build_server`, plus `build_server_reason` when it is `down`), the Sonar state
+(`sonar`, plus `sonar_project_key` when it is `configured`) and the `inbox write` and `inbox read`
+commands. `--project-dir` defaults to the current directory and anchors every project-scoped read.
+The spec read is worktree-first: the shared ledger worktree's copy is read when it exists and the
+main checkout's is the fallback. The result always carries `spec_source` (`ledger_worktree` |
+`main_checkout`), plus `spec_differ: true` when both copies exist and differ.
+`--spec-from-ledger` is accepted as a documented no-op: it names the read the default makes, so a
+command line that carries it behaves exactly as one that does not.
+Fails closed with a specific error code for a spec outside the orchestrator tree, an unreadable
+configuration, an unreadable Sonar block (`sonar_config_unreadable`) or a Sonar block with no
+project key (`sonar_config_incomplete`), a missing automatic-review
+step, an empty required-reviewer list, a project that
+resolves no gate build command (naming the gate canonicals it could not resolve), or a bare
+skill/persona name in a flat install with no recorded bundle identity
+(`flat_skill_identity_missing`).
+
+### executor-skew
+
+```bash
+python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane executor-skew \
+  [--executor .plan/execute-script.py] [--lane-dir DIR]
+```
+
+Compares the version the executor carries with the version of the lane text it will run, reading the
+executor through the shared `plugin_registry` reader rather than parsing it. It answers `match`,
+`skew`, `not_applicable` or `could_not_check`, and names both versions; `skew` also carries the
+remedy. The lane runs it before `resolve` (section 0), because a stale executor's own `resolve`
+cannot perform the check.
+
+Where the lane text's version comes from, once, per layout: a versioned plugin cache supplies it from
+the newest eligible `{bundle}/{version}/skills/{skill}` directory; a flat install (OpenCode,
+Antigravity) has no version directory, so it supplies the `version` of the install stamp — the
+`dist-manifest.json` the sync writes at the deploy root that contains the skill root, where the
+target's sync publishes one (without it the comparison stays `could_not_check`). The stamp moves only
+on a sync, so an edit made to the installed lane text in place is not part of what the comparison
+sees.
+
+A source checkout — a bundle carrying `.claude-plugin/plugin.json` directly, with no version
+directory — answers `not_applicable` when the lane text it probed is the text this run executes. It
+is not `match`: nothing agreed, because nothing was compared. It is safe because the executor maps
+that checkout's own scripts, so the lane text cannot name a verb its mapped script lacks — an unknown
+verb fails at once with the surface named. A source checkout probed from another tree (an explicit
+`--lane-dir` pointing elsewhere) is not excused: its lane text may name a verb this run's mapped
+script lacks, so it stays `could_not_check`. The lane proceeds without asking, and records the
+verdict in the landing. What it does not cover is a stale executor TEMPLATE: the executor's own code,
+not its mapped scripts, decides how a run is dispatched. Only `bootstrap` compares the embedded
+template hash, and it regenerates in place when that is stale, so it is not a read-only witness a
+lane may call; `preflight` compares the manifest's version fields, so a template-only change does not
+reach it at all.
+
+A `could_not_check` is reported and the operator is asked — never read as "no skew" — and its reason
+names the thing it could not read: the executor, the install stamp it probed, or the version-less
+bundle directory.
+
+### build-routing
+
+```bash
+python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane build-routing \
+  --worktree {worktree}
+```
+
+Decides whether the next build may be submitted to the daemon or must run in-process, from whether
+the worktree carries a usable `.plan/execute-script.py`. It answers `executor_in_worktree:
+present|absent`, then `auto` (submit with no execution flag) or `in_process` with the reason it
+names for the degraded case — `executor_absent_from_worktree` for a worktree with no usable slot,
+`worktree_not_created` for one that does not exist yet. Section 4 runs it before the first routed
+build.
+
+### build-classify
+
+```bash
+python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane build-classify \
+  --paths "changed/path/one,changed/path/two" \
+  [--project-dir DIR]
+```
+
+Classifies changed paths as `docs-only` or `buildable` for the build gate (section 4), reading the
+project's own footprint rule. It answers `source: ci-workflow` when the project's CI opts in to the
+footprint gate, and `source: architecture` otherwise.
+
+A rule the lane cannot read is never another rule. A symlinked workflow that carries the opt-in (or
+one whose target lies outside the checkout) is a discovery problem: `reason` names the file and every
+path builds. A workflow that opts in but declares no `paths-ignore` delegates the rule to a reusable
+workflow this checkout does not hold: every path builds too, and the delegation is the `reason`.
+Reading either as "no CI rule" and falling back to the architecture's module surfaces would decide the
+delta by a rule the CI never applied — and a wrong `docs-only` skips a build the CI runs.
+
+### sonar-gate
+
+```bash
+python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane sonar-gate \
+  --state {configured|not_configured} [--count-status {confirmed|carried_forward|undecidable|unconfigured}] \
+  [--open-count N] [--open-keys "K1,K2"] [--operator-selected-keys "K1,K2"] [--progress-file PATH] \
+  [--hotspot-keys "H1,H2"] [--count-status-reason "the read's own reason"] \
+  [--carried-forward --carried-forward-analysis-revision {sha} --carried-forward-head-revision {sha}]
+```
+
+`--count-status`, `--open-count`, `--open-keys`, `--operator-selected-keys`, `--count-status-reason`
+and the carry-forward marking belong to a `configured` state: supplying any of them beside
+`--state not_configured` is refused as `state_contradicts_read`, because a project with no Sonar has
+no read to report.
+
+**The carry-forward marking binds itself to the read.** A carried-forward read answers
+`count_status: carried_forward` — never `confirmed` — so a caller that copies only the status and the
+count is refused as `carried_forward_unmarked` unless the marking and both revisions accompany it.
+That status is a REQUIRED input here, which is what keeps the binding from resting on the optional
+reason. A `--count-status-reason` that names a carry-forward (`carried_forward…`) is refused the same
+way when the marking is absent. When the marking is present the read's own reason becomes the
+verdict's `reason`; with no reason supplied the fallback names the two heads and says nothing about the
+delta, so an empty delta is never described as one the project does not build. A
+revision that is not a hexadecimal object name is refused as `revision_format_invalid`, and a short
+SHA and the full object name of one commit are one revision (`carried_forward_revisions_equal`),
+never a pair.
+
+Decides the merge gate's Sonar condition (section 7) from the read taken on the head:
+`merge_allowed: true` for `not_configured`, for a measured `0`, and for a measured count whose every
+enumerated key is one the OPERATOR selected for dismissal. `undecidable` and `unconfigured` reads, a
+key the operator did not select and a count with no enumerated keys all answer `merge_allowed: false`
+with their `reason`. The `confirmed_*` reason identifiers name a MEASURED read — `carried_forward`
+included — because the figure is a measurement wherever it was taken. The retired `--dismissed-keys`
+flag is refused as
+`lane_dismissal_not_accepted`: the lane never records a dismissal of its own.
+
+`--progress-file` is the MECHANISM behind the operator rule, not a second opinion: it is REQUIRED
+whenever `--operator-selected-keys` is non-empty (a selection with no record is refused as
+`progress_file_required`), and every OPEN key must appear in the run's progress file as an
+`operator-selected: {key}: {reason}` line, or the gate answers `selection_not_recorded`. Without it a
+lane could pass any key set under the new flag and be believed; with it, a supplied key the run never
+recorded is refused, and the violation is visible in the audit record.
+
+`--hotspot-keys` names which of the open keys are SECURITY HOTSPOTS. A hotspot has no transition verb,
+so a recorded dismissal of one would never be transmitted: the gate refuses such a key as
+`hotspot_not_dismissable`, and the finding is fixed or reported as a blocker instead. It is REQUIRED
+whenever a selection is made above a confirmed zero (`hotspot_keys_required`) — pass the read's
+hotspot keys, or an explicit EMPTY value when the read reported none, because an omitted flag cannot
+be told from a read that found none.
+
+### sonar-facts
+
+```bash
+python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane sonar-facts \
+  --state {configured|not_configured} [--count-status {confirmed|carried_forward|undecidable|unconfigured}] \
+  [--open-count N] [--rules "R1,R2"] [--gate-status {ok|error|not_computed|unknown}] \
+  [--count-status-reason "the read's own reason"] \
+  [--carried-forward --analysed-revision {sha} --carried-forward-head-revision {sha}]
+```
+
+A `carried_forward` status is rendered exactly as a confirmed one is, with the marking lines beside it,
+and is refused as `carried_forward_unmarked` without them. `--analysed-revision` and the legacy
+`--carried-forward-analysis-revision` spelling name ONE value: passing both with different values is
+refused as `conflicting_revision_spellings`, never resolved last-wins, and the legacy spelling alone is
+still honoured.
+
+Renders the landing's Sonar facts (section 8) from the read taken at the merge head:
+`sonar_open_new_issues` — the landing's REQUIRED count key, one spelling for one measurement — and
+`step.sonar-roundtrip.open_issue_rules` in `fact_lines`. A measured count (`confirmed`, or
+`carried_forward`) carries the measured figure
+and the rules it left open (`--rules` is required above zero, and `none` at a measured `0`);
+`undecidable` and `unconfigured` both carry `unknown`, and a project without Sonar carries `n/a` at
+both — the answered absence, which is a legal value for the required count. A carried-forward figure
+carries `--carried-forward` (status `carried_forward`, never `confirmed`) with both heads; section 8
+states the three fact lines it renders beside the count, and the verb refuses the marker without them
+and them without it. `--gate-status` adds the
+OPTIONAL `step.sonar-roundtrip.quality_gate_status` fact: a Sonar quality gate can fail on a new-code
+metric that is neither an open finding nor an unreviewed hotspot, so that failure is not a finding for
+the open-findings rule — but it is reported, because a landing silent about a failing gate states half
+its read.
+
+### sonar-stale-delta
+
+```bash
+python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane sonar-stale-delta \
+  --state {configured|not_configured} [--count-status {confirmed|undecidable|unconfigured}] \
+  --analysis-revision {sha} --head-revision {sha} --worktree {worktree}
+```
+
+Decides whether a stale analysis is the read for this head: it resolves the analysed revision in the
+routed checkout, lists the paths changed from it to the head, and classifies them with the project's
+own footprint rule — the rule the build gate reads. `carry_forward: true` means every changed path is
+one the project does not build, and its `reason` is the named `carried_forward_unbuilt_delta`
+sentence stating both revisions. Every refusal class is stated once in section 6.
+
+### review-gate
+
+```bash
+python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane review-gate \
+  --pr-number {N} [--project-dir DIR] [--disposition "{reviewer} {section} {id} — {sha|reason}" ...]
+```
+
+Decides the merge gate's review condition (section 7) from the surfaces read on the head. The verb
+fetches the provider's comment data ONCE, in-process, and derives both views it needs from that one
+snapshot: the raw bodies for the required-reviewer check, and the flattened display form for the
+finding parser. One fetch is the contract — two reads could show the halves different moments, and a
+review landing between them would be credited by one half and unseen by the other. From the
+snapshot it reads the unresolved review threads with their `path:line`, and the body of every
+reviewer's review, whose `inline`, `duplicate`, `outside-diff`, `nitpick`,
+`followup`, `additional` and `minor` sections are parsed into individually identified findings. A
+section contributes the count its title declares (`(N)` or `: N`); with none declared, it contributes
+the larger of its per-row `cr-comment` markers and its nested per-file block counts, and a non-empty
+block with neither reads as one finding (an empty block reads as none). A counted title that matches
+neither a section nor a declared non-finding label (a file list, a review-info block) contributes its
+count as `unclassified` findings, and each finding a POSITIVE count declares blocks the merge until it
+is disposed of like any other (a declared `0` declares no finding to dispose of). A counted title the
+parser cannot read through — a wrapper declaring more findings than the sections it encloses account
+for, one carrying content beside them, or one enclosing a section with no closed block of its own —
+stops the gate as `undecidable_read` instead of being read as fewer. Each
+`--disposition` is one progress-file line, repeated once per finding.
+
+**The `--disposition` value is `{reviewer} {section} {id} — {sha|reason}`**, exactly the tail of the
+progress line, with no `finding: ` prefix: `reviewer` is the bot kind the registry reports for that
+reviewer's login (not the login a human reader sees), or a human reviewer's lower-cased login;
+`section` and `id` are the parser's own vocabulary — `section` is one of the findings kinds the verb
+emits, and an id is `{section}-{n}`. The verb reports both in its `undisposed` rows, which is where the
+lane copies them from, so a kind added to the parser needs no edit here.
+
+It answers `merge_allowed: false` with a named `reason` while any of these holds: an unresolved
+thread exists (`unresolved_review_threads`); a body finding carries no disposition naming a commit or
+a stated reason (`body_findings_undisposed`); a resolved thread whose last BOT
+comment says the concern remains (`thread_concern_remains` — the bot's last word is
+the finding's, so a lane or human reply below it never discharges the concern, and
+a lane reply can itself contain the vocabulary);
+a disposition line names no real evidence
+(`disposition_unparsable` — a commit sha or a stated reason; a placeholder such as `TBD`, `-` or
+`n/a` is not evidence); or the read is undecidable (`undecidable_read`) — a failed or truncated
+provider read, a record kind the verb does not know, a review body with no attributable author, a
+counted heading whose block never closes, one of the counted-wrapper shapes above, or a count above
+the enumeration cap (per heading, for the inline status line, or for the whole body). An undecidable
+read is a stop, never a pass. Otherwise it
+answers `merge_allowed: true` with `all_handled`, and reports `unresolved_review_threads`,
+`review_body_findings_total` and `review_body_findings_handled` for the landing.
+
+**The read is GitHub's, taken in-process.** `review-gate` fetches the pull request's comment data
+itself, through the provider's own data read, and derives the flattened display form from that one
+snapshot; it never shells out to `ci pr comments`. A project whose CI provider is not GitHub, or
+whose provider cannot be resolved, answers `undecidable_read`: the gate states no verdict about a
+surface the project does not publish, and no re-read changes that answer.
+
+## 0. Input
+
+The invocation names a spec:
+
+```text
+/plan-marshall-runbook-lane plan=.plan/orchestrator/{slug}/plans/PLAN-NN-{slug}.md
+```
+
+**Before `resolve`, check that the executor is not older than this text.** Compare the version the
+executor carries with the version of the lane text this run read:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane executor-skew
+```
+
+It answers `match`, `skew`, `not_applicable` or `could_not_check`, naming both versions. A `skew` —
+or an `unknown_verb`/argparse rejection that shows the executor predates this text — stops the run as
+**blocked**, naming both versions and the remedy: regenerate the executor (`/marshall-steward`, or
+the project's equivalent generate step). A `could_not_check` (the executor is unreadable, its
+version is absent, or the lane text's own version cannot be derived) is reported as **could not
+check** and the operator is asked; it is never read as no skew. A `not_applicable` (a source
+checkout; § executor-skew says why it is safe, and what it leaves uncovered) proceeds without asking
+and is recorded in the landing. The check cannot live inside
+`resolve`: a stale executor runs the stale `resolve`, which is exactly the code that lacks it, while
+this text is loaded from the installed plugin and is current when the executor is not.
+
+**A target difference is not a regeneration trigger.** One executor serves every harness: the
+generated file does not depend on which harness generated it, and a call from any harness resolves
+and dispatches. Only a changed script set or a stale version justifies a regeneration — never the
+fact that another harness last wrote the file.
+
+The spec is read from the **shared ledger worktree** first —
+`{epic_dir}/plans/{spec name}`, where `epic_dir` follows the same store seam
+`orchestrator resolve-path --slug {slug}` publishes — and the main checkout's copy only when the
+worktree holds none. That worktree-first order is the default, so an emitted command needs no flag
+and no ledger land between a spec edit and the emit; with `orchestrator.use_worktree` off there is
+no second copy and the one copy is read without error. `--spec-from-ledger` is accepted as a
+documented no-op: it names the read the default makes, so a command line that carries it behaves
+exactly as one that does not.
+`resolve` reports which copy it read (`spec_source`) and, when both copies exist and differ, the
+`spec_differ` marker — "the copy NOT read says something else", which is now the main checkout's
+copy — so a read of the older copy is never silent. The worktree copy is READ ONLY either way. Then
+**resolve** every value the run uses, and read the result before doing anything else:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane resolve --spec {spec}
+```
+
+The result supplies, and nothing below is spelled from anywhere else:
+
+| Name | Field of the resolve result |
+|------|-----------------------------|
+| spec copy read, and whether the other copy differs | `spec_source` (`ledger_worktree` \| `main_checkout`), plus `spec_differ: true` when both copies exist and differ |
+| epic slug | `slug` |
+| `{plan}` | `plan` |
+| `{body_slot}` — the CI body slot | `body_slot`: the plan id folded to the slot vocabulary (`[a-z0-9-]{1,64}`, digest-suffixed when the fold would change it). It is a DIFFERENT value from `{plan}`: the plan id names the worktree, progress file, sender and inbox and is never folded, while every `ci` body call uses `{body_slot}` |
+| worktree | `worktree` |
+| branch | `{branch} = {prefix}{plan}`; one closed set supplies the prefix — the canonical `feature/` (a new capability), `fix/` (a bug fix) and `chore/` (docs or maintenance), plus a prefix the project's configured `working_prefixes` declares. The two sources are one set with no precedence between them |
+| base branch | `base_branch` (the project's own base branch, never a spelling of it) |
+| inbox sender id | `sender_id` |
+| inbox read command | `inbox_read_command` |
+| progress file | `progress_file` |
+| landing file | `landing_file` |
+| build commands | `build` |
+| gate canonicals the project does not publish | `build_missing_canonicals`, present only when one is missing |
+| build timeout (seconds) | `build_timeout_seconds` |
+| runtime stamp reason | `runtime_stamp_reason`, present when a stamp fact could not be measured |
+| required and optional reviewers, with their trigger comments | `required_bots`, `optional_bots` |
+| commit trailer | `commit_trailer` |
+| `inbox write` command | `inbox_write_command` |
+| harness, guard and the landing's runtime stamp | `harness`, `guard`, `model`, `effort`, `plugin_version`, and `executor_version` when it was read |
+| guard-log path | `guard_log` |
+| build server state | `build_server`, plus `build_server_reason` when the state is `down` |
+| Sonar state, and the project key when configured | `sonar` (`configured` \| `not_configured`), plus `sonar_project_key` when it is `configured` |
+| Sonar CE-readiness wait budget (seconds) | `sonar_ce_wait_timeout_seconds`, present only when `sonar` is `configured`: the harness's Bash ceiling less a teardown margin (the provider's own 600s default when the target imposes no ceiling). An unreadable ceiling is `sonar_ce_ceiling_unreadable`, never a 600s fallback that a lower ceiling would kill |
+| worktree executor state | `executor_in_worktree` (`present` \| `absent`), plus `executor_reason` when `absent`: `worktree_not_created` for a resolve taken before setup, `executor_absent_from_worktree` for a worktree whose slot was never filled |
+
+The branch row is derived from the project's configuration rather than returned by `resolve`; every
+other row names a field of the resolve result.
+
+The verb **fails closed**: a spec outside `.plan/orchestrator/{slug}/plans/`, an unreadable
+configuration, a missing or unreadable project architecture (`architecture_unavailable`), an
+unreadable Sonar block (`sonar_config_unreadable`) or a Sonar block with no project
+key (`sonar_config_incomplete`), a missing automatic-review
+step, an empty required-reviewer list, no gate build
+command (`quality-gate` or `verify`) the project's architecture can resolve, or a bare
+`Skills:`/`Persona:` name in a flat install whose `SKILL.md` records no bundle identity
+(`flat_skill_identity_missing`) is an error carrying a specific code. There is never a fall-back to
+a default reviewer list or a default build. Stop and report a resolve error; do not substitute a
+value.
+
+**How to read the spec:**
+
+- **Implement:** its *Deliverables* and every *Done when* clause.
+- **Load:** each deliverable's `Skills:` and `Persona:` lines, before working on that deliverable
+  (step 2 checks they exist).
+- **Facts, not instructions:** its *Claim Labels*. A `HYPOTHESIS` is confirmed or refuted before
+  you build on it, and the result goes in your report.
+- **A hint, not a fence:** its *Expected Surface*.
+- **Ignore:** its *Hand-Off Command*.
+- **Obey:** its *Write-Boundary*.
+- **Translate** plan-marshall vocabulary in the spec:
+  - "verify-at-outline" / "at outline" → confirm it before implementing that deliverable.
+  - "outline deliverable" → one deliverable of this run.
+  - "functional review" → step 5 of this runbook lane.
+
+## 0a. Progress file and resume (do this first, every session)
+
+**Re-read this skill in full** at every session start, after every server restart, after every
+context compaction and after any idle gap. It can change during a run; the current version binds.
+Record the re-read in the progress file with its timestamp and what triggered it.
+
+**Check for a resume first.** If `{progress_file}` exists, this session is a resume:
+
+1. Read the progress file.
+2. Check it against `git -C {worktree} log --oneline origin/{base_branch}..HEAD` and, if a PR is recorded,
+   `ci pr view --pr-number {N}`.
+3. Continue at the **first step not recorded as done**. Never redo a recorded step.
+4. If git or the PR contradicts an entry, trust git and the PR, and record the correction.
+5. If the worktree or branch exists but there is no progress file, rebuild the file from git and
+   the PR before continuing.
+
+**Keep the file current.** It is the run's memory. Write it with the Write or Edit tool, after every
+item below and before starting the next. One line per entry, newest last:
+
+```text
+setup: worktree {worktree}, branch {branch}, pushed
+build-server: {ready|disabled|down}{ (reason)}; builds: {mechanism: count, …}; fallbacks: {one entry per build that fell back or retried — {step}: {degraded|launch-fault-retry}, {reason or none}; `none` when every build was submitted and no retry was needed}
+re-read: lane text loaded at {timestamp} ({session start|compaction|restart|idle gap})
+D{n} hypothesis: {claim} — confirmed|refuted, {file:line}
+D{n} test: {test name} — order {test-first|mutation-after|none}; failing run {commit} {output identifier}; passed at {sha}
+D{n} done: commit {sha}
+finding: {reviewer} {section} {id} — {sha|reason}
+sonar: {configured (project key)}|{not_configured}; read at {sha}: {count} {confirmed|carried_forward}|{undecidable, retried}|{not_configured}; operator-selected: {issue-key: reason, … or none}
+gate: {quality-gate|module-tests|verify} at {sha} — {result}
+self-review round {k}: {findings and disposition}; open: {list or none}
+pr: #{N} created at {sha}
+review: {bot} triggered at {time} on {sha} — {reviewed|refused|silent}; next trigger not before {time}
+operator: asked "{question}" — options {…}; selected "{option}"
+mailbox: {item} — {done|declined with reason|asked}
+merge: {settle result}, merge commit {sha}
+cleanup: done
+landing: written as {message name}
+```
+
+**Commit subjects** end with the deliverable, e.g. `fix(triage): resolve in the finding's store (D1)`,
+so git alone shows which deliverables are committed.
+
+**The landing report (step 8) is assembled from this file,** not from memory.
+
+## 1. Rules (every one binds; breaking one fails the run)
+
+- **Scope.** Implement exactly the spec. Every deliverable stays a separate deliverable, and every
+  Done-when is met as written. Never merge, narrow or reword a criterion. A deliverable you cannot
+  meet is reported as not met, with the reason.
+- **Evidence.** Every Done-when's evidence carries an `order` — exactly one of `test-first`,
+  `mutation-after` or `none` — and this rule is the ONE place a Done-when is graded by it:
+  - `test-first` is met: the test was written and seen failing against the unfixed code, and the
+    failing output is recorded.
+  - `mutation-after` is met with the order stated: the failing output came from mutating or
+    reverting the committed fix, and the test, commit and output identifier are reported.
+  - `none` on a Done-when whose clause says "fails at `{sha}`" is reported **not met as written**,
+    with the reason, so its deliverable is **not** fully met — and `deliverables_done` counts only
+    fully met deliverables.
+  - A green run at HEAD is never evidence that a test fails without the fix. The words "fail-first"
+    and "observed failing before the fix" are reserved for `test-first`; a `mutation-after` or
+    `none` order says so instead.
+  - The failing run is reported by its commit and output identifier wherever the order is not
+    `none`.
+  - **An evidence claim needs an artifact.** A browser check cites its screenshot FILES, not only the
+    snapshots it looked at; a mutation run or an end-to-end run cites the log path it produced, and
+    that path must exist. A claim carrying no artifact is reported **`not evidenced`**, and it does
+    not count toward `deliverables_done`: it is graded exactly as a not-met Done-when, because a
+    Done-when the run cannot show is a Done-when it did not meet as written.
+  - Never cite a test, file or log you have not just read or run.
+- **Base-sha evidence (needs no clone).** A Done-when that says "fails at `{sha}`" is proved on a
+  detached base worktree, never by copying the repository:
+  `python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree-create --detach --plan-id {plan} --base {base_sha}`
+  materializes `{plan}-base` under the project's worktree root at that commit, with no branch, and
+  returns its absolute path as `worktree_path`. `error: worktree_exists` means the base tree already
+  exists: reuse it only when `git -C` at that path reports the same HEAD as `{base_sha}` **and** a
+  clean `status --porcelain`, and remove it first when either differs — the answer carries
+  `detached: true`, `base_ref` and the tree's actual `head_sha`, refuses a tree that is on a branch
+  (`worktree_target_conflict`), and re-produces the executor from that tree, never from main's copy.
+  A creation or reuse answer whose `executor_in_worktree` is `absent` is not evidence: remove the tree
+  and report the blocker. A tree without an executor cannot be trusted to contain its own bootstrap —
+  the bootstrap at that sha may still read a base-directory override from the environment — so never
+  run the base tests on that assumption. That tree carries its own
+  `.plan/local` boundary and the executor the same seam produces — best effort, and the payload reports
+  `executor_in_worktree`; the copy-from-main fallback is disabled for it, because a copied executor
+  carries main's paths and would make a base run cite main's code — so the base tree's own test
+  bootstrap short-circuits instead of resolving its walk into another checkout. The build seam runs
+  against the returned path like any other checkout:
+  `{build.module-tests} --project-dir` with that `worktree_path`, or the gate canonical, with the
+  shell in the main checkout. The tree at the base commit does NOT contain the test the Done-when
+  just added, so copy that committed test file from the plan's worktree into the same path in the
+  base tree before the run — it is the plan's own test, not a harness file — and record the failing
+  output that names it. Then return the base tree to its tracked state BEFORE the cleanliness check,
+  using file tools only — never `git checkout`/`restore`, which the Git rule forbids: when that path is
+  untracked at the base sha, delete the copy; when it is tracked there, save its original content under
+  `.plan/temp/` before overwriting it and copy it back afterwards. Delete the owner marker too before
+  the check. Anything left behind keeps
+  `status --porcelain` dirty and `git worktree remove` refuses. The copy dies with the base tree, the
+  committed test does not. A plan has ONE base tree: as soon as the tree exists, write your
+  `{sender_id}` to `{plan}-base/.plan/local/base-evidence-owner` (inside the boundary, so it never
+  dirties the tree), run its base-evidence work serially, and treat a reuse that finds ANOTHER sender
+  in that marker as a blocker — never as a spare. Four forms are
+  NOT allowed, and a Done-when whose failing run used one
+  is reported `not evidenced`: a `git clone`; a raw `git worktree add` into `.plan/temp`; a hand-run
+  `generate_executor`; and an edit of a harness file in the base copy. The evidence must survive the
+  base copy: the failing log identifier and the file that produced it go in the PR body, and a probe
+  file a Done-when cites by path is committed under the plan's test tree or its content is in the PR
+  body — a path that exists only in the removed base copy is not evidence. Remove the base worktree
+  with `git worktree remove`, never with force, once `git -C` at that returned `worktree_path` shows
+  a clean `status --porcelain`; when it cannot be removed the landing reports `cleanup_owed=true` and
+  names what remains, read from the tree, and no operator question about deleting it is asked before
+  that read has been stated. While it exists, `{plan}-base` is also what `plan-doctor` reports as a
+  dangling worktree: that report IS the owed cleanup, not a defect in the plan record.
+- **Executor only.**
+  - Every script: `python3 .plan/execute-script.py {bundle}:{skill}:{script} …`.
+  - Every build: the `build` commands the resolve result supplies (step 4).
+  - Every CI action: `plan-marshall:tools-integration-ci:ci`.
+  - Never: the CI CLIs directly (`gh`, `glab`), the project's build wrapper directly, the
+    test/lint/type-check binaries directly (`ruff`, `mypy` and `pytest` are the familiar cases),
+    `python3 -c`, `python3 some_script.py`, scripts under a system temp directory, git's `grep`
+    subcommand, or `sleep`. Every one of these goes through its resolved command instead: the
+    executor for scripts, the `build` map for builds, and `ci` for CI.
+- **Shell.**
+  - One command per call: no `&&`, `;`, pipes, command substitution, loops or heredocs.
+  - Files are read and searched with the file tools, never with shell `cat`, `ls`, `grep`, `find`,
+    `head` or `sed`.
+  - Temp files go only under `.plan/temp/`.
+  - Repository files (source, tests, docs) are created and edited **only inside the worktree**,
+    never in the main checkout — not even a draft.
+- **`.plan/` state.** Write nothing under `.plan/` except `.plan/temp/`, a `ci` body slot at a path a
+  `prepare-*` verb returned under `.plan/local/plans/NO_PLAN/work/ci-bodies/` (never a path written by
+  hand — the slot must come back from the matching `prepare-body` / `prepare-comment` verb, whether
+  the `pr` or the `issue` one), the base tree's own `.plan/local/base-evidence-owner` marker (§1), and
+  your one inbox message (step 8).
+  Never edit the spec or any file under `.plan/orchestrator/`.
+- **Stay inside the repository.** Never read, list or print anything outside the repository root:
+  no credential files, config directories or environment dumps. Those hold secrets, and anything
+  you read is sent to the model provider.
+- **There is no session budget.** Never stop, skip a step, skip the build gate, or leave a PR
+  comment unhandled because of "budget" or "context". Stop only when you are blocked, and name the
+  blocker.
+- **Git.**
+  - Never stage everything at once, never `git stash`, `git restore`, `git checkout -- <path>`,
+    `git rebase`, or a forced push.
+  - To bring the base branch in, merge it (step 7).
+- **The operator decides.** Ask the operator (the `AskUserQuestion` tool) when:
+  - you are blocked;
+  - a rule would have to bend;
+  - a required reviewer cannot be obtained (§ 6 step 7).
+
+  Act only on an option the operator **selected**. A question that was cancelled, interrupted or
+  aborted (for example by a server restart) has no answer: ask it again, and never act as if an
+  option had been chosen. Free text such as "try now" or "continue" is not permission to merge,
+  skip a reviewer, or do anything not listed. After the operator reports a problem, take no
+  remedial action they did not choose.
+- **Required reviewers.** Every bot in `{required_bots}` is required. A required reviewer is never
+  skipped and never moved to optional, and a PR is never merged without a review from each. Every
+  bot in `{optional_bots}` is optional, and is included in the cycle below beside the required ones
+  without gating the merge.
+- **Reviewer trigger phrases.** A reviewer's trigger comment and its escalated trigger comment are
+  fields of its resolve row (`trigger_comment`, `escalated_trigger_comment`), and those are read
+  from `plan-marshall:automatic-review` `standards/{bot}.md` — the single source of each bot's
+  phrases. Never type one from memory.
+- **Commit trailer.** Every commit ends with exactly the resolved `{commit_trailer}` line and
+  nothing else by way of attribution. A PR body carries no attribution footer.
+- **Guard.** The resolve result reports `guard: present` only when this project has a tool-call guard
+  installed for the active harness, and `guard: none` otherwise (the Antigravity harness has no
+  pre-tool-use hooks at all). Where nothing was enforced, the landing message says so: the guard
+  state travels as prose beside the fence, never as a facts-fence line, and the rule-check section
+  reports `guard: none on this harness (unenforced)`. The lane never reports "all kept" or "no
+  guard-log line" when nothing was enforced. The guard's audit log is `{guard_log}` (the path
+  `resolve` returns); step 8 reads it there for this run's sessions.
+
+### Personas — loaded as standards, one per kind of work
+
+Load the engineering persona for the kind of work a step does, and apply it as a standard:
+
+| Kind of work | Persona skill |
+|---|---|
+| production code | `persona-implementer` |
+| unit and module tests | `persona-module-tester` |
+| multi-module tests | `persona-integration-tester` |
+| trust boundaries, input validation and secrets | `persona-security-expert` |
+| documentation | `persona-documenter` |
+| every self-review round, and triaging every PR comment | `persona-code-reviewer` |
+
+A deliverable's own `Persona:` line (section 0) selects its persona; with no declaration, this table
+decides from the kind of work.
+
+The persona skills are loaded as **standards only**: any plan-marshall machinery they mention
+(`manage-personas`, extension points, orchestrator pipelines) is ignored in this lane. The lane
+loads the skill for its judgement, never to run its pipeline.
+
+`persona-code-reviewer` applies its adversarial-refute lenses to every finding: is it a defect or a
+preference; is it surplus or load-bearing; is the reported drift real or a false positive; and what
+is its severity. Apply the same lenses to the run's own Done-when verdicts, so that "met on paper"
+is challenged on reachability, on the end-to-end path, and against the spec's intent.
+
+## 2. Set up the worktree
+
+All commands run from the main checkout (the repository root).
+
+1. `git status --porcelain` must print nothing. If it prints anything, stop and report **blocked**.
+2. `git fetch origin {base_branch}`
+3. Create the worktree and branch:
+   `python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree-create --plan-id {plan} --branch {branch} --base origin/{base_branch}`.
+   - The verb also prepares the worktree's plan-local directory and its build tool. Bookkeeping
+     warnings about a missing plan status are expected; ignore them.
+   - `error: worktree_exists` means this is a resume: reuse the worktree.
+   - It PRODUCES the worktree's own `.plan/execute-script.py` and reports `executor_in_worktree:
+     present`, or `absent` with the reason. Record the verdict; an `absent` slot is a degradation the
+     build gate has to route around (section 4), never a reason to fail the creation.
+4. `git -C {worktree} push -u origin {branch}`. Make no edit before this push.
+5. **Check every named skill and persona exists.** The resolve result carries one row per spec
+   deliverable with its `Skills:` and `Persona:` declarations. A `Skills:` entry is a
+   `bundle:skill` notation (comma-separated for several); the literal `none` is an ANSWERED
+   absence ("the project configures no domain skills") and is never probed; a `Persona:` entry is
+   the persona kind (`implementer`) or its full skill name. Every other named skill and persona must
+   exist in the installed bundles; `resolve` reports a name that does not as a
+   `named_skill_not_found` error, and the run then **stops and asks the operator**. A bare name in a
+   flat install whose `SKILL.md` records no bundle identity is the
+   `flat_skill_identity_missing` error for the same reason. A missing skill
+   is never skipped silently. Load the declared skills and persona as standards before working on
+   their deliverable, and list them per deliverable in the progress file.
+   - **Surface drift.** If a deliverable ends up touching a module the spec's Expected Surface did
+     not name, load that module's domain skills too, through the same configuration source the
+     orchestrator uses. Record the addition in the landing report as `skills added: …, reason: …`.
+     Never drop a skill the spec named.
+
+All edits, staging, commits and pushes target the worktree (`git -C {worktree} …`). The main
+checkout stays untouched.
+
+Every executor call runs with the shell in the **main checkout**, in exactly the form
+`python3 .plan/execute-script.py …`. The guard refuses any other form, including an absolute
+executor path. One exception is a verb the plan's own branch introduces: only the WORKTREE's
+executor knows that surface, so that call runs with the shell in the worktree, in the same relative
+form — section 3 step 5 refreshes that executor first. Builds run against the worktree with the
+resolved `build` commands (section 4) and the default routing (`auto`): the project's build wrapper
+decides whether the job runs in-process or is submitted to the build daemon.
+
+6. **Build-server preflight — once, here.**
+   `python3 .plan/execute-script.py plan-marshall:build-server-client:build_server preflight --project-path {worktree}`
+   answers `ready`, `disabled` or `down`. Record it in the progress file and the landing message as
+   `build_server: ready|disabled|down`, with `reason` when the state is `down`. The resolve result
+   carries the same field for the project root; this setup call is the one that describes the
+   worktree.
+   - `disabled` — the project is not enrolled at setup. That is not an error: enrolment is an
+     operator action in `manage-build-server`, and the default routing's own preflight answers
+     `disabled` for an unenrolled project, so the builds run in-process.
+   - `down` — the daemon was unreachable at setup. Record the reason. The builds still run with the
+     default routing, which preflights again per build, so the `mechanism` a build result reports is
+     the authority for how THAT build ran. The `build-routing` check (section 4) decides whether a
+     build may be routed at all.
+   - `ready` — routing is available. A routed job re-runs the worktree's own `.plan/execute-script.py`,
+     never the main checkout's. Worktree creation PRODUCES that executor through the same seam the
+     phase-5 move-in uses, and its payload reports `executor_in_worktree: present`, or `absent` with
+     the reason. Read that verdict and record it; a `present` slot is what lets a routed build submit.
+     Section 4 still runs the `build-routing` check before the first routed build, and only an
+     `absent` slot degrades it to `in_process` with the `executor_absent_from_worktree` reason.
+
+7. **Read the delivered mailbox — the first of three reads.**
+   `{inbox_read_command}` enumerates what the orchestrator delivered to this plan. Read it here, at
+   setup, then again before self-review (section 5) and once more immediately before the merge-gate
+   work (section 7). Every delivered item gets one disposition line in the progress file —
+   `mailbox: {item} — {done|declined with reason|asked}` — and an item with no disposition line
+   **blocks the enqueue**. A mailbox that reports it could not look (`mailbox_state` other than
+   `present`) is not an empty mailbox: say so in the landing rather than reading it as no mail.
+
+## 3. Implement, deliverable by deliverable
+
+For each deliverable, in the spec's order:
+
+0. Load the deliverable's persona and its declared domain skills as standards before any work: its
+   `Persona:` and `Skills:` lines when the spec carries them, otherwise the kind of work selects the
+   persona from the persona table in section 1 — `persona-implementer` for production code,
+   `persona-module-tester` for unit and module tests, `persona-integration-tester` for multi-module
+   tests, `persona-security-expert` where trust boundaries, input validation or secrets are touched,
+   and `persona-documenter` for documentation. A spec without the lines names no domain skills; the
+   landing report then says `skills: none named`.
+1. Confirm the spec's HYPOTHESIS lines for this deliverable by reading the code. Write down
+   confirmed or refuted, with `file:line`.
+2. Write the Done-when tests and capture their evidence under the `order` §1 defines — for a
+   Done-when whose clause fails at a base sha, that is §1's base-sha recipe: a detached `{plan}-base`
+   worktree, built through the build seam, never a clone.
+3. Implement. Run the tests; record them passing.
+4. If any `*.py` changed, run the quality gate (step 4) until clean.
+5. **Refresh the worktree executor after adding, removing or renaming a script verb**, before running
+   the new verb:
+   `python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree-executor-refresh --plan-id {plan}`.
+   The executor embeds the script map and argparse surface it derived when the worktree was created,
+   so a verb the branch adds is not in that record — the executor may refuse the call as
+   `unknown_verb`, and cannot describe the verb's flags — until the surface is rebuilt. The rebuild
+   goes through this verb, never through a direct interpreter call to the generator by path.
+   Record `executor_regenerated` and its detail; a `false` is a blocker, not a warning.
+   Then run the new verb **through the worktree's executor**, with the shell in the worktree and the
+   same relative form (`python3 .plan/execute-script.py …`): that executor is the only one whose
+   surface the refresh rebuilt, and it is the same one a routed build re-runs.
+   - **The plan that introduces this refresh verb itself** cannot call it: no executor's surface
+     carries it yet. Bootstrap that one case through the registered generator notation, from the
+     worktree: `python3 .plan/execute-script.py plan-marshall:tools-script-executor:generate_executor generate --marketplace-root .`
+     with the shell in the worktree. It is a notation like any other, never the generator's path, and
+     every plan landing after this one finds the verb already in its own executor.
+   - A worktree reporting `executor_in_worktree: absent` has no executor to bootstrap through. That is
+     a **blocker**: record it, and have the operator regenerate the checkout's executor with the
+     project's own steward step. The lane never spells the generator's path to get around it.
+6. Commit with the deliverable paths staged by name, then push. Record `D{n} done` in the progress
+   file.
+
+## 4. Build gate
+
+Every build runs from the main checkout against the worktree, using the commands the resolve result
+supplies and the default routing. Each line below applies only where the resolve result supplies
+that canonical — a project with a single gate canonical supplies no `{build.verify}`, and one that
+publishes no test part supplies no `{build.module-tests}`:
+
+```bash
+{build.quality-gate} --project-dir {worktree}
+{build.module-tests} --project-dir {worktree}
+{build.verify} --project-dir {worktree} --timeout {build_timeout_seconds}
+```
+
+- **Routing.** The DEFAULT routing — no `--execution-mode` flag — is used for EVERY build. The setup
+  preflight is only an informational snapshot: `auto` submits each build to the build daemon when
+  THAT build's own preflight is `ready` (the routing client preflights again per build), and runs
+  in-process otherwise. Before the first routed build — and whatever the setup preflight answered,
+  because a daemon that was `down` at setup can be `ready` by the time a build runs — run
+  `python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane build-routing --worktree {worktree}`:
+  `auto` means the worktree carries its own executor and the build submits with no execution flag, so
+  the daemon re-runs that executor; `in_process` is the DEGRADED answer for an `absent` slot, where
+  the run passes `--execution-mode in_process` for that build and records the
+  `executor_absent_from_worktree` reason, so the gate still runs instead of ending terminal on an
+  executor the worktree does not carry. The daemon applies its OWN supervisory bound, which
+  `--timeout` can only raise; a bound expiry comes back as `timeout` naming `timeout_used_seconds`
+  and `timeout_source`, and the client's rules for it are cited, not restated. Record a bound
+  expiry and continue with the split form below rather than re-submitting the same bound.
+- **A launch fault costs ONE retry, not the server.** A routed build whose result is a launch fault
+  never started, so it is NOT a red build: re-run that build ONCE with `--execution-mode in_process`,
+  record the retry with its `reason` (or, where the result states none, that the reason is
+  unavailable), and submit the NEXT build with the default routing again. The launch-fault class is
+  owned by the build client — `_build_result.LAUNCH_FAULT_ERRORS`, today `execution_failed` and
+  `log_file_failed` — so the retry follows that set rather than a second copy of it.
+  `--execution-mode in_process` as a STANDING setting for the rest of the run is allowed only where
+  `build-routing` answered `in_process`; never let one routed failure turn the server off for the
+  run.
+- **Read the routing outcome** from the build result's own fields (`requested`, `resolved`, `reason`,
+  `mechanism`). A `degraded` result has already fallen back in-process: record the degradation and
+  its `reason` in the progress file and the landing message.
+- **A `killed` job is never blind-retried.** Read its status and record it; whether to run it again
+  is the operator's decision, asked with the question tool.
+- **One build per worktree at a time — enforced by the mechanism, not by discipline.** A second build
+  for a busy worktree WAITS: the submit's `queued_behind` names the job ahead, a wait on a job that is
+  not yet admitted reports `queued` with `waiting_on` and `queued_seconds`, and a wait bound that runs
+  out returns the named `directory_busy` error, which names the holder (plan id or `NO_PLAN`, command,
+  pid, seconds held). Nothing needs to be avoided by hand: the daemon admits at most one job per
+  project directory, and every in-process build — the daemon child included — holds the same
+  per-directory lock (directory first, then the slot), so running builds in parallel in one worktree
+  gains nothing; they serialise anyway. The daemon child holds a machine-global slot only when it runs
+  a real plan: a plan-less build takes the directory lock and no slot. What that makes impossible is
+  the hazard the old prose rule named — two builds of one worktree interleaving, with a result
+  carrying its sibling job's counts. The build-server client's prohibitions — a routed build is never
+  backgrounded, and a live (`running` or `queued`) result is re-attached with a bounded wait — are
+  stated in `build-server-client/SKILL.md` and bind here as written, not restated.
+- **Shell timeout:** an in-process build holds the shell call for its whole duration, and a routed
+  build also holds the call — its wait is bounded and re-polled inside the same call, never
+  backgrounded. Give each call the shell tool's `timeout` parameter, set at or above the build's own
+  timeout; on a harness whose default shell timeout is shorter than the build, raise that parameter
+  or run the split form below. The routing choice does not shorten the call.
+  - If the tool cannot wait that long, run the gate's parts as separate calls, in the order
+    `{build.split}` states, running each canonical the resolve result supplies — for example
+    `{build.quality-gate}`, `{build.test-compile}` and `{build.module-tests}` where the project
+    publishes all three, each with the same worktree flags.
+  - Run exactly the canonicals `split` names. `module-tests` and `test-compile` are test-conditional
+    in the architecture's contract, so an absent one means the project publishes no such part — not
+    that a part was skipped. `quality-gate` and `verify` are the gate, and each build system
+    publishes them conditionally, so the resolve result carries at least one; a project that
+    resolves neither has already failed `resolve`. Where `split` names nothing, run the gate
+    canonical the resolve result supplies — `{build.quality-gate}` where supplied, otherwise
+    `{build.verify}` — because the project publishes no separable part. Where the only candidate
+    parts are gate canonicals, the split cannot be shorter than `verify` (Maven's `quality-gate` IS
+    `verify -Ppre-commit`), so `resolve` answers an empty `split` and the lane runs the gate
+    canonical itself.
+  - A daemon-routed build is waited on in the same call, never moved to the background.
+- **Read the result, not the exit code.** The TOON must show `status: success` and an empty
+  `errors[]`. Open the `log_file` it names for the test summary.
+- **Docs-only change.** Before running the full build, classify the worktree diff against the base:
+  get the changed paths with `git -C {worktree} diff --name-only origin/{base_branch}...HEAD`, then
+  pass them to the `build-classify` verb. When it answers `kind: docs-only`, run **no** full
+  `verify`: check the changed docs instead (format, internal links and references, and a
+  `git status` showing only doc files) and record `build-gate: docs-only` in the progress file and
+  the landing message. A docs-only head runs no `module-tests` and no `test-compile`: the build was
+  skipped, so there is no test part to run, and CI's required checks still gate the head.
+  `kind: buildable` runs the gate below as usual. The classifier applies the
+  PROJECT's own footprint rule rather than assuming a `.py` file is the only thing that builds. Its
+  non-building class is the project's CI rule where the checkout HOLDS it: a `paths-ignore` block in
+  the workflow that carries the `skip-on-docs-only` opt-in. Where it does not — the rule lives in a
+  reusable workflow the checkout does not hold — the narrow fallback is the architecture's
+  documentation module prefix AND that module's own `doc` extensions, matched case-sensitively.
+  `extra-buildable` globs force a build ahead of either. A path the classifier cannot place, and any
+  rule it could not read (reported as `reason`), builds — the fail-closed direction, so a wrong
+  answer costs a local build and never skips one the CI would run. Pass the same `--project-dir`
+  the build gate uses. Required CI checks still have to be green, so the merge gate is unchanged.
+- **When to run what:** run the gate canonical the project publishes (`{build.quality-gate}` where
+  the resolve result supplies it, otherwise `{build.verify}`) before each commit that touches
+  `*.py`, and the same gate canonical once before the PR. Scope the tests to one module while
+  iterating.
+- **Every pushed head:** a test run at every head pushed to a PR — not once for the run. Run
+  `{build.module-tests}` where the resolve result supplies it, plus `{build.test-compile}` where the
+  project publishes one; a project that supplies neither is gated by the gate canonical it
+  publishes. Record the sha of each run; a head that was not tested is not a green head.
+- **A single gate canonical is a complete gate.** The merge gate's `verify` condition (section 7)
+  names what replaces it when the project publishes no `verify` or the routed run hit the daemon's
+  bound.
+- **Failures that already fail on the base branch:** environment-dependent tests can fail in a
+  project's local module-tests run. They are not yours. Only a failure in a module you touched, or
+  one the base branch does not show, is yours.
+- **Surface/naming errors** such as "unknown subcommand": suspect a stale executor first and ask the
+  operator with the question tool — do not change source to silence them. The landing records that
+  the question was asked and the answer it got, or, where the harness offered no question tool, says
+  `no question tool was available`.
+
+## 5. Self-review before the PR
+
+**Read the delivered mailbox again — the second of the three reads** (`{inbox_read_command}`), and
+give every newly delivered item its disposition line before the round below grades anything. An item
+still without one blocks the enqueue (section 7).
+
+Dispatch one sub-agent (the `Task` tool, the general agent) with `persona-code-reviewer` loaded as a
+standard. It reports and never edits. Have it apply its adversarial-refute lenses — defect or
+preference, surplus or load-bearing, real or false-positive drift, and severity — to every finding
+and to the run's own Done-when verdicts. Give it:
+
+- **section 1 of this skill, verbatim, as rules it must keep.** That means no git grep, no shell
+  file listing or reading commands, no temp-directory writes or redirects, no inline Python, and no
+  workarounds after a guard refusal; use the file tools. Its rule breaks count as yours.
+- the spec path;
+- `git -C {worktree} diff origin/{base_branch}...HEAD`;
+- the instruction to grade **each Done-when as written** as met or not met, with evidence;
+- the instruction to report:
+  - every pre-existing test assertion the diff removed or relaxed;
+  - every doc or comment the change made false;
+  - every changed file the spec does not explain.
+
+Fix what it finds, then dispatch it again. Stop when a round reports nothing open, or after 3 rounds.
+At the round limit the still-open items are reported AS open, and `self-review: clear` is never
+permitted while any finding is open — that state is reported as `budget-exhausted`. Ask the operator
+whether to continue at the limit. Record every finding and its disposition.
+
+## 6. Pull request and reviews
+
+1. **Open the PR.** The lane is plan-less, so it allocates its body from the shared
+   `NO_PLAN` store under a slot of its OWN — `{body_slot}`, the plan id folded to the CI's
+   slot vocabulary. Two callers writing the default
+   slot at once overwrite each other's body, so the slot is per caller and per run.
+   - `python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr prepare-body --plan-id NO_PLAN --slot {body_slot}`
+     returns a path.
+   - Write the body there: Summary; Changes, grouped per deliverable; Test evidence. The evidence
+     carries, per Done-when, the `order` and verdict §1 defines, the test name, and the failing
+     run's commit and output identifier only where the order is not `none`. No footer.
+   - Then: `python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr create --plan-id NO_PLAN --slot {body_slot} --head {branch} --base {base_branch} --title "{conventional title}"`
+   - Every later body call of this run names the same slot: `pr prepare-comment … --slot {body_slot}`
+     and its consuming `pr reply` / `pr thread-reply` / `pr edit` `--slot {body_slot}`.
+2. **Trigger each reviewer** with a PR comment
+   (`ci pr prepare-comment --for reply --plan-id NO_PLAN --slot {body_slot}` then
+   `ci pr reply --pr-number {N} --plan-id NO_PLAN --slot {body_slot}`), posting its resolved
+   `trigger_comment`.
+3. **Wait for CI:** `python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci checks wait --pr-number {N} --timeout 540`.
+4. **Read the pull request's open Sonar findings** — after CI is green on the head and before the
+   pull request is reported ready. Skip nothing when `sonar` is `configured`:
+   - `resolve` reported `not_configured`: there is nothing to read. Record `sonar: not_configured`
+     in the progress file and the landing, and go on.
+   - `configured`: read the head's open new-code findings with the provider's plan-less read, which
+     needs no plan directory —
+     `python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar read_open_issues --project {sonar_project_key} --pr {N} --ce-wait-timeout {sonar_ce_wait_timeout_seconds}`.
+     Pass the resolved budget: it sits below this harness's Bash ceiling, so a read that does not
+     settle returns its own `undecidable` instead of being killed with no state at all.
+     The read covers the open new-code issues AND the security hotspots still to review — the issue
+     search does not return hotspots — and its `open_issue_count` is their sum. A response whose
+     `paging.total` exceeds the page it carries, or carries none, comes back `undecidable`: a count
+     the read cannot show to be complete is never a number.
+     Fix each finding in a pushed commit, or have the OPERATOR dismiss it (see the dismissal rule
+     below). Re-read after every push until the count is `0` on a measured read, or every remaining
+     finding's
+     key is one the operator selected. The gate's `--open-keys` is the read's own `open_keys` field —
+     it enumerates the issue keys AND the hotspot keys, so a hotspot is never lost by reading `issues`
+     alone. Then decide the gate:
+     `python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane sonar-gate --state configured --count-status {confirmed|carried_forward|undecidable|unconfigured} --open-count {n} --open-keys {open_keys} --operator-selected-keys {k1,k2} --progress-file {progress_file} --hotspot-keys {hotspot_keys}`.
+   - **A dismissal is the operator's act, never the lane's.** When a finding should not be fixed, ask
+     the operator with the question tool, naming each finding key and what dismissing it would mean,
+     and transmit a key only on the option the operator SELECTED. The progress file records the
+     selection as `operator-selected: {issue-key}: {reason}`, never as a lane decision. The
+     transmission is the provider's raw REST transition, which is the one dismissal surface that takes
+     a bare issue key and needs no plan —
+     `python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar_rest transition --issue-key {key} --transition {falsepositive|wontfix}`.
+     The gate reads the same record back through `--progress-file`, so a key the run did not record is
+     refused as `selection_not_recorded` — the record is the witness, not the flag alone.
+     A dismissal the lane cannot transmit is a **blocker**, never a silent pass: record the failure
+     and stop. The gate admits a key only through `--operator-selected-keys`; `--dismissed-keys` is
+     refused as `lane_dismissal_not_accepted`. A HOTSPOT key can be carried by `open_keys` but there is
+     no hotspot transition verb, so a hotspot is FIXED or reported as a blocker — never dismissed.
+   - **A failing new-code quality gate is reported, never counted as a finding.** Read it with
+     `python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar_rest gate-status --project {sonar_project_key} --pr {N}`
+     and pass its verdict to `sonar-facts` as `--gate-status`, mapping the provider's answer to the
+     flag's vocabulary: `gate_status: OK` → `ok`, `ERROR` → `error`, `NONE` → `not_computed`, and a
+     failed call (the verb answers `status: error`) → `unknown`. A quality gate can fail on a new-code
+     metric — coverage, duplication, maintainability — that is neither an open finding nor an
+     unreviewed hotspot, so it is not a finding for this rule, and it does not block on its own; the
+     landing reports it, so a failing gate is never silent.
+   - **A `stale_analysis` read on a head the project's CI never analyses is decided from the
+     analysed head, and carried forward.** Some projects skip the build on a head their CI
+     classifies as not worth building (`skip-on-docs-only`), so the current head is never
+     analysed, the pull-request analysis stays on an older head, and a retry can never succeed.
+     When the read answered `undecidable` with the stale-analysis reason and both revisions are
+     present, decide it:
+     `python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane sonar-stale-delta --state configured --count-status undecidable --analysis-revision {analysis_revision} --head-revision {head_revision} --worktree {worktree}`.
+     It resolves the analysed revision in the routed checkout, lists the paths changed from it to
+     the head, and classifies them with the project's own footprint rule, the same rule the build
+     gate reads. `carry_forward: true` means every changed path is one the project does not build,
+     and the answer's `reason` is the named `carried_forward_unbuilt_delta` sentence stating both
+     revisions.
+     **The rule is the project's OWN, and only that.** A project whose CI delegates its build to a
+     reusable workflow holds no path rule of its own, so this verb cannot decide its delta: it
+     answers `undecidable`, and the case is not carried forward. Deciding it needs the rule the CI
+     actually applied (its check-runs, bound to the picked run), which is therefore not decided here; the architecture's documentation surfaces are not a
+      substitute for a rule the checkout does not hold.
+     On `carry_forward: true` re-read with the SAME plan-less read, licensing exactly that revision
+     and the head the decision verified:
+     `read_open_issues … --analysed-revision {analysis_revision} --carried-forward-head-revision {head_revision}`.
+     That makes the count, the key set and the rules a MEASUREMENT of the analysed head, so a
+     carried-forward `0` is a measured zero of that head — reported as `count_status: carried_forward`,
+     never as `confirmed`. The licence is HEAD-BOUND: the analysed
+     revision alone is disclosed by every undecidable read, so a licence without the verified head
+     is refused (`analysed_revision_requires_verified_head`), and a read whose reported head differs
+     from it is refused too (`carried_forward_head_mismatch`) — a push landed between the two calls,
+     so re-run the decision for the new head.
+     Then pass the gate the read's own marker, its reason and both revisions,
+     `sonar-gate --state configured --count-status carried_forward --open-count {n} --open-keys {open_keys} --count-status-reason "{read_reason}" --carried-forward --carried-forward-analysis-revision {analysis_revision} --carried-forward-head-revision {head_revision} …`,
+     and render the landing's figure the same way,
+     `sonar-facts … --count-status-reason "{read_reason}" --carried-forward --analysed-revision {analysis_revision} --carried-forward-head-revision {head_revision}`,
+     so the fact names the head it was measured at and the head it stands in for. A carried-forward
+     figure that arrives without that marker is refused by both verbs. `--count-status-reason` is the
+     read's OWN reason, copied verbatim: the gate's `carried_forward_unmarked` guard checks it, and the
+     verdict's `reason` takes it only when the gate admits the merge (a refused verdict keeps its own
+     refusal text). The decision's `carried_forward_unbuilt_delta` sentence is a SEPARATE value — it is
+     what the delta decision returned, not what the read reported — so it travels in the run report
+     rather than through this flag.
+     **Each refusal has ONE retry class, stated here and cited by sections 4 and 7.**
+      - **Retryable after the named state changes** — the read can settle on the same head once the
+        cause is removed: `worktree_dirty` (commit or discard the change; an `assume-unchanged` or
+        `skip-worktree` entry also trips it — inspect the index flag with `git ls-files -v` and clear
+        it, or use a clean full checkout when the checkout is intentionally sparse), `worktree_ignored_inputs`
+        (commit or remove the ignored CI file), `worktree_not_at_head` (check the routed checkout out
+        at the head) and `revision_unresolvable` (fetch the revisions, then retry). **Removing the
+        cause keeps the head; committing and pushing it does not**: a retry of the same read is valid
+        only while the revision inputs are unchanged, so a push restarts the read AND the delta
+        decision for the new head instead of reusing this one.
+      - **Retryable as-is** — the read itself may be taken again: `worktree_unreadable` and
+        `diff_failed`.
+      - **Not retryable on this head** — a blocker until the input or the operator changes:
+        `revision_missing`, `revisions_equal` (the two revisions are one commit), `rule_unreadable`
+        (the project's rule cannot be read, including a CI that delegates it to a reusable workflow
+        this checkout does not hold), `rule_changed` (the delta carries a change to the CI configuration
+        itself, so the rule that decided it is no longer the head's rule — the head needs a current
+        analysis or the operator, not the same stale read), `delta_buildable` (the delta carries a path
+        the project builds) and a `stale_analysis` the decision refused, which needs a head the CI
+        builds. A bare `0` is never produced.
+   - An `undecidable` read (the analysis did not settle, no revision reported for it, its head could not be
+     resolved, a page shorter than the provider's own total, or the REST/auth call failed) is a
+     **blocker**, never a `0`: retry the read, and if it stays undecidable do not merge. A
+     `stale_analysis` the carry-forward above refused is NOT in that retry class: retrying it cannot
+     succeed, so it is the blocker described there (a rebuild or the operator). An
+     `unconfigured` read — the typed status the provider answers when the credential resolve said
+     existed could not authenticate — is a blocker too; pass it to the gate and to `sonar-facts` as
+     `--count-status unconfigured`.
+5. **Read all three surfaces** after each push — the PR comments (`ci pr comments`), the PR reviews
+   (`ci pr reviews`), and the inline threads in the PR comments. Triage every comment with
+   `persona-code-reviewer`, applying its adversarial-refute lenses — defect or preference, surplus
+   or load-bearing, real or false-positive drift, and severity — before deciding whether it applies.
+   Handle every comment:
+   - fix it, commit and push; or
+   - answer it with `ci pr prepare-comment --for thread-reply --plan-id NO_PLAN --slot {body_slot}`, write the
+     reason into the returned path, and post it with
+     `ci pr thread-reply --pr-number {N} --thread-id {thread_id} --plan-id NO_PLAN --slot {body_slot}`; then
+     close it with `ci pr resolve-thread`.
+
+   **A thread is resolved only after a reply that names a commit or a stated reason** — never to
+   silence it: `ci pr thread-reply` first, `ci pr resolve-thread` second, in that order. Every
+   finding — whether it arrived as a thread or only inside a review body — gets one disposition line
+   in the progress file, `finding: {reviewer} {section} {id} — {sha|reason}`, and each line is handed
+   to the merge gate's `review-gate` call (section 7) as one `--disposition` value, with the
+   `finding: ` prefix dropped and `{reviewer}`/`{section}`/`{id}` exactly as the verb reports them.
+6. **After every push, re-trigger** a reviewer whose last review predates the head, **except a
+   reviewer the resolve result marks `review_complete_after_handling` that holds a qualifying review
+   on record**: that review is the review, so a later head raises no obligation and no trigger is
+   posted. The resolve flag alone is not the exemption — establish the review from the PR's own
+   surfaces (§ 7 names the artifact) before leaving the reviewer out; a flagged reviewer with no
+   qualifying review is re-triggered exactly as any other. Re-read the open Sonar findings after
+   every push too, on the same condition as step 4.
+7. **Reviewer quota policy** ("review limit reached" or similar), for ANY required reviewer that
+   refuses on quota **while no qualifying review exists** (see section 7):
+   1. Wait 90 minutes. Record the refusal and the next allowed trigger time in the progress file,
+      then stop the session or wait for the operator; never `sleep`. Then post that
+      reviewer's `trigger_comment` again. Repeat up to 10 times. If no review from that reviewer
+      exists at all, post its `escalated_trigger_comment` once.
+   2. Still no reaction: close the PR **unmerged**, open a new PR from the same branch, and trigger
+      again.
+   3. Still nothing: stop and ask the operator. Never merge without the review.
+   4. **Do not ask the operator about a quota before steps 1–3 are spent.** An answer that says
+      "merge" or "continue" does not shorten the policy.
+   5. **Re-trigger no sooner than 90 minutes after the refusal**, even when the reviewer's own notice
+      names a shorter wait. Wait with
+      `python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr wait-for-comments --pr-number {N} --timeout {seconds}`
+      (repeat as needed), or stop the session, recording the next trigger time in the progress file.
+
+## 7. Merge gate
+
+Merge only when all of these hold:
+
+- Every required reviewer reviewed the **current head**. **Satisfied by done for a reviewer the
+  resolve result marks `review_complete_after_handling`, ONCE a qualifying review by that reviewer is
+  on record** — a formal review with a commit id, or its marker-bearing summary whose readable
+  `kind=reviewed` payload names a covered commit (the artifact clause 1 below states; rate-limit
+  notices, marker-less walkthroughs, thread replies and a refusal submitted as a review do not
+  count — the one exception being a refusal whose body also carries a readable finished marker
+  naming the commit it covered, which a reviewer publishes when its summary keeps a later limit
+  notice beside its verdict). The flag alone is not the exemption: `review-gate` enforces it per
+  reviewer when the lane passes `--required-reviewer {bot}` for each required bot, and answers
+  `required_review_missing` when one holds no such review. Given the review, every finding of it
+  being handled makes it the review at ANY head of this PR: the currency demand does not apply, no
+  re-trigger is posted for a later head, and the "which head it last reviewed" fact reports the head
+  that one review covered. **Exception — standing review authorization, quota-limited reviewers
+  only.** For a required reviewer that the resolve result marks `quota_limited` and does NOT mark
+  `review_complete_after_handling`, "reviewed the current head" may be replaced by ALL of:
+  1. **a qualifying review exists** — a formal review by that reviewer on one of this PR's heads,
+     listed by `ci pr reviews` with its commit id, or, where the reviewer publishes a clean review
+     only as a summary comment, the marker-bearing summary comment whose `sourceCommitId` /
+     `coveredCommitId` name one of this PR's heads and whose `kind=reviewed` (the
+     `final_review_risk_coverage` marker the reviewer's summary comment carries; read it from the
+     comment itself, because the marker names the head the review covered, and parse it with
+     `_github_pr.review_coverage_verdict` — the one reader of `sourceCommitId`,
+     `coveredCommitId` and `kind`). That reader is the producer's and the await's: this lane's
+     `review-gate` path and the post chokepoint do not ask it, so a marker naming a commit outside
+     this pull request is not checked there.
+     Rate-limit notices, marker-less walkthroughs and thread replies do not count;
+  2. **every finding is handled** — each finding from that review and from any later one is fixed in
+     a pushed commit, or answered with a reason, and every one of that reviewer's threads is
+     resolved;
+  3. **it was re-triggered once after the last push**, and the refusal or silence is recorded;
+  4. **every other gate condition holds on the current head** — every reviewer that is not
+     quota-limited reviewed it, every comment is handled, the build gate is green, CI is green.
+- Every comment is handled.
+- `verify` (the full build, step 4) is green on the current head. Where the project publishes no
+  `verify`, the gate canonical it does publish is green instead — a single gate canonical is a
+  complete gate (section 4). Where the routed `verify` hit the daemon's supervisory bound, the split
+  form's parts are the run that must be green.
+- CI is green on the current head.
+- The Sonar state of the current head admits the merge: `sonar-gate` reports `merge_allowed: true`
+  on a read taken after the last push — its open new-code finding count is `0` measured (a
+  `confirmed` or `carried_forward` status), or every
+  remaining finding is one the OPERATOR selected for dismissal, or `resolve` reported
+  `not_configured`. A carried-forward read (status `carried_forward`, carrying
+  `--carried-forward` and both revisions) admits the merge on exactly those terms, because its
+  enumeration is a measurement of the analysed head; the decision's own delta sentence is a separate
+  value and does not travel through the gate. The count covers the open issues AND the security hotspots still to review. An
+  `undecidable` read is a blocker and is retried according to section 6's retry classes: a refusal
+  that class names NOT retryable on this head stays a blocker until the input changes (a rebuild) or
+  the operator decides. An `unconfigured` read is a blocker too; the lane never treats either as `0`.
+- **A question that bears on the merge never offers "merge on the recorded evidence"** while the
+  open Sonar count is above `0` or `review-gate` reports `false`. The options it presents are the
+  ones the gate's actual verdicts leave open: fix, dismiss on the operator's explicit selection, or
+  stop. A free-text answer is never that selection.
+- The review surfaces of the current head admit the merge: `review-gate` reports `merge_allowed:
+  true` on a read taken after the last push — no unresolved review thread, every review-body finding
+  carrying a disposition that names a commit or a stated reason, and no resolved thread whose last
+  BOT comment says the concern remains. Call it with `--required-reviewer {bot}` once per required
+  bot, so the done exemption is checked against a review that actually exists
+  (`required_review_missing` otherwise). Its `--disposition` values are this
+  run's progress-file `finding:` lines. An undecidable or truncated read is a blocker and is retried.
+  The standing review authorization never overrides a `review-gate` `false`.
+
+The reviewer quota policy (§ 6 step 7) applies only while no qualifying review exists. The standing
+authorization never applies to a reviewer that is not quota-limited, and never to a PR without a
+qualifying review. A `review_complete_after_handling` reviewer's own review on record is that
+qualifying review, so the quota policy does not apply to it either: nothing is asked of it again.
+
+**An unresolved review thread or an unhandled review-body finding on the merge head blocks the
+standing authorization.** A reviewer's thread that is still open, or ANY undisposed finding the verb's
+`undisposed` rows report — an `outside-diff` row and an `inline` one alike, whatever its section kind —
+means a finding is not handled, so the second condition fails however strong the review credit is.
+
+**Any question that bears on the merge** first re-reads the review surfaces — `ci pr comments`,
+`ci pr reviews`, and the reviewer's summary comment — in the same step as the question, and again
+immediately before the enqueue, and states only facts read in that step: per required reviewer,
+which head it last reviewed, and whether that is the current head; the CI status, the `verify`
+status and the Sonar state only from a result obtained on that head AFTER the last push, reporting
+`pending` where no such result exists, with the Sonar state as the gate's verdict for that head
+alone. Its options never mark a rule-bending choice "Recommended". A review of the current head that
+arrived after the question was asked invalidates the answer: ask the question again. A false or
+incomplete statement in such a question fails the run.
+
+**Read the delivered mailbox once more before the enqueue — the third read** (`{inbox_read_command}`).
+Every delivered item must already carry its disposition line; an item that has none **blocks the
+enqueue**, whatever else the gates say.
+
+**Immediately before enqueue,** fetch the base branch again. **If it moved:**
+`git -C {worktree} fetch origin {base_branch}`, then
+`git -C {worktree} merge origin/{base_branch} -m "merge: origin/{base_branch} into {branch}" -m "{commit_trailer}"`,
+so the merge commit it creates ends with the resolved `{commit_trailer}` line the Commit trailer rule
+requires. Run the build gate again, push, re-trigger the reviewers (leaving out every reviewer marked
+`review_complete_after_handling`), re-read the Sonar findings, re-run the review gate, and repeat the
+reviewer quota policy (§ 6 step 7).
+
+**Before enqueue, re-check the authorization rule:** merge only when every condition above holds, or
+when the operator **selected** an option in a question-tool call that names the exact gap (which
+reviewer, which head). Free text — "continue with merge", "at least one review is ok", "do merge" —
+is never that selection. If you have only free text, ask the question with the tool and wait for the
+selection.
+
+**The reach of a selection the operator made.** A selection made at one head — "merge without
+reviewer X", "merge on the recorded evidence" — covers the heads pushed AFTER it only while those
+heads add no new logic, and "no new logic" is read off the one fact the lane has: the trees of the
+selected head and the merge head compared DIRECTLY (two-dot, so a rewrite that drops a commit is a
+change, and `--no-renames`, so a rename shows its source and its destination),
+`git -C {worktree} diff --name-only --no-renames {selected_head} {merge_head}`. A head adds no new
+logic when EVERY path that lists is documentation (`.md`, `.adoc`) or a test file under the project's
+test tree. Any other path — production code, a script, a configuration or workflow file, and any path
+the lane cannot place — IS new logic, and the default fails closed: the selection does not cover that
+head, so the lane puts the head to the operator again, in a fresh question naming the paths that
+moved, rather than merging on the older record. The reason is what the selection was about: the
+operator chose over the findings, the checks and the Sonar read of the head they were shown, and a
+change to anything but prose or tests can move every one of those.
+
+That reach rule governs a SELECTION. The standing review authorization is a different path and is
+untouched by it: it is unchanged, it never asks, and it applies on the terms its own condition states.
+Two earlier rulings are inputs to this section, restated here because the lane does not read the
+ledger — the standing authorization stays as written, with the lane trying the re-review of the later
+head and asking the operator when the reviewer quota prevents it; and a last head that CHANGED logic
+after the qualifying review is covered by that authorization, so nothing is asked about it.
+
+**The allowance has a residual, and the gate is its backstop.** A documentation file is not always
+inert: in a project that ships its skills, standards or workflow text as product — this repository
+does — a `.md`-only head can change what the gate or the lane DOES. So the reach rule is not a claim
+that such a head is harmless; it is the boundary the lane can defend from the diff alone, and the
+merge head's own conditions are what actually clear it: every comment handled, the build green, CI
+green, and the `review-gate` read clean (no unresolved thread, every body finding disposed) on the
+head being merged. A head whose `review-gate` read is not clean inherits nothing — ask.
+
+**Enqueue and settle:**
+
+The enqueue is issued for the head the checks above read, and for no other head. Re-read the head
+immediately before enqueuing (`ci pr view`'s head sha, or the merge-queue response's own head): if it
+moved since the reads, STOP — do not enqueue — and go back to the reach decision, the build gate, the
+CI wait and the `review-gate` read for the new head. The platform queue re-runs CI on whatever head it
+finds, but it does not re-run the reach decision or the review read, so a head that changed underneath
+a cleared record would enter the queue uncleared.
+
+The enqueue takes no merge mutex: the platform queue serializes the merge and re-tests it against the
+updated base, so two enqueued pull requests cannot interleave their merge commits — the queue is the
+serialization the mutex would otherwise provide, and holding both would only serialize work that is
+already serialized.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr merge-queue --pr-number {N}
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr wait-for-queue-settle --pr-number {N} --timeout 540
+```
+
+- Only `settle: merged` with a `merge_commit_sha` is a landing.
+- `dequeued`: report it and ask the operator.
+
+**Clean up after the merge**, from the main checkout:
+
+1. Check `git -C {worktree} status --porcelain`. If it shows anything, stop and ask. Then run
+   `git worktree remove {worktree}`, never with force. The git-workflow `worktree-remove` verb
+   refuses in this lane, so do not use it.
+2. `python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow prune-local-and-remote-ref --project-dir . --head {branch}`
+3. `python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow switch-and-pull --project-dir . --base {base_branch}`
+
+Never use `git branch -D`. If a cleanup step refuses, report it and ask. Never move the main
+checkout by hand (`git fetch` + `merge`, `pull`, `switch`, `reset`): other sessions may be working
+in it, and step 3 is the only sanctioned way to update it.
+
+## 8. Landing message (the last step, after the merge)
+
+Write the payload to `{landing_file}`, then send it:
+
+```bash
+{inbox_write_command}
+```
+
+The payload is a facts block followed by the report, both taken from the progress file (section 0a).
+The facts block is fenced with the `landing-facts` info-string and carries exactly the schema fields
+the orchestrator's landing-payload contract defines; its field values follow.
+
+```landing-facts
+schema=landing-facts/1
+plan_id={sender_id}
+epic={slug}
+pr=#{N}
+merge_state=merged
+cleanup_owed=false
+deliverables_total={spec deliverable count}
+deliverables_done={deliverables whose every Done-when is met}
+total_tokens=unknown
+harness={harness}
+model={every model and variant used, comma-separated, e.g. deepseek-v4.1-flash/max,deepseek-v4.1-flash/high; record each switch in the progress file}
+effort={the effort level measured with the model}
+plugin_version={the plan-marshall bundle version}
+executor_version={the executor version when resolve returned one; drop this line when it did not (optional)}
+steps=setup:done,implement:done,build-gate:done,self-review:{clear|budget-exhausted},pr:done,reviews:done,merge:done
+unresolved_review_threads={review-gate fact|unknown}
+review_body_findings_total={review-gate fact|unknown}
+review_body_findings_handled={review-gate fact|unknown}
+sonar_open_new_issues={measured count|n/a|unknown}
+step.sonar-roundtrip.open_issue_rules={rules left open|none|unknown|n/a}
+```
+
+- **Base copy (cleanup_owed):** a base worktree a Done-when's evidence used is removed with
+  `git worktree remove`, never with force, once `git -C` at its `worktree_path` shows a clean
+  `status --porcelain`, before this landing is written. When it is still on disk, set the landing's
+  single `cleanup_owed=true` fact — the branch-cleanup fact, which this also answers — and name in the
+  report which tree remains, read from the tree. An operator question about removing it states first
+  what exists, read from the tree; the lane never asks how to delete what it created before that read.
+- **Values:** for a required key, write `unknown` for anything you could not read, never `n/a` and
+  never a guess. `deliverables_done` counts only fully met deliverables. The optional per-step facts
+  below carry their own two sentinels, where `n/a` is a legal answered absence.
+- **The review numbers (required):** `unresolved_review_threads`, `review_body_findings_total` and
+  `review_body_findings_handled` are the `review-gate` call's own `unresolved_review_threads`,
+  `review_body_findings_total` and `review_body_findings_handled` facts, from the read taken on the
+  merge head — never a number recalled from the review cycle, and never `n/a`. A landing that omits
+  them is rejected by `inbox landing-check`, so a "all handled" claim has its numbers behind it.
+- **Sonar (the count is required):** `sonar_open_new_issues` is a required field. When `sonar` is
+  `configured`, render it with
+  `python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane sonar-facts --state configured --count-status {confirmed|carried_forward|undecidable|unconfigured} [--open-count {n}] [--rules "{r1,r2}"] [--gate-status {ok|error|not_computed|unknown}] [--carried-forward --analysed-revision {sha} --carried-forward-head-revision {sha}]`
+  and write its `fact_lines` verbatim; when it is `not_configured`, render with
+  `--state not_configured` and write `n/a` at the count (a project with no Sonar has no such number —
+  one of the four keys at which `n/a` is a legal answer). A confirmed count writes the measured
+  figure, with the rules it left open on the optional `step.sonar-roundtrip.open_issue_rules` line
+  (`none` when that count is `0`). **A carried-forward figure carries its marking and names both
+  heads:** pass `--carried-forward` with `--count-status carried_forward` and
+  `--analysed-revision {analysis_revision} --carried-forward-head-revision {head_revision}`
+  (the verb refuses the marking beside an `undecidable` or `unconfigured` read), and the
+  `step.sonar-roundtrip.analysed_revision`, `step.sonar-roundtrip.carried_forward_head_revision` and
+  `step.sonar-roundtrip.carried_forward=true` lines ride beside the count, so the figure never reads
+  like a measurement of the head the pull request points at. A carried-forward figure without that
+  marker is refused. Where the only open findings are security
+  hotspots — which carry no
+  rule — pass `--rules hotspot`, so the fact states that rather than claiming a rule. An `undecidable`
+  or `unconfigured` read writes `unknown` at both:
+  both are failed reads, never `0`, and never a claim the run did not earn. `--gate-status` adds the
+  optional `step.sonar-roundtrip.quality_gate_status` line — the quality gate is reported, never
+  counted as a finding.
+- **Runtime stamp:** `harness`, `model`, `effort`, `plugin_version` and the optional `executor_version` are
+  the resolve result's fields of those names, resolved from the platform-runtime `runtime-info` seam.
+  Read the stamp from a `resolve` **re-run at landing time**, not from the setup-time result, so a model
+  or effort switch during the run is stamped; record every switch in the progress file. `model` keeps
+  its `{model}/{variant}` list form — one element per model and variant used.
+- **Every line inside the facts fence is a `key=value` pair** — no line is dropped by the consumer's
+  parser. The guard state travels as prose beside the fence rather than as a fence line:
+  `guard: none on this harness (unenforced)` when the resolve result reported `guard: none`, and
+  `guard: present` otherwise.
+- **Guard:** where the resolve result reported `guard: none`, the rule-check section of the report
+  says `guard: none on this harness (unenforced)`. Never report "all kept" or "no guard-log line"
+  for a harness with no guard.
+- **The report follows the facts block,** one short section each:
+  1. **Deliverables** — per Done-when: met, or not met / **not met as written** (a Done-when whose
+     "fails at `{sha}`" clause was not seen failing); the test name; an `order` field with exactly
+     one of `test-first`, `mutation-after` or `none`; the failing run's commit and output identifier
+     that the order names; and the commit. The words "fail-first" and "observed failing before the
+     fix" are reserved for `test-first` — `mutation-after` means the failing output came from
+     mutating or reverting the committed fix, and `none` means no failing output was captured. A
+     `not met as written` Done-when leaves its deliverable not fully met. A claim carrying no
+     artifact is reported **`not evidenced`** — section 1's Evidence rule — and it counts as not
+     met, so it does not raise `deliverables_done` either. Also report the sha of
+     every per-head test run (`module-tests`, and `test-compile` where the project publishes one)
+     against a pushed head.
+  2. **Personas and skills** — per step, which persona was applied (section 1's table, or the
+     deliverable's own `Persona:` line); per deliverable, the domain skills it named — or
+     `skills: none named` when the spec declares none — and any skill added for surface drift as
+     `skills added: …, reason: …`.
+  3. **Hypotheses** — each one confirmed or refuted, with `file:line`.
+  4. **Findings** — self-review, CI and every PR comment, each with its disposition.
+  5. **Reviewers** — one row per reviewer in `{required_bots}` and `{optional_bots}`: reviewed /
+     refused / silent, the head reviewed, and the trigger and wait history. **Standing review
+     authorization:** per quota-limited reviewer, the head it reviewed, the current head, and each
+     finding with how it was handled.
+  6. **Operator questions** — **every** question-tool call in the run, in order: its text, its
+     options, and the option selected. List free-text operator messages separately, as free text. A
+     surface/naming error that prompted a question is recorded here with the answer it got; when the
+     harness offered no question tool at all, this section says `no question tool was available`. If
+     no question was needed and none was asked, write "none asked".
+  7. **Rule check** — every section 1 rule that you or a sub-agent did not keep, and every guard
+     refusal. The check counts the run's OWN actions, not only what the guard recorded: every shell
+     file operation the run issued — the read-class ones included — every routed build including a
+     failed one, and every operator message including a model switch. Read `{guard_log}` (the path
+     `resolve` returns) for this run's sessions; a count taken from the guard log alone is labelled
+     as such. Attribute a refusal by the run's own session tree, never by a time window, and list
+     every restart, every killed sub-agent and every re-dispatch with what it re-ran. "All kept" is
+     allowed only when the log has no line for the run — and never on a harness whose resolve
+     result reported `guard: none`. Record the spec read's own two facts here as well — which copy
+     `resolve` read (`spec_source`) and, when it carried one, the `spec_differ` marker — because a
+     silent read of the older copy is the failure the worktree-first default and this record exist to
+     remove.
+     Record the `executor-skew` verdict this run read here too: a `not_applicable` from a source
+     checkout is answered, recorded and never asked about.
+  8. **Build server** — the setup preflight's state (`ready`, `disabled` or `down`, with its reason),
+     the per-`mechanism` build count (`daemon_longpoll` versus `in_process_fallback`, so a run that
+     did not use the server is visible here and not only in the daemon journal), and the fallback each
+     build used and why, one entry per build that fell back or retried (`degraded` with its `reason`,
+     or `executor_absent_from_worktree` / `launch-fault-retry` with its own), so two builds in one
+     gate never collapse into one field. Take each build's `mechanism` from the client's own
+     `[BUILD-SERVER] resolved build` line on that build's stderr — it is a routing fact, not a
+     build-result field, so it is not in the result's TOON. And any `killed` job with its
+     disposition. Add any
+     `runtime_stamp_reason` the resolve result carried: it names a runtime-info seam that failed, or
+     a fact nothing could measure, and marks the stamp as `unknown` rather than silently absent.
+  9. **Residue** — anything left open.
+
+Then tell the operator the PR number, the merge commit, and that the landing message was written.
+
+**Never edit a filed inbox message.** To correct it, stage the correction body and run
+`python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator inbox amend --slug {slug} --message {name} --payload-file .plan/temp/amend-{plan}.md`
+(see its `--help`), which stamps a revision.
+
+**Stopping before the merge** (blocked, or the operator stops the run): write the same message with
+`merge_state` set to `open` or `n/a`, and `pr` set to the PR number or `n/a`.
